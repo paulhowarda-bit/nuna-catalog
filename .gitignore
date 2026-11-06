@@ -1,0 +1,9 @@
+target/
+*.class
+*.log
+.idea/
+*.iml
+.vscode/
+.claude/worktrees/
+.claude/settings.local.json
+.DS_Store

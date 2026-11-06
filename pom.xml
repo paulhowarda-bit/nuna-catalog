@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Boot's parent supplies plugin versions and dependency management. -->
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>4.1.2</version>
+    <relativePath/>
+  </parent>
+
+  <groupId>fidice</groupId>
+  <artifactId>fidice-catalog-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+  <name>fidice catalog</name>
+  <description>Iceberg REST catalog server. Author: Paul Howard.</description>
+
+  <modules>
+    <module>catalog-core</module>
+    <module>catalog-iceberg</module>
+    <module>catalog-store-api</module>
+    <module>catalog-store-sql</module>
+    <module>catalog-store-oracle</module>
+    <module>catalog-store-mongo</module>
+    <module>catalog-objectstore</module>
+    <module>catalog-security</module>
+    <module>catalog-audit</module>
+    <module>catalog-server</module>
+    <module>catalog-tests-conformance</module>
+    <module>catalog-tests-engines</module>
+    <module>catalog-tests-load</module>
+  </modules>
+
+  <properties>
+    <java.version>25</java.version>
+    <!-- Versions Boot does not manage are pinned here; sources in research_notes/Build plan facts/. -->
+    <iceberg.version>1.12.0</iceberg.version>
+    <!-- iceberg-core 1.12.0 is built on Jackson 2.22.2; Boot 4.1.2 manages 2.21.7. -->
+    <jackson-2-bom.version>2.22.2</jackson-2-bom.version>
+    <!-- 7.1.0 fixes a virtual-thread spin; Boot 4.1.2 manages 7.0.2. -->
+    <hikaricp.version>7.1.0</hikaricp.version>
+    <postgres.image>postgres:18</postgres.image>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.apache.iceberg</groupId>
+        <artifactId>iceberg-core</artifactId>
+        <version>${iceberg.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-core</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-iceberg</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-store-api</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-store-sql</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-server</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <!-- OneDrive marks new folders read-only and JDK 25 refuses to delete them;
+             force=true is the verified fix (notes: onedrive-git-hazards.md). -->
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-clean-plugin</artifactId>
+          <version>3.5.0</version>
+          <configuration>
+            <force>true</force>
+          </configuration>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>require-jdk-25</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[25,)</version>
+                </requireJavaVersion>
+              </rules>
+            </configuration>
+          </execution>
+          <execution>
+            <id>dependency-convergence</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <dependencyConvergence/>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

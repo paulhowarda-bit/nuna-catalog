@@ -1,0 +1,60 @@
+package fidice.catalog.conformance;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.junit.platform.engine.discovery.DiscoverySelectors;
+import org.junit.platform.launcher.LauncherDiscoveryRequest;
+import org.junit.platform.launcher.core.LauncherDiscoveryRequestBuilder;
+import org.junit.platform.launcher.core.LauncherFactory;
+
+/**
+ * Runs the Iceberg REST Compatibility Kit against our server (D31). Every test's outcome goes to
+ * target/rck-results.txt. The build fails only if a test recorded as PASS in rck-baseline.txt no
+ * longer passes. Re-record the baseline deliberately with {@code -Drck.record=true}.
+ */
+class RckRatchetTest {
+
+    private static final List<String> RCK_CLASSES = List.of(
+            "org.apache.iceberg.rest.RESTCompatibilityKitCatalogTests",
+            "org.apache.iceberg.rest.RESTCompatibilityKitViewCatalogTests");
+
+    @Test
+    void compatibilityKitHasNoRegressions() throws Exception {
+        // The RCK client copies every system property into its catalog configuration.
+        System.setProperty("uri", ConformanceServer.start().toString());
+        System.setProperty("warehouse", ConformanceServer.WAREHOUSE);
+
+        LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
+                .selectors(RCK_CLASSES.stream().map(DiscoverySelectors::selectClass).toList())
+                .configurationParameter("rck.local", "false")
+                .build();
+        Outcomes outcomes = new Outcomes();
+        LauncherFactory.create().execute(request, outcomes);
+
+        Map<String, String> current = outcomes.byTest();
+        Path baselineFile = Path.of(System.getProperty("rck.baseline"));
+        Ratchet.write(Path.of(System.getProperty("rck.results")), current);
+        if (Boolean.getBoolean("rck.record")) {
+            Ratchet.write(baselineFile, current);
+        }
+        Map<String, String> baseline = Ratchet.read(baselineFile);
+
+        System.out.println(outcomes.summary());
+        List<String> gained = Ratchet.newPasses(baseline, current);
+        if (!gained.isEmpty()) {
+            System.out.println(gained.size() + " tests now pass that rck-baseline.txt does not record;"
+                    + " re-record with -Drck.record=true");
+        }
+
+        assertThat(current).as("RCK tests discovered").isNotEmpty();
+        // Without a baseline the ratchet would guard nothing, so its absence fails the build.
+        assertThat(baselineFile).as("rck-baseline.txt (record it with -Drck.record=true)").exists();
+        assertThat(Ratchet.regressions(baseline, current))
+                .as("tests that pass in rck-baseline.txt and no longer pass")
+                .isEmpty();
+    }
+}

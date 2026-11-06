@@ -1,0 +1,40 @@
+package fidice.catalog.server;
+
+import fidice.catalog.core.CatalogError;
+import fidice.catalog.core.Names;
+import fidice.catalog.iceberg.Wire;
+import fidice.catalog.store.CatalogRecord;
+import fidice.catalog.store.CatalogStore;
+
+import java.util.Map;
+import org.springframework.http.MediaType;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * {@code GET /v1/config}: tells a client which catalog its warehouse names (as the REST
+ * prefix) and which endpoints this server supports (D13, D28).
+ */
+@RestController
+public class ConfigRoute {
+
+    private final CatalogStore store;
+
+    public ConfigRoute(CatalogStore store) {
+        this.store = store;
+    }
+
+    @GetMapping(path = "/v1/config", produces = MediaType.APPLICATION_JSON_VALUE)
+    public String config(@RequestParam(name = "warehouse", required = false) String warehouse) {
+        if (warehouse == null || warehouse.isBlank()) {
+            throw CatalogError.badRequest("Missing required query parameter: warehouse");
+        }
+        CatalogRecord catalog = store.findCatalog(Names.normalize(warehouse))
+                .orElseThrow(() -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + warehouse));
+        return Wire.config(
+                Map.of(),
+                Map.of("prefix", catalog.normalizedName()),
+                AdvertisedEndpoints.ALL);
+    }
+}
