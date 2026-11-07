@@ -302,8 +302,15 @@ From the report's question list, reduced to those the ledger did not settle, wit
 | R6 | v1 storage commits to branch-ready keys before branches ship. | Design review in M1; the shared suite covers (object, branch) keys from the start. |
 | R7 | Laptop performance is not representative. | Relative SLO tracking here; absolute SLOs are a work gate. |
 | R8 | Unanswered work questions (section 6). | They change configuration and M5–M7 details, not the architecture. |
+| R9 | Oracle's Transaction Guard is not licensed in Free and may need confirming on the work estate. | Without it, findCommit's lock-and-journal path still decides correctly (tested); Transaction Guard only shortens the wait. Confirm licensing before M9. |
 
 ## 8. Status
 
 - **M0 done 2026-11-06.** `mvnw clean verify` passes on JDK 25 / Maven 3.10.0: 16 tests, including the config route on PostgreSQL 18, the advertised-endpoints check, the iceberg-core import boundary, a stock Iceberg client probe and the RCK ratchet (149 RCK tests discovered, all NOT_RUN until M4 adds namespace routes). Each guard test was bite-tested: broken on purpose, seen to fail, restored.
-- **Next: M1**, the storage interface and the shared invariant suite.
+- **M1 done 2026-11-07.** The storage interface, the shared suite and the commit core pass on all three families, each rerun independently:
+  - PostgreSQL 18 (primary plus synchronous standby): 27 suite tests, 25 bite runs.
+  - Oracle Free 23.26.3 with Transaction Guard: 26 tests, 3 skipped by capability (no Data Guard on Free); 23 of 24 bite runs bite, and the one that does not is explained.
+  - MongoDB 8.0.34 three-member replica set: 27 tests, none skipped; 27 of 28 bite runs bite, and the one that does not is the expected evidence for the open-create gap.
+  - Main finding: every backend can report a commit as visible before it is durable (PostgreSQL's in-flight create, Oracle's Transaction Guard, MongoDB's snapshot reads), so findCommit on all three answers COMMITTED only after a durability barrier. Deviations and the suite changes M2 starts with are in `docs/storage-design.md`.
+  - Not run: the nightly 10,000-round CAS profile.
+- **Next: M2**, the backends in full, starting with the suite changes listed in `docs/storage-design.md`.
