@@ -122,6 +122,9 @@ Each test gets a bite run: break the check it guards (e.g. drop the version comp
 | | `pg.commit-cancel-timeout` | `statement_timeout` or `idle_in_transaction_session_timeout` set for the catalog role |
 | Oracle | `ora.no-data-guard` | `v$database.protection_level` not MAXIMUM AVAILABILITY/PROTECTION |
 | | `ora.no-transaction-guard` | the catalog service lacks `COMMIT_OUTCOME` |
+| | `ora.commit-replay` | the catalog service's `FAILOVER_TYPE` is TRANSACTION or AUTO (Application Continuity could replay a COMMIT) |
+| | `ora.commit-nowait` | `commit_wait` or `commit_write` contains NOWAIT |
+| | `ora.linguistic-sort` | the session's `NLS_SORT` is not BINARY |
 | MongoDB | `mongo.not-replica-set` | not a replica set |
 | | `mongo.too-few-voters` | fewer than 3 voting data-bearing members |
 | | `mongo.weak-write-concern` | default write concern below majority, or `writeConcernMajorityJournalDefault` false |
@@ -243,3 +246,85 @@ Clarifications, not deviations:
 11. **Two contract guards are tested only in the MongoDB suite:** a namespace drop refused under a hold on the namespace, an ancestor or the catalog, and a grant naming a catalog other than its securable's (`heldNamespaceRefusesTheDrop`, `grantNamesTheSecurablesCatalog`; bites B27, B28, B31 and B35). They belong in `NamespaceSuite` and `GrantSuite` when those next change.
 12. **Multi-read lookups use one snapshot session.** `findNamespace` walks the path, and the purge scan reads dropped objects and then their holds, each in one snapshot session, so each answer is one point in time. The purge itself re-checks holds in its transaction (bite B33).
 13. **Key expiry re-checks expiry in its delete.** `expireKeys` finds up to `limit` expired keys, then deletes those still expired, so a key claimed afresh between the two is kept. No test can time that race: bite B42 (delete by key alone) passes, and so does B41 (the find unfiltered), because the delete re-checks.
+
+## Deviations (M2b, Oracle whole contract)
+
+Found while implementing section 9 in `catalog-store-oracle` (Flyway V3 and V4) against Oracle AI Database Free 23.26.3. Oracle's 23ai documentation now redirects to the 26ai pages, which Free 23.26 follows. Each Oracle behaviour below was checked against those pages, or measured where the docs say nothing. Bite runs are named by id. 56 of 69 bite, and each one that does not is explained here (items 11, 15 and 19).
+
+1. **No shared row locks (9, "Writes").** Oracle's `SELECT` has only `FOR UPDATE`, an exclusive row lock (SQL Reference, SELECT, for_update_clause; Concepts, "Data Concurrency and Consistency"). A write locks what it depends on (parent namespace, securable, storage profile, catalog) `FOR UPDATE`. As a result, writes under one parent or on one securable serialize where PostgreSQL lets them run side by side. Creates and drops still serialize as section 9 requires.
+2. **`''` is NULL, so text goes through a codec.** Oracle treats a zero-length string as NULL and says this may change (SQL Reference, "Nulls"). Every text value is stored through one codec: `''` is written as `CHR(0)`, and a value that starts with `CHR(0)` gets one more in front. Every other value is stored as is, so M1 rows read back unchanged. The codec keeps byte order, so comparisons, ORDER BY and keyset tokens act on stored values as on the originals. A done idempotency row whose body is NULL (written by M1, M1 deviation 4) reads back as an empty body. Evidence: `emptyStringsRoundTrip` and `previousReleaseEmptyBodyReadsBackEmpty` (Oracle-only); bites X1 and X2.
+3. **Names compare as bytes only under `NLS_SORT = BINARY`: new finding `ora.linguistic-sort`.**
+   - Under `NLS_COMP = BINARY`, the binary comparison operators and IN are binary, but ORDER BY follows `NLS_SORT` (Globalization Support Guide, "Linguistic Sorting and Matching", Table 5-3). So a linguistic sort makes ORDER BY disagree with the keyset `>` predicate.
+   - The thin driver sets `NLS_LANGUAGE` and `NLS_TERRITORY` from the JVM locale, and `NLS_SORT` follows the language. A JVM in a German locale therefore pages with a German sort.
+   - The Oracle-only test `linguisticSortSkipsNamesWhenPaging` pages `b` and `ä` one at a time under `GERMAN` and gets only `ä`.
+   - The store does not rewrite ORDER BY with `NLSSORT`, which would lose the index. The self-check reports the finding and the server refuses to start; the JVM or the pool must keep `NLS_SORT = BINARY`.
+4. **Names and text have length limits.**
+   - Normalized and display names are `VARCHAR2(1000 CHAR)` (4,000 bytes in AL32UTF8). Branch names keep M1's 255 characters.
+   - Locations, settings and attribute values are `VARCHAR2(4000)` bytes. Namespace property values are CLOBs.
+   - Reasons: `MAX_STRING_SIZE = STANDARD` caps VARCHAR2 at 4,000 bytes, and a B-tree key must fit in about 75% of the block, about 6,400 bytes for 8 KB blocks (Reference, "Logical Database Limits"; ORA-01450). The widest key, `trusted_engine_pk` (issuer plus client id), is 6,000 bytes.
+   - PostgreSQL has no such limits. On Oracle a longer value is a `StoreException` (ORA-12899), so the server must reject longer names at its edge.
+5. **Ancestors (9 f 2) are read, not stored, for namespaces.** A drop walks `parent_id` with `START WITH id = ? CONNECT BY id = PRIOR parent_id` (SQL Reference, "Hierarchical Queries"). The walk is stable because namespaces never move and a namespace with children cannot be dropped. Objects keep their path as `object_path` rows (Oracle has no arrays), written when the object is placed and kept after the namespace is gone. Evidence: `holdsRefuseTheDrop` holds the parent of the object's namespace; bites R5 to R7.
+6. **Keyset paging without row-value comparison (9 c).**
+   - Oracle allows a list of expressions on the left only with `=`, `!=` and `<>`, not `<` or `>` (SQL Reference, "Comparison Conditions"). So `(a, b) > (?, ?)` is written `a > ? OR (a = ? AND b > ?)`, nested for three columns.
+   - The optimizer may rewrite that OR into UNION ALL branches but is not required to (SQL Tuning Guide, "OR Expansion"). Each listing therefore has an index that leads with its sort columns, and a page reads at most `size + 1` rows with `FETCH FIRST`.
+   - IN lists are split at 1,000 values. 26ai allows 65,535, but 19c still stops at 1,000 (SQL Reference, "Expression Lists"; ORA-01795).
+   - Bites K1 and K2.
+7. **No `ON CONFLICT`.**
+   - A write that takes a name or key inserts and catches ORA-00001 for that constraint. Statement-level atomicity rolls back only the failed statement, so the same transaction then reads the holder (Concepts, "Statement-Level Atomicity").
+   - The constraint is matched by error code 1 and name. 26ai adds the table and columns to the message text.
+   - An insert waits for an open insert of the same key and then fails. No Oracle page states this; the suite shows it (`createWaitsForAnOpenCreateOfTheSameName`, `exactlyOneConcurrentCreateWins`).
+   - Upserts (storage profile, attribute, trusted engine) are MERGE, run once more if they lose an insert race on ORA-00001. The MERGE page says nothing about concurrency, and no suite test races two upserts of a new key (bite G2 does not bite).
+8. **The active-name index is a function-based unique index**, `(CASE WHEN state = 'ACTIVE' THEN namespace_id END, CASE WHEN state = 'ACTIVE' THEN name_norm END)`. This is Oracle's own conditional-uniqueness example: a row whose keys are all NULL is not indexed (SQL Reference, CREATE INDEX). Lookups by active name use the same expressions, so the optimizer can match the index (Concepts, "Optimization with Function-Based Indexes"). Bites O2 and O3.
+9. **The journal is partitioned by month (2.4, D5), in V4.**
+   - Oracle cannot partition on TIMESTAMP WITH TIME ZONE (CREATE TABLE, "Restrictions on Interval Partitioning"; ORA-03001 here). So the key is a virtual column, `committed_utc = SYS_EXTRACT_UTC(committed_at)`. Interval partitioning, `NUMTOYMINTERVAL(1, 'MONTH')`, creates each month's partition when the first row arrives (VLDB and Partitioning Guide, "Interval Partitioning"), so no maintenance job is needed.
+   - V4 converts M1's table with `ALTER TABLE … MODIFY PARTITION BY … ONLINE` (non-blocking since 12.2). Without UPDATE INDEXES, the primary key and `journal_by_pointer` stay global, non-partitioned indexes, because neither contains the key.
+   - Interval partitioning refuses a SERIALIZABLE transaction that would create a partition. The store's writes are READ COMMITTED.
+   - **The first commit of a month creates its partition, and that is slow.** On this Free container the first commit into a new month took 0.5 to 2.6 s, against about 20 ms for the next one. Twice in full runs it went past the test link's 5 s read timeout and failed cleanly, before COMMIT was sent.
+   - `LOCK TABLE journal PARTITION FOR (TIMESTAMP '…') IN SHARE MODE` creates a month's partition ahead of time. It took 0.4 to 1.4 s, after which that month's first commit took 15 to 83 ms.
+   - Production needs a monthly job that creates the next month's partition. Without one, the first commit of each month runs that much longer, and it fails if that is past the pool's read timeout. The test fixture does the same for the months the suite writes (item 18).
+   - Partitioning is an extra-cost option of Enterprise Edition; Free includes it (Licensing Information, "Oracle Partitioning"). V4 first checks `v$option`, which shows that the option is installed, not that it is licensed, and stops with an error before changing anything if it is off. Licensing on the work estate is a work question.
+   - Evidence: `journalAddsAPartitionForANewMonth` (Oracle-only) and shared test 7. Bites:
+     - M1b (a yearly interval) fails the test.
+     - M1 (no conversion) fails the fixture's partition pre-creation with ORA-14501 before the test runs.
+     - M2 (the guard inverted) stops V4 with its error.
+10. **Changes keep no Transaction Guard id; `createObject` does.**
+    - Transaction Guard covers every local transaction (Development Guide, "Transaction Guard Coverage"). But section 9 gives a change no findCommit, so nothing would ever ask for a change's LTXID. A change's unknown outcome is a `CommitOutcomeUnknownException`, as section 9 requires, and it resolves through its idempotency key.
+    - A change that carries a key holds that key's row lock until its transaction ends, so a retry's claim waits for the lost transaction to commit or roll back and then sees the truth. If the server never learns that the session died, the claim waits until the pool's read timeout and the request fails cleanly.
+    - `createObject` commits under its first commit's id, which findCommit decides, so it keeps its LTXID as a commit does.
+    - Evidence: the Oracle-only `transactionGuardBlocksACreateStillOnItsWay`, new in M2b, is the create counterpart of M1's commit test. With the LTXID dropped (bite C8), findCommit waits for the held COMMIT and answers COMMITTED, instead of answering NOT_COMMITTED and blocking it. Bites C6 and C7 do the same to the commit path.
+11. **A claim that finds a done key commits, and that COMMIT is the durability barrier.** Its `SELECT … FOR UPDATE` writes the row lock, so the transaction has redo, and its COMMIT waits until the redo before it, the answer's included, is written (COMMIT WAIT is the default). `readKey` and `awaitKey` commit the durability barrier.
+    - Evidence: `idempotentReplayWaitsForTheRedo` (Oracle-only, which now covers `awaitKey` too). Bites I3 (no barrier in `readKey`) and I4 (none in `awaitKey`) fail it.
+    - Bite I5 (roll back instead of commit) does not. As M1 measured, a ROLLBACK after a row lock also waits in `log file sync`. The COMMIT stays, because its wait is the documented guarantee and the rollback's is only observed.
+12. **Projection pieces are 1 MiB, as on PostgreSQL** (9 f 4). The first piece stays in `pointer.projection` and the rest go in `projection_piece` BLOBs under the pointer's version, read in the same statement. Oracle binds a zero-length RAW as NULL, so an empty projection is `EMPTY_BLOB()`, an empty LOB that is not NULL (SQL Reference, EMPTY_BLOB). A previous-release node reads only the first piece (PostgreSQL M2 prep deviation 5). Bites P1 to P3.
+13. **The outbox order key is M1's identity with ORDER.** The value is drawn per row at insert (SQL Reference, "Sequence Pseudocolumns"; CREATE TABLE, identity_clause), after the change has locked what it touched (9 b). ORDER keeps RAC instances in request order (RAC Administration Guide). On one instance this cannot be bite-tested. The suite commits sequentially, and two commits to one pointer cannot both succeed concurrently.
+14. **Three new self-check findings** (section 7):
+    - `ora.commit-replay`: the service's `FAILOVER_TYPE` is TRANSACTION or AUTO, which turn on Application Continuity replay (RAC Administration Guide, "Ensuring Application Continuity").
+    - `ora.commit-nowait`: `commit_wait` or `commit_write` contains NOWAIT.
+    - `ora.linguistic-sort` (item 3).
+    - The catalog role also needs SELECT on `V_$PARAMETER`.
+    - This corrects M1's proposal: `COMMIT_LOGGING = BATCH` alone is not a hazard. The COMMIT statement page says WAIT is the default and that BATCH only buffers the redo. It is NOWAIT that returns whether or not the redo write has completed.
+    - Bites S1 to S3.
+15. **The rolling upgrade (9 f 6).**
+    - V3 and V4 set `DDL_LOCK_TIMEOUT = 60`, so a blocking DDL waits for previous-release transactions instead of failing at once with ORA-00054 (Reference, DDL_LOCK_TIMEOUT).
+    - Indexes on live tables are built `ONLINE`. Online index builds are non-blocking DDL, which the timeout does not govern; they wait for open DML to end while new DML continues (Development Guide, "Nonblocking and Blocking DDL Statements").
+    - Evidence: `migrateWhileThePreviousReleaseServes` runs the M1 store, kept as the test class `PreviousReleaseStore`, against a fresh schema at V2 while V3 and V4 apply.
+    - Bites M3 to M5 (no lock timeout in V3, none in V4, the journal index built offline) do not bite. The previous release's transactions are milliseconds long and never held a lock at the instant a DDL needed it, and an offline build of an index on a near-empty journal is instant. The settings stay because ORA-00054 and blocked DML are the documented failures on a busy table.
+
+Clarifications, not deviations:
+
+16. **Inherited from M2 prep.** Namespace drop is a hard delete, objects have a `PURGED` state, and there is no foreign key from pointer to object (PostgreSQL M2 prep deviations 2 to 4). V3 adds no foreign keys at all; each write locks what it depends on.
+17. **Data Guard capabilities skip on Free.** Data Guard is not available in Free (Licensing Information, Table 1-5), so test 4 (failover), test 5's safe environment and test 6 (replica lag) skip through their capabilities, as in M1.
+18. **The test fixture prepares the schema through its admin pool.** The suite's store reaches Oracle through a link whose read timeout is 5 s.
+    - On a loaded machine V1's DDL outlasted that timeout. So `OracleFree` migrates once with a 120 s read timeout, and the suite's own migrate then finds nothing to apply.
+    - The fixture also creates the journal partitions of the months the suite writes, as the production job would (item 9).
+    - `journalAddsAPartitionForANewMonth` still has a commit create its own partition, through the admin pool.
+19. **Checks no suite test reaches.** These bites do not bite because nothing in the shared suite exercises the check. Each is a candidate for a shared-suite test, which every backend would then have to pass:
+    - R3: a grant on a securable of another catalog is Missing.
+    - R4: a grant, attribute or hold locks its securable against a concurrent drop or purge.
+    - N6: a namespace drop is refused under a hold on it, an ancestor or the catalog.
+    - O1: an object write locks its namespace against a concurrent drop.
+    - O5: the purge scan skips objects held through a namespace above them. The suite holds only the object (O6 bites).
+    - O9: rename and undrop rewrite the object's namespace path, so later holds follow it.
+    - I9: a commit's result over an expired record held by another claimant.
+    - B4: two relays claiming at the same instant.
+    - G2: two upserts racing to insert one new key.

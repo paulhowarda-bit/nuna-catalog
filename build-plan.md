@@ -328,4 +328,10 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Rules: each of the five D11 rules and eleven correctness backstops has a test that the builder alone fails. Three more checks from the backstop list are left to the builder, which already makes them. iceberg-core already refuses a snapshot more than a minute ahead on main, so the clock-skew rule matters for snapshots added off main.
   - Not done: the RCK table-commit paths run through REST routes, so they wait for M4; the baseline is still 149 NOT_RUN. Three RCK view tests that move a view's location will conflict with D28.
 - **M2c done 2026-11-08: the whole storage contract on MongoDB 8.0.34** (three-member replica set, schema step 3). 155 suite tests, none skipped; 43 of 50 bite runs bite. Of the 7 that do not, 2 showed redundant code, now removed, and 5 are explained in the M2c deviations of `docs/storage-design.md`. With no shared locks, a write marks the records it depends on; outbox order is a Lamport clock.
+- **M2b done 2026-11-08.** The whole storage contract runs on Oracle Free 23.26.3 in `catalog-store-oracle` (Flyway V3 and V4): 156 suite tests, 3 skipped by capability (no Data Guard on Free).
+  - 56 of 69 bite runs bite. Four that do not are explained by Oracle's behaviour (a rollback after a row lock waits for the redo; short previous-release transactions). Nine show checks no shared-suite test reaches.
+  - Main findings:
+    - Interval partitioning creates each month's journal partition inside its first commit (0.5–2.6 s here), so production needs a monthly pre-create job.
+    - `NLS_SORT` follows the JVM locale and breaks byte-ordered paging; a new self-check finding catches it.
+  - Deviations and the suite gaps are in `docs/storage-design.md`.
 - **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.

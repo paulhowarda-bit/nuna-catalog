@@ -12,13 +12,15 @@ import static fidice.catalog.store.oracle.Sql.value;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
+import fidice.catalog.store.CatalogStore;
+import fidice.catalog.store.Change;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
+import fidice.catalog.store.suite.CatalogStoreUnderTest;
 import fidice.catalog.store.suite.Faults;
-import fidice.catalog.store.suite.StoreUnderTest;
 import fidice.catalog.store.suite.UnsafeSetting;
 import fidice.catalog.store.suite.WrittenRows;
 import java.io.IOException;
@@ -27,6 +29,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -55,7 +58,7 @@ import org.testcontainers.utility.DockerImageName;
  * COMMIT becomes durable when the log writer writes its redo, so stalling replication freezes the
  * log writer (SIGSTOP): a COMMIT then waits at the primary, as it waits for a SYNC standby.
  */
-final class OracleFree implements StoreUnderTest, Faults {
+final class OracleFree implements CatalogStoreUnderTest, Faults {
 
     static final String USER = "catalog";
     /** The catalog service: COMMIT_OUTCOME = TRUE, no FAILOVER_TYPE (the driver never replays). */
@@ -69,6 +72,8 @@ final class OracleFree implements StoreUnderTest, Faults {
     private static final String PASSWORD = "catalog";
     private static final String PDB_SERVICE = "freepdb1";
     private static final String PLAIN_SERVICE = "catalog_plain";
+    /** A service whose FAILOVER_TYPE lets Application Continuity replay transactions. */
+    private static final String REPLAY_SERVICE = "catalog_replay";
     private static final String ORACLE_ALIAS = "oracle";
     private static final int ORACLE_PORT = 1521;
     private static final int LINK_PORT = 8666;
@@ -86,6 +91,7 @@ final class OracleFree implements StoreUnderTest, Faults {
     private final DataSource sysdba;
     /** The undecided commits of the stores this harness hands out: they act as one process. */
     private final Map<UUID, LogicalTransactionId> undecided = new ConcurrentHashMap<>();
+    private final List<String> upgradePools = new ArrayList<>();
     private String logWriterPid;
     private boolean logWriterFrozen;
 
@@ -111,6 +117,32 @@ final class OracleFree implements StoreUnderTest, Faults {
                 PASSWORD, READ_TIMEOUT_SECONDS, 8);
         directPool = Sql.pool("fidice-direct", oracle.getHost(), oracle.getMappedPort(ORACLE_PORT), SERVICE, USER,
                 PASSWORD, ADMIN_READ_TIMEOUT_SECONDS, 4);
+        // DDL can outlast the link's read timeout on a loaded machine, so the schema is built here;
+        // the suite's own migrate through the link then finds nothing left to apply.
+        new OracleCatalogStore(directPool).migrate();
+        precreateJournalMonths();
+    }
+
+    /**
+     * Creates the journal partitions of the months the suite writes, as production's monthly job
+     * does ahead of time (docs/storage-design.md, M2b deviations). A commit that creates its month's
+     * partition took 0.5 to 2.6 s here instead of 20 ms, and once more than the link's 5 s read
+     * timeout. The months: this one, the next, and test 7's 800 and 40 days back and 40 and 400 days
+     * ahead (SizeSuite.journalEntriesFarApartInTime). journalAddsAPartitionForANewMonth still has a
+     * commit create its own.
+     */
+    private void precreateJournalMonths() {
+        java.time.format.DateTimeFormatter utc = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+                .withZone(java.time.ZoneOffset.UTC);
+        for (long days : List.of(-800L, -40L, 0L, 31L, 40L, 400L)) {
+            String month = utc.format(java.time.Instant.now().plus(Duration.ofDays(days)));
+            try (Connection connection = directPool.getConnection(); Statement statement = connection.createStatement()) {
+                // Autocommit ends the lock at once; the partition stays.
+                statement.execute("LOCK TABLE journal PARTITION FOR (TIMESTAMP '" + month + "') IN SHARE MODE");
+            } catch (SQLException e) {
+                throw new IllegalStateException("cannot create the journal partition for " + month, e);
+            }
+        }
     }
 
     private void createServicesAndGrants() {
@@ -130,10 +162,17 @@ final class OracleFree implements StoreUnderTest, Faults {
                   DBMS_SERVICE.CREATE_SERVICE('%s', '%s', parameters);
                   DBMS_SERVICE.START_SERVICE('%s');
                 END;""".formatted(PLAIN_SERVICE, PLAIN_SERVICE, PLAIN_SERVICE));
-        execute(sysdba, "GRANT EXECUTE ON SYS.DBMS_APP_CONT TO " + USER);
-        execute(sysdba, "GRANT SELECT ON SYS.V_$DATABASE TO " + USER);
-        execute(sysdba, "GRANT SELECT ON SYS.V_$SERVICES TO " + USER);
-        for (String service : List.of(SERVICE, PLAIN_SERVICE)) {
+        execute(sysdba, """
+                DECLARE
+                  parameters DBMS_SERVICE.SVC_PARAMETER_ARRAY;
+                BEGIN
+                  parameters('COMMIT_OUTCOME') := 'true';
+                  parameters('FAILOVER_TYPE') := 'TRANSACTION';
+                  DBMS_SERVICE.CREATE_SERVICE('%s', '%s', parameters);
+                  DBMS_SERVICE.START_SERVICE('%s');
+                END;""".formatted(REPLAY_SERVICE, REPLAY_SERVICE, REPLAY_SERVICE));
+        grantCatalogRole(USER);
+        for (String service : List.of(SERVICE, PLAIN_SERVICE, REPLAY_SERVICE)) {
             await(Duration.ofSeconds(60), () -> {
                 try (Connection ignored = directTo(service).getConnection()) {
                     return true;
@@ -144,6 +183,14 @@ final class OracleFree implements StoreUnderTest, Faults {
         }
     }
 
+    /** What the catalog role needs beyond its own schema (the class comment of OracleCatalogStore). */
+    private void grantCatalogRole(String user) {
+        execute(sysdba, "GRANT EXECUTE ON SYS.DBMS_APP_CONT TO " + user);
+        execute(sysdba, "GRANT SELECT ON SYS.V_$DATABASE TO " + user);
+        execute(sysdba, "GRANT SELECT ON SYS.V_$SERVICES TO " + user);
+        execute(sysdba, "GRANT SELECT ON SYS.V_$PARAMETER TO " + user);
+    }
+
     private DataSource directTo(String service) {
         return Sql.direct(oracle.getHost(), oracle.getMappedPort(ORACLE_PORT), service, USER, PASSWORD, false);
     }
@@ -152,12 +199,12 @@ final class OracleFree implements StoreUnderTest, Faults {
 
     /** A store of another process: it reaches the database around the link and never saw this process's commits. */
     @Override
-    public CommitStore storeOfAnotherProcess() {
+    public CatalogStore storeOfAnotherProcess() {
         return new OracleCatalogStore(directPool);
     }
 
     /** A store of this process (it shares the undecided commits) that reaches the database around the link. */
-    CommitStore storeAroundTheLink() {
+    CatalogStore storeAroundTheLink() {
         return new OracleCatalogStore(directPool, CommitHook.NONE, undecided);
     }
 
@@ -166,10 +213,39 @@ final class OracleFree implements StoreUnderTest, Faults {
         toxi(() -> link.toxics().latency("delay-requests", ToxicDirection.UPSTREAM, delay.toMillis()));
     }
 
-    // ---- StoreUnderTest ----
+    /** A store over the catalog schema whose sessions first run {@code alterSession}, around the link. */
+    CatalogStore storeWithSession(String alterSession) {
+        return new OracleCatalogStore(withSession(directTo(SERVICE), alterSession));
+    }
+
+    /** Pooled connections to the catalog schema, around the link. */
+    DataSource direct() {
+        return directPool;
+    }
+
+    /** Connections of {@code dataSource} that first run {@code alterSession}. */
+    private static DataSource withSession(DataSource dataSource, String alterSession) {
+        return (DataSource) java.lang.reflect.Proxy.newProxyInstance(DataSource.class.getClassLoader(),
+                new Class<?>[] {DataSource.class}, (proxy, method, arguments) -> {
+                    Object result;
+                    try {
+                        result = method.invoke(dataSource, arguments);
+                    } catch (java.lang.reflect.InvocationTargetException e) {
+                        throw e.getCause();
+                    }
+                    if (method.getName().equals("getConnection")) {
+                        try (Statement statement = ((Connection) result).createStatement()) {
+                            statement.execute(alterSession);
+                        }
+                    }
+                    return result;
+                });
+    }
+
+    // ---- CatalogStoreUnderTest ----
 
     @Override
-    public CommitStore store(CommitHook hook) {
+    public CatalogStore store(CommitHook hook) {
         return new OracleCatalogStore(linkPool, hook, undecided);
     }
 
@@ -201,6 +277,45 @@ final class OracleFree implements StoreUnderTest, Faults {
     }
 
     @Override
+    public WrittenRows changeRows(Change change) {
+        int outbox = Integer.parseInt(value(directPool, "SELECT count(*) FROM outbox WHERE commit_id = ?", change.id()));
+        int idempotency = Integer.parseInt(value(directPool, "SELECT count(*) FROM idempotency WHERE key = ?"
+                + " AND change_id = ? AND status IS NOT NULL", change.idempotency().map(result -> result.key()).orElse(null),
+                change.id()));
+        return new WrittenRows(0, 0, outbox, idempotency);
+    }
+
+    @Override
+    public int projectionPieceBytes() {
+        return Pointers.PIECE_BYTES;
+    }
+
+    @Override
+    public int projectionPieces(PointerKey key) {
+        return 1 + Integer.parseInt(value(directPool, "SELECT count(*) FROM projection_piece WHERE object_id = ?"
+                + " AND branch = ?", key.objectId(), key.branch()));
+    }
+
+    /**
+     * A fresh schema (an Oracle user) at the previous release's version, reached through the link
+     * by both releases' stores.
+     */
+    @Override
+    public UpgradeTarget upgradeTarget() {
+        String user = "upgrade_" + (upgradePools.size() + 1);
+        execute(sysdba, "CREATE USER " + user + " IDENTIFIED BY \"" + PASSWORD + "\" QUOTA UNLIMITED ON users");
+        execute(sysdba, "GRANT CREATE SESSION, RESOURCE TO " + user);
+        grantCatalogRole(user);
+        String pool = "fidice-" + user;
+        upgradePools.add(pool);
+        DataSource throughLink = Sql.pool(pool, toxiproxy.getHost(), toxiproxy.getMappedPort(LINK_PORT), SERVICE, user,
+                PASSWORD, ADMIN_READ_TIMEOUT_SECONDS, 2);
+        PreviousReleaseStore previous = new PreviousReleaseStore(throughLink);
+        previous.migrate();
+        return new UpgradeTarget(PreviousReleaseStore.SCHEMA_VERSION, previous, new OracleCatalogStore(throughLink));
+    }
+
+    @Override
     public List<Long> journalVersions(PointerKey key) {
         return column(directPool, "SELECT new_version FROM journal WHERE object_id = ? AND branch = ? ORDER BY seq",
                 key.objectId(), key.branch()).stream().map(Long::valueOf).toList();
@@ -226,7 +341,8 @@ final class OracleFree implements StoreUnderTest, Faults {
 
     @Override
     public Set<String> findingCodes() {
-        return Set.of("ora.no-data-guard", "ora.no-transaction-guard");
+        return Set.of("ora.no-data-guard", "ora.no-transaction-guard", "ora.commit-replay", "ora.commit-nowait",
+                "ora.linguistic-sort");
     }
 
     @Override
@@ -237,7 +353,13 @@ final class OracleFree implements StoreUnderTest, Faults {
                 new UnsafeSetting("connected through the PDB's default service, which has no COMMIT_OUTCOME",
                         "ora.no-transaction-guard", () -> new OracleCatalogStore(directTo(PDB_SERVICE)).selfCheck()),
                 new UnsafeSetting("connected through a service created without COMMIT_OUTCOME",
-                        "ora.no-transaction-guard", () -> new OracleCatalogStore(directTo(PLAIN_SERVICE)).selfCheck()));
+                        "ora.no-transaction-guard", () -> new OracleCatalogStore(directTo(PLAIN_SERVICE)).selfCheck()),
+                new UnsafeSetting("connected through a service with FAILOVER_TYPE TRANSACTION (Application Continuity)",
+                        "ora.commit-replay", () -> new OracleCatalogStore(directTo(REPLAY_SERVICE)).selfCheck()),
+                new UnsafeSetting("sessions with COMMIT_WAIT = NOWAIT", "ora.commit-nowait",
+                        () -> storeWithSession("ALTER SESSION SET COMMIT_WAIT = 'NOWAIT'").selfCheck()),
+                new UnsafeSetting("sessions with NLS_SORT = GERMAN (a JVM in a German locale)", "ora.linguistic-sort",
+                        () -> storeWithSession("ALTER SESSION SET NLS_SORT = GERMAN").selfCheck()));
     }
 
     // ---- Faults ----
@@ -364,6 +486,9 @@ final class OracleFree implements StoreUnderTest, Faults {
         try {
             UniversalConnectionPoolManagerImpl.getUniversalConnectionPoolManager().destroyConnectionPool("fidice-link");
             UniversalConnectionPoolManagerImpl.getUniversalConnectionPoolManager().destroyConnectionPool("fidice-direct");
+            for (String pool : upgradePools) {
+                UniversalConnectionPoolManagerImpl.getUniversalConnectionPoolManager().destroyConnectionPool(pool);
+            }
         } catch (UniversalConnectionPoolException e) {
             throw new IllegalStateException(e);
         } finally {
