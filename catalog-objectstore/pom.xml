@@ -10,10 +10,73 @@
   </parent>
   <artifactId>catalog-objectstore</artifactId>
   <description>Storage profiles, metadata.json I/O, credential vending.</description>
+
+  <properties>
+    <!-- Boot does not manage the AWS SDK; research_notes/Build plan facts/object_stores.md S.1. -->
+    <aws-sdk.version>2.57.10</aws-sdk.version>
+    <!-- Two S3 implementations, neither of them AWS's: Ceph RGW (F7) and Silo, the maintained
+         MinIO fork (F5, 5.14). -->
+    <ceph.image>ghcr.io/clyso/ceph-test:v20.2.5</ceph.image>
+    <silo.image>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</silo.image>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws-sdk.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
     <dependency>
       <groupId>fidice</groupId>
       <artifactId>catalog-core</artifactId>
     </dependency>
+    <!-- The synchronous client only; its default HTTP client is apache5-client. -->
+    <dependency>
+      <groupId>software.amazon.awssdk</groupId>
+      <artifactId>s3</artifactId>
+      <exclusions>
+        <exclusion>
+          <groupId>software.amazon.awssdk</groupId>
+          <artifactId>netty-nio-client</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <ceph.image>${ceph.image}</ceph.image>
+            <silo.image>${silo.image}</silo.image>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>
