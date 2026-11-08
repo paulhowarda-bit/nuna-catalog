@@ -43,12 +43,21 @@
     <jackson-2-bom.version>2.22.2</jackson-2-bom.version>
     <!-- 7.1.0 fixes a virtual-thread spin; Boot 4.1.2 manages 7.0.2. -->
     <hikaricp.version>7.1.0</hikaricp.version>
+    <!-- Boot does not manage the AWS SDK; research_notes/Build plan facts/object_stores.md S.1. -->
+    <aws-sdk.version>2.57.10</aws-sdk.version>
     <postgres.image>postgres:18</postgres.image>
     <toxiproxy.image>ghcr.io/shopify/toxiproxy:2.12.0</toxiproxy.image>
   </properties>
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>software.amazon.awssdk</groupId>
+        <artifactId>bom</artifactId>
+        <version>${aws-sdk.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
       <dependency>
         <groupId>org.apache.iceberg</groupId>
         <artifactId>iceberg-core</artifactId>
