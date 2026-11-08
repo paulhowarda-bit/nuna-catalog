@@ -93,6 +93,32 @@ Common rule: first wait until no transaction that could still commit `commitId` 
 1. On `UnknownTransactionCommitResult`, retry `commitTransaction` on the same session (idempotent) a bounded number of times.
 2. If the session is gone: start a transaction that writes a marker field on the pointer document for `anyKeyInBatch` (this write conflicts with any in-flight transaction on that document; retry on `WriteConflict`), commit with majority, then read the journal document for `commitId` with read concern majority from the primary.
 
+### 5.4 CockroachDB
+
+Worked out in M2a against CockroachDB v25.4 (three nodes, three voters per range) and its documentation.
+
+1. **Isolation.** Writes run READ COMMITTED, as on PostgreSQL. Under it CockroachDB replicates locks, `SELECT … FOR UPDATE` and `FOR SHARE` wait for a writer of an existing row, a plain read never waits, and `SELECT … FOR UPDATE` finds nothing for a key whose insert is still open while `INSERT … ON CONFLICT DO NOTHING` waits for it: PostgreSQL's in-flight-create gap, closed the same way. M1's locking design therefore carries over unchanged. READ COMMITTED needs the cluster setting `sql.txn.read_committed_isolation.enabled` (on by default); without it CockroachDB silently runs the transaction SERIALIZABLE, under which `FOR SHARE` does nothing and locks are best-effort, so the self-check reports `crdb.read-committed-off`.
+2. **Retries.** A serialization failure or deadlock (40001; also 40P01) before COMMIT is sent is a definite abort: the store rolls back and runs the transaction again, up to 10 times with jittered backoff. A COMMIT is never run again: every COMMIT failure is `CommitOutcomeUnknownException`, including 40003 (statement completion unknown) and a 40001 that CockroachDB documents as a definite abort. findCommit then answers.
+3. **When a commit is durable.** CockroachDB acknowledges a COMMIT once the transaction record and every write are replicated to a quorum of the range's voters (parallel commits), and applies a write only after that. A connection lost before COMMIT is sent aborts the transaction. One lost while COMMIT waits for a quorum leaves the transaction abandoned: once the quorum is back, the first transaction that meets its locks recovers it, finding every write in place (committed) or aborting it, and that decision is final. A stalled COMMIT can therefore end either way, and both happened in one suite run: the stalled create committed and the stalled update was aborted.
+4. **findCommit.** 5.1 step 1 with the placeholder insert (M1 PostgreSQL deviation 1), then the journal lookup. No durability barrier: a commit the lookup can see is on a quorum already, and with the quorum gone the lookup's lock wait blocks with the commit it waits for. When the quorum returns, the lookup is often the transaction that recovers the abandoned commit, so it answers whatever that recovery decided.
+5. **Settings.** Three voters for every zone that holds the catalog's data (`crdb.replicas`) and a synced Raft log (`crdb.fsync-off`: `kv.raft_log.synchronization.unsafe.disabled`). The catalog role needs `VIEWCLUSTERSETTING`; without it the check reports the finding.
+6. **License.** On a cluster without a license, CockroachDB 24.3 and later checks every statement, COMMIT included, while more than five transactions are open on its gateway. For the first seven days after the cluster starts the statement runs and carries a notice ("No license is installed. Throttling will begin after …"); after that it fails (`pkg/server/license/enforcer.go` and `pkg/sql/conn_executor_exec.go`, release-25.4). Section 4 step 4 treats a warning on COMMIT as unknown because of PostgreSQL's cancelled standby wait; on CockroachDB a warning says nothing about the commit, so the store ignores it there, and `licenseNoticeOnCommitIsIgnored` commits with six other transactions open. A production cluster needs a license (Enterprise Free or Enterprise), which is a work question.
+7. **Outbox order.** The order key is a sequence with CACHE 1: one counter for the cluster, drawn after the change's locks (9 (b)). `unique_rowid()` would not do: it joins the inserting node's clock to its node ID, so two changes to one record through two gateways whose clocks differ can take their keys in the wrong order. The test cluster's nodes share one host clock, so the suite cannot tell the two apart.
+
+### 5.5 YugabyteDB
+
+Worked out in M2a against YugabyteDB 2025.2 (three yugabyted nodes, replication factor 3) and its documentation.
+
+1. **Isolation.** Writes run READ COMMITTED, which needs the tablet-server flag `yb_enable_read_committed_isolation` (yugabyted sets it; a bare tablet server does not, and then runs the transaction as snapshot isolation: `yb.read-committed-off`). With wait-on-conflict (the default `enable_wait_queues`), `SELECT … FOR UPDATE` waits for a writer of an existing row, misses a key whose insert is still open, and `INSERT … ON CONFLICT DO NOTHING` waits for that insert: the same as PostgreSQL, so M1's locking carries over.
+2. **Retries.** 40001 and 40P01 before COMMIT are rolled back and run again, as on CockroachDB. YugabyteDB documents no ambiguous-commit code, and does not say whether an error on COMMIT is definite, so every COMMIT failure is unknown.
+3. **When a commit is durable.** A COMMIT is acknowledged once the transaction's status record is replicated to a majority of its tablet's peers; a read resolves provisional records through that status, so a visible commit is on a majority. The WAL must be synced on every write (`durable_wal_write=true`; the default syncs every second), which SQL cannot see: it is a deployment check.
+4. **findCommit.** As on CockroachDB: 5.1 step 1 with the placeholder insert, the journal lookup, no barrier. A COMMIT stalled without a quorum completed in every run here (four targeted runs and the full suite): the status tablet's leader kept the commit record and replicated it once its peers returned. It can still be lost. Raft drops a leader's unreplicated entry when a returning peer wins an election before it receives that entry, and the transaction then aborts. So findCommit can answer either way, as on CockroachDB.
+5. **Settings.** Three replicas for every tablet of the catalog's database (`yb.replicas`, from `yb_tablet_metadata`), READ COMMITTED on, and sequences that hand out one number per call (`yb.sequence-cache`): `ysql_sequence_cache_minval` defaults to 100 and overrides a sequence's `CACHE 1`, so each connection would take numbers in blocks and the outbox order of section 9 (b) breaks. The flag is not visible from SQL; the check draws twice from the outbox sequence on two open connections and reports the finding when the numbers are not consecutive.
+6. **Schema steps.** PostgreSQL's V1 to V3 run unchanged; V4, the journal's partitioning, does not (M2a deviation 1). Names compare as bytes through the same `COLLATE "C"`.
+7. **Deployment.** Two settings that SQL cannot see:
+   - the WAL synced on every write (step 3);
+   - every master listed in every tablet server's `tserver_master_addrs` (M2a deviation 8). A tablet server that knows two of three masters serves nothing once those two hold no leader.
+
 ## 6. Shared suite (test-jar of `catalog-store-api`)
 
 An abstract JUnit class that each backend extends by supplying a `StoreUnderTest`: the store, plus a `Faults` handle (Toxiproxy between client and database; stop/start primary). The store accepts a `CommitHook` test seam invoked immediately before COMMIT is sent, so a test can cut the link at the exact moment that makes the outcome ambiguous. Production passes a no-op hook.
@@ -125,6 +151,12 @@ Each test gets a bite run: break the check it guards (e.g. drop the version comp
 | MongoDB | `mongo.not-replica-set` | not a replica set |
 | | `mongo.too-few-voters` | fewer than 3 voting data-bearing members |
 | | `mongo.weak-write-concern` | default write concern below majority, or `writeConcernMajorityJournalDefault` false |
+| CockroachDB | `crdb.replicas` | the zone of the catalog's database, or of any of its tables, has fewer than 3 voters (`num_voters`, else `num_replicas`) |
+| | `crdb.fsync-off` | `kv.raft_log.synchronization.unsafe.disabled` is true, or the role cannot read it |
+| | `crdb.read-committed-off` | a READ COMMITTED transaction runs at another level (`sql.txn.read_committed_isolation.enabled` false) |
+| YugabyteDB | `yb.replicas` | a tablet of the catalog's database has fewer than 3 replicas in `yb_tablet_metadata` |
+| | `yb.read-committed-off` | `yb_effective_transaction_isolation_level` of a READ COMMITTED transaction is not READ COMMITTED |
+| | `yb.sequence-cache` | two open connections draw outbox sequence numbers more than 1 apart (`ysql_sequence_cache_minval` above 1) |
 
 The server refuses to start while findings exist (wired in M2). For local development on a single node, the operator may accept specific finding codes by name in configuration; each accepted finding is logged at startup. Accepting is per code, never a blanket switch.
 
@@ -222,3 +254,43 @@ Clarifications, not deviations:
 7. **Times are kept to the microsecond.** `timestamptz` drops nanoseconds; the suite's clock is in milliseconds so round trips compare equal. MongoDB keeps milliseconds, so callers must not rely on anything finer.
 8. **"List by principal" (2.3) is `listGrantsOfGroups`.** Grants go to groups [D18, D19]; the server resolves a principal to its groups and asks for theirs.
 9. **A claim needs no separate barrier on PostgreSQL.** Its row lock gives the claim transaction an id, so its COMMIT waits for the synchronous standby. Bite I13 (the barrier call removed from the claim) left `idempotentReplayWaitsForTheStandby` green, so the call was dropped; bite I14 (the barrier removed from `readKey`) fails that test.
+
+## Deviations (M2a, CockroachDB and YugabyteDB)
+
+Found while running sections 4, 5 and 9 in `catalog-store-sql` on CockroachDB v25.4 and YugabyteDB 2025.2 (three nodes each, every range or tablet replicated three ways), and adding PostgreSQL's journal partitioning (Flyway V4). Bite runs are named by id in the M2a report.
+
+1. **Only PostgreSQL partitions the journal.** V4 lives in `postgresql/`, a Flyway location only PostgreSQL reads, and does what M2 prep deviation 1 proposed, except that the partitioned parent has no primary key: the key would have to include `committed_at`, and giving the old journal that key rebuilds it. Each partition keeps (commit_id, object_id, branch) as its key; a batch's rows share its `committed_at`, so a batch never spans partitions. YugabyteDB does not take V4. Renaming a table there invalidates the catalog snapshot of every open transaction on the cluster (40001, "catalog snapshot … invalidated"): it failed Flyway's own history connection right after the step, and would fail every previous-release commit in flight during the upgrade. Transactional DDL, which might contain it, is early access (`ysql_yb_ddl_transaction_block_enabled`, off by default). So on YugabyteDB, as on CockroachDB, the journal stays one table and the database splits it by size (automatic tablet splitting, on by default since 2.18; range splits), with no horizon to keep. Each backend proves its own roll-over in this module, as 9 (g) asks:
+   - `JournalRollOver` (PostgreSQL): a previous-release journal becomes the partition below the cut-over; monthly partitions follow through the horizon; a commit beyond the horizon waits in the default partition and moves into its month when the horizon is extended.
+   - `JournalRangeSplits` (CockroachDB, 64 KiB ranges) and `JournalTabletSplits` (YugabyteDB, 64 KiB split thresholds): 36 months of commits split the journal several times, and every commit stays readable, kept as sent and findable.
+
+   This replaces 9 (g)'s "PostgreSQL and YugabyteDB use declarative ranges".
+2. **CockroachDB has its own schema steps** (`cockroachdb/`), in its dialect:
+   - JSON text goes in STRING columns, because CockroachDB's only JSON type is JSONB, which rewrites the client's text.
+   - A 32-bit column is INT4, because CockroachDB's INTEGER is 64 bits and comes back as a `Long`.
+   - There is no `COLLATE "C"`. CockroachDB rejects the locale, and it compares STRING as bytes anyway.
+   - Sequences are CACHE 1.
+
+   YugabyteDB runs PostgreSQL's V1 to V3 unchanged.
+3. **A stalled COMMIT can end either way on CockroachDB and YugabyteDB** (5.4 step 3, 5.5). The shared in-flight tests expected `COMMITTED` once replication resumed. Additive suite change: `StoreUnderTest.stalledCommitCanBeLost()`, false by default. When it is true, `assertFindCommitWaitsForInFlightCommit` also accepts `NOT_COMMITTED`, provided that:
+   - the pointer, journal, outbox and idempotency rows are all absent;
+   - a second lookup agrees.
+
+   PostgreSQL, Oracle and MongoDB keep the default and the old assertion.
+4. **Serialization failures before COMMIT are retried on every SQL backend.** 40001 and 40P01 before COMMIT is sent roll the transaction back and run it again, up to 10 times with jittered backoff. CockroachDB and YugabyteDB raise them under READ COMMITTED; on PostgreSQL this adds deadlock retry, where M1 threw `StoreException`. A COMMIT is never run again, and every COMMIT failure is unknown, including a 40001 that CockroachDB documents as a definite abort (5.4 step 2).
+5. **A warning on COMMIT means unknown only on PostgreSQL.** On a cluster without a license, CockroachDB attaches a notice to any statement, COMMIT included, that runs while more than five transactions are open on its gateway (5.4 step 6).
+6. **Schema steps run on their own connections.** These have a 30-minute network timeout, because CockroachDB runs DDL as jobs and YugabyteDB creates tablets, and both outlast the stores' socket timeout (`schemaStepsOutlastACommitTimeout` migrates with a 1 s socket timeout). They also use the UTC time zone. Flyway's CockroachDB lock row is stamped in the session's time zone but expired against UTC. With the JVM in US Eastern, the lock looked five hours old, so a second migrating node deleted the first node's lock as stale at once, and both ran V3. This is a Flyway bug.
+7. **The previous release on CockroachDB and YugabyteDB is a stand-in.** M1 shipped only on PostgreSQL. `PreviousReleaseStore` applies the backend's own steps through V2 and runs M1's statements, so `UpgradeSuite` applies V3 under previous-release writers on each backend.
+8. **YugabyteDB needs deployment checks that SQL cannot see.**
+   - The WAL is synced on every write (`durable_wal_write=true`, 5.5 step 3).
+   - Every tablet server lists every master in `tserver_master_addrs`, as the YugabyteDB docs require. yugabyted 2025.2 starts a tablet server with only two masters: its own and the one it joined. Within a minute it learns the third and sets the flag, but the running server's client keeps the two. In the failover test (run 3) and in reproductions, node 1 died and the third master took over. The second tablet server then reached no master leader (`GetLeaderMasterRpc` over its two addresses, for as long as it ran) and served nothing, even after node 1 came back. A tablet server that yugabyted restarts gets every master.
+   - The tablets made before the third node joined, among them the transaction status tablets, start with one replica. The load balancer copies them over the next minutes.
+
+   The harness waits for both before the suite starts: it restarts each tablet server through yugabyted, then waits until the master reports no under-replicated tablet.
+9. **Harness timeouts.** On the Raft clusters, the stores use a 15 s socket and connect timeout. Each of these took over 5 s:
+   - quorum recovery after the in-flight tests;
+   - a 5 MiB projection read on a loaded Docker host;
+   - opening a previous-release connection during a CockroachDB schema step.
+
+   Killing a container also makes its name stop resolving, and Docker's DNS then takes about 7 s to fail each lookup. This was ruled out as a cause of the failover stall: the same kill on a fully replicated cluster served again within 30 s.
+
+   During one hour of bite runs, a yugabyted container exited with code 137 within seconds of starting in 5 of 10 cluster starts. Docker reported neither an OOM kill nor a kill in the one failure watched, and none of the 9 starts since failed. The cause is not known. Such a start fails the run after the 4-minute startup wait, before any test runs.

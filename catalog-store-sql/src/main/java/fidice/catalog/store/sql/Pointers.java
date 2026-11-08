@@ -13,6 +13,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -127,7 +128,7 @@ final class Pointers {
         }
         String journalSql = "INSERT INTO journal (commit_id, object_id, branch, committed_at, principal, end_user,"
                 + " engine, requirements, updates, old_location, new_location, old_version, new_version)"
-                + " VALUES (?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON), CAST(? AS JSON), ?, ?, ?, ?)";
+                + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement insert = connection.prepareStatement(journalSql)) {
             for (PointerSwap swap : batch.swaps()) {
                 insert.setObject(1, batch.commitId());
@@ -137,8 +138,8 @@ final class Pointers {
                 insert.setString(5, swap.journal().principal());
                 insert.setString(6, swap.journal().endUser());
                 insert.setString(7, swap.journal().engine());
-                insert.setString(8, swap.journal().requirementsJson());
-                insert.setString(9, swap.journal().updatesJson());
+                insert.setObject(8, swap.journal().requirementsJson(), Types.OTHER);
+                insert.setObject(9, swap.journal().updatesJson(), Types.OTHER);
                 insert.setString(10, swap.expected().map(Pointer::metadataLocation).orElse(null));
                 insert.setString(11, swap.next().metadataLocation());
                 insert.setObject(12, swap.expected().map(Pointer::version).orElse(null));

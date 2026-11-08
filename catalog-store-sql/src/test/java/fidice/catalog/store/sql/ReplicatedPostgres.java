@@ -209,13 +209,18 @@ final class ReplicatedPostgres implements CatalogStoreUnderTest, Faults {
                 + " AND branch = ?", key.objectId(), key.branch()));
     }
 
+    /** A fresh, empty database on the primary, reached through the link. */
+    DataSource freshDatabase() {
+        String database = "fresh_" + ++upgrades;
+        execute(primaryDirect, "CREATE DATABASE " + database);
+        return Sql.dataSource(toxiproxy.getHost(), toxiproxy.getMappedPort(LINK_PORT), database, USER,
+                SOCKET_TIMEOUT_SECONDS);
+    }
+
     /** A fresh database on the primary, at the previous release's schema version, reached through the link. */
     @Override
     public UpgradeTarget upgradeTarget() {
-        String database = "upgrade_" + ++upgrades;
-        execute(primaryDirect, "CREATE DATABASE " + database);
-        DataSource throughLink = Sql.dataSource(toxiproxy.getHost(), toxiproxy.getMappedPort(LINK_PORT), database, USER,
-                SOCKET_TIMEOUT_SECONDS);
+        DataSource throughLink = freshDatabase();
         PreviousReleaseStore previous = new PreviousReleaseStore(throughLink);
         previous.migrate();
         return new UpgradeTarget(PreviousReleaseStore.SCHEMA_VERSION, previous, new SqlCatalogStore(throughLink));

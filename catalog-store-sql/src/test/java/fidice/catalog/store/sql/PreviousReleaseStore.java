@@ -35,23 +35,27 @@ import org.flywaydb.core.api.FlywayException;
 /**
  * The previous release's store, frozen for suite test 10: the M1 SqlCatalogStore as committed in
  * bdde131, unchanged except for this comment, its name, and its migrate(), which stops at the
- * previous release's schema version.
+ * previous release's schema version and takes its schema steps from where the backend keeps them
+ * (M2a: CockroachDB has its own; M1 shipped for PostgreSQL only, so on CockroachDB and YugabyteDB
+ * this store stands for the M1 code over that backend's V2, and takes a COMMIT warning as a
+ * failure on PostgreSQL only, as the current release does).
  */
 final class PreviousReleaseStore implements CommitStore {
 
     static final int SCHEMA_VERSION = 2;
-    private static final String MIGRATIONS = "classpath:fidice/store/sql/migration";
 
     private final DataSource dataSource;
     private final CommitHook commitHook;
+    private final Backend backend;
 
     PreviousReleaseStore(DataSource dataSource) {
-        this(dataSource, CommitHook.NONE);
+        this(dataSource, Backend.POSTGRESQL);
     }
 
-    private PreviousReleaseStore(DataSource dataSource, CommitHook commitHook) {
+    PreviousReleaseStore(DataSource dataSource, Backend backend) {
         this.dataSource = dataSource;
-        this.commitHook = commitHook;
+        this.commitHook = CommitHook.NONE;
+        this.backend = backend;
     }
 
     @Override
@@ -302,11 +306,11 @@ final class PreviousReleaseStore implements CommitStore {
      * synchronous standby was cancelled with a warning, not an error, and that commit may not be
      * replicated.
      */
-    private static void commitChecked(Connection connection) throws SQLException {
+    private void commitChecked(Connection connection) throws SQLException {
         connection.clearWarnings();
         connection.commit();
         SQLWarning warning = connection.getWarnings();
-        if (warning != null) {
+        if (warning != null && backend == Backend.POSTGRESQL) {
             throw warning;
         }
     }
@@ -356,7 +360,7 @@ final class PreviousReleaseStore implements CommitStore {
     @Override
     public void migrate() {
         try {
-            Flyway.configure().dataSource(dataSource).locations(MIGRATIONS).target(Integer.toString(SCHEMA_VERSION))
+            Flyway.configure().dataSource(dataSource).locations(backend.migrations).target(Integer.toString(SCHEMA_VERSION))
                     .load().migrate();
         } catch (FlywayException e) {
             throw new StoreException("schema migration failed", e);

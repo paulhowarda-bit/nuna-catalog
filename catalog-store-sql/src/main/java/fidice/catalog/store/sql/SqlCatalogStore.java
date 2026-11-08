@@ -33,12 +33,10 @@ import fidice.catalog.store.StoreException;
 import fidice.catalog.store.TrustedEngine;
 import fidice.catalog.store.WriteResult;
 import java.sql.Connection;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,19 +47,19 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
 
 /**
- * PostgreSQL-wire implementation: PostgreSQL, CockroachDB and YugabyteDB (D7). Implements the
- * whole storage interface on PostgreSQL (docs/storage-design.md sections 4, 5.1, 7 and 9); each
- * operation group lives in its own class.
+ * PostgreSQL-wire implementation: PostgreSQL, CockroachDB and YugabyteDB (D7), told apart by
+ * {@code version()}. Implements the whole storage interface on each (docs/storage-design.md
+ * sections 4, 5.1, 5.4, 5.5, 7 and 9); each operation group lives in its own class.
  *
  * <p>The caller's DataSource must reach the primary, must never replay a statement, and sets the
  * socket timeout that bounds every wait. This class never retries a COMMIT (D8.4).
  */
 public final class SqlCatalogStore implements CatalogStore {
 
-    private static final String MIGRATIONS = "classpath:fidice/store/sql/migration";
-
     private final DataSource dataSource;
     private final Transactions transactions;
+    private final DataSource maintenanceDataSource;
+    private final Transactions maintenance;
     private final SqlNamespaces namespaces;
     private final SqlObjects objects;
     private final SqlGrants grants;
@@ -77,6 +75,8 @@ public final class SqlCatalogStore implements CatalogStore {
     public SqlCatalogStore(DataSource dataSource, CommitHook commitHook) {
         this.dataSource = dataSource;
         this.transactions = new Transactions(dataSource, commitHook);
+        this.maintenanceDataSource = new MaintenanceDataSource(dataSource);
+        this.maintenance = new Transactions(maintenanceDataSource, CommitHook.NONE);
         this.namespaces = new SqlNamespaces(transactions);
         this.objects = new SqlObjects(transactions);
         this.grants = new SqlGrants(transactions);
@@ -107,31 +107,26 @@ public final class SqlCatalogStore implements CatalogStore {
 
     @Override
     public CommitLookup findCommit(UUID commitId, PointerKey anyKeyInBatch) {
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        boolean journaled = transactions.rolledBack("lookup of commit " + commitId, connection -> {
             awaitInFlightCommit(connection, anyKeyInBatch, commitId);
-            boolean journaled = Jdbc.exists(connection, "SELECT 1 FROM journal WHERE commit_id = ? AND object_id = ?"
-                    + " AND branch = ?", commitId, anyKeyInBatch.objectId(), anyKeyInBatch.branch());
-            connection.rollback();
-            if (!journaled) {
-                return CommitLookup.NOT_COMMITTED;
-            }
-            // A commit whose wait for the synchronous standby was cancelled is visible here but may
-            // not be replicated. This commit returns only once the standby has flushed WAL past it.
-            Transactions.barrier(connection);
-            Transactions.commitChecked(connection);
-            return CommitLookup.COMMITTED;
-        } catch (SQLException e) {
-            throw new StoreException("cannot decide whether commit " + commitId + " committed", e);
+            return Jdbc.exists(connection, "SELECT 1 FROM journal WHERE commit_id = ? AND object_id = ? AND branch = ?",
+                    commitId, anyKeyInBatch.objectId(), anyKeyInBatch.branch());
+        });
+        if (!journaled) {
+            return CommitLookup.NOT_COMMITTED;
         }
+        // PostgreSQL: a commit whose wait for the synchronous standby was cancelled is visible here
+        // but may not be replicated; the barrier returns only once the standby has flushed WAL past it.
+        transactions.awaitDurable("lookup of commit " + commitId);
+        return CommitLookup.COMMITTED;
     }
 
     /**
      * Blocks until no transaction that could still commit a swap of {@code key} is in flight. One
      * that updated the pointer holds its row lock, which SELECT FOR UPDATE waits for. One that
      * created it holds only the key in the unique index, and its row is invisible, so SELECT FOR
-     * UPDATE finds nothing; then a placeholder insert (rolled back by the caller) waits for it.
+     * UPDATE finds nothing; then a placeholder insert (rolled back by the caller) waits for it. The
+     * same holds under READ COMMITTED on CockroachDB and YugabyteDB (sections 5.4 and 5.5).
      */
     private static void awaitInFlightCommit(Connection connection, PointerKey key, UUID commitId) throws SQLException {
         if (Jdbc.exists(connection, "SELECT 1 FROM pointer WHERE object_id = ? AND branch = ? FOR UPDATE",
@@ -145,53 +140,49 @@ public final class SqlCatalogStore implements CatalogStore {
 
     @Override
     public List<SafetyFinding> selfCheck() {
-        String sql = "SELECT current_setting('synchronous_commit'), current_setting('synchronous_standby_names'),"
-                + " (SELECT count(*) FROM pg_stat_replication WHERE sync_state IN ('sync', 'quorum')),"
-                + " current_setting('fsync'), current_setting('full_page_writes'),"
-                + " current_setting('statement_timeout'), current_setting('idle_in_transaction_session_timeout')";
-        try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement();
-             ResultSet row = statement.executeQuery(sql)) {
-            row.next();
-            String synchronousCommit = row.getString(1);
-            String standbyNames = row.getString(2);
-            long syncStandbys = row.getLong(3);
-            String fsync = row.getString(4);
-            String fullPageWrites = row.getString(5);
-            String statementTimeout = row.getString(6);
-            String idleTimeout = row.getString(7);
-            List<SafetyFinding> findings = new ArrayList<>();
-            if (!synchronousCommit.equals("on") && !synchronousCommit.equals("remote_apply")) {
-                findings.add(new SafetyFinding("pg.sync-commit-off",
-                        "synchronous_commit is " + synchronousCommit + "; it must be on or remote_apply"));
+        Backend backend = transactions.backend();
+        try {
+            if (backend == Backend.YUGABYTEDB) {
+                return SelfChecks.yugabyte(dataSource);
             }
-            if (standbyNames.isBlank() || syncStandbys == 0) {
-                findings.add(new SafetyFinding("pg.no-sync-standby",
-                        "synchronous_standby_names is '" + standbyNames + "' and " + syncStandbys
-                                + " standbys stream in sync or quorum state (the catalog role needs pg_monitor to see them)"));
+            try (Connection connection = dataSource.getConnection()) {
+                return backend == Backend.COCKROACHDB ? SelfChecks.cockroach(connection) : SelfChecks.postgres(connection);
             }
-            if (fsync.equals("off") || fullPageWrites.equals("off")) {
-                findings.add(new SafetyFinding("pg.fsync-off",
-                        "fsync is " + fsync + " and full_page_writes is " + fullPageWrites + "; both must be on"));
-            }
-            if (!statementTimeout.equals("0") || !idleTimeout.equals("0")) {
-                findings.add(new SafetyFinding("pg.commit-cancel-timeout",
-                        "statement_timeout is " + statementTimeout + " and idle_in_transaction_session_timeout is "
-                                + idleTimeout + "; a timeout can cancel a COMMIT's wait for the standby, so both must be 0"));
-            }
-            return findings;
         } catch (SQLException e) {
             throw new StoreException("self-check failed", e);
         }
     }
 
+    /**
+     * Migrates the schema; on PostgreSQL it then extends the journal's partitions
+     * {@link #JOURNAL_HORIZON_MONTHS} ahead.
+     */
     @Override
     public void migrate() {
         try {
-            Flyway.configure().dataSource(dataSource).locations(MIGRATIONS).load().migrate();
+            Flyway.configure().dataSource(maintenanceDataSource).locations(transactions.backend().migrations).load().migrate();
         } catch (FlywayException e) {
             throw new StoreException("schema migration failed", e);
         }
+        extendJournal(Instant.now().atOffset(ZoneOffset.UTC).plusMonths(JOURNAL_HORIZON_MONTHS).toInstant());
+    }
+
+    /** How far ahead the journal's monthly partitions reach; a maintenance job keeps it so. */
+    public static final int JOURNAL_HORIZON_MONTHS = 12;
+
+    /**
+     * Creates the journal's missing monthly partitions through the month holding {@code through},
+     * moving any commits the default partition holds for those months into them. Returns how many
+     * it created. Safe to call from several nodes at once. Only PostgreSQL partitions its journal;
+     * CockroachDB and YugabyteDB split it into ranges and tablets themselves, so there it creates none.
+     */
+    public int extendJournal(Instant through) {
+        if (!transactions.backend().partitionsJournal) {
+            return 0;
+        }
+        return maintenance.writeAndRetryOnFailure("journal partition extension", connection ->
+                Jdbc.first(connection, "SELECT journal_extend(?)", row -> row.getInt(1), through).orElseThrow(),
+                created -> true);
     }
 
     /** The newest Flyway step applied; version 0 before the first migration. */

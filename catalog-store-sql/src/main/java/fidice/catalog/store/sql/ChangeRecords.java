@@ -11,6 +11,7 @@ import fidice.catalog.store.StoreException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -29,13 +30,13 @@ final class ChangeRecords {
      */
     static void write(Connection connection, UUID id, Instant at, List<OutboxEvent> outbox,
                       Optional<IdempotencyResult> idempotency) throws SQLException {
-        String sql = "INSERT INTO outbox (commit_id, created_at, type, payload) VALUES (?, ?, ?, CAST(? AS JSON))";
+        String sql = "INSERT INTO outbox (commit_id, created_at, type, payload) VALUES (?, ?, ?, ?)";
         try (PreparedStatement insert = connection.prepareStatement(sql)) {
             for (OutboxEvent event : outbox) {
                 insert.setObject(1, id);
                 insert.setObject(2, utc(at));
                 insert.setString(3, event.type());
-                insert.setString(4, event.payloadJson());
+                insert.setObject(4, event.payloadJson(), Types.OTHER);
                 insert.addBatch();
             }
             insert.executeBatch();
