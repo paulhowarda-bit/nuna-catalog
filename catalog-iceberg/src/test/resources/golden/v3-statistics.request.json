@@ -1,0 +1,35 @@
+{
+  "requirements": [],
+  "updates": [
+    {
+      "action": "set-statistics",
+      "statistics": {
+        "snapshot-id": 3002,
+        "statistics-path": "s3://warehouse/ns/orders/metadata/stats-3002.puffin",
+        "file-size-in-bytes": 4096,
+        "file-footer-size-in-bytes": 512,
+        "blob-metadata": [
+          {
+            "type": "apache-datasketches-theta-v1",
+            "snapshot-id": 3002,
+            "sequence-number": 2,
+            "fields": [
+              1
+            ],
+            "properties": {
+              "ndv": "150"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "action": "set-partition-statistics",
+      "partition-statistics": {
+        "snapshot-id": 3002,
+        "statistics-path": "s3://warehouse/ns/orders/metadata/partition-stats-3002.parquet",
+        "file-size-in-bytes": 2048
+      }
+    }
+  ]
+}

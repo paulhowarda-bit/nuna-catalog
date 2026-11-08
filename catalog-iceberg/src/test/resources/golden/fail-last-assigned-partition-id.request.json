@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "type": "assert-last-assigned-partition-id",
+      "last-assigned-partition-id": 1005
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "requirements": [
+    {
+      "type": "assert-table-uuid",
+      "uuid": "a3000000-0000-4000-8000-000000000003"
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "comment": "orders book",
+        "owner": "risk"
+      }
+    },
+    {
+      "action": "remove-properties",
+      "removals": [
+        "commit.retry.num-retries"
+      ]
+    },
+    {
+      "action": "set-location",
+      "location": "s3://warehouse/ns/orders_relocated"
+    }
+  ]
+}

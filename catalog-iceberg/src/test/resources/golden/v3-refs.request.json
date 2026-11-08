@@ -1,0 +1,26 @@
+{
+  "requirements": [
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "audit",
+      "snapshot-id": null
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-snapshot-ref",
+      "ref-name": "eod",
+      "snapshot-id": 3001,
+      "type": "tag",
+      "max-ref-age-ms": 604800000
+    },
+    {
+      "action": "set-snapshot-ref",
+      "ref-name": "audit",
+      "snapshot-id": 3001,
+      "type": "branch",
+      "min-snapshots-to-keep": 2,
+      "max-snapshot-age-ms": 86400000
+    }
+  ]
+}

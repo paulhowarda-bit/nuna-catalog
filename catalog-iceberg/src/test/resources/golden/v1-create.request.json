@@ -1,0 +1,41 @@
+{
+  "name": "positions",
+  "schema": {
+    "type": "struct",
+    "schema-id": 0,
+    "fields": [
+      {
+        "id": 1,
+        "name": "id",
+        "required": true,
+        "type": "long"
+      },
+      {
+        "id": 2,
+        "name": "book",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "id": 3,
+        "name": "qty",
+        "required": false,
+        "type": "long"
+      }
+    ]
+  },
+  "partition-spec": {
+    "spec-id": 0,
+    "fields": [
+      {
+        "source-id": 2,
+        "field-id": 1000,
+        "name": "book",
+        "transform": "identity"
+      }
+    ]
+  },
+  "properties": {
+    "format-version": "1"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "requirements": [],
+  "updates": [
+    {
+      "action": "add-encryption-key",
+      "encryption-key": {
+        "key-id": "key-1",
+        "encrypted-key-metadata": "a2V5LW9uZQ==",
+        "encrypted-by-id": "kms-orders",
+        "properties": {
+          "wrapped-by": "kms-orders"
+        }
+      }
+    },
+    {
+      "action": "add-encryption-key",
+      "encryption-key": {
+        "key-id": "key-2",
+        "encrypted-key-metadata": "a2V5LXR3bw==",
+        "encrypted-by-id": "kms-orders"
+      }
+    }
+  ]
+}

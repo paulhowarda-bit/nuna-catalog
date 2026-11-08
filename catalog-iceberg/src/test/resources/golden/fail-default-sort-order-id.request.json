@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "type": "assert-default-sort-order-id",
+      "default-sort-order-id": 0
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

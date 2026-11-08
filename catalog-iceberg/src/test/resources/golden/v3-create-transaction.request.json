@@ -1,0 +1,84 @@
+{
+  "requirements": [
+    {
+      "type": "assert-create"
+    }
+  ],
+  "updates": [
+    {
+      "action": "assign-uuid",
+      "uuid": "a4000000-0000-4000-8000-000000000004"
+    },
+    {
+      "action": "upgrade-format-version",
+      "format-version": 3
+    },
+    {
+      "action": "add-schema",
+      "schema": {
+        "type": "struct",
+        "schema-id": 0,
+        "identifier-field-ids": [
+          1
+        ],
+        "fields": [
+          {
+            "id": 1,
+            "name": "id",
+            "required": true,
+            "type": "long"
+          },
+          {
+            "id": 2,
+            "name": "data",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "id": 3,
+            "name": "ts",
+            "required": false,
+            "type": "timestamptz"
+          }
+        ]
+      }
+    },
+    {
+      "action": "set-current-schema",
+      "schema-id": -1
+    },
+    {
+      "action": "add-spec",
+      "spec": {
+        "spec-id": 0,
+        "fields": []
+      }
+    },
+    {
+      "action": "set-default-spec",
+      "spec-id": -1
+    },
+    {
+      "action": "add-sort-order",
+      "sort-order": {
+        "order-id": 0,
+        "fields": []
+      }
+    },
+    {
+      "action": "set-default-sort-order",
+      "sort-order-id": -1
+    },
+    {
+      "action": "set-location",
+      "location": "s3://warehouse/ns/staged"
+    },
+    {
+      "action": "set-properties",
+      "updates": {
+        "write.parquet.compression-codec": "zstd",
+        "owner": "staging"
+      }
+    }
+  ]
+}

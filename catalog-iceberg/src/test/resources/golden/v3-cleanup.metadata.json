@@ -1,0 +1,191 @@
+{
+  "format-version": 3,
+  "table-uuid": "a3000000-0000-4000-8000-000000000003",
+  "location": "s3://warehouse/ns/orders_relocated",
+  "last-sequence-number": 2,
+  "last-updated-ms": 1767225600000,
+  "last-column-id": 4,
+  "current-schema-id": 1,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 1,
+      "identifier-field-ids": [
+        1
+      ],
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "data",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "ts",
+          "required": false,
+          "type": "timestamptz"
+        },
+        {
+          "id": 4,
+          "name": "region",
+          "required": false,
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 1,
+  "partition-specs": [
+    {
+      "spec-id": 1,
+      "fields": [
+        {
+          "name": "ts_day",
+          "transform": "day",
+          "source-id": 3,
+          "field-id": 1000
+        },
+        {
+          "name": "region",
+          "transform": "identity",
+          "source-id": 4,
+          "field-id": 1001
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1001,
+  "default-sort-order-id": 2,
+  "sort-orders": [
+    {
+      "order-id": 1,
+      "fields": [
+        {
+          "transform": "identity",
+          "source-id": 1,
+          "direction": "asc",
+          "null-order": "nulls-first"
+        }
+      ]
+    },
+    {
+      "order-id": 2,
+      "fields": [
+        {
+          "transform": "identity",
+          "source-id": 4,
+          "direction": "asc",
+          "null-order": "nulls-first"
+        },
+        {
+          "transform": "identity",
+          "source-id": 1,
+          "direction": "desc",
+          "null-order": "nulls-last"
+        }
+      ]
+    }
+  ],
+  "properties": {
+    "owner": "risk",
+    "comment": "orders book",
+    "write.parquet.compression-codec": "zstd"
+  },
+  "current-snapshot-id": 3002,
+  "next-row-id": 150,
+  "encryption-keys": [
+    {
+      "key-id": "key-2",
+      "encrypted-key-metadata": "a2V5LXR3bw==",
+      "encrypted-by-id": "kms-orders"
+    }
+  ],
+  "refs": {
+    "main": {
+      "snapshot-id": 3002,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 2,
+      "snapshot-id": 3002,
+      "parent-snapshot-id": 3001,
+      "timestamp-ms": 1748736120000,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "1",
+        "added-records": "50"
+      },
+      "manifest-list": "s3://warehouse/ns/orders/metadata/snap-3002.avro",
+      "schema-id": 0,
+      "first-row-id": 100,
+      "added-rows": 50
+    }
+  ],
+  "statistics": [ ],
+  "partition-statistics": [ ],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1748736120000,
+      "snapshot-id": 3002
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-create.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-append.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-append-2.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-evolve-schema.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-evolve-spec.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-sort-order.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-properties-location.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-statistics.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-refs.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-drop-ref-stats.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-encryption.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v3-expire.metadata.json"
+    }
+  ]
+}

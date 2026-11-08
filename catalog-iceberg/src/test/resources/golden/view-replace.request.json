@@ -1,0 +1,86 @@
+{
+  "requirements": [
+    {
+      "type": "assert-view-uuid",
+      "uuid": "b1000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "replace.drop-dialect.allowed": "true",
+        "owner": "finance"
+      }
+    },
+    {
+      "action": "remove-properties",
+      "removals": [
+        "comment"
+      ]
+    },
+    {
+      "action": "add-schema",
+      "schema": {
+        "type": "struct",
+        "schema-id": 1,
+        "fields": [
+          {
+            "id": 1,
+            "name": "book",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "id": 2,
+            "name": "pnl",
+            "required": false,
+            "type": "decimal(18, 2)"
+          },
+          {
+            "id": 3,
+            "name": "trades",
+            "required": false,
+            "type": "long"
+          }
+        ]
+      }
+    },
+    {
+      "action": "add-view-version",
+      "view-version": {
+        "version-id": 2,
+        "timestamp-ms": 1767225660000,
+        "schema-id": -1,
+        "summary": {
+          "engine-name": "spark",
+          "engine-version": "4.1.0"
+        },
+        "representations": [
+          {
+            "type": "sql",
+            "dialect": "spark",
+            "sql": "SELECT book, sum(pnl) AS pnl, count(*) AS trades FROM ns.positions GROUP BY book"
+          },
+          {
+            "type": "sql",
+            "dialect": "trino",
+            "sql": "SELECT book, sum(pnl) AS pnl, count(*) AS trades FROM ns.positions GROUP BY book"
+          }
+        ],
+        "default-catalog": "trading",
+        "default-namespace": [
+          "ns"
+        ]
+      }
+    },
+    {
+      "action": "set-current-view-version",
+      "view-version-id": -1
+    },
+    {
+      "action": "set-location",
+      "location": "s3://warehouse/ns/views/daily_pnl"
+    }
+  ]
+}

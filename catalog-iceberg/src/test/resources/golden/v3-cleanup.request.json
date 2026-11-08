@@ -1,0 +1,26 @@
+{
+  "requirements": [
+    {
+      "type": "assert-current-schema-id",
+      "current-schema-id": 1
+    },
+    {
+      "type": "assert-default-spec-id",
+      "default-spec-id": 1
+    }
+  ],
+  "updates": [
+    {
+      "action": "remove-partition-specs",
+      "spec-ids": [
+        0
+      ]
+    },
+    {
+      "action": "remove-schemas",
+      "schema-ids": [
+        0
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "requirements": [
+    {
+      "type": "assert-create"
+    }
+  ],
+  "updates": [
+    {
+      "action": "assign-uuid",
+      "uuid": "a3000000-0000-4000-8000-000000000003"
+    },
+    {
+      "action": "upgrade-format-version",
+      "format-version": 3
+    }
+  ]
+}

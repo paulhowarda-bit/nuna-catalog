@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "type": "assert-current-schema-id",
+      "current-schema-id": 5
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

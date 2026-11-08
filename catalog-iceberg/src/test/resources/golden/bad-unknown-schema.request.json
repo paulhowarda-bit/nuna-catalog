@@ -1,0 +1,9 @@
+{
+  "requirements": [],
+  "updates": [
+    {
+      "action": "set-current-schema",
+      "schema-id": 42
+    }
+  ]
+}

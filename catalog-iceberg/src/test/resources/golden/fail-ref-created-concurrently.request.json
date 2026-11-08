@@ -1,0 +1,17 @@
+{
+  "requirements": [
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "main",
+      "snapshot-id": null
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

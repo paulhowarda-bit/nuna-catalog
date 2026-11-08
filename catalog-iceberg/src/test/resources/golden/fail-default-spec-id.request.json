@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "type": "assert-default-spec-id",
+      "default-spec-id": 3
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

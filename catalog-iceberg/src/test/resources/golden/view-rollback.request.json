@@ -1,0 +1,14 @@
+{
+  "requirements": [
+    {
+      "type": "assert-view-uuid",
+      "uuid": "b1000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-current-view-version",
+      "view-version-id": 1
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "type": "assert-table-uuid",
+      "uuid": "ffffffff-0000-4000-8000-00000000000f"
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

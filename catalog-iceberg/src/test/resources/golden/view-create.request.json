@@ -1,0 +1,43 @@
+{
+  "name": "daily_pnl",
+  "schema": {
+    "type": "struct",
+    "schema-id": 0,
+    "fields": [
+      {
+        "id": 1,
+        "name": "book",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "id": 2,
+        "name": "pnl",
+        "required": false,
+        "type": "decimal(18, 2)"
+      }
+    ]
+  },
+  "view-version": {
+    "version-id": 1,
+    "timestamp-ms": 1748736000000,
+    "schema-id": 0,
+    "summary": {
+      "engine-name": "spark",
+      "engine-version": "4.1.0"
+    },
+    "representations": [
+      {
+        "type": "sql",
+        "sql": "SELECT book, sum(pnl) AS pnl FROM ns.positions GROUP BY book",
+        "dialect": "spark"
+      }
+    ],
+    "default-namespace": [
+      "ns"
+    ]
+  },
+  "properties": {
+    "comment": "daily pnl"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "requirements": [
+    {
+      "type": "assert-default-sort-order-id",
+      "default-sort-order-id": 1
+    }
+  ],
+  "updates": [
+    {
+      "action": "add-sort-order",
+      "sort-order": {
+        "order-id": 2,
+        "fields": [
+          {
+            "transform": "identity",
+            "source-id": 4,
+            "direction": "asc",
+            "null-order": "nulls-first"
+          },
+          {
+            "transform": "identity",
+            "source-id": 1,
+            "direction": "desc",
+            "null-order": "nulls-last"
+          }
+        ]
+      }
+    },
+    {
+      "action": "set-default-sort-order",
+      "sort-order-id": -1
+    }
+  ]
+}

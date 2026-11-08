@@ -1,0 +1,55 @@
+{
+  "view-uuid": "b1000000-0000-4000-8000-000000000001",
+  "format-version": 1,
+  "location": "s3://warehouse/ns/daily_pnl",
+  "properties": {
+    "comment": "daily pnl"
+  },
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "book",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "pnl",
+          "required": false,
+          "type": "decimal(18, 2)"
+        }
+      ]
+    }
+  ],
+  "current-version-id": 1,
+  "versions": [
+    {
+      "version-id": 1,
+      "timestamp-ms": 1767225600000,
+      "schema-id": 0,
+      "summary": {
+        "iceberg-version": "Apache Iceberg 1.12.0 (commit 212aa894e919ff9fdf89160da4aadcbe6858ac01)"
+      },
+      "default-namespace": [
+        "ns"
+      ],
+      "representations": [
+        {
+          "type": "sql",
+          "sql": "SELECT book, sum(pnl) AS pnl FROM ns.positions GROUP BY book",
+          "dialect": "spark"
+        }
+      ]
+    }
+  ],
+  "version-log": [
+    {
+      "timestamp-ms": 1767225600000,
+      "version-id": 1
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "view-uuid": "b1000000-0000-4000-8000-000000000001",
+  "format-version": 1,
+  "location": "s3://warehouse/ns/views/daily_pnl",
+  "properties": {
+    "owner": "finance",
+    "replace.drop-dialect.allowed": "true"
+  },
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "book",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "pnl",
+          "required": false,
+          "type": "decimal(18, 2)"
+        }
+      ]
+    },
+    {
+      "type": "struct",
+      "schema-id": 1,
+      "fields": [
+        {
+          "id": 1,
+          "name": "book",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 2,
+          "name": "pnl",
+          "required": false,
+          "type": "decimal(18, 2)"
+        },
+        {
+          "id": 3,
+          "name": "trades",
+          "required": false,
+          "type": "long"
+        }
+      ]
+    }
+  ],
+  "current-version-id": 1,
+  "versions": [
+    {
+      "version-id": 1,
+      "timestamp-ms": 1767225600000,
+      "schema-id": 0,
+      "summary": {
+        "iceberg-version": "Apache Iceberg 1.12.0 (commit 212aa894e919ff9fdf89160da4aadcbe6858ac01)"
+      },
+      "default-namespace": [
+        "ns"
+      ],
+      "representations": [
+        {
+          "type": "sql",
+          "sql": "SELECT book, sum(pnl) AS pnl FROM ns.positions GROUP BY book",
+          "dialect": "spark"
+        }
+      ]
+    },
+    {
+      "version-id": 2,
+      "timestamp-ms": 1767225660000,
+      "schema-id": 1,
+      "summary": {
+        "engine-name": "spark",
+        "engine-version": "4.1.0"
+      },
+      "default-catalog": "trading",
+      "default-namespace": [
+        "ns"
+      ],
+      "representations": [
+        {
+          "type": "sql",
+          "sql": "SELECT book, sum(pnl) AS pnl, count(*) AS trades FROM ns.positions GROUP BY book",
+          "dialect": "spark"
+        },
+        {
+          "type": "sql",
+          "sql": "SELECT book, sum(pnl) AS pnl, count(*) AS trades FROM ns.positions GROUP BY book",
+          "dialect": "trino"
+        }
+      ]
+    }
+  ],
+  "version-log": [
+    {
+      "timestamp-ms": 1767225600000,
+      "version-id": 1
+    },
+    {
+      "timestamp-ms": 1767225660000,
+      "version-id": 2
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "version-id": 1
+    }
+  ]
+}

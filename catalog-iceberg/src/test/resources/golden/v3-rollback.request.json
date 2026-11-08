@@ -1,0 +1,17 @@
+{
+  "requirements": [
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "main",
+      "snapshot-id": 3002
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-snapshot-ref",
+      "ref-name": "main",
+      "snapshot-id": 3001,
+      "type": "branch"
+    }
+  ]
+}

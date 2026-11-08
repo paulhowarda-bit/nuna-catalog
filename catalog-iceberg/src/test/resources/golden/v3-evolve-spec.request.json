@@ -1,0 +1,38 @@
+{
+  "requirements": [
+    {
+      "type": "assert-default-spec-id",
+      "default-spec-id": 0
+    },
+    {
+      "type": "assert-last-assigned-partition-id",
+      "last-assigned-partition-id": 1000
+    }
+  ],
+  "updates": [
+    {
+      "action": "add-spec",
+      "spec": {
+        "spec-id": 1,
+        "fields": [
+          {
+            "source-id": 3,
+            "field-id": 1000,
+            "name": "ts_day",
+            "transform": "day"
+          },
+          {
+            "source-id": 4,
+            "field-id": 1001,
+            "name": "region",
+            "transform": "identity"
+          }
+        ]
+      }
+    },
+    {
+      "action": "set-default-spec",
+      "spec-id": -1
+    }
+  ]
+}
