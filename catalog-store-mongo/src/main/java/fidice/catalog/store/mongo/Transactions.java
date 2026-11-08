@@ -39,7 +39,6 @@ final class Transactions {
      */
     static final int COMMIT_ATTEMPTS = 3;
     static final int WRITE_CONFLICT = 112;
-    static final int DUPLICATE_KEY = 11000;
     /** How long a write keeps retrying while a concurrent transaction holds a document it writes. */
     private static final Duration WRITE_CONFLICT_BUDGET = Duration.ofSeconds(10);
     static final TransactionOptions TRANSACTION = TransactionOptions.builder()
@@ -146,9 +145,10 @@ final class Transactions {
 
     /**
      * Runs {@code body} in a new transaction, leaving it open when {@code keep} accepts the result
-     * and aborting it otherwise. A write conflict with a concurrent transaction, or a unique key
-     * that one committed meanwhile, aborts this one before anything is sent to commit, and the body
-     * runs again on a fresh snapshot; a body that took a name or key then finds its holder.
+     * and aborting it otherwise. A write conflict with a concurrent transaction, including an insert
+     * of a unique key that one holds open or committed after this snapshot, aborts this one before
+     * anything is sent to commit, and the body runs again on a fresh snapshot; a body that took a
+     * name or key then finds its holder.
      */
     private <T> T run(ClientSession session, String what, Body<T> body, Predicate<T> keep) {
         long deadline = System.nanoTime() + WRITE_CONFLICT_BUDGET.toNanos();
@@ -162,7 +162,7 @@ final class Transactions {
                 return result;
             } catch (MongoException e) {
                 abort(session, e);
-                if ((e.getCode() != WRITE_CONFLICT && e.getCode() != DUPLICATE_KEY) || System.nanoTime() > deadline) {
+                if (e.getCode() != WRITE_CONFLICT || System.nanoTime() > deadline) {
                     throw new StoreException(what + " failed before COMMIT was sent", e);
                 }
             } catch (RuntimeException e) {

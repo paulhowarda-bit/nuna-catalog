@@ -58,8 +58,9 @@ final class MongoIdempotency {
 
     /**
      * Claims the key in a transaction. A done key found by the transaction's snapshot may not be
-     * on a majority yet; the claim then writes to the key's record and commits with majority
-     * write concern, so the answer it returns is durable before it is returned.
+     * on a majority yet, so the claim commits its transaction, which wrote nothing, with majority
+     * write concern: only then are the snapshot's reads majority-committed, and the answer it
+     * returns is durable before it is returned.
      */
     KeyState claim(IdempotencyClaim claim) {
         return transactions.write(claim.changeId(), "idempotency claim", tx -> {
@@ -91,8 +92,6 @@ final class MongoIdempotency {
                 return KeyState.MISMATCH;
             }
             if (state instanceof KeyState.Done) {
-                tx.collection(IDEMPOTENCY).updateOne(tx.session, byId(held.get("_id")),
-                        new BsonDocument("$inc", new BsonDocument("replays", new BsonInt32(1))));
                 return state;
             }
             if (instant(held.get("leaseUntil")).isAfter(claim.now())) {

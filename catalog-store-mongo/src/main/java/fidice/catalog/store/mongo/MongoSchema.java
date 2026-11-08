@@ -58,10 +58,10 @@ final class MongoSchema {
                         new BsonDocument("$setOnInsert", new BsonDocument("counter", new BsonInt64(0))),
                         new UpdateOptions().upsert(true));
             }),
-            // No index on pointer or journal here: an index build briefly takes an exclusive lock
-            // on its collection, and a transaction that waits for a lock more than 5 ms fails, so
-            // every commit of the previous release, still running during the upgrade, would risk
-            // failing. Only those that write outbox events or an idempotency result touch a
+            // No index on pointer or journal here: an index build locks its collection exclusively
+            // at its start and end, and shared while it drains, and a transaction that waits for a
+            // lock longer than maxTransactionLockRequestTimeoutMillis (5 ms) aborts, so every
+            // commit of the previous release, still running during the upgrade, would risk failing. Only those that write outbox events or an idempotency result touch a
             // collection indexed here; they may fail cleanly, and can be repeated, while the
             // build takes its lock. No index names a collation, so names compare as binary
             // strings, in code point order.

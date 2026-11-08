@@ -323,4 +323,5 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - M5 part: token validation in `catalog-security` and principal types in `catalog-core`, 46 tests, 28 bite runs.
   - M6 part: metadata file IO and location guardrails in `catalog-objectstore`, 156 tests, 19 bite runs.
   - M7 part: audit events, the Kafka publisher and the hash-chained archive in `catalog-audit`, 144 tests.
+- **M2c done 2026-11-08: the whole storage contract on MongoDB 8.0.34** (three-member replica set, schema step 3). 155 suite tests, none skipped; 43 of 50 bite runs bite. Of the 7 that do not, 2 showed redundant code, now removed, and 5 are explained in the M2c deviations of `docs/storage-design.md`. With no shared locks, a write marks the records it depends on; outbox order is a Lamport clock.
 - **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.
