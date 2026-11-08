@@ -18,10 +18,14 @@ import fidice.catalog.store.Securable;
 import fidice.catalog.store.StorageProfile;
 import fidice.catalog.store.TrustedEngine;
 import fidice.catalog.store.WriteResult;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -198,5 +202,29 @@ public abstract class GovernanceSuite extends GroupSuite {
         assertThat(underTest().changeRows(replace)).isEqualTo(WrittenRows.allOf(replace));
         assertThat(underTest().changeRows(remove)).isEqualTo(WrittenRows.allOf(remove));
         assertThat(underTest().changeRows(removeAgain)).isEqualTo(WrittenRows.NONE);
+    }
+
+    @Test
+    @DisplayName("Governance: 8 concurrent registrations of one new engine all apply, and one of them is kept, every round")
+    void concurrentPutsOfOneNewEngineAllApply() throws Exception {
+        for (int round = 0; round < 10; round++) {
+            String issuer = "https://idp.suite/" + UUID.randomUUID();
+            CyclicBarrier start = new CyclicBarrier(8);
+            List<TrustedEngine> engines = new ArrayList<>();
+            List<Future<WriteResult>> results = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                TrustedEngine engine = new TrustedEngine(issuer, "trino", "sub", Set.of("writer-" + i));
+                engines.add(engine);
+                results.add(background.submit(() -> {
+                    start.await();
+                    return store.putTrustedEngine(engine, change());
+                }));
+            }
+            for (Future<WriteResult> result : results) {
+                assertThat(result.get(60, TimeUnit.SECONDS)).as("round %d", round).isEqualTo(WriteResult.APPLIED);
+            }
+
+            assertThat(store.findTrustedEngine(issuer, "trino")).hasValueSatisfying(kept -> assertThat(engines).contains(kept));
+        }
     }
 }

@@ -121,6 +121,71 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
+    @DisplayName("Objects: a create racing its namespace's drop never leaves an orphan, every round")
+    void createRacingTheNamespaceDropLeavesNoOrphan() throws Exception {
+        UUID catalog = newCatalog();
+        for (int round = 0; round < 30; round++) {
+            NamespaceRecord namespace = newNamespace(catalog, "ns-" + round);
+            ObjectCreation creation = creation(CatalogObject.active(catalog, UUID.randomUUID(), namespace.id(),
+                    name("t"), CatalogObject.Kind.TABLE, "s3://suite-warehouse/" + UUID.randomUUID()));
+            CyclicBarrier start = new CyclicBarrier(2);
+            Future<WriteResult> create = background.submit(() -> {
+                start.await();
+                return store.createObject(creation);
+            });
+            Future<WriteResult> drop = background.submit(() -> {
+                start.await();
+                return store.dropNamespace(namespace.id(), change());
+            });
+            WriteResult created = create.get(60, TimeUnit.SECONDS);
+            WriteResult dropped = drop.get(60, TimeUnit.SECONDS);
+
+            if (created.equals(WriteResult.APPLIED)) {
+                assertThat(dropped).as("round %d", round).isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_EMPTY));
+                assertThat(store.readNamespace(namespace.id())).isPresent();
+            } else {
+                assertThat(created).as("round %d", round).isEqualTo(new WriteResult.Missing(WriteResult.Subject.NAMESPACE));
+                assertThat(dropped).isEqualTo(WriteResult.APPLIED);
+                assertThat(store.readObject(creation.object().id())).isEmpty();
+                assertThat(store.readPointer(creation.object().mainKey())).isEmpty();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Objects: of a hold and a purge of one object racing, exactly one applies, every round")
+    void holdRacingThePurgeExactlyOneApplies() throws Exception {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        for (int round = 0; round < 30; round++) {
+            CatalogObject table = newTable(namespace, "t-" + round);
+            Change drop = change();
+            assertApplied(store.dropObject(table.id(), drop.at(), drop));
+            LegalHold hold = new LegalHold(UUID.randomUUID(), table.securable(), "matter", "legal", now());
+            Change due = new Change(UUID.randomUUID(), drop.at().plusSeconds(1), change().outbox(), Optional.empty());
+            CyclicBarrier start = new CyclicBarrier(2);
+            Future<WriteResult> place = background.submit(() -> {
+                start.await();
+                return store.placeHold(hold, change());
+            });
+            Future<WriteResult> purge = background.submit(() -> {
+                start.await();
+                return store.purgeObject(table.id(), due);
+            });
+            WriteResult placed = place.get(60, TimeUnit.SECONDS);
+            WriteResult purged = purge.get(60, TimeUnit.SECONDS);
+
+            if (placed.equals(WriteResult.APPLIED)) {
+                assertThat(purged).as("round %d", round).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+                assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
+            } else {
+                assertThat(placed).as("round %d", round).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+                assertThat(purged).isEqualTo(WriteResult.APPLIED);
+                assertThat(store.holdsOn(Set.of(hold.target()))).isEmpty();
+            }
+        }
+    }
+
+    @Test
     @DisplayName("Objects: a create whose answer is lost is unknown, and findCommit resolves it to COMMITTED")
     void lostCreateAnswerResolvesToCommitted() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
@@ -378,5 +443,65 @@ public abstract class CatalogObjectSuite extends GroupSuite {
             assertThat(store.releaseHold(hold.id(), change())).isEqualTo(WriteResult.APPLIED);
         }
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).isEqualTo(WriteResult.APPLIED);
+    }
+
+    @Test
+    @DisplayName("Objects: the purge scan skips an object held through its namespace, an ancestor or its catalog")
+    void purgeScanSkipsObjectsHeldAbove() {
+        UUID catalog = newCatalog();
+        NamespaceRecord parent = newNamespace(catalog, "parent");
+        NamespaceRecord namespace = newNamespace(parent, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Instant due = Instant.parse("2001-01-01T00:00:00Z").plus(Duration.ofMinutes(UUID.randomUUID().hashCode() & 0xffff));
+        assertApplied(store.dropObject(table.id(), due, change()));
+        for (Securable target : List.of(new Securable(Securable.Kind.NAMESPACE, namespace.id()),
+                new Securable(Securable.Kind.NAMESPACE, parent.id()), new Securable(Securable.Kind.CATALOG, catalog))) {
+            LegalHold hold = new LegalHold(UUID.randomUUID(), target, "matter", "legal", now());
+            assertApplied(store.placeHold(hold, change()));
+
+            assertThat(purgeEligible(due)).as("held by %s", target).doesNotContain(table.id());
+
+            assertApplied(store.releaseHold(hold.id(), change()));
+        }
+        assertThat(purgeEligible(due)).contains(table.id());
+    }
+
+    @Test
+    @DisplayName("Objects: after a rename or undrop into another namespace, the holds above the new namespace apply")
+    void holdsFollowARenameOrUndrop() {
+        UUID catalog = newCatalog();
+        NamespaceRecord oldParent = newNamespace(catalog, "old-parent");
+        NamespaceRecord newParent = newNamespace(catalog, "new-parent");
+        NamespaceRecord oldHome = newNamespace(oldParent, "old");
+        NamespaceRecord newHome = newNamespace(newParent, "new");
+        CatalogObject table = newTable(oldHome, "t");
+
+        assertApplied(store.renameObject(table.id(), newHome.id(), name("t"), change()));
+        LegalHold onNew = holdOn(newParent);
+        assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("held above its new namespace")
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+        assertApplied(store.releaseHold(onNew.id(), change()));
+        LegalHold onOld = holdOn(oldParent);
+        assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("no longer under its old namespace")
+                .isEqualTo(WriteResult.APPLIED);
+
+        assertApplied(store.undropObject(table.id(), oldHome.id(), name("t"), change()));
+        assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("held above the namespace it was undropped into")
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+        assertApplied(store.releaseHold(onOld.id(), change()));
+        holdOn(newParent);
+        assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("no longer under the namespace it was renamed into")
+                .isEqualTo(WriteResult.APPLIED);
+    }
+
+    private LegalHold holdOn(NamespaceRecord namespace) {
+        LegalHold hold = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.NAMESPACE, namespace.id()),
+                "matter", "legal", now());
+        assertApplied(store.placeHold(hold, change()));
+        return hold;
+    }
+
+    private List<UUID> purgeEligible(Instant now) {
+        return allPages(100, page -> store.listPurgeEligible(now, page)).stream().map(CatalogObject::id).toList();
     }
 }
