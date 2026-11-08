@@ -1,0 +1,52 @@
+package fidice.catalog.audit;
+
+import java.net.URI;
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.IntStream;
+
+/** One fixed event of every type, with non-ASCII names, for golden and round-trip tests. */
+public final class SampleEvents {
+
+    public static final URI SOURCE = URI.create("urn:fidice:deployment:test");
+    public static final Instant TIME = Instant.parse("2026-11-07T10:15:30.123Z");
+
+    public static final Actor ACTOR = new Actor("svc-trino", "alice@example.com", "trino-shared", "req-0001");
+    public static final Securable CATALOG = new Securable(Securable.Kind.CATALOG,
+            UUID.fromString("00000000-0000-0000-0000-00000000000c"), "Trading", List.of());
+    public static final Securable TABLE = new Securable(Securable.Kind.TABLE,
+            UUID.fromString("7f0c2a52-9d0e-4a8b-9c61-2b1e6f0d4a11"), "Trading", List.of("Équités", "Orders"));
+    public static final PointerState V1 = new PointerState("s3://lake/t/7f0c/metadata/00001.json", 1, "a".repeat(64));
+    public static final PointerState V2 = new PointerState("s3://lake/t/7f0c/metadata/00002.json", 2, "b".repeat(64));
+
+    public static final String UPDATES = "[{\"action\":\"set-properties\",\"updates\":{\"owner\":\"Zoë\"}}]";
+
+    private SampleEvents() {
+    }
+
+    public static List<EventData> oneOfEachType() {
+        return List.of(
+                new Commit(UUID.fromString("c0000000-0000-0000-0000-000000000001"), TABLE, "main", V1, V2, UPDATES,
+                        ACTOR),
+                new GrantChange(GrantChange.Action.GRANTED, CATALOG, "grp-equities-read", "select", ACTOR),
+                new Drop(TABLE, Instant.parse("2026-12-07T10:15:30Z"), ACTOR),
+                new BreakGlass(TABLE, "incident INC-42", ACTOR),
+                new ObjectRead(TABLE, "main", V2, ACTOR),
+                new Denial("updateTable", TABLE, "modify", "missing privilege modify", ACTOR),
+                new AuthFailure("https://login.example.com/tenant/v2.0", "u-123", "app-9", "token expired", "req-0002",
+                        "10.0.0.7"),
+                new CredentialIssue(TABLE, "s3-east", "s3://lake/t/7f0c/", CredentialIssue.Access.READ,
+                        "fidice-svc-trino-req-0001", Instant.parse("2026-11-07T10:45:30Z"), ACTOR));
+    }
+
+    /** An event with an id fixed by {@code n}, so its encoding is fixed too. */
+    public static CatalogEvent event(EventData data, int n) {
+        return new CatalogEvent(new UUID(0xe0e0e0e0L, n), SOURCE, TIME, data);
+    }
+
+    public static List<CatalogEvent> events() {
+        List<EventData> data = oneOfEachType();
+        return IntStream.range(0, data.size()).mapToObj(i -> event(data.get(i), i + 1)).toList();
+    }
+}
