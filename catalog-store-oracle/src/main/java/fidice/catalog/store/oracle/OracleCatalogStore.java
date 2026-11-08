@@ -64,8 +64,9 @@ import org.flywaydb.core.api.FlywayException;
  * COMMIT_OUTCOME = TRUE (Transaction Guard) and no FAILOVER_TYPE, so the driver never replays a
  * transaction; it must not retry statements, and it sets the read timeout that bounds every wait.
  * Sessions must sort and compare with NLS_SORT = BINARY (the driver sets NLS_LANGUAGE from the JVM
- * locale, and NLS_SORT follows the language). The catalog role needs EXECUTE on DBMS_APP_CONT and SELECT on V_$DATABASE, V_$SERVICES
- * and V_$PARAMETER. This class never retries a COMMIT (D8.4).
+ * locale, and NLS_SORT follows the language). The catalog role needs EXECUTE on DBMS_APP_CONT, SELECT on V_$DATABASE, V_$SERVICES
+ * and V_$PARAMETER, and CREATE JOB for the job that creates the journal's partitions ahead
+ * (migration V5). This class never retries a COMMIT (D8.4).
  */
 public final class OracleCatalogStore implements CatalogStore {
 

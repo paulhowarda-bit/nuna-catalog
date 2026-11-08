@@ -61,6 +61,8 @@ import fidice.catalog.store.suite.UpgradeSuite;
 import fidice.catalog.store.suite.WrittenRows;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -68,6 +70,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -304,9 +307,10 @@ class OracleStoreSuiteTest extends CommitSuite {
         void journalAddsAPartitionForANewMonth() {
             assertThat(Sql.value(oracle.direct(), "SELECT interval FROM user_part_tables WHERE table_name = 'JOURNAL'"))
                     .isEqualTo("NUMTOYMINTERVAL(1, 'MONTH')");
-            int before = partitions();
             PointerKey key = newKey();
             Instant far = Changes.now().plus(Duration.ofDays(5 * 366));
+            YearMonth farMonth = YearMonth.from(far.atZone(ZoneOffset.UTC));
+            assertThat(partitionMonths(oracle.direct())).doesNotContain(farMonth);
             CommitBatch batch = new CommitBatch(UUID.randomUUID(), far, List.of(advance(key, Optional.empty(), "far")),
                     List.of(), Optional.empty());
 
@@ -315,14 +319,32 @@ class OracleStoreSuiteTest extends CommitSuite {
             CatalogStore direct = new OracleCatalogStore(oracle.direct());
             assertThat(direct.commit(batch)).isEqualTo(new CommitResult.Committed(batch.commitId()));
 
-            assertThat(partitions()).isEqualTo(before + 1);
+            assertThat(partitionMonths(oracle.direct())).contains(farMonth);
             assertThat(direct.readJournal(key, far, far.plusMillis(1), PageRequest.first(1)).items())
                     .extracting(JournalRecord::commitId).containsExactly(batch.commitId());
         }
 
-        private int partitions() {
-            return Integer.parseInt(Sql.value(oracle.direct(),
-                    "SELECT count(*) FROM user_tab_partitions WHERE table_name = 'JOURNAL'"));
+        @Test
+        @DisplayName("Oracle: a daily scheduler job creates the journal partitions of this month and the next two")
+        void schedulerJobCreatesJournalPartitionsAhead() {
+            DataSource fresh = oracle.freshSchema();
+            String job = "SELECT %s FROM user_scheduler_jobs WHERE job_name = 'JOURNAL_PARTITIONS_AHEAD'";
+
+            assertThat(Sql.value(fresh, job.formatted("enabled || ' ' || repeat_interval"))).isEqualTo("TRUE FREQ=DAILY");
+            Sql.await(Duration.ofSeconds(120), () -> Integer.parseInt(Sql.value(fresh, job.formatted("run_count"))) > 0,
+                    "the job's first run");
+
+            assertThat(Sql.value(fresh, job.formatted("failure_count"))).isEqualTo("0");
+            YearMonth month = YearMonth.now(ZoneOffset.UTC);
+            assertThat(partitionMonths(fresh)).contains(month, month.plusMonths(1), month.plusMonths(2))
+                    .doesNotContain(month.plusMonths(3));
+        }
+
+        /** The month of each journal partition, from its upper bound, the first instant of the month after it. */
+        private static List<YearMonth> partitionMonths(DataSource schema) {
+            return Sql.column(schema, "SELECT high_value FROM user_tab_partitions WHERE table_name = 'JOURNAL'").stream()
+                    .map(bound -> YearMonth.parse(bound.replaceAll("(?s).*'\\s*(\\d{4}-\\d{2})-01 .*", "$1")).minusMonths(1))
+                    .toList();
         }
     }
 

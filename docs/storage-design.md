@@ -249,7 +249,7 @@ Clarifications, not deviations:
 
 ## Deviations (M2b, Oracle whole contract)
 
-Found while implementing section 9 in `catalog-store-oracle` (Flyway V3 and V4) against Oracle AI Database Free 23.26.3. Oracle's 23ai documentation now redirects to the 26ai pages, which Free 23.26 follows. Each Oracle behaviour below was checked against those pages, or measured where the docs say nothing. Bite runs are named by id. 56 of 69 bite, and each one that does not is explained here (items 11, 15 and 19).
+Found while implementing section 9 in `catalog-store-oracle` (Flyway V3 to V5) against Oracle AI Database Free 23.26.3. Oracle's 23ai documentation now redirects to the 26ai pages, which Free 23.26 follows. Each Oracle behaviour below was checked against those pages, or measured where the docs say nothing. Bite runs are named by id. In the first batch 56 of 69 bite; each one that does not is explained here (items 11, 15 and 19). The second batch, run after the shared-suite tests of item 19 and the partition job of item 9 were added, bites 13 of 13.
 
 1. **No shared row locks (9, "Writes").** Oracle's `SELECT` has only `FOR UPDATE`, an exclusive row lock (SQL Reference, SELECT, for_update_clause; Concepts, "Data Concurrency and Consistency"). A write locks what it depends on (parent namespace, securable, storage profile, catalog) `FOR UPDATE`. As a result, writes under one parent or on one securable serialize where PostgreSQL lets them run side by side. Creates and drops still serialize as section 9 requires.
 2. **`''` is NULL, so text goes through a codec.** Oracle treats a zero-length string as NULL and says this may change (SQL Reference, "Nulls"). Every text value is stored through one codec: `''` is written as `CHR(0)`, and a value that starts with `CHR(0)` gets one more in front. Every other value is stored as is, so M1 rows read back unchanged. The codec keeps byte order, so comparisons, ORDER BY and keyset tokens act on stored values as on the originals. A done idempotency row whose body is NULL (written by M1, M1 deviation 4) reads back as an empty body. Evidence: `emptyStringsRoundTrip` and `previousReleaseEmptyBodyReadsBackEmpty` (Oracle-only); bites X1 and X2.
@@ -273,15 +273,20 @@ Found while implementing section 9 in `catalog-store-oracle` (Flyway V3 and V4) 
    - A write that takes a name or key inserts and catches ORA-00001 for that constraint. Statement-level atomicity rolls back only the failed statement, so the same transaction then reads the holder (Concepts, "Statement-Level Atomicity").
    - The constraint is matched by error code 1 and name. 26ai adds the table and columns to the message text.
    - An insert waits for an open insert of the same key and then fails. No Oracle page states this; the suite shows it (`createWaitsForAnOpenCreateOfTheSameName`, `exactlyOneConcurrentCreateWins`).
-   - Upserts (storage profile, attribute, trusted engine) are MERGE, run once more if they lose an insert race on ORA-00001. The MERGE page says nothing about concurrency, and no suite test races two upserts of a new key (bite G2 does not bite).
+   - Upserts (storage profile, attribute, trusted engine) are MERGE, run once more if they lose an insert race on ORA-00001. The MERGE page says nothing about concurrency. `concurrentPutsOfOneNewEngineAllApply` races eight upserts of a new key (bite G2).
 8. **The active-name index is a function-based unique index**, `(CASE WHEN state = 'ACTIVE' THEN namespace_id END, CASE WHEN state = 'ACTIVE' THEN name_norm END)`. This is Oracle's own conditional-uniqueness example: a row whose keys are all NULL is not indexed (SQL Reference, CREATE INDEX). Lookups by active name use the same expressions, so the optimizer can match the index (Concepts, "Optimization with Function-Based Indexes"). Bites O2 and O3.
 9. **The journal is partitioned by month (2.4, D5), in V4.**
-   - Oracle cannot partition on TIMESTAMP WITH TIME ZONE (CREATE TABLE, "Restrictions on Interval Partitioning"; ORA-03001 here). So the key is a virtual column, `committed_utc = SYS_EXTRACT_UTC(committed_at)`. Interval partitioning, `NUMTOYMINTERVAL(1, 'MONTH')`, creates each month's partition when the first row arrives (VLDB and Partitioning Guide, "Interval Partitioning"), so no maintenance job is needed.
+   - Oracle cannot partition on TIMESTAMP WITH TIME ZONE (CREATE TABLE, "Restrictions on Interval Partitioning"; ORA-03001 here). So the key is a virtual column, `committed_utc = SYS_EXTRACT_UTC(committed_at)`. Interval partitioning, `NUMTOYMINTERVAL(1, 'MONTH')`, creates each month's partition when the first row arrives (VLDB and Partitioning Guide, "Interval Partitioning").
    - V4 converts M1's table with `ALTER TABLE … MODIFY PARTITION BY … ONLINE` (non-blocking since 12.2). Without UPDATE INDEXES, the primary key and `journal_by_pointer` stay global, non-partitioned indexes, because neither contains the key.
    - Interval partitioning refuses a SERIALIZABLE transaction that would create a partition. The store's writes are READ COMMITTED.
    - **The first commit of a month creates its partition, and that is slow.** On this Free container the first commit into a new month took 0.5 to 2.6 s, against about 20 ms for the next one. Twice in full runs it went past the test link's 5 s read timeout and failed cleanly, before COMMIT was sent.
    - `LOCK TABLE journal PARTITION FOR (TIMESTAMP '…') IN SHARE MODE` creates a month's partition ahead of time. It took 0.4 to 1.4 s, after which that month's first commit took 15 to 83 ms.
-   - Production needs a monthly job that creates the next month's partition. Without one, the first commit of each month runs that much longer, and it fails if that is past the pool's read timeout. The test fixture does the same for the months the suite writes (item 18).
+   - **So V5 adds a daily Scheduler job, `JOURNAL_PARTITIONS_AHEAD`, that creates the partitions of this month and the next two** before any commit lands in them. Without it, the first commit of each month runs that much longer, and fails if that is past the pool's read timeout. A daily run leaves next month ready even after missed days.
+     - Locking an interval partition that has no rows yet materializes it (VLDB and Partitioning Guide, "Adding a Partition to an Interval-Partitioned Table", whose example locks IN SHARE MODE). The job locks IN ROW SHARE MODE, which also materializes it (the test below) and conflicts only with an exclusive table lock, so it never waits for a commit or blocks one.
+     - The catalog role needs CREATE JOB, and `JOB_QUEUE_PROCESSES` must not be 0, or no Scheduler job runs (Reference, JOB_QUEUE_PROCESSES).
+     - Data Guard applies Scheduler objects to a physical standby like any other change, and on failover the Scheduler runs the jobs of the new role (Administrator's Guide, "Scheduler Support for Oracle Data Guard").
+     - Evidence: `schedulerJobCreatesJournalPartitionsAhead` (Oracle-only) migrates a fresh schema, waits for the job's first run, and finds the three partitions and no fourth. Bites J1 (the job creates only this month) and J2 (the job is created disabled).
+     - The test fixture still creates the months the suite writes itself (item 18).
    - Partitioning is an extra-cost option of Enterprise Edition; Free includes it (Licensing Information, "Oracle Partitioning"). V4 first checks `v$option`, which shows that the option is installed, not that it is licensed, and stops with an error before changing anything if it is off. Licensing on the work estate is a work question.
    - Evidence: `journalAddsAPartitionForANewMonth` (Oracle-only) and shared test 7. Bites:
      - M1b (a yearly interval) fails the test.
@@ -316,15 +321,18 @@ Clarifications, not deviations:
 17. **Data Guard capabilities skip on Free.** Data Guard is not available in Free (Licensing Information, Table 1-5), so test 4 (failover), test 5's safe environment and test 6 (replica lag) skip through their capabilities, as in M1.
 18. **The test fixture prepares the schema through its admin pool.** The suite's store reaches Oracle through a link whose read timeout is 5 s.
     - On a loaded machine V1's DDL outlasted that timeout. So `OracleFree` migrates once with a 120 s read timeout, and the suite's own migrate then finds nothing to apply.
-    - The fixture also creates the journal partitions of the months the suite writes, as the production job would (item 9).
+    - The fixture also creates the journal partitions of the months the suite writes. V5's job (item 9) does that for this month and the next two, but on its own schedule, so the suite does not wait for it.
     - `journalAddsAPartitionForANewMonth` still has a commit create its own partition, through the admin pool.
-19. **Checks no suite test reaches.** These bites do not bite because nothing in the shared suite exercises the check. Each is a candidate for a shared-suite test, which every backend would then have to pass:
-    - R3: a grant on a securable of another catalog is Missing.
-    - R4: a grant, attribute or hold locks its securable against a concurrent drop or purge.
-    - N6: a namespace drop is refused under a hold on it, an ancestor or the catalog.
-    - O1: an object write locks its namespace against a concurrent drop.
-    - O5: the purge scan skips objects held through a namespace above them. The suite holds only the object (O6 bites).
-    - O9: rename and undrop rewrite the object's namespace path, so later holds follow it.
-    - I9: a commit's result over an expired record held by another claimant.
-    - B4: two relays claiming at the same instant.
-    - G2: two upserts racing to insert one new key.
+19. **Shared-suite tests for the checks no test reached.** In the first batch nine bites did not bite because nothing in the shared suite exercised the check. Each check now has a shared-suite test, which PostgreSQL, MongoDB and Oracle all pass, and the second batch bites each one:
+    - R3: `grantOnASecurableOfAnotherCatalog`. A grant whose catalog is not its securable's is Missing.
+    - R4: a grant, hold or attribute locks its securable against a concurrent drop or purge.
+      - `grantDuringAnOpenDropIsMissing` and `holdDuringAnOpenDropIsMissing` hold a namespace's drop open just before its COMMIT and write on the namespace meanwhile. `holdRacingThePurgeExactlyOneApplies` races a hold against an object's purge.
+      - Bites R4n (no namespace lock) and R4o (no object lock) bite separately. The catalog lock has no bite: nothing drops or purges a catalog, so nothing can race it.
+      - Racing a grant or hold against a namespace drop, 30 rounds each, did not bite R4n. The grant's transaction is shorter than the drop's, so it committed before the drop deleted the namespace's grants every time. Holding the drop open makes the window certain.
+    - N6: `holdsRefuseANamespaceDrop`. A hold on the namespace, an ancestor or the catalog refuses its drop.
+    - O1: `createRacingTheNamespaceDropLeavesNoOrphan`, the object counterpart of the namespace race test.
+    - O5: `purgeScanSkipsObjectsHeldAbove`. The scan skips an object held through its namespace, an ancestor or its catalog.
+    - O9: `holdsFollowARenameOrUndrop`. After a rename or undrop into another namespace, the holds above the new namespace apply and those above the old one do not.
+    - I9: `commitOverAnExpiredRecordRecordsItsOwnAnswer`. A commit over another request's expired claim or answer records its own answer.
+    - B4: `concurrentClaimsTakeTheLeaseOnce`. Of eight relays claiming at one instant, exactly one takes the lease.
+    - G2: `concurrentPutsOfOneNewEngineAllApply` (item 7).

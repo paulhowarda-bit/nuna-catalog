@@ -243,6 +243,29 @@ public abstract class IdempotencySuite extends GroupSuite {
     }
 
     @Test
+    @DisplayName("9 Idempotency: a commit over another request's expired claim or answer records its own answer")
+    void commitOverAnExpiredRecordRecordsItsOwnAnswer() {
+        Instant past = now().minus(Duration.ofDays(2));
+        String abandoned = newKeyName();
+        assertThat(store.claimKey(new IdempotencyClaim(abandoned, "svc-suite", "hash-of-" + abandoned, UUID.randomUUID(),
+                past, past.plus(LEASE), past.plus(Duration.ofHours(24))))).isEqualTo(KeyState.CLAIMED);
+        String answered = newKeyName();
+        UUID first = UUID.randomUUID();
+        assertThat(store.claimKey(new IdempotencyClaim(answered, "svc-suite", "hash-of-" + answered, first,
+                past, past.plus(LEASE), past.plus(Duration.ofHours(24))))).isEqualTo(KeyState.CLAIMED);
+        assertThat(store.completeKey(result(answered, 200, past), first)).isEqualTo(WriteResult.APPLIED);
+
+        for (String key : List.of(abandoned, answered)) {
+            CommitBatch batch = keyedCommit(key, UUID.randomUUID(), newKey());
+
+            assertThat(store.commit(batch)).as(key.equals(abandoned) ? "over a claim" : "over an answer")
+                    .isEqualTo(new CommitResult.Committed(batch.commitId()));
+
+            assertThat(store.readKey(key, now())).isEqualTo(new KeyState.Done(batch.idempotency().orElseThrow()));
+        }
+    }
+
+    @Test
     @DisplayName("9 Idempotency: 8 concurrent requests with one key make exactly one commit and all get its answer")
     void concurrentSameKeyRequestsCommitOnce() throws Exception {
         String key = newKeyName();
