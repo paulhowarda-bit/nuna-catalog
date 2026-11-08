@@ -27,6 +27,8 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -137,6 +139,29 @@ public abstract class OutboxSuite extends GroupSuite {
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER));
         assertThat(store.markRelayed(other, ids(second.entries()), lapsed)).isEqualTo(WriteResult.APPLIED);
         clock = lapsed.plus(Duration.ofHours(1));
+    }
+
+    @Test
+    @DisplayName("Outbox: of 8 relays claiming at the same instant exactly one takes the lease, every round")
+    void concurrentClaimsTakeTheLeaseOnce() throws Exception {
+        for (int round = 0; round < 10; round++) {
+            Instant now = tick();
+            CyclicBarrier start = new CyclicBarrier(8);
+            List<Future<Optional<OutboxBatch>>> claims = new ArrayList<>();
+            for (int i = 0; i < 8; i++) {
+                UUID relayId = UUID.randomUUID();
+                claims.add(background.submit(() -> {
+                    start.await();
+                    return store.claimOutbox(relayId, now, LEASE, 1);
+                }));
+            }
+            List<Optional<OutboxBatch>> batches = new ArrayList<>();
+            for (Future<Optional<OutboxBatch>> claim : claims) {
+                batches.add(claim.get(60, TimeUnit.SECONDS));
+            }
+
+            assertThat(batches).as("round %d", round).filteredOn(Optional::isPresent).hasSize(1);
+        }
     }
 
     @Test

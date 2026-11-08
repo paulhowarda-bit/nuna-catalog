@@ -124,12 +124,12 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
     }
 
     /**
-     * Creates the journal partitions of the months the suite writes, as production's monthly job
-     * does ahead of time (docs/storage-design.md, M2b deviations). A commit that creates its month's
-     * partition took 0.5 to 2.6 s here instead of 20 ms, and once more than the link's 5 s read
-     * timeout. The months: this one, the next, and test 7's 800 and 40 days back and 40 and 400 days
-     * ahead (SizeSuite.journalEntriesFarApartInTime). journalAddsAPartitionForANewMonth still has a
-     * commit create its own.
+     * Creates the journal partitions of the months the suite writes. Migration V5's job does that
+     * for this month and the next two, but it runs on its own, so the suite does not wait for it. A
+     * commit that creates its month's partition took 0.5 to 2.6 s here instead of 20 ms, and once
+     * more than the link's 5 s read timeout. The months: this one, the next, and test 7's 800 and 40
+     * days back and 40 and 400 days ahead (SizeSuite.journalEntriesFarApartInTime).
+     * journalAddsAPartitionForANewMonth still has a commit create its own.
      */
     private void precreateJournalMonths() {
         java.time.format.DateTimeFormatter utc = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -189,6 +189,7 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
         execute(sysdba, "GRANT SELECT ON SYS.V_$DATABASE TO " + user);
         execute(sysdba, "GRANT SELECT ON SYS.V_$SERVICES TO " + user);
         execute(sysdba, "GRANT SELECT ON SYS.V_$PARAMETER TO " + user);
+        execute(sysdba, "GRANT CREATE JOB TO " + user);
     }
 
     private DataSource directTo(String service) {
@@ -302,10 +303,7 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
      */
     @Override
     public UpgradeTarget upgradeTarget() {
-        String user = "upgrade_" + (upgradePools.size() + 1);
-        execute(sysdba, "CREATE USER " + user + " IDENTIFIED BY \"" + PASSWORD + "\" QUOTA UNLIMITED ON users");
-        execute(sysdba, "GRANT CREATE SESSION, RESOURCE TO " + user);
-        grantCatalogRole(user);
+        String user = newCatalogUser("upgrade_");
         String pool = "fidice-" + user;
         upgradePools.add(pool);
         DataSource throughLink = Sql.pool(pool, toxiproxy.getHost(), toxiproxy.getMappedPort(LINK_PORT), SERVICE, user,
@@ -313,6 +311,26 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
         PreviousReleaseStore previous = new PreviousReleaseStore(throughLink);
         previous.migrate();
         return new UpgradeTarget(PreviousReleaseStore.SCHEMA_VERSION, previous, new OracleCatalogStore(throughLink));
+    }
+
+    /** A fresh schema at the current version, reached around the link. */
+    DataSource freshSchema() {
+        String user = newCatalogUser("fresh_");
+        String pool = "fidice-" + user;
+        upgradePools.add(pool);
+        DataSource direct = Sql.pool(pool, oracle.getHost(), oracle.getMappedPort(ORACLE_PORT), SERVICE, user, PASSWORD,
+                ADMIN_READ_TIMEOUT_SECONDS, 1);
+        new OracleCatalogStore(direct).migrate();
+        return direct;
+    }
+
+    /** A new Oracle user with the catalog role; returns its name. */
+    private String newCatalogUser(String prefix) {
+        String user = prefix + (upgradePools.size() + 1);
+        execute(sysdba, "CREATE USER " + user + " IDENTIFIED BY \"" + PASSWORD + "\" QUOTA UNLIMITED ON users");
+        execute(sysdba, "GRANT CREATE SESSION, RESOURCE TO " + user);
+        grantCatalogRole(user);
+        return user;
     }
 
     @Override

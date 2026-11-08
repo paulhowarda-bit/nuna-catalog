@@ -328,10 +328,11 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Rules: each of the five D11 rules and eleven correctness backstops has a test that the builder alone fails. Three more checks from the backstop list are left to the builder, which already makes them. iceberg-core already refuses a snapshot more than a minute ahead on main, so the clock-skew rule matters for snapshots added off main.
   - Not done: the RCK table-commit paths run through REST routes, so they wait for M4; the baseline is still 149 NOT_RUN. Three RCK view tests that move a view's location will conflict with D28.
 - **M2c done 2026-11-08: the whole storage contract on MongoDB 8.0.34** (three-member replica set, schema step 3). 155 suite tests, none skipped; 43 of 50 bite runs bite. Of the 7 that do not, 2 showed redundant code, now removed, and 5 are explained in the M2c deviations of `docs/storage-design.md`. With no shared locks, a write marks the records it depends on; outbox order is a Lamport clock.
-- **M2b done 2026-11-08.** The whole storage contract runs on Oracle Free 23.26.3 in `catalog-store-oracle` (Flyway V3 and V4): 156 suite tests, 3 skipped by capability (no Data Guard on Free).
-  - 56 of 69 bite runs bite. Four that do not are explained by Oracle's behaviour (a rollback after a row lock waits for the redo; short previous-release transactions). Nine show checks no shared-suite test reaches.
+- **M2b done 2026-11-08.** The whole storage contract runs on Oracle Free 23.26.3 in `catalog-store-oracle` (Flyway V3 to V5): 168 suite tests, 3 skipped by capability (no Data Guard on Free).
+  - 56 of 69 bite runs bite in the first batch. Four that do not are explained by Oracle's behaviour (a rollback after a row lock waits for the redo; short previous-release transactions).
+  - The other nine showed checks no shared-suite test reached. Each now has a shared-suite test, which PostgreSQL, MongoDB and Oracle pass, and a second batch bites 13 of 13.
   - Main findings:
-    - Interval partitioning creates each month's journal partition inside its first commit (0.5–2.6 s here), so production needs a monthly pre-create job.
+    - Interval partitioning creates each month's journal partition inside its first commit (0.5–2.6 s here). V5 adds a daily Scheduler job that creates this month's and the next two ahead.
     - `NLS_SORT` follows the JVM locale and breaks byte-ordered paging; a new self-check finding catches it.
   - Deviations and the suite gaps are in `docs/storage-design.md`.
 - **M2a done 2026-11-08.** The whole storage contract runs on CockroachDB v25.4 and YugabyteDB 2025.2 (three-node clusters) in `catalog-store-sql`, and PostgreSQL gained journal partitioning (V4): PostgreSQL 152 suite tests, CockroachDB 148, YugabyteDB 145, none skipped.

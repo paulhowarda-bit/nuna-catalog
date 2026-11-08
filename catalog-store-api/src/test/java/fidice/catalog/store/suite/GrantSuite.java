@@ -79,6 +79,28 @@ public abstract class GrantSuite extends GroupSuite {
     }
 
     @Test
+    @DisplayName("Grants: a grant whose catalog is not its securable's is Missing and writes nothing")
+    void grantOnASecurableOfAnotherCatalog() {
+        UUID catalog = newCatalog();
+        UUID other = newCatalog();
+        NamespaceRecord namespace = newNamespace(other, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Securable onOther = new Securable(Securable.Kind.CATALOG, other);
+        Securable onNamespace = new Securable(Securable.Kind.NAMESPACE, namespace.id());
+        Change change = fullChange();
+
+        assertThat(store.putGrant(new Grant(catalog, onOther, "g", "select"), "admin", change))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.CATALOG));
+        assertThat(store.putGrant(new Grant(catalog, onNamespace, "g", "select"), "admin", change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.NAMESPACE));
+        assertThat(store.putGrant(new Grant(catalog, table.securable(), "g", "select"), "admin", change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+
+        assertThat(underTest().changeRows(change)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.grantsFor(Set.of(onOther, onNamespace, table.securable()), Set.of("g"))).isEmpty();
+    }
+
+    @Test
     @DisplayName("Grants: the batch check returns exactly the grants on the asked securables to the asked groups")
     void batchCheckReturnsExactlyTheMatches() {
         UUID catalog = newCatalog();

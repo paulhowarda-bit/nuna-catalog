@@ -3,6 +3,7 @@ package fidice.catalog.store.suite;
 import static fidice.catalog.store.suite.Changes.change;
 import static fidice.catalog.store.suite.Changes.fullChange;
 import static fidice.catalog.store.suite.Changes.name;
+import static fidice.catalog.store.suite.Changes.now;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -10,6 +11,7 @@ import fidice.catalog.store.Change;
 import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.Grant;
+import fidice.catalog.store.LegalHold;
 import fidice.catalog.store.NamespaceRecord;
 import fidice.catalog.store.PageRequest;
 import fidice.catalog.store.Securable;
@@ -22,6 +24,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
@@ -287,6 +290,80 @@ public abstract class NamespaceSuite extends GroupSuite {
                 assertThat(store.readNamespace(child.id())).isEmpty();
             }
         }
+    }
+
+    @Test
+    @DisplayName("Namespaces: a hold on the namespace, an ancestor or the catalog refuses its drop and writes nothing")
+    void holdsRefuseANamespaceDrop() {
+        UUID catalog = newCatalog();
+        NamespaceRecord parent = newNamespace(catalog, "parent");
+        NamespaceRecord namespace = newNamespace(parent, "ns");
+        for (Securable target : List.of(new Securable(Securable.Kind.NAMESPACE, namespace.id()),
+                new Securable(Securable.Kind.NAMESPACE, parent.id()), new Securable(Securable.Kind.CATALOG, catalog))) {
+            LegalHold hold = new LegalHold(UUID.randomUUID(), target, "matter", "legal", now());
+            assertApplied(store.placeHold(hold, change()));
+            Change refused = fullChange();
+
+            assertThat(store.dropNamespace(namespace.id(), refused)).as("held by %s", target)
+                    .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+
+            assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+            assertApplied(store.releaseHold(hold.id(), change()));
+        }
+        assertApplied(store.dropNamespace(namespace.id(), change()));
+    }
+
+    @Test
+    @DisplayName("Namespaces: a grant on a namespace whose drop is open is Missing once the drop commits, and leaves no grant")
+    void grantDuringAnOpenDropIsMissing() throws Exception {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        Grant grant = new Grant(namespace.catalogId(), new Securable(Securable.Kind.NAMESPACE, namespace.id()),
+                "racers", "select");
+
+        assertThat(duringAnOpenDrop(namespace, () -> store.putGrant(grant, "admin", change())))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.NAMESPACE));
+
+        assertThat(store.grantsFor(Set.of(grant.securable()), Set.of("racers"))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Namespaces: a hold on a namespace whose drop is open is Missing once the drop commits, and leaves no hold")
+    void holdDuringAnOpenDropIsMissing() throws Exception {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        LegalHold hold = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.NAMESPACE, namespace.id()),
+                "matter", "legal", now());
+
+        assertThat(duringAnOpenDrop(namespace, () -> store.placeHold(hold, change())))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.NAMESPACE));
+
+        assertThat(store.holdsOn(Set.of(hold.target()))).isEmpty();
+    }
+
+    /**
+     * Drops the namespace through a store that holds the drop open just before its COMMIT, runs
+     * {@code write} meanwhile, then lets the drop commit; returns what {@code write} returned. A
+     * write that does not wait for the drop finishes inside the 1.5 s the drop is held.
+     */
+    private WriteResult duringAnOpenDrop(NamespaceRecord namespace, Callable<WriteResult> write) throws Exception {
+        Change drop = change();
+        CountDownLatch atCommit = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CatalogStore held = underTest().store(changeId -> {
+            if (changeId.equals(drop.id())) {
+                atCommit.countDown();
+                CommitSuite.awaitLatch(release);
+            }
+        });
+        CompletableFuture<WriteResult> dropping = CompletableFuture.supplyAsync(
+                () -> held.dropNamespace(namespace.id(), drop), background);
+        assertThat(atCommit.await(60, TimeUnit.SECONDS)).isTrue();
+
+        Future<WriteResult> writing = background.submit(write);
+        Thread.sleep(1_500);
+        release.countDown();
+
+        assertThat(dropping.get(60, TimeUnit.SECONDS)).isEqualTo(WriteResult.APPLIED);
+        return writing.get(60, TimeUnit.SECONDS);
     }
 
     @Test
