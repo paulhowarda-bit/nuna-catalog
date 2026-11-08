@@ -11,15 +11,15 @@ import static fidice.catalog.store.suite.Commits.swap;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitLookup;
 import fidice.catalog.store.CommitResult;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.IdempotencyResult;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
 import fidice.catalog.store.SafetyFinding;
-import fidice.catalog.store.suite.StoreSuite;
+import fidice.catalog.store.suite.CommitSuite;
 import fidice.catalog.store.suite.StoreUnderTest;
 import fidice.catalog.store.suite.WrittenRows;
 import java.time.Duration;
@@ -30,7 +30,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /** The shared suite against Oracle AI Database Free with Transaction Guard, plus Oracle-only hazards. */
-class OracleStoreSuiteTest extends StoreSuite {
+class OracleStoreSuiteTest extends CommitSuite {
 
     /** Shorter than the link's read timeout: the client still gets its answer. */
     private static final Duration COMMIT_DELAY = Duration.ofSeconds(3);
@@ -65,7 +65,7 @@ class OracleStoreSuiteTest extends StoreSuite {
             oracle.delayRequests(LATE_COMMIT_DELAY);
             sentAt[0] = System.nanoTime();
         })), batch);
-        CatalogStore sameProcess = oracle.storeAroundTheLink();
+        CommitStore sameProcess = oracle.storeAroundTheLink();
         assertThat(sameProcess.findCommit(batch.commitId(), key)).isEqualTo(CommitLookup.NOT_COMMITTED);
 
         Sql.pause(Duration.ofNanos(sentAt[0] + LATE_COMMIT_DELAY.plusSeconds(3).toNanos() - System.nanoTime()));
@@ -90,7 +90,7 @@ class OracleStoreSuiteTest extends StoreSuite {
     private void assertAnotherProcessWaitsForCommitOnItsWay(PointerKey key, Optional<Pointer> base) throws Exception {
         CommitBatch batch = batch(advance(key, base, "on-its-way"));
         CountDownLatch held = new CountDownLatch(1);
-        CatalogStore delaying = oracle.store(before(batch, () -> {
+        CommitStore delaying = oracle.store(before(batch, () -> {
             oracle.delayRequests(COMMIT_DELAY);
             held.countDown();
         }));
@@ -116,7 +116,7 @@ class OracleStoreSuiteTest extends StoreSuite {
         oracle.stallReplication();
 
         assertOutcomeUnknown(store(), batch);
-        CatalogStore anotherProcess = oracle.storeOfAnotherProcess();
+        CommitStore anotherProcess = oracle.storeOfAnotherProcess();
         // The hazard is real: other sessions see the commit though its redo is not written.
         assertThat(anotherProcess.readPointer(key)).contains(next(batch));
 

@@ -10,13 +10,14 @@ import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
 import fidice.catalog.store.CatalogStore;
+import fidice.catalog.store.Change;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
 import fidice.catalog.store.SafetyFinding;
 import fidice.catalog.store.suite.Faults;
-import fidice.catalog.store.suite.StoreUnderTest;
+import fidice.catalog.store.suite.CatalogStoreUnderTest;
 import fidice.catalog.store.suite.UnsafeSetting;
 import fidice.catalog.store.suite.WrittenRows;
 import java.io.IOException;
@@ -42,9 +43,10 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * PostgreSQL 18: a primary and one synchronous standby streaming over a private network, with
  * Toxiproxy between the stores and the primary. The faults of the shared suite act on this
- * topology; an unsafe single node is started on demand for the self-check findings.
+ * topology; an unsafe single node is started on demand for the self-check findings, and a fresh
+ * database on the primary for each upgrade test.
  */
-final class ReplicatedPostgres implements StoreUnderTest, Faults {
+final class ReplicatedPostgres implements CatalogStoreUnderTest, Faults {
 
     static final String DATABASE = "catalog";
     static final String USER = "catalog";
@@ -76,6 +78,7 @@ final class ReplicatedPostgres implements StoreUnderTest, Faults {
     private boolean applyLagged;
     private boolean topologyLost;
     private PostgreSQLContainer singleNode;
+    private int upgrades;
 
     ReplicatedPostgres() {
         toxiproxy = new ToxiproxyContainer(DockerImageName.parse(System.getProperty("toxiproxy.image")))
@@ -154,6 +157,12 @@ final class ReplicatedPostgres implements StoreUnderTest, Faults {
         return new SqlCatalogStore(linkDataSource, hook);
     }
 
+    /** The store keeps nothing in memory about its commits, so another process is another store on the link. */
+    @Override
+    public CatalogStore storeOfAnotherProcess() {
+        return new SqlCatalogStore(linkDataSource);
+    }
+
     @Override
     public Faults faults() {
         return this;
@@ -181,6 +190,38 @@ final class ReplicatedPostgres implements StoreUnderTest, Faults {
     }
 
     @Override
+    public WrittenRows changeRows(Change change) {
+        int outbox = Integer.parseInt(value(primaryDirect, "SELECT count(*) FROM outbox WHERE commit_id = ?", change.id()));
+        int idempotency = Integer.parseInt(value(primaryDirect, "SELECT count(*) FROM idempotency WHERE key = ?"
+                + " AND change_id = ? AND status IS NOT NULL", change.idempotency().map(result -> result.key()).orElse(null),
+                change.id()));
+        return new WrittenRows(0, 0, outbox, idempotency);
+    }
+
+    @Override
+    public int projectionPieceBytes() {
+        return Pointers.PIECE_BYTES;
+    }
+
+    @Override
+    public int projectionPieces(PointerKey key) {
+        return 1 + Integer.parseInt(value(primaryDirect, "SELECT count(*) FROM projection_piece WHERE object_id = ?"
+                + " AND branch = ?", key.objectId(), key.branch()));
+    }
+
+    /** A fresh database on the primary, at the previous release's schema version, reached through the link. */
+    @Override
+    public UpgradeTarget upgradeTarget() {
+        String database = "upgrade_" + ++upgrades;
+        execute(primaryDirect, "CREATE DATABASE " + database);
+        DataSource throughLink = Sql.dataSource(toxiproxy.getHost(), toxiproxy.getMappedPort(LINK_PORT), database, USER,
+                SOCKET_TIMEOUT_SECONDS);
+        PreviousReleaseStore previous = new PreviousReleaseStore(throughLink);
+        previous.migrate();
+        return new UpgradeTarget(PreviousReleaseStore.SCHEMA_VERSION, previous, new SqlCatalogStore(throughLink));
+    }
+
+    @Override
     public List<Long> journalVersions(PointerKey key) {
         return column(primaryDirect, "SELECT new_version FROM journal WHERE object_id = ? AND branch = ? ORDER BY seq",
                 key.objectId(), key.branch()).stream().map(Long::valueOf).toList();
@@ -188,6 +229,11 @@ final class ReplicatedPostgres implements StoreUnderTest, Faults {
 
     @Override
     public boolean supportsFailover() {
+        return true;
+    }
+
+    @Override
+    public boolean hasReplica() {
         return true;
     }
 

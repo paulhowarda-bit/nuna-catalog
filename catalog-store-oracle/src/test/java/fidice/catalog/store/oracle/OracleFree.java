@@ -12,9 +12,9 @@ import static fidice.catalog.store.oracle.Sql.value;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
 import fidice.catalog.store.suite.Faults;
@@ -151,12 +151,13 @@ final class OracleFree implements StoreUnderTest, Faults {
     // ---- Oracle-only seams for OracleStoreSuiteTest ----
 
     /** A store of another process: it reaches the database around the link and never saw this process's commits. */
-    CatalogStore storeOfAnotherProcess() {
+    @Override
+    public CommitStore storeOfAnotherProcess() {
         return new OracleCatalogStore(directPool);
     }
 
     /** A store of this process (it shares the undecided commits) that reaches the database around the link. */
-    CatalogStore storeAroundTheLink() {
+    CommitStore storeAroundTheLink() {
         return new OracleCatalogStore(directPool, CommitHook.NONE, undecided);
     }
 
@@ -168,7 +169,7 @@ final class OracleFree implements StoreUnderTest, Faults {
     // ---- StoreUnderTest ----
 
     @Override
-    public CatalogStore store(CommitHook hook) {
+    public CommitStore store(CommitHook hook) {
         return new OracleCatalogStore(linkPool, hook, undecided);
     }
 
@@ -208,6 +209,12 @@ final class OracleFree implements StoreUnderTest, Faults {
     /** Free has no Data Guard: failover is a work-hardware test. */
     @Override
     public boolean supportsFailover() {
+        return false;
+    }
+
+    /** Free has no standby (no Data Guard): read-after-commit with replica lag is a work-hardware test. */
+    @Override
+    public boolean hasReplica() {
         return false;
     }
 
@@ -286,7 +293,7 @@ final class OracleFree implements StoreUnderTest, Faults {
      * All other connections are held, so the store borrows the one just released.
      */
     private static void runEveryOperationThroughEverySession(PoolDataSource pool) {
-        CatalogStore store = new OracleCatalogStore(pool);
+        CommitStore store = new OracleCatalogStore(pool);
         List<Connection> held = new ArrayList<>();
         try {
             int open = pool.getAvailableConnectionsCount() + pool.getBorrowedConnectionsCount();

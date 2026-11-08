@@ -13,12 +13,12 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.result.UpdateResult;
 import fidice.catalog.store.CatalogRecord;
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitLookup;
 import fidice.catalog.store.CommitOutcomeUnknownException;
 import fidice.catalog.store.CommitResult;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.IdempotencyResult;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
@@ -56,7 +56,7 @@ import static com.mongodb.MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL
  * transaction, and it resends commitTransaction once per call whatever the setting says.
  * The catalog role needs {@code clusterMonitor} for the self-check and findCommit.
  */
-public final class MongoCatalogStore implements CatalogStore {
+public final class MongoCatalogStore implements CommitStore {
 
     static final String CATALOG = "catalog";
     static final String POINTER = "pointer";

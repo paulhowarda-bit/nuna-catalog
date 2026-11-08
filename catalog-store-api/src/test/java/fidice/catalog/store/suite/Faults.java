@@ -21,16 +21,21 @@ public interface Faults {
     /** Loses every byte the database sends back; connections stay open. */
     void dropResponses();
 
-    /** Removes every link fault. */
+    /** Removes every link fault, and returns once the stores can reach the database again. */
     void healLink();
 
-    /** Replicas stop acknowledging, so a durable commit waits at the primary. */
+    /**
+     * Replicas stop acknowledging, so a durable commit waits at the primary. Oracle Free has no
+     * standby, so its harness freezes the log writer instead; that also stalls logons, sequence
+     * refills and a session's first LOB write per table, so the harness warms those before each
+     * freeze.
+     */
     void stallReplication();
 
     /** Replicas acknowledge again. */
     void resumeReplication();
 
-    /** Replicas still acknowledge commits at once, but apply them {@code lag} late. */
+    /** Replicas still acknowledge commits at once, but apply them at least {@code lag} late. */
     void lagReplicaApply(Duration lag);
 
     /** Reads a pointer on a replica, where injected apply lag shows. */

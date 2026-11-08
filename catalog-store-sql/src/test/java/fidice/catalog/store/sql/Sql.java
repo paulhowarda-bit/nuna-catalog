@@ -18,10 +18,14 @@ final class Sql {
     }
 
     static PGSimpleDataSource dataSource(String host, int port, String user, int socketTimeoutSeconds) {
+        return dataSource(host, port, ReplicatedPostgres.DATABASE, user, socketTimeoutSeconds);
+    }
+
+    static PGSimpleDataSource dataSource(String host, int port, String database, String user, int socketTimeoutSeconds) {
         PGSimpleDataSource dataSource = new PGSimpleDataSource();
         dataSource.setServerNames(new String[] {host});
         dataSource.setPortNumbers(new int[] {port});
-        dataSource.setDatabaseName(ReplicatedPostgres.DATABASE);
+        dataSource.setDatabaseName(database);
         dataSource.setUser(user);
         dataSource.setConnectTimeout(5);
         dataSource.setSocketTimeout(socketTimeoutSeconds);

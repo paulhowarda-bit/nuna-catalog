@@ -21,9 +21,9 @@ import com.mongodb.client.MongoDatabase;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
 import fidice.catalog.store.SafetyFinding;
@@ -260,8 +260,14 @@ final class MongoReplicaSet implements StoreUnderTest, Faults {
     // ---- StoreUnderTest ----
 
     @Override
-    public CatalogStore store(CommitHook hook) {
+    public CommitStore store(CommitHook hook) {
         return new MongoCatalogStore(linkClient, DATABASE, hook);
+    }
+
+    /** The store keeps nothing in memory about its commits, so another process is another store on the link. */
+    @Override
+    public CommitStore storeOfAnotherProcess() {
+        return new MongoCatalogStore(linkClient, DATABASE);
     }
 
     @Override
@@ -305,6 +311,11 @@ final class MongoReplicaSet implements StoreUnderTest, Faults {
 
     @Override
     public boolean supportsFailover() {
+        return true;
+    }
+
+    @Override
+    public boolean hasReplica() {
         return true;
     }
 
