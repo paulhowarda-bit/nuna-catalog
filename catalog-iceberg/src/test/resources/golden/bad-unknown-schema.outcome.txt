@@ -1,0 +1,1 @@
+bad-request: Cannot set current schema to unknown schema: 42

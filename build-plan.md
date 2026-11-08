@@ -192,6 +192,10 @@ Three worktree sessions, each owning one module:
 - STS vending per table, prefix-scoped by session policy, session name/tags carrying principal and request ID, cached for most of its lifetime, refresh endpoint in config; honour delegation `none` for trusted engines [D21].
 - Guardrails: allowed locations per profile, overlap index, no client-supplied endpoints, no delete permission except maintenance principals, session policy under 2,048 characters [D21, D25].
 - **Gate:** adversarial prefix tests (`orders` vs `orders2`, `..`, encoded paths) against MinIO and Ceph containers; S3 verified in an AWS sandbox account (see F6).
+- **AWS sandbox (decided 2026-11-07):** Paul's personal AWS account, opened 2026-11-07 on the Free plan with a USD 100 credit. The plan ends by about 2027-05-07, or sooner if the credit runs out. Tests use synthetic data only. The laptop authenticates through a named CLI profile with short-lived credentials, never root and never long-lived access keys. Paul does the sign-in, and the tests read the profile through the SDK's default provider chain.
+  - **The Free plan constrains the setup** (AWS `free-tier-plans.md`, read 2026-11-07). It closes the account six months after sign-up, or when the credits run out, whichever comes first. Joining AWS Organizations upgrades the account to the Paid plan automatically, so a separate member account means accepting Paid.
+  - **While on Free:** isolate the tests in one dedicated bucket and one role inside the account.
+  - **Decided: stay on Free.** The project moves to work well before the Free plan ends (Paul, 2026-11-07), so the personal account only bridges until then. After the move, the AWS checks run in a work sandbox account (PLT-5).
 
 ### M7 — Governance and audit
 
@@ -297,7 +301,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
 | R1 | Five backends cost roughly three implementations' worth of work (Polaris's pluggable persistence is ~26% of its code). | The shared suite is the gate: a backend that cannot pass it is not supported, and v1 ships without it rather than with a weaker guarantee [D8.9]. |
 | R2 | Oracle RAC/Exadata behaviour cannot be tested on the laptop. | Oracle Free covers the logic; RAC items are listed as work gates in M2 and M9. |
 | R3 | JSON library conflict between Spring Boot 4 and iceberg-core (F2). | Settled at M0: P5 keeps Iceberg JSON out of Spring; Jackson 2 pinned to 2.22.2 and the dependency tree converges. |
-| R4 | MinIO community edition is unmaintained (F5). | Decision for Paul before M6: which on-prem store work actually runs (AIStor, a fork, or Ceph). |
+| R4 | MinIO community edition is unmaintained (F5). | Tests run on Ceph (single container, AWS's role-based credential model; Paul, 2026-11-07), with Silo for MinIO's model. RustFS was assessed as an alternative (F8). The production on-prem store still depends on what work runs (PLT-3). |
 | R5 | Defaulting new tables to v3 breaks v2-only readers (SingleStore) and PyIceberg writers (F9). | Clients can create v2 explicitly [D12]; the engine matrix tests both. Revisit the default if PyIceberg writers are common. |
 | R6 | v1 storage commits to branch-ready keys before branches ship. | Design review in M1; the shared suite covers (object, branch) keys from the start. |
 | R7 | Laptop performance is not representative. | Relative SLO tracking here; absolute SLOs are a work gate. |
@@ -313,4 +317,10 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - MongoDB 8.0.34 three-member replica set: 27 tests, none skipped; 27 of 28 bite runs bite, and the one that does not is the expected evidence for the open-create gap.
   - Main finding: every backend can report a commit as visible before it is durable (PostgreSQL's in-flight create, Oracle's Transaction Guard, MongoDB's snapshot reads), so findCommit on all three answers COMMITTED only after a durability barrier. Deviations and the suite changes M2 starts with are in `docs/storage-design.md`.
   - Not run: the nightly 10,000-round CAS profile.
-- **Next: M2**, the backends in full, starting with the suite changes listed in `docs/storage-design.md`.
+- **Landed 2026-11-07: M2 prep and the first parts of M3, M5, M6 and M7.** `mvnw install` passes on the merged tree: 729 tests, 3 skipped by capability.
+  - M2 prep: the whole storage contract (nine group interfaces, `docs/storage-design.md` section 9) on PostgreSQL, 149 tests; 70 of 71 bite runs bite, and the one that does not showed a redundant barrier, now removed. Oracle (28 tests, 3 skipped) and MongoDB (27) still pass the commit suite.
+  - M3 part: the Iceberg metadata adapter in `catalog-iceberg`, 160 tests including 80 golden cases. The commit loop, rules layer and idempotency are not built yet.
+  - M5 part: token validation in `catalog-security` and principal types in `catalog-core`, 46 tests, 28 bite runs.
+  - M6 part: metadata file IO and location guardrails in `catalog-objectstore`, 156 tests, 19 bite runs.
+  - M7 part: audit events, the Kafka publisher and the hash-chained archive in `catalog-audit`, 144 tests.
+- **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.

@@ -1,0 +1,26 @@
+{
+  "requirements": [
+    {
+      "type": "assert-view-uuid",
+      "uuid": "b1000000-0000-4000-8000-000000000001"
+    }
+  ],
+  "updates": [
+    {
+      "action": "assign-uuid",
+      "uuid": "b1000000-0000-4000-8000-000000000001"
+    },
+    {
+      "action": "upgrade-format-version",
+      "format-version": 1
+    },
+    {
+      "action": "set-location",
+      "location": "s3://warehouse/ns/daily_pnl"
+    },
+    {
+      "action": "set-current-view-version",
+      "view-version-id": 1
+    }
+  ]
+}

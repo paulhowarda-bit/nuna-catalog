@@ -1,0 +1,32 @@
+{
+  "requirements": [
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "main",
+      "snapshot-id": null
+    }
+  ],
+  "updates": [
+    {
+      "action": "add-snapshot",
+      "snapshot": {
+        "snapshot-id": 2001,
+        "sequence-number": 1,
+        "timestamp-ms": 1748736060000,
+        "manifest-list": "s3://warehouse/ns/trades/metadata/snap-2001.avro",
+        "summary": {
+          "operation": "append",
+          "added-data-files": "1",
+          "added-records": "10"
+        },
+        "schema-id": 0
+      }
+    },
+    {
+      "action": "set-snapshot-ref",
+      "ref-name": "main",
+      "snapshot-id": 2001,
+      "type": "branch"
+    }
+  ]
+}

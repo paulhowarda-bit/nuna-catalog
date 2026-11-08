@@ -1,0 +1,45 @@
+{
+  "requirements": [
+    {
+      "type": "assert-table-uuid",
+      "uuid": "a3000000-0000-4000-8000-000000000003"
+    },
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "main",
+      "snapshot-id": 3002
+    }
+  ],
+  "updates": [
+    {
+      "action": "assign-uuid",
+      "uuid": "a3000000-0000-4000-8000-000000000003"
+    },
+    {
+      "action": "upgrade-format-version",
+      "format-version": 3
+    },
+    {
+      "action": "set-current-schema",
+      "schema-id": 0
+    },
+    {
+      "action": "set-default-spec",
+      "spec-id": 0
+    },
+    {
+      "action": "set-default-sort-order",
+      "sort-order-id": 1
+    },
+    {
+      "action": "set-location",
+      "location": "s3://warehouse/ns/orders"
+    },
+    {
+      "action": "set-snapshot-ref",
+      "ref-name": "main",
+      "snapshot-id": 3002,
+      "type": "branch"
+    }
+  ]
+}

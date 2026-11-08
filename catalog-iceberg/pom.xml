@@ -15,6 +15,12 @@
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-core</artifactId>
     </dependency>
+    <!-- iceberg-core declares Jackson 2 at runtime scope; request parsing needs it to compile.
+         Version from the parent's jackson-2-bom pin. -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>

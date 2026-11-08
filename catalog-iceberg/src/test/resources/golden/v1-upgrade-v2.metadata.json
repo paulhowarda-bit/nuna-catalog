@@ -1,0 +1,99 @@
+{
+  "format-version": 2,
+  "table-uuid": "a1000000-0000-4000-8000-000000000001",
+  "location": "s3://warehouse/ns/positions",
+  "last-sequence-number": 0,
+  "last-updated-ms": 1767225600000,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "book",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "qty",
+          "required": false,
+          "type": "long"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "name": "book",
+          "transform": "identity",
+          "source-id": 2,
+          "field-id": 1000
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1000,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": [ ]
+    }
+  ],
+  "properties": {
+    "owner": "ops",
+    "write.parquet.compression-codec": "zstd"
+  },
+  "current-snapshot-id": 1001,
+  "refs": {
+    "main": {
+      "snapshot-id": 1001,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "snapshot-id": 1001,
+      "timestamp-ms": 1748736060000,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "1",
+        "added-records": "10"
+      },
+      "manifest-list": "s3://warehouse/ns/positions/metadata/snap-1001.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [ ],
+  "partition-statistics": [ ],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1748736060000,
+      "snapshot-id": 1001
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v1-create.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v1-append.metadata.json"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "requirements": [
+    {
+      "type": "assert-last-assigned-field-id",
+      "last-assigned-field-id": 7
+    }
+  ],
+  "updates": [
+    {
+      "action": "set-properties",
+      "updates": {
+        "owner": "x"
+      }
+    }
+  ]
+}

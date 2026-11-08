@@ -1,0 +1,21 @@
+{
+  "requirements": [
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "main",
+      "snapshot-id": 3002
+    }
+  ],
+  "updates": [
+    {
+      "action": "remove-snapshots",
+      "snapshot-ids": [
+        3001
+      ]
+    },
+    {
+      "action": "remove-encryption-key",
+      "key-id": "key-1"
+    }
+  ]
+}

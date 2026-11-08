@@ -1,0 +1,93 @@
+{
+  "format-version": 3,
+  "table-uuid": "a2000000-0000-4000-8000-000000000002",
+  "location": "s3://warehouse/ns/trades",
+  "last-sequence-number": 1,
+  "last-updated-ms": 1767225600000,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "symbol",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "qty",
+          "required": false,
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [ ]
+    }
+  ],
+  "last-partition-id": 999,
+  "default-sort-order-id": 0,
+  "sort-orders": [
+    {
+      "order-id": 0,
+      "fields": [ ]
+    }
+  ],
+  "properties": {
+    "write.parquet.compression-codec": "zstd"
+  },
+  "current-snapshot-id": 2001,
+  "next-row-id": 0,
+  "refs": {
+    "main": {
+      "snapshot-id": 2001,
+      "type": "branch"
+    }
+  },
+  "snapshots": [
+    {
+      "sequence-number": 1,
+      "snapshot-id": 2001,
+      "timestamp-ms": 1748736060000,
+      "summary": {
+        "operation": "append",
+        "added-data-files": "1",
+        "added-records": "10"
+      },
+      "manifest-list": "s3://warehouse/ns/trades/metadata/snap-2001.avro",
+      "schema-id": 0
+    }
+  ],
+  "statistics": [ ],
+  "partition-statistics": [ ],
+  "snapshot-log": [
+    {
+      "timestamp-ms": 1748736060000,
+      "snapshot-id": 2001
+    }
+  ],
+  "metadata-log": [
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v2-create.metadata.json"
+    },
+    {
+      "timestamp-ms": 1767225600000,
+      "metadata-file": "s3://warehouse/golden/v2-append.metadata.json"
+    }
+  ]
+}

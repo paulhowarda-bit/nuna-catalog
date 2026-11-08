@@ -1,0 +1,30 @@
+{
+  "name": "trades",
+  "schema": {
+    "type": "struct",
+    "schema-id": 0,
+    "fields": [
+      {
+        "id": 1,
+        "name": "id",
+        "required": true,
+        "type": "long"
+      },
+      {
+        "id": 2,
+        "name": "symbol",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "id": 3,
+        "name": "qty",
+        "required": false,
+        "type": "int"
+      }
+    ]
+  },
+  "properties": {
+    "format-version": "2"
+  }
+}

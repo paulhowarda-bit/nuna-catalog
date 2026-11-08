@@ -1,0 +1,80 @@
+{
+  "format-version": 3,
+  "table-uuid": "a3000000-0000-4000-8000-000000000003",
+  "location": "s3://warehouse/ns/orders",
+  "last-sequence-number": 0,
+  "last-updated-ms": 1767225600000,
+  "last-column-id": 3,
+  "current-schema-id": 0,
+  "schemas": [
+    {
+      "type": "struct",
+      "schema-id": 0,
+      "identifier-field-ids": [
+        1
+      ],
+      "fields": [
+        {
+          "id": 1,
+          "name": "id",
+          "required": true,
+          "type": "long"
+        },
+        {
+          "id": 2,
+          "name": "data",
+          "required": false,
+          "type": "string"
+        },
+        {
+          "id": 3,
+          "name": "ts",
+          "required": false,
+          "type": "timestamptz"
+        }
+      ]
+    }
+  ],
+  "default-spec-id": 0,
+  "partition-specs": [
+    {
+      "spec-id": 0,
+      "fields": [
+        {
+          "name": "ts_day",
+          "transform": "day",
+          "source-id": 3,
+          "field-id": 1000
+        }
+      ]
+    }
+  ],
+  "last-partition-id": 1000,
+  "default-sort-order-id": 1,
+  "sort-orders": [
+    {
+      "order-id": 1,
+      "fields": [
+        {
+          "transform": "identity",
+          "source-id": 1,
+          "direction": "asc",
+          "null-order": "nulls-first"
+        }
+      ]
+    }
+  ],
+  "properties": {
+    "owner": "trading",
+    "write.parquet.compression-codec": "zstd",
+    "commit.retry.num-retries": "4"
+  },
+  "current-snapshot-id": null,
+  "next-row-id": 0,
+  "refs": { },
+  "snapshots": [ ],
+  "statistics": [ ],
+  "partition-statistics": [ ],
+  "snapshot-log": [ ],
+  "metadata-log": [ ]
+}

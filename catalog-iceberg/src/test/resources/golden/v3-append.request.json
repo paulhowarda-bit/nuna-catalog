@@ -1,0 +1,38 @@
+{
+  "requirements": [
+    {
+      "type": "assert-table-uuid",
+      "uuid": "a3000000-0000-4000-8000-000000000003"
+    },
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "main",
+      "snapshot-id": null
+    }
+  ],
+  "updates": [
+    {
+      "action": "add-snapshot",
+      "snapshot": {
+        "snapshot-id": 3001,
+        "sequence-number": 1,
+        "timestamp-ms": 1748736060000,
+        "manifest-list": "s3://warehouse/ns/orders/metadata/snap-3001.avro",
+        "summary": {
+          "operation": "append",
+          "added-data-files": "1",
+          "added-records": "100"
+        },
+        "schema-id": 0,
+        "first-row-id": 0,
+        "added-rows": 100
+      }
+    },
+    {
+      "action": "set-snapshot-ref",
+      "ref-name": "main",
+      "snapshot-id": 3001,
+      "type": "branch"
+    }
+  ]
+}

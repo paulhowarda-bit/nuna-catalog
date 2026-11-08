@@ -1,0 +1,56 @@
+{
+  "name": "orders",
+  "schema": {
+    "type": "struct",
+    "schema-id": 0,
+    "identifier-field-ids": [
+      1
+    ],
+    "fields": [
+      {
+        "id": 1,
+        "name": "id",
+        "required": true,
+        "type": "long"
+      },
+      {
+        "id": 2,
+        "name": "data",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "id": 3,
+        "name": "ts",
+        "required": false,
+        "type": "timestamptz"
+      }
+    ]
+  },
+  "partition-spec": {
+    "spec-id": 0,
+    "fields": [
+      {
+        "source-id": 3,
+        "field-id": 1000,
+        "name": "ts_day",
+        "transform": "day"
+      }
+    ]
+  },
+  "write-order": {
+    "order-id": 1,
+    "fields": [
+      {
+        "transform": "identity",
+        "source-id": 1,
+        "direction": "asc",
+        "null-order": "nulls-first"
+      }
+    ]
+  },
+  "properties": {
+    "owner": "trading",
+    "commit.retry.num-retries": "4"
+  }
+}

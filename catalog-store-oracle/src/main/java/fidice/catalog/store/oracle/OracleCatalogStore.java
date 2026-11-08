@@ -1,12 +1,12 @@
 package fidice.catalog.store.oracle;
 
 import fidice.catalog.store.CatalogRecord;
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitLookup;
 import fidice.catalog.store.CommitOutcomeUnknownException;
 import fidice.catalog.store.CommitResult;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.IdempotencyResult;
 import fidice.catalog.store.OutboxEvent;
 import fidice.catalog.store.Pointer;
@@ -50,7 +50,7 @@ import org.flywaydb.core.api.FlywayException;
  * The catalog role needs EXECUTE on DBMS_APP_CONT and SELECT on V_$DATABASE and V_$SERVICES. This
  * class never retries a COMMIT (D8.4).
  */
-public final class OracleCatalogStore implements CatalogStore {
+public final class OracleCatalogStore implements CommitStore {
 
     private static final String MIGRATIONS = "classpath:fidice/store/oracle/migration";
     private static final Set<String> SYNCHRONIZED_PROTECTION = Set.of("MAXIMUM AVAILABILITY", "MAXIMUM PROTECTION");

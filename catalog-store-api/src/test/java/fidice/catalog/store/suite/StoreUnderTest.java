@@ -1,21 +1,28 @@
 package fidice.catalog.store.suite;
 
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.PointerKey;
 import java.util.List;
 import java.util.Set;
 
 /**
- * What a backend hands the shared suite: stores over its database, the faults it can inject, and
+ * What a backend hands the commit suite: stores over its database, the faults it can inject, and
  * direct reads of what a commit left behind. Every store reaches the database through the link
- * {@link Faults} breaks; the direct reads go around it, to the current primary.
+ * {@link Faults} breaks; the direct reads go around it, to the current primary. A backend of the
+ * whole interface hands the suites a {@link CatalogStoreUnderTest}.
  */
 public interface StoreUnderTest extends AutoCloseable {
 
-    /** A store over the backend's database whose commits call {@code hook} just before COMMIT is sent. */
-    CatalogStore store(CommitHook hook);
+    /** A store over the backend's database whose writes call {@code hook} just before COMMIT is sent. */
+    CommitStore store(CommitHook hook);
+
+    /**
+     * A store of another process: it shares nothing in memory with the stores {@link #store}
+     * hands out (for example Oracle's transaction ids of undecided commits).
+     */
+    CommitStore storeOfAnotherProcess();
 
     Faults faults();
 
@@ -27,6 +34,9 @@ public interface StoreUnderTest extends AutoCloseable {
 
     /** Capability for suite test 4: the backend runs with a replica it can promote. */
     boolean supportsFailover();
+
+    /** Capability for suite test 6: the backend runs with a replica whose apply can lag. */
+    boolean hasReplica();
 
     /** Capability for suite test 5: the environment is durable enough for an empty self-check. */
     boolean hasSafeEnvironment();

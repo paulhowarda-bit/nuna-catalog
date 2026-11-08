@@ -1,0 +1,23 @@
+{
+  "requirements": [
+    {
+      "type": "assert-ref-snapshot-id",
+      "ref": "audit",
+      "snapshot-id": 3001
+    }
+  ],
+  "updates": [
+    {
+      "action": "remove-snapshot-ref",
+      "ref-name": "audit"
+    },
+    {
+      "action": "remove-statistics",
+      "snapshot-id": 3002
+    },
+    {
+      "action": "remove-partition-statistics",
+      "snapshot-id": 3002
+    }
+  ]
+}

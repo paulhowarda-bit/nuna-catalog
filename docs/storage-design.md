@@ -25,7 +25,7 @@ The contract every backend implements, designed against all three families at on
 
 ## 3. Interface
 
-Java package `fidice.catalog.store`. All methods are one atomic unit; reads of pointers go to the primary/leader only [D8.3].
+Java package `fidice.catalog.store`. All methods are one atomic unit; reads of pointers go to the primary/leader only [D8.3]. Section 9 replaces the M2 sketch below with the whole contract; the M1 core is now `CommitStore`.
 
 ```java
 public interface CatalogStore {
@@ -104,11 +104,11 @@ An abstract JUnit class that each backend extends by supplying a `StoreUnderTest
 | 3 | Ambiguity: cut the response path after COMMIT is sent → `CommitOutcomeUnknownException` → `findCommit` says `COMMITTED` and the pointer advanced. Cut the request path so COMMIT never arrives → `findCommit` says `NOT_COMMITTED`. Never a `Conflict`. | yes |
 | 4 | Failover: stop the primary during a stream of commits; every commit acknowledged before the stop is present after promotion. | PostgreSQL, MongoDB |
 | 5 | Self-check: the safe environment reports no findings; each unsafe setting reports its finding code. | yes (Oracle: unsafe only; safe is a work gate) |
-| 6 | Read-after-commit with injected replica lag. | yes |
-| 7 | Size: large projection, journal partition rollover. | M2 |
-| 8 | Names. | M2 |
-| 9 | Idempotency key concurrency and replay. | M2 |
-| 10 | Rolling schema upgrade. | M2 |
+| 6 | Read-after-commit with injected replica lag. | PostgreSQL, MongoDB (`hasReplica`) |
+| 7 | Size: large projection, journal partition rollover (section 9 (g)). | M2: `SizeSuite` |
+| 8 | Names. | M2: `NamespaceSuite`, `CatalogObjectSuite` |
+| 9 | Idempotency key concurrency and replay. | M2: `IdempotencySuite` |
+| 10 | Rolling schema upgrade. | M2: `UpgradeSuite` |
 
 Each test gets a bite run: break the check it guards (e.g. drop the version compare, skip the barrier) and see it fail.
 
@@ -132,6 +132,34 @@ The server refuses to start while findings exist (wired in M2). For local develo
 
 - v1 already stores pointers by (object, branch) and journals every commit with `seq`, so branches add rows only.
 - **Open problem, decided in v1.x:** a tag must be a consistent cut across tables. A journal `seq` from a backend sequence is not commit-ordered (a lower `seq` can commit after a higher one). Candidate protocols: (a) commits hold a shared lock and tag creation takes it exclusively for an instant, then records max(`seq`); (b) per-backend commit-ordered clocks (Oracle SCN, CockroachDB commit timestamp, MongoDB cluster time) with a PostgreSQL fallback of (a); (c) materialize the tag as a copy of (object, version) pairs. None changes the v1 storage layout; (a) adds a lock to the commit path.
+
+## 9. The whole contract (M2)
+
+`CatalogStore` is `CommitStore` (the M1 core of sections 3 to 5, renamed) plus one interface per operation group of build-plan 2.3: `NamespaceStore`, `CatalogObjectStore`, `GrantStore`, `IdempotencyStore`, `OutboxStore`, `GovernanceStore`, `JournalStore`, `SchemaStore`. The javadoc is normative: each method lists the outcomes it can return. Every method is one atomic unit on every backend. This section replaces the M2 sketch in section 3.
+
+**Writes.** Every non-commit mutation takes a `Change(id, at, outbox, idempotency)`. The id is generated before the transaction, like a commit id; `at` is the change's time (a drop's dropped-at, a purge's "now"). The mutation and its change records (outbox events, idempotency result) are one transaction. It returns a `WriteResult`; only `Applied` wrote anything. A COMMIT that fails or warns throws `CommitOutcomeUnknownException` carrying the id, as a commit does. Changes have no `findCommit`: the server resolves an unknown change through its idempotency key (the retry finds `Done`, or the claim lapses and the change runs again), and a change is safe to retry without one (`putGrant` answers `Unchanged`; a create answers `NameTaken` naming the caller's own id). Each write locks what it checks: the record it changes for update, the records it depends on (parent namespace, securable, storage profile) for share, so a create and a drop of what it depends on serialize. A write that takes a name or key inserts under a unique index, which waits for an open writer of the same name (the M1 lesson: an in-flight create is invisible to `SELECT … FOR UPDATE`).
+
+**(a) Create-table atomicity.** `createObject(ObjectCreation)` is its own method, not a `CommitBatch` variant. One transaction checks the namespace, inserts the object under the active-name index, and applies the first commit (pointer version 1, journal, outbox, idempotency) through the unchanged commit path. Reasons: a commit swaps pointers and knows nothing of names or namespaces, so every backend's bite-tested commit path stays as it is, while a creation needs the name check and namespace lock a commit does not. The first commit's id is the creation's id, so an unknown outcome resolves with `findCommit(firstCommitId, object.mainKey())`. Registering a table is a creation whose first pointer names an existing metadata file.
+
+**(b) Outbox order.** Every backend guarantees: every committed event is claimed eventually, at least once; the events of one change keep their order; of two changes that touched the same record, the one that committed first is claimed first. There is no order across unrelated changes, so no backend needs a global counter. No gaps: the relay always takes the lowest remaining entries and `markRelayed` deletes them, so an entry whose transaction commits after higher entries were relayed is still taken; there is no high-water mark to skip it. The order key is assigned after the change has locked what it touched. PostgreSQL: the identity `seq`, drawn at insert, after the locks. YugabyteDB: the same with sequence cache 1 (a per-node cache breaks the guarantee). CockroachDB: a sequence, not `unique_rowid()`. MongoDB: a Lamport clock: each record document carries a clock; a change stamps its entries with one more than the largest clock among the documents it writes and sets their clocks to that value; ties between unrelated changes break by entry id. One relay drains at a time under a lease judged by the caller's clock; a lapsed lease passes to the next relay, and the old holder's `markRelayed` is refused.
+
+**(c) Paging tokens.** Opaque: base64url of the last item's sort key (`PageToken`). Listings are keyset pages that resume strictly after that key, so rows inserted before or after the position never shift it, and every item present throughout is listed once. Each listing has a total order with a unique tiebreak: namespaces by normalized name (unique per parent); objects by (normalized name, id); grants of groups by (group, securable id, privilege); grants on a securable by (group, privilege); purge-eligible objects by (purge-after, id); journal by version. Tokens survive restarts and never expire. A token the store did not issue is an `IllegalArgumentException`. Each page is a fresh read, not one snapshot across pages.
+
+**(d) Names.** `Name(normalized, display)`: the core normalizes (NFC, then `Locale.ROOT` lower case); the store compares and orders normalized forms only, as bytes (SQL `COLLATE "C"`, Oracle binary comparison, MongoDB simple collation). Unique: catalogs by name; namespaces per parent; tables and views share one name space per namespace, among active objects only. A create whose normalized name is held answers `NameTaken(holder)`, so a case-only collision keeps the first display case. A rename to a case-only variant of the object's own name changes only the display name. A drop frees the name at once, and two dropped objects may share a name; undrop and rename need the name free and answer `NameTaken` otherwise. Two objects swap names through a third. Namespaces do not rename in v1.
+
+**(e) Shared value types.** Records and a few small sealed results: `WriteResult` (`Applied`, `Unchanged`, `Missing(subject)`, `NameTaken(holder)`, `VersionMismatch(actual)`, `Refused(reason)`), `KeyState` (`Absent`, `Claimed`, `InFlight(changeId, leaseUntil)`, `Done(result)`, `Mismatch`), and M1's `CommitResult` and `CommitLookup`; plus `Page`, `PageRequest`, `Change`, `Name`, `Securable` and each group's records. No backend type crosses the interface.
+
+**(f) Other rules.**
+
+1. *Idempotency (D10).* A request claims its key with a lease and the commit or change id it will write with; only a write with that id completes the claim, in its own transaction. With no live record the write records the result directly; otherwise (another claimant, already done) it fails cleanly with `StoreException`. A definite 4xx is recorded with `completeKey`; a 5xx releases the claim. A record past `expiresAt` is absent whether or not `expireKeys` has deleted it. A `Done` answer is durable before it is returned (5.1 step 3). On PostgreSQL a claim that finds the key done commits the transaction that locked its row, and that COMMIT waits for the standby as the barrier's does; `readKey` and `awaitKey` commit the barrier.
+2. *Holds (D24).* Drop and purge check holds on the record, every namespace above it and its catalog, inside their transaction. Namespaces never move, so each stores its ancestors; each object stores its namespace path and keeps it after the namespace is gone.
+3. *Soft drop (D25).* Drop sets dropped-at to `change.at()` and fixes purge-after; the id, pointer, journal and grants stay. Purge marks the object `PURGED` (kept as history) and deletes its grants; it is refused before purge-after or under a hold.
+4. *Size (D8.5).* A projection above the piece budget is stored in pieces keyed by pointer version and read in the same statement as the pointer. The budget is per backend (PostgreSQL: 1 MiB).
+5. *Refs (D33).* The ref record (build-plan 2.4) exists from v1 with no operations; v1 storage needs nothing else from it.
+6. *Schema (D8.7).* `schemaVersion()` reports the newest applied step. Every step keeps the previous release's statements working: additions and relaxed constraints only.
+7. *Commit hook.* Called before the COMMIT of every write that carries an id: commits, changes, and idempotency claims, completions and releases. The relay lease and key expiry carry none; an unknown outcome there is safe to repeat, so it is a `StoreException`.
+
+**(g) Suite.** The commit suite (tests 1 to 6) plus one abstract suite per group, which a backend runs as `@Nested` classes inside its commit suite so they share its backend and after-each restore: `NamespaceSuite` and `CatalogObjectSuite` (both carry test 8), `GrantSuite`, `IdempotencySuite` (test 9), `OutboxSuite`, `GovernanceSuite`, `JournalSuite`, `SizeSuite` (test 7), `UpgradeSuite` (test 10), and `MutationSuite`, which drives every non-commit mutation through tests 2 and 3: it applies with exactly its change records; a lost answer is unknown, carries the change id, and was written; a link cut before COMMIT is unknown and wrote nothing. Capabilities, each skipping through an assumption with its reason: `supportsFailover` (test 4), `hasSafeEnvironment` (test 5), `hasReplica` (test 6). `storeOfAnotherProcess` is the seam for a store that shares no memory with the committing one. Journal partition roll-over is not a shared test: how a backend partitions by time cannot be seen through the interface (PostgreSQL and YugabyteDB use declarative ranges, CockroachDB splits ranges itself, Oracle's interval partitions create themselves, MongoDB has none), so test 7 checks what a caller sees, journal entries years apart written and read back in one range, and each backend proves its own roll-over in its own module.
 
 ## Deviations (M1, PostgreSQL commit core)
 
@@ -170,10 +198,27 @@ Found in `catalog-store-mongo` against a three-member `mongo:8.0.34` replica set
 6. **`WriteConflict` before commit** aborts and re-runs the body on a fresh snapshot for up to 10 s, before `commitTransaction` is ever sent.
 7. **Role.** The catalog role needs `clusterMonitor` (for `getParameter`, `replSetGetConfig` and `getDefaultRWConcern`).
 
-## Suite changes for M2
+## Suite changes for M2 (done)
 
-- A capability method for test 6 (for example `StoreUnderTest.hasReplica()`), so a backend with no replica skips through an assumption instead of aborting in `Faults`.
-- Move the hook-held open-transaction tests (MongoDB's `openCreateIsWaitedFor` and `openUpdateIsWaitedFor`) into the shared suite; the replication-stall variants miss the open-create gap on MongoDB.
-- A suite seam for "another process" (a store that does not share the committing store's memory), which Oracle's second findCommit path needs.
-- Javadoc: `Faults.healLink` returns once the store can reach the database again; `Faults.lagReplicaApply(lag)` lags for at least `lag`; `stallReplication` on Oracle Free freezes the log writer, which also stalls logons, sequence refills and first LOB writes, so the harness warms those before each freeze.
-- `StoreSuite.stopBackend` throws a NullPointerException when the backend failed to start; it should skip the close.
+- `StoreUnderTest.hasReplica()`: test 6 skips through an assumption on a backend without a replica (Oracle Free).
+- `openCreateIsWaitedFor` and `openUpdateIsWaitedFor` moved from the MongoDB module into `CommitSuite` and run on every backend.
+- `StoreUnderTest.storeOfAnotherProcess()`: a store that shares no memory with the committing one. Oracle returns a store without the LTXID map; MongoDB and PostgreSQL return a second store on the same database, since their stores keep nothing in memory.
+- The `Faults` javadocs say what `healLink`, `lagReplicaApply` and `stallReplication` guarantee.
+- `CommitSuite.stopBackend` skips the close when the backend never started.
+
+## Deviations (M2 prep, PostgreSQL whole contract)
+
+Found while implementing section 9 in `catalog-store-sql` (Flyway V3). Bite runs are named by id in the M2 prep report.
+
+1. **The journal is not partitioned by time yet (2.4, D8.5).** M1's journal is a plain table with an identity column, written by M1 nodes during the upgrade. Converting it in place needs an exclusive lock on the journal and a way to create next month's partition before a commit lands in it, so it belongs in its own step with its own roll-over test in this module, not in V3. Proposed V4: rename `journal` to `journal_m1`, drop its identity default, create a partitioned `journal` by range on `committed_at` with the identity restarted above the old maximum, attach `journal_m1` as the range below the cut-over, and pre-create monthly partitions twelve months ahead; a maintenance job keeps the horizon (YugabyteDB the same; CockroachDB needs none). Until then test 7 checks only what a caller sees: entries 800 days back and 400 days ahead are written and read in one range; bite S6 (a CHECK standing in for missing partitions) fails it.
+2. **Namespace drop is a hard delete (2.4 lists a namespace dropped-at).** Nothing in v1 undrops a namespace, and a dropped name must be free at once. Objects keep their `namespace_id` and `namespace_path` after the namespace is gone, so dropped tables, their holds and the journal still resolve. If namespace undrop is ever wanted, the record gains a state and dropped-at as objects have.
+3. **Objects have a third state, `PURGED` (2.4 lists active and dropped).** A purge keeps the row as history (id, name, location root, drop and purge times) so audit and journal still resolve the id; grants go with it, and a purged object cannot be undropped, granted or held. Evidence: `purgeRefusesNotDueAndHeld`; bite O13.
+4. **No foreign key from pointer to object (section 2 said it arrives in M2).** The commit suite commits pointers with no object record, and findCommit's placeholder insert (M1 PostgreSQL deviation 1) has no object to satisfy one. `createObject` writes the object and its first pointer in one transaction, which is what the key would protect.
+5. **A previous-release node reads only the first projection piece.** M1's `readPointer` reads `pointer.projection` alone, so during a rolling upgrade an M1 node returns a projection above 1 MiB written by an M2 node truncated. M1 never shipped, so V3 accepts it. Section 9 (f) 6 keeps statements working but not new data layouts; the rule for later layouts is that a release learns to read one a release before any release writes it.
+6. **V3 builds its indexes inside the migration transaction.** `CREATE INDEX journal_by_pointer` holds a SHARE lock on the journal while it builds, which blocks previous-release commits. Every journal is empty today, so the build is instant; a later migration on a populated table needs `CREATE INDEX CONCURRENTLY` in a non-transactional Flyway step.
+
+Clarifications, not deviations:
+
+7. **Times are kept to the microsecond.** `timestamptz` drops nanoseconds; the suite's clock is in milliseconds so round trips compare equal. MongoDB keeps milliseconds, so callers must not rely on anything finer.
+8. **"List by principal" (2.3) is `listGrantsOfGroups`.** Grants go to groups [D18, D19]; the server resolves a principal to its groups and asks for theirs.
+9. **A claim needs no separate barrier on PostgreSQL.** Its row lock gives the claim transaction an id, so its COMMIT waits for the synchronous standby. Bite I13 (the barrier call removed from the claim) left `idempotentReplayWaitsForTheStandby` green, so the call was dropped; bite I14 (the barrier removed from `readKey`) fails that test.

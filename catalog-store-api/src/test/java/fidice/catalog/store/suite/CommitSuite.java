@@ -13,12 +13,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
-import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitLookup;
 import fidice.catalog.store.CommitOutcomeUnknownException;
 import fidice.catalog.store.CommitResult;
+import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
 import fidice.catalog.store.SafetyFinding;
@@ -29,6 +29,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,19 +48,22 @@ import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.TestInstance;
 
 /**
- * The shared invariant and fault-injection suite (docs/storage-design.md section 6). Passing it
- * is what "supported" means for a backend (D8.9). A backend extends this class and supplies a
- * {@link StoreUnderTest}. Test numbers follow the design's table; display names start with them.
+ * The commit suite: tests 1 to 6 of the shared invariant and fault-injection suite
+ * (docs/storage-design.md sections 6 and 9). A backend extends this class and supplies a
+ * {@link StoreUnderTest}; this class starts and stops it. A backend of the whole
+ * {@link fidice.catalog.store.CatalogStore} also runs every group suite (see {@link GroupSuite})
+ * as {@code @Nested} classes, which share the backend and its after-each restore. Test numbers
+ * follow the design's table; display names start with them.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-public abstract class StoreSuite {
+public abstract class CommitSuite {
 
     /** Rounds of the CAS linearizability test: 200 in CI, 10,000 in the nightly profile. */
     static final int CAS_ROUNDS = Integer.getInteger("fidice.suite.cas-rounds", 200);
     static final int CAS_WRITERS = 8;
 
     private StoreUnderTest underTest;
-    private CatalogStore store;
+    private CommitStore store;
     private Faults faults;
     private final ExecutorService background = Executors.newCachedThreadPool();
 
@@ -82,7 +86,9 @@ public abstract class StoreSuite {
     @AfterAll
     void stopBackend() {
         background.shutdownNow();
-        underTest.close();
+        if (underTest != null) {
+            underTest.close();
+        }
     }
 
     // ---- 1. CAS linearizability ----
@@ -320,6 +326,48 @@ public abstract class StoreSuite {
         assertThat(store.readPointer(key)).contains(next(batch));
     }
 
+    @Test
+    @DisplayName("3 Ambiguity: findCommit in another process waits for a create whose transaction is open before COMMIT")
+    void openCreateIsWaitedFor() throws Exception {
+        assertFindCommitWaitsForOpenTransaction(newKey(), Optional.empty());
+    }
+
+    @Test
+    @DisplayName("3 Ambiguity: findCommit in another process waits for an update whose transaction is open before COMMIT")
+    void openUpdateIsWaitedFor() throws Exception {
+        PointerKey key = newKey();
+        assertFindCommitWaitsForOpenTransaction(key, Optional.of(commitNew(key, "base")));
+    }
+
+    /**
+     * The transaction has written everything and is held just before COMMIT, as when that request
+     * is still on its way. Its writes are invisible to others until it commits, so a lookup that
+     * does not wait for it answers NOT_COMMITTED and is then wrong. Replication-stall variants miss
+     * this on MongoDB, whose snapshot reads see locally committed writes.
+     */
+    private void assertFindCommitWaitsForOpenTransaction(PointerKey key, Optional<Pointer> base) throws Exception {
+        CommitBatch batch = batch(advance(key, base, "held-open"));
+        CountDownLatch atCommit = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CommitStore held = underTest.store(before(batch, () -> {
+            atCommit.countDown();
+            awaitLatch(release);
+        }));
+        CompletableFuture<CommitResult> commit = CompletableFuture.supplyAsync(() -> held.commit(batch), background);
+        assertThat(atCommit.await(60, TimeUnit.SECONDS)).as("the commit reached COMMIT").isTrue();
+
+        CommitStore anotherProcess = underTest.storeOfAnotherProcess();
+        CompletableFuture<CommitLookup> lookup = CompletableFuture.supplyAsync(
+                () -> anotherProcess.findCommit(batch.commitId(), key), background);
+        Thread.sleep(1_500);
+        assertThat(lookup).as("findCommit must wait while the open transaction can still commit").isNotDone();
+        release.countDown();
+
+        assertThat(commit.get(60, TimeUnit.SECONDS)).isEqualTo(new CommitResult.Committed(batch.commitId()));
+        assertThat(lookup.get(60, TimeUnit.SECONDS)).isEqualTo(CommitLookup.COMMITTED);
+        assertThat(store.readPointer(key)).contains(next(batch));
+    }
+
     // ---- 4. Failover ----
 
     @Test
@@ -396,6 +444,7 @@ public abstract class StoreSuite {
     @Test
     @DisplayName("6 Read-after-commit: a read after an acknowledged commit sees it while replicas lag")
     void readAfterCommitSeesItDespiteReplicaLag() {
+        assumeTrue(underTest.hasReplica(), "the backend declares no replica in this environment");
         PointerKey key = newKey();
         Pointer current = commitNew(key, "base");
         faults.lagReplicaApply(Duration.ofSeconds(10));
@@ -410,7 +459,7 @@ public abstract class StoreSuite {
     // ---- helpers ----
 
     /** The store under test with no commit hook. */
-    protected CatalogStore store() {
+    protected CommitStore store() {
         return store;
     }
 
@@ -426,7 +475,7 @@ public abstract class StoreSuite {
         return next(batch);
     }
 
-    protected static void assertOutcomeUnknown(CatalogStore store, CommitBatch batch) {
+    protected static void assertOutcomeUnknown(CommitStore store, CommitBatch batch) {
         assertThatThrownBy(() -> store.commit(batch))
                 .isInstanceOfSatisfying(CommitOutcomeUnknownException.class,
                         unknown -> assertThat(unknown.commitId()).isEqualTo(batch.commitId()));
@@ -440,6 +489,18 @@ public abstract class StoreSuite {
                 throw new AssertionError("timed out waiting for " + what);
             }
             Thread.sleep(20);
+        }
+    }
+
+    /** Blocks a held commit until the test releases it. */
+    protected static void awaitLatch(CountDownLatch latch) {
+        try {
+            if (!latch.await(120, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("the test never released the commit");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
         }
     }
 

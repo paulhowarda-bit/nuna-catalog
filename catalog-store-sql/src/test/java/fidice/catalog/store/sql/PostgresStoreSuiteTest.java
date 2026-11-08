@@ -1,5 +1,6 @@
 package fidice.catalog.store.sql;
 
+import static fidice.catalog.store.suite.Commits.advance;
 import static fidice.catalog.store.suite.Commits.batch;
 import static fidice.catalog.store.suite.Commits.newKey;
 import static fidice.catalog.store.suite.Commits.next;
@@ -8,26 +9,48 @@ import static fidice.catalog.store.suite.Commits.swap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
+import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitLookup;
 import fidice.catalog.store.CommitOutcomeUnknownException;
 import fidice.catalog.store.CommitResult;
+import fidice.catalog.store.IdempotencyClaim;
+import fidice.catalog.store.KeyState;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
-import fidice.catalog.store.suite.StoreSuite;
+import fidice.catalog.store.suite.CatalogObjectSuite;
+import fidice.catalog.store.suite.CatalogStoreUnderTest;
+import fidice.catalog.store.suite.Changes;
+import fidice.catalog.store.suite.CommitSuite;
+import fidice.catalog.store.suite.GovernanceSuite;
+import fidice.catalog.store.suite.GrantSuite;
+import fidice.catalog.store.suite.IdempotencySuite;
+import fidice.catalog.store.suite.JournalSuite;
+import fidice.catalog.store.suite.MutationSuite;
+import fidice.catalog.store.suite.NamespaceSuite;
+import fidice.catalog.store.suite.OutboxSuite;
+import fidice.catalog.store.suite.SizeSuite;
 import fidice.catalog.store.suite.StoreUnderTest;
+import fidice.catalog.store.suite.UpgradeSuite;
 import java.sql.SQLWarning;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-/** The shared suite against PostgreSQL 18 with a synchronous standby, plus PostgreSQL-only hazards. */
-class PostgresStoreSuiteTest extends StoreSuite {
+/**
+ * The shared suite against PostgreSQL 18 with a synchronous standby: the commit suite, every group
+ * suite as a nested class on the same backend, and PostgreSQL-only hazards.
+ */
+class PostgresStoreSuiteTest extends CommitSuite {
 
     private ReplicatedPostgres postgres;
 
@@ -35,6 +58,86 @@ class PostgresStoreSuiteTest extends StoreSuite {
     protected StoreUnderTest storeUnderTest() {
         postgres = new ReplicatedPostgres();
         return postgres;
+    }
+
+    @Nested
+    class Namespaces extends NamespaceSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class CatalogObjects extends CatalogObjectSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Grants extends GrantSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Idempotency extends IdempotencySuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Outbox extends OutboxSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Governance extends GovernanceSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Journal extends JournalSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Size extends SizeSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Upgrade extends UpgradeSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Mutations extends MutationSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
     }
 
     @Test
@@ -64,6 +167,34 @@ class PostgresStoreSuiteTest extends StoreSuite {
         postgres.resumeReplication();
 
         assertThat(lookup.get(60, TimeUnit.SECONDS)).isEqualTo(CommitLookup.COMMITTED);
+    }
+
+    @Test
+    @DisplayName("PostgreSQL: a key's answer whose COMMIT lost its wait for the standby is replayed only once the"
+            + " standby has it")
+    void idempotentReplayWaitsForTheStandby() throws Exception {
+        CatalogStore store = postgres.store(CommitHook.NONE);
+        String key = UUID.randomUUID().toString();
+        Instant now = Changes.now();
+        CommitBatch batch = new CommitBatch(UUID.randomUUID(), now, List.of(advance(newKey(), Optional.empty(), "keyed")),
+                List.of(), Optional.of(Changes.result(key, 200, now)));
+        postgres.stallReplication();
+
+        CompletableFuture<CommitResult> commit = CompletableFuture.supplyAsync(() -> store.commit(batch));
+        Sql.execute(postgres.primaryDirect(), "SELECT pg_cancel_backend(CAST(? AS INT))", awaitBackendWaitingForTheStandby());
+        assertThatThrownBy(() -> commit.get(60, TimeUnit.SECONDS)).cause().isInstanceOf(CommitOutcomeUnknownException.class);
+
+        CompletableFuture<KeyState> claim = CompletableFuture.supplyAsync(() -> store.claimKey(new IdempotencyClaim(key,
+                "svc-suite", "hash-of-" + key, UUID.randomUUID(), now, now.plusSeconds(30), now.plusSeconds(3600))));
+        CompletableFuture<KeyState> read = CompletableFuture.supplyAsync(() -> store.readKey(key, Changes.now()));
+        Thread.sleep(1_500);
+        assertThat(claim).as("Done must wait until the standby has the answer").isNotDone();
+        assertThat(read).as("Done must wait until the standby has the answer").isNotDone();
+        postgres.resumeReplication();
+
+        KeyState done = new KeyState.Done(batch.idempotency().orElseThrow());
+        assertThat(claim.get(60, TimeUnit.SECONDS)).isEqualTo(done);
+        assertThat(read.get(60, TimeUnit.SECONDS)).isEqualTo(done);
     }
 
     private String awaitBackendWaitingForTheStandby() {
