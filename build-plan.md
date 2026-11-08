@@ -335,7 +335,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - Interval partitioning creates each month's journal partition inside its first commit (0.5–2.6 s here). V5 adds a daily Scheduler job that creates this month's and the next two ahead.
     - `NLS_SORT` follows the JVM locale and breaks byte-ordered paging; a new self-check finding catches it.
   - Deviations and the suite gaps are in `docs/storage-design.md`.
-- **M2a done 2026-11-08.** The whole storage contract runs on CockroachDB v25.4 and YugabyteDB 2025.2 (three-node clusters) in `catalog-store-sql`, and PostgreSQL gained journal partitioning (V4): PostgreSQL 152 suite tests, CockroachDB 148, YugabyteDB 145, none skipped.
+- **M2a done 2026-11-08.** The whole storage contract runs on CockroachDB v25.4 and YugabyteDB 2025.2 (three-node clusters) in `catalog-store-sql`, and PostgreSQL gained journal partitioning (V4): PostgreSQL 163 suite tests, CockroachDB 159, YugabyteDB 156, none skipped, M2b's follow-up suite tests included.
   - 36 of 39 bite runs bite. Three do not: the piece width is never read, the test cluster's nodes share one clock, and YugabyteDB's default collation is already C.
   - Main findings:
     - A COMMIT stalled by a lost quorum can be lost on both, so the shared suite gained `stalledCommitCanBeLost()` (additive; every backend passes).
