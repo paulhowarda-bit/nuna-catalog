@@ -1,5 +1,8 @@
 package fidice.catalog.store.mongo;
 
+import static fidice.catalog.store.mongo.Docs.keyFilter;
+import static fidice.catalog.store.mongo.Docs.uuid;
+
 import com.mongodb.ClientSessionOptions;
 import com.mongodb.MongoException;
 import com.mongodb.ReadConcern;
@@ -11,74 +14,87 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.UpdateOptions;
-import com.mongodb.client.result.UpdateResult;
+import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CatalogRecord;
+import fidice.catalog.store.CatalogSettings;
+import fidice.catalog.store.CatalogStore;
+import fidice.catalog.store.Change;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitLookup;
-import fidice.catalog.store.CommitOutcomeUnknownException;
 import fidice.catalog.store.CommitResult;
-import fidice.catalog.store.CommitStore;
+import fidice.catalog.store.GovernanceAttribute;
+import fidice.catalog.store.Grant;
+import fidice.catalog.store.GrantRecord;
+import fidice.catalog.store.IdempotencyClaim;
 import fidice.catalog.store.IdempotencyResult;
+import fidice.catalog.store.JournalRecord;
+import fidice.catalog.store.KeyState;
+import fidice.catalog.store.LegalHold;
+import fidice.catalog.store.Name;
+import fidice.catalog.store.NamespaceRecord;
+import fidice.catalog.store.ObjectCreation;
+import fidice.catalog.store.OutboxBatch;
+import fidice.catalog.store.Page;
+import fidice.catalog.store.PageRequest;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
-import fidice.catalog.store.PointerSwap;
 import fidice.catalog.store.SafetyFinding;
+import fidice.catalog.store.SchemaVersion;
+import fidice.catalog.store.Securable;
+import fidice.catalog.store.StorageProfile;
 import fidice.catalog.store.StoreException;
-
+import fidice.catalog.store.TrustedEngine;
+import fidice.catalog.store.WriteResult;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
-import org.bson.BsonBinary;
+import java.util.function.Supplier;
 import org.bson.BsonBoolean;
-import org.bson.BsonDateTime;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
 import org.bson.BsonInt64;
-import org.bson.BsonNull;
 import org.bson.BsonString;
 import org.bson.BsonValue;
-import org.bson.UuidRepresentation;
-
-import static com.mongodb.MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL;
+import org.bson.types.ObjectId;
 
 /**
  * MongoDB implementation (D7): multi-document transactions with snapshot reads and majority
- * writes on the primary. M1 implements the commit core (docs/storage-design.md sections 4, 5.3
- * and 7).
+ * writes on the primary, for the whole storage contract (docs/storage-design.md sections 4, 5.3,
+ * 7 and 9). Reads outside a transaction use majority read concern; reads that must see one
+ * point in time use a snapshot session.
  *
  * <p>The caller's client must reach a replica set and sets the socket timeout that bounds every
  * wait. Its retryWrites setting does not matter: the driver never retries a write inside a
  * transaction, and it resends commitTransaction once per call whatever the setting says.
  * The catalog role needs {@code clusterMonitor} for the self-check and findCommit.
  */
-public final class MongoCatalogStore implements CommitStore {
+public final class MongoCatalogStore implements CatalogStore {
 
     static final String CATALOG = "catalog";
     static final String POINTER = "pointer";
+    static final String PROJECTION_PIECE = "projection_piece";
     static final String JOURNAL = "journal";
     static final String OUTBOX = "outbox";
+    static final String OUTBOX_RELAY = "outbox_relay";
     static final String IDEMPOTENCY = "idempotency";
     static final String DURABILITY_BARRIER = "durability_barrier";
+    static final String NAMESPACE = "namespace";
+    static final String OBJECT = "catalog_object";
+    static final String GRANT = "grant";
+    static final String STORAGE_PROFILE = "storage_profile";
+    static final String ATTRIBUTE = "governance_attribute";
+    static final String HOLD = "legal_hold";
+    static final String ENGINE = "trusted_engine";
 
-    /**
-     * Attempts of commitTransaction on the same session while the answer is
-     * UnknownTransactionCommitResult. The driver resends commitTransaction once by itself within
-     * each attempt, whatever retryWrites says.
-     */
-    static final int COMMIT_ATTEMPTS = 3;
-    /** How long a commit keeps retrying while a concurrent transaction holds one of its pointers. */
-    private static final Duration WRITE_CONFLICT_BUDGET = Duration.ofSeconds(10);
-    private static final int WRITE_CONFLICT = 112;
-    private static final TransactionOptions TRANSACTION = TransactionOptions.builder()
-            .readConcern(ReadConcern.SNAPSHOT)
-            .writeConcern(WriteConcern.MAJORITY)
-            .readPreference(ReadPreference.primary())
-            .build();
+    /** Projections longer than this are stored in pieces (section 7). */
+    public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
+
     /**
      * The findCommit marker is always aborted. Its abort uses w:1 because an abort with w:majority
      * waits for the newest write on the primary to replicate, which would hide whether the
@@ -92,7 +108,13 @@ public final class MongoCatalogStore implements CommitStore {
 
     private final MongoClient client;
     private final MongoDatabase database;
-    private final CommitHook commitHook;
+    private final Transactions transactions;
+    private final MongoNamespaces namespaces;
+    private final MongoObjects objects;
+    private final MongoGrants grants;
+    private final MongoIdempotency idempotency;
+    private final MongoOutbox outbox;
+    private final MongoGovernance governance;
 
     public MongoCatalogStore(MongoClient client, String databaseName) {
         this(client, databaseName, CommitHook.NONE);
@@ -100,164 +122,56 @@ public final class MongoCatalogStore implements CommitStore {
 
     /** {@code commitHook} is a test seam called just before each commitTransaction is sent. */
     public MongoCatalogStore(MongoClient client, String databaseName, CommitHook commitHook) {
+        this(client, databaseName, commitHook, ObjectId::new, PIECE_BYTES);
+    }
+
+    /**
+     * Test seams: {@code entryIds} are the ids of outbox entries, which break ties of the Lamport
+     * clock; {@code pieceBytes} is the piece budget, so a race over pieces can use small ones.
+     */
+    MongoCatalogStore(MongoClient client, String databaseName, CommitHook commitHook, Supplier<ObjectId> entryIds,
+            int pieceBytes) {
         this.client = client;
         this.database = client.getDatabase(databaseName)
                 .withReadPreference(ReadPreference.primary())
                 .withReadConcern(ReadConcern.MAJORITY)
                 .withWriteConcern(WriteConcern.MAJORITY);
-        this.commitHook = commitHook;
+        this.transactions = new Transactions(client, database, commitHook, entryIds, pieceBytes);
+        this.namespaces = new MongoNamespaces(transactions);
+        this.objects = new MongoObjects(transactions);
+        this.grants = new MongoGrants(transactions);
+        this.idempotency = new MongoIdempotency(transactions);
+        this.outbox = new MongoOutbox(transactions);
+        this.governance = new MongoGovernance(transactions);
     }
+
+    // ---- commit core (sections 4, 5.3 and 7) ----
 
     @Override
     public Optional<CatalogRecord> findCatalog(String normalizedName) {
-        try {
-            BsonDocument found = collection(CATALOG).find(new BsonDocument("nameNorm", new BsonString(normalizedName))).first();
-            return Optional.ofNullable(found).map(doc -> new CatalogRecord(uuid(doc.get("_id")),
-                    doc.getString("nameNorm").getValue(), doc.getString("name").getValue()));
-        } catch (MongoException e) {
-            throw new StoreException("catalog lookup failed", e);
-        }
+        return transactions.read("catalog lookup", () -> Optional.ofNullable(collection(CATALOG)
+                        .find(new BsonDocument("nameNorm", new BsonString(normalizedName))).first())
+                .map(doc -> new CatalogRecord(uuid(doc.get("_id")), doc.getString("nameNorm").getValue(),
+                        doc.getString("name").getValue())));
     }
 
+    /** Read in a snapshot session, so a projection in pieces is reassembled from one version. */
     @Override
     public Optional<Pointer> readPointer(PointerKey key) {
-        try {
-            return Optional.ofNullable(collection(POINTER).find(keyFilter(key)).first()).map(MongoCatalogStore::pointer);
-        } catch (MongoException e) {
-            throw new StoreException("pointer read failed for " + key, e);
-        }
+        return transactions.snapshot("pointer read for " + key, session -> Pointers.read(database, session, key));
     }
 
     @Override
     public CommitResult commit(CommitBatch batch) {
-        try (ClientSession session = client.startSession()) {
-            Optional<CommitResult.Conflict> conflict = writeInTransaction(session, batch);
+        return transactions.write(batch.commitId(), "commit " + batch.commitId(), tx -> {
+            Pointers.see(tx, batch);
+            Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
             if (conflict.isPresent()) {
                 return conflict.get();
             }
-            commitHook.beforeCommit(batch.commitId());
-            commitTransaction(session, batch.commitId());
+            Pointers.records(tx, batch, transactions.entryIds());
             return new CommitResult.Committed(batch.commitId());
-        }
-    }
-
-    /**
-     * Opens a transaction and writes the whole batch, leaving it open for commitTransaction; or
-     * aborts it and returns the conflict. A write conflict with a concurrent transaction aborts
-     * this one before anything is sent to commit, so the batch is retried on a fresh snapshot.
-     */
-    private Optional<CommitResult.Conflict> writeInTransaction(ClientSession session, CommitBatch batch) {
-        long deadline = System.nanoTime() + WRITE_CONFLICT_BUDGET.toNanos();
-        for (int attempt = 0; ; attempt++) {
-            session.startTransaction(TRANSACTION);
-            try {
-                Optional<CommitResult.Conflict> conflict = swapPointers(session, batch);
-                if (conflict.isPresent()) {
-                    session.abortTransaction();
-                    return conflict;
-                }
-                writeRecords(session, batch);
-                return Optional.empty();
-            } catch (MongoException e) {
-                session.abortTransaction();
-                if (e.getCode() != WRITE_CONFLICT || System.nanoTime() > deadline) {
-                    throw new StoreException("commit " + batch.commitId() + " failed before COMMIT was sent", e);
-                }
-                backOff(attempt);
-            }
-        }
-    }
-
-    /**
-     * Compares and writes every pointer in key order. Each write is conditional on the expected
-     * pointer, so it is the compare and the lock at once; a create inserts only if no pointer
-     * exists. When nothing matched, the transaction's snapshot shows what is there instead.
-     */
-    private Optional<CommitResult.Conflict> swapPointers(ClientSession session, CommitBatch batch) {
-        MongoCollection<BsonDocument> pointers = collection(POINTER);
-        for (PointerSwap swap : batch.swaps()) {
-            BsonDocument next = pointerFields(swap.next(), batch.commitId(), batch.committedAt());
-            if (swap.expected().isEmpty()) {
-                UpdateResult created = pointers.updateOne(session, keyFilter(swap.key()),
-                        new BsonDocument("$setOnInsert", next), new UpdateOptions().upsert(true));
-                if (created.getUpsertedId() != null) {
-                    continue;
-                }
-            } else {
-                Pointer expected = swap.expected().get();
-                BsonDocument filter = keyFilter(swap.key())
-                        .append("version", new BsonInt64(expected.version()))
-                        .append("metadataLocation", new BsonString(expected.metadataLocation()));
-                if (pointers.updateOne(session, filter, new BsonDocument("$set", next)).getMatchedCount() == 1) {
-                    continue;
-                }
-            }
-            Optional<Pointer> actual = Optional.ofNullable(pointers.find(session, keyFilter(swap.key())).first())
-                    .map(MongoCatalogStore::pointer);
-            return Optional.of(new CommitResult.Conflict(swap.key(), actual));
-        }
-        return Optional.empty();
-    }
-
-    private void writeRecords(ClientSession session, CommitBatch batch) {
-        BsonBinary commitId = uuid(batch.commitId());
-        BsonDateTime committedAt = time(batch.committedAt());
-        List<BsonDocument> journal = new ArrayList<>();
-        for (PointerSwap swap : batch.swaps()) {
-            journal.add(new BsonDocument("commitId", commitId)
-                    .append("objectId", uuid(swap.key().objectId()))
-                    .append("branch", new BsonString(swap.key().branch()))
-                    .append("committedAt", committedAt)
-                    .append("principal", new BsonString(swap.journal().principal()))
-                    .append("endUser", text(swap.journal().endUser()))
-                    .append("engine", text(swap.journal().engine()))
-                    .append("requirements", new BsonString(swap.journal().requirementsJson()))
-                    .append("updates", new BsonString(swap.journal().updatesJson()))
-                    .append("oldLocation", text(swap.expected().map(Pointer::metadataLocation).orElse(null)))
-                    .append("newLocation", new BsonString(swap.next().metadataLocation()))
-                    .append("oldVersion", swap.expected().<BsonValue>map(p -> new BsonInt64(p.version())).orElse(BsonNull.VALUE))
-                    .append("newVersion", new BsonInt64(swap.next().version())));
-        }
-        collection(JOURNAL).insertMany(session, journal);
-        List<BsonDocument> outbox = new ArrayList<>();
-        for (int position = 0; position < batch.outbox().size(); position++) {
-            outbox.add(new BsonDocument("commitId", commitId)
-                    .append("position", new BsonInt32(position))
-                    .append("createdAt", committedAt)
-                    .append("type", new BsonString(batch.outbox().get(position).type()))
-                    .append("payload", new BsonString(batch.outbox().get(position).payloadJson())));
-        }
-        if (!outbox.isEmpty()) {
-            collection(OUTBOX).insertMany(session, outbox);
-        }
-        if (batch.idempotency().isPresent()) {
-            IdempotencyResult result = batch.idempotency().get();
-            collection(IDEMPOTENCY).insertOne(session, new BsonDocument("key", new BsonString(result.key()))
-                    .append("principal", new BsonString(result.principal()))
-                    .append("requestHash", new BsonString(result.requestHash()))
-                    .append("status", new BsonInt32(result.status()))
-                    .append("body", new BsonString(result.body()))
-                    .append("expiresAt", time(result.expiresAt())));
-        }
-    }
-
-    /**
-     * Sends commitTransaction, and sends it again on the same session while the answer is
-     * UnknownTransactionCommitResult: the server applies a transaction's commit at most once
-     * (5.3 step 1). The body is never replayed, so a commit that landed can never come back as a
-     * conflict.
-     */
-    private static void commitTransaction(ClientSession session, UUID commitId) {
-        for (int attempt = 1; ; attempt++) {
-            try {
-                session.commitTransaction();
-                return;
-            } catch (MongoException e) {
-                if (attempt == COMMIT_ATTEMPTS || !e.hasErrorLabel(UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL)) {
-                    throw new CommitOutcomeUnknownException(commitId, e);
-                }
-            }
-        }
+        }, result -> result instanceof CommitResult.Committed);
     }
 
     @Override
@@ -300,13 +214,13 @@ public final class MongoCatalogStore implements CommitStore {
                 collection(POINTER).updateOne(session, keyFilter(key), marker, new UpdateOptions().upsert(true));
                 return;
             } catch (MongoException e) {
-                if (e.getCode() != WRITE_CONFLICT || System.nanoTime() > deadline) {
+                if (e.getCode() != Transactions.WRITE_CONFLICT || System.nanoTime() > deadline) {
                     throw e;
                 }
             } finally {
                 session.abortTransaction();
             }
-            backOff(attempt);
+            Transactions.backOff(attempt);
         }
     }
 
@@ -357,52 +271,252 @@ public final class MongoCatalogStore implements CommitStore {
         }
     }
 
+    @Override
+    public SchemaVersion schemaVersion() {
+        return transactions.read("schema version read", () -> {
+            BsonDocument schema = collection(MongoSchema.SCHEMA_VERSION).find(new BsonDocument("_id", new BsonString("schema"))).first();
+            if (schema == null) {
+                return new SchemaVersion(0, "empty");
+            }
+            int version = schema.getInt32("version").getValue();
+            String description = schema.getArray("applied").stream().map(BsonValue::asDocument)
+                    .filter(applied -> applied.getInt32("version").getValue() == version)
+                    .map(applied -> applied.getString("description").getValue())
+                    .findFirst().orElse("");
+            return new SchemaVersion(version, description);
+        });
+    }
+
     private MongoCollection<BsonDocument> collection(String name) {
         return database.getCollection(name, BsonDocument.class);
     }
 
-    private static void backOff(int attempt) {
-        try {
-            Thread.sleep(ThreadLocalRandom.current().nextLong(1, 2L << Math.min(attempt, 6)));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new StoreException("interrupted while waiting out a write conflict", e);
-        }
+    // ---- namespaces ----
+
+    @Override
+    public WriteResult createNamespace(NamespaceRecord namespace, Change change) {
+        return namespaces.create(namespace, change);
     }
 
-    // ---- documents ----
-
-    static BsonDocument keyFilter(PointerKey key) {
-        return new BsonDocument("objectId", uuid(key.objectId())).append("branch", new BsonString(key.branch()));
+    @Override
+    public Optional<NamespaceRecord> findNamespace(UUID catalogId, List<String> normalizedPath) {
+        return namespaces.find(catalogId, normalizedPath);
     }
 
-    static Pointer pointer(BsonDocument doc) {
-        return new Pointer(doc.getString("metadataLocation").getValue(), doc.getInt64("version").getValue(),
-                doc.getString("sha256").getValue(), doc.getBinary("projection").getData());
+    @Override
+    public Optional<NamespaceRecord> readNamespace(UUID namespaceId) {
+        return namespaces.read(namespaceId);
     }
 
-    private static BsonDocument pointerFields(Pointer pointer, UUID commitId, Instant committedAt) {
-        return new BsonDocument("metadataLocation", new BsonString(pointer.metadataLocation()))
-                .append("version", new BsonInt64(pointer.version()))
-                .append("sha256", new BsonString(pointer.sha256()))
-                .append("projection", new BsonBinary(pointer.projection()))
-                .append("lastCommitId", uuid(commitId))
-                .append("updatedAt", time(committedAt));
+    @Override
+    public Page<NamespaceRecord> listNamespaces(UUID parentId, PageRequest page) {
+        return namespaces.list(parentId, page);
     }
 
-    static BsonBinary uuid(UUID id) {
-        return new BsonBinary(id, UuidRepresentation.STANDARD);
+    @Override
+    public WriteResult updateNamespaceProperties(UUID namespaceId, long expectedVersion, Map<String, String> properties,
+                                                 Change change) {
+        return namespaces.updateProperties(namespaceId, expectedVersion, properties, change);
     }
 
-    static UUID uuid(BsonValue value) {
-        return value.asBinary().asUuid(UuidRepresentation.STANDARD);
+    @Override
+    public WriteResult dropNamespace(UUID namespaceId, Change change) {
+        return namespaces.drop(namespaceId, change);
     }
 
-    private static BsonDateTime time(Instant instant) {
-        return new BsonDateTime(instant.toEpochMilli());
+    // ---- objects ----
+
+    @Override
+    public WriteResult createObject(ObjectCreation creation) {
+        return objects.create(creation);
     }
 
-    private static BsonValue text(String value) {
-        return value == null ? BsonNull.VALUE : new BsonString(value);
+    @Override
+    public Optional<CatalogObject> findObject(UUID namespaceId, String normalizedName) {
+        return objects.find(namespaceId, normalizedName);
+    }
+
+    @Override
+    public Optional<CatalogObject> readObject(UUID objectId) {
+        return objects.read(objectId);
+    }
+
+    @Override
+    public Page<CatalogObject> listObjects(UUID namespaceId, CatalogObject.Kind kind, CatalogObject.State state,
+                                           PageRequest page) {
+        return objects.list(namespaceId, kind, state, page);
+    }
+
+    @Override
+    public WriteResult renameObject(UUID objectId, UUID namespaceId, Name name, Change change) {
+        return objects.rename(objectId, namespaceId, name, change);
+    }
+
+    @Override
+    public WriteResult dropObject(UUID objectId, Instant purgeAfter, Change change) {
+        return objects.drop(objectId, purgeAfter, change);
+    }
+
+    @Override
+    public WriteResult undropObject(UUID objectId, UUID namespaceId, Name name, Change change) {
+        return objects.undrop(objectId, namespaceId, name, change);
+    }
+
+    @Override
+    public Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page) {
+        return objects.listPurgeEligible(now, page);
+    }
+
+    @Override
+    public WriteResult purgeObject(UUID objectId, Change change) {
+        return objects.purge(objectId, change);
+    }
+
+    // ---- grants ----
+
+    @Override
+    public WriteResult putGrant(Grant grant, String grantedBy, Change change) {
+        return grants.put(grant, grantedBy, change);
+    }
+
+    @Override
+    public WriteResult revokeGrant(Grant grant, Change change) {
+        return grants.revoke(grant, change);
+    }
+
+    @Override
+    public List<GrantRecord> grantsFor(Set<Securable> securables, Set<String> groups) {
+        return grants.grantsFor(securables, groups);
+    }
+
+    @Override
+    public Page<GrantRecord> listGrantsOfGroups(UUID catalogId, Set<String> groups, PageRequest page) {
+        return grants.listOfGroups(catalogId, groups, page);
+    }
+
+    @Override
+    public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
+        return grants.listOn(securable, page);
+    }
+
+    // ---- idempotency ----
+
+    @Override
+    public KeyState claimKey(IdempotencyClaim claim) {
+        return idempotency.claim(claim);
+    }
+
+    @Override
+    public KeyState readKey(String key, Instant now) {
+        return idempotency.read(key, now);
+    }
+
+    @Override
+    public KeyState awaitKey(String key, Duration limit) {
+        return idempotency.await(key, limit);
+    }
+
+    @Override
+    public WriteResult completeKey(IdempotencyResult result, UUID changeId) {
+        return idempotency.complete(result, changeId);
+    }
+
+    @Override
+    public WriteResult releaseKey(String key, UUID changeId) {
+        return idempotency.release(key, changeId);
+    }
+
+    @Override
+    public int expireKeys(Instant now, int limit) {
+        return idempotency.expire(now, limit);
+    }
+
+    // ---- outbox and journal ----
+
+    @Override
+    public Optional<OutboxBatch> claimOutbox(UUID relayId, Instant now, Duration lease, int limit) {
+        return outbox.claim(relayId, now, lease, limit);
+    }
+
+    @Override
+    public WriteResult markRelayed(UUID relayId, List<String> entryIds, Instant now) {
+        return outbox.markRelayed(relayId, entryIds, now);
+    }
+
+    @Override
+    public Page<JournalRecord> readJournal(PointerKey key, Instant from, Instant to, PageRequest page) {
+        return outbox.readJournal(key, from, to, page);
+    }
+
+    // ---- governance ----
+
+    @Override
+    public WriteResult createCatalog(CatalogRecord catalog, CatalogSettings settings, Change change) {
+        return governance.createCatalog(catalog, settings, change);
+    }
+
+    @Override
+    public Optional<CatalogSettings> catalogSettings(UUID catalogId) {
+        return governance.catalogSettings(catalogId);
+    }
+
+    @Override
+    public WriteResult putStorageProfile(StorageProfile profile, Change change) {
+        return governance.putStorageProfile(profile, change);
+    }
+
+    @Override
+    public Optional<StorageProfile> readStorageProfile(UUID profileId) {
+        return governance.readStorageProfile(profileId);
+    }
+
+    @Override
+    public WriteResult putAttribute(GovernanceAttribute attribute, Change change) {
+        return governance.putAttribute(attribute, change);
+    }
+
+    @Override
+    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, Change change) {
+        return governance.removeAttribute(target, kind, change);
+    }
+
+    @Override
+    public List<GovernanceAttribute> attributesOf(Set<Securable> targets) {
+        return governance.attributesOf(targets);
+    }
+
+    @Override
+    public WriteResult placeHold(LegalHold hold, Change change) {
+        return governance.placeHold(hold, change);
+    }
+
+    @Override
+    public WriteResult releaseHold(UUID holdId, Change change) {
+        return governance.releaseHold(holdId, change);
+    }
+
+    @Override
+    public List<LegalHold> holdsOn(Set<Securable> targets) {
+        return governance.holdsOn(targets);
+    }
+
+    @Override
+    public WriteResult putTrustedEngine(TrustedEngine engine, Change change) {
+        return governance.putTrustedEngine(engine, change);
+    }
+
+    @Override
+    public WriteResult removeTrustedEngine(String issuer, String clientId, Change change) {
+        return governance.removeTrustedEngine(issuer, clientId, change);
+    }
+
+    @Override
+    public Optional<TrustedEngine> findTrustedEngine(String issuer, String clientId) {
+        return governance.findTrustedEngine(issuer, clientId);
+    }
+
+    @Override
+    public List<TrustedEngine> listTrustedEngines() {
+        return governance.listTrustedEngines();
     }
 }

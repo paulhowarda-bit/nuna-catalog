@@ -4,8 +4,9 @@ import static fidice.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static fidice.catalog.store.mongo.MongoCatalogStore.JOURNAL;
 import static fidice.catalog.store.mongo.MongoCatalogStore.OUTBOX;
 import static fidice.catalog.store.mongo.MongoCatalogStore.POINTER;
-import static fidice.catalog.store.mongo.MongoCatalogStore.keyFilter;
-import static fidice.catalog.store.mongo.MongoCatalogStore.uuid;
+import static fidice.catalog.store.mongo.Docs.keyFilter;
+import static fidice.catalog.store.mongo.Docs.uuid;
+import static fidice.catalog.store.mongo.MongoCatalogStore.PROJECTION_PIECE;
 
 import com.github.dockerjava.api.model.ExposedPort;
 import com.mongodb.ConnectionString;
@@ -21,14 +22,17 @@ import com.mongodb.client.MongoDatabase;
 import eu.rekawek.toxiproxy.Proxy;
 import eu.rekawek.toxiproxy.ToxiproxyClient;
 import eu.rekawek.toxiproxy.model.ToxicDirection;
+import fidice.catalog.store.CatalogStore;
+import fidice.catalog.store.Change;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitStore;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerKey;
 import fidice.catalog.store.SafetyFinding;
+import fidice.catalog.store.suite.CatalogStoreUnderTest;
 import fidice.catalog.store.suite.Faults;
-import fidice.catalog.store.suite.StoreUnderTest;
+
 import fidice.catalog.store.suite.UnsafeSetting;
 import fidice.catalog.store.suite.WrittenRows;
 import java.io.IOException;
@@ -46,6 +50,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import org.bson.BsonArray;
 import org.bson.BsonBoolean;
 import org.bson.BsonDocument;
@@ -53,6 +58,7 @@ import org.bson.BsonInt32;
 import org.bson.BsonInt64;
 import org.bson.BsonString;
 import org.bson.BsonValue;
+import org.bson.types.ObjectId;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -73,7 +79,7 @@ import org.testcontainers.utility.DockerImageName;
  * {@code mongo-b:P} directly. Every byte between the stores and the set crosses Toxiproxy, the
  * driver finds a new primary by itself after failover, and replication never crosses the link.
  */
-final class MongoReplicaSet implements StoreUnderTest, Faults {
+final class MongoReplicaSet implements CatalogStoreUnderTest, Faults {
 
     static final String DATABASE = "catalog";
     /** The stores' socket timeout: a lost answer fails the client quickly; it does not stop the server's commit. */
@@ -94,6 +100,8 @@ final class MongoReplicaSet implements StoreUnderTest, Faults {
     private final MongoClient linkClient;
 
     private final Set<Member> stalled = new LinkedHashSet<>();
+    private int upgrades;
+    private int freshDatabases;
     private Member applyStopped;
     private Member killed;
 
@@ -219,8 +227,13 @@ final class MongoReplicaSet implements StoreUnderTest, Faults {
         }, "the stores' client to reach the primary through the proxies");
     }
 
+    /**
+     * A 1 GB cache: the size suite commits a projection five piece budgets long (40 MiB) in one
+     * transaction, and the server refuses a transaction that dirties more than about 15% of its
+     * cache (TransactionTooLargeForCache), which a 0.25 GB cache would.
+     */
     private String[] mongod(String... extra) {
-        List<String> command = new ArrayList<>(List.of("mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "0.25",
+        List<String> command = new ArrayList<>(List.of("mongod", "--bind_ip_all", "--wiredTigerCacheSizeGB", "1",
                 "--setParameter", "enableTestCommands=1"));
         command.addAll(List.of(extra));
         return command.toArray(String[]::new);
@@ -260,14 +273,73 @@ final class MongoReplicaSet implements StoreUnderTest, Faults {
     // ---- StoreUnderTest ----
 
     @Override
-    public CommitStore store(CommitHook hook) {
+    public CatalogStore store(CommitHook hook) {
         return new MongoCatalogStore(linkClient, DATABASE, hook);
+    }
+
+    /** A store on {@code database} whose outbox entry ids come from {@code entryIds}, as from a process with another clock. */
+    CatalogStore store(String database, Supplier<ObjectId> entryIds) {
+        return new MongoCatalogStore(linkClient, database, CommitHook.NONE, entryIds, MongoCatalogStore.PIECE_BYTES);
+    }
+
+    /** A node of the previous release on the suite's database. */
+    PreviousReleaseStore previousRelease() {
+        return new PreviousReleaseStore(linkClient, DATABASE);
+    }
+
+    /** A store whose projections are split into pieces of {@code pieceBytes}. */
+    CatalogStore store(int pieceBytes) {
+        return new MongoCatalogStore(linkClient, DATABASE, CommitHook.NONE, ObjectId::new, pieceBytes);
+    }
+
+    /** A new database at the current schema, for a test that must see only its own outbox. */
+    String freshDatabase() {
+        String database = "fresh_" + ++freshDatabases;
+        new MongoCatalogStore(linkClient, database).migrate();
+        return database;
+    }
+
+    /** Whether the key's record holds an answer on the primary, read locally: written there, not necessarily on a majority. */
+    boolean doneOnPrimary(String key) {
+        BsonDocument record = primary().direct.getDatabase(DATABASE).getCollection(IDEMPOTENCY, BsonDocument.class)
+                .withReadConcern(ReadConcern.LOCAL).find(new BsonDocument("key", new BsonString(key))).first();
+        return record != null && record.containsKey("status");
     }
 
     /** The store keeps nothing in memory about its commits, so another process is another store on the link. */
     @Override
-    public CommitStore storeOfAnotherProcess() {
+    public CatalogStore storeOfAnotherProcess() {
         return new MongoCatalogStore(linkClient, DATABASE);
+    }
+
+    /** Outbox entries of the change, and its idempotency result if the key's record holds it. */
+    @Override
+    public WrittenRows changeRows(Change change) {
+        var database = primary().direct.getDatabase(DATABASE);
+        int outbox = (int) database.getCollection(OUTBOX).countDocuments(new BsonDocument("commitId", uuid(change.id())));
+        int idempotency = (int) database.getCollection(IDEMPOTENCY).countDocuments(new BsonDocument("key",
+                        new BsonString(change.idempotency().map(result -> result.key()).orElse("")))
+                .append("changeId", uuid(change.id())).append("status", new BsonDocument("$exists", BsonBoolean.TRUE)));
+        return new WrittenRows(0, 0, outbox, idempotency);
+    }
+
+    @Override
+    public int projectionPieceBytes() {
+        return MongoCatalogStore.PIECE_BYTES;
+    }
+
+    @Override
+    public int projectionPieces(PointerKey key) {
+        return 1 + (int) primary().direct.getDatabase(DATABASE).getCollection(PROJECTION_PIECE).countDocuments(keyFilter(key));
+    }
+
+    /** A fresh database at the previous release's schema version, reached through the link. */
+    @Override
+    public UpgradeTarget upgradeTarget() {
+        String database = "upgrade_" + ++upgrades;
+        PreviousReleaseStore previous = new PreviousReleaseStore(linkClient, database);
+        previous.migrate();
+        return new UpgradeTarget(PreviousReleaseStore.SCHEMA_VERSION, previous, new MongoCatalogStore(linkClient, database));
     }
 
     @Override
@@ -503,7 +575,8 @@ final class MongoReplicaSet implements StoreUnderTest, Faults {
     public Optional<Pointer> readPointerOnReplica(PointerKey key) {
         Member replica = applyStopped != null ? applyStopped : secondaries().getFirst();
         return Optional.ofNullable(replica.direct.getDatabase(DATABASE).getCollection(POINTER, BsonDocument.class)
-                .withReadPreference(ReadPreference.secondary()).find(keyFilter(key)).first()).map(MongoCatalogStore::pointer);
+                .withReadPreference(ReadPreference.secondary()).find(keyFilter(key)).first()).map(doc -> new Pointer(doc.getString("metadataLocation").getValue(),
+                doc.getInt64("version").getValue(), doc.getString("sha256").getValue(), doc.getBinary("projection").getData()));
     }
 
     @Override

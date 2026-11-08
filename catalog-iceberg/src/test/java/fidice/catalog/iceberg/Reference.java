@@ -99,6 +99,23 @@ final class Reference {
         }
     }
 
+    /** The reference outcome of a table commit against any base, registered at {@code baseLocation}. */
+    static Outcome commitTable(String baseJson, String baseLocation, String request) {
+        InMemoryCatalog catalog = new InMemoryCatalog();
+        catalog.initialize("reference", Map.of(CatalogProperties.WAREHOUSE_LOCATION, Golden.WAREHOUSE));
+        catalog.createNamespace(NS);
+        FILES.addFile(baseLocation, baseJson.getBytes(StandardCharsets.UTF_8));
+        catalog.registerTable(IDENT, baseLocation);
+        try {
+            return written(CatalogHandlers.updateTable(catalog, IDENT, UpdateTableRequestParser.fromJson(request))
+                    .tableMetadata().metadataFileLocation(), baseLocation);
+        } catch (CommitFailedException e) {
+            return new RequirementFailed(e.getMessage());
+        } catch (IllegalArgumentException | ValidationException e) {
+            return new BadRequest(e.getMessage());
+        }
+    }
+
     /**
      * The file the catalog now points at; the base itself means nothing was written. View metadata files
      * are gzip-compressed by default (write.metadata.compression-codec), so they are read through it.
