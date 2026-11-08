@@ -10,6 +10,12 @@
   </parent>
   <artifactId>catalog-audit</artifactId>
   <description>Outbox relay, Kafka publishing, change stream, archive.</description>
+
+  <properties>
+    <!-- Matches the kafka-clients version Boot 4.1.2 manages (4.2.2). -->
+    <kafka.image>apache/kafka:4.2.2</kafka.image>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>fidice</groupId>
@@ -19,5 +25,49 @@
       <groupId>fidice</groupId>
       <artifactId>catalog-store-api</artifactId>
     </dependency>
+    <!-- Jackson 3, Boot's default JSON stack; Iceberg's Jackson 2 stays inside catalog-iceberg (P5). -->
+    <dependency>
+      <groupId>tools.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.kafka</groupId>
+      <artifactId>kafka-clients</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-kafka</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-toxiproxy</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables>
+            <kafka.image>${kafka.image}</kafka.image>
+            <toxiproxy.image>${toxiproxy.image}</toxiproxy.image>
+          </systemPropertyVariables>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>
