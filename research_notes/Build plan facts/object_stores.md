@@ -87,6 +87,19 @@ A test that passes on either emulator proves nothing about the guardrail. The ch
 
 ---
 
+## F8. RustFS (checked 2026-11-07)
+
+Source: GitHub API (repo, releases) and a shallow clone of tag `1.0.4` (commit `46337942`), read in `scratchpad/rustfs_facts/`. Nothing was run.
+
+| # | Fact | Detail | Source | Status |
+|---|---|---|---|---|
+| 8.1 | Release state | 1.0.0 GA on 2026-09-16 after rc.4–rc.6; latest `1.0.4` on 2026-10-25. Apache-2.0, not archived, pushed 2026-11-08. | GitHub API | VERIFIED |
+| 8.2 | AssumeRole with inline session policy | `rustfs/src/admin/handlers/sts.rs` and `admin/service/session_policy.rs`. Session policy must parse and have `Version`; it is rejected above 2048 bytes. A request carrying a session token is denied, and temporary credentials or service accounts cannot call AssumeRole. DurationSeconds is clamped to at most 43200. | source | VERIFIED (source) |
+| 8.3 | Enforcement model | `crates/iam/src/sys.rs` `try_eval_prepared`, STS branch: `session_ok && (is_owner \|\| combined_policy.is_allowed(args))`, where `combined_policy` belongs to the parent user. This is **MinIO's model**: the calling user's policies intersected with the session policy, unlike the role-based model of AWS and Ceph. | source | VERIFIED (source) |
+| 8.4 | Derived-credential escalation guard | `rustfs/src/admin/handlers/user.rs` `add_user_targets_requester_parent` blocks an STS session or service account from rewriting its parent. That is the same class of bug as MinIO CVE-2025-62506, so it needs the same regression test. | source | VERIFIED (source). Not run |
+| 8.5 | SHA-256 checksums | `x-amz-checksum-sha256` / `ChecksumSHA256` handling exists in `rustfs/src/app/object/*` and the multipart path. Whether a mismatch is refused was not checked. | source | Present in source. Behaviour UNVERIFIED |
+| 8.6 | Self-described limits | README marks MinIO on-disk compatibility and S3 Tables as Preview. Topology rules "follow MinIO", and single-node single-drive deployments cannot expand. | README at 1.0.4 | VERIFIED |
+
 ## AWS SDK for Java v2
 
 | # | Fact | Value | Source | Status |
