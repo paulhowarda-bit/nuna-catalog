@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import fidice.catalog.core.commit.TableFiles;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -173,6 +174,23 @@ abstract class MetadataFilesContract {
         assertThatThrownBy(() -> files.read(location, sha256Hex(JSON), OnMismatch.FAIL))
                 .isInstanceOf(ObjectStoreException.class)
                 .hasMessageContaining(location);
+    }
+
+    @Test
+    @DisplayName("the commit engine's adapter writes where the catalog assigns and flags a changed file rather than refusing it")
+    void commitEngineAdapter() {
+        ProfileTableFiles adapter = new ProfileTableFiles(profile, files);
+        String table = adapter.newLocation(UUID.randomUUID());
+
+        TableFiles.Written written = adapter.write(table, 2, JSON);
+
+        assertThat(written.location()).startsWith(table + "/metadata/00002-");
+        assertThat(adapter.read(written.location(), written.sha256()))
+                .isEqualTo(new TableFiles.Read(JSON, sha256Hex(JSON), true));
+        String tampered = JSON.replace("\"format-version\":3", "\"format-version\":2");
+        directPut(written.location(), tampered);
+        assertThat(adapter.read(written.location(), written.sha256()))
+                .isEqualTo(new TableFiles.Read(tampered, sha256Hex(tampered), false));
     }
 
     private String newTable() {
