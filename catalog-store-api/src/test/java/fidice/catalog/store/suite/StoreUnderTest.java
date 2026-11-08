@@ -41,6 +41,16 @@ public interface StoreUnderTest extends AutoCloseable {
     /** Capability for suite test 5: the environment is durable enough for an empty self-check. */
     boolean hasSafeEnvironment();
 
+    /**
+     * Capability for suite test 3: a commit whose COMMIT was in flight while replication stalled
+     * may still be lost once replication resumes. On a Raft backend the lookup that finds the
+     * commit's transaction abandoned by its client may abort it (docs/storage-design.md sections 5.4
+     * and 5.5). findCommit's answer must still be final and agree with what the commit left behind.
+     */
+    default boolean stalledCommitCanBeLost() {
+        return false;
+    }
+
     /** Every finding code the backend's self-check can report (docs/storage-design.md section 7). */
     Set<String> findingCodes();
 

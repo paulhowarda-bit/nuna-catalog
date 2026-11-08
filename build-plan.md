@@ -335,4 +335,12 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - Interval partitioning creates each month's journal partition inside its first commit (0.5–2.6 s here). V5 adds a daily Scheduler job that creates this month's and the next two ahead.
     - `NLS_SORT` follows the JVM locale and breaks byte-ordered paging; a new self-check finding catches it.
   - Deviations and the suite gaps are in `docs/storage-design.md`.
+- **M2a done 2026-11-08.** The whole storage contract runs on CockroachDB v25.4 and YugabyteDB 2025.2 (three-node clusters) in `catalog-store-sql`, and PostgreSQL gained journal partitioning (V4): PostgreSQL 163 suite tests, CockroachDB 159, YugabyteDB 156, none skipped, M2b's follow-up suite tests included.
+  - 36 of 39 bite runs bite. Three do not: the piece width is never read, the test cluster's nodes share one clock, and YugabyteDB's default collation is already C.
+  - Main findings:
+    - A COMMIT stalled by a lost quorum can be lost on both, so the shared suite gained `stalledCommitCanBeLost()` (additive; every backend passes).
+    - An unlicensed CockroachDB cluster attaches a license notice to COMMIT, then fails statements after seven days.
+    - YugabyteDB schema steps run outside a transaction, with Flyway's session lock, so indexes build online.
+    - A yugabyted cluster needs deployment checks before it survives a node loss (every master known, no under-replicated tablet).
+  - Deviations 1–10 are in `docs/storage-design.md`.
 - **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.

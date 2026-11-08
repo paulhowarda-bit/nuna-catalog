@@ -42,6 +42,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -195,6 +196,29 @@ class PostgresStoreSuiteTest extends CommitSuite {
         KeyState done = new KeyState.Done(batch.idempotency().orElseThrow());
         assertThat(claim.get(60, TimeUnit.SECONDS)).isEqualTo(done);
         assertThat(read.get(60, TimeUnit.SECONDS)).isEqualTo(done);
+    }
+
+    @Test
+    @DisplayName("PostgreSQL 7 Size: the journal rolls over into monthly partitions, and a commit beyond the horizon"
+            + " moves into its month when the horizon is extended")
+    void journalRollsOver() {
+        DataSource database = postgres.freshDatabase();
+        new JournalRollOver(database, new SqlCatalogStore(database)).run();
+    }
+
+    @Test
+    @DisplayName("PostgreSQL: a write aborted as a deadlock before COMMIT (40P01) is rolled back and run again")
+    void deadlockVictimRunsAgain() throws Exception {
+        DeadlockRetry.run(postgres.freshDatabase());
+    }
+
+    @Test
+    @DisplayName("PostgreSQL 8 Names: names compare and sort as bytes, like COLLATE \"C\"")
+    void namesCompareAsBytes() {
+        DataSource database = postgres.freshDatabase();
+        SqlCatalogStore store = new SqlCatalogStore(database);
+        store.migrate();
+        ByteOrderNames.run(store);
     }
 
     private String awaitBackendWaitingForTheStandby() {

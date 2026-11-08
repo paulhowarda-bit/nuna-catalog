@@ -322,7 +322,14 @@ public abstract class CommitSuite {
         assertThat(lookup).as("findCommit must wait while the commit can still complete").isNotDone();
         faults.resumeReplication();
 
-        assertThat(lookup.get(60, TimeUnit.SECONDS)).isEqualTo(CommitLookup.COMMITTED);
+        CommitLookup answer = lookup.get(60, TimeUnit.SECONDS);
+        if (answer == CommitLookup.NOT_COMMITTED && underTest.stalledCommitCanBeLost()) {
+            assertThat(store.readPointer(key)).as("a lost commit stays lost").isEqualTo(base);
+            assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.NONE);
+            assertThat(store.findCommit(batch.commitId(), key)).isEqualTo(CommitLookup.NOT_COMMITTED);
+            return;
+        }
+        assertThat(answer).isEqualTo(CommitLookup.COMMITTED);
         assertThat(store.readPointer(key)).contains(next(batch));
     }
 

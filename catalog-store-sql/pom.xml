@@ -62,6 +62,8 @@
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
             <toxiproxy.image>${toxiproxy.image}</toxiproxy.image>
+            <cockroachdb.image>${cockroachdb.image}</cockroachdb.image>
+            <yugabytedb.image>${yugabytedb.image}</yugabytedb.image>
           </systemPropertyVariables>
         </configuration>
       </plugin>

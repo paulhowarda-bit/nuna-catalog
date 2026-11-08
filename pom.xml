@@ -47,6 +47,8 @@
     <aws-sdk.version>2.57.10</aws-sdk.version>
     <postgres.image>postgres:18</postgres.image>
     <toxiproxy.image>ghcr.io/shopify/toxiproxy:2.12.0</toxiproxy.image>
+    <cockroachdb.image>cockroachdb/cockroach:v25.4.20</cockroachdb.image>
+    <yugabytedb.image>yugabytedb/yugabyte:2025.2.8.1-b8</yugabytedb.image>
   </properties>
 
   <dependencyManagement>
