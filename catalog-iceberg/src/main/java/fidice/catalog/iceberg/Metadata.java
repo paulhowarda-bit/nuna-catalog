@@ -3,6 +3,7 @@ package fidice.catalog.iceberg;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
@@ -19,6 +20,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.apache.iceberg.EnvironmentContext;
 import org.apache.iceberg.MetadataUpdate.UpgradeFormatVersion;
@@ -77,10 +79,11 @@ public final class Metadata {
     /**
      * {@code POST .../tables}: a new table from a create-table request.
      *
-     * @param tableUuid       the catalog-assigned table UUID
-     * @param defaultLocation the table location when the request names none
+     * @param tableUuid the catalog-assigned table UUID
+     * @param location  the catalog-assigned table location; a location named in the request is ignored, so
+     *                  the response shows where the table really is (D28)
      */
-    public static Outcome createTable(String requestJson, String tableUuid, String defaultLocation) {
+    public static Outcome createTable(String requestJson, String tableUuid, String location) {
         return guarded(() -> {
             CreateTableRequest request = read(requestJson, CreateTableRequest.class);
             request.validate();
@@ -91,7 +94,7 @@ public final class Metadata {
                     request.schema(),
                     request.spec() != null ? request.spec() : PartitionSpec.unpartitioned(),
                     request.writeOrder() != null ? request.writeOrder() : SortOrder.unsorted(),
-                    request.location() != null ? request.location() : defaultLocation,
+                    location,
                     properties);
             return table(null, TableMetadata.buildFrom(created).assignUUID(tableUuid).build());
         });
@@ -145,10 +148,10 @@ public final class Metadata {
      * server's environment as its summary.
      *
      * @param viewUuid        the catalog-assigned view UUID
-     * @param defaultLocation the view location when the request names none
+     * @param location        the catalog-assigned view location; a location named in the request is ignored
      * @param timestampMillis the new version's timestamp
      */
-    public static Outcome createView(String requestJson, String viewUuid, String defaultLocation,
+    public static Outcome createView(String requestJson, String viewUuid, String location,
                                      long timestampMillis) {
         return guarded(() -> {
             CreateViewRequest request = read(requestJson, CreateViewRequest.class);
@@ -174,7 +177,7 @@ public final class Metadata {
             ViewMetadata created = ViewMetadata.builder()
                     .assignUUID(viewUuid)
                     .setProperties(new HashMap<>(request.properties()))
-                    .setLocation(request.location() != null ? request.location() : defaultLocation)
+                    .setLocation(location)
                     .setCurrentVersion(version, request.schema())
                     .build();
             return new NewMetadata(ViewMetadataParser.toJson(created), null, facts(created));
@@ -201,8 +204,30 @@ public final class Metadata {
             return new BadRequest("Table format version " + after.formatVersion()
                     + " is not supported; the highest is " + MAX_TABLE_FORMAT_VERSION);
         }
+        Optional<String> problem = Backstops.check(before, after);
+        if (problem.isPresent()) {
+            return new BadRequest(problem.get());
+        }
         return new NewMetadata(TableMetadataParser.toJson(after), before == null ? null : facts(before),
                 facts(after));
+    }
+
+    /** A commit request's requirements and updates, as the JSON arrays the client sent, for the journal. */
+    public record Journal(String requirementsJson, String updatesJson) {
+    }
+
+    /** Splits an update request that a commit method has already accepted into its journal parts. */
+    public static Journal journal(String updateRequestJson) {
+        try {
+            JsonNode request = REQUESTS.readTree(updateRequestJson);
+            return new Journal(arrayOrEmpty(request.get("requirements")), arrayOrEmpty(request.get("updates")));
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static String arrayOrEmpty(JsonNode node) {
+        return node == null || node.isNull() ? "[]" : node.toString();
     }
 
     private static TableFacts facts(TableMetadata metadata) {

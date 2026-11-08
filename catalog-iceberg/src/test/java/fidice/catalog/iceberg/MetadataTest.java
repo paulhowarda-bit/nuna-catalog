@@ -279,13 +279,34 @@ class MetadataTest {
         assertThat(after.snapshotTimestamps()).isEmpty();
     }
 
+    /** D28: the catalog assigns table and view locations; the RCK knows this as rck.overrides-requested-location. */
     @Test
-    void createTableKeepsARequestedLocation() {
+    void createPutsATableWhereTheCatalogSaysNotWhereTheRequestAsks() {
         String request = "{\"location\": \"s3://elsewhere/positions\", " + createTable("{}").substring(1);
 
         NewMetadata created = (NewMetadata) Metadata.createTable(request, UUID, LOCATION);
 
-        assertThat(created.after().location()).isEqualTo("s3://elsewhere/positions");
+        assertThat(created.after().location()).isEqualTo(LOCATION);
+        assertThat(created.json()).doesNotContain("elsewhere");
+    }
+
+    @Test
+    void createPutsAViewWhereTheCatalogSays() {
+        String request = "{\"location\": \"s3://elsewhere/v\", "
+                + createView("[{\"type\": \"sql\", \"sql\": \"select 1\", \"dialect\": \"spark\"}]").substring(1);
+
+        NewMetadata created = (NewMetadata) Metadata.createView(request, UUID, LOCATION, 0);
+
+        assertThat(created.after().location()).isEqualTo(LOCATION);
+    }
+
+    @Test
+    void theJournalHoldsTheRequirementsAndUpdatesAsSent() {
+        Metadata.Journal journal = Metadata.journal(stagedCreate(""));
+
+        assertThat(journal.requirementsJson()).isEqualTo("[{\"type\":\"assert-create\"}]");
+        assertThat(journal.updatesJson()).startsWith("[{\"action\":\"assign-uuid\",\"uuid\":\"" + UUID + "\"}");
+        assertThat(Metadata.journal("{}")).isEqualTo(new Metadata.Journal("[]", "[]"));
     }
 
     @Test
