@@ -4,6 +4,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -126,11 +127,13 @@ final class Sql {
         }
     }
 
-    /** Binds each parameter; a UUID binds as the store's RAW(16). */
+    /** Binds each parameter; a UUID binds as the store's RAW(16), null as a NULL. */
     private static void bind(PreparedStatement statement, Object... parameters) throws SQLException {
         for (int i = 0; i < parameters.length; i++) {
             if (parameters[i] instanceof UUID id) {
                 statement.setBytes(i + 1, OracleCatalogStore.raw(id));
+            } else if (parameters[i] == null) {
+                statement.setNull(i + 1, Types.VARCHAR);
             } else {
                 statement.setObject(i + 1, parameters[i]);
             }

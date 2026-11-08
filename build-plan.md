@@ -323,4 +323,10 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - M5 part: token validation in `catalog-security` and principal types in `catalog-core`, 46 tests, 28 bite runs.
   - M6 part: metadata file IO and location guardrails in `catalog-objectstore`, 156 tests, 19 bite runs.
   - M7 part: audit events, the Kafka publisher and the hash-chained archive in `catalog-audit`, 144 tests.
+- **M2b done 2026-11-08.** The whole storage contract runs on Oracle Free 23.26.3 in `catalog-store-oracle` (Flyway V3 and V4): 156 suite tests, 3 skipped by capability (no Data Guard on Free).
+  - 56 of 69 bite runs bite. Four that do not are explained by Oracle's behaviour (a rollback after a row lock waits for the redo; short previous-release transactions). Nine show checks no shared-suite test reaches.
+  - Main findings:
+    - Interval partitioning creates each month's journal partition inside its first commit (0.5–2.6 s here), so production needs a monthly pre-create job.
+    - `NLS_SORT` follows the JVM locale and breaks byte-ordered paging; a new self-check finding catches it.
+  - Deviations and the suite gaps are in `docs/storage-design.md`.
 - **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.
