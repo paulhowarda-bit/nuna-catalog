@@ -13,14 +13,14 @@ import java.sql.Statement;
 enum Backend {
 
     /** The shared steps, then the journal's partitioning. */
-    POSTGRESQL(new String[] {Locations.SHARED, "classpath:fidice/store/sql/postgresql"}, true, true),
+    POSTGRESQL(new String[] {Locations.SHARED, "classpath:fidice/store/sql/postgresql"}, true, true, true),
     /**
      * PostgreSQL's steps but not the journal's partitioning: on YugabyteDB the renames it needs
      * invalidate every open transaction, and its journal splits into tablets by itself (section 5.5).
      */
-    YUGABYTEDB(new String[] {Locations.SHARED}, false, false),
+    YUGABYTEDB(new String[] {Locations.SHARED}, false, false, false),
     /** Its own steps, in CockroachDB's dialect; its journal splits into ranges by itself. */
-    COCKROACHDB(new String[] {"classpath:fidice/store/sql/cockroachdb"}, false, false);
+    COCKROACHDB(new String[] {"classpath:fidice/store/sql/cockroachdb"}, false, false, false);
 
     private static final class Locations {
         /** Not a parent of the other locations: Flyway scans a location recursively. */
@@ -37,11 +37,21 @@ enum Backend {
     final boolean needsDurabilityBarrier;
     /** The journal is range-partitioned by month, and its horizon is extended ahead of time. */
     final boolean partitionsJournal;
+    /**
+     * A schema step runs in one transaction. CockroachDB and YugabyteDB commit each DDL statement
+     * by itself, so a transaction would undo nothing of a failed step; on YugabyteDB it would also
+     * build every index without online backfill, which is unsafe while the table takes writes.
+     * Without it, Flyway's lock must not hold a transaction open either: an online index build
+     * waits for every open transaction to end.
+     */
+    final boolean transactionalSchemaSteps;
 
-    Backend(String[] migrations, boolean needsDurabilityBarrier, boolean partitionsJournal) {
+    Backend(String[] migrations, boolean needsDurabilityBarrier, boolean partitionsJournal,
+            boolean transactionalSchemaSteps) {
         this.migrations = migrations;
         this.needsDurabilityBarrier = needsDurabilityBarrier;
         this.partitionsJournal = partitionsJournal;
+        this.transactionalSchemaSteps = transactionalSchemaSteps;
     }
 
     static Backend of(Connection connection) throws SQLException {

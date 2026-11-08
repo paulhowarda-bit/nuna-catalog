@@ -37,8 +37,9 @@ import org.flywaydb.core.api.FlywayException;
  * bdde131, unchanged except for this comment, its name, and its migrate(), which stops at the
  * previous release's schema version and takes its schema steps from where the backend keeps them
  * (M2a: CockroachDB has its own; M1 shipped for PostgreSQL only, so on CockroachDB and YugabyteDB
- * this store stands for the M1 code over that backend's V2, and takes a COMMIT warning as a
- * failure on PostgreSQL only, as the current release does).
+ * this store stands for the M1 code over that backend's V2, takes a COMMIT warning as a failure
+ * on PostgreSQL only, and retries 40001 and 40P01 before COMMIT on the other two, as the current
+ * release does).
  */
 final class PreviousReleaseStore implements CommitStore {
 
@@ -85,8 +86,27 @@ final class PreviousReleaseStore implements CommitStore {
         }
     }
 
+    /**
+     * M2a: no release without retries runs on CockroachDB or YugabyteDB, so there the stand-in
+     * runs a write again after 40001 or 40P01 before COMMIT, as the current release does. A schema
+     * step that changes a table aborts the open writes to it (YugabyteDB: "schema version
+     * mismatch").
+     */
     @Override
     public CommitResult commit(CommitBatch batch) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return commitOnce(batch);
+            } catch (StoreException e) {
+                if (backend == Backend.POSTGRESQL || attempt == Transactions.ATTEMPTS
+                        || !(e.getCause() instanceof SQLException cause) || !Transactions.retryable(cause)) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private CommitResult commitOnce(CommitBatch batch) {
         Connection connection;
         try {
             connection = dataSource.getConnection();

@@ -160,7 +160,14 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public void migrate() {
         try {
-            Flyway.configure().dataSource(maintenanceDataSource).locations(transactions.backend().migrations).load().migrate();
+            Backend backend = transactions.backend();
+            // Flyway's PostgreSQL lock otherwise holds a transaction open for the whole migration,
+            // and a YugabyteDB online index build waits for every open transaction to end.
+            Flyway.configure()
+                    .configuration(Map.of("flyway.postgresql.transactional.lock",
+                            String.valueOf(backend.transactionalSchemaSteps)))
+                    .dataSource(maintenanceDataSource).locations(backend.migrations)
+                    .executeInTransaction(backend.transactionalSchemaSteps).load().migrate();
         } catch (FlywayException e) {
             throw new StoreException("schema migration failed", e);
         }
