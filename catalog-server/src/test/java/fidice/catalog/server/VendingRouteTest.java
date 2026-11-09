@@ -5,12 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.jayway.jsonpath.JsonPath;
 import fidice.catalog.audit.CredentialIssue;
-import fidice.catalog.core.principal.Caller;
-import fidice.catalog.core.principal.Principal;
-import fidice.catalog.server.rest.Callers;
+import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.RestSettings;
 import fidice.catalog.server.storage.CatalogStorage;
-import fidice.catalog.server.storage.CredentialAudit;
 import fidice.catalog.server.storage.StorageSettings;
 import fidice.catalog.objectstore.StoreKind;
 import fidice.catalog.store.CatalogStore;
@@ -22,8 +19,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -37,6 +32,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ContextConfiguration;
 import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -48,44 +45,38 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * Real STS credentials through the REST routes (D21, D23, D14), on Silo: what a load vends, that the
  * credentials reach the table's prefix and nothing else, that every new set is audited before it is handed
  * out and nothing is handed out when the audit fails, the maintenance and delegation rules, and the 304 rule
- * with real expiry. Callers come from test headers until M5 validates tokens.
+ * with real expiry. Callers sign in with tokens from the local test issuer; {@code trino-prod} is registered
+ * as a trusted engine.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "fidice.storage.maintenance-principals=svc-maintenance")
-@Import({PostgresForTests.class, SiloForTests.class, VendingRouteTest.TestCallersAndAudit.class})
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
+        "fidice.storage.maintenance-principals=svc-maintenance",
+        "fidice.security.platform-operator-groups=platform-ops"})
+@ContextConfiguration(initializers = IssuerForTests.class)
+@Import({PostgresForTests.class, SiloForTests.class, VendingRouteTest.RecordingAudit.class})
 class VendingRouteTest {
 
     static final List<CredentialIssue> ISSUED = new CopyOnWriteArrayList<>();
     static final AtomicBoolean AUDIT_DOWN = new AtomicBoolean();
 
-    /** Callers named by headers, and an audit sink that records, or fails when told to. */
+    /** An audit publisher that records credential issues, or fails when told to. */
     @TestConfiguration
-    static class TestCallersAndAudit {
+    static class RecordingAudit {
 
         @Bean
         @Primary
-        Callers headerCallers() {
-            return request -> {
-                String principal = request.getHeader("X-Test-Principal");
-                if (principal == null) {
-                    return Callers.ANONYMOUS_CALLER;
-                }
-                return new Caller(new Principal(principal, Set.of()), "spark",
-                        "true".equals(request.getHeader("X-Test-Trusted")), Optional.empty());
-            };
-        }
-
-        @Bean
-        @Primary
-        CredentialAudit recordingAudit() {
-            return issue -> {
+        AuditPublisher recordingAudit() {
+            return event -> {
                 if (AUDIT_DOWN.get()) {
                     throw new IllegalStateException("audit broker unreachable");
                 }
-                ISSUED.add(issue);
+                if (event.data() instanceof CredentialIssue issue) {
+                    ISSUED.add(issue);
+                }
             };
         }
     }
+
+    private static final String TRUSTED_ENGINE = "trino-prod";
 
     private static final String TABLE = """
             {"name":"t","schema":{"type":"struct","schema-id":0,"fields":[
@@ -105,11 +96,19 @@ class VendingRouteTest {
     @Autowired
     private RestSettings rest;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
     private String namespace;
 
     @BeforeEach
     void freshNamespace() throws Exception {
         AUDIT_DOWN.set(false);
+        IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
+        HttpResponse<String> engine = request("PUT", "/management/v1/engines", """
+                {"issuer":"%s","client-id":"%s","end-user-claim":"oid","flags":[]}"""
+                .formatted(IssuerForTests.ISSUER, TRUSTED_ENGINE), IssuerForTests.bearer("ops", "platform-ops"));
+        assertThat(engine.statusCode()).as(engine.body()).isBetween(200, 204);
         namespace = "vend_" + UUID.randomUUID().toString().substring(0, 8);
         assertThat(send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", "alice").statusCode())
                 .isEqualTo(200);
@@ -205,15 +204,14 @@ class VendingRouteTest {
     void onlyTrustedEnginesMayDecline() throws Exception {
         createTable("t", "alice");
 
-        HttpResponse<String> trusted = send("GET", table("t"), null, "trino-svc", "X-Test-Trusted", "true",
-                "X-Iceberg-Access-Delegation", "none");
+        HttpResponse<String> trusted = send("GET", table("t"), null, TRUSTED, "X-Iceberg-Access-Delegation", "none");
         assertThat(trusted.statusCode()).isEqualTo(200);
         assertThat(trusted.body()).doesNotContain("s3.access-key-id").doesNotContain("storage-credentials\":[{");
 
         HttpResponse<String> untrusted = send("GET", table("t"), null, "dave", "X-Iceberg-Access-Delegation", "none");
         assertThat(JsonPath.<Map<String, String>>read(untrusted.body(), "$.config")).containsKey("s3.access-key-id");
 
-        HttpResponse<String> both = send("GET", table("t"), null, "trino-svc", "X-Test-Trusted", "true",
+        HttpResponse<String> both = send("GET", table("t"), null, TRUSTED,
                 "X-Iceberg-Access-Delegation", "vended-credentials,none");
         assertThat(JsonPath.<Map<String, String>>read(both.body(), "$.config")).containsKey("s3.access-key-id");
     }
@@ -298,12 +296,28 @@ class VendingRouteTest {
                 e -> assertThat(e.statusCode()).isEqualTo(403));
     }
 
+    /** The trusted engine's service principal, signing in through its registered client. */
+    private static final String TRUSTED = "svc-trino@" + TRUSTED_ENGINE;
+
+    /**
+     * A request to the {@code trading} catalog as {@code principal}, a user in the test group; a principal
+     * written {@code user@client} signs in through that client.
+     */
     private HttpResponse<String> send(String method, String path, String body, String principal, String... headers)
             throws Exception {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1/trading" + path))
+        String[] parts = principal.split("@", 2);
+        String token = parts.length == 2
+                ? IssuerForTests.sign(IssuerForTests.claims(parts[0], parts[1], IssuerForTests.GROUP).build())
+                : IssuerForTests.bearer(principal, IssuerForTests.GROUP);
+        return request(method, "/v1/trading" + path, body, token, headers);
+    }
+
+    private HttpResponse<String> request(String method, String path, String body, String token, String... headers)
+            throws Exception {
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofString(body))
-                .header("X-Test-Principal", principal);
+                .header("Authorization", token);
         if (body != null) {
             request.header("Content-Type", "application/json");
         }

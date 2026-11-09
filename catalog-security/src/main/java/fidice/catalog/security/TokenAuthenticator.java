@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -63,12 +64,12 @@ public final class TokenAuthenticator {
     /**
      * @param bearerToken     the token from the {@code Authorization} header, without its scheme
      * @param assertedEndUser the end user the caller says it acts for, when it says so
-     * @param trustedEngines  the trusted-engine registry
+     * @param registered      whether an engine is in the trusted-engine registry
      * @throws AuthenticationFailure 401 if the token is not accepted; 403 if its client asserts an
      *                               end user without being a registered trusted engine
      */
     public Caller authenticate(String bearerToken, Optional<Principal> assertedEndUser,
-                               Set<TrustedEngine> trustedEngines) {
+                               Predicate<TrustedEngine> registered) {
         Issuer issuer = issuerNamedBy(bearerToken);
         String iss = issuer.policy().issuer();
         Jwt jwt;
@@ -81,7 +82,7 @@ public final class TokenAuthenticator {
         ClaimMapping claims = issuer.policy().claims();
         Principal principal = new Principal(required(jwt, claims.userIdClaim(), iss), groups(jwt, claims.groupsClaim(), iss));
         String clientId = required(jwt, claims.clientIdClaim(), iss);
-        boolean trusted = trustedEngines.contains(new TrustedEngine(iss, clientId));
+        boolean trusted = registered.test(new TrustedEngine(iss, clientId));
         if (assertedEndUser.isPresent() && !trusted) {
             throw AuthenticationFailure.assertionRefused("client " + clientId + " of " + iss
                     + " is not a registered trusted engine, so it may not act for another user");

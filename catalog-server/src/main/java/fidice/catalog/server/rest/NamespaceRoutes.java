@@ -52,15 +52,17 @@ class NamespaceRoutes {
     private final Idempotency idempotency;
     private final AuditEvents audit;
     private final Callers callers;
+    private final Guard guard;
     private final Clock clock;
 
     NamespaceRoutes(CatalogStore store, Lookup lookup, Idempotency idempotency, AuditEvents audit, Callers callers,
-                    Clock clock) {
+                    Guard guard, Clock clock) {
         this.store = store;
         this.lookup = lookup;
         this.idempotency = idempotency;
         this.audit = audit;
         this.callers = callers;
+        this.guard = guard;
         this.clock = clock;
     }
 
@@ -68,10 +70,12 @@ class NamespaceRoutes {
     ResponseEntity<String> list(@PathVariable String prefix,
                                 @RequestParam(required = false) String parent,
                                 @RequestParam(required = false) String pageToken,
-                                @RequestParam(required = false) String pageSize) {
+                                @RequestParam(required = false) String pageSize,
+                                HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> parentLevels = parent == null || parent.isEmpty() ? List.of() : Lookup.levels(parent);
         UUID parentId = parentLevels.isEmpty() ? catalog.id() : lookup.existingNamespace(catalog, parentLevels).id();
+        guard.onParent(RequestContext.of(http, callers), catalog, parentId, parentLevels, Guard.LIST_NAMESPACES);
         Page<NamespaceRecord> page = Lookup.listing(() -> store.listNamespaces(parentId,
                 lookup.page(pageToken, pageSize)));
         List<List<String>> namespaces = page.items().stream()
@@ -94,6 +98,7 @@ class NamespaceRoutes {
                     List<String> parentLevels = levels.subList(0, levels.size() - 1);
                     UUID parentId = parentLevels.isEmpty()
                             ? catalog.id() : lookup.existingNamespace(catalog, parentLevels).id();
+                    guard.onParent(request, catalog, parentId, parentLevels, Guard.CREATE_NAMESPACE);
                     String last = levels.getLast();
                     NamespaceRecord record = new NamespaceRecord(catalog.id(), UUID.randomUUID(), parentId,
                             new Name(Names.normalize(last), last), created.properties(), 1);
@@ -128,16 +133,26 @@ class NamespaceRoutes {
     }
 
     @GetMapping(NAMESPACE)
-    ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace) {
+    ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace,
+                                HttpServletRequest http) {
         List<String> levels = Lookup.levels(namespace);
-        NamespaceRecord record = lookup.existingNamespace(lookup.catalog(prefix), levels);
+        CatalogRecord catalog = lookup.catalog(prefix);
+        NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+        guard.onNamespace(RequestContext.of(http, callers), catalog, record, levels, Guard.LOAD_NAMESPACE);
         return Http.json(200, RestResponse.namespace(levels, record.properties()));
     }
 
     @RequestMapping(path = NAMESPACE, method = RequestMethod.HEAD)
-    ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace) {
-        boolean found = lookup.namespace(lookup.catalog(prefix), Lookup.levels(namespace)).isPresent();
-        return found ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+    ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace,
+                                HttpServletRequest http) {
+        CatalogRecord catalog = lookup.catalog(prefix);
+        List<String> levels = Lookup.levels(namespace);
+        Optional<NamespaceRecord> found = lookup.namespace(catalog, levels);
+        if (found.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        guard.onNamespace(RequestContext.of(http, callers), catalog, found.get(), levels, Guard.NAMESPACE_EXISTS);
+        return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping(NAMESPACE)
@@ -150,6 +165,7 @@ class NamespaceRoutes {
         return idempotency.run(Optional.ofNullable(key), request.caller(), "DROP_NAMESPACE",
                 catalog.id() + "/" + String.join("\u001f", levels), "", ticket -> {
                     NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+                    guard.onNamespace(request, catalog, record, levels, Guard.DROP_NAMESPACE);
                     Instant now = clock.instant();
                     Change change = ticket.change(now, List.of(audit.event(now, new NamespaceChange(
                             NamespaceChange.Action.DROPPED, AuditEvents.namespace(record.id(), catalog.name(), levels),
@@ -188,6 +204,8 @@ class NamespaceRoutes {
         return idempotency.run(Optional.ofNullable(key), request.caller(), "UPDATE_NAMESPACE_PROPERTIES",
                 catalog.id() + "/" + String.join("\u001f", levels), body, ticket -> {
                     RestRequest.PropertyChanges changes = RestRequest.updateNamespaceProperties(body == null ? "" : body);
+                    guard.onNamespace(request, catalog, lookup.existingNamespace(catalog, levels), levels,
+                            Guard.UPDATE_PROPERTIES);
                     for (int attempt = 1; attempt <= PROPERTY_ATTEMPTS; attempt++) {
                         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
                         Map<String, String> properties = new HashMap<>(record.properties());

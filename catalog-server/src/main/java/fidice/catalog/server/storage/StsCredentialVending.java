@@ -1,6 +1,7 @@
 package fidice.catalog.server.storage;
 
 import fidice.catalog.audit.Actor;
+import fidice.catalog.audit.CatalogEvent;
 import fidice.catalog.audit.CredentialIssue;
 import fidice.catalog.audit.Securable;
 import fidice.catalog.core.CatalogError;
@@ -14,7 +15,9 @@ import fidice.catalog.objectstore.ObjectStoreException;
 import fidice.catalog.objectstore.SessionIdentity;
 import fidice.catalog.objectstore.StoreKind;
 import fidice.catalog.objectstore.VendedCredentials;
+import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.CredentialVending;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -28,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +46,9 @@ public final class StsCredentialVending implements CredentialVending {
     private static final Logger LOG = LoggerFactory.getLogger(StsCredentialVending.class);
 
     private final CatalogStorage storage;
-    private final CredentialAudit audit;
+    private final AuditPublisher audit;
+    private final URI source;
+    private final Clock clock;
     private final CredentialCache cache;
     private final Set<String> maintenancePrincipals;
 
@@ -50,10 +56,12 @@ public final class StsCredentialVending implements CredentialVending {
      * @param refreshMargin no 304 when credentials expire within this (D14); cached credentials are renewed
      *                      a minute before that, so a load normally carries credentials a client may cache
      */
-    public StsCredentialVending(CatalogStorage storage, CredentialAudit audit, StorageSettings settings,
+    public StsCredentialVending(CatalogStorage storage, AuditPublisher audit, URI source, StorageSettings settings,
                                 Duration refreshMargin, Clock clock) {
         this.storage = storage;
         this.audit = audit;
+        this.source = source;
+        this.clock = clock;
         Duration quarter = settings.credentialLifetime().dividedBy(4);
         Duration margin = refreshMargin.plusMinutes(1);
         this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,
@@ -96,10 +104,10 @@ public final class StsCredentialVending implements CredentialVending {
         Actor actor = new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                 caller.engine(), request.requestId());
         try {
-            audit.issued(new CredentialIssue(new Securable(Securable.Kind.TABLE, request.tableId(),
+            audit.publish(new CatalogEvent(UUID.randomUUID(), source, clock.instant(), new CredentialIssue(new Securable(Securable.Kind.TABLE, request.tableId(),
                     request.catalog().name(), request.path()), bound.name(), credentials.location(),
                     CredentialIssue.Access.valueOf(access.name()), credentials.sessionName(),
-                    credentials.expiresAt(), actor));
+                    credentials.expiresAt(), actor)));
         } catch (RuntimeException e) {
             throw new AuditFailedException(e);
         }

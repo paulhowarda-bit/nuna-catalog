@@ -1,5 +1,6 @@
 package fidice.catalog.server.storage;
 
+import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.CredentialVending;
 import fidice.catalog.server.rest.RestSettings;
 import fidice.catalog.store.CatalogStore;
@@ -9,7 +10,7 @@ import org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitializat
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Each catalog's storage profile, and STS credential vending audited before hand-out (M6). */
+/** Each catalog's storage profile, and STS credential vending audited through the {@link AuditPublisher} before hand-out (M6). */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(StorageSettings.class)
 class StorageWiring {
@@ -22,13 +23,9 @@ class StorageWiring {
     }
 
     @Bean
-    CredentialAudit credentialAudit(RestSettings rest) {
-        return CredentialAudit.log(rest.auditSource());
-    }
-
-    @Bean
-    CredentialVending credentialVending(CatalogStorage storage, CredentialAudit audit, StorageSettings settings,
+    CredentialVending credentialVending(CatalogStorage storage, AuditPublisher audit, StorageSettings settings,
                                         RestSettings rest, Clock clock) {
-        return new StsCredentialVending(storage, audit, settings, rest.credentialRefreshMargin(), clock);
+        return new StsCredentialVending(storage, audit, rest.auditSource(), settings, rest.credentialRefreshMargin(),
+                clock);
     }
 }

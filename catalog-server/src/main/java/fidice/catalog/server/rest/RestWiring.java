@@ -8,9 +8,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * The REST surface's collaborators. Callers and telemetry are seams that M5 (security) and M7 (audit)
- * replace; until then requests are anonymous and metrics reports are logged. Storage and credential
- * vending are wired per catalog in {@code fidice.catalog.server.storage} (M6).
+ * The REST surface's collaborators. The synchronous audit publisher and telemetry are seams that M7 (audit)
+ * replaces; until then audit events and metrics reports are logged. Callers come from the security package
+ * (M5); storage and credential vending are wired per catalog in {@code fidice.catalog.server.storage} (M6).
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(RestSettings.class)
@@ -37,8 +37,8 @@ class RestWiring {
     }
 
     @Bean
-    Callers callers() {
-        return Callers.ANONYMOUS;
+    AuditPublisher auditPublisher() {
+        return AuditPublisher.LOG;
     }
 
     @Bean

@@ -34,12 +34,13 @@ class EventCodecTest {
             Map.entry(EventType.DROP, List.of("object", "purgeAfter", "actor")),
             Map.entry(EventType.BREAK_GLASS, List.of("securable", "justification", "actor")),
             Map.entry(EventType.OBJECT_READ, List.of("object", "branch", "served", "actor")),
-            Map.entry(EventType.DENIAL, List.of("operation", "securable", "reason", "actor")),
+            Map.entry(EventType.DENIAL, List.of("operation", "reason", "actor")),
             Map.entry(EventType.AUTH_FAILURE, List.of("reason", "requestId")),
             Map.entry(EventType.CREDENTIAL_ISSUE, List.of("object", "storageProfile", "locationPrefix", "access", "sessionName",
                     "expiresAt", "actor")),
             Map.entry(EventType.NAMESPACE_CHANGE, List.of("action", "namespace", "set", "removed", "actor")),
             Map.entry(EventType.RENAME, List.of("object", "fromPath", "actor")),
+            Map.entry(EventType.ENGINE_CHANGE, List.of("action", "issuer", "clientId", "endUserClaim", "flags", "actor")),
             Map.entry(EventType.STORAGE_SETUP, List.of("action", "id", "name", "settings", "actor")));
     private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
             Map.entry(EventType.COMMIT, List.of("before")),
@@ -47,11 +48,12 @@ class EventCodecTest {
             Map.entry(EventType.DROP, List.of()),
             Map.entry(EventType.BREAK_GLASS, List.of()),
             Map.entry(EventType.OBJECT_READ, List.of()),
-            Map.entry(EventType.DENIAL, List.of("privilege")),
+            Map.entry(EventType.DENIAL, List.of("securable", "privilege")),
             Map.entry(EventType.AUTH_FAILURE, List.of("issuer", "claimedSubject", "clientId", "remoteAddress")),
             Map.entry(EventType.CREDENTIAL_ISSUE, List.of()),
             Map.entry(EventType.NAMESPACE_CHANGE, List.of()),
             Map.entry(EventType.RENAME, List.of()),
+            Map.entry(EventType.ENGINE_CHANGE, List.of()),
             Map.entry(EventType.STORAGE_SETUP, List.of()));
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
     private static final List<String> NESTED_REQUIRED = List.of("actor.principal", "actor.requestId", "object.kind",
@@ -160,6 +162,13 @@ class EventCodecTest {
     @MethodSource("nullableFields")
     void nullInNullableFieldIsAccepted(String name, CatalogEvent event, String path) {
         byte[] mutated = mutateData(event, data -> parentOf(data, path).putNull(leafOf(path)));
+        if (event.type() == EventType.DENIAL && path.equals("securable")) {
+            // A denial about no securable (the engine registry) has no subject, so its envelope names none.
+            ObjectNode envelope = (ObjectNode) EventCodec.MAPPER.readTree(mutated);
+            envelope.remove("subject");
+            envelope.remove("partitionkey");
+            mutated = EventCodec.MAPPER.writeValueAsBytes(envelope);
+        }
         CatalogEvent decoded = EventCodec.decode(mutated);
         assertThat(EventCodec.encode(decoded)).isEqualTo(mutated);
     }

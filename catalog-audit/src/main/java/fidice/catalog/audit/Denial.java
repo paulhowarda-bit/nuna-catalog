@@ -6,7 +6,8 @@ import java.util.Objects;
  * An authorization decision that refused a request; every decision is audited (D18).
  *
  * @param operation the operation refused
- * @param securable what it was refused on
+ * @param securable what it was refused on, or null when the refusal is about no securable (the
+ *                  deployment's trusted-engine registry, D17)
  * @param privilege the privilege that was missing, or null when the refusal is not about one
  *                  (a flagged table and an untrusted engine (D20), an unclassified table in a
  *                  regulated namespace (D27))
@@ -18,7 +19,6 @@ public record Denial(String operation, Securable securable, String privilege, St
 
     public Denial {
         Objects.requireNonNull(operation, "operation");
-        Objects.requireNonNull(securable, "securable");
         Objects.requireNonNull(reason, "reason");
         Objects.requireNonNull(actor, "actor");
     }
@@ -30,6 +30,6 @@ public record Denial(String operation, Securable securable, String privilege, St
 
     @Override
     public String subject() {
-        return securable.id().toString();
+        return securable == null ? null : securable.id().toString();
     }
 }

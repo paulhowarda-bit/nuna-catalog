@@ -15,11 +15,14 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.context.annotation.Primary;
 
 /**
@@ -28,6 +31,7 @@ import org.springframework.context.annotation.Primary;
  * {@code storage.VendingRouteTest} covers the same rule with real STS credentials.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class, CredentialExpiryTest.Vending.class})
 class CredentialExpiryTest {
 
@@ -50,8 +54,12 @@ class CredentialExpiryTest {
     @Value("${local.server.port}")
     private int port;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
     @Test
     void noNotModifiedNearExpiryAndANewEpochIsANewETag() throws Exception {
+        IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
         EXPIRES.set(Instant.now().plus(Duration.ofHours(1)));
         String namespace = "expiry_" + UUID.randomUUID().toString().replace("-", "");
         assertThat(send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", null).statusCode())
@@ -80,7 +88,8 @@ class CredentialExpiryTest {
     private HttpResponse<String> send(String method, String path, String body, String ifNoneMatch) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1/trading" + path))
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofString(body));
+                        : HttpRequest.BodyPublishers.ofString(body))
+                .header("Authorization", IssuerForTests.bearer());
         if (body != null) {
             request.header("Content-Type", "application/json");
         }

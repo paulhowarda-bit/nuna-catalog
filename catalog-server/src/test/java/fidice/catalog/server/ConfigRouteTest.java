@@ -13,8 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ContextConfiguration;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class})
 class ConfigRouteTest {
 
@@ -66,7 +68,8 @@ class ConfigRouteTest {
     }
 
     private HttpResponse<String> get(String path) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Authorization", IssuerForTests.bearer()).GET().build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

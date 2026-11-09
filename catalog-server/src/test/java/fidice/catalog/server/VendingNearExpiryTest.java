@@ -10,9 +10,12 @@ import java.net.http.HttpResponse;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ContextConfiguration;
 
 /**
  * The 304 rule of D14 with real STS credentials: when every vended credential expires within the refresh
@@ -21,6 +24,7 @@ import org.springframework.context.annotation.Import;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "fidice.rest.credential-refresh-margin=20m", "fidice.storage.credential-lifetime=15m"})
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class})
 class VendingNearExpiryTest {
 
@@ -29,8 +33,12 @@ class VendingNearExpiryTest {
     @Value("${local.server.port}")
     private int port;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
     @Test
     void noNotModifiedWhenCredentialsExpireWithinTheMargin() throws Exception {
+        IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
         String namespace = "near_" + UUID.randomUUID().toString().substring(0, 8);
         assertThat(send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", null).statusCode())
                 .isEqualTo(200);
@@ -56,7 +64,8 @@ class VendingNearExpiryTest {
     private HttpResponse<String> send(String method, String path, String body, String ifNoneMatch) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1/trading" + path))
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofString(body));
+                        : HttpRequest.BodyPublishers.ofString(body))
+                .header("Authorization", IssuerForTests.bearer());
         if (body != null) {
             request.header("Content-Type", "application/json");
         }
