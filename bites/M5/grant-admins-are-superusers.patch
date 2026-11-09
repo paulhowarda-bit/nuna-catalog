@@ -1,0 +1,17 @@
+Breaks: Grant-admin groups pass every check, not only manage-grants.
+Module: catalog-security
+Test: AuthorizerTest#thereIsNoSuperuserNotEvenTheDeploymentsGrantAdmins
+
+diff --git a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
+index 7eb5785..d5a06e2 100644
+--- a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
+@@ -184,7 +184,7 @@ public final class Authorizer {
+                             List<GovernanceAttribute> attributes, boolean grantAdmin) {
+         Operation operation = request.operation();
+         Privilege needed = operation.privilege();
+-        boolean granted = (grantAdmin && Privilege.MANAGE_GRANTS.implies(needed))
++        boolean granted = grantAdmin
+                 || held.stream().filter(g -> chain.contains(g.grant().securable()))
+                         .flatMap(g -> known(g).stream())
+                         .anyMatch(p -> p.implies(needed));
