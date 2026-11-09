@@ -49,7 +49,7 @@ class TrustedEngineTest {
     @Test
     void aRegisteredEngineActsForTheEndUserAndBothAreKept() {
         Caller caller = authenticator.authenticate(trinoToken, Optional.of(ALICE),
-                Set.of(new TrustedEngine(entra.issuer, "trino-client")));
+                Set.of(new TrustedEngine(entra.issuer, "trino-client"))::contains);
 
         assertThat(caller.principal().id()).isEqualTo("svc-trino@corp.example");
         assertThat(caller.engine()).isEqualTo("trino-client");
@@ -61,7 +61,7 @@ class TrustedEngineTest {
     @Test
     void aRegisteredEngineThatAssertsNoOneActsAsItself() {
         Caller caller = authenticator.authenticate(trinoToken, Optional.empty(),
-                Set.of(new TrustedEngine(entra.issuer, "trino-client")));
+                Set.of(new TrustedEngine(entra.issuer, "trino-client"))::contains);
 
         assertThat(caller.trustedEngine()).isTrue();
         assertThat(caller.endUser()).isEmpty();
@@ -72,7 +72,7 @@ class TrustedEngineTest {
     void anUnregisteredClientMayNotActForAnotherUser() {
         assertThatExceptionOfType(AuthenticationFailure.class)
                 .isThrownBy(() -> authenticator.authenticate(trinoToken, Optional.of(ALICE),
-                        Set.of(new TrustedEngine(entra.issuer, "spark-platform-client"))))
+                        Set.of(new TrustedEngine(entra.issuer, "spark-platform-client"))::contains))
                 .satisfies(failure -> assertThat(failure.status()).isEqualTo(403))
                 .withMessageContaining("client trino-client of " + entra.issuer + " is not a registered trusted engine");
     }
@@ -81,13 +81,13 @@ class TrustedEngineTest {
     void registrationBelongsToOneIssuer() {
         assertThatExceptionOfType(AuthenticationFailure.class)
                 .isThrownBy(() -> authenticator.authenticate(trinoToken, Optional.of(ALICE),
-                        Set.of(new TrustedEngine("https://sso.example.test/ping", "trino-client"))))
+                        Set.of(new TrustedEngine("https://sso.example.test/ping", "trino-client"))::contains))
                 .satisfies(failure -> assertThat(failure.status()).isEqualTo(403));
     }
 
     @Test
     void anUnregisteredClientThatAssertsNoOneIsItself() {
-        Caller caller = authenticator.authenticate(trinoToken, Optional.empty(), Set.of());
+        Caller caller = authenticator.authenticate(trinoToken, Optional.empty(), Set.of()::contains);
 
         assertThat(caller.trustedEngine()).isFalse();
         assertThat(caller.subject().id()).isEqualTo("svc-trino@corp.example");

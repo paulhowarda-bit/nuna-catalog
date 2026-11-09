@@ -6,8 +6,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import fidice.catalog.audit.CatalogEvent;
 import fidice.catalog.audit.EventType;
+import fidice.catalog.server.IssuerForTests;
 import fidice.catalog.server.SiloForTests;
+import java.net.URLEncoder;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -42,7 +45,9 @@ class MutatingRoutesAuditTest {
 
     /** POST routes that change nothing in the catalog, and why. */
     private static final Map<String, String> NOT_MUTATING = Map.of(
-            "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics", "forwarded to telemetry, never stored");
+            "POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/metrics", "forwarded to telemetry, never stored",
+            "POST /management/v1/catalogs/{catalog}/grants/check", "the caller's own batch check: stores nothing,"
+                    + " and M5 does not audit its answers");
 
     private static final String M = "/management/v1/catalogs/{catalog}";
     private static final Map<String, String> LEVELS = Map.of(
@@ -74,7 +79,7 @@ class MutatingRoutesAuditTest {
 
     @BeforeEach
     void connect() {
-        api = new Api(port, jdbc, broker.bootstrapServers());
+        api = new Api(port, jdbc, broker.bootstrapServers(), clock);
     }
 
     @AfterEach
@@ -103,7 +108,9 @@ class MutatingRoutesAuditTest {
         cases.forEach((route, run) -> {
             String requestId = "m7-gate-" + UUID.randomUUID();
             EventType expected = run.apply(requestId);
-            CatalogEvent record = api.awaitRequest(requestId);
+            // A create or commit also vends credentials under the same request id; that record comes first.
+            CatalogEvent record = api.awaitRecord(json -> json.contains("\"" + requestId + "\"")
+                    && json.contains("\"type\":\"" + expected.typeName() + "\""));
             assertThat(record.data().type()).as(route).isEqualTo(expected);
         });
     }
@@ -220,6 +227,30 @@ class MutatingRoutesAuditTest {
             });
         });
 
+        cases.put("POST " + M + "/grants", id -> {
+            expect(api.manage("POST", "/grants", grant(api.namespace()), rid(id, api.grantAdmin())), 204);
+            return EventType.GRANT_CHANGE;
+        });
+        cases.put("POST " + M + "/grants/revoke", id -> {
+            String body = grant(api.namespace());
+            expect(api.manage("POST", "/grants", body, "Authorization", api.grantAdmin()), 204);
+            expect(api.manage("POST", "/grants/revoke", body, rid(id, api.grantAdmin())), 204);
+            return EventType.GRANT_CHANGE;
+        });
+        cases.put("PUT /management/v1/engines", id -> {
+            expect(api.send("PUT", "/management/v1/engines", engine("m7-put-" + Api.suffix()),
+                    rid(id, api.operator())), 204);
+            return EventType.ENGINE_CHANGE;
+        });
+        cases.put("DELETE /management/v1/engines", id -> {
+            String client = "m7-delete-" + Api.suffix();
+            expect(api.send("PUT", "/management/v1/engines", engine(client), "Authorization", api.operator()), 204);
+            expect(api.send("DELETE", "/management/v1/engines?issuer="
+                    + URLEncoder.encode(IssuerForTests.ISSUER, StandardCharsets.UTF_8) + "&client-id=" + client, null,
+                    rid(id, api.operator())), 204);
+            return EventType.ENGINE_CHANGE;
+        });
+
         cases.put("POST " + M + "/objects/{id}/undrop", id -> {
             String object = dropped();
             expect(api.manage("POST", "/objects/" + object + "/undrop", null, rid(id)), 200);
@@ -237,6 +268,21 @@ class MutatingRoutesAuditTest {
 
     private static String[] rid(String requestId) {
         return new String[] {"X-Request-ID", requestId};
+    }
+
+    private static String[] rid(String requestId, String authorization) {
+        return new String[] {"X-Request-ID", requestId, "Authorization", authorization};
+    }
+
+    /** SELECT on {@code namespace} for a group of its own, so no grant meets separation of duties. */
+    private static String grant(String namespace) {
+        return "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + namespace + "\"]},"
+                + "\"group\":\"readers-" + Api.suffix() + "\",\"privilege\":\"select\"}";
+    }
+
+    private static String engine(String client) {
+        return "{\"issuer\":\"" + IssuerForTests.ISSUER + "\",\"client-id\":\"" + client
+                + "\",\"end-user-claim\":\"oid\",\"flags\":[]}";
     }
 
     /** A management target of this kind: the catalog itself, or a new namespace, table or view. */

@@ -5,17 +5,22 @@ import fidice.catalog.core.commit.CommitRule;
 import fidice.catalog.core.commit.CommitSettings;
 import fidice.catalog.core.commit.MetadataCache;
 import fidice.catalog.core.commit.Rules;
-import fidice.catalog.core.commit.TableFiles;
+import fidice.catalog.server.storage.CatalogStorage;
+import fidice.catalog.store.CatalogRecord;
 import fidice.catalog.store.CatalogStore;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
  * Builds the commit engine (M3) for one request, whose audit events name the object as the request does.
+ * Each catalog's engine writes through its own storage profile (D28) and also applies that profile's rules.
  * Construction is cheap; the metadata cache and the rules are shared.
  */
 @Component
@@ -24,39 +29,57 @@ class Engines {
     /** D9: a commit whose timestamps are further than this ahead of the server clock is refused. */
     private static final Duration CLOCK_SKEW = Duration.ofMinutes(1);
 
+    private record Profile(CatalogStorage.Bound bound, List<CommitRule> rules, CommitEngine reader) {
+    }
+
     private final CatalogStore store;
-    private final TableFiles files;
+    private final CatalogStorage storage;
     private final MetadataCache cache;
-    private final List<CommitRule> rules;
     private final ServerAlerts alerts;
     private final AuditEvents audit;
     private final Clock clock;
-    private final CommitEngine reader;
+    private final ObjectProvider<CommitRule> extraRules;
+    private final Map<UUID, Profile> profiles = new ConcurrentHashMap<>();
 
     /** @param extraRules rules other milestones add after the standard ones, such as retention classes (M7) */
-    Engines(CatalogStore store, TableFiles files, MetadataCache cache, ServerAlerts alerts, AuditEvents audit,
+    Engines(CatalogStore store, CatalogStorage storage, MetadataCache cache, ServerAlerts alerts, AuditEvents audit,
             Clock clock, ObjectProvider<CommitRule> extraRules) {
         this.store = store;
-        this.files = files;
+        this.storage = storage;
         this.cache = cache;
-        List<CommitRule> rules = new ArrayList<>(Rules.standard(files, CLOCK_SKEW));
-        extraRules.orderedStream().forEach(rules::add);
-        this.rules = List.copyOf(rules);
+        this.extraRules = extraRules;
         this.alerts = alerts;
         this.audit = audit;
         this.clock = clock;
-        this.reader = new CommitEngine(store, files, cache, rules, commit -> {
-            throw new IllegalStateException("the reader engine never commits");
-        }, alerts, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
     }
 
-    CommitEngine forRequest(String catalog, List<String> path, RequestContext request) {
-        return new CommitEngine(store, files, cache, rules, audit.commits(catalog, path, request.actor()), alerts,
-                CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
+    CommitEngine forRequest(CatalogRecord catalog, List<String> path, RequestContext request) {
+        Profile profile = profile(catalog);
+        return new CommitEngine(store, profile.bound().files(), cache, profile.rules(),
+                audit.commits(catalog.name(), path, request.actor()), alerts, CommitSettings.DEFAULTS, clock,
+                CommitEngine.Sleeper.THREAD);
     }
 
     /** For reading current metadata only. */
-    CommitEngine reader() {
-        return reader;
+    CommitEngine reader(CatalogRecord catalog) {
+        return profile(catalog).reader();
+    }
+
+    /** Where a new table of {@code catalog} goes. */
+    String newLocation(CatalogRecord catalog, UUID tableId) {
+        return profile(catalog).bound().files().newLocation(tableId);
+    }
+
+    private Profile profile(CatalogRecord catalog) {
+        CatalogStorage.Bound bound = storage.forCatalog(catalog.id());
+        return profiles.computeIfAbsent(bound.id(), id -> {
+            List<CommitRule> rules = new ArrayList<>(Rules.standard(bound.files(), CLOCK_SKEW));
+            rules.addAll(bound.rules());
+            extraRules.orderedStream().forEach(rules::add);
+            CommitEngine reader = new CommitEngine(store, bound.files(), cache, List.copyOf(rules), commit -> {
+                throw new IllegalStateException("the reader engine never commits");
+            }, alerts, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
+            return new Profile(bound, List.copyOf(rules), reader);
+        });
     }
 }

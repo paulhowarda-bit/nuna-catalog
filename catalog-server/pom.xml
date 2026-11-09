@@ -32,6 +32,10 @@
       <artifactId>catalog-audit</artifactId>
     </dependency>
     <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-security</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
     </dependency>
@@ -68,6 +72,17 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-security</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-kafka</artifactId>
       <scope>test</scope>
@@ -82,6 +97,7 @@
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
             <silo.image>${silo.image}</silo.image>
+            <keycloak.image>${keycloak.image}</keycloak.image>
             <kafka.image>${kafka.image}</kafka.image>
             <repo.root>${project.basedir}/..</repo.root>
           </systemPropertyVariables>

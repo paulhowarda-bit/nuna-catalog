@@ -24,6 +24,9 @@ class GovernanceRoutesTest {
     @Autowired
     private GovernanceServer.Broker broker;
 
+    @Autowired
+    private GovernanceServer.TestClock clock;
+
     @Value("${local.server.port}")
     private int port;
 
@@ -31,7 +34,7 @@ class GovernanceRoutesTest {
 
     @BeforeEach
     void connect() {
-        api = new Api(port, jdbc, broker.bootstrapServers());
+        api = new Api(port, jdbc, broker.bootstrapServers(), clock);
     }
 
     @AfterEach

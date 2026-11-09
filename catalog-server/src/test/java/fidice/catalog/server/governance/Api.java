@@ -5,15 +5,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import fidice.catalog.audit.CatalogEvent;
 import fidice.catalog.audit.EventCodec;
+import fidice.catalog.server.IssuerForTests;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,15 +44,23 @@ final class Api implements AutoCloseable {
     static final String SET_PROPERTY = """
             {"requirements":[],"updates":[{"action":"set-properties","updates":{"k":"%s"}}]}""";
 
+    /** The trusted engine's client id; its callers may decline credentials. */
+    static final String ENGINE_CLIENT = "m7-engine";
+
     private final HttpClient http = HttpClient.newHttpClient();
     private final int port;
+    private final Clock clock;
     private final KafkaConsumer<byte[], byte[]> audit;
     private final List<byte[]> seen = new ArrayList<>();
 
-    Api(int port, JdbcTemplate jdbc, String bootstrapServers) {
+    /** @param clock the server's clock, which tokens are checked against */
+    Api(int port, JdbcTemplate jdbc, String bootstrapServers, Clock clock) {
         this.port = port;
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
+        this.clock = clock;
+        IssuerForTests.grant(jdbc, CATALOG, IssuerForTests.GROUP, "create", "modify");
+        expect(send("PUT", "/management/v1/engines", """
+                {"issuer":"%s","client-id":"%s","end-user-claim":"oid","flags":[]}"""
+                .formatted(IssuerForTests.ISSUER, ENGINE_CLIENT), "Authorization", operator()), 204);
         audit = new KafkaConsumer<>(Map.of(
                 ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers,
                 ConsumerConfig.GROUP_ID_CONFIG, "test-" + UUID.randomUUID(),
@@ -71,6 +83,11 @@ final class Api implements AutoCloseable {
                 : "/management/v1/catalogs/" + CATALOG + path, body, headers);
     }
 
+    /**
+     * Sends a request signed in as {@code tester} in the test group, or as the {@link GovernanceServer#PRINCIPAL}
+     * pseudo-header names, through the trusted engine with {@link GovernanceServer#ENGINE}; an explicit
+     * {@code Authorization} header is sent as it is.
+     */
     HttpResponse<String> send(String method, String path, String body, String... headers) {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
@@ -78,14 +95,43 @@ final class Api implements AutoCloseable {
         if (body != null) {
             request.header("Content-Type", "application/json");
         }
+        String principal = "tester";
+        boolean engine = false;
+        String authorization = null;
         for (int i = 0; i < headers.length; i += 2) {
-            request.header(headers[i], headers[i + 1]);
+            switch (headers[i]) {
+                case GovernanceServer.PRINCIPAL -> principal = headers[i + 1];
+                case GovernanceServer.ENGINE -> engine = Boolean.parseBoolean(headers[i + 1]);
+                case "Authorization" -> authorization = headers[i + 1];
+                default -> request.header(headers[i], headers[i + 1]);
+            }
         }
+        request.header("Authorization", authorization != null ? authorization
+                : token(principal, engine ? ENGINE_CLIENT : "server-tests", IssuerForTests.GROUP));
         try {
             return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** A grant administrator's {@code Authorization} header. */
+    String grantAdmin() {
+        return token("gina", "server-tests", GovernanceServer.GRANT_ADMINS);
+    }
+
+    /** A platform operator's {@code Authorization} header. */
+    String operator() {
+        return token("ops", "server-tests", GovernanceServer.PLATFORM_OPS);
+    }
+
+    /** A token valid for an hour by the server's clock, which tests move forward. */
+    private String token(String user, String client, String... groups) {
+        Instant now = clock.instant();
+        return IssuerForTests.sign(IssuerForTests.claims(user, client, groups)
+                .issueTime(Date.from(now.minusSeconds(5)))
+                .expirationTime(Date.from(now.plusSeconds(3600)))
+                .build());
     }
 
     // ---- fixtures ----

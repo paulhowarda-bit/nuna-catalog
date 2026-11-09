@@ -4,21 +4,21 @@ import fidice.catalog.core.CatalogError;
 import fidice.catalog.core.commit.CommitEngine;
 import fidice.catalog.core.commit.CommitReply;
 import fidice.catalog.core.commit.ObjectName;
-import fidice.catalog.core.commit.TableFiles;
 import fidice.catalog.iceberg.Metadata;
 import fidice.catalog.iceberg.MetadataViews;
 import fidice.catalog.iceberg.Outcome;
 import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.iceberg.RestResponse;
+import fidice.catalog.server.governance.ReadAudit;
 import fidice.catalog.server.rest.CredentialVending.Vended;
 import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CatalogObject.Kind;
 import fidice.catalog.store.CatalogRecord;
-import fidice.catalog.server.governance.ReadAudit;
 import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.NamespaceRecord;
 import fidice.catalog.store.Pointer;
 import jakarta.servlet.http.HttpServletRequest;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +37,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.UriUtils;
 
 /**
  * The table routes of D13. Creates, commits and registrations go through the commit engine (M3);
@@ -57,29 +58,29 @@ class TableRoutes {
     private final ObjectRoutes objects;
     private final Engines engines;
     private final MetadataViews views;
-    private final TableFiles files;
     private final CredentialVending vending;
     private final MetricsSink metrics;
     private final ServerAlerts alerts;
     private final RestSettings settings;
     private final Callers callers;
+    private final Guard guard;
     private final ReadAudit reads;
     private final Clock clock;
 
     TableRoutes(CatalogStore store, Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views,
-                TableFiles files, CredentialVending vending, MetricsSink metrics, ServerAlerts alerts,
-                RestSettings settings, Callers callers, Clock clock, ReadAudit reads) {
+                CredentialVending vending, MetricsSink metrics, ServerAlerts alerts,
+                RestSettings settings, Callers callers, Guard guard, Clock clock, ReadAudit reads) {
         this.store = store;
         this.lookup = lookup;
         this.objects = objects;
         this.engines = engines;
         this.views = views;
-        this.files = files;
         this.vending = vending;
         this.metrics = metrics;
         this.alerts = alerts;
         this.settings = settings;
         this.callers = callers;
+        this.guard = guard;
         this.clock = clock;
         this.reads = reads;
     }
@@ -87,8 +88,9 @@ class TableRoutes {
     @GetMapping(TABLES)
     ResponseEntity<String> list(@PathVariable String prefix, @PathVariable String namespace,
                                 @RequestParam(required = false) String pageToken,
-                                @RequestParam(required = false) String pageSize) {
-        return objects.list(prefix, namespace, pageToken, pageSize, Kind.TABLE);
+                                @RequestParam(required = false) String pageSize,
+                                HttpServletRequest http) {
+        return objects.list(prefix, namespace, pageToken, pageSize, Kind.TABLE, RequestContext.of(http, callers));
     }
 
     /** A create, or with {@code stage-create} the metadata of a table that exists only once its create commits. */
@@ -104,15 +106,15 @@ class TableRoutes {
         RestRequest.NewTable table = RestRequest.createTable(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
-        if (table.stageCreate()) {
-            return staged(catalog, record, name, json, Optional.ofNullable(delegation),
-                    AuditEvents.path(levels, table.name()), http);
-        }
         RequestContext request = RequestContext.of(http, callers);
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, table.name()), request)
+        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
+        Target target = new Target(catalog, prefix, namespace, table.name(), request, Optional.ofNullable(delegation));
+        if (table.stageCreate()) {
+            return staged(target, record, name, json);
+        }
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table.name()), request)
                 .createTable(name, json, request.caller(), Optional.ofNullable(key));
-        return ObjectRoutes.reply(reply, done -> loaded(catalog, done, Optional.ofNullable(delegation),
-                AuditEvents.path(levels, table.name()), http));
+        return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
     @GetMapping(TABLE)
@@ -125,22 +127,24 @@ class TableRoutes {
                                 HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
         boolean refsOnly = refsOnly(snapshots);
-        List<String> path = AuditEvents.path(Lookup.levels(namespace), table);
-        CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), table, Kind.TABLE);
-        Vended vended = vending.vend(catalog.id(), object.id(), object.locationRoot(), Optional.ofNullable(delegation));
+        List<String> levels = Lookup.levels(namespace);
+        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        RequestContext request = RequestContext.of(http, callers);
+        guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_TABLE);
+        Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
+                object.id(), object.locationRoot());
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         if (cacheable && pointer.isPresent()) {
             String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch());
             if (ETags.matches(ifNoneMatch, etag)) {
-                reads.read(http, catalog, path, object, pointer.get());
+                reads.read(http, catalog, AuditEvents.path(levels, table), object, pointer.get());
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build();
             }
         }
-        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(), object);
+        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
         String location = current.pointer().metadataLocation();
-        reads.credentials(http, catalog, path, object.id(), vended);
-        reads.read(http, catalog, path, object, current.pointer());
+        reads.read(http, catalog, AuditEvents.path(levels, table), object, current.pointer());
         alerts.loaded(object.id(), location, views.tableStats(location, current.json()));
         String response = views.loadTable(location, current.json(), refsOnly, vended.config(), vended.credentials());
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();
@@ -152,8 +156,8 @@ class TableRoutes {
 
     @RequestMapping(path = TABLE, method = RequestMethod.HEAD)
     ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace,
-                                @PathVariable String table) {
-        return objects.exists(prefix, namespace, table, Kind.TABLE);
+                                @PathVariable String table, HttpServletRequest http) {
+        return objects.exists(prefix, namespace, table, Kind.TABLE, RequestContext.of(http, callers));
     }
 
     /** A commit, including the commit of a staged create. */
@@ -169,11 +173,17 @@ class TableRoutes {
         NamespaceRecord record = lookup.namespace(catalog, levels)
                 .orElseThrow(() -> Http.noSuchTable(Http.qualified(levels, table)));
         RequestContext request = RequestContext.of(http, callers);
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, table), request)
+        Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        if (existing.isPresent()) {
+            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), Guard.commit(body));
+        } else {
+            guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
+        }
+        Target target = new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation));
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
                 .commitTable(ObjectRoutes.name(catalog, record, levels, table), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
-        return ObjectRoutes.reply(reply, done -> loaded(catalog, done, Optional.ofNullable(delegation),
-                AuditEvents.path(levels, table), http));
+        return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
     /** {@code purgeRequested} is ignored: every drop is soft, and purge follows the retention (D25). */
@@ -207,11 +217,13 @@ class TableRoutes {
         RestRequest.Registration registration = RestRequest.register(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, registration.name()), request)
+        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE);
+        Target target = new Target(catalog, prefix, namespace, registration.name(), request,
+                Optional.ofNullable(delegation));
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key));
-        return ObjectRoutes.reply(reply, done -> loaded(catalog, done, Optional.ofNullable(delegation),
-                AuditEvents.path(levels, registration.name()), http));
+        return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
     /** Forwarded to telemetry, never stored (D13). */
@@ -230,9 +242,12 @@ class TableRoutes {
                                        @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                        HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
-        CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), table, Kind.TABLE);
-        Vended vended = vending.vend(catalog.id(), object.id(), object.locationRoot(), Optional.ofNullable(delegation));
-        reads.credentials(http, catalog, AuditEvents.path(Lookup.levels(namespace), table), object.id(), vended);
+        List<String> levels = Lookup.levels(namespace);
+        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        RequestContext request = RequestContext.of(http, callers);
+        guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_CREDENTIALS);
+        Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
+                object.id(), object.locationRoot());
         return Http.json(200, RestResponse.credentials(vended.credentials()));
     }
 
@@ -240,9 +255,7 @@ class TableRoutes {
      * Stage-create: the table's first metadata, at the location and UUID the catalog assigns, with no file
      * and no object yet. The create commit later takes that UUID (M3).
      */
-    private ResponseEntity<String> staged(CatalogRecord catalog, NamespaceRecord namespace, ObjectName name,
-                                          String json, Optional<String> delegation, List<String> path,
-                                          HttpServletRequest http) {
+    private ResponseEntity<String> staged(Target target, NamespaceRecord namespace, ObjectName name, String json) {
         Optional<CatalogObject> holder = store.findObject(namespace.id(), name.name().normalized());
         if (holder.isPresent()) {
             throw CatalogError.of(409, "AlreadyExistsException", holder.get().kind() == Kind.TABLE
@@ -250,11 +263,10 @@ class TableRoutes {
                     : "View with same name already exists: " + name.qualified());
         }
         UUID id = UUID.randomUUID();
-        String location = files.newLocation(id);
+        String location = engines.newLocation(target.catalog(), id);
         return switch (Metadata.createTable(json, id.toString(), location)) {
             case Outcome.NewMetadata created -> {
-                Vended vended = vending.vend(catalog.id(), id, location, delegation);
-                reads.credentials(http, catalog, path, id, vended);
+                Vended vended = vend(target, id, location);
                 yield Http.json(200, MetadataViews.stagedTable(created.json(), vended.config(), vended.credentials()));
             }
             case Outcome.BadRequest bad -> Http.error(400, bad.type(), bad.message());
@@ -264,21 +276,45 @@ class TableRoutes {
         };
     }
 
-    /** The load response for a create, commit or registration, with its ETag for the next load. */
-    private ResponseEntity<String> loaded(CatalogRecord catalog, CommitReply.Success done,
-                                          Optional<String> delegation, List<String> path,
-                                          HttpServletRequest http) {
+    /**
+     * The load response for a create, commit or registration, with its ETag for the next load. The change is
+     * already committed, so if credentials cannot be issued now the response carries none and the client
+     * asks the credentials route.
+     */
+    private ResponseEntity<String> loaded(Target target, CommitReply.Success done) {
         String location = done.metadataLocation();
-        Optional<CatalogObject> object = store.readObject(done.objectId());
-        Vended vended = object
-                .map(o -> vending.vend(catalog.id(), o.id(), o.locationRoot(), delegation))
-                .orElse(CredentialVending.NONE.vend(catalog.id(), done.objectId(), location, delegation));
-        reads.credentials(http, catalog, path, done.objectId(), vended);
+        Vended vended = store.readObject(done.objectId()).map(object -> {
+            try {
+                return vend(target, object.id(), object.locationRoot());
+            } catch (CatalogError e) {
+                if (e.status() != 503) {
+                    throw e;
+                }
+                return Vended.NONE;
+            }
+        }).orElse(Vended.NONE);
         String response = views.loadTable(location, done.metadataJson(), false, vended.config(), vended.credentials());
         return ResponseEntity.ok()
                 .eTag(ETags.of(location, false, null, vended.epoch()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
+    }
+
+    /** One table of one request, as the URL names it: what credentials are vended for. */
+    private record Target(CatalogRecord catalog, String prefix, String namespace, String table,
+                          RequestContext request, Optional<String> delegation) {
+    }
+
+    private Vended vend(Target target, UUID tableId, String location) {
+        String refresh = "v1/" + segment(target.prefix()) + "/namespaces/" + segment(target.namespace()) + "/tables/"
+                + segment(target.table()) + "/credentials";
+        return vending.vend(new CredentialVending.Request(target.catalog(), tableId,
+                AuditEvents.path(Lookup.levels(target.namespace()), target.table()), location,
+                target.request().caller(), target.request().requestId(), target.delegation(), refresh));
+    }
+
+    private static String segment(String value) {
+        return UriUtils.encodePathSegment(value, StandardCharsets.UTF_8);
     }
 
     private static boolean refsOnly(String snapshots) {

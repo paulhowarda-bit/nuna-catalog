@@ -39,7 +39,7 @@ class HeldTablesTest {
 
     @BeforeEach
     void connect() {
-        api = new Api(port, jdbc, broker.bootstrapServers());
+        api = new Api(port, jdbc, broker.bootstrapServers(), clock);
     }
 
     @AfterEach

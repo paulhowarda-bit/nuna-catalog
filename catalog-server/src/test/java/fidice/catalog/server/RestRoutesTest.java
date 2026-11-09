@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -28,6 +29,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * snapshots=refs with statistics, soft drops, idempotent replays and the fixed OAuth error.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class})
 class RestRoutesTest {
 
@@ -50,9 +52,8 @@ class RestRoutesTest {
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void seedCatalog() {
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
+    void grantPrivileges() {
+        IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
     }
 
     @Test
@@ -283,7 +284,9 @@ class RestRoutesTest {
                  "operation":"append","metrics":{}}""".formatted(namespace)).statusCode()).isEqualTo(204);
         HttpResponse<String> credentials = send("GET", table + "/credentials", null);
         assertThat(credentials.statusCode()).isEqualTo(200);
-        assertThat(JsonPath.<List<Object>>read(credentials.body(), "$.storage-credentials")).isEmpty();
+        assertThat(JsonPath.<List<String>>read(credentials.body(), "$.storage-credentials[*].prefix"))
+                .as("M6 vends credentials for the table's location").singleElement().asString()
+                .startsWith("s3://" + SiloForTests.BUCKET + "/tables/");
 
         HttpResponse<String> token = request("POST", URI.create("http://localhost:" + port + "/v1/oauth/tokens"),
                 "grant_type=client_credentials", "Content-Type", "application/x-www-form-urlencoded");
@@ -351,7 +354,8 @@ class RestRoutesTest {
     private HttpResponse<String> request(String method, URI uri, String body, String... headers) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(uri)
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofString(body));
+                        : HttpRequest.BodyPublishers.ofString(body))
+                .header("Authorization", IssuerForTests.bearer());
         if (body != null && Arrays.stream(headers).noneMatch("Content-Type"::equals)) {
             request.header("Content-Type", "application/json");
         }

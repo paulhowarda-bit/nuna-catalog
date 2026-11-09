@@ -4,8 +4,8 @@ import java.net.URI;
 
 /**
  * The event types of D23, each with its current payload schema version. Changes (commits, grants,
- * drops, undrops, purges, namespace changes, renames, governance attributes, holds, break-glass)
- * travel through the outbox; reads, denials,
+ * drops, undrops, purges, namespace changes, renames, governance attributes, holds, break-glass,
+ * storage setup) travel through the outbox; reads, denials,
  * authentication failures and credential issues are published synchronously.
  */
 public enum EventType {
@@ -19,6 +19,8 @@ public enum EventType {
     CREDENTIAL_ISSUE("credential-issue", 1, CredentialIssue.class),
     NAMESPACE_CHANGE("namespace", 1, NamespaceChange.class),
     RENAME("rename", 1, Rename.class),
+    ENGINE_CHANGE("engine", 1, EngineChange.class),
+    STORAGE_SETUP("storage-setup", 1, StorageSetup.class),
     GOVERNANCE_CHANGE("governance", 1, GovernanceChange.class),
     HOLD_CHANGE("hold", 1, HoldChange.class),
     UNDROP("undrop", 1, Undrop.class),

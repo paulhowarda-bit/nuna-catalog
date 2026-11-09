@@ -1,0 +1,17 @@
+Breaks: a load carries an ETag, and may answer 304, although its real STS credentials expire within the refresh margin.
+Module: catalog-server
+Test: VendingNearExpiryTest
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
+index ff7377e..1081cf5 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
+@@ -130,7 +130,7 @@ class TableRoutes {
+         guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_TABLE);
+         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
+                 object.id(), object.locationRoot());
+-        boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
++        boolean cacheable = true;
+         Optional<Pointer> pointer = store.readPointer(object.mainKey());
+         if (cacheable && pointer.isPresent()) {
+             String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch());

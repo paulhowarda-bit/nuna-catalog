@@ -1,0 +1,17 @@
+Breaks: a declared catalog may start under a different KMS key set, legal entity or profile than the store holds.
+Module: catalog-server
+Test: VendingRouteTest#startupGuardrails
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
+index 8d564ce..25b69bb 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
+@@ -168,7 +168,7 @@ public final class CatalogStorage implements AutoCloseable {
+         CatalogRecord record = existing.orElseThrow(() -> new IllegalStateException("catalog " + name
+                 + " could not be created"));
+         Optional<CatalogSettings> held = store.catalogSettings(record.id());
+-        if (!held.equals(Optional.of(wanted))) {
++        if (held.isEmpty()) {
+             throw new IllegalStateException("catalog " + name + " is bound to " + held.map(Object::toString)
+                     .orElse("no storage profile") + " in the store, but configured as " + wanted
+                     + "; a catalog's boundary never changes (D28)");

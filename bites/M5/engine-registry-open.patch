@@ -1,0 +1,17 @@
+Breaks: Anyone may run the trusted-engine registry.
+Module: catalog-server
+Test: SecurityGateTest#theEngineRegistryIsForPlatformOperatorsOnly
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/security/EngineRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/security/EngineRoutes.java
+index cc26924..68a0a29 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/security/EngineRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/security/EngineRoutes.java
+@@ -134,7 +134,7 @@ class EngineRoutes {
+     private RequestContext operator(HttpServletRequest http, String operation) {
+         RequestContext request = RequestContext.of(http, callers);
+         Set<String> groups = request.caller().subject().groups();
+-        if (groups.stream().noneMatch(separation.platformOperatorGroups()::contains)) {
++        if (false) {
+             throw denials.refuse(request.actor(), operation, null, null, "no_privilege",
+                     "only platform operators run the trusted-engine registry");
+         }

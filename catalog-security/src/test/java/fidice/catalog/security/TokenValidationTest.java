@@ -183,7 +183,7 @@ class TokenValidationTest {
     }
 
     private Caller authenticate(String token) {
-        return authenticator.authenticate(token, Optional.empty(), Set.of());
+        return authenticator.authenticate(token, Optional.empty(), Set.of()::contains);
     }
 
     private org.assertj.core.api.ThrowableAssertAlternative<AuthenticationFailure> rejected(String token) {

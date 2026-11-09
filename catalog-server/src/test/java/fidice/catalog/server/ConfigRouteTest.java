@@ -9,16 +9,14 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ContextConfiguration;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class})
 class ConfigRouteTest {
 
@@ -26,15 +24,6 @@ class ConfigRouteTest {
 
     @Value("${local.server.port}")
     private int port;
-
-    @Autowired
-    private JdbcTemplate jdbc;
-
-    @BeforeEach
-    void seedCatalog() {
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
-    }
 
     @Test
     void warehouseIsMatchedCaseInsensitivelyAndBecomesThePrefix() throws Exception {
@@ -79,7 +68,8 @@ class ConfigRouteTest {
     }
 
     private HttpResponse<String> get(String path) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path)).GET().build();
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("Authorization", IssuerForTests.bearer()).GET().build();
         return http.send(request, HttpResponse.BodyHandlers.ofString());
     }
 }

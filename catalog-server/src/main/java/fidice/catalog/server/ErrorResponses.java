@@ -5,6 +5,7 @@ import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.iceberg.Wire;
 import fidice.catalog.objectstore.LocationRejectedException;
 import fidice.catalog.objectstore.MetadataNotFoundException;
+import fidice.catalog.server.rest.AccessDenied;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,12 @@ class ErrorResponses {
     @ExceptionHandler(LocationRejectedException.class)
     ResponseEntity<String> location(LocationRejectedException error) {
         return body(400, "BadRequestException", error.getMessage());
+    }
+
+    /** Authorization refused the request; the denial is already audited (D18). */
+    @ExceptionHandler(AccessDenied.class)
+    ResponseEntity<String> denied(AccessDenied error) {
+        return body(403, "ForbiddenException", error.getMessage());
     }
 
     /** A metadata file that is not in the store, worded as iceberg-core words it. */

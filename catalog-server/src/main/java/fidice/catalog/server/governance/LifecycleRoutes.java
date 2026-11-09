@@ -12,6 +12,7 @@ import fidice.catalog.core.CatalogError;
 import fidice.catalog.core.Names;
 import fidice.catalog.core.commit.GovernanceChain;
 import fidice.catalog.core.commit.TableFiles;
+import fidice.catalog.server.storage.CatalogStorage;
 import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.server.governance.Management.Request;
 import fidice.catalog.store.CatalogObject;
@@ -69,17 +70,17 @@ class LifecycleRoutes {
     private final Management management;
     private final GovernanceSettings settings;
     private final AuditTrail trail;
-    private final TableFiles files;
+    private final CatalogStorage storage;
     private final Clock clock;
     private final Deque<Instant> recentPurges = new ArrayDeque<>();
 
     LifecycleRoutes(CatalogStore store, Management management, GovernanceSettings settings, AuditTrail trail,
-                    TableFiles files, Clock clock) {
+                    CatalogStorage storage, Clock clock) {
         this.store = store;
         this.management = management;
         this.settings = settings;
         this.trail = trail;
-        this.files = files;
+        this.storage = storage;
         this.clock = clock;
     }
 
@@ -215,7 +216,7 @@ class LifecycleRoutes {
         body.set("object", object(object));
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         if (pointer.isPresent()) {
-            TableFiles.Read read = files.read(pointer.get().metadataLocation(), pointer.get().sha256());
+            TableFiles.Read read = storage.forCatalog(catalog.id()).files().read(pointer.get().metadataLocation(), pointer.get().sha256());
             if (!read.intact()) {
                 throw CatalogError.of(500, "MetadataIntegrityException", "The metadata file of " + id
                         + " does not match its recorded hash");

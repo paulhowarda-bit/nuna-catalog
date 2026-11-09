@@ -1,15 +1,18 @@
 package fidice.catalog.server.governance;
 
+import fidice.catalog.audit.CredentialIssue;
 import fidice.catalog.audit.archive.ObjectLockArchive;
 import fidice.catalog.audit.publish.EventPublisher;
 import fidice.catalog.core.commit.CommitRule;
 import fidice.catalog.core.commit.Rules;
+import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.RestSettings;
-import fidice.catalog.server.rest.StorageSettings;
+import fidice.catalog.server.storage.StorageSettings;
 import fidice.catalog.store.CatalogStore;
 import java.net.URI;
 import java.time.Clock;
 import java.util.Optional;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -36,15 +39,20 @@ class GovernanceWiring {
         if (bucket == null || bucket.isBlank()) {
             return Optional.empty();
         }
-        AwsCredentialsProvider credentials = storage.accessKeyId() == null
+        StorageSettings.Profile profile = storage.profiles().get(audit.archive().profile());
+        if (profile == null) {
+            throw new IllegalStateException("fidice.audit.archive.profile must name a storage profile, not "
+                    + audit.archive().profile());
+        }
+        AwsCredentialsProvider credentials = profile.accessKeyId() == null
                 ? DefaultCredentialsProvider.builder().build()
                 : StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(storage.accessKeyId(), storage.secretAccessKey()));
+                        AwsBasicCredentials.create(profile.accessKeyId(), profile.secretAccessKey()));
         S3ClientBuilder s3 = S3Client.builder()
-                .region(Region.of(storage.region()))
+                .region(Region.of(profile.region()))
                 .credentialsProvider(credentials);
-        if (storage.endpoint() != null && !storage.endpoint().isBlank()) {
-            s3.endpointOverride(URI.create(storage.endpoint())).forcePathStyle(true);
+        if (profile.endpoint() != null && !profile.endpoint().isBlank()) {
+            s3.endpointOverride(URI.create(profile.endpoint())).forcePathStyle(true);
         }
         ObjectLockArchive archive = new ObjectLockArchive(s3.build(), bucket, audit.archive().prefix(),
                 audit.archive().retention(), clock);
@@ -63,6 +71,23 @@ class GovernanceWiring {
     AuditTrail auditTrail(AuditRuntime runtime, AuditSettings audit, RestSettings rest, Clock clock) {
         return new AuditTrail(runtime.auditPublisher().map(EventPublisher.class::cast), rest.auditSource(), clock,
                 audit.probeInterval());
+    }
+
+    /**
+     * The synchronous audit seam of M5 and M6 (denials, authentication failures, credential issues), on the
+     * audit topic. A credential issue fails closed, so vending hands nothing out; the others never fail.
+     * The trail is looked up on first use: M5's filter takes this bean while the web server starts, before
+     * the audit and storage settings may be bound.
+     */
+    @Bean
+    AuditPublisher auditPublisher(ObjectProvider<AuditTrail> trail) {
+        return event -> {
+            if (event.data() instanceof CredentialIssue) {
+                trail.getObject().requireRecorded(event);
+            } else {
+                trail.getObject().record(event);
+            }
+        };
     }
 
     /** A retention class's minimum snapshot age, enforced when a commit removes snapshots (D24). */

@@ -9,11 +9,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /** The endpoints list in /v1/config must name exactly the routes this server serves (D13). */
 @SpringBootTest
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class})
 class AdvertisedEndpointsTest {
 
@@ -39,6 +41,8 @@ class AdvertisedEndpointsTest {
         served.remove("GET /v1/config");
         served.remove("ANY /error");
         served.remove("ANY /v1/oauth/tokens");
+        // The management API (grants, engines) is not part of the Iceberg REST spec, so it is never advertised.
+        served.removeIf(route -> route.contains(" /management/"));
 
         assertThat(served).containsExactlyInAnyOrderElementsOf(AdvertisedEndpoints.ALL);
     }

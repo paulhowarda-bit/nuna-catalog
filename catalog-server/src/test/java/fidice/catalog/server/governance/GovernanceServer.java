@@ -1,12 +1,8 @@
 package fidice.catalog.server.governance;
 
-import fidice.catalog.core.principal.Caller;
-import fidice.catalog.core.principal.Principal;
-import fidice.catalog.iceberg.RestResponse.StorageCredential;
+import fidice.catalog.server.IssuerForTests;
 import fidice.catalog.server.PostgresForTests;
 import fidice.catalog.server.SiloForTests;
-import fidice.catalog.server.rest.Callers;
-import fidice.catalog.server.rest.CredentialVending;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -16,15 +12,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.kafka.KafkaContainer;
@@ -32,8 +25,8 @@ import org.testcontainers.utility.DockerImageName;
 
 /**
  * The server every M7 server test shares (one Spring context): PostgreSQL, Silo and a Kafka broker,
- * a caller named by the {@code X-Test-Principal} header, a clock tests can move forward, and
- * credential vending that hands out one credential when the delegation header asks for it.
+ * M5's test issuer, M6's credential vending on Silo, and a clock tests can move forward. {@link Api}
+ * signs each request in as the caller its {@code X-Test-Principal} pseudo-header names.
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
@@ -45,12 +38,19 @@ import org.testcontainers.utility.DockerImageName;
         "fidice.governance.maintenance-principals=maintenance",
         "fidice.governance.purges-per-minute=3",
         "fidice.governance.retention-classes.trade-records.minimum-snapshot-age=30d",
+        "fidice.security.grant-admin-groups=" + GovernanceServer.GRANT_ADMINS,
+        "fidice.security.platform-operator-groups=" + GovernanceServer.PLATFORM_OPS,
 })
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class, GovernanceServer.Beans.class})
 public @interface GovernanceServer {
 
+    /** A pseudo-header {@link Api} turns into a token for this principal; the default is {@code tester}. */
     String PRINCIPAL = "X-Test-Principal";
-    String VEND = "vended-credentials";
+    /** A pseudo-header {@link Api} turns into a token from the registered trusted engine. */
+    String ENGINE = "X-Test-Engine";
+    String GRANT_ADMINS = "grant-admins";
+    String PLATFORM_OPS = "platform-ops";
 
     /** The test beans; the clock is a {@link TestClock}, the broker a {@link Broker}. */
     @TestConfiguration(proxyBeanMethods = false)
@@ -70,25 +70,6 @@ public @interface GovernanceServer {
         @Primary
         TestClock testClock() {
             return new TestClock();
-        }
-
-        @Bean
-        @Primary
-        Callers testCallers() {
-            return request -> {
-                String principal = request.getHeader(PRINCIPAL);
-                return principal == null ? Callers.ANONYMOUS_CALLER
-                        : new Caller(new Principal(principal, Set.of()), "test", false, Optional.empty());
-            };
-        }
-
-        @Bean
-        @Primary
-        CredentialVending testVending() {
-            return (catalogId, tableId, location, delegation) -> delegation.filter(VEND::equals).isPresent()
-                    ? new CredentialVending.Vended(Map.of(), List.of(new StorageCredential(location,
-                    Map.of("s3.session-token", "test"))), "test-epoch", Optional.of(Instant.now().plusSeconds(3600)))
-                    : new CredentialVending.Vended(Map.of(), List.of(), "none", Optional.empty());
         }
     }
 

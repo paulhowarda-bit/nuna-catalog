@@ -1,0 +1,92 @@
+{
+  "realm": "ping",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "groups": [
+    {
+      "name": "traders"
+    }
+  ],
+  "users": [
+    {
+      "username": "d1001",
+      "enabled": true,
+      "email": "d1001@example.test",
+      "emailVerified": true,
+      "firstName": "Ada",
+      "lastName": "Tester",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pw-d1001",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/traders"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "trino-ping",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "fidice-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "included.custom.audience": "fidice-catalog"
+          }
+        },
+        {
+          "name": "uid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "user.attribute": "username",
+            "claim.name": "uid",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "memberOf",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "claim.name": "memberOf",
+            "full.path": "false"
+          }
+        },
+        {
+          "name": "client_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "claim.name": "client_id",
+            "claim.value": "trino-ping",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ]
+}

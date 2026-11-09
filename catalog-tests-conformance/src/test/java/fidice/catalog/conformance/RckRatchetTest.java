@@ -29,6 +29,7 @@ class RckRatchetTest {
         System.setProperty("uri", ConformanceServer.start().toString());
         System.setProperty("warehouse", ConformanceServer.WAREHOUSE);
         ConformanceServer.clientStorage().forEach(System::setProperty);
+        System.setProperty("token", ConformanceServer.token());
         // The catalog assigns every location (D28), namespaces are created explicitly (a table's namespace
         // must exist), names may hold dots, commits retry on the server (D9), and v3 tables take variants.
         System.setProperty("rck.overrides-requested-location", "true");

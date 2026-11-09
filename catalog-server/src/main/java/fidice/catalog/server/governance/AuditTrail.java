@@ -47,7 +47,11 @@ public final class AuditTrail {
      * record is written to the fallback log instead.
      */
     public void record(EventData data) {
-        CatalogEvent event = CatalogEvent.create(source, clock.instant(), data);
+        record(CatalogEvent.create(source, clock.instant(), data));
+    }
+
+    /** {@link #record(EventData)} for an event another seam built. */
+    public void record(CatalogEvent event) {
         if (publisher.isEmpty() || clock.instant().isBefore(skipUntil)) {
             fallback(event, null);
             return;
@@ -68,7 +72,11 @@ public final class AuditTrail {
      *                                   REST layer answers 503
      */
     public void requireRecorded(EventData data) {
-        CatalogEvent event = CatalogEvent.create(source, clock.instant(), data);
+        requireRecorded(CatalogEvent.create(source, clock.instant(), data));
+    }
+
+    /** {@link #requireRecorded(EventData)} for an event another seam built. */
+    public void requireRecorded(CatalogEvent event) {
         if (publisher.isEmpty()) {
             throw new AuditUnavailableException(event, new IllegalStateException("fidice.audit.kafka-bootstrap-servers is not set"));
         }

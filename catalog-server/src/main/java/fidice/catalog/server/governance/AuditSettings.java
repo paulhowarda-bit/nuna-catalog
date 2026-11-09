@@ -35,11 +35,12 @@ public record AuditSettings(
         @DefaultValue Archive archive) {
 
     /**
-     * The archive ({@code fidice.audit.archive.*}). It runs where {@code bucket} is set, on the
-     * deployment's object store ({@code fidice.storage.*}); the bucket must have been created with
-     * Object Lock, or the server refuses to start.
+     * The archive ({@code fidice.audit.archive.*}). It runs where {@code bucket} is set, on the store of
+     * storage profile {@code profile} ({@code fidice.storage.profiles.*}); the bucket must have been
+     * created with Object Lock, or the server refuses to start.
      *
      * @param bucket          the Object Lock bucket
+     * @param profile         the storage profile whose endpoint, region and keys reach the bucket
      * @param prefix          the key prefix of every chain
      * @param retention       how long each segment is locked; at least five years (D23)
      * @param segmentEvents   the most records in one segment
@@ -48,6 +49,7 @@ public record AuditSettings(
      */
     public record Archive(
             String bucket,
+            String profile,
             @DefaultValue("audit") String prefix,
             @DefaultValue("1827d") Duration retention,
             @DefaultValue("10000") int segmentEvents,
