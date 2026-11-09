@@ -85,6 +85,6 @@ class MultiIssuerTest {
     }
 
     private Caller authenticate(String token) {
-        return authenticator.authenticate(token, Optional.empty(), Set.of());
+        return authenticator.authenticate(token, Optional.empty(), Set.of()::contains);
     }
 }

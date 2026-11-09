@@ -38,24 +38,24 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
  * 127.0.0.1, counting every fetch. The issuer string is unrelated to the server's address, as with
  * a real IdP whose JWKS URI is configured rather than derived from the token.
  */
-final class TestIdp implements AutoCloseable {
+public final class TestIdp implements AutoCloseable {
 
-    static final Instant NOW = Instant.parse("2026-11-07T12:00:00Z");
-    static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
+    public static final Instant NOW = Instant.parse("2026-11-07T12:00:00Z");
+    public static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
     /** Not Spring's 60-second default, so a check that ignores the configured skew shows up. */
-    static final Duration SKEW = Duration.ofSeconds(30);
+    public static final Duration SKEW = Duration.ofSeconds(30);
 
-    static final ClaimMapping ENTRA_CLAIMS = new ClaimMapping("upn", "groups", "azp");
-    static final ClaimMapping PING_CLAIMS = new ClaimMapping("sub", "memberOf", "client_id");
+    public static final ClaimMapping ENTRA_CLAIMS = new ClaimMapping("upn", "groups", "azp");
+    public static final ClaimMapping PING_CLAIMS = new ClaimMapping("sub", "memberOf", "client_id");
 
-    final String issuer;
-    final String audience;
+    public final String issuer;
+    public final String audience;
     private final HttpServer server;
     private final AtomicInteger fetches = new AtomicInteger();
     private volatile String jwks = new JWKSet().toString();
     private volatile int status = 200;
 
-    TestIdp(String issuer, String audience) throws IOException {
+    public TestIdp(String issuer, String audience) throws IOException {
         this.issuer = issuer;
         this.audience = audience;
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
@@ -71,29 +71,29 @@ final class TestIdp implements AutoCloseable {
         server.start();
     }
 
-    URI jwksUri() {
+    public URI jwksUri() {
         return URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/keys");
     }
 
-    IssuerPolicy policy(ClaimMapping claims, SignatureAlgorithm... algorithms) {
+    public IssuerPolicy policy(ClaimMapping claims, SignatureAlgorithm... algorithms) {
         return new IssuerPolicy(issuer, jwksUri(), Set.of(audience), Set.of(algorithms), claims);
     }
 
     /** Publishes the public halves of these keys, replacing whatever was published before. */
-    void publish(JWK... keys) {
+    public void publish(JWK... keys) {
         jwks = new JWKSet(List.of(keys)).toPublicJWKSet().toString();
     }
 
-    void failFetches() {
+    public void failFetches() {
         status = 503;
     }
 
-    int fetches() {
+    public int fetches() {
         return fetches.get();
     }
 
     /** Claims for a token this IdP would issue now: its issuer and audience, valid for ten minutes. */
-    JWTClaimsSet.Builder claims() {
+    public JWTClaimsSet.Builder claims() {
         return new JWTClaimsSet.Builder()
                 .issuer(issuer)
                 .audience(audience)
@@ -101,15 +101,15 @@ final class TestIdp implements AutoCloseable {
                 .expirationTime(Date.from(NOW.plusSeconds(600)));
     }
 
-    static RSAKey rsaKey(String keyId) throws Exception {
+    public static RSAKey rsaKey(String keyId) throws Exception {
         return new RSAKeyGenerator(2048).keyID(keyId).generate();
     }
 
-    static ECKey ecKey(String keyId) throws Exception {
+    public static ECKey ecKey(String keyId) throws Exception {
         return new ECKeyGenerator(Curve.P_256).keyID(keyId).generate();
     }
 
-    static String sign(JWK key, JWSAlgorithm algorithm, JWTClaimsSet claims) throws Exception {
+    public static String sign(JWK key, JWSAlgorithm algorithm, JWTClaimsSet claims) throws Exception {
         JWSSigner signer = key instanceof RSAKey rsa ? new RSASSASigner(rsa) : new ECDSASigner((ECKey) key);
         SignedJWT jwt = new SignedJWT(
                 new JWSHeader.Builder(algorithm).keyID(key.getKeyID()).type(JOSEObjectType.JWT).build(), claims);
