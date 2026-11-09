@@ -241,6 +241,22 @@ public final class Metadata {
         }
     }
 
+    /**
+     * One table metadata file as a link of its metadata-log chain, for the DR reconcile (D37).
+     *
+     * @param previous the file it replaced: the newest entry of its metadata log, empty for a first version
+     */
+    public record TableLink(String uuid, TableFacts facts, Optional<String> previous) {
+    }
+
+    /** Reads a table metadata file's UUID, facts and predecessor; throws on anything that is not table metadata. */
+    public static TableLink tableLink(String metadataJson, String metadataLocation) {
+        TableMetadata metadata = TableMetadataParser.fromJson(metadataLocation, metadataJson);
+        List<TableMetadata.MetadataLogEntry> log = metadata.previousFiles();
+        return new TableLink(metadata.uuid(), facts(metadata),
+                log.isEmpty() ? Optional.empty() : Optional.of(log.getLast().file()));
+    }
+
     private static String arrayOrEmpty(JsonNode node) {
         return node == null || node.isNull() ? "[]" : node.toString();
     }

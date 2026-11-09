@@ -1,0 +1,17 @@
+Breaks: a reconcile moves pointers of a table no DR freeze covers.
+Module: catalog-core
+Test: ReconcileTest#anUnfrozenTableDoesNotMove
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+index 2771cfa..a17b6cf 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+@@ -152,7 +152,7 @@ public final class Reconcile {
+      */
+     public Applied apply(Plan plan, Caller caller, CommitEvents events) {
+         CatalogObject table = plan.table();
+-        if (GovernanceChain.of(store, table).nearest(GovernanceAttribute.Kind.DR_FREEZE).isEmpty()) {
++        if (false && GovernanceChain.of(store, table).nearest(GovernanceAttribute.Kind.DR_FREEZE).isEmpty()) {
+             return new Applied(plan, 0, Optional.of("not frozen for DR reconcile; place a DR freeze on it or above it"));
+         }
+         Pointer before = plan.from();

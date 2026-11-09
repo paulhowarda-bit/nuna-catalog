@@ -32,4 +32,11 @@ public sealed interface CommitReply {
      */
     record ServerError(String type, String message) implements CommitReply {
     }
+
+    /**
+     * 503 with Retry-After: the catalog store could not be reached and nothing was written, so the client
+     * may send the request again. Never replayed (D10).
+     */
+    record Unavailable(String message) implements CommitReply {
+    }
 }

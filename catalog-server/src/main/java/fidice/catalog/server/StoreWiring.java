@@ -11,8 +11,15 @@ import org.springframework.context.annotation.Configuration;
 @Configuration(proxyBeanMethods = false)
 class StoreWiring {
 
+    /**
+     * The store, its schema brought up to date before anything uses it. The store migrates with its
+     * backend's own steps: on PostgreSQL that includes the journal's partitioning (V4) and its partitions
+     * ahead, which the shared Flyway location alone never reaches.
+     */
     @Bean
     CatalogStore catalogStore(DataSource dataSource) {
-        return new SqlCatalogStore(dataSource);
+        SqlCatalogStore store = new SqlCatalogStore(dataSource);
+        store.migrate();
+        return store;
     }
 }

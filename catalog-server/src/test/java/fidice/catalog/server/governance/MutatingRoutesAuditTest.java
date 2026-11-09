@@ -13,6 +13,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -179,6 +180,7 @@ class MutatingRoutesAuditTest {
                 null, rid(id, api.steward())));
         cases.put("POST " + M + "/objects/{id}/purge", id -> api.manage("POST", "/objects/" + dropped() + "/purge",
                 null, rid(id)));
+        cases.put("POST " + M + "/dr-reconcile", id -> api.manage("POST", "/dr-reconcile", null, rid(id)));
         return cases;
     }
 
@@ -335,7 +337,30 @@ class MutatingRoutesAuditTest {
                     GovernanceServer.PRINCIPAL, "maintenance"), 204);
             return EventType.PURGE;
         });
+        cases.put("POST " + M + "/dr-reconcile", id -> {
+            String ns = behindItsStorage();
+            String freeze = "/namespaces/" + Api.ns(ns) + "/dr-freeze";
+            expect(api.manage("PUT", freeze, "{\"reason\":\"drill\"}", "Authorization", api.operator()), 200);
+            expect(api.manage("POST", "/dr-reconcile", "{\"apply\":true}", rid(id, api.operator())), 200);
+            expect(api.manage("DELETE", freeze, null, "Authorization", api.operator()), 204);
+            return EventType.COMMIT;
+        });
         return cases;
+    }
+
+    /** A namespace whose table's pointer row is put back to version 1 after two commits, as a DR replica lags. */
+    private String behindItsStorage() {
+        String ns = withTable();
+        String id = api.id(ns, "tables", "t");
+        Map<String, Object> first = jdbc.queryForMap("SELECT metadata_location, version, sha256, projection,"
+                + " last_commit_id FROM pointer WHERE object_id = ?::uuid AND branch = 'main'", id);
+        for (String value : List.of("1", "2")) {
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables/t", Api.SET_PROPERTY.formatted(value)), 200);
+        }
+        jdbc.update("UPDATE pointer SET metadata_location = ?, version = ?, sha256 = ?, projection = ?,"
+                + " last_commit_id = ? WHERE object_id = ?::uuid AND branch = 'main'", first.get("metadata_location"),
+                first.get("version"), first.get("sha256"), first.get("projection"), first.get("last_commit_id"), id);
+        return ns;
     }
 
     private static String[] rid(String requestId) {

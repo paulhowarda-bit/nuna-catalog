@@ -4,6 +4,7 @@ import fidice.catalog.core.commit.CommitReply.Failure;
 import fidice.catalog.core.commit.CommitReply.How;
 import fidice.catalog.core.commit.CommitReply.ServerError;
 import fidice.catalog.core.commit.CommitReply.Success;
+import fidice.catalog.core.commit.CommitReply.Unavailable;
 import fidice.catalog.core.commit.CommitRule.Rejection;
 import fidice.catalog.core.principal.Caller;
 import fidice.catalog.core.principal.Principal;
@@ -27,6 +28,7 @@ import fidice.catalog.store.OutboxEvent;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.PointerSwap;
 import fidice.catalog.store.StoreException;
+import fidice.catalog.store.StoreUnavailableException;
 import fidice.catalog.store.WriteResult;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -180,6 +182,7 @@ public final class CommitEngine {
         Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, name, json, caller),
                 clock.instant().plus(settings.keyLifetime()));
         Request request = new Request(operation, name, json, caller, commitId, Optional.of(fixed));
+        RuntimeException lastClaimFailure = null;
         for (int round = 0; round < CLAIM_ROUNDS; round++) {
             KeyState state;
             try {
@@ -189,6 +192,7 @@ public final class CommitEngine {
             } catch (CommitOutcomeUnknownException | StoreException e) {
                 // Claiming again with the same change id answers Claimed or InFlight(ours) if the first claim landed.
                 LOG.log(System.Logger.Level.DEBUG, "claim of an idempotency key failed; claiming again", e);
+                lastClaimFailure = e;
                 continue;
             }
             switch (state) {
@@ -209,6 +213,8 @@ public final class CommitEngine {
                     KeyState settled;
                     try {
                         settled = store.awaitKey(fixed.key(), settings.keyLease());
+                    } catch (StoreUnavailableException e) {
+                        return new Unavailable("Could not read idempotency key: " + e.getMessage());
                     } catch (StoreException e) {
                         return new ServerError(SERVICE_FAILURE, "Could not read idempotency key: " + e.getMessage());
                     }
@@ -219,6 +225,10 @@ public final class CommitEngine {
                 case KeyState.Absent absent -> {
                 }
             }
+        }
+        if (lastClaimFailure instanceof StoreUnavailableException unavailable) {
+            // Nothing ran under the key; a request sent again claims it as this one would have.
+            return new Unavailable("Could not claim idempotency key " + fixed.key() + ": " + unavailable.getMessage());
         }
         return new ServerError(SERVICE_FAILURE, "Could not claim idempotency key " + fixed.key());
     }
@@ -243,6 +253,7 @@ public final class CommitEngine {
             case Failure failure -> complete(key, request.commitId(), failure.status(),
                     Replies.failure(failure.type(), failure.message()));
             case ServerError error -> release(key, request.commitId());
+            case Unavailable unavailable -> release(key, request.commitId());
         }
         return reply;
     }
@@ -307,6 +318,11 @@ public final class CommitEngine {
                 case COMMIT_TABLE, COMMIT_VIEW -> commit(request);
                 case REGISTER_TABLE -> register(request);
             };
+        } catch (StoreUnavailableException e) {
+            // Thrown only before a COMMIT was sent: an attempt whose COMMIT was lost is settled by findCommit,
+            // which answers CommitStateUnknownException when the store cannot say.
+            LOG.log(System.Logger.Level.WARNING, "catalog store unavailable", e);
+            return new Unavailable("Catalog store unavailable; nothing was applied: " + e.getMessage());
         } catch (StoreException e) {
             LOG.log(System.Logger.Level.WARNING, "catalog store failed", e);
             return new ServerError(SERVICE_FAILURE, "Catalog store failed: " + e.getMessage());

@@ -1,0 +1,17 @@
+Breaks: the walk takes the first file that follows the pointer, proven by a successor or not.
+Module: catalog-core
+Test: ReconcileTest#movesThroughProvenFilesAndLeavesTheTipToTheOperator+twoTipsAtOneVersionAreNotGuessedBetween
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+index 2771cfa..b0d4f5b 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+@@ -115,7 +115,7 @@ public final class Reconcile {
+             if (next.isEmpty()) {
+                 return new Plan(table, from, steps, List.of(), Optional.empty());
+             }
+-            List<Node> proven = next.stream().filter(n -> parents.contains(n.location())).toList();
++            List<Node> proven = next.stream().limit(1).toList();
+             if (proven.size() > 1) {
+                 return stopped(table, from, steps, "later files build on " + proven.size() + " files that follow "
+                         + current + ": " + proven.stream().map(Node::location).toList());

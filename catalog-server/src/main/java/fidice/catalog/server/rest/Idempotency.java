@@ -14,6 +14,7 @@ import fidice.catalog.store.IdempotencyResult;
 import fidice.catalog.store.KeyState;
 import fidice.catalog.store.OutboxEvent;
 import fidice.catalog.store.StoreException;
+import fidice.catalog.store.StoreUnavailableException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -105,6 +106,7 @@ class Idempotency {
         Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, scope, caller, body),
                 clock.instant().plus(settings.keyLifetime()));
         Ticket ticket = new Ticket(changeId, Optional.of(fixed));
+        RuntimeException lastClaimFailure = null;
         for (int round = 0; round < CLAIM_ROUNDS; round++) {
             KeyState state;
             try {
@@ -113,6 +115,7 @@ class Idempotency {
                         changeId, now, now.plus(settings.keyLease()), fixed.expiresAt()));
             } catch (CommitOutcomeUnknownException | StoreException e) {
                 LOG.debug("claim of an idempotency key failed; claiming again", e);
+                lastClaimFailure = e;
                 continue;
             }
             switch (state) {
@@ -136,6 +139,10 @@ class Idempotency {
                 case KeyState.Absent absent -> {
                 }
             }
+        }
+        if (lastClaimFailure instanceof StoreUnavailableException) {
+            // Nothing ran under the key; the request sent again claims it as this one would have.
+            return Http.unavailable("Could not claim idempotency key " + fixed.key() + ": catalog store unavailable");
         }
         return Http.error(500, Http.SERVICE_FAILURE, "Could not claim idempotency key " + fixed.key());
     }
@@ -172,6 +179,9 @@ class Idempotency {
             return Reply.error(e.status(), e.type(), e.getMessage());
         } catch (RestRequest.InvalidRequest e) {
             return Reply.error(e.status(), e.type(), e.getMessage());
+        } catch (StoreUnavailableException e) {
+            // Nothing was applied: the key is released and the error handler answers 503 with Retry-After.
+            throw e;
         } catch (StoreException e) {
             LOG.warn("catalog store failed", e);
             return Reply.error(500, Http.SERVICE_FAILURE, "Catalog store failed: " + e.getMessage());

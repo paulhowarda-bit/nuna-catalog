@@ -5,8 +5,6 @@ spring:
   threads:
     virtual:
       enabled: true
-  flyway:
-    locations: classpath:fidice/store/sql/migration
   main:
     banner-mode: off
 server:

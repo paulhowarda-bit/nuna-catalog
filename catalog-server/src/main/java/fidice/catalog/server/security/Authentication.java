@@ -12,7 +12,10 @@ import fidice.catalog.security.TokenAuthenticator;
 import fidice.catalog.security.TrustedEngine;
 import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.RestSettings;
+import fidice.catalog.server.StoreOutage;
 import fidice.catalog.store.GovernanceStore;
+import fidice.catalog.store.StoreException;
+import fidice.catalog.store.StoreUnavailableException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -95,9 +98,29 @@ final class Authentication extends OncePerRequestFilter {
             refuse(request, response, failure.status(), failure.getMessage(), token,
                     failure.status() == 401 ? "Bearer error=\"invalid_token\"" : null);
             return;
+        } catch (StoreException e) {
+            // The engine registry could not be read: no answer about the caller, so not an authentication
+            // failure. A filter's exception would reach Spring's error page; answer as the routes do.
+            storeFailed(response, e);
+            return;
         }
         request.setAttribute(CALLER, caller);
         chain.doFilter(request, response);
+    }
+
+    private static void storeFailed(HttpServletResponse response, StoreException e) throws IOException {
+        response.setContentType("application/json");
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        if (e instanceof StoreUnavailableException) {
+            LOG.warn("catalog store unavailable while authenticating: {}", e.getMessage());
+            response.setStatus(StoreOutage.STATUS);
+            response.setHeader("Retry-After", StoreOutage.RETRY_AFTER_SECONDS);
+            response.getWriter().write(StoreOutage.body("Catalog store unavailable; retry later"));
+        } else {
+            LOG.error("catalog store failed while authenticating", e);
+            response.setStatus(500);
+            response.getWriter().write(Wire.error(500, "ServiceFailureException", "Internal server error"));
+        }
     }
 
     private boolean registered(TrustedEngine engine) {

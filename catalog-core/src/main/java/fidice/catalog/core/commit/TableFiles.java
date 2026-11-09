@@ -1,5 +1,6 @@
 package fidice.catalog.core.commit;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -23,6 +24,12 @@ public interface TableFiles {
 
     /** Whether {@code location} lies strictly beneath {@code root}, judged on canonical locations. */
     boolean isWithin(String location, String root);
+
+    /** The metadata files directly in {@code locationRoot}'s metadata directory, in no particular order. */
+    List<String> metadataFiles(String locationRoot);
+
+    /** Every table or view location beneath the table root, each the root a {@link #newLocation} gave out. */
+    List<String> tableLocations();
 
     /** @param sha256 lower-case hex */
     record Written(String location, String sha256) {

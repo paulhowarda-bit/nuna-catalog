@@ -17,6 +17,7 @@ import fidice.catalog.core.commit.CommitReply.Failure;
 import fidice.catalog.core.commit.CommitReply.How;
 import fidice.catalog.core.commit.CommitReply.ServerError;
 import fidice.catalog.core.commit.CommitReply.Success;
+import fidice.catalog.core.commit.CommitReply.Unavailable;
 import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CommitBatch;
 import fidice.catalog.store.CommitOutcomeUnknownException;
@@ -26,6 +27,7 @@ import fidice.catalog.store.Name;
 import fidice.catalog.store.ObjectCreation;
 import fidice.catalog.store.Pointer;
 import fidice.catalog.store.StoreException;
+import fidice.catalog.store.StoreUnavailableException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -648,6 +650,42 @@ class CommitEngineTest {
 
             assertThat(commit("Orders", setA("Orders", "1"), key)).isInstanceOfSatisfying(Success.class,
                     s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
+            assertThat(h.pointer("orders").version()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("a store outage before COMMIT is a 503, never replayed: the retry runs the request again")
+        void outageBeforeCommitIsUnavailable() {
+            h.createTable("Orders");
+            String key = key();
+            h.faults.once("commit", (args, proceed) -> {
+                throw new StoreUnavailableException("connection refused", null);
+            });
+            assertThat(commit("Orders", setA("Orders", "1"), key)).isInstanceOf(Unavailable.class);
+            assertThat(h.pointer("orders").version()).isEqualTo(1);
+
+            assertThat(commit("Orders", setA("Orders", "1"), key)).isInstanceOfSatisfying(Success.class,
+                    s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
+            assertThat(h.pointer("orders").version()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("a store outage while deciding a lost COMMIT stays CommitStateUnknown, never a 503")
+        void outageWhileSettlingStaysUnknown() {
+            h.createTable("Orders");
+            String key = key();
+            h.faults.once("commit", (args, proceed) -> {
+                proceed.call();
+                throw new CommitOutcomeUnknownException(((CommitBatch) args[0]).commitId(), null);
+            });
+            h.faults.once("findCommit", (args, proceed) -> {
+                throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+            });
+            assertThat(commit("Orders", setA("Orders", "1"), key)).isInstanceOfSatisfying(ServerError.class,
+                    e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
+
+            assertThat(commit("Orders", setA("Orders", "1"), key)).isInstanceOfSatisfying(Success.class,
+                    s -> assertThat(s.how()).isEqualTo(How.REPLAYED));
             assertThat(h.pointer("orders").version()).isEqualTo(2);
         }
 
