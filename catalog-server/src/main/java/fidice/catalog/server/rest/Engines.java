@@ -9,7 +9,9 @@ import fidice.catalog.core.commit.TableFiles;
 import fidice.catalog.store.CatalogStore;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
@@ -31,12 +33,15 @@ class Engines {
     private final Clock clock;
     private final CommitEngine reader;
 
+    /** @param extraRules rules other milestones add after the standard ones, such as retention classes (M7) */
     Engines(CatalogStore store, TableFiles files, MetadataCache cache, ServerAlerts alerts, AuditEvents audit,
-            Clock clock) {
+            Clock clock, ObjectProvider<CommitRule> extraRules) {
         this.store = store;
         this.files = files;
         this.cache = cache;
-        this.rules = Rules.standard(files, CLOCK_SKEW);
+        List<CommitRule> rules = new ArrayList<>(Rules.standard(files, CLOCK_SKEW));
+        extraRules.orderedStream().forEach(rules::add);
+        this.rules = List.copyOf(rules);
         this.alerts = alerts;
         this.audit = audit;
         this.clock = clock;

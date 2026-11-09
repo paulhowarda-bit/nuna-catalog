@@ -43,7 +43,13 @@ public final class SampleEvents {
                         "fidice-svc-trino-req-0001", Instant.parse("2026-11-07T10:45:30Z"), ACTOR),
                 new NamespaceChange(NamespaceChange.Action.PROPERTIES_CHANGED, NAMESPACE,
                         Map.of("owner", "Zoë", "comment", "desk"), List.of("stale"), ACTOR),
-                new Rename(TABLE, List.of("Équités", "Orders_old"), ACTOR));
+                new Rename(TABLE, List.of("Équités", "Orders_old"), ACTOR),
+                new GovernanceChange(GovernanceChange.Action.SET, TABLE, "classification", "confidential",
+                        "collibra:asset/7f0c@2026-11-07", ACTOR),
+                new HoldChange(HoldChange.Action.PLACED, UUID.fromString("d0000000-0000-0000-0000-000000000001"),
+                        NAMESPACE, "matter 2026-114", ACTOR),
+                new Undrop(TABLE, ACTOR),
+                new Purge(TABLE, ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

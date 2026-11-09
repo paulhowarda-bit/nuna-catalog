@@ -29,7 +29,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
  * subject as the key (so one object's events keep their order), and the CloudEvents media type
  * as the {@code content-type} header. Safe for concurrent use.
  */
-public final class KafkaEventPublisher implements RelayTarget, AutoCloseable {
+public final class KafkaEventPublisher implements EventPublisher, RelayTarget, AutoCloseable {
 
     static final String CONTENT_TYPE_HEADER = "content-type";
 
@@ -80,6 +80,7 @@ public final class KafkaEventPublisher implements RelayTarget, AutoCloseable {
      *
      * @throws AuditUnavailableException if it was not acknowledged within the delivery timeout
      */
+    @Override
     public void publish(CatalogEvent event) {
         long deadline = System.nanoTime() + deliveryTimeoutNanos;
         try {

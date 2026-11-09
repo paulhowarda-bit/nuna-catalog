@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import fidice.catalog.core.commit.CommitReply.Failure;
 import fidice.catalog.core.commit.CommitReply.Success;
+import fidice.catalog.store.GovernanceAttribute;
 import fidice.catalog.store.Securable;
 import java.time.Duration;
 import java.util.List;
@@ -159,6 +160,48 @@ class RulesInTheLoopTest {
             h.hold(h.namespace());
 
             assertThat(commit(update(uuid(), setProperties(Map.of("comment", "held"))))).isInstanceOf(Success.class);
+        }
+    }
+
+    @Nested
+    class Governance {
+
+        private void twoSnapshots() {
+            h.createTable("Orders", Map.of("format-version", "2"));
+            long now = h.clock.millis();
+            assertThat(commit(update(assertMain(null), addSnapshot(1, null, 1, now), setMain(1))))
+                    .isInstanceOf(Success.class);
+            assertThat(commit(update(assertMain(1L), addSnapshot(2, 1L, 2, now), setMain(2))))
+                    .isInstanceOf(Success.class);
+        }
+
+        @Test
+        @DisplayName("a DR freeze on the namespace refuses commits and creates beneath it with 403; lifted, they apply")
+        void drFreeze() {
+            h.createTable("Orders");
+            h.attribute(h.namespace(), GovernanceAttribute.Kind.DR_FREEZE, "reconcile");
+
+            assertRefused(commit(update(uuid(), setProperties(Map.of("comment", "x")))), 403, "Writes to ");
+            assertRefused(h.engine().createTable(h.name("Other"), Requests.createTable("Other", Map.of()), ALICE,
+                    Optional.empty()), 403, "Writes to ");
+            assertThat(h.pointer("Orders").version()).isEqualTo(1);
+
+            h.faults.real.removeAttribute(h.namespace(), GovernanceAttribute.Kind.DR_FREEZE, Harness.change());
+            assertThat(commit(update(uuid(), setProperties(Map.of("comment", "x"))))).isInstanceOf(Success.class);
+        }
+
+        @Test
+        @DisplayName("the table's own retention class overrides its namespace's: the nearest level wins")
+        void nearestRetentionClass() {
+            h.rules = List.of(Rules.snapshotMinimumAge(name -> name.equals("long")
+                    ? Optional.of(java.time.Duration.ofDays(30)) : Optional.empty()));
+            twoSnapshots();
+            h.attribute(h.namespace(), GovernanceAttribute.Kind.RETENTION_CLASS, "long");
+
+            assertRefused(commit(update(uuid(), removeSnapshots(1))), 403, "Snapshot 1 of ");
+
+            h.attribute(h.object("Orders").securable(), GovernanceAttribute.Kind.RETENTION_CLASS, "short");
+            assertThat(commit(update(uuid(), removeSnapshots(1)))).isInstanceOf(Success.class);
         }
     }
 

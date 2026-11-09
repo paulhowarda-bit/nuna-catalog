@@ -159,6 +159,11 @@ final class Harness {
                 "test", "admin", Instant.now()), change())).isEqualTo(WriteResult.APPLIED);
     }
 
+    void attribute(Securable target, GovernanceAttribute.Kind kind, String value) {
+        assertThat(faults.real.putAttribute(new GovernanceAttribute(target, kind, value, "test", "admin", Instant.now()),
+                change())).isEqualTo(WriteResult.APPLIED);
+    }
+
     void hold(Securable target) {
         assertThat(faults.real.placeHold(new LegalHold(UUID.randomUUID(), target, "litigation", "legal", Instant.now()),
                 change())).isEqualTo(WriteResult.APPLIED);

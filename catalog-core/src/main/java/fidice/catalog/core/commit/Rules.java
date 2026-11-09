@@ -3,16 +3,19 @@ package fidice.catalog.core.commit;
 import fidice.catalog.core.commit.CommitRule.Rejection;
 import fidice.catalog.iceberg.Facts;
 import fidice.catalog.iceberg.Facts.TableFacts;
+import fidice.catalog.store.GovernanceAttribute;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * The enterprise policy of D11: approved locations, property policy, an immutable encryption key id,
- * the retention-hold guard and the clock-skew guard. Correctness backstops that need Iceberg's own
+ * the retention-hold guard and the clock-skew guard; and the governance guards of M7: the DR freeze
+ * (D37) and the minimum snapshot age of a retention class (D24, D30). Correctness backstops that need Iceberg's own
  * types live in catalog-iceberg and run inside the builder step.
  */
 public final class Rules {
@@ -26,9 +29,10 @@ public final class Rules {
     private Rules() {
     }
 
-    /** Every rule, in the order they are judged. */
+    /** Every rule that needs no deployment settings, in the order they are judged. */
     public static List<CommitRule> standard(TableFiles files, Duration clockSkew) {
         return List.of(
+                Rules::drFreeze,
                 Rules::assignedLocation,
                 change -> pathProperties(change, files),
                 Rules::encryptionKeyId,
@@ -79,6 +83,44 @@ public final class Rules {
                     + " is under legal hold: its snapshots cannot be removed"));
         }
         return Optional.empty();
+    }
+
+    /** Nothing commits to a table or view while it, a namespace above it or its catalog is frozen for a DR reconcile (D37). */
+    static Optional<Rejection> drFreeze(CommitRule.Change change) {
+        return change.governance().nearest(GovernanceAttribute.Kind.DR_FREEZE)
+                .map(freeze -> Rejection.forbidden("Writes to " + change.object().id()
+                        + " are frozen for DR reconcile: " + freeze.value()));
+    }
+
+    /**
+     * A snapshot younger than its table's retention class allows may not be removed (D24, D30): the
+     * minimum-age guardrail holds whoever expires snapshots, the maintenance worker or an engine.
+     *
+     * @param minimumAge the minimum snapshot age of a retention class, empty for a class with none
+     */
+    public static CommitRule snapshotMinimumAge(Function<String, Optional<Duration>> minimumAge) {
+        return change -> {
+            if (!(change.before() instanceof TableFacts before) || !(change.after() instanceof TableFacts after)
+                    || after.snapshotTimestamps().keySet().containsAll(before.snapshotTimestamps().keySet())) {
+                return Optional.empty();
+            }
+            Optional<GovernanceAttribute> retentionClass = change.governance()
+                    .nearest(GovernanceAttribute.Kind.RETENTION_CLASS);
+            Optional<Duration> minimum = retentionClass.flatMap(c -> minimumAge.apply(c.value()));
+            if (minimum.isEmpty()) {
+                return Optional.empty();
+            }
+            Instant youngestRemovable = change.now().minus(minimum.get());
+            for (Map.Entry<Long, Long> snapshot : before.snapshotTimestamps().entrySet()) {
+                if (!after.snapshotTimestamps().containsKey(snapshot.getKey())
+                        && Instant.ofEpochMilli(snapshot.getValue()).isAfter(youngestRemovable)) {
+                    return Optional.of(Rejection.forbidden("Snapshot " + snapshot.getKey() + " of " + change.object().id()
+                            + " is younger than " + minimum.get() + ", the minimum age of retention class "
+                            + retentionClass.get().value() + ": it cannot be removed yet"));
+                }
+            }
+            return Optional.empty();
+        };
     }
 
     /** A new snapshot may not be stamped further ahead of the catalog's clock than the skew allows (D9). */

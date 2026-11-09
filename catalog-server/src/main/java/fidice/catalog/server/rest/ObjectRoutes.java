@@ -6,6 +6,7 @@ import fidice.catalog.core.CatalogError;
 import fidice.catalog.core.Names;
 import fidice.catalog.core.commit.CommitEngine;
 import fidice.catalog.core.commit.CommitReply;
+import fidice.catalog.core.commit.GovernanceChain;
 import fidice.catalog.core.commit.ObjectName;
 import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.iceberg.RestRequest.Identifier;
@@ -17,6 +18,7 @@ import fidice.catalog.store.CatalogRecord;
 import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.Change;
 import fidice.catalog.store.CommitOutcomeUnknownException;
+import fidice.catalog.store.GovernanceAttribute;
 import fidice.catalog.store.Name;
 import fidice.catalog.store.NamespaceRecord;
 import fidice.catalog.store.Page;
@@ -105,6 +107,7 @@ class ObjectRoutes {
         String qualified = Http.qualified(levels, name);
         return idempotency.run(key, request.caller(), "DROP_" + kind, scope(catalog, levels, name), "", ticket -> {
             CatalogObject object = existing(catalog, levels, name, kind);
+            requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + qualified);
             Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
             Instant purgeAfter = now.plus(settings.dropRetention());
             Change change = ticket.change(now, List.of(audit.event(now, new Drop(
@@ -141,6 +144,8 @@ class ObjectRoutes {
             String toName = Http.qualified(to.namespace(), to.name());
             CatalogObject object = existing(catalog, from.namespace(), from.name(), kind);
             NamespaceRecord target = lookup.existingNamespace(catalog, to.namespace());
+            requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + fromName);
+            requireUnfrozen(GovernanceChain.of(store, target), "Namespace " + Http.dotted(to.namespace()));
             Optional<CatalogObject> holder = store.findObject(target.id(), Names.normalize(to.name()))
                     .filter(o -> !o.id().equals(object.id()));
             if (holder.isPresent()) {
@@ -190,6 +195,13 @@ class ObjectRoutes {
             case CommitEngine.Current.Refused refused ->
                     throw CatalogError.of(500, refused.error().type(), refused.error().message());
         };
+    }
+
+    /** A DR freeze on any level above refuses drops and renames as it refuses commits (D37, M7). */
+    private static void requireUnfrozen(GovernanceChain chain, String what) {
+        chain.nearest(GovernanceAttribute.Kind.DR_FREEZE).ifPresent(freeze -> {
+            throw Http.forbidden(what + " is frozen for DR reconcile: " + freeze.value());
+        });
     }
 
     private static CatalogError alreadyExists(String from, String to, Kind holder) {
