@@ -1,0 +1,17 @@
+Breaks: two proven files at one version go unnoticed and the walk picks one.
+Module: catalog-core
+Test: ReconcileTest#twoProvenFilesAtOneVersionStopTheWalk
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+index 2771cfa..d13ba76 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+@@ -116,7 +116,7 @@ public final class Reconcile {
+                 return new Plan(table, from, steps, List.of(), Optional.empty());
+             }
+             List<Node> proven = next.stream().filter(n -> parents.contains(n.location())).toList();
+-            if (proven.size() > 1) {
++            if (proven.size() > 2) {
+                 return stopped(table, from, steps, "later files build on " + proven.size() + " files that follow "
+                         + current + ": " + proven.stream().map(Node::location).toList());
+             }

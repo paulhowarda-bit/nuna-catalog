@@ -1,0 +1,17 @@
+Breaks: a commit whose COMMIT was lost and whose outcome the store cannot decide answers 503, inviting a blind retry, not CommitStateUnknownException.
+Module: catalog-core
+Test: CommitEngineTest$Idempotency#outageWhileSettlingStaysUnknown
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
+index b5d6935..9ce29ee 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
+@@ -544,6 +544,8 @@ public final class CommitEngine {
+         CommitLookup lookup;
+         try {
+             lookup = store.findCommit(request.commitId(), object.mainKey());
++        } catch (StoreUnavailableException e) {
++            return Optional.of(new Unavailable("Catalog store unavailable: " + e.getMessage()));
+         } catch (StoreException e) {
+             LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
+             return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()

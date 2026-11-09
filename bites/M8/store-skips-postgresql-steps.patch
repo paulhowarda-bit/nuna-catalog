@@ -1,0 +1,17 @@
+Breaks: the server's store migrates only the shared steps, so PostgreSQL never reaches V4 (journal partitions).
+Module: catalog-server
+Test: SchemaAtStartupTest
+
+diff --git a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java
+index b4c2a76..e9ecf43 100644
+--- a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java
++++ b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java
+@@ -13,7 +13,7 @@ import java.sql.Statement;
+ enum Backend {
+ 
+     /** The shared steps, then the journal's partitioning. */
+-    POSTGRESQL(new String[] {Locations.SHARED, "classpath:fidice/store/sql/postgresql"}, true, true, true),
++    POSTGRESQL(new String[] {Locations.SHARED}, true, true, true),
+     /**
+      * PostgreSQL's steps but not the journal's partitioning: on YugabyteDB the renames it needs
+      * invalidate every open transaction, and its journal splits into tablets by itself (section 5.5).

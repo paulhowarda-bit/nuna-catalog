@@ -1,0 +1,17 @@
+Breaks: a commit refused by a store outage before COMMIT answers 500, which a client cannot safely repeat, not 503.
+Module: catalog-core
+Test: CommitEngineTest$Idempotency#outageBeforeCommitIsUnavailable
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
+index b5d6935..d986629 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
+@@ -322,7 +322,7 @@ public final class CommitEngine {
+             // Thrown only before a COMMIT was sent: an attempt whose COMMIT was lost is settled by findCommit,
+             // which answers CommitStateUnknownException when the store cannot say.
+             LOG.log(System.Logger.Level.WARNING, "catalog store unavailable", e);
+-            return new Unavailable("Catalog store unavailable; nothing was applied: " + e.getMessage());
++            return new ServerError(SERVICE_FAILURE, "Catalog store unavailable; nothing was applied: " + e.getMessage());
+         } catch (StoreException e) {
+             LOG.log(System.Logger.Level.WARNING, "catalog store failed", e);
+             return new ServerError(SERVICE_FAILURE, "Catalog store failed: " + e.getMessage());
