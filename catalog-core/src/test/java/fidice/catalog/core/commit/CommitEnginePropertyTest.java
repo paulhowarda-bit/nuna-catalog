@@ -135,7 +135,9 @@ class CommitEnginePropertyTest {
         var pointer = h.pointer("Orders");
         Map<String, String> properties = TableMetadataParser.fromJson(
                 h.files.read(pointer.metadataLocation(), pointer.sha256()).json()).properties();
-        assertThat(properties.keySet()).containsAll(landed).doesNotContainAnyElementsOf(notLanded);
+        assertThat(properties.keySet()).containsAll(landed);
+        // A run whose every request landed leaves notLanded empty, which doesNotContainAnyElementsOf refuses.
+        assertThat(notLanded).noneMatch(properties::containsKey);
         assertThat(pointer.version()).isEqualTo(1 + landed.size());
         List<JournalRecord> journal = h.journal("Orders");
         assertThat(journal).extracting(JournalRecord::newVersion)
