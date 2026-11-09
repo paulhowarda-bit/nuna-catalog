@@ -92,11 +92,18 @@ abstract class VendingContract {
         vendor = new CredentialVendor(profile, store.roleArn(), store.credentials(), CredentialVendor.MIN_LIFETIME);
     }
 
+    /** Runs after a failed start too, so whatever the store created (a real AWS role, say) is removed. */
     @AfterAll
     void stopStore() {
-        vendor.close();
-        direct.close();
-        store.close();
+        if (vendor != null) {
+            vendor.close();
+        }
+        if (direct != null) {
+            direct.close();
+        }
+        if (store != null) {
+            store.close();
+        }
     }
 
     @Test
