@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -48,12 +47,6 @@ class RestRoutesTest {
 
     @Autowired
     private JdbcTemplate jdbc;
-
-    @BeforeEach
-    void seedCatalog() {
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
-    }
 
     @Test
     void namespacesNestListDropAndReportTheirProperties() throws Exception {
@@ -283,7 +276,9 @@ class RestRoutesTest {
                  "operation":"append","metrics":{}}""".formatted(namespace)).statusCode()).isEqualTo(204);
         HttpResponse<String> credentials = send("GET", table + "/credentials", null);
         assertThat(credentials.statusCode()).isEqualTo(200);
-        assertThat(JsonPath.<List<Object>>read(credentials.body(), "$.storage-credentials")).isEmpty();
+        assertThat(JsonPath.<List<String>>read(credentials.body(), "$.storage-credentials[*].prefix"))
+                .as("M6 vends credentials for the table's location").singleElement().asString()
+                .startsWith("s3://" + SiloForTests.BUCKET + "/tables/");
 
         HttpResponse<String> token = request("POST", URI.create("http://localhost:" + port + "/v1/oauth/tokens"),
                 "grant_type=client_credentials", "Content-Type", "application/x-www-form-urlencoded");

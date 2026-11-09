@@ -28,29 +28,31 @@ import tools.jackson.databind.node.ObjectNode;
 class EventCodecTest {
 
     /** Version 1 of each payload schema: the fields that must not be null, and those that may be. */
-    private static final Map<EventType, List<String>> REQUIRED = Map.of(
-            EventType.COMMIT, List.of("commitId", "object", "branch", "after", "updates", "actor"),
-            EventType.GRANT_CHANGE, List.of("action", "securable", "group", "privilege", "actor"),
-            EventType.DROP, List.of("object", "purgeAfter", "actor"),
-            EventType.BREAK_GLASS, List.of("securable", "justification", "actor"),
-            EventType.OBJECT_READ, List.of("object", "branch", "served", "actor"),
-            EventType.DENIAL, List.of("operation", "securable", "reason", "actor"),
-            EventType.AUTH_FAILURE, List.of("reason", "requestId"),
-            EventType.CREDENTIAL_ISSUE, List.of("object", "storageProfile", "locationPrefix", "access", "sessionName",
-                    "expiresAt", "actor"),
-            EventType.NAMESPACE_CHANGE, List.of("action", "namespace", "set", "removed", "actor"),
-            EventType.RENAME, List.of("object", "fromPath", "actor"));
-    private static final Map<EventType, List<String>> NULLABLE = Map.of(
-            EventType.COMMIT, List.of("before"),
-            EventType.GRANT_CHANGE, List.of(),
-            EventType.DROP, List.of(),
-            EventType.BREAK_GLASS, List.of(),
-            EventType.OBJECT_READ, List.of(),
-            EventType.DENIAL, List.of("privilege"),
-            EventType.AUTH_FAILURE, List.of("issuer", "claimedSubject", "clientId", "remoteAddress"),
-            EventType.CREDENTIAL_ISSUE, List.of(),
-            EventType.NAMESPACE_CHANGE, List.of(),
-            EventType.RENAME, List.of());
+    private static final Map<EventType, List<String>> REQUIRED = Map.ofEntries(
+            Map.entry(EventType.COMMIT, List.of("commitId", "object", "branch", "after", "updates", "actor")),
+            Map.entry(EventType.GRANT_CHANGE, List.of("action", "securable", "group", "privilege", "actor")),
+            Map.entry(EventType.DROP, List.of("object", "purgeAfter", "actor")),
+            Map.entry(EventType.BREAK_GLASS, List.of("securable", "justification", "actor")),
+            Map.entry(EventType.OBJECT_READ, List.of("object", "branch", "served", "actor")),
+            Map.entry(EventType.DENIAL, List.of("operation", "securable", "reason", "actor")),
+            Map.entry(EventType.AUTH_FAILURE, List.of("reason", "requestId")),
+            Map.entry(EventType.CREDENTIAL_ISSUE, List.of("object", "storageProfile", "locationPrefix", "access", "sessionName",
+                    "expiresAt", "actor")),
+            Map.entry(EventType.NAMESPACE_CHANGE, List.of("action", "namespace", "set", "removed", "actor")),
+            Map.entry(EventType.RENAME, List.of("object", "fromPath", "actor")),
+            Map.entry(EventType.STORAGE_SETUP, List.of("action", "id", "name", "settings", "actor")));
+    private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
+            Map.entry(EventType.COMMIT, List.of("before")),
+            Map.entry(EventType.GRANT_CHANGE, List.of()),
+            Map.entry(EventType.DROP, List.of()),
+            Map.entry(EventType.BREAK_GLASS, List.of()),
+            Map.entry(EventType.OBJECT_READ, List.of()),
+            Map.entry(EventType.DENIAL, List.of("privilege")),
+            Map.entry(EventType.AUTH_FAILURE, List.of("issuer", "claimedSubject", "clientId", "remoteAddress")),
+            Map.entry(EventType.CREDENTIAL_ISSUE, List.of()),
+            Map.entry(EventType.NAMESPACE_CHANGE, List.of()),
+            Map.entry(EventType.RENAME, List.of()),
+            Map.entry(EventType.STORAGE_SETUP, List.of()));
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
     private static final List<String> NESTED_REQUIRED = List.of("actor.principal", "actor.requestId", "object.kind",
             "object.id", "object.catalog", "object.path", "after.metadataLocation", "after.version", "after.sha256");

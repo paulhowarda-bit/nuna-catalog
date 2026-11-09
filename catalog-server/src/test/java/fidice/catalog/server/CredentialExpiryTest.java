@@ -15,18 +15,17 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * A table load never answers 304 when the vended credentials expire within the refresh margin, and a
- * new credential epoch is a new ETag (D14). M4 vends nothing, so a stand-in vends credentials here.
+ * new credential epoch is a new ETag (D14). A stand-in vends credentials whose expiry the test moves;
+ * {@code storage.VendingRouteTest} covers the same rule with real STS credentials.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import({PostgresForTests.class, SiloForTests.class, CredentialExpiryTest.Vending.class})
@@ -41,7 +40,7 @@ class CredentialExpiryTest {
         @Bean
         @Primary
         CredentialVending expiringCredentials() {
-            return (catalogId, tableId, location, delegation) -> new CredentialVending.Vended(
+            return request -> new CredentialVending.Vended(
                     Map.of(), List.of(), EPOCH.get(), Optional.of(EXPIRES.get()));
         }
     }
@@ -51,13 +50,8 @@ class CredentialExpiryTest {
     @Value("${local.server.port}")
     private int port;
 
-    @Autowired
-    private JdbcTemplate jdbc;
-
     @Test
     void noNotModifiedNearExpiryAndANewEpochIsANewETag() throws Exception {
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
         EXPIRES.set(Instant.now().plus(Duration.ofHours(1)));
         String namespace = "expiry_" + UUID.randomUUID().toString().replace("-", "");
         assertThat(send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", null).statusCode())

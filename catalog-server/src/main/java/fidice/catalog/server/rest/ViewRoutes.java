@@ -64,7 +64,7 @@ class ViewRoutes {
         String name = RestRequest.createViewName(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, name), request)
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, name), request)
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
                         Optional.ofNullable(key));
         return ObjectRoutes.reply(reply, this::loaded);
@@ -75,7 +75,7 @@ class ViewRoutes {
                                 @PathVariable String view) {
         CatalogRecord catalog = lookup.catalog(prefix);
         CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), view, Kind.VIEW);
-        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(), object);
+        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
         return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of()));
     }
 
@@ -97,7 +97,7 @@ class ViewRoutes {
         NamespaceRecord record = lookup.namespace(catalog, levels)
                 .orElseThrow(() -> Http.noSuchView(Http.qualified(levels, view)));
         RequestContext request = RequestContext.of(http, callers);
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, view), request)
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, view), request)
                 .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
         return ObjectRoutes.reply(reply, this::loaded);

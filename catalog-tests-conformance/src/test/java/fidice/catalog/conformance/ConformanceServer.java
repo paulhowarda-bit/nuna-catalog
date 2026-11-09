@@ -5,10 +5,8 @@ import fidice.catalog.server.CatalogServer;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
-import java.util.UUID;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -52,16 +50,18 @@ final class ConformanceServer {
                         "spring.datasource.url=" + postgres.getJdbcUrl(),
                         "spring.datasource.username=" + postgres.getUsername(),
                         "spring.datasource.password=" + postgres.getPassword(),
-                        "fidice.storage.kind=MINIO",
-                        "fidice.storage.endpoint=" + storage,
-                        "fidice.storage.region=" + REGION,
-                        "fidice.storage.table-root=s3://" + BUCKET + "/tables",
-                        "fidice.storage.allowed-prefixes=s3://" + BUCKET + "/tables",
-                        "fidice.storage.access-key-id=" + ACCESS_KEY,
-                        "fidice.storage.secret-access-key=" + SECRET_KEY)
+                        "fidice.storage.require-tls=false",
+                        "fidice.storage.profiles.silo.kind=MINIO",
+                        "fidice.storage.profiles.silo.endpoint=" + storage,
+                        "fidice.storage.profiles.silo.region=" + REGION,
+                        "fidice.storage.profiles.silo.table-root=s3://" + BUCKET + "/tables",
+                        "fidice.storage.profiles.silo.allowed-prefixes=s3://" + BUCKET + "/tables",
+                        "fidice.storage.profiles.silo.access-key-id=" + ACCESS_KEY,
+                        "fidice.storage.profiles.silo.secret-access-key=" + SECRET_KEY,
+                        "fidice.storage.catalogs." + WAREHOUSE + ".profile=silo",
+                        "fidice.storage.catalogs." + WAREHOUSE + ".kms-key-set=test-keys",
+                        "fidice.storage.catalogs." + WAREHOUSE + ".legal-entity=Test Entity")
                 .run();
-        server.getBean(JdbcTemplate.class).update(
-                "INSERT INTO catalog (id, name_norm, name) VALUES (?, ?, ?)", UUID.randomUUID(), WAREHOUSE, WAREHOUSE);
         int port = server.getEnvironment().getRequiredProperty("local.server.port", Integer.class);
         uri = URI.create("http://localhost:" + port + "/");
         return uri;

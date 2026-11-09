@@ -1,6 +1,8 @@
 package fidice.catalog.server.rest;
 
+import fidice.catalog.core.principal.Caller;
 import fidice.catalog.iceberg.RestResponse.StorageCredential;
+import fidice.catalog.store.CatalogRecord;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -8,21 +10,39 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Storage access handed out with a table load (D21). M6 vends scoped STS credentials; until then
- * nothing is vended and clients bring their own storage access.
- */
+/** Storage access handed out with a table load (D21): scoped STS credentials, or none. */
 @FunctionalInterface
 public interface CredentialVending {
 
-    CredentialVending NONE = (catalogId, tableId, location, delegation) ->
-            new Vended(Map.of(), List.of(), "none", Optional.empty());
+    CredentialVending NONE = request -> Vended.NONE;
 
     /**
-     * @param location   the table's location, as the catalog assigned or registered it
-     * @param delegation the client's {@code X-Iceberg-Access-Delegation} header, if any
+     * @throws fidice.catalog.core.CatalogError 503 when credentials cannot be issued, or their issue
+     *                                          cannot be audited (D23)
      */
-    Vended vend(UUID catalogId, UUID tableId, String location, Optional<String> delegation);
+    Vended vend(Request request);
+
+    /**
+     * @param path        the table's namespace levels, then its name, as the request gives them
+     * @param location    the table's location, as the catalog assigned or registered it
+     * @param requestId   the request's id, carried into the STS session name and tags
+     * @param delegation  the client's {@code X-Iceberg-Access-Delegation} header, if any
+     * @param refreshPath the table's credentials route, relative to the catalog's base URI
+     */
+    record Request(CatalogRecord catalog, UUID tableId, List<String> path, String location, Caller caller,
+                   String requestId, Optional<String> delegation, String refreshPath) {
+
+        public Request {
+            Objects.requireNonNull(catalog, "catalog");
+            Objects.requireNonNull(tableId, "tableId");
+            path = List.copyOf(path);
+            Objects.requireNonNull(location, "location");
+            Objects.requireNonNull(caller, "caller");
+            Objects.requireNonNull(requestId, "requestId");
+            Objects.requireNonNull(delegation, "delegation");
+            Objects.requireNonNull(refreshPath, "refreshPath");
+        }
+    }
 
     /**
      * @param config      FileIO properties for the load response's {@code config}
@@ -31,6 +51,8 @@ public interface CredentialVending {
      */
     record Vended(Map<String, String> config, List<StorageCredential> credentials, String epoch,
                   Optional<Instant> expiresAt) {
+
+        public static final Vended NONE = new Vended(Map.of(), List.of(), "none", Optional.empty());
 
         public Vended {
             config = Map.copyOf(config);
