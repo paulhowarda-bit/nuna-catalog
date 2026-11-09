@@ -10,7 +10,7 @@ public enum StoreKind {
      * On-prem stores are addressed by path ({@code endpoint/bucket/key}), since their endpoints
      * rarely carry a wildcard DNS name per bucket. AWS S3 is addressed by virtual host.
      */
-    boolean pathStyle() {
+    public boolean pathStyle() {
         return this != S3;
     }
 }

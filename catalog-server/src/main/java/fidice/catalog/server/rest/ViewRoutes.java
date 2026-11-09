@@ -69,7 +69,7 @@ class ViewRoutes {
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
         guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW);
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, name), request)
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, name), request)
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
                         Optional.ofNullable(key));
         return ObjectRoutes.reply(reply, this::loaded);
@@ -83,7 +83,7 @@ class ViewRoutes {
         CatalogObject object = objects.existing(catalog, levels, view, Kind.VIEW);
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, view),
                 Guard.LOAD_VIEW);
-        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(), object);
+        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
         return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of()));
     }
 
@@ -111,7 +111,7 @@ class ViewRoutes {
         } else {
             guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW);
         }
-        CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, view), request)
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, view), request)
                 .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
         return ObjectRoutes.reply(reply, this::loaded);

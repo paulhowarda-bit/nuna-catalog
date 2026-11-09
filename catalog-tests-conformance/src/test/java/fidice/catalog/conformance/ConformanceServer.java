@@ -79,13 +79,17 @@ final class ConformanceServer {
                         "spring.datasource.url=" + postgres.getJdbcUrl(),
                         "spring.datasource.username=" + postgres.getUsername(),
                         "spring.datasource.password=" + postgres.getPassword(),
-                        "fidice.storage.kind=MINIO",
-                        "fidice.storage.endpoint=" + storage,
-                        "fidice.storage.region=" + REGION,
-                        "fidice.storage.table-root=s3://" + BUCKET + "/tables",
-                        "fidice.storage.allowed-prefixes=s3://" + BUCKET + "/tables",
-                        "fidice.storage.access-key-id=" + ACCESS_KEY,
-                        "fidice.storage.secret-access-key=" + SECRET_KEY,
+                        "fidice.storage.require-tls=false",
+                        "fidice.storage.profiles.silo.kind=MINIO",
+                        "fidice.storage.profiles.silo.endpoint=" + storage,
+                        "fidice.storage.profiles.silo.region=" + REGION,
+                        "fidice.storage.profiles.silo.table-root=s3://" + BUCKET + "/tables",
+                        "fidice.storage.profiles.silo.allowed-prefixes=s3://" + BUCKET + "/tables",
+                        "fidice.storage.profiles.silo.access-key-id=" + ACCESS_KEY,
+                        "fidice.storage.profiles.silo.secret-access-key=" + SECRET_KEY,
+                        "fidice.storage.catalogs." + WAREHOUSE + ".profile=silo",
+                        "fidice.storage.catalogs." + WAREHOUSE + ".kms-key-set=test-keys",
+                        "fidice.storage.catalogs." + WAREHOUSE + ".legal-entity=Test Entity",
                         "fidice.security.issuers[0].issuer=" + ISSUER,
                         "fidice.security.issuers[0].jwks-uri=" + idp.jwksUri(),
                         "fidice.security.issuers[0].audiences=" + AUDIENCE,
@@ -95,8 +99,7 @@ final class ConformanceServer {
                         "fidice.security.issuers[0].client-id-claim=azp")
                 .run();
         JdbcTemplate jdbc = server.getBean(JdbcTemplate.class);
-        UUID catalog = UUID.randomUUID();
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, ?, ?)", catalog, WAREHOUSE, WAREHOUSE);
+        UUID catalog = jdbc.queryForObject("SELECT id FROM catalog WHERE name_norm = ?", UUID.class, WAREHOUSE);
         for (String privilege : List.of("create", "modify")) {
             jdbc.update("INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege,"
                     + " granted_by, granted_at) VALUES (?, 'CATALOG', ?, ?, ?, 'conformance', now())",

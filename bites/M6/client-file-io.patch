@@ -1,0 +1,17 @@
+Breaks: a client may set a new file IO property such as s3.endpoint, only not change one.
+Module: catalog-objectstore
+Test: StorageRulesTest#noFileIoProperties
+
+diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
+index b7b0dce..80adab6 100644
+--- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
++++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
+@@ -50,7 +50,7 @@ public final class StorageRules {
+         Map<String, String> before = change.before() == null ? Map.of() : change.before().properties();
+         for (Map.Entry<String, String> property : change.after().properties().entrySet()) {
+             String key = property.getKey();
+-            if (fileIo(key) && !Objects.equals(property.getValue(), before.get(key))) {
++            if (fileIo(key) && before.containsKey(key) && !Objects.equals(property.getValue(), before.get(key))) {
+                 return Optional.of(Rejection.badRequest("Property " + key
+                         + " configures storage access, which the catalog alone sets"));
+             }

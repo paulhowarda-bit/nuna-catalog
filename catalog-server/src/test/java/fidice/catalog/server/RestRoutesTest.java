@@ -52,9 +52,7 @@ class RestRoutesTest {
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void seedCatalog() {
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
+    void grantPrivileges() {
         IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
     }
 
@@ -286,7 +284,9 @@ class RestRoutesTest {
                  "operation":"append","metrics":{}}""".formatted(namespace)).statusCode()).isEqualTo(204);
         HttpResponse<String> credentials = send("GET", table + "/credentials", null);
         assertThat(credentials.statusCode()).isEqualTo(200);
-        assertThat(JsonPath.<List<Object>>read(credentials.body(), "$.storage-credentials")).isEmpty();
+        assertThat(JsonPath.<List<String>>read(credentials.body(), "$.storage-credentials[*].prefix"))
+                .as("M6 vends credentials for the table's location").singleElement().asString()
+                .startsWith("s3://" + SiloForTests.BUCKET + "/tables/");
 
         HttpResponse<String> token = request("POST", URI.create("http://localhost:" + port + "/v1/oauth/tokens"),
                 "grant_type=client_credentials", "Content-Type", "application/x-www-form-urlencoded");

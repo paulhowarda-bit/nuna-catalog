@@ -1,0 +1,16 @@
+Breaks: the commit engines leave out the storage profile's rules, so a client can create a table with s3.endpoint.
+Module: catalog-server
+Test: VendingRouteTest#fileIoPropertiesAreRefused
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java b/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java
+index 71ed03f..5193614 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java
+@@ -70,7 +70,6 @@ class Engines {
+         CatalogStorage.Bound bound = storage.forCatalog(catalog.id());
+         return profiles.computeIfAbsent(bound.id(), id -> {
+             List<CommitRule> rules = new ArrayList<>(Rules.standard(bound.files(), CLOCK_SKEW));
+-            rules.addAll(bound.rules());
+             CommitEngine reader = new CommitEngine(store, bound.files(), cache, List.copyOf(rules), commit -> {
+                 throw new IllegalStateException("the reader engine never commits");
+             }, alerts, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);

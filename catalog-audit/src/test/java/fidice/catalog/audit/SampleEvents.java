@@ -45,7 +45,10 @@ public final class SampleEvents {
                         Map.of("owner", "Zoë", "comment", "desk"), List.of("stale"), ACTOR),
                 new Rename(TABLE, List.of("Équités", "Orders_old"), ACTOR),
                 new EngineChange(EngineChange.Action.REGISTERED, "https://login.example.com/tenant/v2.0", "trino-shared",
-                        "oid", List.of("delegation-none"), ACTOR));
+                        "oid", List.of("delegation-none"), ACTOR),
+                new StorageSetup(StorageSetup.Action.CATALOG_CREATED, CATALOG.id(), "Trading",
+                        Map.of("storage-profile", "s3-east", "kms-key-set", "equities-eu", "legal-entity", "Fidice Bourse SA"),
+                        ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

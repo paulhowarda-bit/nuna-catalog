@@ -49,7 +49,10 @@ import org.springframework.test.context.ContextConfiguration;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "fidice.security.grant-admin-groups=grant-admins",
         "fidice.security.platform-operator-groups=platform-ops",
-        "fidice.security.refuse-identity-less-commits=true"})
+        "fidice.security.refuse-identity-less-commits=true",
+        "fidice.storage.catalogs.gate.profile=silo",
+        "fidice.storage.catalogs.gate.kms-key-set=test-keys",
+        "fidice.storage.catalogs.gate.legal-entity=Test Entity"})
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class, AuditSinkForTests.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -92,8 +95,6 @@ class SecurityGateTest {
 
     @BeforeAll
     void buildTheEstate() throws Exception {
-        jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'gate', 'Gate') "
-                + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
         IssuerForTests.grant(jdbc, "gate", "data-admins", "create", "modify");
         IssuerForTests.grant(jdbc, "gate", "loaders", "modify");
         for (List<String> namespace : List.of(List.of("sales"), List.of("sales", "eu"), List.of("hr"),
