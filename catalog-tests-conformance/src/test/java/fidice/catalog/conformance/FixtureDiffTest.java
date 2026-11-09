@@ -123,8 +123,9 @@ class FixtureDiffTest {
         Map<String, String> differences = new LinkedHashMap<>();
         StringBuilder report = new StringBuilder();
         for (Step step : steps()) {
-            HttpResponse<String> ourResponse = send(ours.resolve("v1/" + ConformanceServer.WAREHOUSE + "/"), step);
-            HttpResponse<String> theirResponse = send(reference.resolve("/v1/"), step);
+            HttpResponse<String> ourResponse = send(ours.resolve("v1/" + ConformanceServer.WAREHOUSE + "/"), step,
+                    ConformanceServer.token());
+            HttpResponse<String> theirResponse = send(reference.resolve("/v1/"), step, null);
             String mine = shape(ourResponse);
             String theirs = shape(theirResponse);
             report.append(step.name()).append('\t').append(mine).append('\t').append(theirs).append('\t')
@@ -140,13 +141,17 @@ class FixtureDiffTest {
                 .containsExactlyInAnyOrderElementsOf(DEVIATIONS.keySet());
     }
 
-    private HttpResponse<String> send(URI base, Step step) throws Exception {
+    /** {@code token} is null for the reference fixture, which authenticates no one. */
+    private HttpResponse<String> send(URI base, Step step, String token) throws Exception {
         URI uri = step.path().startsWith("oauth/")
                 ? base.resolve("/v1/" + step.path())
                 : URI.create(base.toString().replaceAll("/$", "") + step.path());
         HttpRequest.Builder request = HttpRequest.newBuilder(uri).method(step.method(),
                 step.body() == null ? HttpRequest.BodyPublishers.noBody()
                         : HttpRequest.BodyPublishers.ofString(step.body()));
+        if (token != null) {
+            request.header("Authorization", "Bearer " + token);
+        }
         if (step.body() != null) {
             request.header("Content-Type", step.path().startsWith("oauth/")
                     ? "application/x-www-form-urlencoded" : "application/json");

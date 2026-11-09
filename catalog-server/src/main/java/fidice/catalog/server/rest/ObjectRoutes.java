@@ -41,15 +41,17 @@ class ObjectRoutes {
     private final Idempotency idempotency;
     private final AuditEvents audit;
     private final RestSettings settings;
+    private final Guard guard;
     private final Clock clock;
 
     ObjectRoutes(CatalogStore store, Lookup lookup, Idempotency idempotency, AuditEvents audit, RestSettings settings,
-                 Clock clock) {
+                 Guard guard, Clock clock) {
         this.store = store;
         this.lookup = lookup;
         this.idempotency = idempotency;
         this.audit = audit;
         this.settings = settings;
+        this.guard = guard;
         this.clock = clock;
     }
 
@@ -76,10 +78,12 @@ class ObjectRoutes {
         return lookup.object(namespace, name, kind).orElseThrow(() -> noSuch(kind, qualified));
     }
 
-    ResponseEntity<String> list(String prefix, String namespace, String pageToken, String pageSize, Kind kind) {
+    ResponseEntity<String> list(String prefix, String namespace, String pageToken, String pageSize, Kind kind,
+                                RequestContext request) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+        guard.onNamespace(request, catalog, record, levels, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS);
         Page<CatalogObject> page = Lookup.listing(() -> store.listObjects(record.id(), kind,
                 CatalogObject.State.ACTIVE, lookup.page(pageToken, pageSize)));
         List<Identifier> identifiers = page.items().stream()
@@ -88,13 +92,16 @@ class ObjectRoutes {
         return Http.json(200, RestResponse.identifiers(identifiers, page.nextToken().orElse(null)));
     }
 
-    ResponseEntity<Void> exists(String prefix, String namespace, String name, Kind kind) {
+    ResponseEntity<Void> exists(String prefix, String namespace, String name, Kind kind, RequestContext request) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
-        boolean found = lookup.namespace(catalog, levels)
-                .flatMap(ns -> lookup.object(ns, name, kind))
-                .isPresent();
-        return found ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
+        Optional<CatalogObject> found = lookup.namespace(catalog, levels).flatMap(ns -> lookup.object(ns, name, kind));
+        if (found.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        guard.onObject(request, catalog, found.get(), AuditEvents.path(levels, name),
+                kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS);
+        return ResponseEntity.noContent().build();
     }
 
     /** Always a soft drop: the name is free at once, the object stays undroppable until purge (D25). */
@@ -105,6 +112,8 @@ class ObjectRoutes {
         String qualified = Http.qualified(levels, name);
         return idempotency.run(key, request.caller(), "DROP_" + kind, scope(catalog, levels, name), "", ticket -> {
             CatalogObject object = existing(catalog, levels, name, kind);
+            guard.onObject(request, catalog, object, AuditEvents.path(levels, name),
+                    kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW);
             Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
             Instant purgeAfter = now.plus(settings.dropRetention());
             Change change = ticket.change(now, List.of(audit.event(now, new Drop(
@@ -141,6 +150,10 @@ class ObjectRoutes {
             String toName = Http.qualified(to.namespace(), to.name());
             CatalogObject object = existing(catalog, from.namespace(), from.name(), kind);
             NamespaceRecord target = lookup.existingNamespace(catalog, to.namespace());
+            guard.onObject(request, catalog, object, AuditEvents.path(from.namespace(), from.name()),
+                    kind == Kind.TABLE ? Guard.RENAME_TABLE : Guard.RENAME_VIEW);
+            guard.onNamespace(request, catalog, target, to.namespace(),
+                    kind == Kind.TABLE ? Guard.RENAME_TABLE_INTO : Guard.RENAME_VIEW_INTO);
             Optional<CatalogObject> holder = store.findObject(target.id(), Names.normalize(to.name()))
                     .filter(o -> !o.id().equals(object.id()));
             if (holder.isPresent()) {

@@ -1,0 +1,79 @@
+{
+  "realm": "rogue",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "groups": [
+    {
+      "name": "traders"
+    }
+  ],
+  "users": [
+    {
+      "username": "d1001",
+      "enabled": true,
+      "email": "d1001@example.test",
+      "emailVerified": true,
+      "firstName": "Ada",
+      "lastName": "Tester",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "pw-d1001",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/traders"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "trino-rogue",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "fidice-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "included.custom.audience": "fidice-catalog"
+          }
+        },
+        {
+          "name": "oid",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "user.attribute": "username",
+            "claim.name": "oid",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "full.path": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

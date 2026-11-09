@@ -7,9 +7,9 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.UUID;
 
 /** Who a request comes from, and its id: the client's {@code X-Request-ID}, or one made up here. */
-record RequestContext(Caller caller, String requestId) {
+public record RequestContext(Caller caller, String requestId) {
 
-    static RequestContext of(HttpServletRequest request, Callers callers) {
+    public static RequestContext of(HttpServletRequest request, Callers callers) {
         String id = request.getHeader(Http.REQUEST_ID);
         if (id == null || id.isBlank() || id.length() > 128) {
             id = UUID.randomUUID().toString();
@@ -17,7 +17,7 @@ record RequestContext(Caller caller, String requestId) {
         return new RequestContext(callers.caller(request), id);
     }
 
-    Actor actor() {
+    public Actor actor() {
         return new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null), caller.engine(),
                 requestId);
     }

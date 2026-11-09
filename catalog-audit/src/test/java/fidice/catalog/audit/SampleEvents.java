@@ -43,7 +43,9 @@ public final class SampleEvents {
                         "fidice-svc-trino-req-0001", Instant.parse("2026-11-07T10:45:30Z"), ACTOR),
                 new NamespaceChange(NamespaceChange.Action.PROPERTIES_CHANGED, NAMESPACE,
                         Map.of("owner", "Zoë", "comment", "desk"), List.of("stale"), ACTOR),
-                new Rename(TABLE, List.of("Équités", "Orders_old"), ACTOR));
+                new Rename(TABLE, List.of("Équités", "Orders_old"), ACTOR),
+                new EngineChange(EngineChange.Action.REGISTERED, "https://login.example.com/tenant/v2.0", "trino-shared",
+                        "oid", List.of("delegation-none"), ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

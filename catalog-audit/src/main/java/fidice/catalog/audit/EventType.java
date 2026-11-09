@@ -17,7 +17,8 @@ public enum EventType {
     AUTH_FAILURE("auth-failure", 1, AuthFailure.class),
     CREDENTIAL_ISSUE("credential-issue", 1, CredentialIssue.class),
     NAMESPACE_CHANGE("namespace", 1, NamespaceChange.class),
-    RENAME("rename", 1, Rename.class);
+    RENAME("rename", 1, Rename.class),
+    ENGINE_CHANGE("engine", 1, EngineChange.class);
 
     private final String typeName;
     private final URI dataSchema;
