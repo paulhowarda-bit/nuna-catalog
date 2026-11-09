@@ -33,6 +33,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.TestFactory;
 
 /**
@@ -151,6 +152,7 @@ public abstract class MutationSuite extends GroupSuite {
         }));
     }
 
+    @Tag("heavy")
     @TestFactory
     @DisplayName("3 Ambiguity: every mutation whose answer is lost is unknown, carries its change id, and was written")
     Stream<DynamicTest> everyMutationWithALostAnswerIsUnknown() {
@@ -164,6 +166,7 @@ public abstract class MutationSuite extends GroupSuite {
         }));
     }
 
+    @Tag("heavy")
     @TestFactory
     @DisplayName("2 Atomicity: every mutation whose link is cut just before COMMIT is unknown and wrote nothing")
     Stream<DynamicTest> everyMutationCutBeforeCommitWritesNothing() {

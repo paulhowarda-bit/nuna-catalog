@@ -31,12 +31,14 @@ import java.util.Optional;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * The shared suite against a three-node CockroachDB cluster: the commit suite, every group suite as a
  * nested class on the same cluster, and CockroachDB-only checks (docs/storage-design.md 5.4).
  */
+@Tag("heavy")
 class CockroachStoreSuiteTest extends CommitSuite {
 
     private CockroachCluster cockroach;

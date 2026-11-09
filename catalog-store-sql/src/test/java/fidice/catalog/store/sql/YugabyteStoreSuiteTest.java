@@ -16,12 +16,14 @@ import fidice.catalog.store.suite.UpgradeSuite;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * The shared suite against a three-node YugabyteDB cluster: the commit suite, every group suite as a
  * nested class on the same cluster, and YugabyteDB-only checks (docs/storage-design.md 5.5).
  */
+@Tag("heavy")
 class YugabyteStoreSuiteTest extends CommitSuite {
 
     private YugabyteCluster yugabyte;

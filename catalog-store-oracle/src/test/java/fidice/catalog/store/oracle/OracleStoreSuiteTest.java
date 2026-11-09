@@ -73,12 +73,14 @@ import java.util.concurrent.CountDownLatch;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * The shared suite against Oracle AI Database Free with Transaction Guard: the commit suite, every
  * group suite as a nested class on the same backend, and Oracle-only hazards.
  */
+@Tag("heavy")
 class OracleStoreSuiteTest extends CommitSuite {
 
     /** Shorter than the link's read timeout: the client still gets its answer. */

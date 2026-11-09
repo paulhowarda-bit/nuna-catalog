@@ -43,6 +43,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.TestInstance;
@@ -235,6 +236,7 @@ public abstract class CommitSuite {
         assertThat(store.findCommit(batch.commitId(), keys.get(0))).isEqualTo(CommitLookup.NOT_COMMITTED);
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("2 Atomicity: cutting the link just before COMMIT leaves no pointer, journal, outbox or idempotency row")
     void linkCutBeforeCommitLeavesNothing() {
@@ -250,6 +252,7 @@ public abstract class CommitSuite {
         assertThat(store.readPointer(key)).contains(base);
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("2 Atomicity: a link that is down before the commit starts is a clean failure, not an unknown outcome")
     void linkDownBeforeCommitIsACleanFailure() {
@@ -267,6 +270,7 @@ public abstract class CommitSuite {
 
     // ---- 3. Ambiguity ----
 
+    @Tag("heavy")
     @Test
     @DisplayName("3 Ambiguity: a response lost after COMMIT is unknown, never a conflict, and resolves to COMMITTED")
     void lostResponseResolvesToCommitted() {
@@ -282,6 +286,7 @@ public abstract class CommitSuite {
         assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.allOf(batch));
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("3 Ambiguity: a COMMIT lost on its way is unknown, never a conflict, and resolves to NOT_COMMITTED")
     void lostCommitResolvesToNotCommitted() {
@@ -297,6 +302,7 @@ public abstract class CommitSuite {
         assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.NONE);
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("3 Ambiguity: findCommit waits for an update whose COMMIT is still in flight")
     void inFlightUpdateIsWaitedFor() throws Exception {
@@ -304,6 +310,7 @@ public abstract class CommitSuite {
         assertFindCommitWaitsForInFlightCommit(key, Optional.of(commitNew(key, "base")));
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("3 Ambiguity: findCommit waits for a create whose COMMIT is still in flight")
     void inFlightCreateIsWaitedFor() throws Exception {
@@ -377,6 +384,7 @@ public abstract class CommitSuite {
 
     // ---- 4. Failover ----
 
+    @Tag("heavy")
     @Test
     @DisplayName("4 Failover: every commit acknowledged before the primary is lost is present after promotion")
     void acknowledgedCommitsSurviveFailover() throws Exception {
@@ -448,6 +456,7 @@ public abstract class CommitSuite {
 
     // ---- 6. Read-after-commit ----
 
+    @Tag("heavy")
     @Test
     @DisplayName("6 Read-after-commit: a read after an acknowledged commit sees it while replicas lag")
     void readAfterCommitSeesItDespiteReplicaLag() {
