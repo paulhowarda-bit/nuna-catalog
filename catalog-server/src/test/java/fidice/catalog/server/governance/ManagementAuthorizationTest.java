@@ -120,6 +120,13 @@ class ManagementAuthorizationTest {
     }
 
     @Test
+    void reconcilingFromStorageNeedsAPlatformOperator() {
+        refused(api.manage("POST", "/dr-reconcile", null));
+        refused(api.manage("POST", "/dr-reconcile", null, AUTH, api.steward()));
+        expect(api.manage("POST", "/dr-reconcile", null, AUTH, api.operator()), 200);
+    }
+
+    @Test
     void liftingADrFreezeNeedsAPlatformOperator() {
         String freeze = "/namespaces/" + ns + "/dr-freeze";
         expect(api.manage("PUT", freeze, "{\"reason\":\"drill\"}", AUTH, api.operator()), 200);

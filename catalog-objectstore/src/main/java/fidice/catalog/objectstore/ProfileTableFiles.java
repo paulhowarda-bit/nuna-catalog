@@ -1,6 +1,7 @@
 package fidice.catalog.objectstore;
 
 import fidice.catalog.core.commit.TableFiles;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -33,6 +34,16 @@ public final class ProfileTableFiles implements TableFiles {
     public Read read(String location, String expectedSha256) {
         LoadedMetadata loaded = files.read(location, expectedSha256, OnMismatch.FLAG);
         return new Read(loaded.json(), loaded.sha256(), loaded.intact());
+    }
+
+    @Override
+    public List<String> metadataFiles(String locationRoot) {
+        return files.list(locationRoot);
+    }
+
+    @Override
+    public List<String> tableLocations() {
+        return files.tableLocations();
     }
 
     /** False for anything that is not a canonical {@code s3://} location, which can lie within nothing. */

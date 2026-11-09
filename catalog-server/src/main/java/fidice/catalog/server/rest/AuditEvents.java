@@ -24,7 +24,7 @@ import org.springframework.stereotype.Component;
  * event's type name and the whole CloudEvent, encoded as the relay will publish it (M7).
  */
 @Component
-class AuditEvents {
+public class AuditEvents {
 
     private final RestSettings settings;
 
@@ -38,7 +38,7 @@ class AuditEvents {
     }
 
     /** The commit events of one request against {@code path} (namespace levels, then the name) in {@code catalog}. */
-    CommitEvents commits(String catalog, List<String> path, Actor actor) {
+    public CommitEvents commits(String catalog, List<String> path, Actor actor) {
         return commit -> List.of(event(commit.at(), new Commit(commit.commitId(),
                 securable(commit.object(), catalog, path), PointerKey.MAIN,
                 commit.before().map(AuditEvents::state).orElse(null), state(commit.after()),

@@ -61,6 +61,28 @@ final class MemoryFiles implements TableFiles {
         return path.size() > prefix.size() && path.subList(0, prefix.size()).equals(prefix);
     }
 
+    @Override
+    public List<String> metadataFiles(String locationRoot) {
+        String directory = locationRoot + "/metadata/";
+        return files.keySet().stream()
+                .filter(location -> location.startsWith(directory) && location.indexOf('/', directory.length()) < 0)
+                .toList();
+    }
+
+    @Override
+    public List<String> tableLocations() {
+        return files.keySet().stream()
+                .filter(location -> location.startsWith(ROOT + "/"))
+                .map(location -> ROOT + "/" + location.substring(ROOT.length() + 1).split("/", 2)[0])
+                .distinct()
+                .toList();
+    }
+
+    /** Deletes a file, as storage that has not yet received it would lack it. */
+    void remove(String location) {
+        files.remove(location);
+    }
+
     /** Changes a file behind the catalog's back. */
     void tamper(String location, String json) {
         files.put(location, json.getBytes(UTF_8));

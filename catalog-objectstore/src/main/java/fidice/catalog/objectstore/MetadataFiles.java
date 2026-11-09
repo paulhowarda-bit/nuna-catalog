@@ -4,16 +4,20 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Consumer;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 /**
@@ -78,6 +82,40 @@ public final class MetadataFiles implements AutoCloseable {
             throw new MetadataIntegrityException(location, expectedSha256, actual);
         }
         return new LoadedMetadata(location, new String(bytes, UTF_8), actual, intact);
+    }
+
+    /**
+     * The metadata files directly in a table's metadata directory, as {@link #write} names them, in no
+     * particular order.
+     */
+    public List<String> list(String tableLocation) {
+        ObjectLocation directory = profile.approve(tableLocation).child("metadata");
+        List<String> files = new ArrayList<>();
+        listDirectory(directory, response -> response.contents().stream()
+                .map(object -> object.key().substring(object.key().lastIndexOf('/') + 1))
+                .filter(name -> name.endsWith(".metadata.json"))
+                .forEach(name -> files.add(directory.child(name).toString())));
+        return files;
+    }
+
+    /** Every location directly beneath the profile's table root: one per table or view it gave out. */
+    public List<String> tableLocations() {
+        ObjectLocation root = profile.tableRoot();
+        List<String> tables = new ArrayList<>();
+        listDirectory(root, response -> response.commonPrefixes().forEach(prefix -> {
+            String key = prefix.prefix().substring(0, prefix.prefix().length() - 1);
+            tables.add(root.child(key.substring(key.lastIndexOf('/') + 1)).toString());
+        }));
+        return tables;
+    }
+
+    private void listDirectory(ObjectLocation directory, Consumer<ListObjectsV2Response> page) {
+        try {
+            s3.listObjectsV2Paginator(request -> request.bucket(directory.bucket()).prefix(directory.key() + "/")
+                    .delimiter("/")).forEach(page);
+        } catch (SdkException e) {
+            throw new ObjectStoreException("listing " + directory + " failed", e);
+        }
     }
 
     @Override
