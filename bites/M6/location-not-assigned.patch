@@ -1,0 +1,17 @@
+Breaks: a new or registered object may sit anywhere in the profile, not only at the location assigned to its id.
+Module: catalog-objectstore
+Test: StorageRulesTest#assignedOnCreate
+
+diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
+index b7b0dce..893718e 100644
+--- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
++++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
+@@ -38,7 +38,7 @@ public final class StorageRules {
+             return Optional.empty();
+         }
+         String assigned = files.newLocation(change.object().id());
+-        if (!assigned.equals(change.object().locationRoot())) {
++        if (!change.object().locationRoot().startsWith(assigned.substring(0, assigned.lastIndexOf('/')))) {
+             return Optional.of(Rejection.badRequest("Location is assigned by the catalog: " + assigned
+                     + ", not " + change.object().locationRoot()));
+         }

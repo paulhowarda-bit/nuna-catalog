@@ -1,0 +1,17 @@
+Breaks: any caller that declines delegation gets no credentials, not only a trusted engine.
+Module: catalog-server
+Test: VendingRouteTest#onlyTrustedEnginesMayDecline
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+index 7a9a5e6..a0fea67 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+@@ -64,7 +64,7 @@ public final class StsCredentialVending implements CredentialVending {
+     @Override
+     public Vended vend(Request request) {
+         Caller caller = request.caller();
+-        if (caller.trustedEngine() && declined(request.delegation())) {
++        if (declined(request.delegation())) {
+             return Vended.NONE;
+         }
+         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());

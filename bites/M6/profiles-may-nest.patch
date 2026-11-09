@@ -1,0 +1,16 @@
+Breaks: one profile's prefix may contain another's.
+Module: catalog-objectstore
+Test: ProfileOverlapTest#overlapIsRefused
+
+diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/ProfileOverlap.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/ProfileOverlap.java
+index 38b01e2..d3b62af 100644
+--- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/ProfileOverlap.java
++++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/ProfileOverlap.java
+@@ -45,6 +45,6 @@ public final class ProfileOverlap {
+     }
+ 
+     static boolean overlap(ObjectLocation a, ObjectLocation b) {
+-        return a.equals(b) || a.isBeneath(b) || b.isBeneath(a);
++        return a.equals(b);
+     }
+ }

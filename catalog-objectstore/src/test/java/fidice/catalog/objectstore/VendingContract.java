@@ -56,9 +56,6 @@ import software.amazon.awssdk.services.s3.model.S3Object;
 abstract class VendingContract {
 
     private static final String REGION = "us-east-1";
-    private static final String BUCKET = "lake";
-    private static final String OTHER_BUCKET = "lake2";
-    private static final String TABLE = "s3://lake/t/orders";
     private static final String SECRET = "orders2-secret-" + UUID.randomUUID();
     /** Objects the tests seed outside {@code t/orders/}; nothing else may ever appear there. */
     private static final Set<String> OUTSIDE = Set.of("t/orders2/secret.json", "t/orders", "t/ordersX/secret.json",
@@ -66,6 +63,10 @@ abstract class VendingContract {
     private static final String SEED = "t/orders/seed.json";
 
     private RunningStore store;
+    private String bucket;
+    private String otherBucket;
+    /** The table credentials are vended for. */
+    private String table;
     private S3Client direct;
     private CredentialVendor vendor;
     private final HttpClient http = HttpClient.newHttpClient();
@@ -75,16 +76,19 @@ abstract class VendingContract {
     @BeforeAll
     void startStore() {
         store = start();
+        bucket = store.bucket();
+        otherBucket = store.otherBucket();
+        table = "s3://" + bucket + "/t/orders";
         direct = client(store.credentials());
-        direct.createBucket(request -> request.bucket(BUCKET));
-        direct.createBucket(request -> request.bucket(OTHER_BUCKET));
+        direct.createBucket(request -> request.bucket(bucket));
+        direct.createBucket(request -> request.bucket(otherBucket));
         for (String key : OUTSIDE) {
-            directPut(BUCKET, key, SECRET);
+            directPut(bucket, key, SECRET);
         }
-        directPut(OTHER_BUCKET, "t/orders/secret.json", SECRET);
-        directPut(BUCKET, SEED, "seed");
-        StorageProfile profile = StorageProfile.of(store.kind(), store.endpoint().toString(), REGION, "s3://lake/t",
-                List.of("s3://lake/t"));
+        directPut(otherBucket, "t/orders/secret.json", SECRET);
+        directPut(bucket, SEED, "seed");
+        StorageProfile profile = StorageProfile.of(store.kind(), store.endpoint().toString(), REGION, "s3://" + bucket + "/t",
+                List.of("s3://" + bucket + "/t"));
         vendor = new CredentialVendor(profile, store.roleArn(), store.credentials(), CredentialVendor.MIN_LIFETIME);
     }
 
@@ -99,24 +103,24 @@ abstract class VendingContract {
     @DisplayName("vended credentials read, write, list and upload in parts inside their table's prefix")
     void ownPrefix() {
         try (S3Client vended = vended(Access.READ_WRITE)) {
-            vended.putObject(r -> r.bucket(BUCKET).key("t/orders/data/a.parquet"), RequestBody.fromString("a"));
-            assertThat(vended.getObjectAsBytes(r -> r.bucket(BUCKET).key("t/orders/data/a.parquet")).asUtf8String())
+            vended.putObject(r -> r.bucket(bucket).key("t/orders/data/a.parquet"), RequestBody.fromString("a"));
+            assertThat(vended.getObjectAsBytes(r -> r.bucket(bucket).key("t/orders/data/a.parquet")).asUtf8String())
                     .isEqualTo("a");
-            vended.headObject(r -> r.bucket(BUCKET).key(SEED));
+            vended.headObject(r -> r.bucket(bucket).key(SEED));
             // Silo (as MinIO) lists nothing under t/orders/ while an object named t/orders exists, even for
             // its root user; the tests seed one, so the listing goes a level down.
-            assertThat(vended.listObjectsV2(r -> r.bucket(BUCKET).prefix("t/orders/data/")).contents())
+            assertThat(vended.listObjectsV2(r -> r.bucket(bucket).prefix("t/orders/data/")).contents())
                     .extracting(S3Object::key).contains("t/orders/data/a.parquet");
 
-            String upload = vended.createMultipartUpload(r -> r.bucket(BUCKET).key("t/orders/data/parts")).uploadId();
-            String etag = vended.uploadPart(r -> r.bucket(BUCKET).key("t/orders/data/parts").uploadId(upload)
+            String upload = vended.createMultipartUpload(r -> r.bucket(bucket).key("t/orders/data/parts")).uploadId();
+            String etag = vended.uploadPart(r -> r.bucket(bucket).key("t/orders/data/parts").uploadId(upload)
                     .partNumber(1), RequestBody.fromString("parts")).eTag();
-            vended.completeMultipartUpload(r -> r.bucket(BUCKET).key("t/orders/data/parts").uploadId(upload)
+            vended.completeMultipartUpload(r -> r.bucket(bucket).key("t/orders/data/parts").uploadId(upload)
                     .multipartUpload(m -> m.parts(CompletedPart.builder().partNumber(1).eTag(etag).build())));
-            assertThat(directGet(BUCKET, "t/orders/data/parts")).isEqualTo("parts");
+            assertThat(directGet(bucket, "t/orders/data/parts")).isEqualTo("parts");
 
-            String abandoned = vended.createMultipartUpload(r -> r.bucket(BUCKET).key("t/orders/data/x")).uploadId();
-            vended.abortMultipartUpload(r -> r.bucket(BUCKET).key("t/orders/data/x").uploadId(abandoned));
+            String abandoned = vended.createMultipartUpload(r -> r.bucket(bucket).key("t/orders/data/x")).uploadId();
+            vended.abortMultipartUpload(r -> r.bucket(bucket).key("t/orders/data/x").uploadId(abandoned));
         }
         assertNothingNewOutside();
     }
@@ -126,11 +130,11 @@ abstract class VendingContract {
     void siblingWithACommonStem() {
         try (S3Client vended = vended(Access.READ_WRITE)) {
             for (String key : List.of("t/orders2/secret.json", "t/ordersX/secret.json", "t/orders")) {
-                assertDenied(() -> vended.getObjectAsBytes(r -> r.bucket(BUCKET).key(key)));
-                assertDenied(() -> vended.headObject(r -> r.bucket(BUCKET).key(key)));
-                assertDenied(() -> vended.putObject(r -> r.bucket(BUCKET).key(key), RequestBody.fromString("pwned")));
+                assertDenied(() -> vended.getObjectAsBytes(r -> r.bucket(bucket).key(key)));
+                assertDenied(() -> vended.headObject(r -> r.bucket(bucket).key(key)));
+                assertDenied(() -> vended.putObject(r -> r.bucket(bucket).key(key), RequestBody.fromString("pwned")));
             }
-            assertDenied(() -> vended.putObject(r -> r.bucket(BUCKET).key("t/orders2/new.json"),
+            assertDenied(() -> vended.putObject(r -> r.bucket(bucket).key("t/orders2/new.json"),
                     RequestBody.fromString("pwned")));
         }
         assertNothingNewOutside();
@@ -141,10 +145,10 @@ abstract class VendingContract {
     void listing() {
         try (S3Client vended = vended(Access.READ_WRITE)) {
             for (String prefix : List.of("t/orders2/", "t/orders", "t/", "", "t/ordersX")) {
-                assertDenied(() -> vended.listObjectsV2(r -> r.bucket(BUCKET).prefix(prefix)));
+                assertDenied(() -> vended.listObjectsV2(r -> r.bucket(bucket).prefix(prefix)));
             }
             try {
-                List<String> keys = vended.listObjectsV2(r -> r.bucket(BUCKET).prefix("t/orders/../orders2/"))
+                List<String> keys = vended.listObjectsV2(r -> r.bucket(bucket).prefix("t/orders/../orders2/"))
                         .contents().stream().map(S3Object::key).toList();
                 assertThat(keys).allMatch(key -> key.startsWith("t/orders/"));
             } catch (S3Exception e) {
@@ -157,73 +161,73 @@ abstract class VendingContract {
     @DisplayName("a copy cannot pull a sibling's object into the table's prefix")
     void copyFromASibling() {
         try (S3Client vended = vended(Access.READ_WRITE)) {
-            assertDenied(() -> vended.copyObject(r -> r.sourceBucket(BUCKET).sourceKey("t/orders2/secret.json")
-                    .destinationBucket(BUCKET).destinationKey("t/orders/stolen.json")));
-            assertDenied(() -> vended.copyObject(r -> r.sourceBucket(OTHER_BUCKET).sourceKey("t/orders/secret.json")
-                    .destinationBucket(BUCKET).destinationKey("t/orders/stolen2.json")));
+            assertDenied(() -> vended.copyObject(r -> r.sourceBucket(bucket).sourceKey("t/orders2/secret.json")
+                    .destinationBucket(bucket).destinationKey("t/orders/stolen.json")));
+            assertDenied(() -> vended.copyObject(r -> r.sourceBucket(otherBucket).sourceKey("t/orders/secret.json")
+                    .destinationBucket(bucket).destinationKey("t/orders/stolen2.json")));
         }
-        assertThatThrownBy(() -> directGet(BUCKET, "t/orders/stolen.json")).isInstanceOf(NoSuchKeyException.class);
-        assertThatThrownBy(() -> directGet(BUCKET, "t/orders/stolen2.json")).isInstanceOf(NoSuchKeyException.class);
+        assertThatThrownBy(() -> directGet(bucket, "t/orders/stolen.json")).isInstanceOf(NoSuchKeyException.class);
+        assertThatThrownBy(() -> directGet(bucket, "t/orders/stolen2.json")).isInstanceOf(NoSuchKeyException.class);
     }
 
     @Test
     @DisplayName("the same prefix in another bucket, and bucket-level actions, are refused")
     void otherBucketsAndBucketActions() {
         try (S3Client vended = vended(Access.READ_WRITE_DELETE)) {
-            assertDenied(() -> vended.getObjectAsBytes(r -> r.bucket(OTHER_BUCKET).key("t/orders/secret.json")));
-            assertDenied(() -> vended.putObject(r -> r.bucket(OTHER_BUCKET).key("t/orders/x"),
+            assertDenied(() -> vended.getObjectAsBytes(r -> r.bucket(otherBucket).key("t/orders/secret.json")));
+            assertDenied(() -> vended.putObject(r -> r.bucket(otherBucket).key("t/orders/x"),
                     RequestBody.fromString("pwned")));
-            assertDenied(() -> vended.listObjectsV2(r -> r.bucket(OTHER_BUCKET).prefix("t/orders/")));
-            assertDenied(() -> vended.createBucket(r -> r.bucket("lake3")));
-            assertDenied(() -> vended.putBucketPolicy(r -> r.bucket(BUCKET).policy("{\"Version\":\"2012-10-17\","
+            assertDenied(() -> vended.listObjectsV2(r -> r.bucket(otherBucket).prefix("t/orders/")));
+            assertDenied(() -> vended.createBucket(r -> r.bucket(bucket + "3")));
+            assertDenied(() -> vended.putBucketPolicy(r -> r.bucket(bucket).policy("{\"Version\":\"2012-10-17\","
                     + "\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:*\","
-                    + "\"Resource\":\"arn:aws:s3:::lake/*\"}]}")));
-            assertDenied(() -> vended.deleteBucket(r -> r.bucket(OTHER_BUCKET)));
+                    + "\"Resource\":\"arn:aws:s3:::" + bucket + "/*\"}]}")));
+            assertDenied(() -> vended.deleteBucket(r -> r.bucket(otherBucket)));
             assertDenied(() -> vended.listBuckets());
         }
-        assertThat(directGet(OTHER_BUCKET, "t/orders/secret.json")).isEqualTo(SECRET);
+        assertThat(directGet(otherBucket, "t/orders/secret.json")).isEqualTo(SECRET);
     }
 
     @Test
     @DisplayName("without the maintenance level nothing can be deleted, singly or in a batch (D25)")
     void noDeleteWithoutMaintenance() {
-        directPut(BUCKET, "t/orders/keep.json", "keep");
+        directPut(bucket, "t/orders/keep.json", "keep");
         try (S3Client vended = vended(Access.READ_WRITE)) {
-            assertDenied(() -> vended.deleteObject(r -> r.bucket(BUCKET).key("t/orders/keep.json")));
+            assertDenied(() -> vended.deleteObject(r -> r.bucket(bucket).key("t/orders/keep.json")));
             try {
-                DeleteObjectsResponse batch = vended.deleteObjects(r -> r.bucket(BUCKET).delete(d -> d.objects(
+                DeleteObjectsResponse batch = vended.deleteObjects(r -> r.bucket(bucket).delete(d -> d.objects(
                         ObjectIdentifier.builder().key("t/orders/keep.json").build())));
                 assertThat(batch.errors()).as("per-key errors of a batch delete").isNotEmpty();
             } catch (S3Exception e) {
                 assertThat(e.statusCode()).isEqualTo(403);
             }
         }
-        assertThat(directGet(BUCKET, "t/orders/keep.json")).isEqualTo("keep");
+        assertThat(directGet(bucket, "t/orders/keep.json")).isEqualTo("keep");
     }
 
     @Test
     @DisplayName("the maintenance level deletes inside the prefix and still nowhere else")
     void maintenanceDeletesOnlyInside() {
-        directPut(BUCKET, "t/orders/old.json", "old");
+        directPut(bucket, "t/orders/old.json", "old");
         try (S3Client vended = vended(Access.READ_WRITE_DELETE)) {
-            vended.deleteObject(r -> r.bucket(BUCKET).key("t/orders/old.json"));
-            assertDenied(() -> vended.deleteObject(r -> r.bucket(BUCKET).key("t/orders2/secret.json")));
-            assertDenied(() -> vended.deleteObject(r -> r.bucket(BUCKET).key("t/orders")));
+            vended.deleteObject(r -> r.bucket(bucket).key("t/orders/old.json"));
+            assertDenied(() -> vended.deleteObject(r -> r.bucket(bucket).key("t/orders2/secret.json")));
+            assertDenied(() -> vended.deleteObject(r -> r.bucket(bucket).key("t/orders")));
         }
-        assertThatThrownBy(() -> directGet(BUCKET, "t/orders/old.json")).isInstanceOf(NoSuchKeyException.class);
-        assertThat(directGet(BUCKET, "t/orders2/secret.json")).isEqualTo(SECRET);
-        assertThat(directGet(BUCKET, "t/orders")).isEqualTo(SECRET);
+        assertThatThrownBy(() -> directGet(bucket, "t/orders/old.json")).isInstanceOf(NoSuchKeyException.class);
+        assertThat(directGet(bucket, "t/orders2/secret.json")).isEqualTo(SECRET);
+        assertThat(directGet(bucket, "t/orders")).isEqualTo(SECRET);
     }
 
     @Test
     @DisplayName("read access reads and lists, and cannot write")
     void readCannotWrite() {
         try (S3Client vended = vended(Access.READ)) {
-            assertThat(vended.getObjectAsBytes(r -> r.bucket(BUCKET).key(SEED)).asUtf8String()).isEqualTo("seed");
-            vended.listObjectsV2(r -> r.bucket(BUCKET).prefix("t/orders/data/"));
-            assertDenied(() -> vended.putObject(r -> r.bucket(BUCKET).key("t/orders/data/w"),
+            assertThat(vended.getObjectAsBytes(r -> r.bucket(bucket).key(SEED)).asUtf8String()).isEqualTo("seed");
+            vended.listObjectsV2(r -> r.bucket(bucket).prefix("t/orders/data/"));
+            assertDenied(() -> vended.putObject(r -> r.bucket(bucket).key("t/orders/data/w"),
                     RequestBody.fromString("w")));
-            assertDenied(() -> vended.createMultipartUpload(r -> r.bucket(BUCKET).key("t/orders/data/w")));
+            assertDenied(() -> vended.createMultipartUpload(r -> r.bucket(bucket).key("t/orders/data/w")));
         }
     }
 
@@ -231,26 +235,26 @@ abstract class VendingContract {
     @DisplayName("raw requests with dot segments and encoded paths never reach outside the prefix")
     void rawPathAttacks() throws Exception {
         VendedCredentials credentials = vend(Access.READ_WRITE);
-        RawResponse control = raw(credentials, "GET", "/lake/" + SEED, null);
+        RawResponse control = raw(credentials, "GET", "/" + bucket + "/" + SEED, null);
         assertThat(control.status()).as("a raw request the policy allows succeeds, so the signing is right")
                 .isEqualTo(200);
         assertThat(control.body()).isEqualTo("seed");
 
         List<String> attacks = List.of(
-                "/lake/t/orders/../orders2/secret.json",
-                "/lake/t/orders/./../orders2/secret.json",
-                "/lake/t/orders//../../t/orders2/secret.json",
-                "/lake/t/orders/%2E%2E/orders2/secret.json",
-                "/lake/t/orders/%2e%2e%2forders2%2fsecret.json",
-                "/lake/t/orders%2F..%2Forders2%2Fsecret.json",
-                "/lake/t/orders/..%2Forders2/secret.json",
-                "/lake/t/orders/%252E%252E/orders2/secret.json",
-                "/lake/t/orders/..%5Corders2%5Csecret.json",
-                "/lake/t/orders/%C0%AE%C0%AE/orders2/secret.json",
-                "/lake/t/orders/%EF%BC%8E%EF%BC%8E/orders2/secret.json",
-                "/lake/t/orders/%00/../../orders2/secret.json",
-                "/lake/t/orders/../../lake2/t/orders/secret.json",
-                "/lake/t/orders/..");
+                "/" + bucket + "/t/orders/../orders2/secret.json",
+                "/" + bucket + "/t/orders/./../orders2/secret.json",
+                "/" + bucket + "/t/orders//../../t/orders2/secret.json",
+                "/" + bucket + "/t/orders/%2E%2E/orders2/secret.json",
+                "/" + bucket + "/t/orders/%2e%2e%2forders2%2fsecret.json",
+                "/" + bucket + "/t/orders%2F..%2Forders2%2Fsecret.json",
+                "/" + bucket + "/t/orders/..%2Forders2/secret.json",
+                "/" + bucket + "/t/orders/%252E%252E/orders2/secret.json",
+                "/" + bucket + "/t/orders/..%5Corders2%5Csecret.json",
+                "/" + bucket + "/t/orders/%C0%AE%C0%AE/orders2/secret.json",
+                "/" + bucket + "/t/orders/%EF%BC%8E%EF%BC%8E/orders2/secret.json",
+                "/" + bucket + "/t/orders/%00/../../orders2/secret.json",
+                "/" + bucket + "/t/orders/../../" + otherBucket + "/t/orders/secret.json",
+                "/" + bucket + "/t/orders/..");
         StringBuilder report = new StringBuilder("raw path attacks on " + store.kind()
                 + " (* = signed for the path as the store decodes it):\n");
         for (String path : attacks) {
@@ -262,15 +266,15 @@ abstract class VendingContract {
         }
         System.out.print(report);
         assertNothingNewOutside();
-        assertThat(directGet(BUCKET, "t/orders2/secret.json")).isEqualTo(SECRET);
-        assertThat(directGet(OTHER_BUCKET, "t/orders/secret.json")).isEqualTo(SECRET);
+        assertThat(directGet(bucket, "t/orders2/secret.json")).isEqualTo(SECRET);
+        assertThat(directGet(otherBucket, "t/orders/secret.json")).isEqualTo(SECRET);
     }
 
     @Test
     @DisplayName("the vendor refuses the prefix itself, other prefixes and other buckets")
     void vendorRefusesLocationsOutsideTheProfile() {
-        for (String location : List.of("s3://lake/t", "s3://lake/other/x", "s3://lake2/t/x", "s3://lake/t/../x",
-                "s3://lake/t/orders/", "s3://lake/t/%2e%2e/x")) {
+        for (String location : List.of("s3://" + bucket + "/t", "s3://" + bucket + "/other/x", "s3://" + otherBucket + "/t/x", "s3://" + bucket + "/t/../x",
+                "s3://" + bucket + "/t/orders/", "s3://" + bucket + "/t/%2e%2e/x")) {
             assertThatThrownBy(() -> vendor.vend(location, Access.READ, identity()))
                     .as(location).isInstanceOf(LocationRejectedException.class);
         }
@@ -286,7 +290,7 @@ abstract class VendingContract {
         assertThat(credentials.sessionToken()).isNotBlank();
         assertThat(credentials.expiresAt()).isBetween(before.plus(Duration.ofMinutes(14)),
                 Instant.now().plus(Duration.ofMinutes(16)));
-        assertThat(credentials.location()).isEqualTo(TABLE);
+        assertThat(credentials.location()).isEqualTo(table);
         assertThat(credentials.sessionName()).isEqualTo(identity().sessionName());
         assertThat(credentials.toString()).doesNotContain(credentials.secretAccessKey(), credentials.sessionToken());
     }
@@ -297,7 +301,7 @@ abstract class VendingContract {
     }
 
     private VendedCredentials vend(Access access) {
-        return vendor.vend(TABLE, access, identity());
+        return vendor.vend(table, access, identity());
     }
 
     private S3Client vended(Access access) {
@@ -331,15 +335,15 @@ abstract class VendingContract {
 
     /** Every key in the bucket outside {@code t/orders/} is one the tests seeded, and each still holds its bytes. */
     private void assertNothingNewOutside() {
-        Set<String> outside = direct.listObjectsV2Paginator(r -> r.bucket(BUCKET)).contents().stream()
+        Set<String> outside = direct.listObjectsV2Paginator(r -> r.bucket(bucket)).contents().stream()
                 .map(S3Object::key)
                 .filter(key -> !key.startsWith("t/orders/"))
                 .collect(Collectors.toSet());
         assertThat(outside).containsExactlyInAnyOrderElementsOf(OUTSIDE);
         for (String key : OUTSIDE) {
-            assertThat(directGet(BUCKET, key)).as(key).isEqualTo(SECRET);
+            assertThat(directGet(bucket, key)).as(key).isEqualTo(SECRET);
         }
-        Set<String> other = direct.listObjectsV2Paginator(r -> r.bucket(OTHER_BUCKET)).contents().stream()
+        Set<String> other = direct.listObjectsV2Paginator(r -> r.bucket(otherBucket)).contents().stream()
                 .map(S3Object::key).collect(Collectors.toSet());
         assertThat(other).containsExactly("t/orders/secret.json");
     }
