@@ -33,7 +33,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Three governance rules then apply, in this order, to tables and views:
  * <ol>
  *   <li>D27: a table without its own classification, in a regulated area (the table, a namespace above
- *       it or its catalog is flagged regulated), is refused everything but {@code describe};</li>
+ *       it or its catalog is flagged regulated), is refused everything but {@code describe} and
+ *       {@code manage-tags}, so a tag steward can still classify it;</li>
  *   <li>D20: a table flagged with a row/column policy gives storage access (load, credentials, commit)
  *       only to trusted engines, which enforce the policy;</li>
  *   <li>D17: with the switch on, a trusted engine acting as itself, with no end user, may not write to
@@ -199,6 +200,7 @@ public final class Authorizer {
                 && a.kind() == GovernanceAttribute.Kind.REGULATED && "true".equalsIgnoreCase(a.value()));
         Securable self = object.securable();
         if (object.kind() == CatalogObject.Kind.TABLE && regulated && needed != Privilege.DESCRIBE
+                && needed != Privilege.MANAGE_TAGS
                 && attributes.stream().noneMatch(a -> a.target().equals(self)
                         && a.kind() == GovernanceAttribute.Kind.CLASSIFICATION)) {
             return new Decision.Denied(Reason.UNCLASSIFIED, null, "table " + object.name().display()

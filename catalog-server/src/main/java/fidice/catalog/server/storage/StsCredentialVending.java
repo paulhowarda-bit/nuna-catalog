@@ -17,6 +17,7 @@ import fidice.catalog.objectstore.StoreKind;
 import fidice.catalog.objectstore.VendedCredentials;
 import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.CredentialVending;
+import fidice.catalog.server.security.SecuritySettings;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,14 +51,14 @@ public final class StsCredentialVending implements CredentialVending {
     private final URI source;
     private final Clock clock;
     private final CredentialCache cache;
-    private final Set<String> maintenancePrincipals;
+    private final SecuritySettings security;
 
     /**
      * @param refreshMargin no 304 when credentials expire within this (D14); cached credentials are renewed
      *                      a minute before that, so a load normally carries credentials a client may cache
      */
     public StsCredentialVending(CatalogStorage storage, AuditPublisher audit, URI source, StorageSettings settings,
-                                Duration refreshMargin, Clock clock) {
+                                SecuritySettings security, Duration refreshMargin, Clock clock) {
         this.storage = storage;
         this.audit = audit;
         this.source = source;
@@ -66,7 +67,7 @@ public final class StsCredentialVending implements CredentialVending {
         Duration margin = refreshMargin.plusMinutes(1);
         this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,
                 settings.credentialCacheEntries(), clock);
-        this.maintenancePrincipals = Set.copyOf(settings.maintenancePrincipals());
+        this.security = security;
     }
 
     @Override
@@ -76,8 +77,7 @@ public final class StsCredentialVending implements CredentialVending {
             return Vended.NONE;
         }
         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
-        Access access = caller.endUser().isEmpty() && maintenancePrincipals.contains(caller.principal().id())
-                ? Access.READ_WRITE_DELETE : Access.READ_WRITE;
+        Access access = security.isMaintenance(caller) ? Access.READ_WRITE_DELETE : Access.READ_WRITE;
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
                 caller.principal().id(), subject, caller.engine());

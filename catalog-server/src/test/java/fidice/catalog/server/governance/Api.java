@@ -58,6 +58,7 @@ final class Api implements AutoCloseable {
         this.port = port;
         this.clock = clock;
         IssuerForTests.grant(jdbc, CATALOG, IssuerForTests.GROUP, "create", "modify");
+        IssuerForTests.grant(jdbc, CATALOG, GovernanceServer.STEWARDS, "manage-tags");
         expect(send("PUT", "/management/v1/engines", """
                 {"issuer":"%s","client-id":"%s","end-user-claim":"oid","flags":[]}"""
                 .formatted(IssuerForTests.ISSUER, ENGINE_CLIENT), "Authorization", operator()), 204);
@@ -84,9 +85,10 @@ final class Api implements AutoCloseable {
     }
 
     /**
-     * Sends a request signed in as {@code tester} in the test group, or as the {@link GovernanceServer#PRINCIPAL}
-     * pseudo-header names, through the trusted engine with {@link GovernanceServer#ENGINE}; an explicit
-     * {@code Authorization} header is sent as it is.
+     * Sends a request signed in as {@code tester} in the test group (create and modify on the catalog), or as
+     * the {@link GovernanceServer#PRINCIPAL} pseudo-header names in the {@link GovernanceServer#GROUPS} it names,
+     * through the trusted engine with {@link GovernanceServer#ENGINE}; an explicit {@code Authorization} header
+     * is sent as it is.
      */
     HttpResponse<String> send(String method, String path, String body, String... headers) {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
@@ -96,18 +98,20 @@ final class Api implements AutoCloseable {
             request.header("Content-Type", "application/json");
         }
         String principal = "tester";
+        String[] groups = {IssuerForTests.GROUP};
         boolean engine = false;
         String authorization = null;
         for (int i = 0; i < headers.length; i += 2) {
             switch (headers[i]) {
                 case GovernanceServer.PRINCIPAL -> principal = headers[i + 1];
                 case GovernanceServer.ENGINE -> engine = Boolean.parseBoolean(headers[i + 1]);
+                case GovernanceServer.GROUPS -> groups = headers[i + 1].split(",");
                 case "Authorization" -> authorization = headers[i + 1];
                 default -> request.header(headers[i], headers[i + 1]);
             }
         }
         request.header("Authorization", authorization != null ? authorization
-                : token(principal, engine ? ENGINE_CLIENT : "server-tests", IssuerForTests.GROUP));
+                : token(principal, engine ? ENGINE_CLIENT : "server-tests", groups));
         try {
             return http.send(request.build(), HttpResponse.BodyHandlers.ofString());
         } catch (Exception e) {
@@ -123,6 +127,21 @@ final class Api implements AutoCloseable {
     /** A platform operator's {@code Authorization} header. */
     String operator() {
         return token("ops", "server-tests", GovernanceServer.PLATFORM_OPS);
+    }
+
+    /** A tag steward's {@code Authorization} header: {@code manage-tags} on the catalog. */
+    String steward() {
+        return token("stella", "server-tests", GovernanceServer.STEWARDS);
+    }
+
+    /** The {@code Authorization} header of a signed-in caller in a group that holds no grant. */
+    String outsider() {
+        return token("otto", "server-tests", "outsiders");
+    }
+
+    /** The maintenance principal's {@code Authorization} header. */
+    String maintenance() {
+        return token("maintenance", "server-tests", IssuerForTests.GROUP);
     }
 
     /** A token valid for an hour by the server's clock, which tests move forward. */

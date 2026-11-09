@@ -3,15 +3,13 @@ package fidice.catalog.server.governance;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Governance settings ({@code fidice.governance.*}): who purges, how fast, the retention classes
+ * Governance settings ({@code fidice.governance.*}): how fast purges run, the retention classes
  * the governance tool may push, and the maintenance policy's defaults and guardrails (D24, D25, D30).
  *
- * @param maintenancePrincipals the principals that may purge dropped tables and views (D25, CMP-5)
  * @param purgesPerMinute       purges this server accepts per minute, from all maintenance principals together
  * @param retentionClasses      the retention classes by name; a push of any other name is refused
  * @param pitrWindow            the database's point-in-time-recovery window: orphan removal only ever
@@ -21,7 +19,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  */
 @ConfigurationProperties("fidice.governance")
 public record GovernanceSettings(
-        @DefaultValue Set<String> maintenancePrincipals,
         @DefaultValue("10") int purgesPerMinute,
         @DefaultValue Map<String, RetentionClass> retentionClasses,
         @DefaultValue("7d") Duration pitrWindow,
