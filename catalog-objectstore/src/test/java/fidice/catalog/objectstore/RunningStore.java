@@ -83,8 +83,9 @@ record RunningStore(StoreKind kind, URI endpoint, AwsCredentialsProvider credent
     }
 
     /**
-     * A real AWS account, signed in through the named CLI profile (short-lived SSO credentials, which
-     * the SDK reads from the CLI's cache; nothing here reads, prints or stores them). Creates a role
+     * A real AWS account, signed in through the named CLI profile (short-lived credentials from an
+     * {@code aws login} session, which the SDK gets through the profile's {@code credential_process}; nothing
+     * here reads, prints or stores them). Creates a role
      * whose own policy allows every S3 action on the gate's two buckets and trusts the account to assume
      * and tag it, waits until STS accepts it, and on close empties and deletes the buckets and the role.
      * Synthetic data only.

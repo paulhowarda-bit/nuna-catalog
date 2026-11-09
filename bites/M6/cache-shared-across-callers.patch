@@ -3,10 +3,10 @@ Module: catalog-server
 Test: VendingRouteTest#auditedBeforeHandOutAndFailsClosed
 
 diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-index 7a9a5e6..cb321b7 100644
+index 899e3cd..1cbc2c7 100644
 --- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-@@ -72,7 +72,7 @@ public final class StsCredentialVending implements CredentialVending {
+@@ -80,7 +80,7 @@ public final class StsCredentialVending implements CredentialVending {
                  ? Access.READ_WRITE_DELETE : Access.READ_WRITE;
          String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
          CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,

@@ -3,11 +3,11 @@ Module: catalog-server
 Test: VendingNearExpiryTest
 
 diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-index 7a9a5e6..fdee9b0 100644
+index 899e3cd..95d8038 100644
 --- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-@@ -56,7 +56,7 @@ public final class StsCredentialVending implements CredentialVending {
-         this.audit = audit;
+@@ -64,7 +64,7 @@ public final class StsCredentialVending implements CredentialVending {
+         this.clock = clock;
          Duration quarter = settings.credentialLifetime().dividedBy(4);
          Duration margin = refreshMargin.plusMinutes(1);
 -        this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,

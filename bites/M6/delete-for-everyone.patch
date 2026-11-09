@@ -3,10 +3,10 @@ Module: catalog-server
 Test: VendingRouteTest#loadVendsCredentialsConfinedToTheTable
 
 diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-index 7a9a5e6..23c8c57 100644
+index 899e3cd..d24800e 100644
 --- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-@@ -68,7 +68,7 @@ public final class StsCredentialVending implements CredentialVending {
+@@ -76,7 +76,7 @@ public final class StsCredentialVending implements CredentialVending {
              return Vended.NONE;
          }
          CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());

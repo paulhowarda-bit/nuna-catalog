@@ -3,13 +3,13 @@ Module: catalog-server
 Test: VendingNearExpiryTest
 
 diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
-index 4ef1076..f00ea08 100644
+index ff7377e..1081cf5 100644
 --- a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
-@@ -123,7 +123,7 @@ class TableRoutes {
-         CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), table, Kind.TABLE);
-         Vended vended = vend(new Target(catalog, prefix, namespace, table, RequestContext.of(http, callers),
-                 Optional.ofNullable(delegation)), object.id(), object.locationRoot());
+@@ -130,7 +130,7 @@ class TableRoutes {
+         guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_TABLE);
+         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
+                 object.id(), object.locationRoot());
 -        boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
 +        boolean cacheable = true;
          Optional<Pointer> pointer = store.readPointer(object.mainKey());
