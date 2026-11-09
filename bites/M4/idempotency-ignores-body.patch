@@ -1,0 +1,17 @@
+Breaks: the idempotency request hash leaves out the body, so one key replays its answer to a different request.
+Module: catalog-server
+Test: RestRoutesTest#anIdempotencyKeyReplaysItsAnswerAndBelongsToOneRequest
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/Idempotency.java b/catalog-server/src/main/java/fidice/catalog/server/rest/Idempotency.java
+index 66e9092..e424d81 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/rest/Idempotency.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/rest/Idempotency.java
+@@ -192,7 +192,7 @@ class Idempotency {
+ 
+     private static String requestHash(String operation, String scope, Caller caller, String body) {
+         String canonical = String.join("\n", operation, scope, caller.endUser().map(Principal::id).orElse(""),
+-                body == null ? "" : body);
++                "");
+         try {
+             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                     .digest(canonical.getBytes(StandardCharsets.UTF_8)));

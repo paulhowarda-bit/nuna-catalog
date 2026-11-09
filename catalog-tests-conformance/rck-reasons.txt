@@ -1,0 +1,39 @@
+# Why each RCK test that does not pass on PostgreSQL does not pass: test<TAB>reason.
+# RckRatchetTest fails on a non-passing test with no line here, and on a line for a test that passes.
+#
+# Aborted by the kit's own capability switches, which the RCK fixes rather than reads from a property.
+[class:RESTCompatibilityKitCatalogTests]/[method:createAndDropEmptyNamespace()]	Aborted: the kit hard-codes supportsEmptyNamespace() false. The empty namespace is the catalog root here and holds nothing.
+[class:RESTCompatibilityKitCatalogTests]/[method:listNamespacesWithEmptyNamespace()]	Aborted: the kit hard-codes supportsEmptyNamespace() false.
+[class:RESTCompatibilityKitCatalogTests]/[method:listTablesInEmptyNamespace()]	Aborted: the kit hard-codes supportsEmptyNamespace() false.
+[class:RESTCompatibilityKitCatalogTests]/[method:namespacePropertiesOnEmptyNamespace()]	Aborted: the kit hard-codes supportsEmptyNamespace() false.
+[class:RESTCompatibilityKitViewCatalogTests]/[method:listViewsInEmptyNamespace()]	Aborted: the kit hard-codes supportsEmptyNamespace() false.
+[class:RESTCompatibilityKitCatalogTests]/[method:testDropNamespaceWithNestedNamespace()]	Aborted: the kit hard-codes supportsNestedNamespaces() false. Nesting is supported (D28) and covered by RestRoutesTest.
+[class:RESTCompatibilityKitCatalogTests]/[method:testListNestedNamespaces()]	Aborted: the kit hard-codes supportsNestedNamespaces() false. Nesting is supported (D28) and covered by RestRoutesTest.
+[class:RESTCompatibilityKitCatalogTests]/[method:testNamespaceWithSlash()]	Aborted: the kit hard-codes supportsNamesWithSlashes() false.
+[class:RESTCompatibilityKitCatalogTests]/[method:testTableNameWithSlash()]	Aborted: the kit hard-codes supportsNamesWithSlashes() false.
+[class:RESTCompatibilityKitCatalogTests]/[method:createTableInUniqueLocation()]	Skipped: @Disabled in iceberg-core 1.12.0 (the test server is not configurable per test).
+#
+# D12: new tables default to format v3. A concurrent replace builds its snapshot on the old next-row-id,
+# and iceberg-core 1.12.0 refuses a first-row-id behind the table's (409, as the reference answers). Run
+# with table-default.format-version=2, all seven pass.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactionPartitionSpec()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactionPartitionSpec2()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactionSchema()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactionSchema2()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactionSortOrder()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactionSortOrderConflict()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+[class:RESTCompatibilityKitCatalogTests]/[method:testConcurrentReplaceTransactions()]	D12: v3 row lineage refuses the losing replace's stale first-row-id (409); passes on v2 tables.
+#
+# D28: the catalog assigns every location; a client cannot move a table or view, or put metadata outside it.
+[class:RESTCompatibilityKitCatalogTests]/[method:testCompleteCreateOrReplaceTransactionReplace()]	D28: the replace asks for location file:/tmp/...; the client writes its manifests there before the catalog can refuse, and S3FileIO cannot (the catalog stores on S3 only).
+[class:RESTCompatibilityKitCatalogTests]/[method:testCompleteReplaceTransaction()]	D28: the replace asks for location file:/tmp/...; the client writes its manifests there before the catalog can refuse, and S3FileIO cannot (the catalog stores on S3 only).
+[class:RESTCompatibilityKitViewCatalogTests]/[method:createAndReplaceViewWithLocation()]	D28: moving a view's location is refused, 400 "Location is assigned by the catalog".
+[class:RESTCompatibilityKitViewCatalogTests]/[method:updateViewLocation()]	D28: moving a view's location is refused, 400 "Location is assigned by the catalog".
+[class:RESTCompatibilityKitViewCatalogTests]/[method:createViewWithCustomMetadataLocation()]	D28: write.metadata.path outside the view's assigned location is refused (400).
+#
+# Other decisions.
+[class:RESTCompatibilityKitCatalogTests]/[method:testRegisterTable()]	Soft drop (D13, D34): the test drops a table and registers its file again; the UUID still belongs to the dropped table, so register answers 409 and undrop (v1.x) brings it back.
+[class:RESTCompatibilityKitViewCatalogTests]/[method:registerView()]	D13: register-view is a v1.x route; the endpoint is not advertised.
+[class:RESTCompatibilityKitViewCatalogTests]/[method:registerExistingView()]	D13: register-view is a v1.x route; the endpoint is not advertised.
+[class:RESTCompatibilityKitViewCatalogTests]/[method:registerViewThatAlreadyExistsAsTable()]	D13: register-view is a v1.x route; the endpoint is not advertised.
+[class:RESTCompatibilityKitCatalogTests]/[method:testLoadTableWithMissingMetadataFile(java.nio.file.Path)]	Test environment: the test deletes the metadata file through java.nio.file.Path, which cannot open an s3:// location. Our 404 for a missing metadata file is covered by RestRoutesTest (register case).

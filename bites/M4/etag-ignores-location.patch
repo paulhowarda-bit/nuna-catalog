@@ -1,0 +1,17 @@
+Breaks: the table ETag leaves out the metadata location, so a commit does not change it and stale loads answer 304.
+Module: catalog-server
+Test: RestRoutesTest#tableLoadsAnswer304WhileThePointerHolds
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java b/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java
+index 7a289c4..308a1b3 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java
+@@ -16,7 +16,7 @@ final class ETags {
+     }
+ 
+     static String of(String metadataLocation, boolean refsOnly, String referencedBy, String credentialEpoch) {
+-        String canonical = String.join("\n", metadataLocation, refsOnly ? "refs" : "all",
++        String canonical = String.join("\n", refsOnly ? "refs" : "all",
+                 referencedBy == null ? "" : referencedBy, credentialEpoch);
+         try {
+             byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));

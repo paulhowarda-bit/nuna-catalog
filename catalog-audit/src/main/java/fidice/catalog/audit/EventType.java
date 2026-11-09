@@ -4,8 +4,8 @@ import java.net.URI;
 
 /**
  * The event types of D23, each with its current payload schema version. Changes (commits, grants,
- * drops, break-glass) travel through the outbox; reads, denials, authentication failures and
- * credential issues are published synchronously.
+ * drops, namespace changes, renames, break-glass) travel through the outbox; reads, denials,
+ * authentication failures and credential issues are published synchronously.
  */
 public enum EventType {
     COMMIT("commit", 1, Commit.class),
@@ -15,7 +15,9 @@ public enum EventType {
     OBJECT_READ("read", 1, ObjectRead.class),
     DENIAL("denial", 1, Denial.class),
     AUTH_FAILURE("auth-failure", 1, AuthFailure.class),
-    CREDENTIAL_ISSUE("credential-issue", 1, CredentialIssue.class);
+    CREDENTIAL_ISSUE("credential-issue", 1, CredentialIssue.class),
+    NAMESPACE_CHANGE("namespace", 1, NamespaceChange.class),
+    RENAME("rename", 1, Rename.class);
 
     private final String typeName;
     private final URI dataSchema;

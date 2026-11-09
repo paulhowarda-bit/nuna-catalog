@@ -14,6 +14,7 @@ import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 /**
  * Writes and reads one storage profile's metadata.json files (plan 2.2 steps 4 and 6). Every
@@ -59,12 +60,15 @@ public final class MetadataFiles implements AutoCloseable {
      * file flagged.
      *
      * @throws MetadataIntegrityException on a mismatch under {@link OnMismatch#FAIL}
+     * @throws MetadataNotFoundException  when no file is at {@code location}
      */
     public LoadedMetadata read(String location, String expectedSha256, OnMismatch onMismatch) {
         ObjectLocation file = profile.approve(location);
         byte[] bytes;
         try {
             bytes = s3.getObjectAsBytes(request -> request.bucket(file.bucket()).key(file.key())).asByteArray();
+        } catch (NoSuchKeyException e) {
+            throw new MetadataNotFoundException(location, e);
         } catch (SdkException e) {
             throw new ObjectStoreException("reading " + file + " failed", e);
         }

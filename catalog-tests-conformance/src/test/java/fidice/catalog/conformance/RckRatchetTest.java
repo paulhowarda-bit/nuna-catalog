@@ -13,8 +13,9 @@ import org.junit.platform.launcher.core.LauncherFactory;
 
 /**
  * Runs the Iceberg REST Compatibility Kit against our server (D31). Every test's outcome goes to
- * target/rck-results.txt. The build fails only if a test recorded as PASS in rck-baseline.txt no
- * longer passes. Re-record the baseline deliberately with {@code -Drck.record=true}.
+ * target/rck-results.txt. The build fails if a test recorded as PASS in rck-baseline.txt no longer
+ * passes, or if a test that does not pass has no stated reason in rck-reasons.txt (or one that
+ * passes still has one). Re-record the baseline deliberately with {@code -Drck.record=true}.
  */
 class RckRatchetTest {
 
@@ -27,6 +28,14 @@ class RckRatchetTest {
         // The RCK client copies every system property into its catalog configuration.
         System.setProperty("uri", ConformanceServer.start().toString());
         System.setProperty("warehouse", ConformanceServer.WAREHOUSE);
+        ConformanceServer.clientStorage().forEach(System::setProperty);
+        // The catalog assigns every location (D28), namespaces are created explicitly (a table's namespace
+        // must exist), names may hold dots, commits retry on the server (D9), and v3 tables take variants.
+        System.setProperty("rck.overrides-requested-location", "true");
+        System.setProperty("rck.requires-namespace-create", "true");
+        System.setProperty("rck.supports-names-with-dot", "true");
+        System.setProperty("rck.supports-serverside-retry", "true");
+        System.setProperty("rck.supports-variant", "true");
 
         LauncherDiscoveryRequest request = LauncherDiscoveryRequestBuilder.request()
                 .selectors(RCK_CLASSES.stream().map(DiscoverySelectors::selectClass).toList())
@@ -37,7 +46,9 @@ class RckRatchetTest {
 
         Map<String, String> current = outcomes.byTest();
         Path baselineFile = Path.of(System.getProperty("rck.baseline"));
-        Ratchet.write(Path.of(System.getProperty("rck.results")), current);
+        Path results = Path.of(System.getProperty("rck.results"));
+        Ratchet.write(results, current);
+        Ratchet.write(results.resolveSibling("rck-causes.txt"), outcomes.causes());
         if (Boolean.getBoolean("rck.record")) {
             Ratchet.write(baselineFile, current);
         }
@@ -55,6 +66,13 @@ class RckRatchetTest {
         assertThat(baselineFile).as("rck-baseline.txt (record it with -Drck.record=true)").exists();
         assertThat(Ratchet.regressions(baseline, current))
                 .as("tests that pass in rck-baseline.txt and no longer pass")
+                .isEmpty();
+        Map<String, String> reasons = Ratchet.readReasons(Path.of(System.getProperty("rck.reasons")));
+        assertThat(Ratchet.unexplained(current, reasons))
+                .as("RCK tests that do not pass and have no reason in rck-reasons.txt")
+                .isEmpty();
+        assertThat(Ratchet.staleReasons(current, reasons))
+                .as("rck-reasons.txt entries for tests that pass or no longer exist")
                 .isEmpty();
     }
 }

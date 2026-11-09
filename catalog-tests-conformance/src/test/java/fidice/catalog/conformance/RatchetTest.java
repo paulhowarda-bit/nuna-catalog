@@ -19,6 +19,15 @@ class RatchetTest {
     }
 
     @Test
+    void everyTestThatDoesNotPassNeedsAReasonAndPassingTestsNeedNone() {
+        Map<String, String> current = Map.of("a", "PASS", "b", "FAIL", "c", "SKIPPED");
+        Map<String, String> reasons = Map.of("a", "stale", "b", "by design", "gone", "removed test");
+
+        assertThat(Ratchet.unexplained(current, reasons)).containsExactly("c");
+        assertThat(Ratchet.staleReasons(current, reasons)).containsExactly("a", "gone");
+    }
+
+    @Test
     void noPassesInTheBaselineMeansNoRegressions() {
         assertThat(Ratchet.regressions(Map.of("a", "NOT_RUN"), Map.of())).isEmpty();
     }

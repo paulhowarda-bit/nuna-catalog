@@ -1,8 +1,9 @@
 package fidice.catalog.core;
 
 /**
- * A request failure with a definite outcome, carried to the REST layer as an Iceberg error
- * response. {@code type} is the Iceberg error class name clients map to an exception.
+ * A request failure carried to the REST layer as an Iceberg error response: a definite 4xx, or a
+ * 500 the server reports as such. {@code type} is the Iceberg error class name clients map to an
+ * exception.
  */
 public final class CatalogError extends RuntimeException {
 
@@ -13,6 +14,11 @@ public final class CatalogError extends RuntimeException {
         super(message);
         this.status = status;
         this.type = type;
+    }
+
+    /** Any failure; {@code type} is an Iceberg error class name. */
+    public static CatalogError of(int status, String type, String message) {
+        return new CatalogError(status, type, message);
     }
 
     public static CatalogError badRequest(String message) {

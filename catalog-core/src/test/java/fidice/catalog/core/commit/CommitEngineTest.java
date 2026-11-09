@@ -296,9 +296,10 @@ class CommitEngineTest {
             CommitReply reply = commit("Orders", update(assertUuid(h.object("Orders").id().toString()),
                     "{\"action\":\"set-current-schema\",\"schema-id\":42}"));
 
+            // iceberg-core's type, as the reference sends it: the Iceberg client rethrows it as itself.
             assertThat(reply).isInstanceOfSatisfying(Failure.class, f -> {
                 assertThat(f.status()).isEqualTo(400);
-                assertThat(f.type()).isEqualTo("BadRequestException");
+                assertThat(f.type()).isEqualTo("IllegalArgumentException");
             });
         }
 

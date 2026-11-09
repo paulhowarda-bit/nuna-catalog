@@ -5,7 +5,8 @@ package fidice.catalog.audit;
  * version 1 of its type's schema; a change to its JSON form is a new version, not an edit.
  */
 public sealed interface EventData
-        permits Commit, GrantChange, Drop, BreakGlass, ObjectRead, Denial, AuthFailure, CredentialIssue {
+        permits Commit, GrantChange, Drop, BreakGlass, ObjectRead, Denial, AuthFailure, CredentialIssue,
+        NamespaceChange, Rename {
 
     EventType type();
 

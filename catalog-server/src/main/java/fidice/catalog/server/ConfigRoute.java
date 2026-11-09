@@ -2,6 +2,7 @@ package fidice.catalog.server;
 
 import fidice.catalog.core.CatalogError;
 import fidice.catalog.core.Names;
+import fidice.catalog.core.commit.CommitSettings;
 import fidice.catalog.iceberg.Wire;
 import fidice.catalog.store.CatalogRecord;
 import fidice.catalog.store.CatalogStore;
@@ -14,7 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * {@code GET /v1/config}: tells a client which catalog its warehouse names (as the REST
- * prefix) and which endpoints this server supports (D13, D28).
+ * prefix), which endpoints this server supports (D13, D28), and that mutations take idempotency
+ * keys (D10).
  */
 @RestController
 public class ConfigRoute {
@@ -35,6 +37,7 @@ public class ConfigRoute {
         return Wire.config(
                 Map.of(),
                 Map.of("prefix", catalog.normalizedName()),
-                AdvertisedEndpoints.ALL);
+                AdvertisedEndpoints.ALL,
+                CommitSettings.DEFAULTS.keyLifetime().toString());
     }
 }

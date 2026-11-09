@@ -3,6 +3,7 @@ package fidice.catalog.audit;
 import java.net.URI;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.IntStream;
 
@@ -15,6 +16,8 @@ public final class SampleEvents {
     public static final Actor ACTOR = new Actor("svc-trino", "alice@example.com", "trino-shared", "req-0001");
     public static final Securable CATALOG = new Securable(Securable.Kind.CATALOG,
             UUID.fromString("00000000-0000-0000-0000-00000000000c"), "Trading", List.of());
+    public static final Securable NAMESPACE = new Securable(Securable.Kind.NAMESPACE,
+            UUID.fromString("5a1d0c3e-0000-4000-8000-0000000000a1"), "Trading", List.of("Équités"));
     public static final Securable TABLE = new Securable(Securable.Kind.TABLE,
             UUID.fromString("7f0c2a52-9d0e-4a8b-9c61-2b1e6f0d4a11"), "Trading", List.of("Équités", "Orders"));
     public static final PointerState V1 = new PointerState("s3://lake/t/7f0c/metadata/00001.json", 1, "a".repeat(64));
@@ -37,7 +40,10 @@ public final class SampleEvents {
                 new AuthFailure("https://login.example.com/tenant/v2.0", "u-123", "app-9", "token expired", "req-0002",
                         "10.0.0.7"),
                 new CredentialIssue(TABLE, "s3-east", "s3://lake/t/7f0c/", CredentialIssue.Access.READ,
-                        "fidice-svc-trino-req-0001", Instant.parse("2026-11-07T10:45:30Z"), ACTOR));
+                        "fidice-svc-trino-req-0001", Instant.parse("2026-11-07T10:45:30Z"), ACTOR),
+                new NamespaceChange(NamespaceChange.Action.PROPERTIES_CHANGED, NAMESPACE,
+                        Map.of("owner", "Zoë", "comment", "desk"), List.of("stale"), ACTOR),
+                new Rename(TABLE, List.of("Équités", "Orders_old"), ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

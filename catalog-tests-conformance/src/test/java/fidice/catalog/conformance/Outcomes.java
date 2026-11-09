@@ -16,6 +16,7 @@ final class Outcomes implements TestExecutionListener {
 
     private final Map<String, String> byTest = new TreeMap<>();
     private final Map<String, String> failedContainers = new TreeMap<>();
+    private final Map<String, String> causes = new TreeMap<>();
 
     @Override
     public void testPlanExecutionStarted(TestPlan plan) {
@@ -40,9 +41,16 @@ final class Outcomes implements TestExecutionListener {
         };
         if (id.isTest()) {
             byTest.put(name(id), status);
+            result.getThrowable().ifPresent(cause -> causes.put(name(id), String.valueOf(cause).lines()
+                    .findFirst().orElse("").replace('	', ' ')));
         } else if (result.getStatus() == TestExecutionResult.Status.FAILED) {
             failedContainers.put(name(id), result.getThrowable().map(Throwable::toString).orElse("(no cause)"));
         }
+    }
+
+    /** The first line of each failed or aborted test's exception. */
+    Map<String, String> causes() {
+        return causes;
     }
 
     Map<String, String> byTest() {

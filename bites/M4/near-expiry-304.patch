@@ -1,0 +1,17 @@
+Breaks: a load answers 304 even when the vended credentials expire inside the refresh margin.
+Module: catalog-server
+Test: CredentialExpiryTest#noNotModifiedNearExpiryAndANewEpochIsANewETag
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
+index 880edb6..cde9de6 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
+@@ -121,7 +121,7 @@ class TableRoutes {
+         boolean refsOnly = refsOnly(snapshots);
+         CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), table, Kind.TABLE);
+         Vended vended = vending.vend(catalog.id(), object.id(), object.locationRoot(), Optional.ofNullable(delegation));
+-        boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
++        boolean cacheable = true;
+         Optional<Pointer> pointer = store.readPointer(object.mainKey());
+         if (cacheable && pointer.isPresent()) {
+             String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch());

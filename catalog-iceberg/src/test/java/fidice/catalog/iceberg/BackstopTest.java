@@ -87,6 +87,18 @@ class BackstopTest {
         }
 
         @Test
+        void aReplaceThatStartsMainAfreshMayAddARequiredFieldWithoutADefault() {
+            String request = request("{\"action\": \"remove-snapshot-ref\", \"ref-name\": \"main\"},"
+                    + " {\"action\": \"add-schema\", \"schema\": {\"type\": \"struct\", \"schema-id\": 1,"
+                    + " \"fields\": [" + ID + ", " + DATA + ", " + TS + ","
+                    + " {\"id\": 4, \"name\": \"r\", \"required\": true, \"type\": \"int\"}]}},"
+                    + " {\"action\": \"set-current-schema\", \"schema-id\": -1}");
+
+            assertReferenceAccepts(request);
+            assertThat(ours(request)).isInstanceOf(NewMetadata.class);
+        }
+
+        @Test
         void aNewRequiredFieldWithAnInitialDefaultIsAccepted() {
             String request = schema(ID, DATA, TS, """
                     {"id": 4, "name": "r", "required": true, "type": "int", "initial-default": 1, "write-default": 1}""");
@@ -182,7 +194,7 @@ class BackstopTest {
         @Test
         void v3DateToTimestampUnderADayPartitionIsRefusedByTheBuilder() {
             assertThat(promote(3, 2, "timestamp"))
-                    .isEqualTo(new BadRequest("Invalid source type timestamp for transform: day"));
+                    .isEqualTo(new BadRequest("ValidationException", "Invalid source type timestamp for transform: day"));
         }
 
         @Test
@@ -334,19 +346,19 @@ class BackstopTest {
         @Test
         void mainMustBeABranch() {
             assertThat(ours(request("{\"action\": \"set-snapshot-ref\", \"ref-name\": \"main\", \"snapshot-id\": 3001,"
-                    + " \"type\": \"tag\"}"))).isEqualTo(new BadRequest("Cannot set main to a tag, it must be a branch"));
+                    + " \"type\": \"tag\"}"))).isEqualTo(new BadRequest("ValidationException", "Cannot set main to a tag, it must be a branch"));
         }
 
         @Test
         void theCurrentSchemaCannotBeRemoved() {
             assertThat(ours(request("{\"action\": \"remove-schemas\", \"schema-ids\": [0]}")))
-                    .isEqualTo(new BadRequest("Cannot remove the current schema"));
+                    .isEqualTo(new BadRequest("IllegalArgumentException", "Cannot remove the current schema"));
         }
 
         @Test
         void theDefaultSpecCannotBeRemoved() {
             assertThat(ours(request("{\"action\": \"remove-partition-specs\", \"spec-ids\": [0]}")))
-                    .isEqualTo(new BadRequest("Cannot remove the default partition spec"));
+                    .isEqualTo(new BadRequest("IllegalArgumentException", "Cannot remove the default partition spec"));
         }
     }
 

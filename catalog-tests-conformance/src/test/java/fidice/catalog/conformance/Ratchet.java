@@ -38,6 +38,41 @@ final class Ratchet {
                 .toList();
     }
 
+    /** Tests that do not pass and have no stated reason. */
+    static List<String> unexplained(Map<String, String> current, Map<String, String> reasons) {
+        return current.entrySet().stream()
+                .filter(e -> !PASS.equals(e.getValue()))
+                .map(Map.Entry::getKey)
+                .filter(test -> !reasons.containsKey(test))
+                .sorted()
+                .toList();
+    }
+
+    /** Reasons for tests that now pass, or that the kit no longer has. */
+    static List<String> staleReasons(Map<String, String> current, Map<String, String> reasons) {
+        return reasons.keySet().stream()
+                .filter(test -> PASS.equals(current.get(test)) || !current.containsKey(test))
+                .sorted()
+                .toList();
+    }
+
+    /**
+     * Why tests do not pass: one {@code test<TAB>reason} line each; lines starting with {@code #} and
+     * blank lines are comments.
+     */
+    static Map<String, String> readReasons(Path file) throws IOException {
+        Map<String, String> reasons = new TreeMap<>();
+        if (Files.exists(file)) {
+            for (String line : Files.readAllLines(file)) {
+                int tab = line.indexOf('	');
+                if (!line.isBlank() && !line.startsWith("#") && tab > 0) {
+                    reasons.put(line.substring(0, tab), line.substring(tab + 1));
+                }
+            }
+        }
+        return reasons;
+    }
+
     static Map<String, String> read(Path file) throws IOException {
         Map<String, String> outcomes = new TreeMap<>();
         if (Files.exists(file)) {

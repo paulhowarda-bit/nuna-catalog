@@ -167,13 +167,13 @@ abstract class MetadataFilesContract {
     }
 
     @Test
-    @DisplayName("a missing file is an object store error naming the location")
+    @DisplayName("a missing file is reported as missing, in iceberg-core's words, naming the location")
     void missingFile() {
         String location = newTable() + "/metadata/00001-missing.metadata.json";
 
         assertThatThrownBy(() -> files.read(location, sha256Hex(JSON), OnMismatch.FAIL))
-                .isInstanceOf(ObjectStoreException.class)
-                .hasMessageContaining(location);
+                .isInstanceOf(MetadataNotFoundException.class)
+                .hasMessage("Failed to open input stream for file: " + location);
     }
 
     @Test
