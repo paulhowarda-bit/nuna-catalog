@@ -6,9 +6,11 @@ import fidice.catalog.iceberg.Wire;
 import fidice.catalog.objectstore.LocationRejectedException;
 import fidice.catalog.objectstore.MetadataNotFoundException;
 import fidice.catalog.server.rest.AccessDenied;
+import fidice.catalog.store.StoreUnavailableException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -47,6 +49,16 @@ class ErrorResponses {
     @ExceptionHandler(MetadataNotFoundException.class)
     ResponseEntity<String> missingFile(MetadataNotFoundException error) {
         return body(404, "NotFoundException", error.getMessage());
+    }
+
+    /** The store could not be reached and nothing was applied: 503 with Retry-After, so the client repeats. */
+    @ExceptionHandler(StoreUnavailableException.class)
+    ResponseEntity<String> unavailable(StoreUnavailableException error) {
+        LOG.warn("catalog store unavailable: {}", error.getMessage());
+        return ResponseEntity.status(StoreOutage.STATUS)
+                .header(HttpHeaders.RETRY_AFTER, StoreOutage.RETRY_AFTER_SECONDS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(StoreOutage.body("Catalog store unavailable; nothing was applied: " + error.getMessage()));
     }
 
     /** Spring's own request errors (unknown route, wrong method, bad parameter) keep their status. */

@@ -4,9 +4,12 @@ import fidice.catalog.store.Change;
 import fidice.catalog.store.CommitHook;
 import fidice.catalog.store.CommitOutcomeUnknownException;
 import fidice.catalog.store.StoreException;
+import fidice.catalog.store.StoreUnavailableException;
 import fidice.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLTransientConnectionException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.UUID;
@@ -49,7 +52,7 @@ final class Transactions {
             try (Connection connection = dataSource.getConnection()) {
                 known = Backend.of(connection);
             } catch (SQLException e) {
-                throw new StoreException("cannot tell which database the store is on", e);
+                throw failed("cannot tell which database the store is on", e);
             }
             backend = known;
         }
@@ -62,7 +65,7 @@ final class Transactions {
             try (Connection connection = dataSource.getConnection()) {
                 return body.run(connection);
             } catch (SQLException e) {
-                throw retryOr(e, new StoreException(what + " failed", e));
+                throw retryOr(e, failed(what + " failed", e));
             }
         });
     }
@@ -78,7 +81,7 @@ final class Transactions {
                 connection.rollback();
                 return result;
             } catch (SQLException e) {
-                throw retryOr(e, new StoreException(what + " failed", e));
+                throw retryOr(e, failed(what + " failed", e));
             }
         });
     }
@@ -154,7 +157,7 @@ final class Transactions {
                 try {
                     commitChecked(connection, backend);
                 } catch (SQLException e) {
-                    throw new StoreException(what + " may not have committed; it is safe to repeat", e);
+                    throw failed(what + " may not have committed; it is safe to repeat", e);
                 }
                 return result;
             } finally {
@@ -178,7 +181,7 @@ final class Transactions {
             barrier(connection);
             commitChecked(connection, backend());
         } catch (SQLException e) {
-            throw new StoreException(what + ": cannot confirm the answer is durable", e);
+            throw failed(what + ": cannot confirm the answer is durable", e);
         }
     }
 
@@ -207,8 +210,37 @@ final class Transactions {
         try {
             return dataSource.getConnection();
         } catch (SQLException e) {
-            throw new StoreException(what + " could not connect", e);
+            throw failed(what + " could not connect", e);
         }
+    }
+
+    /**
+     * A failure in which nothing was committed: {@link StoreUnavailableException} when the database could
+     * not be reached or dropped the connection, so the caller may repeat once it is back.
+     */
+    static StoreException failed(String message, SQLException e) {
+        return unavailable(e) ? new StoreUnavailableException(message, e) : new StoreException(message, e);
+    }
+
+    /**
+     * Whether the database was unreachable rather than refusing the work: a connection failure (class 08),
+     * a server shutting down or crashed (57P01 to 57P03), too many connections (53300), a write reaching a
+     * standby during failover (25006), or the pool timing out waiting for a connection.
+     */
+    static boolean unavailable(SQLException e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLTransientConnectionException || cause instanceof SQLNonTransientConnectionException) {
+                return true;
+            }
+            if (cause instanceof SQLException sql && sql.getSQLState() != null) {
+                String state = sql.getSQLState();
+                if (state.startsWith("08") || state.equals("57P01") || state.equals("57P02") || state.equals("57P03")
+                        || state.equals("53300") || state.equals("25006")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** A serialization failure or deadlock: the transaction was rolled back and may run again. */
@@ -264,7 +296,7 @@ final class Transactions {
             return body.run(connection);
         } catch (SQLException | RuntimeException e) {
             RuntimeException failure = e instanceof RuntimeException runtime ? runtime
-                    : retryOr((SQLException) e, new StoreException(what + " failed before COMMIT was sent", e));
+                    : retryOr((SQLException) e, failed(what + " failed before COMMIT was sent", (SQLException) e));
             try {
                 connection.rollback();
             } catch (SQLException rollbackFailure) {
@@ -278,7 +310,7 @@ final class Transactions {
         try {
             connection.rollback();
         } catch (SQLException e) {
-            throw new StoreException(what + " could not roll back", e);
+            throw failed(what + " could not roll back", e);
         }
     }
 

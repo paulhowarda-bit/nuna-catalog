@@ -198,6 +198,7 @@ class ObjectRoutes {
             case CommitReply.Success done -> success.apply(done);
             case CommitReply.Failure failure -> Http.error(failure.status(), failure.type(), failure.message());
             case CommitReply.ServerError error -> Http.error(500, error.type(), error.message());
+            case CommitReply.Unavailable unavailable -> Http.unavailable(unavailable.message());
         };
     }
 

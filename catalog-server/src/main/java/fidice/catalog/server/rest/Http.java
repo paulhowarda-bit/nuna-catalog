@@ -3,8 +3,10 @@ package fidice.catalog.server.rest;
 import fidice.catalog.core.CatalogError;
 import fidice.catalog.iceberg.RestResponse;
 import fidice.catalog.iceberg.Wire;
+import fidice.catalog.server.StoreOutage;
 import java.util.List;
 import java.util.function.BooleanSupplier;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
@@ -25,6 +27,14 @@ final class Http {
 
     static ResponseEntity<String> error(int status, String type, String message) {
         return json(status, Wire.error(status, type, message));
+    }
+
+    /** 503 with Retry-After: the store could not be reached and nothing was applied ({@link StoreOutage}). */
+    static ResponseEntity<String> unavailable(String message) {
+        return ResponseEntity.status(StoreOutage.STATUS)
+                .header(HttpHeaders.RETRY_AFTER, StoreOutage.RETRY_AFTER_SECONDS)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(StoreOutage.body(message));
     }
 
     /** {@code ns.orders}, as iceberg-core prints an identifier in its messages. */
