@@ -34,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** Tables and views, and suite test 8 (names) for them. */
@@ -185,6 +186,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         }
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("Objects: a create whose answer is lost is unknown, and findCommit resolves it to COMMITTED")
     void lostCreateAnswerResolvesToCommitted() {
@@ -203,6 +205,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertThat(store.readObject(creation.object().id())).contains(creation.object());
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("Objects: a create whose COMMIT is lost is unknown, and findCommit resolves it to NOT_COMMITTED")
     void lostCreateCommitResolvesToNotCommitted() {

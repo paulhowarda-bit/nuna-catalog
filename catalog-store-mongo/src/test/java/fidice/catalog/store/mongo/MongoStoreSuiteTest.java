@@ -84,12 +84,14 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * The shared suite against a three-member MongoDB 8.0 replica set: the commit suite, every group
  * suite as a nested class on the same backend, and MongoDB-only hazards.
  */
+@Tag("heavy")
 class MongoStoreSuiteTest extends CommitSuite {
 
     private MongoReplicaSet mongo;

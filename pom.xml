@@ -49,6 +49,8 @@
     <toxiproxy.image>ghcr.io/shopify/toxiproxy:2.12.0</toxiproxy.image>
     <cockroachdb.image>cockroachdb/cockroach:v25.4.20</cockroachdb.image>
     <yugabytedb.image>yugabytedb/yugabyte:2025.2.8.1-b8</yugabytedb.image>
+    <!-- Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. -->
+    <fidice.excluded-groups>heavy</fidice.excluded-groups>
   </properties>
 
   <dependencyManagement>
@@ -106,6 +108,13 @@
             <force>true</force>
           </configuration>
         </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <configuration>
+            <excludedGroups>${fidice.excluded-groups}</excludedGroups>
+          </configuration>
+        </plugin>
       </plugins>
     </pluginManagement>
     <plugins>
@@ -141,4 +150,15 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- Every test, heavy ones included: landings that change storage code, milestone ends, nightly
+         (-Pheavy,nightly). -->
+    <profile>
+      <id>heavy</id>
+      <properties>
+        <fidice.excluded-groups></fidice.excluded-groups>
+      </properties>
+    </profile>
+  </profiles>
 </project>

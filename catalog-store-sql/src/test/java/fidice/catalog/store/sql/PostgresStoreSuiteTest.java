@@ -45,6 +45,7 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -141,6 +142,7 @@ class PostgresStoreSuiteTest extends CommitSuite {
         }
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("PostgreSQL: a COMMIT whose wait for the standby is cancelled is unknown, and findCommit answers"
             + " COMMITTED only once the standby has it")
@@ -170,6 +172,7 @@ class PostgresStoreSuiteTest extends CommitSuite {
         assertThat(lookup.get(60, TimeUnit.SECONDS)).isEqualTo(CommitLookup.COMMITTED);
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("PostgreSQL: a key's answer whose COMMIT lost its wait for the standby is replayed only once the"
             + " standby has it")
