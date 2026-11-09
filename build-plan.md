@@ -343,4 +343,18 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - YugabyteDB schema steps run outside a transaction, with Flyway's session lock, so indexes build online.
     - A yugabyted cluster needs deployment checks before it survives a node loss (every master known, no under-replicated tablet).
   - Deviations 1–10 are in `docs/storage-design.md`.
+- **M4 done 2026-11-08, on PostgreSQL; the other four backends wait for the after-M9 pass.** Every v1 route of D13 is in `catalog-server` (`fidice.catalog.server.rest`): config, namespaces (paged, HEAD, properties), tables (staged create, register, rename, HEAD, soft drop), all view routes, loadCredentials, metrics (204, to telemetry) and a fixed `/v1/oauth/tokens` error naming the IdP. M5, M6 and M7 replace one bean each (callers, credential vending, metrics and alerts) and add their own route packages.
+  - Loads (D14): the ETag hashes the metadata location, snapshot mode, view scope and credential epoch, and a 304 is decided on the pointer alone. No 304 inside the credential refresh margin. `snapshots=refs` drops unreferenced snapshots with their statistics files, where the reference fixture answers 400. A parsed-metadata cache is keyed by location, and alerts fire on metadata size and snapshot count.
+  - Errors (D9) and idempotency (D10): 400s from iceberg-core keep the reference's error type, so the Iceberg client rethrows IllegalArgumentException as itself. A reused Idempotency-Key with a different request is a 400 and is not recorded. A failed regulated hash is a 500. An unknown commit outcome is read back, and a 500 says the change may or may not have been applied.
+  - RCK on PostgreSQL and Silo: 133 of 160 pass, up from 149 NOT_RUN. Each of the other 27 has a reason in `catalog-tests-conformance/rck-reasons.txt`:
+    - 10 are aborted or skipped by the kit itself: it hard-codes support for empty namespaces, nested namespaces and names with slashes to off, and one test is @Disabled upstream. Nesting works here (D28) and RestRoutesTest covers it.
+    - 7 concurrent replaces fail on v3 tables (D12): iceberg-core refuses the losing replace's stale first-row-id. All 7 pass in a diagnostic run with v2 tables.
+    - 5 follow from D28: three view tests move a view's location, and two replaces ask for a file: location that the client writes to before the catalog can refuse.
+    - 4 follow from D13 and soft drop: register-view is v1.x, and a dropped table's file cannot be registered again (undrop brings it back).
+    - 1 test deletes the metadata file through java.nio, which cannot reach s3://.
+  - D28 decision on the three RCK view tests: keep refusing location moves (400); the tests are recorded as failing by decision, not skipped.
+  - Fixture diff (D31): one scripted run against our server and the 1.12.0 reference `RESTCatalogServer` in process, both on Silo, compares statuses, error types and response keys. The 7 differences are each tied to a decision: v3 metadata (D12), a 400 where the reference answers a 500 HTML page (D9), the oauth error (D13), and a table's namespace must exist.
+  - Found and fixed on the way: the D11 backstop refused a new required field without a default even in a replace that starts main afresh, where the reference accepts it.
+  - Bites: 7 recorded in `bites/M4/`, not run.
+  - Not verified: the four other backends, the heavy and nightly profiles, the bites, and real credential vending (M6) behind the expiry rule, which a test stand-in covers.
 - **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.

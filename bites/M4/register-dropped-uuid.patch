@@ -1,0 +1,17 @@
+Breaks: register accepts the metadata file of a dropped table, whose UUID the catalog still holds.
+Module: catalog-server
+Test: RestRoutesTest#registerRefusesADroppedTablesFileAndLocationsOutsideTheProfile
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
+index b20c7a2..e01d48e 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/CommitEngine.java
+@@ -357,7 +357,7 @@ public final class CommitEngine {
+                     yield new Failure(400, "BadRequestException", "Table UUID must be a UUID, not "
+                             + found.after().uuid());
+                 }
+-                if (store.readObject(id).isPresent()) {
++                if (false && store.readObject(id).isPresent()) {
+                     yield new Failure(409, "AlreadyExistsException", "Table UUID " + id
+                             + " already belongs to a table in this catalog; a dropped table is brought back by undrop");
+                 }

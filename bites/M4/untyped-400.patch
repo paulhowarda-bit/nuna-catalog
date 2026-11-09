@@ -1,0 +1,17 @@
+Breaks: iceberg-core's 400s lose the reference's error type, so the Iceberg client cannot rethrow IllegalArgumentException.
+Module: catalog-iceberg
+Test: MetadataTest#unknownSchemaIdIsABadRequest
+
+diff --git a/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Metadata.java b/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Metadata.java
+index a1cf973..20c4e38 100644
+--- a/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Metadata.java
++++ b/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Metadata.java
+@@ -279,7 +279,7 @@ public final class Metadata {
+             return new RequirementFailed(e.getMessage());
+         } catch (ValidationException | IllegalArgumentException | IllegalStateException
+                  | UnsupportedOperationException | UncheckedIOException e) {
+-            boolean referenceType = e instanceof IllegalArgumentException || e instanceof ValidationException;
++            boolean referenceType = false;
+             return new BadRequest(referenceType ? e.getClass().getSimpleName() : "BadRequestException", e.getMessage());
+         }
+     }
