@@ -14,7 +14,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 
 /** The endpoints list in /v1/config must name exactly the routes this server serves (D13). */
 @SpringBootTest
-@Import(PostgresForTests.class)
+@Import({PostgresForTests.class, SiloForTests.class})
 class AdvertisedEndpointsTest {
 
     @Autowired
@@ -35,6 +35,7 @@ class AdvertisedEndpointsTest {
         });
         served.remove("GET /v1/config");
         served.remove("ANY /error");
+        served.remove("ANY /v1/oauth/tokens");
 
         assertThat(served).containsExactlyInAnyOrderElementsOf(AdvertisedEndpoints.ALL);
     }

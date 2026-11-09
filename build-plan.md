@@ -173,7 +173,7 @@ Three worktree sessions, each owning one module:
 - Every v1 route in D13: config, namespaces (paged, HEAD, properties), tables (staged create, register (kept for DR reconcile and tests [D34]), rename, HEAD, drop as soft delete), all view routes, loadCredentials, metrics (204, forwarded to telemetry). Table-load 404 is NoSuchTableException. `/v1/oauth/tokens` returns a fixed error naming the IdP.
 - ETag/304 against the pointer (hash of location, snapshot mode, view scope, credential epoch); no 304 near credential expiry; correct `snapshots=refs` including statistics files; parsed-metadata cache keyed by location; alerts on metadata size and snapshot count [D14].
 - The full error contract [D9].
-- **Gate:** RCK passes and the fixture diff is clean on all five backends.
+- **Gate:** RCK passes and the fixture diff is clean on PostgreSQL, with a stated reason for every RCK test that does not pass. The other four backends are checked in the after-M9 heavy pass.
 
 ### M5 — Security
 

@@ -24,6 +24,14 @@
       <artifactId>catalog-store-sql</artifactId>
     </dependency>
     <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-objectstore</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-audit</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-webmvc</artifactId>
     </dependency>
@@ -68,6 +76,7 @@
         <configuration>
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
+            <silo.image>${silo.image}</silo.image>
             <repo.root>${project.basedir}/..</repo.root>
           </systemPropertyVariables>
         </configuration>

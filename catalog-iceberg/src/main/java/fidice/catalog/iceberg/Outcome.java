@@ -21,8 +21,16 @@ public sealed interface Outcome {
     record RequirementFailed(String message) implements Outcome {
     }
 
-    /** The request is malformed or not allowed: 400. */
-    record BadRequest(String message) implements Outcome {
+    /**
+     * The request is malformed or not allowed: 400. The type is the error type the client sees: the
+     * class name of iceberg-core's exception, as the reference sends it (the Iceberg client turns
+     * IllegalArgumentException back into that exception), or BadRequestException for our own refusals.
+     */
+    record BadRequest(String type, String message) implements Outcome {
+
+        public BadRequest(String message) {
+            this("BadRequestException", message);
+        }
     }
 
     /** A table commit that is not a create, against a table with no current metadata: 404. */

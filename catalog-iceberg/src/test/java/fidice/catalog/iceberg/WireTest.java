@@ -11,10 +11,17 @@ class WireTest {
     @Test
     void configAcceptsImmutableMapsAndWritesEndpoints() {
         String json = Wire.config(Map.of(), Map.of("prefix", "trading"),
-                List.of("GET /v1/{prefix}/namespaces"));
+                List.of("GET /v1/{prefix}/namespaces"), "PT24H");
 
         assertThat(json).contains("\"prefix\":\"trading\"")
-                .contains("\"endpoints\":[\"GET /v1/{prefix}/namespaces\"]");
+                .contains("\"endpoints\":[\"GET /v1/{prefix}/namespaces\"]")
+                .contains("\"idempotency-key-lifetime\":\"PT24H\"");
+    }
+
+    @Test
+    void oauthErrorHasTheOAuthShape() {
+        assertThat(Wire.oauthError("unsupported_grant_type", "ask the IdP"))
+                .isEqualTo("{\"error\":\"unsupported_grant_type\",\"error_description\":\"ask the IdP\"}");
     }
 
     @Test

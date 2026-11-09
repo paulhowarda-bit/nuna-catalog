@@ -1,7 +1,10 @@
 package fidice.catalog.server;
 
 import fidice.catalog.core.CatalogError;
+import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.iceberg.Wire;
+import fidice.catalog.objectstore.LocationRejectedException;
+import fidice.catalog.objectstore.MetadataNotFoundException;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +22,24 @@ class ErrorResponses {
     @ExceptionHandler(CatalogError.class)
     ResponseEntity<String> definite(CatalogError error) {
         return body(error.status(), error.type(), error.getMessage());
+    }
+
+    /** A request body or path that is not a valid Iceberg request: 400, or 422 for clashing property keys. */
+    @ExceptionHandler(RestRequest.InvalidRequest.class)
+    ResponseEntity<String> invalid(RestRequest.InvalidRequest error) {
+        return body(error.status(), error.type(), error.getMessage());
+    }
+
+    /** A location outside the storage profile's approved prefixes, e.g. a registered metadata file (D21). */
+    @ExceptionHandler(LocationRejectedException.class)
+    ResponseEntity<String> location(LocationRejectedException error) {
+        return body(400, "BadRequestException", error.getMessage());
+    }
+
+    /** A metadata file that is not in the store, worded as iceberg-core words it. */
+    @ExceptionHandler(MetadataNotFoundException.class)
+    ResponseEntity<String> missingFile(MetadataNotFoundException error) {
+        return body(404, "NotFoundException", error.getMessage());
     }
 
     /** Spring's own request errors (unknown route, wrong method, bad parameter) keep their status. */

@@ -37,7 +37,9 @@ class EventCodecTest {
             EventType.DENIAL, List.of("operation", "securable", "reason", "actor"),
             EventType.AUTH_FAILURE, List.of("reason", "requestId"),
             EventType.CREDENTIAL_ISSUE, List.of("object", "storageProfile", "locationPrefix", "access", "sessionName",
-                    "expiresAt", "actor"));
+                    "expiresAt", "actor"),
+            EventType.NAMESPACE_CHANGE, List.of("action", "namespace", "set", "removed", "actor"),
+            EventType.RENAME, List.of("object", "fromPath", "actor"));
     private static final Map<EventType, List<String>> NULLABLE = Map.of(
             EventType.COMMIT, List.of("before"),
             EventType.GRANT_CHANGE, List.of(),
@@ -46,7 +48,9 @@ class EventCodecTest {
             EventType.OBJECT_READ, List.of(),
             EventType.DENIAL, List.of("privilege"),
             EventType.AUTH_FAILURE, List.of("issuer", "claimedSubject", "clientId", "remoteAddress"),
-            EventType.CREDENTIAL_ISSUE, List.of());
+            EventType.CREDENTIAL_ISSUE, List.of(),
+            EventType.NAMESPACE_CHANGE, List.of(),
+            EventType.RENAME, List.of());
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
     private static final List<String> NESTED_REQUIRED = List.of("actor.principal", "actor.requestId", "object.kind",
             "object.id", "object.catalog", "object.path", "after.metadataLocation", "after.version", "after.sha256");

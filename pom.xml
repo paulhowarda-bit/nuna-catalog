@@ -49,6 +49,8 @@
     <toxiproxy.image>ghcr.io/shopify/toxiproxy:2.12.0</toxiproxy.image>
     <cockroachdb.image>cockroachdb/cockroach:v25.4.20</cockroachdb.image>
     <yugabytedb.image>yugabytedb/yugabyte:2025.2.8.1-b8</yugabytedb.image>
+    <!-- Silo, the maintained MinIO fork: the S3 store server and conformance tests run against. -->
+    <silo.image>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</silo.image>
     <!-- Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. -->
     <fidice.excluded-groups>heavy</fidice.excluded-groups>
   </properties>
@@ -85,6 +87,16 @@
       <dependency>
         <groupId>fidice</groupId>
         <artifactId>catalog-store-sql</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-objectstore</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-audit</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>

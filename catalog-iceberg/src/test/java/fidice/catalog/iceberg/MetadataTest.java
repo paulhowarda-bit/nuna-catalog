@@ -187,7 +187,7 @@ class MetadataTest {
         assertThat(Metadata.commitTable("""
                 {"requirements": [], "updates": [{"action": "set-current-schema", "schema-id": 42}]}""",
                 base("v3-create"), location("v3-create")))
-                .isEqualTo(new BadRequest("Cannot set current schema to unknown schema: 42"));
+                .isEqualTo(new BadRequest("IllegalArgumentException", "Cannot set current schema to unknown schema: 42"));
     }
 
     /** The reference answers 406 here (UnsupportedOperationException); the request is at fault, so 400. */
@@ -212,7 +212,7 @@ class MetadataTest {
         assertThat(Metadata.commitView("""
                 {"requirements": [{"type": "assert-ref-snapshot-id", "ref": "main", "snapshot-id": null}],
                  "updates": []}""", base("view-create")))
-                .isEqualTo(new BadRequest("Cannot validate AssertRefSnapshotID against a view"));
+                .isEqualTo(new BadRequest("ValidationException", "Cannot validate AssertRefSnapshotID against a view"));
     }
 
     @Test

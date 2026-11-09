@@ -11,6 +11,7 @@ import fidice.catalog.iceberg.Facts;
 import fidice.catalog.iceberg.Facts.TableFacts;
 import fidice.catalog.iceberg.Metadata;
 import fidice.catalog.iceberg.Outcome;
+import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CatalogStore;
 import fidice.catalog.store.CommitBatch;
@@ -106,6 +107,36 @@ public final class CommitEngine {
         return run(Operation.COMMIT_TABLE, name, requestJson, caller, idempotencyKey);
     }
 
+    /**
+     * {@code POST .../register}: a table whose metadata file already exists (D34). The new table takes the
+     * file's table UUID and location; the pointer names the file as it is, hashed as read.
+     */
+    public CommitReply registerTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
+        return run(Operation.REGISTER_TABLE, name, requestJson, caller, idempotencyKey);
+    }
+
+    /**
+     * The current metadata of an active table or view, from the cache or its file. A file that no longer
+     * matches its hash is alerted; for a regulated object the read fails closed (D5, D26).
+     */
+    public Current readCurrent(CatalogObject object) {
+        Pointer pointer = store.readPointer(object.mainKey())
+                .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
+        Optional<String> json = load(object, pointer, new ObjectGovernance(store, object));
+        return json.<Current>map(j -> new Current.Loaded(pointer, j))
+                .orElseGet(() -> new Current.Refused(new ServerError(SERVICE_FAILURE, "Metadata file "
+                        + pointer.metadataLocation() + " does not match the hash its pointer recorded")));
+    }
+
+    /** What {@link #readCurrent} found. */
+    public sealed interface Current {
+        record Loaded(Pointer pointer, String json) implements Current {
+        }
+
+        record Refused(ServerError error) implements Current {
+        }
+    }
+
     /** {@code POST .../views}. */
     public CommitReply createView(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
         return run(Operation.CREATE_VIEW, name, requestJson, caller, idempotencyKey);
@@ -118,7 +149,7 @@ public final class CommitEngine {
 
     private enum Operation {
         CREATE_TABLE(CatalogObject.Kind.TABLE), COMMIT_TABLE(CatalogObject.Kind.TABLE),
-        CREATE_VIEW(CatalogObject.Kind.VIEW), COMMIT_VIEW(CatalogObject.Kind.VIEW);
+        REGISTER_TABLE(CatalogObject.Kind.TABLE), CREATE_VIEW(CatalogObject.Kind.VIEW), COMMIT_VIEW(CatalogObject.Kind.VIEW);
 
         final CatalogObject.Kind kind;
 
@@ -274,6 +305,7 @@ public final class CommitEngine {
             return switch (request.operation()) {
                 case CREATE_TABLE, CREATE_VIEW -> create(request);
                 case COMMIT_TABLE, COMMIT_VIEW -> commit(request);
+                case REGISTER_TABLE -> register(request);
             };
         } catch (StoreException e) {
             LOG.log(System.Logger.Level.WARNING, "catalog store failed", e);
@@ -294,11 +326,49 @@ public final class CommitEngine {
                 : Metadata.createView(request.json(), id.toString(), location, clock.millis());
         return switch (outcome) {
             case Outcome.NewMetadata created -> createObject(request, id, location, created,
-                    new Metadata.Journal("[]", request.json()), alreadyExists(request, request.operation().kind));
-            case Outcome.BadRequest bad -> new Failure(400, "BadRequestException", bad.message());
+                    new Metadata.Journal("[]", request.json()), alreadyExists(request, request.operation().kind),
+                    Optional.empty());
+            case Outcome.BadRequest bad -> new Failure(400, bad.type(), bad.message());
             case Outcome.RequirementFailed failed -> new Failure(409, COMMIT_FAILED, failed.message());
             case Outcome.NoChange noChange -> throw new IllegalStateException("a create always writes metadata");
             case Outcome.NotFound notFound -> throw new IllegalStateException("a create never reads metadata");
+        };
+    }
+
+    /**
+     * Registers an existing metadata file. Its table UUID becomes the object id, so a UUID that any object
+     * in the catalog holds, a dropped one included, is refused: a dropped table keeps its UUID and location
+     * until it is purged (D25), and is brought back by undrop, not by registering its file again.
+     */
+    private CommitReply register(Request request) {
+        Optional<CatalogObject> existing = store.findObject(request.name().namespaceId(),
+                request.name().name().normalized());
+        if (existing.isPresent()) {
+            return alreadyExists(request, existing.get().kind());
+        }
+        String metadataLocation = RestRequest.register(request.json()).metadataLocation();
+        TableFiles.Read read = files.read(metadataLocation, "");
+        return switch (Metadata.registerTable(read.json(), metadataLocation)) {
+            case Outcome.NewMetadata found -> {
+                UUID id;
+                try {
+                    id = UUID.fromString(found.after().uuid());
+                } catch (RuntimeException e) {
+                    yield new Failure(400, "BadRequestException", "Table UUID must be a UUID, not "
+                            + found.after().uuid());
+                }
+                if (store.readObject(id).isPresent()) {
+                    yield new Failure(409, "AlreadyExistsException", "Table UUID " + id
+                            + " already belongs to a table in this catalog; a dropped table is brought back by undrop");
+                }
+                yield createObject(request, id, found.after().location(), found,
+                        new Metadata.Journal("[]", request.json()), alreadyExists(request, CatalogObject.Kind.TABLE),
+                        Optional.of(new TableFiles.Written(metadataLocation, read.sha256())));
+            }
+            case Outcome.BadRequest bad -> new Failure(400, bad.type(), bad.message());
+            case Outcome.RequirementFailed failed -> new Failure(400, "BadRequestException", failed.message());
+            case Outcome.NoChange noChange -> throw new IllegalStateException("a register always creates");
+            case Outcome.NotFound notFound -> throw new IllegalStateException("a register never reads a pointer");
         };
     }
 
@@ -314,10 +384,10 @@ public final class CommitEngine {
         // No table by that name: only the commit of a staged create (assert-create) can succeed.
         return switch (Metadata.commitTable(request.json(), null, null)) {
             case Outcome.NewMetadata created when found.isPresent() ->
-                    new Failure(409, COMMIT_FAILED, "View with same name already exists: " + display(request));
+                    new Failure(409, "AlreadyExistsException", "View with same name already exists: " + display(request));
             case Outcome.NewMetadata created -> stagedCreate(request, created);
             case Outcome.NotFound notFound -> noSuch(request);
-            case Outcome.BadRequest bad -> new Failure(400, "BadRequestException", bad.message());
+            case Outcome.BadRequest bad -> new Failure(400, bad.type(), bad.message());
             case Outcome.RequirementFailed failed -> new Failure(409, COMMIT_FAILED, failed.message());
             case Outcome.NoChange noChange -> throw new IllegalStateException("a create always writes metadata");
         };
@@ -339,12 +409,16 @@ public final class CommitEngine {
             return new Failure(409, COMMIT_FAILED, "Table UUID " + id + " is already in use");
         }
         return createObject(request, id, files.newLocation(id), created, Metadata.journal(request.json()),
-                new Failure(409, COMMIT_FAILED, "Table already exists: " + display(request)));
+                new Failure(409, "AlreadyExistsException", "Table already exists: " + display(request)), Optional.empty());
     }
 
-    /** Writes version 1 and creates the object with its first pointer (storage-design 9 a). */
+    /**
+     * Writes version 1, unless {@code existing} names a file already written, and creates the object with
+     * its first pointer (storage-design 9 a).
+     */
     private CommitReply createObject(Request request, UUID id, String location, Outcome.NewMetadata created,
-                                     Metadata.Journal journal, Failure nameTaken) {
+                                     Metadata.Journal journal, Failure nameTaken,
+                                     Optional<TableFiles.Written> existing) {
         ObjectName name = request.name();
         CatalogObject object = CatalogObject.active(name.catalogId(), id, name.namespaceId(), name.name(),
                 request.operation().kind, location);
@@ -352,7 +426,7 @@ public final class CommitEngine {
         if (refused.isPresent()) {
             return refused.get();
         }
-        TableFiles.Written written = files.write(location, 1, created.json());
+        TableFiles.Written written = existing.orElseGet(() -> files.write(location, 1, created.json()));
         Pointer first = new Pointer(written.location(), 1, written.sha256(), Projection.of(created.after()));
         ObjectCreation creation = new ObjectCreation(object,
                 batch(request, object, Optional.empty(), first, journal, false));
@@ -408,7 +482,7 @@ public final class CommitEngine {
                     return new Failure(409, COMMIT_FAILED, failed.message());
                 }
                 case Outcome.BadRequest bad -> {
-                    return new Failure(400, "BadRequestException", bad.message());
+                    return new Failure(400, bad.type(), bad.message());
                 }
                 case Outcome.NotFound notFound -> throw new IllegalStateException("current metadata was given");
             }
@@ -547,9 +621,13 @@ public final class CommitEngine {
                 && (b.currentSchemaId() != a.currentSchemaId() || b.defaultSpecId() != a.defaultSpecId());
     }
 
+    /** Worded as iceberg-core words it, by what was asked for and what holds the name. */
     private static Failure alreadyExists(Request request, CatalogObject.Kind holder) {
-        return new Failure(409, "AlreadyExistsException", (holder == CatalogObject.Kind.TABLE
-                ? "Table already exists: " : "View with same name already exists: ") + display(request));
+        boolean sameKind = holder == request.operation().kind;
+        String message = holder == CatalogObject.Kind.TABLE
+                ? (sameKind ? "Table already exists: " : "Table with same name already exists: ")
+                : (sameKind ? "View already exists: " : "View with same name already exists: ");
+        return new Failure(409, "AlreadyExistsException", message + display(request));
     }
 
     private static Failure noSuch(Request request) {
@@ -559,6 +637,6 @@ public final class CommitEngine {
     }
 
     private static String display(Request request) {
-        return request.name().name().display();
+        return request.name().qualified();
     }
 }

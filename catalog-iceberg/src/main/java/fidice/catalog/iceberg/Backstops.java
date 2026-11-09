@@ -44,8 +44,13 @@ final class Backstops {
         return problem.or(() -> transforms(before, after)).or(() -> snapshots(before, after));
     }
 
-    /** Every schema this commit adds evolves the table's current schema by the spec's rules. */
+    /**
+     * Every schema this commit adds evolves the table's current schema by the spec's rules. A new required
+     * field needs an initial default only when main keeps its rows: a replace that starts main afresh
+     * has no rows to fill, and the reference allows it.
+     */
     private static Optional<String> schemas(TableMetadata before, TableMetadata after) {
+        boolean keepsRows = keepsRows(before, after);
         Map<Integer, Types.NestedField> current = TypeUtil.indexById(before.schema().asStruct());
         for (Schema added : after.schemas()) {
             if (before.schemasById().containsKey(added.schemaId())) {
@@ -56,7 +61,7 @@ final class Backstops {
                 Types.NestedField old = current.get(field.fieldId());
                 Optional<String> problem = old != null
                         ? evolved(old, field, after)
-                        : added(field, parents.get(field.fieldId()), current, before.lastColumnId());
+                        : added(field, parents.get(field.fieldId()), current, before.lastColumnId(), keepsRows);
                 if (problem.isPresent()) {
                     return problem;
                 }
@@ -87,17 +92,43 @@ final class Backstops {
      * sits in a struct that already holds data, existing rows need its initial default.
      */
     private static Optional<String> added(Types.NestedField field, Integer parent, Map<Integer, Types.NestedField> current,
-                                          int lastColumnId) {
+                                          int lastColumnId, boolean keepsRows) {
         if (field.fieldId() <= lastColumnId) {
             return Optional.of("New field " + field.fieldId() + " (" + field.name() + ") reuses an ID at or below"
                     + " last-column-id " + lastColumnId);
         }
-        boolean parentExists = parent == null || current.containsKey(parent);
+        boolean parentExists = keepsRows && (parent == null || current.containsKey(parent));
         if (field.isRequired() && field.initialDefault() == null && parentExists) {
             return Optional.of("New required field " + field.fieldId() + " (" + field.name()
                     + ") needs an initial-default");
         }
         return Optional.empty();
+    }
+
+    /**
+     * Whether main after the commit still reads the rows main held before: its snapshot is the old one
+     * or descends from it. A parent missing from the history counts as keeping them. Not covered: a later
+     * commit that points main back at an old snapshot reads its rows through the replaced schema.
+     */
+    private static boolean keepsRows(TableMetadata before, TableMetadata after) {
+        Snapshot old = before.currentSnapshot();
+        if (old == null) {
+            return false;
+        }
+        Snapshot snapshot = after.currentSnapshot();
+        while (snapshot != null) {
+            if (snapshot.snapshotId() == old.snapshotId()) {
+                return true;
+            }
+            if (snapshot.parentId() == null) {
+                return false;
+            }
+            snapshot = after.snapshot(snapshot.parentId());
+            if (snapshot == null) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

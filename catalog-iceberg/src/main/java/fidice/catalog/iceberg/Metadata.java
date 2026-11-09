@@ -64,7 +64,7 @@ public final class Metadata {
     public static final int MAX_TABLE_FORMAT_VERSION = 3;
 
     // Configured as iceberg-core's own REST object mapper is, so request bodies parse as they do there.
-    private static final ObjectMapper REQUESTS = new ObjectMapper()
+    static final ObjectMapper REQUESTS = new ObjectMapper()
             .setVisibility(PropertyAccessor.FIELD, JsonAutoDetect.Visibility.ANY)
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
             .setPropertyNamingStrategy(new PropertyNamingStrategies.KebabCaseStrategy());
@@ -97,6 +97,21 @@ public final class Metadata {
                     location,
                     properties);
             return table(null, TableMetadata.buildFrom(created).assignUUID(tableUuid).build());
+        });
+    }
+
+    /**
+     * {@code POST .../register}: a table whose metadata file already exists (D34). Nothing is applied: the
+     * file is read so the rules can judge it and the new object can take its UUID and location.
+     */
+    public static Outcome registerTable(String metadataJson, String metadataLocation) {
+        return guarded(() -> {
+            TableMetadata metadata = TableMetadataParser.fromJson(metadataLocation, metadataJson);
+            if (metadata.formatVersion() > MAX_TABLE_FORMAT_VERSION) {
+                return new BadRequest("Table format version " + metadata.formatVersion()
+                        + " is not supported; the highest is " + MAX_TABLE_FORMAT_VERSION);
+            }
+            return new NewMetadata(metadataJson, null, facts(metadata));
         });
     }
 
@@ -254,7 +269,8 @@ public final class Metadata {
     /**
      * Maps iceberg-core's failures to outcomes as its reference adapter maps them to statuses, except that
      * a dropped view dialect (IllegalStateException) and an update of the wrong kind
-     * (UnsupportedOperationException) are 400 here, where the reference answers 500 and 406.
+     * (UnsupportedOperationException) are 400 here, where the reference answers 500 and 406. The 400s the
+     * reference also sends keep its error type, the exception's class name.
      */
     private static Outcome guarded(Supplier<Outcome> work) {
         try {
@@ -263,7 +279,8 @@ public final class Metadata {
             return new RequirementFailed(e.getMessage());
         } catch (ValidationException | IllegalArgumentException | IllegalStateException
                  | UnsupportedOperationException | UncheckedIOException e) {
-            return new BadRequest(e.getMessage());
+            boolean referenceType = e instanceof IllegalArgumentException || e instanceof ValidationException;
+            return new BadRequest(referenceType ? e.getClass().getSimpleName() : "BadRequestException", e.getMessage());
         }
     }
 }

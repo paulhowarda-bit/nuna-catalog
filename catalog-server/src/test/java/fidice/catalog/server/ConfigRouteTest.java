@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(PostgresForTests.class)
+@Import({PostgresForTests.class, SiloForTests.class})
 class ConfigRouteTest {
 
     private final HttpClient http = HttpClient.newHttpClient();
@@ -42,9 +43,10 @@ class ConfigRouteTest {
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<String>read(response.body(), "$.overrides.prefix")).isEqualTo("trading");
         assertThat(JsonPath.<Map<String, Object>>read(response.body(), "$.defaults")).isEmpty();
-        // iceberg-core omits an empty endpoints list (see AdvertisedEndpoints).
-        assertThat(AdvertisedEndpoints.ALL).isEmpty();
-        assertThat(JsonPath.<Map<String, Object>>read(response.body(), "$")).doesNotContainKey("endpoints");
+        assertThat(JsonPath.<List<String>>read(response.body(), "$.endpoints"))
+                .containsExactlyElementsOf(AdvertisedEndpoints.ALL)
+                .contains("HEAD /v1/{prefix}/namespaces/{namespace}/tables/{table}");
+        assertThat(JsonPath.<String>read(response.body(), "$.idempotency-key-lifetime")).isEqualTo("PT24H");
     }
 
     @Test
@@ -63,7 +65,7 @@ class ConfigRouteTest {
 
     @Test
     void unknownRouteIsAnIcebergError() throws Exception {
-        HttpResponse<String> response = get("/v1/trading/namespaces");
+        HttpResponse<String> response = get("/v1/trading/nowhere");
 
         assertError(response, 404, "NotFoundException");
     }
