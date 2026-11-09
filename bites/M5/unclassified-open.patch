@@ -3,15 +3,15 @@ Module: catalog-security
 Test: AuthorizerTest#anUnclassifiedTableInARegulatedNamespaceIsClosedButStillVisible
 
 diff --git a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
-index 7eb5785..cffbe7a 100644
+index 38ae889..488c437 100644
 --- a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
 +++ b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
-@@ -198,7 +198,7 @@ public final class Authorizer {
+@@ -199,7 +199,7 @@ public final class Authorizer {
          boolean regulated = attributes.stream().anyMatch(a -> chain.contains(a.target())
                  && a.kind() == GovernanceAttribute.Kind.REGULATED && "true".equalsIgnoreCase(a.value()));
          Securable self = object.securable();
 -        if (object.kind() == CatalogObject.Kind.TABLE && regulated && needed != Privilege.DESCRIBE
 +        if (object.kind() == CatalogObject.Kind.TABLE && false && regulated && needed != Privilege.DESCRIBE
+                 && needed != Privilege.MANAGE_TAGS
                  && attributes.stream().noneMatch(a -> a.target().equals(self)
                          && a.kind() == GovernanceAttribute.Kind.CLASSIFICATION)) {
-             return new Decision.Denied(Reason.UNCLASSIFIED, null, "table " + object.name().display()

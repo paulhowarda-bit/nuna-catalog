@@ -1,0 +1,16 @@
+Breaks: anyone signed in may read the purge queue, not only a maintenance principal.
+Module: catalog-server
+Test: ManagementAuthorizationTest#thePurgeQueueIsForTheMaintenancePrincipal
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+index 7397391..1cac62d 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+@@ -200,7 +200,6 @@ class LifecycleRoutes {
+     ResponseEntity<String> purgeEligible(@RequestParam(required = false) String pageToken,
+                                          @RequestParam(required = false) Integer pageSize,
+                                          HttpServletRequest http) {
+-        guard.requireMaintenance(management.request(http), null, "listPurgeEligible");
+         PageRequest page = new PageRequest(Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()),
+                 pageSize == null ? PAGE : Math.clamp(pageSize, 1, 1000));
+         Page<CatalogObject> listed;
