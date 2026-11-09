@@ -134,6 +134,21 @@ public abstract class GovernanceSuite extends GroupSuite {
     }
 
     @Test
+    @DisplayName("Governance: every attribute kind round-trips, a 2,000-character value included")
+    void everyKindRoundTrips() {
+        Securable onCatalog = new Securable(Securable.Kind.CATALOG, newCatalog());
+        List<GovernanceAttribute> all = new ArrayList<>();
+        for (GovernanceAttribute.Kind kind : GovernanceAttribute.Kind.values()) {
+            String value = kind == GovernanceAttribute.Kind.MAINTENANCE_POLICY ? "{\"k\":\"" + "v".repeat(1990) + "\"}"
+                    : kind.name().toLowerCase();
+            GovernanceAttribute attribute = new GovernanceAttribute(onCatalog, kind, value, "catalog-api", "op", now());
+            assertApplied(store.putAttribute(attribute, change()));
+            all.add(attribute);
+        }
+        assertThat(store.attributesOf(Set.of(onCatalog))).containsExactlyInAnyOrderElementsOf(all);
+    }
+
+    @Test
     @DisplayName("Governance: an attribute or hold on a securable that does not exist is Missing and writes nothing")
     void attributeAndHoldNeedTheirTarget() {
         Securable nowhere = new Securable(Securable.Kind.VIEW, UUID.randomUUID());

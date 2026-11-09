@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 /**
@@ -37,13 +38,16 @@ class Engines {
     private final ServerAlerts alerts;
     private final AuditEvents audit;
     private final Clock clock;
+    private final ObjectProvider<CommitRule> extraRules;
     private final Map<UUID, Profile> profiles = new ConcurrentHashMap<>();
 
+    /** @param extraRules rules other milestones add after the standard ones, such as retention classes (M7) */
     Engines(CatalogStore store, CatalogStorage storage, MetadataCache cache, ServerAlerts alerts, AuditEvents audit,
-            Clock clock) {
+            Clock clock, ObjectProvider<CommitRule> extraRules) {
         this.store = store;
         this.storage = storage;
         this.cache = cache;
+        this.extraRules = extraRules;
         this.alerts = alerts;
         this.audit = audit;
         this.clock = clock;
@@ -71,6 +75,7 @@ class Engines {
         return profiles.computeIfAbsent(bound.id(), id -> {
             List<CommitRule> rules = new ArrayList<>(Rules.standard(bound.files(), CLOCK_SKEW));
             rules.addAll(bound.rules());
+            extraRules.orderedStream().forEach(rules::add);
             CommitEngine reader = new CommitEngine(store, bound.files(), cache, List.copyOf(rules), commit -> {
                 throw new IllegalStateException("the reader engine never commits");
             }, alerts, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);

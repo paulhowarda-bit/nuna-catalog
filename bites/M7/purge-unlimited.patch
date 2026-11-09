@@ -1,0 +1,17 @@
+Breaks: purges are not rate-limited.
+Module: catalog-server
+Test: LifecycleTest#purgesAreRateLimited
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+index 061f811..337ece0 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+@@ -250,7 +250,7 @@ class LifecycleRoutes {
+         while (!recentPurges.isEmpty() && !recentPurges.peekFirst().isAfter(windowStart)) {
+             recentPurges.removeFirst();
+         }
+-        if (recentPurges.size() >= settings.purgesPerMinute()) {
++        if (false) {
+             return false;
+         }
+         recentPurges.addLast(now);

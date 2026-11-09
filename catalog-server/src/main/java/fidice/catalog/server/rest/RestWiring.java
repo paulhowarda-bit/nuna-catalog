@@ -8,8 +8,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * The REST surface's collaborators. The synchronous audit publisher and telemetry are seams that M7 (audit)
- * replaces; until then audit events and metrics reports are logged. Callers come from the security package
+ * The REST surface's collaborators. Telemetry is a seam; until it is wired, metrics reports are logged. The
+ * synchronous audit publisher is M7's, in {@code fidice.catalog.server.governance}. Callers come from the security package
  * (M5); storage and credential vending are wired per catalog in {@code fidice.catalog.server.storage} (M6).
  */
 @Configuration(proxyBeanMethods = false)
@@ -34,11 +34,6 @@ class RestWiring {
     @Bean
     ServerAlerts serverAlerts(RestSettings settings) {
         return new ServerAlerts(settings.alertMetadataChars(), settings.alertSnapshots());
-    }
-
-    @Bean
-    AuditPublisher auditPublisher() {
-        return AuditPublisher.LOG;
     }
 
     @Bean

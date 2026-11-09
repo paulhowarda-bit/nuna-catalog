@@ -1,0 +1,17 @@
+Breaks: a pushed attribute without provenance is accepted.
+Module: catalog-server
+Test: GovernanceRoutesTest#pushedAttributesKeepTheirProvenanceAndTheNearestLevelWins
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+index 0c0912f..5f9722a 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+@@ -118,7 +118,7 @@ class GovernanceRoutes {
+         GovernanceAttribute.Kind kind = pushed(attribute);
+         JsonNode json = Management.body(body);
+         String value = Management.text(json, "value", MAX_VALUE);
+-        String provenance = Management.text(json, "provenance", MAX_VALUE);
++        String provenance = json.has("provenance") ? Management.text(json, "provenance", MAX_VALUE) : "unknown";
+         check(kind, value);
+         Target target = management.target(prefix, namespace, table, view);
+         return put(target, kind, attribute, value, provenance, management.request(http));

@@ -8,7 +8,7 @@ import org.testcontainers.utility.DockerImageName;
 
 /** A PostgreSQL container for server tests; the image is pinned in the parent POM. */
 @TestConfiguration(proxyBeanMethods = false)
-class PostgresForTests {
+public class PostgresForTests {
 
     @Bean
     @ServiceConnection

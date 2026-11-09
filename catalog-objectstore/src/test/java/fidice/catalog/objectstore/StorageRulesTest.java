@@ -7,10 +7,12 @@ import fidice.catalog.core.commit.CommitRule.Rejection;
 import fidice.catalog.iceberg.Facts;
 import fidice.catalog.iceberg.Facts.TableFacts;
 import fidice.catalog.store.CatalogObject;
+import fidice.catalog.store.GovernanceAttribute;
 import fidice.catalog.store.Name;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,11 @@ class StorageRulesTest {
             @Override
             public boolean regulated() {
                 return false;
+            }
+
+            @Override
+            public Optional<GovernanceAttribute> nearest(GovernanceAttribute.Kind kind) {
+                return Optional.empty();
             }
         });
     }

@@ -4,6 +4,7 @@ import fidice.catalog.core.commit.CommitEngine;
 import fidice.catalog.core.commit.CommitReply;
 import fidice.catalog.iceberg.MetadataViews;
 import fidice.catalog.iceberg.RestRequest;
+import fidice.catalog.server.governance.ReadAudit;
 import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CatalogObject.Kind;
 import fidice.catalog.store.CatalogRecord;
@@ -38,15 +39,17 @@ class ViewRoutes {
     private final MetadataViews views;
     private final Callers callers;
     private final Guard guard;
+    private final ReadAudit reads;
 
     ViewRoutes(Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views, Callers callers,
-               Guard guard) {
+               Guard guard, ReadAudit reads) {
         this.lookup = lookup;
         this.objects = objects;
         this.engines = engines;
         this.views = views;
         this.callers = callers;
         this.guard = guard;
+        this.reads = reads;
     }
 
     @GetMapping(VIEWS)
@@ -84,6 +87,7 @@ class ViewRoutes {
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, view),
                 Guard.LOAD_VIEW);
         CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
+        reads.read(http, catalog, AuditEvents.path(levels, view), object, current.pointer());
         return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of()));
     }
 

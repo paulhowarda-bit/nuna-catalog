@@ -30,7 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class})
+@Import({PostgresForTests.class, SiloForTests.class, AuditSinkForTests.class})
 class RestRoutesTest {
 
     private static final String TABLE = """

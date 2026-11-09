@@ -4,7 +4,8 @@ import java.net.URI;
 
 /**
  * The event types of D23, each with its current payload schema version. Changes (commits, grants,
- * drops, namespace changes, renames, break-glass, storage setup) travel through the outbox; reads, denials,
+ * drops, undrops, purges, namespace changes, renames, governance attributes, holds, break-glass,
+ * storage setup) travel through the outbox; reads, denials,
  * authentication failures and credential issues are published synchronously.
  */
 public enum EventType {
@@ -19,7 +20,11 @@ public enum EventType {
     NAMESPACE_CHANGE("namespace", 1, NamespaceChange.class),
     RENAME("rename", 1, Rename.class),
     ENGINE_CHANGE("engine", 1, EngineChange.class),
-    STORAGE_SETUP("storage-setup", 1, StorageSetup.class);
+    STORAGE_SETUP("storage-setup", 1, StorageSetup.class),
+    GOVERNANCE_CHANGE("governance", 1, GovernanceChange.class),
+    HOLD_CHANGE("hold", 1, HoldChange.class),
+    UNDROP("undrop", 1, Undrop.class),
+    PURGE("purge", 1, Purge.class);
 
     private final String typeName;
     private final URI dataSchema;

@@ -7,9 +7,12 @@ import fidice.catalog.iceberg.Facts;
 import fidice.catalog.iceberg.Facts.TableFacts;
 import fidice.catalog.iceberg.Facts.ViewFacts;
 import fidice.catalog.store.CatalogObject;
+import fidice.catalog.store.GovernanceAttribute;
 import fidice.catalog.store.Name;
+import fidice.catalog.store.Securable;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -32,6 +35,7 @@ class RulesTest {
 
     private final MemoryFiles files = new MemoryFiles();
     private final AtomicInteger governanceReads = new AtomicInteger();
+    private final Map<GovernanceAttribute.Kind, GovernanceAttribute> attributes = new EnumMap<>(GovernanceAttribute.Kind.class);
 
     private CommitRule.Governance governance(boolean held) {
         return new CommitRule.Governance() {
@@ -46,7 +50,18 @@ class RulesTest {
                 governanceReads.incrementAndGet();
                 return false;
             }
+
+            @Override
+            public Optional<GovernanceAttribute> nearest(GovernanceAttribute.Kind kind) {
+                governanceReads.incrementAndGet();
+                return Optional.ofNullable(attributes.get(kind));
+            }
         };
+    }
+
+    private void set(GovernanceAttribute.Kind kind, String value) {
+        attributes.put(kind, new GovernanceAttribute(new Securable(Securable.Kind.NAMESPACE, UUID.randomUUID()), kind,
+                value, "test", "tester", NOW));
     }
 
     private static TableFacts table(String location, Map<String, String> properties, Map<Long, Long> snapshots) {
@@ -74,9 +89,80 @@ class RulesTest {
     }
 
     @Test
-    @DisplayName("the standard set holds the five D11 rules, in order")
+    @DisplayName("the standard set holds the DR freeze and the five D11 rules, in order")
     void standard() {
-        assertThat(Rules.standard(files, SKEW)).hasSize(5);
+        assertThat(Rules.standard(files, SKEW)).hasSize(6);
+    }
+
+    @Nested
+    class DrFreeze {
+
+        @Test
+        void aFrozenObjectTakesNoCommit() {
+            set(GovernanceAttribute.Kind.DR_FREEZE, "reconcile INC-7");
+            assertThat(Rules.drFreeze(change(table(Map.of()), table(props("a", "b")))))
+                    .contains(Rejection.forbidden("Writes to " + ID + " are frozen for DR reconcile: reconcile INC-7"));
+            assertThat(Rules.drFreeze(change(null, table(Map.of())))).as("nor a create").isPresent();
+        }
+
+        @Test
+        void anUnfrozenObjectCommits() {
+            set(GovernanceAttribute.Kind.RETENTION_CLASS, "standard");
+            assertThat(Rules.drFreeze(change(table(Map.of()), table(props("a", "b"))))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the standard set judges the freeze first")
+        void judgedFirst() {
+            set(GovernanceAttribute.Kind.DR_FREEZE, "dr");
+            CommitRule.Change elsewhere = change(table(Map.of()), table("s3://elsewhere", Map.of(), Map.of()));
+            assertThat(Rules.standard(files, SKEW).getFirst().judge(elsewhere)).get()
+                    .extracting(Rejection::status).isEqualTo(403);
+        }
+    }
+
+    @Nested
+    class SnapshotMinimumAge {
+
+        private final long hourAgo = NOW.minus(Duration.ofHours(1)).toEpochMilli();
+        private final long weekAgo = NOW.minus(Duration.ofDays(7)).toEpochMilli();
+        private final CommitRule rule = Rules.snapshotMinimumAge(name -> name.equals("trade-records")
+                ? Optional.of(Duration.ofDays(3)) : Optional.empty());
+
+        private Optional<Rejection> remove(long removedAt) {
+            return rule.judge(change(table(ROOT, Map.of(), Map.of(1L, removedAt, 2L, NOW.toEpochMilli())),
+                    table(ROOT, Map.of(), Map.of(2L, NOW.toEpochMilli()))));
+        }
+
+        @Test
+        void aSnapshotYoungerThanItsClassAllowsStays() {
+            set(GovernanceAttribute.Kind.RETENTION_CLASS, "trade-records");
+            assertThat(remove(hourAgo)).get().extracting(Rejection::status).isEqualTo(403);
+            assertThat(remove(hourAgo).orElseThrow().message()).contains("PT72H", "trade-records");
+        }
+
+        @Test
+        void anOlderSnapshotGoes() {
+            set(GovernanceAttribute.Kind.RETENTION_CLASS, "trade-records");
+            assertThat(remove(weekAgo)).isEmpty();
+        }
+
+        @Test
+        void aClassWithoutMinimumOrNoClassAllowsRemoval() {
+            assertThat(remove(hourAgo)).isEmpty();
+            set(GovernanceAttribute.Kind.RETENTION_CLASS, "scratch");
+            assertThat(remove(hourAgo)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("governance is read only when something is removed")
+        void readOnlyWhenNeeded() {
+            set(GovernanceAttribute.Kind.RETENTION_CLASS, "trade-records");
+            assertThat(rule.judge(change(table(ROOT, Map.of(), Map.of(1L, hourAgo)),
+                    table(ROOT, Map.of(), Map.of(1L, hourAgo, 2L, NOW.toEpochMilli()))))).isEmpty();
+            assertThat(rule.judge(change(null, table(ROOT, Map.of(), Map.of(1L, hourAgo))))).isEmpty();
+            assertThat(governanceReads).hasValue(0);
+        }
     }
 
     @Nested

@@ -122,7 +122,7 @@ public final class CommitEngine {
     public Current readCurrent(CatalogObject object) {
         Pointer pointer = store.readPointer(object.mainKey())
                 .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
-        Optional<String> json = load(object, pointer, new ObjectGovernance(store, object));
+        Optional<String> json = load(object, pointer, GovernanceChain.of(store, object));
         return json.<Current>map(j -> new Current.Loaded(pointer, j))
                 .orElseGet(() -> new Current.Refused(new ServerError(SERVICE_FAILURE, "Metadata file "
                         + pointer.metadataLocation() + " does not match the hash its pointer recorded")));
@@ -422,7 +422,7 @@ public final class CommitEngine {
         ObjectName name = request.name();
         CatalogObject object = CatalogObject.active(name.catalogId(), id, name.namespaceId(), name.name(),
                 request.operation().kind, location);
-        Optional<Failure> refused = judge(object, null, created.after(), new ObjectGovernance(store, object));
+        Optional<Failure> refused = judge(object, null, created.after(), GovernanceChain.of(store, object));
         if (refused.isPresent()) {
             return refused.get();
         }
@@ -458,7 +458,7 @@ public final class CommitEngine {
 
     /** Applies the request to the current metadata and swaps the pointer, retrying a lost swap. */
     private CommitReply update(Request request, CatalogObject object) {
-        ObjectGovernance governance = new ObjectGovernance(store, object);
+        GovernanceChain governance = GovernanceChain.of(store, object);
         Instant started = clock.instant();
         for (int attempt = 1; ; attempt++) {
             Pointer base = store.readPointer(object.mainKey())

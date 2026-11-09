@@ -2,6 +2,7 @@ package fidice.catalog.core.commit;
 
 import fidice.catalog.iceberg.Facts;
 import fidice.catalog.store.CatalogObject;
+import fidice.catalog.store.GovernanceAttribute;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,6 +41,12 @@ public interface CommitRule {
 
         /** The object or anything above it carries the regulated flag (D11a, D26). */
         boolean regulated();
+
+        /**
+         * The attribute of {@code kind} on the nearest level that sets one: the object, then its
+         * namespaces from the innermost out, then its catalog.
+         */
+        Optional<GovernanceAttribute> nearest(GovernanceAttribute.Kind kind);
     }
 
     /** @param type the Iceberg error class name */

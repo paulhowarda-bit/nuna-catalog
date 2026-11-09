@@ -48,7 +48,13 @@ public final class SampleEvents {
                         "oid", List.of("delegation-none"), ACTOR),
                 new StorageSetup(StorageSetup.Action.CATALOG_CREATED, CATALOG.id(), "Trading",
                         Map.of("storage-profile", "s3-east", "kms-key-set", "equities-eu", "legal-entity", "Fidice Bourse SA"),
-                        ACTOR));
+                        ACTOR),
+                new GovernanceChange(GovernanceChange.Action.SET, TABLE, "classification", "confidential",
+                        "collibra:asset/7f0c@2026-11-07", ACTOR),
+                new HoldChange(HoldChange.Action.PLACED, UUID.fromString("d0000000-0000-0000-0000-000000000001"),
+                        NAMESPACE, "matter 2026-114", ACTOR),
+                new Undrop(TABLE, ACTOR),
+                new Purge(TABLE, ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

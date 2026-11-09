@@ -9,6 +9,7 @@ import fidice.catalog.iceberg.MetadataViews;
 import fidice.catalog.iceberg.Outcome;
 import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.iceberg.RestResponse;
+import fidice.catalog.server.governance.ReadAudit;
 import fidice.catalog.server.rest.CredentialVending.Vended;
 import fidice.catalog.store.CatalogObject;
 import fidice.catalog.store.CatalogObject.Kind;
@@ -63,11 +64,12 @@ class TableRoutes {
     private final RestSettings settings;
     private final Callers callers;
     private final Guard guard;
+    private final ReadAudit reads;
     private final Clock clock;
 
     TableRoutes(CatalogStore store, Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views,
                 CredentialVending vending, MetricsSink metrics, ServerAlerts alerts,
-                RestSettings settings, Callers callers, Guard guard, Clock clock) {
+                RestSettings settings, Callers callers, Guard guard, Clock clock, ReadAudit reads) {
         this.store = store;
         this.lookup = lookup;
         this.objects = objects;
@@ -80,6 +82,7 @@ class TableRoutes {
         this.callers = callers;
         this.guard = guard;
         this.clock = clock;
+        this.reads = reads;
     }
 
     @GetMapping(TABLES)
@@ -135,11 +138,13 @@ class TableRoutes {
         if (cacheable && pointer.isPresent()) {
             String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch());
             if (ETags.matches(ifNoneMatch, etag)) {
+                reads.read(http, catalog, AuditEvents.path(levels, table), object, pointer.get());
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build();
             }
         }
         CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
         String location = current.pointer().metadataLocation();
+        reads.read(http, catalog, AuditEvents.path(levels, table), object, current.pointer());
         alerts.loaded(object.id(), location, views.tableStats(location, current.json()));
         String response = views.loadTable(location, current.json(), refsOnly, vended.config(), vended.credentials());
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();

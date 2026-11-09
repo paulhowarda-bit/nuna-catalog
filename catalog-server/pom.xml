@@ -82,6 +82,11 @@
       <artifactId>testcontainers</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-kafka</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
   <build>
     <plugins>
@@ -93,6 +98,7 @@
             <postgres.image>${postgres.image}</postgres.image>
             <silo.image>${silo.image}</silo.image>
             <keycloak.image>${keycloak.image}</keycloak.image>
+            <kafka.image>${kafka.image}</kafka.image>
             <repo.root>${project.basedir}/..</repo.root>
           </systemPropertyVariables>
         </configuration>

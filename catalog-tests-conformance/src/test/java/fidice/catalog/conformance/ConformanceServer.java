@@ -18,6 +18,7 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -58,6 +59,10 @@ final class ConformanceServer {
                 new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image")));
         postgres.start();
         storage = startSilo();
+        // Audit is on (M7): every load hands out credentials, and a credential issue needs Kafka's ack.
+        KafkaContainer kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
+                .withEnv("KAFKA_HEAP_OPTS", "-Xms256m -Xmx256m");
+        kafka.start();
         TestIdp idp;
         RSAKey key;
         try {
@@ -96,7 +101,8 @@ final class ConformanceServer {
                         "fidice.security.issuers[0].algorithms=RS256",
                         "fidice.security.issuers[0].user-id-claim=sub",
                         "fidice.security.issuers[0].groups-claim=groups",
-                        "fidice.security.issuers[0].client-id-claim=azp")
+                        "fidice.security.issuers[0].client-id-claim=azp",
+                        "fidice.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers())
                 .run();
         JdbcTemplate jdbc = server.getBean(JdbcTemplate.class);
         UUID catalog = jdbc.queryForObject("SELECT id FROM catalog WHERE name_norm = ?", UUID.class, WAREHOUSE);

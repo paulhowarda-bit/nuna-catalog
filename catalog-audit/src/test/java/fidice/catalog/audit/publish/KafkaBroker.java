@@ -29,7 +29,7 @@ import org.testcontainers.utility.DockerImageName;
  * advertises the link's address on the listener the link reaches, so a client that bootstraps
  * through the link stays on it.
  */
-final class KafkaBroker implements AutoCloseable {
+public final class KafkaBroker implements AutoCloseable {
 
     private static final int LINK_PORT = 8666;
     private static final String LINK_LISTENER = "kafka:19092";
@@ -41,7 +41,7 @@ final class KafkaBroker implements AutoCloseable {
     private final KafkaContainer kafka;
     private final Admin admin;
 
-    KafkaBroker() {
+    public KafkaBroker() {
         toxiproxy = new ToxiproxyContainer(DockerImageName.parse(System.getProperty("toxiproxy.image")))
                 .withNetwork(network);
         toxiproxy.start();
@@ -55,7 +55,7 @@ final class KafkaBroker implements AutoCloseable {
         admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, direct()));
     }
 
-    String direct() {
+    public String direct() {
         return kafka.getBootstrapServers();
     }
 
@@ -64,10 +64,15 @@ final class KafkaBroker implements AutoCloseable {
     }
 
     /** A new single-partition topic, so the order of its records is the order they were written. */
-    String newTopic() {
+    public String newTopic() {
+        return newTopic(1);
+    }
+
+    /** A new topic with this many partitions. */
+    public String newTopic(int partitions) {
         String topic = "audit-" + UUID.randomUUID();
         try {
-            admin.createTopics(List.of(new NewTopic(topic, 1, (short) 1))).all().get();
+            admin.createTopics(List.of(new NewTopic(topic, partitions, (short) 1))).all().get();
         } catch (InterruptedException | ExecutionException e) {
             throw new IllegalStateException(e);
         }
@@ -113,11 +118,11 @@ final class KafkaBroker implements AutoCloseable {
     }
 
     /** Freezes the broker process: connections stay open and nothing answers. */
-    void pause() {
+    public void pause() {
         kafka.getDockerClient().pauseContainerCmd(kafka.getContainerId()).exec();
     }
 
-    void unpause() {
+    public void unpause() {
         kafka.getDockerClient().unpauseContainerCmd(kafka.getContainerId()).exec();
     }
 

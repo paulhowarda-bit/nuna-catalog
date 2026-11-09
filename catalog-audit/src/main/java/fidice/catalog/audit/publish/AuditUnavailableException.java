@@ -8,7 +8,7 @@ import fidice.catalog.audit.CatalogEvent;
  */
 public final class AuditUnavailableException extends RuntimeException {
 
-    AuditUnavailableException(CatalogEvent event, Throwable cause) {
+    public AuditUnavailableException(CatalogEvent event, Throwable cause) {
         super("event " + event.id() + " (" + event.type().typeName() + ") was not acknowledged by Kafka", cause);
     }
 }

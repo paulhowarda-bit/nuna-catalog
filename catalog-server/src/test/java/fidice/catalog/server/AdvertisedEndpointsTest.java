@@ -29,6 +29,9 @@ class AdvertisedEndpointsTest {
         mapping.getHandlerMethods().forEach((info, method) -> {
             Set<RequestMethod> methods = info.getMethodsCondition().getMethods();
             for (String path : info.getPatternValues()) {
+                if (!path.startsWith("/v1/")) {
+                    continue; // the management API (M7) is not part of the Iceberg REST surface
+                }
                 if (methods.isEmpty()) {
                     served.add("ANY " + path);
                 }
