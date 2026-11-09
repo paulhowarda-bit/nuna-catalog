@@ -152,8 +152,7 @@
   </build>
 
   <profiles>
-    <!-- Every test, heavy ones included: landings that change storage code, milestone ends, nightly
-         (-Pheavy,nightly). -->
+    <!-- Every test, heavy ones included: the pass after M9 (-Pheavy,nightly; CLAUDE.md). -->
     <profile>
       <id>heavy</id>
       <properties>
