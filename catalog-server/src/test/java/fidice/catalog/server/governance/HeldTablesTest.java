@@ -59,12 +59,13 @@ class HeldTablesTest {
         expectError(api.rest("POST", table, Api.removeSnapshot(1)), 403, "ForbiddenException");
         expectError(api.rest("DELETE", table, null), 403, "ForbiddenException");
         expect(api.rest("POST", table, Api.SET_PROPERTY.formatted("held")), 200);
-        expect(api.manage("DELETE", table + "/holds/" + tableHold, null), 204);
+        expect(api.manage("DELETE", table + "/holds/" + tableHold, null, "Authorization", api.steward()), 204);
 
         String namespaceHold = hold("/namespaces/" + ns);
         expectError(api.rest("POST", table, Api.removeSnapshot(1)), 403, "ForbiddenException");
         expectError(api.rest("DELETE", table, null), 403, "ForbiddenException");
-        expect(api.manage("DELETE", "/namespaces/" + ns + "/holds/" + namespaceHold, null), 204);
+        expect(api.manage("DELETE", "/namespaces/" + ns + "/holds/" + namespaceHold, null,
+                "Authorization", api.steward()), 204);
 
         expect(api.rest("POST", table, Api.removeSnapshot(1)), 200);
         HttpResponse<String> loaded = expect(api.rest("GET", table, null), 200);
@@ -80,11 +81,11 @@ class HeldTablesTest {
         String hold = hold("/namespaces/" + ns);
         clock.advance(Duration.ofDays(31));
 
-        assertThat(api.manage("GET", "/maintenance/purge-eligible?pageSize=1000", null).body()).doesNotContain(id);
+        assertThat(eligible().body()).doesNotContain(id);
         expectError(purge(id), 403, "ForbiddenException");
 
-        expect(api.manage("DELETE", "/namespaces/" + ns + "/holds/" + hold, null), 204);
-        assertThat(api.manage("GET", "/maintenance/purge-eligible?pageSize=1000", null).body()).contains(id);
+        expect(api.manage("DELETE", "/namespaces/" + ns + "/holds/" + hold, null, "Authorization", api.steward()), 204);
+        assertThat(eligible().body()).contains(id);
         expect(purge(id), 204);
     }
 
@@ -97,9 +98,10 @@ class HeldTablesTest {
         expect(api.rest("POST", table, Api.snapshot(location, 2, System.currentTimeMillis())), 200);
 
         expectError(api.manage("PUT", "/namespaces/" + ns + "/attributes/retention-class",
-                "{\"value\":\"no-such-class\",\"provenance\":\"records-office\"}"), 400, "BadRequestException");
+                "{\"value\":\"no-such-class\",\"provenance\":\"records-office\"}", "Authorization", api.steward()), 400,
+                "BadRequestException");
         expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/retention-class",
-                "{\"value\":\"trade-records\",\"provenance\":\"records-office\"}"), 200);
+                "{\"value\":\"trade-records\",\"provenance\":\"records-office\"}", "Authorization", api.steward()), 200);
         HttpResponse<String> refused = api.rest("POST", table, Api.removeSnapshot(1));
         expectError(refused, 403, "ForbiddenException");
         assertThat(refused.body()).contains("trade-records");
@@ -114,7 +116,8 @@ class HeldTablesTest {
         String table = "/namespaces/" + ns + "/tables/t";
         api.table(ns, "t");
         api.table(ns, "other");
-        expect(api.manage("PUT", "/namespaces/" + ns + "/dr-freeze", "{\"reason\":\"reconcile after failover\"}"), 200);
+        expect(api.manage("PUT", "/namespaces/" + ns + "/dr-freeze", "{\"reason\":\"reconcile after failover\"}",
+                "Authorization", api.operator()), 200);
 
         HttpResponse<String> commit = api.rest("POST", table, Api.SET_PROPERTY.formatted("frozen"));
         expectError(commit, 403, "ForbiddenException");
@@ -126,13 +129,18 @@ class HeldTablesTest {
                 + "\"destination\":{\"namespace\":[\"" + ns + "\"],\"name\":\"t2\"}}"), 403, "ForbiddenException");
         expect(api.rest("GET", table, null), 200);
 
-        expect(api.manage("DELETE", "/namespaces/" + ns + "/dr-freeze", null), 204);
+        expect(api.manage("DELETE", "/namespaces/" + ns + "/dr-freeze", null, "Authorization", api.operator()), 204);
         expect(api.rest("POST", table, Api.SET_PROPERTY.formatted("thawed")), 200);
     }
 
     private String hold(String target) {
-        return JsonPath.read(expect(api.manage("POST", target + "/holds", "{\"reason\":\"litigation 7\"}"), 201)
-                .body(), "$.id");
+        return JsonPath.read(expect(api.manage("POST", target + "/holds", "{\"reason\":\"litigation 7\"}",
+                "Authorization", api.steward()), 201).body(), "$.id");
+    }
+
+    private HttpResponse<String> eligible() {
+        return expect(api.manage("GET", "/maintenance/purge-eligible?pageSize=1000", null,
+                "Authorization", api.maintenance()), 200);
     }
 
     private HttpResponse<String> purge(String id) {

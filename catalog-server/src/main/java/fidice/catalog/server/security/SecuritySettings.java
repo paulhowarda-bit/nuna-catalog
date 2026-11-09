@@ -1,5 +1,6 @@
 package fidice.catalog.server.security;
 
+import fidice.catalog.core.principal.Caller;
 import fidice.catalog.security.ClaimMapping;
 import fidice.catalog.security.IssuerPolicy;
 import java.net.URI;
@@ -18,7 +19,10 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
  * @param issuers                   the trusted token issuers (D16, D17a), each with its JWKS and claim mapping
  * @param clockSkew                 how far either side of a token's {@code exp}/{@code nbf} it is still accepted (P10)
  * @param grantAdminGroups          groups that hold {@code manage-grants} on every catalog and nothing else (D18)
- * @param platformOperatorGroups    groups that run the trusted-engine registry and hold no data access (D18)
+ * @param platformOperatorGroups    groups that run the trusted-engine registry and the DR freeze, and hold no data
+ *                                  access (D18, D37)
+ * @param maintenancePrincipals     the maintenance tier (D25), by principal id: acting as themselves, their vended
+ *                                  credentials may delete, and they alone purge and read the purge queue
  * @param refuseIdentityLessCommits D17's switch (CMP-7): refuse writes to regulated areas by a trusted engine
  *                                  that names no end user
  */
@@ -28,6 +32,7 @@ public record SecuritySettings(
         @DefaultValue("60s") Duration clockSkew,
         @DefaultValue Set<String> grantAdminGroups,
         @DefaultValue Set<String> platformOperatorGroups,
+        @DefaultValue Set<String> maintenancePrincipals,
         @DefaultValue("false") boolean refuseIdentityLessCommits) {
 
     public SecuritySettings {
@@ -38,6 +43,12 @@ public record SecuritySettings(
         issuers = List.copyOf(issuers);
         grantAdminGroups = Set.copyOf(grantAdminGroups);
         platformOperatorGroups = Set.copyOf(platformOperatorGroups);
+        maintenancePrincipals = Set.copyOf(maintenancePrincipals);
+    }
+
+    /** Whether the caller is a maintenance principal acting as itself; one acting for an end user is not. */
+    public boolean isMaintenance(Caller caller) {
+        return caller.endUser().isEmpty() && maintenancePrincipals.contains(caller.principal().id());
     }
 
     /**

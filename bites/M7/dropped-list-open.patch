@@ -1,0 +1,17 @@
+Breaks: anyone signed in may list a namespace's dropped objects, without describe on it.
+Module: catalog-server
+Test: ManagementAuthorizationTest#listingDroppedObjectsNeedsDescribe
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+index 7397391..f20c866 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+@@ -95,8 +95,6 @@ class LifecycleRoutes {
+         CatalogRecord catalog = management.catalog(prefix);
+         List<String> levels = RestRequest.namespaceLevels(namespace);
+         NamespaceRecord record = management.namespace(catalog, levels);
+-        guard.require(management.request(http), Authorizer.Target.of(record),
+-                namespaceAudit(catalog, record.id(), levels), "listDropped", Privilege.DESCRIBE);
+         ObjectNode body = Management.JSON.createObjectNode();
+         ArrayNode objects = body.putArray("dropped");
+         for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {

@@ -146,6 +146,10 @@ class AuthorizerTest {
         assertReason(person("d", "desk"), table, DROP, Reason.UNCLASSIFIED);
         assertAllowed(person("d", "desk"), view, LOAD);
         assertThat(authorizer.decide(person("d", "desk"), Target.of(nested), CREATE).allowed()).isFalse();
+        // The closed table can still be classified, or it would stay closed for good.
+        estate.grant(regulated, "stewards", Privilege.MANAGE_TAGS);
+        assertAllowed(person("s", "stewards"), table, LIST, TAG);
+        assertDenied(person("s", "stewards"), table, Privilege.SELECT, LOAD);
 
         estate.classify(table, "confidential");
         assertAllowed(person("d", "desk"), table, LOAD, APPEND, DROP);

@@ -35,7 +35,7 @@ import org.testcontainers.utility.DockerImageName;
         "fidice.audit.request-timeout=1s",
         "fidice.audit.probe-interval=1s",
         "fidice.audit.relay-interval=100ms",
-        "fidice.governance.maintenance-principals=maintenance",
+        "fidice.security.maintenance-principals=maintenance",
         "fidice.governance.purges-per-minute=3",
         "fidice.governance.retention-classes.trade-records.minimum-snapshot-age=30d",
         "fidice.security.grant-admin-groups=" + GovernanceServer.GRANT_ADMINS,
@@ -49,8 +49,12 @@ public @interface GovernanceServer {
     String PRINCIPAL = "X-Test-Principal";
     /** A pseudo-header {@link Api} turns into a token from the registered trusted engine. */
     String ENGINE = "X-Test-Engine";
+    /** A pseudo-header naming the token's groups, comma-separated; the default is the test group. */
+    String GROUPS = "X-Test-Groups";
     String GRANT_ADMINS = "grant-admins";
     String PLATFORM_OPS = "platform-ops";
+    /** Tag stewards: {@code manage-tags} on the test catalog, nothing else. */
+    String STEWARDS = "stewards";
 
     /** The test beans; the clock is a {@link TestClock}, the broker a {@link Broker}. */
     @TestConfiguration(proxyBeanMethods = false)

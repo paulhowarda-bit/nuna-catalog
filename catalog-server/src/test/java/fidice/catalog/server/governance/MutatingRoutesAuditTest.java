@@ -37,8 +37,9 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * The M7 gate, route by route: every route that changes the catalog writes its audit record, and the
- * relay delivers it to the audit topic. The routes are read from the server's own mappings, so a new
- * mutating route without a case here fails the test until it gets one.
+ * relay delivers it to the audit topic; and every mutating management route that refuses a caller
+ * records a Denial (D18). The routes are read from the server's own mappings, so a new mutating route
+ * without a case here fails the test until it gets one.
  */
 @GovernanceServer
 class MutatingRoutesAuditTest {
@@ -115,6 +116,72 @@ class MutatingRoutesAuditTest {
         });
     }
 
+    @Test
+    void everyMutatingManagementRouteAuditsItsRefusals() {
+        Set<String> management = new TreeSet<>();
+        mapping.getHandlerMethods().forEach((info, method) -> {
+            for (String path : info.getPatternValues()) {
+                for (RequestMethod m : info.getMethodsCondition().getMethods()) {
+                    if (path.startsWith("/management/") && (m == RequestMethod.POST || m == RequestMethod.PUT
+                            || m == RequestMethod.DELETE || m == RequestMethod.PATCH)) {
+                        management.add(m.name() + " " + path);
+                    }
+                }
+            }
+        });
+        management.removeAll(NOT_MUTATING.keySet());
+
+        Map<String, Function<String, HttpResponse<String>>> cases = refusals();
+        assertThat(cases.keySet()).as("a refusal case for every mutating management route")
+                .containsExactlyInAnyOrderElementsOf(management);
+
+        cases.forEach((route, run) -> {
+            String requestId = "m7-refused-" + UUID.randomUUID();
+            Api.expectError(run.apply(requestId), 403, "ForbiddenException");
+            CatalogEvent record = api.awaitRequest(requestId);
+            assertThat(record.data().type()).as(route).isEqualTo(EventType.DENIAL);
+        });
+    }
+
+    /**
+     * Each case sends the route once, with the request id, as a signed-in caller that may not call it: the
+     * tester holds create and modify on the catalog, the steward manage-tags.
+     */
+    private Map<String, Function<String, HttpResponse<String>>> refusals() {
+        Map<String, Function<String, HttpResponse<String>>> cases = new LinkedHashMap<>();
+        LEVELS.forEach((level, kind) -> {
+            cases.put("PUT " + M + level + "/attributes/{attribute}", id -> api.manage("PUT",
+                    target(kind) + "/attributes/classification", "{\"value\":\"x\",\"provenance\":\"p\"}", rid(id)));
+            cases.put("DELETE " + M + level + "/attributes/{attribute}", id -> api.manage("DELETE",
+                    target(kind) + "/attributes/owner", null, rid(id)));
+            cases.put("POST " + M + level + "/holds", id -> api.manage("POST", target(kind) + "/holds",
+                    "{\"reason\":\"case 3\"}", rid(id)));
+            cases.put("DELETE " + M + level + "/holds/{holdId}", id -> api.manage("DELETE",
+                    target(kind) + "/holds/" + UUID.randomUUID(), null, rid(id)));
+            cases.put("PUT " + M + level + "/maintenance-policy", id -> api.manage("PUT",
+                    target(kind) + "/maintenance-policy", "{\"compaction.enabled\":true}", rid(id, api.steward())));
+            cases.put("DELETE " + M + level + "/maintenance-policy", id -> api.manage("DELETE",
+                    target(kind) + "/maintenance-policy", null, rid(id, api.steward())));
+            cases.put("PUT " + M + level + "/dr-freeze", id -> api.manage("PUT", target(kind) + "/dr-freeze",
+                    "{\"reason\":\"drill\"}", rid(id)));
+            cases.put("DELETE " + M + level + "/dr-freeze", id -> api.manage("DELETE", target(kind) + "/dr-freeze",
+                    null, rid(id)));
+        });
+        cases.put("POST " + M + "/grants", id -> api.manage("POST", "/grants", grant(api.namespace()), rid(id)));
+        cases.put("POST " + M + "/grants/revoke", id -> api.manage("POST", "/grants/revoke", grant(api.namespace()),
+                rid(id)));
+        cases.put("PUT /management/v1/engines", id -> api.send("PUT", "/management/v1/engines",
+                engine("m7-refused-" + Api.suffix()), rid(id)));
+        cases.put("DELETE /management/v1/engines", id -> api.send("DELETE", "/management/v1/engines?issuer="
+                + URLEncoder.encode(IssuerForTests.ISSUER, StandardCharsets.UTF_8) + "&client-id=" + Api.ENGINE_CLIENT,
+                null, rid(id)));
+        cases.put("POST " + M + "/objects/{id}/undrop", id -> api.manage("POST", "/objects/" + dropped() + "/undrop",
+                null, rid(id, api.steward())));
+        cases.put("POST " + M + "/objects/{id}/purge", id -> api.manage("POST", "/objects/" + dropped() + "/purge",
+                null, rid(id)));
+        return cases;
+    }
+
     /** Each case makes its fixtures, sends the route once with the request id, and names the record it expects. */
     private Map<String, Function<String, EventType>> cases() {
         Map<String, Function<String, EventType>> cases = new LinkedHashMap<>();
@@ -179,26 +246,30 @@ class MutatingRoutesAuditTest {
         LEVELS.forEach((level, kind) -> {
             cases.put("PUT " + M + level + "/attributes/{attribute}", id -> {
                 expect(api.manage("PUT", target(kind) + "/attributes/classification",
-                        "{\"value\":\"confidential\",\"provenance\":\"collibra:asset/1\"}", rid(id)), 200);
+                        "{\"value\":\"confidential\",\"provenance\":\"collibra:asset/1\"}", rid(id, api.steward())), 200);
                 return EventType.GOVERNANCE_CHANGE;
             });
             cases.put("DELETE " + M + level + "/attributes/{attribute}", id -> {
                 String target = target(kind);
-                expect(api.manage("PUT", target + "/attributes/owner", "{\"value\":\"desk\",\"provenance\":\"hr\"}"), 200);
-                expect(api.manage("DELETE", target + "/attributes/owner", null, rid(id)), 204);
+                expect(api.manage("PUT", target + "/attributes/owner", "{\"value\":\"desk\",\"provenance\":\"hr\"}",
+                        "Authorization", api.steward()), 200);
+                expect(api.manage("DELETE", target + "/attributes/owner", null, rid(id, api.steward())), 204);
                 return EventType.GOVERNANCE_CHANGE;
             });
             cases.put("POST " + M + level + "/holds", id -> {
                 String target = target(kind);
                 HttpResponse<String> placed = expect(api.manage("POST", target + "/holds",
-                        "{\"reason\":\"case 1\"}", rid(id)), 201);
-                expect(api.manage("DELETE", target + "/holds/" + JsonPath.read(placed.body(), "$.id"), null), 204);
+                        "{\"reason\":\"case 1\"}", rid(id, api.steward())), 201);
+                expect(api.manage("DELETE", target + "/holds/" + JsonPath.read(placed.body(), "$.id"), null,
+                        "Authorization", api.steward()), 204);
                 return EventType.HOLD_CHANGE;
             });
             cases.put("DELETE " + M + level + "/holds/{holdId}", id -> {
                 String target = target(kind);
-                HttpResponse<String> placed = expect(api.manage("POST", target + "/holds", "{\"reason\":\"case 2\"}"), 201);
-                expect(api.manage("DELETE", target + "/holds/" + JsonPath.read(placed.body(), "$.id"), null, rid(id)), 204);
+                HttpResponse<String> placed = expect(api.manage("POST", target + "/holds", "{\"reason\":\"case 2\"}",
+                        "Authorization", api.steward()), 201);
+                expect(api.manage("DELETE", target + "/holds/" + JsonPath.read(placed.body(), "$.id"), null,
+                        rid(id, api.steward())), 204);
                 return EventType.HOLD_CHANGE;
             });
             cases.put("PUT " + M + level + "/maintenance-policy", id -> {
@@ -215,14 +286,15 @@ class MutatingRoutesAuditTest {
             });
             cases.put("PUT " + M + level + "/dr-freeze", id -> {
                 String target = target(kind);
-                expect(api.manage("PUT", target + "/dr-freeze", "{\"reason\":\"drill\"}", rid(id)), 200);
-                expect(api.manage("DELETE", target + "/dr-freeze", null), 204);
+                expect(api.manage("PUT", target + "/dr-freeze", "{\"reason\":\"drill\"}", rid(id, api.operator())), 200);
+                expect(api.manage("DELETE", target + "/dr-freeze", null, "Authorization", api.operator()), 204);
                 return EventType.GOVERNANCE_CHANGE;
             });
             cases.put("DELETE " + M + level + "/dr-freeze", id -> {
                 String target = target(kind);
-                expect(api.manage("PUT", target + "/dr-freeze", "{\"reason\":\"drill\"}"), 200);
-                expect(api.manage("DELETE", target + "/dr-freeze", null, rid(id)), 204);
+                expect(api.manage("PUT", target + "/dr-freeze", "{\"reason\":\"drill\"}", "Authorization",
+                        api.operator()), 200);
+                expect(api.manage("DELETE", target + "/dr-freeze", null, rid(id, api.operator())), 204);
                 return EventType.GOVERNANCE_CHANGE;
             });
         });

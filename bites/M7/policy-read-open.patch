@@ -1,0 +1,16 @@
+Breaks: anyone signed in may read a maintenance policy, without describe on its target.
+Module: catalog-server
+Test: ManagementAuthorizationTest#readingTheMaintenancePolicyNeedsDescribe
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+index 501b568..e07af2b 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+@@ -213,7 +213,6 @@ class GovernanceRoutes {
+                                   @PathVariable(required = false) String view,
+                                   HttpServletRequest http) {
+         Target target = management.target(prefix, namespace, table, view);
+-        guard.require(management.request(http), target, "loadMaintenancePolicy", Privilege.DESCRIBE);
+         List<Map.Entry<String, Map<String, String>>> levels = new ArrayList<>();
+         Map<String, String> own = Map.of();
+         for (GovernanceAttribute attribute : target.chain().attributes()) {

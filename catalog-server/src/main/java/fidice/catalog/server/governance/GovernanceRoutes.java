@@ -8,6 +8,7 @@ import static fidice.catalog.server.governance.Management.VIEW;
 import fidice.catalog.audit.GovernanceChange;
 import fidice.catalog.audit.HoldChange;
 import fidice.catalog.core.CatalogError;
+import fidice.catalog.security.Privilege;
 import fidice.catalog.server.governance.Management.Request;
 import fidice.catalog.server.governance.Management.Target;
 import fidice.catalog.store.CatalogStore;
@@ -47,7 +48,7 @@ import tools.jackson.databind.node.ObjectNode;
  * The governance management API (D24, D27, D30, D37) on a catalog, namespace, table or view: the
  * attributes the governance tool pushes, with their provenance; legal holds; the maintenance policy;
  * and the DR freeze. Every change writes its audit record to the outbox with the change itself.
- * Authorization of these routes is M5's.
+ * Each route asks {@link ManagementGuard} once its target is resolved, before reading the body.
  */
 @RestController
 class GovernanceRoutes {
@@ -74,12 +75,15 @@ class GovernanceRoutes {
 
     private final CatalogStore store;
     private final Management management;
+    private final ManagementGuard guard;
     private final GovernanceSettings settings;
     private final Clock clock;
 
-    GovernanceRoutes(CatalogStore store, Management management, GovernanceSettings settings, Clock clock) {
+    GovernanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
+                     Clock clock) {
         this.store = store;
         this.management = management;
+        this.guard = guard;
         this.settings = settings;
         this.clock = clock;
     }
@@ -89,8 +93,10 @@ class GovernanceRoutes {
     ResponseEntity<String> governance(@PathVariable("catalog") String prefix,
                                       @PathVariable(required = false) String namespace,
                                       @PathVariable(required = false) String table,
-                                      @PathVariable(required = false) String view) {
+                                      @PathVariable(required = false) String view,
+                                      HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
+        guard.require(management.request(http), target, "loadGovernance", Privilege.DESCRIBE);
         ObjectNode body = Management.JSON.createObjectNode();
         body.set("target", securable(target.securable()));
         ArrayNode attributes = body.putArray("attributes");
@@ -116,12 +122,14 @@ class GovernanceRoutes {
                                         @RequestBody(required = false) String body,
                                         HttpServletRequest http) {
         GovernanceAttribute.Kind kind = pushed(attribute);
+        Target target = management.target(prefix, namespace, table, view);
+        Request request = management.request(http);
+        guard.require(request, target, "setGovernanceAttribute", Privilege.MANAGE_TAGS);
         JsonNode json = Management.body(body);
         String value = Management.text(json, "value", MAX_VALUE);
         String provenance = Management.text(json, "provenance", MAX_VALUE);
         check(kind, value);
-        Target target = management.target(prefix, namespace, table, view);
-        return put(target, kind, attribute, value, provenance, management.request(http));
+        return put(target, kind, attribute, value, provenance, request);
     }
 
     @DeleteMapping({CATALOG + ATTRIBUTE, NAMESPACE + ATTRIBUTE, TABLE + ATTRIBUTE, VIEW + ATTRIBUTE})
@@ -133,7 +141,9 @@ class GovernanceRoutes {
                                            HttpServletRequest http) {
         GovernanceAttribute.Kind kind = pushed(attribute);
         Target target = management.target(prefix, namespace, table, view);
-        return remove(target, kind, attribute, management.request(http));
+        Request request = management.request(http);
+        guard.require(request, target, "removeGovernanceAttribute", Privilege.MANAGE_TAGS);
+        return remove(target, kind, attribute, request);
     }
 
     /** Places a legal hold (D24): {@code {"reason": ...}}. The hold covers everything under the target. */
@@ -145,9 +155,10 @@ class GovernanceRoutes {
                                      @PathVariable(required = false) String view,
                                      @RequestBody(required = false) String body,
                                      HttpServletRequest http) {
-        String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
         Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        guard.require(request, target, "placeHold", Privilege.MANAGE_TAGS);
+        String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
         Instant now = now();
         LegalHold hold = new LegalHold(UUID.randomUUID(), target.securable(), reason, request.actor().principal(), now);
         WriteResult result = Management.write("Placing a hold", () -> store.placeHold(hold, management.change(now,
@@ -170,13 +181,14 @@ class GovernanceRoutes {
                                        @PathVariable String holdId,
                                        HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
+        Request request = management.request(http);
+        guard.require(request, target, "releaseHold", Privilege.MANAGE_TAGS);
         UUID id = uuid(holdId);
         LegalHold hold = store.holdsOn(java.util.Set.of(target.securable())).stream()
                 .filter(h -> h.id().equals(id))
                 .findFirst()
                 .orElseThrow(() -> CatalogError.of(404, "NoSuchHoldException",
                         "No hold " + holdId + " on this " + kind(target.securable())));
-        Request request = management.request(http);
         Instant now = now();
         WriteResult result = Management.write("Releasing a hold", () -> store.releaseHold(id, management.change(now,
                         new HoldChange(HoldChange.Action.RELEASED, id, target.audit(), hold.reason(), request.actor()))),
@@ -198,8 +210,10 @@ class GovernanceRoutes {
     ResponseEntity<String> policy(@PathVariable("catalog") String prefix,
                                   @PathVariable(required = false) String namespace,
                                   @PathVariable(required = false) String table,
-                                  @PathVariable(required = false) String view) {
+                                  @PathVariable(required = false) String view,
+                                  HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
+        guard.require(management.request(http), target, "loadMaintenancePolicy", Privilege.DESCRIBE);
         List<Map.Entry<String, Map<String, String>>> levels = new ArrayList<>();
         Map<String, String> own = Map.of();
         for (GovernanceAttribute attribute : target.chain().attributes()) {
@@ -245,6 +259,9 @@ class GovernanceRoutes {
                                      @PathVariable(required = false) String view,
                                      @RequestBody(required = false) String body,
                                      HttpServletRequest http) {
+        Target target = management.target(prefix, namespace, table, view);
+        Request request = management.request(http);
+        guard.require(request, target, "setMaintenancePolicy", Privilege.MODIFY);
         JsonNode json = Management.body(body);
         Map<String, String> keys = new TreeMap<>();
         for (Map.Entry<String, JsonNode> field : json.properties()) {
@@ -258,9 +275,8 @@ class GovernanceRoutes {
             throw CatalogError.badRequest("A maintenance policy sets at least one key; DELETE removes the policy");
         }
         String canonical = policyJson(MaintenancePolicy.canonical(keys, settings));
-        Target target = management.target(prefix, namespace, table, view);
         return put(target, GovernanceAttribute.Kind.MAINTENANCE_POLICY, POLICY_ATTRIBUTE, canonical, API_PROVENANCE,
-                management.request(http));
+                request);
     }
 
     @DeleteMapping({CATALOG + POLICY, NAMESPACE + POLICY, TABLE + POLICY, VIEW + POLICY})
@@ -270,7 +286,9 @@ class GovernanceRoutes {
                                         @PathVariable(required = false) String view,
                                         HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
-        return remove(target, GovernanceAttribute.Kind.MAINTENANCE_POLICY, POLICY_ATTRIBUTE, management.request(http));
+        Request request = management.request(http);
+        guard.require(request, target, "removeMaintenancePolicy", Privilege.MODIFY);
+        return remove(target, GovernanceAttribute.Kind.MAINTENANCE_POLICY, POLICY_ATTRIBUTE, request);
     }
 
     /**
@@ -285,10 +303,11 @@ class GovernanceRoutes {
                                   @PathVariable(required = false) String view,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
         Target target = management.target(prefix, namespace, table, view);
-        return put(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, reason, API_PROVENANCE,
-                management.request(http));
+        Request request = management.request(http);
+        guard.requireOperator(request, target.audit(), "setDrFreeze");
+        String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
+        return put(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, reason, API_PROVENANCE, request);
     }
 
     @DeleteMapping({CATALOG + FREEZE, NAMESPACE + FREEZE, TABLE + FREEZE, VIEW + FREEZE})
@@ -298,7 +317,9 @@ class GovernanceRoutes {
                                 @PathVariable(required = false) String view,
                                 HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
-        return remove(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, management.request(http));
+        Request request = management.request(http);
+        guard.requireOperator(request, target.audit(), "liftDrFreeze");
+        return remove(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, request);
     }
 
     private ResponseEntity<String> put(Target target, GovernanceAttribute.Kind kind, String attribute, String value,

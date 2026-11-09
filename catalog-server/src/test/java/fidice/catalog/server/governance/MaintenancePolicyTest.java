@@ -14,12 +14,11 @@ import java.time.Duration;
 import java.util.AbstractMap.SimpleEntry;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class MaintenancePolicyTest {
 
-    private static final GovernanceSettings SETTINGS = new GovernanceSettings(Set.of(), 10, Map.of(),
+    private static final GovernanceSettings SETTINGS = new GovernanceSettings(10, Map.of(),
             Duration.ofDays(7), Duration.ofHours(1), Map.of(EXPIRY_ENABLED, "true", ORPHAN_ENABLED, "true"));
 
     @Test

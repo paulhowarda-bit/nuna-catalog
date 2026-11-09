@@ -1,0 +1,17 @@
+Breaks: anyone signed in may undrop, without create on the namespace.
+Module: catalog-server
+Test: ManagementAuthorizationTest#undropNeedsCreateOnTheNamespace
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+index 7397391..cd9eeee 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+@@ -125,8 +125,6 @@ class LifecycleRoutes {
+         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElseThrow(
+                 () -> CatalogError.of(404, "NoSuchNamespaceException", "The namespace of " + id + " no longer exists"));
+         Request request = management.request(http);
+-        guard.require(request, new Authorizer.Target.Namespace(catalog.id(), object.namespaceId()),
+-                namespaceAudit(catalog, object.namespaceId(), levels), "undropObject", Privilege.CREATE);
+         if (object.state() != CatalogObject.State.DROPPED) {
+             throw notDropped(id);
+         }

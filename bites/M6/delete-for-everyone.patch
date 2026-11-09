@@ -1,17 +1,17 @@
-Breaks: every caller without an end user gets delete, not only maintenance principals.
+Breaks: every caller without an end user is a maintenance principal, so all get delete.
 Module: catalog-server
 Test: VendingRouteTest#loadVendsCredentialsConfinedToTheTable
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-index 899e3cd..d24800e 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-@@ -76,7 +76,7 @@ public final class StsCredentialVending implements CredentialVending {
-             return Vended.NONE;
-         }
-         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
--        Access access = caller.endUser().isEmpty() && maintenancePrincipals.contains(caller.principal().id())
-+        Access access = caller.endUser().isEmpty() || maintenancePrincipals.contains(caller.principal().id())
-                 ? Access.READ_WRITE_DELETE : Access.READ_WRITE;
-         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
-         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/security/SecuritySettings.java b/catalog-server/src/main/java/fidice/catalog/server/security/SecuritySettings.java
+index 1d19911..30a0228 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/security/SecuritySettings.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/security/SecuritySettings.java
+@@ -48,7 +48,7 @@ public record SecuritySettings(
+ 
+     /** Whether the caller is a maintenance principal acting as itself; one acting for an end user is not. */
+     public boolean isMaintenance(Caller caller) {
+-        return caller.endUser().isEmpty() && maintenancePrincipals.contains(caller.principal().id());
++        return caller.endUser().isEmpty() || maintenancePrincipals.contains(caller.principal().id());
+     }
+ 
+     /**

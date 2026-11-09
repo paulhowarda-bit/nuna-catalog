@@ -49,7 +49,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * as a trusted engine.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
-        "fidice.storage.maintenance-principals=svc-maintenance",
+        "fidice.security.maintenance-principals=svc-maintenance",
         "fidice.security.platform-operator-groups=platform-ops"})
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class, VendingRouteTest.RecordingAudit.class})
@@ -262,7 +262,7 @@ class VendingRouteTest {
 
     private static StorageSettings settings(Map<String, StorageSettings.Profile> profiles,
                                             Map<String, StorageSettings.Catalog> catalogs, boolean tls) {
-        return new StorageSettings(profiles, catalogs, Duration.ofMinutes(30), 100, List.of(), tls);
+        return new StorageSettings(profiles, catalogs, Duration.ofMinutes(30), 100, tls);
     }
 
     private String createTable(String name, String principal) throws Exception {

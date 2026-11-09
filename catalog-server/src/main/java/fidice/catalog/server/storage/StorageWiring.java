@@ -3,6 +3,7 @@ package fidice.catalog.server.storage;
 import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.CredentialVending;
 import fidice.catalog.server.rest.RestSettings;
+import fidice.catalog.server.security.SecuritySettings;
 import fidice.catalog.store.CatalogStore;
 import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -24,8 +25,8 @@ class StorageWiring {
 
     @Bean
     CredentialVending credentialVending(CatalogStorage storage, AuditPublisher audit, StorageSettings settings,
-                                        RestSettings rest, Clock clock) {
-        return new StsCredentialVending(storage, audit, rest.auditSource(), settings, rest.credentialRefreshMargin(),
-                clock);
+                                        SecuritySettings security, RestSettings rest, Clock clock) {
+        return new StsCredentialVending(storage, audit, rest.auditSource(), settings, security,
+                rest.credentialRefreshMargin(), clock);
     }
 }

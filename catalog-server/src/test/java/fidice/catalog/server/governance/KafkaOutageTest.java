@@ -79,7 +79,8 @@ class KafkaOutageTest {
                     "X-Request-ID", createId), 200);
             expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/doomed", null, "X-Request-ID", dropId), 204);
             expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/classification",
-                    "{\"value\":\"internal\",\"provenance\":\"collibra\"}", "X-Request-ID", governanceId), 200);
+                    "{\"value\":\"internal\",\"provenance\":\"collibra\"}", "X-Request-ID", governanceId,
+                    "Authorization", api.steward()), 200);
         } finally {
             broker.unpause();
         }

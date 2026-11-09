@@ -16,8 +16,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param catalogs               catalogs by name, created at startup if they do not exist
  * @param credentialLifetime     how long vended credentials live, 15 to 60 minutes (D21, P10)
  * @param credentialCacheEntries how many callers' credentials are cached at once
- * @param maintenancePrincipals  principals whose vended credentials may delete objects (compaction,
- *                               snapshot expiry, purge); nobody else's may
  * @param requireTls             refuse a profile whose endpoint is plain http; only local tests turn it off
  */
 @ConfigurationProperties("fidice.storage")
@@ -26,7 +24,6 @@ public record StorageSettings(
         @DefaultValue Map<String, Catalog> catalogs,
         @DefaultValue("30m") Duration credentialLifetime,
         @DefaultValue("10000") int credentialCacheEntries,
-        @DefaultValue List<String> maintenancePrincipals,
         @DefaultValue("true") boolean requireTls) {
 
     /**

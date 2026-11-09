@@ -4,7 +4,6 @@ import static fidice.catalog.server.governance.Management.CATALOG;
 import static fidice.catalog.server.governance.Management.NAMESPACE;
 import static fidice.catalog.server.governance.Management.ROOT;
 
-import fidice.catalog.audit.Denial;
 import fidice.catalog.audit.ObjectRead;
 import fidice.catalog.audit.Purge;
 import fidice.catalog.audit.Undrop;
@@ -12,6 +11,8 @@ import fidice.catalog.core.CatalogError;
 import fidice.catalog.core.Names;
 import fidice.catalog.core.commit.GovernanceChain;
 import fidice.catalog.core.commit.TableFiles;
+import fidice.catalog.security.Authorizer;
+import fidice.catalog.security.Privilege;
 import fidice.catalog.server.storage.CatalogStorage;
 import fidice.catalog.iceberg.RestRequest;
 import fidice.catalog.server.governance.Management.Request;
@@ -52,6 +53,7 @@ import tools.jackson.databind.node.ObjectNode;
  * Dropped tables and views (D25): listing them, undrop within the window, purge after it by the
  * maintenance principal only and at a bounded rate, and the snapshot-and-journal export of any object.
  * The maintenance worker that deletes a purged object's files is v1.x; it calls purge once they are gone.
+ * Each route asks {@link ManagementGuard} once the object or namespace it names is found.
  */
 @RestController
 class LifecycleRoutes {
@@ -68,16 +70,18 @@ class LifecycleRoutes {
 
     private final CatalogStore store;
     private final Management management;
+    private final ManagementGuard guard;
     private final GovernanceSettings settings;
     private final AuditTrail trail;
     private final CatalogStorage storage;
     private final Clock clock;
     private final Deque<Instant> recentPurges = new ArrayDeque<>();
 
-    LifecycleRoutes(CatalogStore store, Management management, GovernanceSettings settings, AuditTrail trail,
-                    CatalogStorage storage, Clock clock) {
+    LifecycleRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
+                    AuditTrail trail, CatalogStorage storage, Clock clock) {
         this.store = store;
         this.management = management;
+        this.guard = guard;
         this.settings = settings;
         this.trail = trail;
         this.storage = storage;
@@ -86,9 +90,13 @@ class LifecycleRoutes {
 
     /** The namespace's dropped tables and views, with when each may be purged. */
     @GetMapping(path = DROPPED, produces = MediaType.APPLICATION_JSON_VALUE)
-    ResponseEntity<String> dropped(@PathVariable("catalog") String prefix, @PathVariable String namespace) {
+    ResponseEntity<String> dropped(@PathVariable("catalog") String prefix, @PathVariable String namespace,
+                                   HttpServletRequest http) {
         CatalogRecord catalog = management.catalog(prefix);
-        NamespaceRecord record = management.namespace(catalog, RestRequest.namespaceLevels(namespace));
+        List<String> levels = RestRequest.namespaceLevels(namespace);
+        NamespaceRecord record = management.namespace(catalog, levels);
+        guard.require(management.request(http), Authorizer.Target.of(record),
+                namespaceAudit(catalog, record.id(), levels), "listDropped", Privilege.DESCRIBE);
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode objects = body.putArray("dropped");
         for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
@@ -113,7 +121,15 @@ class LifecycleRoutes {
     ResponseEntity<String> undrop(@PathVariable("catalog") String prefix, @PathVariable String id,
                                   @RequestBody(required = false) String body, HttpServletRequest http) {
         CatalogRecord catalog = management.catalog(prefix);
-        CatalogObject object = dropped(catalog, id);
+        CatalogObject object = existing(catalog, id);
+        List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElseThrow(
+                () -> CatalogError.of(404, "NoSuchNamespaceException", "The namespace of " + id + " no longer exists"));
+        Request request = management.request(http);
+        guard.require(request, new Authorizer.Target.Namespace(catalog.id(), object.namespaceId()),
+                namespaceAudit(catalog, object.namespaceId(), levels), "undropObject", Privilege.CREATE);
+        if (object.state() != CatalogObject.State.DROPPED) {
+            throw notDropped(id);
+        }
         JsonNode json = Management.body(body);
         Name name = json.has("name")
                 ? new Name(Names.normalize(Management.text(json, "name", 1000)), json.get("name").asString())
@@ -124,9 +140,6 @@ class LifecycleRoutes {
                     + object.purgeAfter().get() + "; it is waiting to be purged");
         }
         Management.requireUnfrozen(GovernanceChain.of(store, object), "The namespace of " + id);
-        List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElseThrow(
-                () -> CatalogError.of(404, "NoSuchNamespaceException", "The namespace of " + id + " no longer exists"));
-        Request request = management.request(http);
         WriteResult result = Management.write("Undropping " + id, () -> store.undropObject(object.id(),
                         object.namespaceId(), name, management.change(now, new Undrop(
                                 Management.audit(catalog, levels, name.display(), object), request.actor()))),
@@ -156,10 +169,7 @@ class LifecycleRoutes {
         Request request = management.request(http);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
         fidice.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
-        if (!settings.maintenancePrincipals().contains(request.actor().principal())) {
-            trail.record(new Denial("purge", audit, null, "not a maintenance principal", request.actor()));
-            throw CatalogError.of(403, "ForbiddenException", "Only a maintenance principal may purge");
-        }
+        guard.requireMaintenance(request, audit, "purge");
         if (object.state() != CatalogObject.State.DROPPED) {
             throw notDropped(id);
         }
@@ -188,7 +198,9 @@ class LifecycleRoutes {
     /** Dropped objects whose undrop window has closed and that no hold covers: the maintenance worker's queue. */
     @GetMapping(path = PURGE_ELIGIBLE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> purgeEligible(@RequestParam(required = false) String pageToken,
-                                         @RequestParam(required = false) Integer pageSize) {
+                                         @RequestParam(required = false) Integer pageSize,
+                                         HttpServletRequest http) {
+        guard.requireMaintenance(management.request(http), null, "listPurgeEligible");
         PageRequest page = new PageRequest(Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()),
                 pageSize == null ? PAGE : Math.clamp(pageSize, 1, 1000));
         Page<CatalogObject> listed;
@@ -212,6 +224,10 @@ class LifecycleRoutes {
     ResponseEntity<String> export(@PathVariable("catalog") String prefix, @PathVariable String id, HttpServletRequest http) {
         CatalogRecord catalog = management.catalog(prefix);
         CatalogObject object = existing(catalog, id);
+        List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
+        Request request = management.request(http);
+        guard.require(request, Authorizer.Target.of(object),
+                Management.audit(catalog, levels, object.name().display(), object), "exportObject", Privilege.SELECT);
         ObjectNode body = Management.JSON.createObjectNode();
         body.set("object", object(object));
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
@@ -226,9 +242,8 @@ class LifecycleRoutes {
             node.put("version", pointer.get().version());
             node.put("sha256", pointer.get().sha256());
             body.set("metadata", Management.JSON.readTree(read.json()));
-            List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
             trail.record(new ObjectRead(Management.audit(catalog, levels, object.name().display(), object),
-                    PointerKey.MAIN, ReadAudit.state(pointer.get()), management.request(http).actor()));
+                    PointerKey.MAIN, ReadAudit.state(pointer.get()), request.actor()));
         }
         ArrayNode journal = body.putArray("journal");
         PageRequest page = PageRequest.first(PAGE);
@@ -268,12 +283,10 @@ class LifecycleRoutes {
                 () -> CatalogError.of(404, "NoSuchObjectException", "No table or view " + id + " in " + catalog.name()));
     }
 
-    private CatalogObject dropped(CatalogRecord catalog, String id) {
-        CatalogObject object = existing(catalog, id);
-        if (object.state() != CatalogObject.State.DROPPED) {
-            throw notDropped(id);
-        }
-        return object;
+    private static fidice.catalog.audit.Securable namespaceAudit(CatalogRecord catalog, UUID namespaceId,
+                                                                 List<String> levels) {
+        return new fidice.catalog.audit.Securable(fidice.catalog.audit.Securable.Kind.NAMESPACE, namespaceId,
+                catalog.name(), levels);
     }
 
     private static CatalogError notDropped(String id) {

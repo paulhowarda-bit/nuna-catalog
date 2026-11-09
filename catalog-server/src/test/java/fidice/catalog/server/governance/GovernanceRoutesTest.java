@@ -48,10 +48,10 @@ class GovernanceRoutesTest {
         api.table(ns, "t");
         String table = "/namespaces/" + ns + "/tables/t";
         expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/classification",
-                "{\"value\":\"internal\",\"provenance\":\"collibra:domain/9\"}"), 200);
+                "{\"value\":\"internal\",\"provenance\":\"collibra:domain/9\"}", "Authorization", api.steward()), 200);
         expect(api.manage("PUT", table + "/attributes/classification",
                 "{\"value\":\"restricted\",\"provenance\":\"collibra:asset/42\"}", GovernanceServer.PRINCIPAL,
-                "governance-sync"), 200);
+                "governance-sync", GovernanceServer.GROUPS, GovernanceServer.STEWARDS), 200);
 
         HttpResponse<String> governance = expect(api.manage("GET", table + "/governance", null), 200);
         assertThat(JsonPath.<String>read(governance.body(), "$.effective.classification")).isEqualTo("restricted");
@@ -60,13 +60,14 @@ class GovernanceRoutesTest {
         assertThat(JsonPath.<String>read(governance.body(), "$.attributes[0].set-by"))
                 .isEqualTo("governance-sync");
 
-        expectError(api.manage("PUT", table + "/attributes/classification", "{\"value\":\"x\"}"), 400,
-                "BadRequestException");
-        expectError(api.manage("PUT", table + "/attributes/regulated", "{\"value\":\"yes\",\"provenance\":\"p\"}"),
-                400, "BadRequestException");
-        expectError(api.manage("PUT", table + "/attributes/colour", "{\"value\":\"x\",\"provenance\":\"p\"}"), 404,
+        expectError(api.manage("PUT", table + "/attributes/classification", "{\"value\":\"x\"}",
+                "Authorization", api.steward()), 400, "BadRequestException");
+        expectError(api.manage("PUT", table + "/attributes/regulated", "{\"value\":\"yes\",\"provenance\":\"p\"}",
+                "Authorization", api.steward()), 400, "BadRequestException");
+        expectError(api.manage("PUT", table + "/attributes/colour", "{\"value\":\"x\",\"provenance\":\"p\"}",
+                "Authorization", api.steward()), 404, "NoSuchAttributeException");
+        expectError(api.manage("DELETE", table + "/attributes/owner", null, "Authorization", api.steward()), 404,
                 "NoSuchAttributeException");
-        expectError(api.manage("DELETE", table + "/attributes/owner", null), 404, "NoSuchAttributeException");
         expectError(api.manage("GET", "/namespaces/" + ns + "/tables/nope/governance", null), 404,
                 "NoSuchTableException");
     }
@@ -92,16 +93,16 @@ class GovernanceRoutesTest {
         assertThat(JsonPath.<String>read(body, "$.resolved['compaction.enabled'].source")).isEqualTo("built-in");
 
         expect(api.manage("PUT", namespace + "/attributes/retention-class",
-                "{\"value\":\"trade-records\",\"provenance\":\"records-office\"}"), 200);
-        String hold = JsonPath.read(expect(api.manage("POST", table + "/holds", "{\"reason\":\"case 3\"}"), 201)
-                .body(), "$.id");
+                "{\"value\":\"trade-records\",\"provenance\":\"records-office\"}", "Authorization", api.steward()), 200);
+        String hold = JsonPath.read(expect(api.manage("POST", table + "/holds", "{\"reason\":\"case 3\"}",
+                "Authorization", api.steward()), 201).body(), "$.id");
         body = expect(api.manage("GET", table + "/maintenance-policy", null), 200).body();
         assertThat(JsonPath.<String>read(body, "$.resolved['snapshot-expiry.max-snapshot-age'].value")).isEqualTo("PT720H");
         assertThat(JsonPath.<String>read(body, "$.resolved['snapshot-expiry.max-snapshot-age'].source"))
                 .isEqualTo("guardrail");
         assertThat(JsonPath.<String>read(body, "$.resolved['snapshot-expiry.enabled'].value")).isEqualTo("false");
         assertThat(JsonPath.<String>read(body, "$.resolved['orphan-removal.enabled'].value")).isEqualTo("false");
-        expect(api.manage("DELETE", table + "/holds/" + hold, null), 204);
+        expect(api.manage("DELETE", table + "/holds/" + hold, null, "Authorization", api.steward()), 204);
 
         expectError(api.manage("PUT", table + "/maintenance-policy", "{\"orphan-removal.older-than\":\"P1D\"}"), 400,
                 "BadRequestException");
