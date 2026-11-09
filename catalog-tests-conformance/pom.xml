@@ -27,6 +27,12 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-security</artifactId>
+      <type>test-jar</type>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-open-api</artifactId>
       <version>${iceberg.version}</version>

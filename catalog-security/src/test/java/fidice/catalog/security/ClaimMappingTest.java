@@ -101,7 +101,7 @@ class ClaimMappingTest {
     }
 
     private Principal principal(JWTClaimsSet.Builder claims) throws Exception {
-        return authenticator.authenticate(signed(claims), Optional.empty(), Set.of()).principal();
+        return authenticator.authenticate(signed(claims), Optional.empty(), Set.of()::contains).principal();
     }
 
     private String signed(JWTClaimsSet.Builder claims) throws Exception {
@@ -110,7 +110,7 @@ class ClaimMappingTest {
 
     private org.assertj.core.api.ThrowableAssertAlternative<AuthenticationFailure> rejected(String token) {
         return assertThatExceptionOfType(AuthenticationFailure.class)
-                .isThrownBy(() -> authenticator.authenticate(token, Optional.empty(), Set.of()))
+                .isThrownBy(() -> authenticator.authenticate(token, Optional.empty(), Set.of()::contains))
                 .satisfies(failure -> assertThat(failure.status()).isEqualTo(401));
     }
 }

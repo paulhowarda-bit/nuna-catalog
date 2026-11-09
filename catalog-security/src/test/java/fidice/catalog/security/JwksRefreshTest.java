@@ -96,6 +96,6 @@ class JwksRefreshTest {
     }
 
     private String authenticate(String token) {
-        return authenticator.authenticate(token, Optional.empty(), Set.of()).principal().id();
+        return authenticator.authenticate(token, Optional.empty(), Set.of()::contains).principal().id();
     }
 }

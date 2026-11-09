@@ -62,11 +62,12 @@ class TableRoutes {
     private final ServerAlerts alerts;
     private final RestSettings settings;
     private final Callers callers;
+    private final Guard guard;
     private final Clock clock;
 
     TableRoutes(CatalogStore store, Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views,
                 TableFiles files, CredentialVending vending, MetricsSink metrics, ServerAlerts alerts,
-                RestSettings settings, Callers callers, Clock clock) {
+                RestSettings settings, Callers callers, Guard guard, Clock clock) {
         this.store = store;
         this.lookup = lookup;
         this.objects = objects;
@@ -78,14 +79,16 @@ class TableRoutes {
         this.alerts = alerts;
         this.settings = settings;
         this.callers = callers;
+        this.guard = guard;
         this.clock = clock;
     }
 
     @GetMapping(TABLES)
     ResponseEntity<String> list(@PathVariable String prefix, @PathVariable String namespace,
                                 @RequestParam(required = false) String pageToken,
-                                @RequestParam(required = false) String pageSize) {
-        return objects.list(prefix, namespace, pageToken, pageSize, Kind.TABLE);
+                                @RequestParam(required = false) String pageSize,
+                                HttpServletRequest http) {
+        return objects.list(prefix, namespace, pageToken, pageSize, Kind.TABLE, RequestContext.of(http, callers));
     }
 
     /** A create, or with {@code stage-create} the metadata of a table that exists only once its create commits. */
@@ -101,10 +104,11 @@ class TableRoutes {
         RestRequest.NewTable table = RestRequest.createTable(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
+        RequestContext request = RequestContext.of(http, callers);
+        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
         if (table.stageCreate()) {
             return staged(catalog, record, name, json, Optional.ofNullable(delegation));
         }
-        RequestContext request = RequestContext.of(http, callers);
         CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, table.name()), request)
                 .createTable(name, json, request.caller(), Optional.ofNullable(key));
         return ObjectRoutes.reply(reply, done -> loaded(catalog, done, Optional.ofNullable(delegation)));
@@ -116,10 +120,14 @@ class TableRoutes {
                                 @RequestParam(required = false) String snapshots,
                                 @RequestParam(name = "referenced-by", required = false) String referencedBy,
                                 @RequestHeader(name = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
-                                @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation) {
+                                @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
+                                HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
         boolean refsOnly = refsOnly(snapshots);
-        CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), table, Kind.TABLE);
+        List<String> levels = Lookup.levels(namespace);
+        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
+                Guard.LOAD_TABLE);
         Vended vended = vending.vend(catalog.id(), object.id(), object.locationRoot(), Optional.ofNullable(delegation));
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
@@ -142,8 +150,8 @@ class TableRoutes {
 
     @RequestMapping(path = TABLE, method = RequestMethod.HEAD)
     ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace,
-                                @PathVariable String table) {
-        return objects.exists(prefix, namespace, table, Kind.TABLE);
+                                @PathVariable String table, HttpServletRequest http) {
+        return objects.exists(prefix, namespace, table, Kind.TABLE, RequestContext.of(http, callers));
     }
 
     /** A commit, including the commit of a staged create. */
@@ -159,6 +167,12 @@ class TableRoutes {
         NamespaceRecord record = lookup.namespace(catalog, levels)
                 .orElseThrow(() -> Http.noSuchTable(Http.qualified(levels, table)));
         RequestContext request = RequestContext.of(http, callers);
+        Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        if (existing.isPresent()) {
+            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), Guard.commit(body));
+        } else {
+            guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
+        }
         CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, table), request)
                 .commitTable(ObjectRoutes.name(catalog, record, levels, table), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
@@ -196,6 +210,7 @@ class TableRoutes {
         RestRequest.Registration registration = RestRequest.register(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
+        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE);
         CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, registration.name()), request)
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key));
@@ -215,9 +230,13 @@ class TableRoutes {
     @GetMapping(CREDENTIALS)
     ResponseEntity<String> credentials(@PathVariable String prefix, @PathVariable String namespace,
                                        @PathVariable String table,
-                                       @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation) {
+                                       @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
+                                       HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
-        CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), table, Kind.TABLE);
+        List<String> levels = Lookup.levels(namespace);
+        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
+                Guard.LOAD_CREDENTIALS);
         Vended vended = vending.vend(catalog.id(), object.id(), object.locationRoot(), Optional.ofNullable(delegation));
         return Http.json(200, RestResponse.credentials(vended.credentials()));
     }

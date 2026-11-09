@@ -51,6 +51,8 @@
     <yugabytedb.image>yugabytedb/yugabyte:2025.2.8.1-b8</yugabytedb.image>
     <!-- Silo, the maintained MinIO fork: the S3 store server and conformance tests run against. -->
     <silo.image>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</silo.image>
+    <!-- Two realms stand in for Entra ID and Ping (D17a). -->
+    <keycloak.image>quay.io/keycloak/keycloak:26.8.2</keycloak.image>
     <!-- Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. -->
     <fidice.excluded-groups>heavy</fidice.excluded-groups>
   </properties>
@@ -98,6 +100,18 @@
         <groupId>fidice</groupId>
         <artifactId>catalog-audit</artifactId>
         <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-security</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-security</artifactId>
+        <version>${project.version}</version>
+        <type>test-jar</type>
+        <scope>test</scope>
       </dependency>
       <dependency>
         <groupId>fidice</groupId>

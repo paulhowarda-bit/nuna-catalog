@@ -21,6 +21,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
@@ -29,6 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * new credential epoch is a new ETag (D14). M4 vends nothing, so a stand-in vends credentials here.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, SiloForTests.class, CredentialExpiryTest.Vending.class})
 class CredentialExpiryTest {
 
@@ -58,6 +60,7 @@ class CredentialExpiryTest {
     void noNotModifiedNearExpiryAndANewEpochIsANewETag() throws Exception {
         jdbc.update("INSERT INTO catalog (id, name_norm, name) VALUES (?, 'trading', 'Trading') "
                 + "ON CONFLICT (name_norm) DO NOTHING", UUID.randomUUID());
+        IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
         EXPIRES.set(Instant.now().plus(Duration.ofHours(1)));
         String namespace = "expiry_" + UUID.randomUUID().toString().replace("-", "");
         assertThat(send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", null).statusCode())
@@ -86,7 +89,8 @@ class CredentialExpiryTest {
     private HttpResponse<String> send(String method, String path, String body, String ifNoneMatch) throws Exception {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/v1/trading" + path))
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody()
-                        : HttpRequest.BodyPublishers.ofString(body));
+                        : HttpRequest.BodyPublishers.ofString(body))
+                .header("Authorization", IssuerForTests.bearer());
         if (body != null) {
             request.header("Content-Type", "application/json");
         }

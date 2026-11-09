@@ -16,9 +16,9 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 
 /**
- * The REST surface's collaborators. Callers, credential vending and telemetry are seams that M5 (security),
- * M6 (object store) and M7 (audit) replace; until then requests are anonymous, no credentials are vended
- * and metrics reports are logged.
+ * The REST surface's collaborators. Credential vending, the synchronous audit publisher and telemetry are
+ * seams that M6 (object store) and M7 (audit) replace; until then no credentials are vended and audit events
+ * and metrics reports are logged. Callers come from the security package (M5).
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({RestSettings.class, StorageSettings.class})
@@ -64,13 +64,13 @@ class RestWiring {
     }
 
     @Bean
-    Callers callers() {
-        return Callers.ANONYMOUS;
+    CredentialVending credentialVending() {
+        return CredentialVending.NONE;
     }
 
     @Bean
-    CredentialVending credentialVending() {
-        return CredentialVending.NONE;
+    AuditPublisher auditPublisher() {
+        return AuditPublisher.LOG;
     }
 
     @Bean

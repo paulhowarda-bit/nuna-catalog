@@ -22,6 +22,7 @@ class IcebergClientConfigTest {
         Map<String, String> properties = new HashMap<>(ConformanceServer.clientStorage());
         properties.put(CatalogProperties.URI, ConformanceServer.start().toString());
         properties.put(CatalogProperties.WAREHOUSE_LOCATION, ConformanceServer.WAREHOUSE);
+        properties.put("token", ConformanceServer.token());
         try (RESTCatalog client = new RESTCatalog()) {
             client.setConf(new Configuration());
             client.initialize("probe", properties);

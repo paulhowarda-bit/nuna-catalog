@@ -37,20 +37,24 @@ class ViewRoutes {
     private final Engines engines;
     private final MetadataViews views;
     private final Callers callers;
+    private final Guard guard;
 
-    ViewRoutes(Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views, Callers callers) {
+    ViewRoutes(Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views, Callers callers,
+               Guard guard) {
         this.lookup = lookup;
         this.objects = objects;
         this.engines = engines;
         this.views = views;
         this.callers = callers;
+        this.guard = guard;
     }
 
     @GetMapping(VIEWS)
     ResponseEntity<String> list(@PathVariable String prefix, @PathVariable String namespace,
                                 @RequestParam(required = false) String pageToken,
-                                @RequestParam(required = false) String pageSize) {
-        return objects.list(prefix, namespace, pageToken, pageSize, Kind.VIEW);
+                                @RequestParam(required = false) String pageSize,
+                                HttpServletRequest http) {
+        return objects.list(prefix, namespace, pageToken, pageSize, Kind.VIEW, RequestContext.of(http, callers));
     }
 
     @PostMapping(VIEWS)
@@ -64,6 +68,7 @@ class ViewRoutes {
         String name = RestRequest.createViewName(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
+        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW);
         CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, name), request)
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
                         Optional.ofNullable(key));
@@ -72,17 +77,20 @@ class ViewRoutes {
 
     @GetMapping(VIEW)
     ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace,
-                                @PathVariable String view) {
+                                @PathVariable String view, HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
-        CatalogObject object = objects.existing(catalog, Lookup.levels(namespace), view, Kind.VIEW);
+        List<String> levels = Lookup.levels(namespace);
+        CatalogObject object = objects.existing(catalog, levels, view, Kind.VIEW);
+        guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, view),
+                Guard.LOAD_VIEW);
         CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(), object);
         return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of()));
     }
 
     @RequestMapping(path = VIEW, method = RequestMethod.HEAD)
     ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace,
-                                @PathVariable String view) {
-        return objects.exists(prefix, namespace, view, Kind.VIEW);
+                                @PathVariable String view, HttpServletRequest http) {
+        return objects.exists(prefix, namespace, view, Kind.VIEW, RequestContext.of(http, callers));
     }
 
     /** Replace: a new version of the view (D28 keeps its location where the catalog put it). */
@@ -97,6 +105,12 @@ class ViewRoutes {
         NamespaceRecord record = lookup.namespace(catalog, levels)
                 .orElseThrow(() -> Http.noSuchView(Http.qualified(levels, view)));
         RequestContext request = RequestContext.of(http, callers);
+        Optional<CatalogObject> existing = lookup.object(record, view, Kind.VIEW);
+        if (existing.isPresent()) {
+            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, view), Guard.REPLACE_VIEW);
+        } else {
+            guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW);
+        }
         CommitReply reply = engines.forRequest(catalog.name(), AuditEvents.path(levels, view), request)
                 .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
