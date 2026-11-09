@@ -162,6 +162,11 @@
       <artifactId>testcontainers-postgresql</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>testcontainers-kafka</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -188,6 +193,7 @@
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
             <silo.image>${silo.image}</silo.image>
+            <kafka.image>${kafka.image}</kafka.image>
             <rck.reasons>${project.basedir}/rck-reasons.txt</rck.reasons>
             <rck.baseline>${project.basedir}/rck-baseline.txt</rck.baseline>
             <rck.results>${project.build.directory}/rck-results.txt</rck.results>
