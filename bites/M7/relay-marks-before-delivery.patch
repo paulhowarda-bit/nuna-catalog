@@ -1,0 +1,18 @@
+Breaks: the relay marks a batch relayed even when delivery fails.
+Module: catalog-audit
+Test: OutboxRelayTest#failedDeliveryIsRetried
+
+diff --git a/catalog-audit/src/main/java/fidice/catalog/audit/relay/OutboxRelay.java b/catalog-audit/src/main/java/fidice/catalog/audit/relay/OutboxRelay.java
+index 1481d8c..ef24c25 100644
+--- a/catalog-audit/src/main/java/fidice/catalog/audit/relay/OutboxRelay.java
++++ b/catalog-audit/src/main/java/fidice/catalog/audit/relay/OutboxRelay.java
+@@ -72,8 +72,8 @@ public final class OutboxRelay {
+                     }
+                 })
+                 .toList();
+-        target.deliver(events);
+         WriteResult marked = store.markRelayed(relayId, entries.stream().map(OutboxEntry::id).toList(), clock.instant());
++        target.deliver(events);
+         if (!(marked instanceof WriteResult.Applied)) {
+             LOG.log(System.Logger.Level.WARNING, "the outbox lease lapsed while {0} events were delivered ({1});"
+                     + " the next relay delivers them again", entries.size(), marked);

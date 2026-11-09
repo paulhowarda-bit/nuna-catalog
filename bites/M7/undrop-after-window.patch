@@ -1,0 +1,17 @@
+Breaks: undrop works after the purge-after time.
+Module: catalog-server
+Test: LifecycleTest#undropRestoresTheSameObjectWithinTheWindowOnly
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+index b2a9413..3db49eb 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+@@ -118,7 +118,7 @@ class LifecycleRoutes {
+                 ? new Name(Names.normalize(Management.text(json, "name", 1000)), json.get("name").asString())
+                 : object.name();
+         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
+-        if (!now.isBefore(object.purgeAfter().orElseThrow())) {
++        if (false) {
+             throw CatalogError.of(409, "UndropWindowClosedException", "The undrop window of " + id + " closed at "
+                     + object.purgeAfter().get() + "; it is waiting to be purged");
+         }

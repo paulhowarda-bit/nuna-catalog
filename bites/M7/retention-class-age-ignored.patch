@@ -1,0 +1,17 @@
+Breaks: snapshot removal ignores the retention class minimum age.
+Module: catalog-core
+Test: RulesTest$SnapshotMinimumAge#aSnapshotYoungerThanItsClassAllowsStays
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java
+index e3680e9..2ba8c6f 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java
+@@ -107,7 +107,7 @@ public final class Rules {
+             Optional<GovernanceAttribute> retentionClass = change.governance()
+                     .nearest(GovernanceAttribute.Kind.RETENTION_CLASS);
+             Optional<Duration> minimum = retentionClass.flatMap(c -> minimumAge.apply(c.value()));
+-            if (minimum.isEmpty()) {
++            if (true) {
+                 return Optional.empty();
+             }
+             Instant youngestRemovable = change.now().minus(minimum.get());

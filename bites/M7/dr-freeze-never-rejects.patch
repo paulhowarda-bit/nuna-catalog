@@ -1,0 +1,17 @@
+Breaks: a DR freeze does not refuse commits.
+Module: catalog-core
+Test: RulesTest$DrFreeze#aFrozenObjectTakesNoCommit
+
+diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java
+index e3680e9..5d86653 100644
+--- a/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java
++++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Rules.java
+@@ -87,7 +87,7 @@ public final class Rules {
+ 
+     /** Nothing commits to a table or view while it, a namespace above it or its catalog is frozen for a DR reconcile (D37). */
+     static Optional<Rejection> drFreeze(CommitRule.Change change) {
+-        return change.governance().nearest(GovernanceAttribute.Kind.DR_FREEZE)
++        return Optional.<GovernanceAttribute>empty()
+                 .map(freeze -> Rejection.forbidden("Writes to " + change.object().id()
+                         + " are frozen for DR reconcile: " + freeze.value()));
+     }

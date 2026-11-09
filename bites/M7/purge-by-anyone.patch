@@ -1,0 +1,17 @@
+Breaks: any caller may purge, not only a maintenance principal.
+Module: catalog-server
+Test: LifecycleTest#onlyTheMaintenancePrincipalPurgesAndOnlyAfterTheWindow
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+index b2a9413..8646899 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+@@ -155,7 +155,7 @@ class LifecycleRoutes {
+         Request request = management.request(http);
+         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
+         fidice.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
+-        if (!settings.maintenancePrincipals().contains(request.actor().principal())) {
++        if (false) {
+             trail.record(new Denial("purge", audit, null, "not a maintenance principal", request.actor()));
+             throw CatalogError.of(403, "ForbiddenException", "Only a maintenance principal may purge");
+         }

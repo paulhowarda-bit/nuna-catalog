@@ -1,0 +1,16 @@
+Breaks: a DR freeze does not refuse drops.
+Module: catalog-server
+Test: HeldTablesTest#aDrFreezeRefusesWritesUntilLifted
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/ObjectRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/rest/ObjectRoutes.java
+index 7a673a5..0f957a5 100644
+--- a/catalog-server/src/main/java/fidice/catalog/server/rest/ObjectRoutes.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/rest/ObjectRoutes.java
+@@ -107,7 +107,6 @@ class ObjectRoutes {
+         String qualified = Http.qualified(levels, name);
+         return idempotency.run(key, request.caller(), "DROP_" + kind, scope(catalog, levels, name), "", ticket -> {
+             CatalogObject object = existing(catalog, levels, name, kind);
+-            requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + qualified);
+             Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
+             Instant purgeAfter = now.plus(settings.dropRetention());
+             Change change = ticket.change(now, List.of(audit.event(now, new Drop(
