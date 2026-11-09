@@ -230,6 +230,57 @@ Three worktree sessions, each owning one module:
 - **Gate:** all of the above green on the personal machine.
 - **Work hardware:** absolute SLOs, three-site quorum latency, async DR region.
 
+**Status (2026-11-09): gate met on the personal machine, PostgreSQL only.** Every M8 suite is tagged `heavy`, so `./mvnw verify` stays the everyday fast build. Each suite was run on its own with `-Pheavy -Dtest=…`; the whole `-Pheavy` pass and `bites/run.sh` wait for the after-M9 pass. Bites are recorded in `bites/M8/` (12 patches), not run.
+
+- **What M8 changed in the server.**
+  - The server migrates through the store (`SqlCatalogStore.migrate()`), so PostgreSQL reaches V4 (journal partitions) on every start; Spring's Flyway starter is gone.
+  - Reconcile from storage [D37]: `POST /management/v1/catalogs/{catalog}/dr-reconcile` `{"apply", "accept"}`, platform operators only. A file counts as committed when a later file names it as predecessor. The pointer moves one version per swap, only through proven files and the tips the operator names in `accept`, and only under a DR freeze. Two proven files at one version, a gap, a foreign UUID, or storage missing the pointer's file stop the walk. Table directories the database does not know are reported as `unknown-locations`.
+  - A store outage answers 503 with Retry-After, in the Iceberg error shape. The routes, the idempotency paths and the authentication filter all do this; before, the filter fell through to Spring's error page. It covers a database that cannot be reached, is failing over or is out of connections, when nothing was applied. A commit whose COMMIT was sent and whose outcome the store cannot tell stays `CommitStateUnknownException` (500).
+- **Engine matrix** (`catalog-tests-engines`, docker compose, about 11 min; versions, timings and settings in its README). All six pass. Every engine got vended credentials and no storage keys.
+
+  | Engine | v2 and v3 in `m8.deep.<engine>`: create, write, read, evolve, drop | Reads Spark's v2 / v3 / v3 with a deletion vector |
+  |---|---|---|
+  | Spark 4.1.4 + Iceberg 1.12.0 | pass | writes them |
+  | Trino 484 | pass | pass |
+  | Flink 2.3.0 + Iceberg 1.12.0 | pass | pass |
+  | DuckDB 2.0.0 | pass | pass |
+  | PyIceberg 0.12.0 | pass, except v3 data writes, which the client refuses ("Cannot write manifest for table version: 3"; the test asserts it) | pass |
+  | SingleStore 10.9.0 | n/a: read-only client [D35] | pass, by pipeline; v3 reads too, though its docs say v1/v2 only |
+
+- **Load and resilience** (`catalog-tests-load`): two server processes from the exec jar, on PostgreSQL 18 with a synchronous standby. Results are in `target/m8/results/`.
+
+  | Suite | Result |
+  |---|---|
+  | 8, 16 and 32 writers on one table, v2 and v3 | Every commit acknowledged exactly once (200 to 800 per run). Zero 5xx, zero deadlocks, nothing lost or doubled. |
+  | 10,120 snapshots, v2 and v3 | History whole; loads, `?snapshots=refs` and 304 work. Metadata is 3.1 MB (v2) and 3.5 MB (v3). Full load p99 186 / 654 ms, refs-only p99 177 / 117 ms, 304 p99 84 / 65 ms. |
+  | Kill the primary mid-commit | Standby promoted at 3 s; the first commit landed about 11 s after the kill. Only 503s with Retry-After during the outage, no 500. Every acknowledged commit present exactly once. |
+  | Rolling upgrade | Two previous-release servers (75df4ff, schema V3) replaced one at a time, the first new one migrating to V4 under traffic. 296 commits, zero 5xx, every request reached a server, history and journal whole. |
+  | DR drill | DR standby cut off, writers kept committing, region lost, DR promoted. Then freeze (commits 403, cleanup off), dry run, apply with the acknowledged tips accepted (30 steps per table), lift the freeze, register the table DR never knew. All 134 acknowledged commits recovered; commits resume. |
+
+- **SLO run (laptop, relative only).** Clients, two servers, PostgreSQL, Kafka and Silo share one machine.
+
+  | Measure | Laptop | Target |
+  |---|---|---|
+  | Load p99 (16 readers, 32 tables) | 295 ms (p50 135) | < 50 ms |
+  | 304 p99 | 164 ms (p50 77) | < 10 ms |
+  | Commit p99 (32 writers, a table each) | 1,764 ms (p50 653) | < 300 ms |
+  | Commits per second | 43 | ≥ 500 |
+
+  Every load and 304 waits for the read audit's Kafka acknowledgement [D23], which sets a floor on the laptop. The absolute SLOs stay a work-hardware gate.
+
+- **Findings for decision:**
+  - **ETags do not survive a change of server.** The ETag includes the credential epoch, a hash of the vended access key. Each server mints and caches its own credentials, so a conditional load answered by another server is always a 200: 0 of 32 in the SLO run. Behind a non-sticky balancer, the 304 path [D14] mostly misses. Two ways to fix it:
+    - derive the epoch from a shared issuance window, so servers agree on it;
+    - accept sticky routing.
+  - **One hot table manages about 4–5 commits a second under contention on the laptop.** Fairness is poor: at 32 writers, p99 time to acknowledgement passes 2 minutes. The server's own retries (P10) each write a metadata file before losing the swap. This is not a correctness problem, but work hardware should measure it.
+- **Follow-ups:**
+  - The server does not run the store's `selfCheck()` at startup (D8.2).
+  - The journal horizon is extended only when migrations run, not by a job.
+  - `accept` is assembled by hand; the audit archive could prove tips instead.
+  - A register is refused under a DR freeze, so the runbook registers unknown tables after the thaw.
+  - Oracle and MongoDB stores do not raise `StoreUnavailableException` yet, so an outage there still answers 500.
+  - `findCommit` answers "unknown" at once when the store is down, where it could wait within the retry budget.
+
 ### M9 — Carry to work
 
 - Artifact approval in the curated repository (PLT-6).
