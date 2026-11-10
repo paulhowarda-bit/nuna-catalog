@@ -1,6 +1,6 @@
 Breaks: A grant counts wherever it is, not only on the target's chain.
 Module: catalog-security
-Test: AuthorizerTest#aGrantOnAChildDoesNotReachUpOrAcross
+Test: AuthorizerTest#aGrantOnAChildDoesNotReachUpOrAcross+aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain
 
 diff --git a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
 index 7eb5785..1118b69 100644

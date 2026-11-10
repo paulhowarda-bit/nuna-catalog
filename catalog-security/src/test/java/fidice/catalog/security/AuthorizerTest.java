@@ -90,6 +90,20 @@ class AuthorizerTest {
     }
 
     @Test
+    void aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain() {
+        NamespaceRecord namespace = estate.namespace("Batch");
+        CatalogObject granted = estate.table(namespace, "granted");
+        CatalogObject sibling = estate.table(namespace, "sibling");
+        estate.grant(granted, "narrow", Privilege.MODIFY);
+
+        List<Decision> decisions = authorizer.decide(person("n", "narrow"),
+                List.of(new Request(Target.of(granted), LOAD), new Request(Target.of(sibling), LOAD)));
+
+        assertThat(decisions.get(0)).isInstanceOf(Decision.Allowed.class);
+        assertThat(decisions.get(1)).as("the grant on the other table in the batch").isInstanceOf(Decision.Denied.class);
+    }
+
+    @Test
     void groupsAreMatchedExactlyAndNoGroupsMeansNothing() {
         CatalogObject table = estate.table(estate.namespace("Exact"), "t");
         estate.grant(table, "Readers", Privilege.SELECT);
