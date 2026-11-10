@@ -14,7 +14,7 @@
 
 ## Landing
 
-- Every landing uses the fast build, whatever the branch changes. Don't run `-Pheavy` before the after-M9 pass.
+- Every landing uses the fast build, whatever the branch changes. Don't run `-Pheavy` outside the heavy pass below.
 - When the work is finished and its build is green, land it without asking Paul:
   1. Merge the current `main` into the branch and run the fast build, `./mvnw install`.
   2. Run `git -C C:/Users/paulh/OneDrive/Desktop/code/fidice-catalog status --porcelain`. If it prints anything, the main checkout is busy: report the branch as ready instead of merging.
@@ -27,6 +27,7 @@
 - A branch that adds a guarded check records its bite instead of running it: `bites/<milestone>/<id>.patch`, made with `git diff` of the broken check, headed by a `Module:` line and a `Test:` line (the `-Dtest` selector that must fail). The two patches in `bites/M2/` show the form. Check it with `git apply --check`, then restore the file.
 - `bites/run.sh bites/M*` applies each patch, runs its test with `-Pheavy`, expects a failure, reverts, and checks every tracked file's hash is restored.
 
-## The heavy pass, once, after M9
+## The heavy pass, once, after M8
 
-- After M9, one run in a worktree: `./mvnw install -Pheavy,nightly`, then `bites/run.sh bites/M*` (every recorded bite). Fix anything that fails or does not bite.
+- The pass was planned for after M9. On 2026-11-10 Paul moved it to after M8, before M9: M9 happens at work, and he wants a fully checked build to carry there.
+- One run in a worktree: `./mvnw install -Pheavy,nightly`, then `bites/run.sh bites/M*` (every recorded bite). Fix anything that fails or does not bite.
