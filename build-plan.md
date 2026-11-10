@@ -286,6 +286,7 @@ Three worktree sessions, each owning one module:
 - Artifact approval in the curated repository (PLT-6).
 - RAC/Exadata, real IdPs, real object stores, DBA review of the self-check thresholds.
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
+- A scheduled nightly job in work CI running `./mvnw install -Pheavy,nightly` (the CAS test at 10,000 rounds). It left the heavy pass on 2026-11-10: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
 
 ### v1.x milestones
 
@@ -458,4 +459,8 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Tests: `ManagementAuthorizationTest` sends each route first as a caller that holds something but not what the route needs (403), then as one that does. `MutatingRoutesAuditTest` now also refuses every mutating management route, M5's grant and engine routes included, and finds each `Denial` on the audit topic.
   - `./mvnw verify` green: 995 tests. RCK still 133 of 160.
   - Bites: 14 new in `bites/M7/`, one per new guard; `purge-by-anyone` and `provenance-optional`, M5's `unclassified-open` and M6's `delete-for-everyone`, `cache-shared-across-callers` and `renewed-inside-margin` regenerated for the changed code; `bites/M4/near-expiry-304.patch` removed, since M6's `real-near-expiry-304` covers its rule on the rewritten code. Checked with `git apply --check`, not run.
-- **Next:** M2a (CockroachDB, YugabyteDB), M2b (Oracle) and M2c (MongoDB) on the whole contract, and the M3 commit loop on PostgreSQL, in parallel.
+- **Heavy pass done 2026-11-10, after M8 and before M9.** `./mvnw install -Pheavy`: 1,742 tests on all five backends, 0 failures, 1 h 52 min (SQL stores 50 min, load 21, MongoDB 19). Skipped: Oracle 3 (no Data Guard on Free) and `AwsVendingTest` 11, run separately against the `fidice-sandbox` account: 11 of 11.
+  - Bites: all 85 in `bites/M2`–`bites/M8` bite, each in its named test. Four needed fixes: `bites/run.sh` now runs to `verify`, since below package the load tests copied the unpatched server jar from `~/.m2` (both M8 load bites then bit); `auth-filter-outage-escapes` was regenerated (it did not compile); `change-stream-unfiltered` now names `ChangeStreamTest#fansOut`; `grants-reach-across` needed a new test, `AuthorizerTest#aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain`, since the chain filter matters only in a batch check.
+  - The 10,000-round CAS test left the pass for M9's nightly CI job (see M9).
+  - Finding: on YugabyteDB, writers queued on one pointer row are released about 200 ms apart (PostgreSQL: under 2 ms), so 8 contending writers take 2.3 s a round. Not the store's backoff (no backoff sleeps) and not fsync (the winning COMMIT takes 10 ms); lowering `wait_queue_poll_interval_ms` and `wait_for_relock_unblocked_txn_keys_ms` to 10 ms cut it only to 2.1 s. Cause open.
+- **Next:** M9, carried to work.

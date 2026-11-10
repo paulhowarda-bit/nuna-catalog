@@ -1,6 +1,6 @@
 Breaks: the change stream carries every audit record, reads and denials included.
 Module: catalog-audit
-Test: ChangeStreamTest#auditOnlyTypes
+Test: ChangeStreamTest#fansOut
 
 diff --git a/catalog-audit/src/main/java/fidice/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/fidice/catalog/audit/relay/ChangeStream.java
 index 65d08a2..b90d6fc 100644

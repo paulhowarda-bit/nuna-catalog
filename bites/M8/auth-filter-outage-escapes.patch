@@ -3,10 +3,10 @@ Module: catalog-tests-load
 Test: KillPrimaryTest
 
 diff --git a/catalog-server/src/main/java/fidice/catalog/server/security/Authentication.java b/catalog-server/src/main/java/fidice/catalog/server/security/Authentication.java
-index ea442d1..6aad096 100644
+index ea442d1..c1c9865 100644
 --- a/catalog-server/src/main/java/fidice/catalog/server/security/Authentication.java
 +++ b/catalog-server/src/main/java/fidice/catalog/server/security/Authentication.java
-@@ -98,12 +98,7 @@ final class Authentication extends OncePerRequestFilter {
+@@ -98,11 +98,6 @@ final class Authentication extends OncePerRequestFilter {
              refuse(request, response, failure.status(), failure.getMessage(), token,
                      failure.status() == 401 ? "Bearer error=\"invalid_token\"" : null);
              return;
@@ -15,8 +15,6 @@ index ea442d1..6aad096 100644
 -            // failure. A filter's exception would reach Spring's error page; answer as the routes do.
 -            storeFailed(response, e);
 -            return;
--        }
-+
+         }
          request.setAttribute(CALLER, caller);
          chain.doFilter(request, response);
-     }

@@ -180,7 +180,7 @@
   </build>
 
   <profiles>
-    <!-- Every test, heavy ones included: the pass after M9 (-Pheavy,nightly; CLAUDE.md). -->
+    <!-- Every test, heavy ones included: the heavy pass (-Pheavy; CLAUDE.md). -->
     <profile>
       <id>heavy</id>
       <properties>
