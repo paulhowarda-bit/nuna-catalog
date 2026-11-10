@@ -30,4 +30,5 @@
 ## The heavy pass, once, after M8
 
 - The pass was planned for after M9. On 2026-11-10 Paul moved it to after M8, before M9: M9 happens at work, and he wants a fully checked build to carry there.
-- One run in a worktree: `./mvnw install -Pheavy,nightly`, then `bites/run.sh bites/M*` (every recorded bite). Fix anything that fails or does not bite.
+- One run in a worktree: `./mvnw install -Pheavy`, then `bites/run.sh bites/M*` (every recorded bite). Fix anything that fails or does not bite.
+- The pass leaves out `nightly`: the CAS test at 10,000 rounds alone ran past 10 hours across the five backends (YugabyteDB 2.2 s a round). That depth check belongs to a scheduled nightly job in work CI (M9 in `build-plan.md`).
