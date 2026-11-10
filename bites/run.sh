@@ -13,6 +13,9 @@
 #
 # Runs with -Pheavy, so tests tagged heavy can be selected. Needs JAVA_HOME. Maven logs go to
 # target/bites/. Exits 0 only if every bite bites and the tree is restored. Run it in a worktree.
+#
+# Runs to verify, not test: catalog-tests-load copies the server's exec jar, and below package the
+# reactor has none, so the copy silently takes ~/.m2's jar, built without the patch.
 
 main() {
     set -u
@@ -49,7 +52,7 @@ main() {
         else
             git apply "$patch"
             current="$patch"
-            "$root/mvnw" -B -Pheavy -pl "$module" -am test -Dtest="$selector" \
+            "$root/mvnw" -B -Pheavy -pl "$module" -am verify -Dtest="$selector" \
                 -Dsurefire.failIfNoSpecifiedTests=false >"$logs/$id.log" 2>&1
             verdict=$(judge "$logs/$id.log")
             revert_current
