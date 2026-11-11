@@ -52,11 +52,19 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
 
     static final String DATABASE = "catalog";
     /**
-     * The stores' socket timeout: a lost answer fails the client, but not before a cluster whose
-     * quorum was stalled for the in-flight tests serves again, which has taken over 5 s here (as
-     * has a 5 MiB projection read while other suites load this Docker host).
+     * The stores' socket timeout: long enough for a cluster whose quorum was stalled for the
+     * in-flight tests to serve the lookups again, which has taken over 5 s here (as has a 5 MiB
+     * projection read while other suites load this Docker host).
      */
     static final int SOCKET_TIMEOUT_SECONDS = 15;
+    /**
+     * How long the one connection about to send COMMIT waits once a fault struck from its commit
+     * hook has dropped the answer, dropped the COMMIT or stalled the quorum: no answer can come, so
+     * waiting out the full socket timeout proves nothing more. Every other connection, the lookups
+     * after a stall among them, keeps {@link #SOCKET_TIMEOUT_SECONDS}. The same 5 s as PostgreSQL's
+     * and MongoDB's harnesses.
+     */
+    static final Duration LOST_ANSWER_WAIT = Duration.ofSeconds(5);
     static final int ADMIN_SOCKET_TIMEOUT_SECONDS = 120;
     static final int NODES = 3;
     static final Duration SETTLE = Duration.ofSeconds(180);
@@ -68,7 +76,7 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
     private final ToxiproxyContainer toxiproxy;
     private final ToxiproxyClient toxiproxyClient;
     private Proxy link;
-    private DataSource linkDataSource;
+    private LinkDataSource linkDataSource;
 
     private int gateway;
     private boolean stallArmed;
@@ -102,7 +110,18 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
                 return false;
             }
         }, "the cluster to create the catalog's database");
-        linkDataSource = throughLink(DATABASE);
+        // A first connection to the new database through the link has taken over the stores' 15 s
+        // socket timeout while other modules load this Docker host (-T 2), so the cluster counts as
+        // started once that connection is answered.
+        await(SETTLE, () -> {
+            try {
+                value(throughLink(DATABASE), "SELECT 1");
+                return true;
+            } catch (IllegalStateException e) {
+                return false;
+            }
+        }, "the catalog's database to answer through the link");
+        linkDataSource = new LinkDataSource(throughLink(DATABASE));
     }
 
     /** The network alias of node {@code node}, 0 to 2. */
@@ -300,11 +319,13 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
     @Override
     public void dropRequests() {
         toxi(() -> link.toxics().timeout("drop-requests", ToxicDirection.UPSTREAM, 0));
+        linkDataSource.shortenWaitOfThisThreadsConnection(LOST_ANSWER_WAIT);
     }
 
     @Override
     public void dropResponses() {
         toxi(() -> link.toxics().timeout("drop-responses", ToxicDirection.DOWNSTREAM, 0));
+        linkDataSource.shortenWaitOfThisThreadsConnection(LOST_ANSWER_WAIT);
     }
 
     @Override
@@ -332,6 +353,7 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
                 paused.add(node);
             }
         }
+        linkDataSource.shortenWaitOfThisThreadsConnection(LOST_ANSWER_WAIT);
     }
 
     @Override

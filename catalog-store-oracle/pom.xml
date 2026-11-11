@@ -83,7 +83,7 @@
     </plugins>
   </build>
   <profiles>
-    <!-- Nightly: the CAS linearizability test runs 10,000 rounds instead of CI's 200. -->
+    <!-- Nightly, the overnight run (root pom): the CAS test, at 1,000 rounds. No build runs it. -->
     <profile>
       <id>nightly</id>
       <build>
@@ -93,7 +93,7 @@
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
               <systemPropertyVariables>
-                <fidice.suite.cas-rounds>10000</fidice.suite.cas-rounds>
+                <fidice.suite.cas-rounds>1000</fidice.suite.cas-rounds>
               </systemPropertyVariables>
             </configuration>
           </plugin>

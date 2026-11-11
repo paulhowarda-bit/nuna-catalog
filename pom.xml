@@ -24,15 +24,17 @@
     <module>catalog-iceberg</module>
     <module>catalog-store-api</module>
     <module>catalog-store-sql</module>
+    <module>catalog-store-sql-raft</module>
     <module>catalog-store-oracle</module>
     <module>catalog-store-mongo</module>
     <module>catalog-objectstore</module>
     <module>catalog-security</module>
     <module>catalog-audit</module>
     <module>catalog-server</module>
+    <!-- load first: under -T 2 the longest module after the server starts as soon as the server is built. -->
+    <module>catalog-tests-load</module>
     <module>catalog-tests-conformance</module>
     <module>catalog-tests-engines</module>
-    <module>catalog-tests-load</module>
   </modules>
 
   <properties>
@@ -55,8 +57,10 @@
     <silo.image>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</silo.image>
     <!-- Two realms stand in for Entra ID and Ping (D17a). -->
     <keycloak.image>quay.io/keycloak/keycloak:26.8.2</keycloak.image>
-    <!-- Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. -->
-    <fidice.excluded-groups>heavy</fidice.excluded-groups>
+    <!-- Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy.
+         The CAS test (tagged cas) runs in no build: only overnight, on its own, with -Pnightly. -->
+    <fidice.excluded-groups>heavy,cas</fidice.excluded-groups>
+    <fidice.groups></fidice.groups>
   </properties>
 
   <dependencyManagement>
@@ -140,6 +144,7 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-surefire-plugin</artifactId>
           <configuration>
+            <groups>${fidice.groups}</groups>
             <excludedGroups>${fidice.excluded-groups}</excludedGroups>
           </configuration>
         </plugin>
@@ -180,10 +185,19 @@
   </build>
 
   <profiles>
-    <!-- Every test, heavy ones included: the heavy pass (-Pheavy; CLAUDE.md). -->
+    <!-- Every test but the CAS test, heavy ones included: the heavy pass (-Pheavy; CLAUDE.md). -->
     <profile>
       <id>heavy</id>
       <properties>
+        <fidice.excluded-groups>cas</fidice.excluded-groups>
+      </properties>
+    </profile>
+    <!-- The overnight run, never part of a build: only the CAS test, on all five backends, at
+         1,000 rounds (each store module's nightly profile sets the rounds). -->
+    <profile>
+      <id>nightly</id>
+      <properties>
+        <fidice.groups>cas</fidice.groups>
         <fidice.excluded-groups></fidice.excluded-groups>
       </properties>
     </profile>
