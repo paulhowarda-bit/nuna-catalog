@@ -157,7 +157,12 @@ public final class SqlCatalogStore implements CatalogStore {
     public void migrate() {
         try {
             Backend backend = transactions.backend();
-            Flyway.configure().dataSource(maintenanceDataSource).locations(backend.migrations)
+            // Where steps run outside a transaction, Flyway's PostgreSQL lock must not hold one
+            // open for the whole migration either.
+            Flyway.configure()
+                    .configuration(Map.of("flyway.postgresql.transactional.lock",
+                            String.valueOf(backend.transactionalSchemaSteps)))
+                    .dataSource(maintenanceDataSource).locations(backend.migrations)
                     .executeInTransaction(backend.transactionalSchemaSteps)
                     .lockRetryCount(MIGRATION_LOCK_RETRIES).load().migrate();
         } catch (FlywayException e) {
