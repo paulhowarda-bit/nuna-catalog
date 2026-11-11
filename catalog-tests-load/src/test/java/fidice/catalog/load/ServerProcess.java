@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * One catalog server as its own JVM, started from a runnable jar with command-line properties, its output
- * in {@code target/m8/logs/<name>.log}. Stopping it ends the process at once: a load balancer drains a
+ * in {@code build/m8/logs/<name>.log}. Stopping it ends the process at once: a load balancer drains a
  * server before it is stopped, which the tests do by taking it out of rotation first.
  */
 final class ServerProcess implements AutoCloseable {

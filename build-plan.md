@@ -16,7 +16,7 @@ These were not asked during the grilling; they are routine calls made to unblock
 
 | # | Choice | Why |
 |---|---|---|
-| P1 | **Maven multi-module build**, with the Maven wrapper pinned. | Maven 3.9.8 is already installed here; Gradle is not. Work's package index is blocked, and Maven with a corporate mirror (`settings.xml`) is the lowest-friction path there. |
+| P1 | **Gradle multi-module build** (Kotlin build files), with the Gradle wrapper pinned and its checksum set. Amended 2026-11-11 by Paul ("ok then lets switch"); until then it was a Maven build. | Work builds Java with Gradle, and this project is carried there at M9. Paul knows Gradle and does not know Maven. Maven re-ran every module's tests on every build; Gradle skips a module whose inputs did not change, and the bite loop no longer restarts the build tool and rebuilds every upstream module for each patch. Libraries and plugins come from the Maven-format repository work mirrors; only the Gradle distribution does not. The original reason for Maven was wrong: it assumed Maven through the corporate mirror was the easiest path at work, which Paul corrected on 2026-11-10. Gradle does not make the heavy database suites faster: they are slow because of what they do. |
 | P2 | **JDK 25 (Amazon Corretto 25)**. | Matches the Corretto 21 already installed. JDK 25 is not installed yet: prerequisite for M0, Paul installs it. |
 | P3 | **Spring MVC on virtual threads**, not WebFlux. | Blocking I/O with JDBC/Mongo sync drivers [D4]. |
 | P4 | **Hand-written controllers against the vendored OpenAPI spec**, plus a test that every advertised endpoint matches a spec operation. No code generator. | Generated code would add bloat and foreign names; the RCK proves conformance [D31]. |
@@ -24,7 +24,7 @@ These were not asked during the grilling; they are routine calls made to unblock
 | P6 | **Flyway for the three SQL targets** (PostgreSQL, CockroachDB, Oracle; YugabyteDB was a fourth until it was dropped on 2026-11-11 [D7]); a small versioned-step runner of our own for MongoDB. | DBAs know Flyway. M0 verifies that the community edition covers every target at the pinned version (F4); if it does not, we write the same small runner for SQL too. |
 | P7 | **PostgreSQL is the default development backend.** No in-memory store. | An in-memory store would drift from the invariants [D8]. Unit tests of the commit loop mock the storage interface. |
 | P8 | **Testcontainers** for every backend, IdP, object store and Kafka in tests; **docker compose** for the nightly engine matrix. | Docker Desktop 27.1.1 is installed here. |
-| P9 | **Package root `fidice.catalog`**, Maven groupId `fidice`. | Follows the repo name. |
+| P9 | **Package root `fidice.catalog`**, group `fidice`. | Follows the repo name. |
 | P10 | Defaults that the ledger left to the plan: vended credential lifetime 30 min (bounds 15–60 [D21]); idempotency key lifetime PT24H [D10]; server-side commit retry: at most 4 attempts or 2 s [D9]; multi-table cap 100 [D15]; soft-drop window 30 days [D25]; clock-skew guard 60 s [D9, D11]. | Each is configuration, changeable without code. |
 | P11 | Branch and tag defaults [D33]: at most 50 open branches per catalog; a branch expires 30 days after its last commit unless renewed (max 180 days); tags never expire, at most 1,000 per catalog; a branch or tag blocks file cleanup for everything it references; merging or deleting a branch releases it. | The ledger asked the plan to set these. |
 
@@ -36,9 +36,9 @@ These were not asked during the grilling; they are routine calls made to unblock
 |---|---|---|
 | `catalog-core` | Domain types (names, principals, privileges, pointers, commit records, errors), the commit loop, idempotency, rules layer, authorization decisions, retention/hold logic. No Spring. | `catalog-iceberg`, `catalog-store-api` |
 | `catalog-iceberg` | The only module that imports `org.apache.iceberg`. Parses requests, applies updates (TableMetadata.Builder, MetadataUpdate.applyTo), validates requirements (UpdateRequirement.validate), builds view metadata, serializes responses. Exposes our own interfaces. | pinned iceberg-core |
-| `catalog-store-api` | The narrow storage interface (2.3) and the shared invariant/fault-injection suite, published as a test-jar. | — |
-| `catalog-store-sql` | PostgreSQL and CockroachDB: one PG-wire implementation with dialect switches [D7]. It refuses a YugabyteDB server, which is not supported (dropped 2026-11-11). Its tests cover PostgreSQL; the cluster harness is published as a test-jar. | `catalog-store-api` |
-| `catalog-store-sql-raft` | Tests only: the SQL store's CockroachDB suite. Nothing depends on it, so under `-T 2` the modules that need `catalog-store-sql` don't wait for its cluster. | `catalog-store-sql` |
+| `catalog-store-api` | The narrow storage interface (2.3) and the shared invariant/fault-injection suite, handed to each backend as a test jar. | — |
+| `catalog-store-sql` | PostgreSQL and CockroachDB: one PG-wire implementation with dialect switches [D7]. It refuses a YugabyteDB server, which is not supported (dropped 2026-11-11). Its tests cover PostgreSQL; the cluster harness is handed to `catalog-store-sql-raft` as a test jar. | `catalog-store-api` |
+| `catalog-store-sql-raft` | Tests only: the SQL store's CockroachDB suite. Nothing depends on it. | `catalog-store-sql` |
 | `catalog-store-oracle` | Oracle including Exadata/RAC: UCP + FAN, Transaction Guard, service affinity [D7]. | `catalog-store-api` |
 | `catalog-store-mongo` | MongoDB: multi-document transactions, `w:majority`, primary reads [D7]. | `catalog-store-api` |
 | `catalog-objectstore` | Storage profiles; metadata.json write/read with SHA-256; credential vending through STS AssumeRole for S3, MinIO and Ceph; location guardrails [D21, D26, D36a]. | `catalog-core` |
@@ -115,7 +115,7 @@ YugabyteDB had a row here until support for it was dropped on 2026-11-11 [D7]. T
 
 ### 2.6 Shared invariant and fault-injection suite
 
-Lives in `catalog-store-api` as a test-jar. Every backend runs all of it; passing it is what "supported" means [D8.9]. Faults are injected with container stop/pause and a TCP proxy between server and database.
+Lives in `catalog-store-api` as a test jar. Every backend runs all of it; passing it is what "supported" means [D8.9]. Faults are injected with container stop/pause and a TCP proxy between server and database.
 
 1. **CAS linearizability**: N writers from one base, exactly one wins; repeated 1,000 times, only in the overnight run.
 2. **Atomicity**: break the connection at every step boundary of `commit`; pointer, journal, outbox and idempotency never disagree.
@@ -288,7 +288,8 @@ Three worktree sessions, each owning one module:
 - Artifact approval in the curated repository (PLT-6).
 - RAC/Exadata, real IdPs, real object stores, DBA review of the self-check thresholds.
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
-- A scheduled overnight job in work CI running `./mvnw install -Pnightly`: only the CAS test, at 1,000 rounds, on the four supported backends (YugabyteDB, measured below, was dropped on 2026-11-11 [D7]). On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
+- The build at work [P1]: point `settings.gradle.kts` (both `mavenCentral()` lines) at the internal Maven-format repository; every library and plugin resolves from that one repository. The Gradle distribution is the one download that does not: `gradle/wrapper/gradle-wrapper.properties` fetches `gradle-9.9.1-bin.zip` from `services.gradle.org` and checks it against `distributionSha256Sum`, so work needs that zip from an internal location (change `distributionUrl`, keep the checksum). JDK 25 must be installed: Gradle finds it and never downloads one.
+- A scheduled overnight job in work CI running `./gradlew build -Pnightly`: only the CAS test, at 1,000 rounds, on the four supported backends (YugabyteDB, measured below, was dropped on 2026-11-11 [D7]). On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
 
 ### UI v1 — web console
 

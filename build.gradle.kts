@@ -1,4 +1,5 @@
 import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
+import java.nio.file.Files
 import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 // fidice catalog: Iceberg REST catalog server. Author: Paul Howard.
@@ -15,6 +16,29 @@ plugins {
 
 val heavy = providers.gradleProperty("heavy").isPresent
 val nightly = providers.gradleProperty("nightly").isPresent
+
+// OneDrive marks every new folder read-only within seconds, and Java cannot delete a read-only
+// folder. In a checkout under OneDrive, Gradle then fails as soon as a task replaces its own old
+// output ("Unable to delete directory"): a second test run, a result reused from the build cache,
+// clean. So before each task runs, the folders under its project's build directory are made
+// deletable again. OneDrive does not mark a folder twice.
+// Gradle has deprecated task execution listeners, and they do not work with the configuration
+// cache (off here); nothing else runs before a task's old output is removed.
+if (System.getProperty("os.name").startsWith("Windows")) {
+    val buildDirectories = allprojects.associate { it.path to it.layout.buildDirectory.get().asFile }
+    @Suppress("DEPRECATION")
+    val makeDeletable = object : TaskExecutionListener {
+        override fun beforeExecute(task: Task) {
+            buildDirectories.getValue(task.path.substringBeforeLast(':').ifEmpty { ":" }).walkTopDown()
+                .filter { it.isDirectory && Files.getAttribute(it.toPath(), "dos:readonly") == true }
+                .forEach { Files.setAttribute(it.toPath(), "dos:readonly", false) }
+        }
+
+        override fun afterExecute(task: Task, state: TaskState) {
+        }
+    }
+    gradle.addListener(makeDeletable)
+}
 
 subprojects {
     apply(plugin = "java-library")

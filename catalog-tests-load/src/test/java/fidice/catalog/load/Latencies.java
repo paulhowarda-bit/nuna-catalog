@@ -40,7 +40,7 @@ final class Latencies {
                 percentile(99), percentile(100));
     }
 
-    /** Appends a line to {@code target/m8/results/<file>} and prints it. */
+    /** Appends a line to {@code build/m8/results/<file>} and prints it. */
     static void report(String file, String line) {
         System.out.println("[m8] " + line);
         Path results = Path.of(System.getProperty("m8.work"), "results");

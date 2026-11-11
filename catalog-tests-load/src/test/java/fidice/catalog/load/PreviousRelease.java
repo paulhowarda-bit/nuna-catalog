@@ -12,7 +12,8 @@ import java.util.zip.ZipInputStream;
 
 /**
  * The runnable jar of the previous release ({@code m8.previous-release}, a commit of this repository), built
- * once from a {@code git archive} of that commit into {@code target/m8/previous}, without installing anything.
+ * once from a {@code git archive} of that commit into {@code build/m8/previous}, without installing anything.
+ * That release still built with Maven, so it is built with the Maven wrapper in its own tree.
  */
 final class PreviousRelease {
 

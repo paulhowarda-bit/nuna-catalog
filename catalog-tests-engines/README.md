@@ -8,13 +8,13 @@ tables in a three-level namespace `m8.deep.<engine>`, then reads three tables Sp
 ## Running it
 
 ```
-./mvnw verify -pl catalog-tests-engines -am -Pheavy -Dtest='EngineMatrixTest*' -Dsurefire.failIfNoSpecifiedTests=false
+./gradlew :catalog-tests-engines:test -Pheavy --tests EngineMatrixTest
 ```
 
 The test is tagged `heavy`, so the fast build compiles it and starts nothing. It needs Docker, the internet
 the first time (images, Maven Central jars and PyPI packages are baked into three local images), and the
-`singlestoredb-dev` container already running. `-Dengines.keep-stack=true` leaves the stack up afterwards;
-`target/engines-run/` then holds the token, `compose.log` (every command and its output) and `results.txt`.
+`singlestoredb-dev` container already running. `-Pengines.keep-stack=true` leaves the stack up afterwards;
+`build/engines-run/` then holds the token, `compose.log` (every command and its output) and `results.txt`.
 
 ## How it works
 

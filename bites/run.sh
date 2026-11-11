@@ -6,22 +6,23 @@
 #   bites/run.sh bites/M4/some-check.patch one bite
 #
 # A bite is a patch made with `git diff` that breaks one check. Its first lines, before
-# "diff --git", name the Maven module and the surefire -Dtest selector expected to fail:
+# "diff --git", name the module and the test expected to fail, as Class, Class#method or
+# Class#method+method (a nested class is Outer$Inner):
 #
 #   Module: catalog-store-sql
 #   Test: PostgresStoreSuiteTest#staleVersionAtTheSameLocationConflicts
 #
-# Runs with -Pheavy, so tests tagged heavy can be selected. Needs JAVA_HOME. Maven logs go to
-# target/bites/. Exits 0 only if every bite bites and the tree is restored. Run it in a worktree.
+# Runs the module's test task with -Pheavy, so tests tagged heavy can be selected. Gradle logs go
+# to build/bites/. Exits 0 only if every bite bites and the tree is restored. Run it in a worktree.
 #
-# Runs to verify, not test: catalog-tests-load copies the server's exec jar, and below package the
-# reactor has none, so the copy silently takes ~/.m2's jar, built without the patch.
+# Gradle builds what the module's tests use from the patched tree, and only that: a bite against
+# catalog-tests-load runs the server jar built with the patch in it.
 
 main() {
     set -u
     root=$(cd "$(dirname "$0")/.." && pwd)
     cd "$root" || exit 2
-    logs="$root/target/bites"
+    logs="$root/build/bites"
     mkdir -p "$logs"
 
     patches=()
@@ -52,9 +53,11 @@ main() {
         else
             git apply "$patch"
             current="$patch"
-            "$root/mvnw" -B -Pheavy -pl "$module" -am verify -Dtest="$selector" \
-                -Dsurefire.failIfNoSpecifiedTests=false >"$logs/$id.log" 2>&1
-            verdict=$(judge "$logs/$id.log")
+            results="$root/$module/build/test-results/test"
+            rm -rf "$results"
+            tests_of "$selector"
+            "$root/gradlew" --console=plain -Pheavy ":$module:test" "${tests[@]}" >"$logs/$id.log" 2>&1
+            verdict=$(judge "$logs/$id.log" "$results")
             revert_current
         fi
         if [ "$(tree_hash)" = "$before" ]; then
@@ -71,13 +74,28 @@ main() {
 
     printf '%-40s %-60s %-28s %s\n' "bite" "test" "verdict" "tree"
     printf '%s' "$table"
-    echo "${#patches[@]} bites, $failures not biting or not restored; logs in target/bites/"
+    echo "${#patches[@]} bites, $failures not biting or not restored; logs in build/bites/"
     [ "$failures" -eq 0 ]
 }
 
 # The value of a "Name: value" line before the first "diff --git".
 header() {
     sed -n "/^diff --git/q; s/^$2: *//p" "$1" | head -n 1 | tr -d '\r'
+}
+
+# Sets tests to Gradle's --tests arguments for a selector: Class, Class#method or Class#m1+m2.
+tests_of() {
+    local class=${1%%#*} method
+    tests=()
+    if [ "$class" = "$1" ]; then
+        tests=(--tests "$class")
+        return
+    fi
+    local methods
+    IFS=+ read -ra methods <<<"${1#*#}"
+    for method in "${methods[@]}"; do
+        tests+=(--tests "$class.$method")
+    done
 }
 
 # One hash over the content of every tracked file.
@@ -92,19 +110,19 @@ revert_current() {
     fi
 }
 
-# BITES when the selected tests ran and one failed; NO BITE when they ran and passed.
+# BITES when the selected tests ran and one failed; NO BITE when they ran and passed. The counts
+# come from the test task's result files ($2), which Gradle also restores for a reused result.
 judge() {
-    if grep -q "COMPILATION ERROR" "$1"; then
+    if grep -q "Compilation failed" "$1"; then
         echo "SETUP: does not compile"
         return
     fi
-    if ! grep -q "BUILD SUCCESS\|BUILD FAILURE" "$1"; then
-        echo "SETUP: no Maven verdict"
+    if ! grep -q "^BUILD SUCCESSFUL\|^BUILD FAILED" "$1"; then
+        echo "SETUP: no Gradle verdict"
         return
     fi
-    # Module summaries ("Tests run: 3, Failures: 1, Errors: 0, Skipped: 0" with no "in <class>").
-    totals=$(grep -E "Tests run: [0-9]+, Failures: [0-9]+, Errors: [0-9]+, Skipped: [0-9]+$" "$1" |
-        sed -E 's/.*Tests run: ([0-9]+), Failures: ([0-9]+), Errors: ([0-9]+).*/\1 \2 \3/' |
+    totals=$(cat "$2"/TEST-*.xml 2>/dev/null | grep "<testsuite " |
+        sed -E 's/.* tests="([0-9]+)" skipped="[0-9]+" failures="([0-9]+)" errors="([0-9]+)".*/\1 \2 \3/' |
         awk '{ run += $1; bad += $2 + $3 } END { print run + 0, bad + 0 }')
     run=${totals% *}
     bad=${totals#* }
