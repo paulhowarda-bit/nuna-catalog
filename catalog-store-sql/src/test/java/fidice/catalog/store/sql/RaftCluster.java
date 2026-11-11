@@ -110,6 +110,17 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
                 return false;
             }
         }, "the cluster to create the catalog's database");
+        // A first connection to the new database through the link has taken over the stores' 15 s
+        // socket timeout while other modules load this Docker host (-T 2), so the cluster counts as
+        // started once that connection is answered.
+        await(SETTLE, () -> {
+            try {
+                value(throughLink(DATABASE), "SELECT 1");
+                return true;
+            } catch (IllegalStateException e) {
+                return false;
+            }
+        }, "the catalog's database to answer through the link");
         linkDataSource = new LinkDataSource(throughLink(DATABASE));
     }
 
