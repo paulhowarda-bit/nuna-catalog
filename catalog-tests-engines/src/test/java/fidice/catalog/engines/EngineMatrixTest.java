@@ -40,7 +40,7 @@ import org.junit.jupiter.api.TestMethodOrder;
  * <p>{@code -Pengines.keep-stack=true} leaves the stack up afterwards, with the token in
  * {@code build/engines-run/token}, to rerun one engine by hand.
  */
-@Tag("heavy")
+@Tag("overnight")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class EngineMatrixTest {
 

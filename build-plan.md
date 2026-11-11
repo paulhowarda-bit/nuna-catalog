@@ -118,8 +118,8 @@ YugabyteDB had a row here until support for it was dropped on 2026-11-11 [D7]. T
 Lives in `catalog-store-api` as a test jar. Every backend runs all of it; passing it is what "supported" means [D8.9]. Faults are injected with container stop/pause and a TCP proxy between server and database.
 
 1. **CAS linearizability**: N writers from one base, exactly one wins; repeated 1,000 times, only in the overnight run.
-2. **Atomicity**: break the connection at every step boundary of `commit`; pointer, journal, outbox and idempotency never disagree.
-3. **Ambiguity**: drop the link after COMMIT is sent; the outcome resolves correctly, is never reported as 409, and no acknowledged commit is lost.
+2. **Atomicity**: break the connection at every step boundary of `commit`; pointer, journal, outbox and idempotency never disagree. Repeated for every mutation type only in the overnight run.
+3. **Ambiguity**: drop the link after COMMIT is sent; the outcome resolves correctly, is never reported as 409, and no acknowledged commit is lost. Repeated for every mutation type only in the overnight run.
 4. **Failover**: stop the primary mid-load; every acknowledged commit is present afterwards.
 5. **Self-check**: boot against each unsafe setting in 2.5; startup fails with a clear message.
 6. **Read-after-commit**: inject replica lag; a load after an acknowledged commit always sees it.
@@ -232,6 +232,8 @@ Three worktree sessions, each owning one module:
 - **Gate:** all of the above green on the personal machine.
 - **Work hardware:** absolute SLOs, three-site quorum latency, async DR region.
 
+Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overnight job (M9), not in the heavy build.
+
 **Status (2026-11-09): gate met on the personal machine, PostgreSQL only.** Every M8 suite is tagged `heavy`, so `./mvnw verify` stays the everyday fast build. Each suite was run on its own with `-Pheavy -Dtest=…`; the whole `-Pheavy` pass and `bites/run.sh` wait for the after-M9 pass. Bites are recorded in `bites/M8/` (12 patches), not run.
 
 - **What M8 changed in the server.**
@@ -289,7 +291,7 @@ Three worktree sessions, each owning one module:
 - RAC/Exadata, real IdPs, real object stores, DBA review of the self-check thresholds.
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
 - The build at work [P1]: point `settings.gradle.kts` (both `mavenCentral()` lines) at the internal Maven-format repository; every library and plugin resolves from that one repository. The Gradle distribution is the one download that does not: `gradle/wrapper/gradle-wrapper.properties` fetches `gradle-9.9.1-bin.zip` from `services.gradle.org` and checks it against `distributionSha256Sum`, so work needs that zip from an internal location (change `distributionUrl`, keep the checksum). JDK 25 must be installed: Gradle finds it and never downloads one.
-- A scheduled overnight job in work CI running `./gradlew build -Pnightly`: only the CAS test, at 1,000 rounds, on the four supported backends (YugabyteDB, measured below, was dropped on 2026-11-11 [D7]). On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
+- A scheduled overnight job in work CI running `./gradlew build -Pnightly`: the tests tagged `overnight` and the CAS test, nothing else. The `overnight` tests (Paul, 2026-11-11, to shorten the heavy build) are every M8 suite (`catalog-tests-load`: concurrent writers, rolling upgrade, SLO runs, ten thousand snapshots, kill the primary, DR drill), the engine matrix, and the two fault sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type, on the four backends. The CAS test runs at 1,000 rounds on the four supported backends (YugabyteDB, measured below, was dropped on 2026-11-11 [D7]). On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
 
 ### UI v1 — web console
 

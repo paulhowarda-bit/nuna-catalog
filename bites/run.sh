@@ -12,8 +12,9 @@
 #   Module: catalog-store-sql
 #   Test: PostgresStoreSuiteTest#staleVersionAtTheSameLocationConflicts
 #
-# Runs the module's test task with -Pheavy, so tests tagged heavy can be selected. Gradle logs go
-# to build/bites/. Exits 0 only if every bite bites and the tree is restored. Run it in a worktree.
+# Runs the module's test task with -Pbites, so any test but CAS can be selected, heavy and overnight
+# ones included. Gradle logs go to build/bites/. Exits 0 only if every bite bites and the tree is
+# restored. Run it in a worktree.
 #
 # Gradle builds what the module's tests use from the patched tree, and only that: a bite against
 # catalog-tests-load runs the server jar built with the patch in it.
@@ -54,7 +55,7 @@ main() {
             git apply "$patch"
             current="$patch"
             tests_of "$selector"
-            "$root/gradlew" --console=plain -Pheavy ":$module:test" "${tests[@]}" >"$logs/$id.log" 2>&1
+            "$root/gradlew" --console=plain -Pbites ":$module:test" "${tests[@]}" >"$logs/$id.log" 2>&1
             verdict=$(judge "$logs/$id.log" "$module")
             revert_current
         fi

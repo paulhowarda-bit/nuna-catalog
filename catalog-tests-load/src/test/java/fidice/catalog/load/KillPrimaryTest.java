@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
  * is CommitStateUnknownException, for a commit whose COMMIT was sent and whose outcome the store could not
  * then tell.
  */
-@Tag("heavy")
+@Tag("overnight")
 class KillPrimaryTest {
 
     private static final int WRITERS = 8;
