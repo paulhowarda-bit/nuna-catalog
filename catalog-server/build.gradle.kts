@@ -41,7 +41,7 @@ tasks.test {
     listOf("postgres.image", "silo.image", "keycloak.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
     // IcebergImportBoundaryTest and NoKmsBoundaryTest read every module's main sources.
     inputs.files(rootProject.fileTree(rootDir) { include("*/src/main/java/**/*.java") })
-        .withPropertyName("mainSources").withPathSensitivity(PathSensitivity.RELATIVE)
+        .withPropertyName("mainSources").withPathSensitivity(PathSensitivity.RELATIVE).ignoreEmptyDirectories()
     val root = rootDir
     doFirst {
         // A path of this checkout, set as the task starts so it stays out of the build cache key.
