@@ -289,6 +289,65 @@ Three worktree sessions, each owning one module:
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
 - A scheduled overnight job in work CI running `./mvnw install -Pnightly`: only the CAS test, at 1,000 rounds. On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
 
+### UI v1 — web console
+
+A browser console for people: browse catalogs, read governance, manage grants, and read an object's recent audit records. The server stays the only place permissions are decided; the console shows every refusal as the server answered it.
+
+**Decisions**
+
+- **Hosting.** `catalog-server` serves the console from `classpath:/fidice/ui/` under `/ui/`. There is no separate module or build step: plain HTML, CSS and ES modules, no npm and no third-party code.
+- **Public files, private data.** Only the console's flat files (`/ui/`, `/ui/<name>.(html|js|css|json|svg)`) skip authentication. Every API call they make carries a bearer token and goes through the same filter, guards and audit as an engine's.
+- **Headers.** Every `/ui` response carries a strict Content-Security-Policy: `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'` plus the IdP's origin when OIDC is set; `base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. It also carries nosniff, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and COOP. The scripts build the page with text nodes only; no catalog data reaches `innerHTML`.
+- **Sign-in.**
+  - Production uses the OIDC authorization code flow with PKCE (S256) against `fidice.ui.oidc.{issuer,client-id,scopes,redirect-uri}`. The settings are published, with nothing secret, at the unauthenticated `/ui/config.json`.
+  - The access token lives in `sessionStorage` only, never `localStorage` or a cookie, and a 401 signs the console out.
+  - Token paste is a development aid, `fidice.ui.dev-token-login=true`, off by default.
+  - The console reads the token's claims for display only.
+- **Browsing uses the Iceberg REST API**, with no second read path. Tables load with `snapshots=all`.
+  - Exception: one small route, `GET /management/v1/catalogs`, lists the declared catalog names to any signed-in caller, unfiltered. These are the warehouse names every engine is configured with, and `/v1/config` already tells any signed-in caller whether a name exists.
+- **Vended credentials reach the browser.** D21 vends to every caller who loads a table; only a trusted engine may decline with `X-Iceberg-Access-Delegation: none`, and a bite guards that rule. The console asks for `none`, then drops `storage-credentials` and `config` from each load before keeping it, and never shows or stores them. Whether non-engine callers may decline is open (below).
+- **Audit trail read.**
+  - Route: `GET .../audit?limit=` on a catalog, namespace, table or view (default 50, at most 200). It needs `manage-grants` on the object or above. The trail shows who used the object and who was refused, which is the evidence an access review needs (D19), and separation of duties keeps grant admins away from the data itself (D18). A refusal is audited as a `Denial`, and each read as a new event, `AuditRead` (`fidice.catalog.audit-read`, v1: target, number returned, actor).
+  - Source: the audit topic itself. Records are keyed by subject, so the route works out the subject's partition with Kafka's default partitioner, reads that partition backwards from its end, at most 20,000 offsets in chunks of 2,000, and keeps the subject's records. The answer is sorted by record time, newest first: the outbox relay publishes changes after the synchronous records made meanwhile, so topic order is not time order.
+  - Limits: the answer reports the window it scanned and whether it reached the partition's start. Older records, and any search across objects or people, are the SIEM's job (D23), later joined by the v1.x queryable audit tables. There is no second store.
+- **Demo.** `demo/demo.sh up` starts compose project `fidice-demo`: PostgreSQL, Kafka, Silo, the catalog with the console on 8181, and Trino on 8183.
+  - It loads sample data: deep namespaces, v2 and v3 tables, evolved schemas, a second partition spec, a tag and a branch, a view with two versions, classifications, a regulated namespace, a legal hold and a DR freeze.
+  - It mints a local test key and 7-day tokens for five users in five groups; see `demo/README.md`.
+
+**In v1**
+
+- Catalog picker and a lazy namespace tree with tables and views, a filter box, and deep links (`#c=…&k=…&ns=…&n=…&tab=…`).
+- Tables: overview (format version, location, metadata location, UUID, properties), current schema and every earlier one (field ids, types, required or optional, nested types, defaults, fields added since the previous schema), every partition spec and sort order, snapshots newest first with the current one marked and refs beside them, and the metadata log.
+- Views: versions newest first with their SQL per dialect, and the schema.
+- Governance: DR freeze, hold status, holds, attributes with the level each comes from, and effective values.
+- Grants: by object and by group; grant and revoke. Errors, including separation-of-duties refusals, are shown verbatim.
+- Audit: an object's recent records, each with its raw JSON.
+- Light and dark themes, following the system with a manual override.
+
+**Out of v1**
+
+- Writing governance (tags, holds, freeze) from the console: it reads them only. The management API already does all three.
+- Table maintenance, schema changes, drops and any data preview.
+- Engine registry and storage profiles.
+
+**Tests and bites**
+
+- `ConsoleTest`, `ConsoleConfiguredTest` and `AuditReadRouteTest` cover the fast-build guards:
+  - `/ui` files are served without a token, under the CSP;
+  - only console files skip authentication;
+  - `config.json` holds no secret, and dev mode is off by default;
+  - the files hold no inline code and never write markup;
+  - the audit route needs `manage-grants`, a refusal is a `Denial`, each read is an `AuditRead`, and the answer is limited and newest first.
+- Five bites in `bites/UI/`, checked with `git apply --check`, not run.
+
+**Open**
+
+- **D21 for people:** should a non-engine caller (the console) be allowed to decline vending, or get no credentials at all? Today it is vended to and discards the credentials client-side. Paul's decision.
+- **OIDC against a real IdP:** the PKCE flow is not yet tested against Entra ID, Ping or Keycloak. The demo uses token paste. The IdP's token endpoint must allow CORS from the console's origin.
+- **Catalog names** are listed unfiltered to any signed-in caller (see above). Filter them if a deployment treats names as secret.
+- **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
+- **Browser end-to-end tests:** none yet. The screens were checked by hand against the demo (see Status).
+
 ### v1.x milestones
 
 - `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15].
@@ -464,6 +523,20 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Bites: all 85 in `bites/M2`–`bites/M8` bite, each in its named test. Four needed fixes: `bites/run.sh` now runs to `verify`, since below package the load tests copied the unpatched server jar from `~/.m2` (both M8 load bites then bit); `auth-filter-outage-escapes` was regenerated (it did not compile); `change-stream-unfiltered` now names `ChangeStreamTest#fansOut`; `grants-reach-across` needed a new test, `AuthorizerTest#aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain`, since the chain filter matters only in a batch check.
   - The CAS test (then 10,000 rounds; 1,000 since 2026-11-11) left the pass for M9's overnight CI job (see M9).
   - Finding: on YugabyteDB, writers queued on one pointer row are released about 200 ms apart (PostgreSQL: under 2 ms), so 8 contending writers take 2.3 s a round. Not the store's backoff (no backoff sleeps) and not fsync (the winning COMMIT takes 10 ms); lowering `wait_queue_poll_interval_ms` and `wait_for_relock_unblocked_txn_keys_ms` to 10 ms cut it only to 2.1 s. Cause open.
+- **UI v1 done 2026-11-10, on PostgreSQL** (section 3, UI v1). The console is served at `/ui/` by `catalog-server` (`fidice.catalog.server.ui`, files in `src/main/resources/fidice/ui`), with one new read route, `GET .../audit`, and one new audit event, `AuditRead`.
+  - Tests: `ConsoleTest` 6, `ConsoleConfiguredTest` 2 and `AuditReadRouteTest` 6 pass; `EventCodecTest` covers `AuditRead`.
+  - Checked by hand against the demo (`demo/demo.sh up`), signed in as `ana` and `gary`, light and dark:
+    - the deep tree;
+    - the v2 and v3 table tabs: three schemas with added fields marked, two partition specs and the sort order, seven snapshots with the current one, a tag and a branch, the metadata log;
+    - the view's two versions with their SQL;
+    - governance: a hold, the DR freeze, an inherited owner;
+    - the D27 refusal of `accounts`;
+    - grant and revoke, grants by group;
+    - a separation-of-duties refusal shown verbatim;
+    - `ana`'s 403s on grants and audit, and `gary`'s 403 on loading data;
+    - the audit trail with reads, denials, a credential issue and commits.
+  - Bites: 5 recorded in `bites/UI/`, not run.
+  - Not verified: OIDC sign-in against a real IdP, the other four backends, and the heavy profile.
 - **Heavy build speed-up landed 2026-11-11, not proven green.** Changes, each measured:
   - The CAS test runs in no build, fast or heavy: only `-Pnightly`, on its own, at 1,000 rounds (Paul, 2026-11-10 and 2026-11-11). In the heavy pass it cost 81 s on CockroachDB and 11 min on YugabyteDB at 200 rounds.
   - Raft harness: the connection a lost-answer, lost-COMMIT or stall fault struck waits 5 s, not 15. CockroachDB suite 745.7 s → 561.9 s (CAS dropped included); its 21 lost-answer cases 15.3 s → 5.4 s each.

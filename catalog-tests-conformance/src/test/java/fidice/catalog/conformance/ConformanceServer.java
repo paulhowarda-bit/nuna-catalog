@@ -80,7 +80,6 @@ final class ConformanceServer {
         }
         ConfigurableApplicationContext server = new SpringApplicationBuilder(CatalogServer.class)
                 .properties(
-                        "server.port=0",
                         "spring.datasource.url=" + postgres.getJdbcUrl(),
                         "spring.datasource.username=" + postgres.getUsername(),
                         "spring.datasource.password=" + postgres.getPassword(),
@@ -103,7 +102,9 @@ final class ConformanceServer {
                         "fidice.security.issuers[0].groups-claim=groups",
                         "fidice.security.issuers[0].client-id-claim=azp",
                         "fidice.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers())
-                .run();
+                // A free port, as an argument: builder properties are only defaults, and application.yaml's 8181
+                // would win over them, clashing with any catalog already running here (the demo).
+                .run("--server.port=0");
         JdbcTemplate jdbc = server.getBean(JdbcTemplate.class);
         UUID catalog = jdbc.queryForObject("SELECT id FROM catalog WHERE name_norm = ?", UUID.class, WAREHOUSE);
         for (String privilege : List.of("create", "modify")) {
