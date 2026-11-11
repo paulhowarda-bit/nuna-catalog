@@ -167,12 +167,20 @@ public final class SqlCatalogStore implements CatalogStore {
                     .configuration(Map.of("flyway.postgresql.transactional.lock",
                             String.valueOf(backend.transactionalSchemaSteps)))
                     .dataSource(maintenanceDataSource).locations(backend.migrations)
-                    .executeInTransaction(backend.transactionalSchemaSteps).load().migrate();
+                    .executeInTransaction(backend.transactionalSchemaSteps)
+                    .lockRetryCount(MIGRATION_LOCK_RETRIES).load().migrate();
         } catch (FlywayException e) {
             throw new StoreException("schema migration failed", e);
         }
         extendJournal(Instant.now().atOffset(ZoneOffset.UTC).plusMonths(JOURNAL_HORIZON_MONTHS).toInstant());
     }
+
+    /**
+     * How many times, a second apart, a node retries Flyway's migration lock while another node
+     * migrates: 5 minutes. Flyway's default, 50, failed a second node's start while the first ran
+     * V3 on a loaded YugabyteDB cluster.
+     */
+    static final int MIGRATION_LOCK_RETRIES = 300;
 
     /** How far ahead the journal's monthly partitions reach; a maintenance job keeps it so. */
     public static final int JOURNAL_HORIZON_MONTHS = 12;

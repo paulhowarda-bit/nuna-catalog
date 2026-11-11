@@ -1,0 +1,17 @@
+Breaks: a node starting while another migrates does not wait for the migration lock.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Upgrade#migrateWhileThePreviousReleaseServes
+
+diff --git a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
+index e888cf2..34ab2ab 100644
+--- a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
++++ b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
+@@ -180,7 +180,7 @@ public final class SqlCatalogStore implements CatalogStore {
+      * migrates: 5 minutes. Flyway's default, 50, failed a second node's start while the first ran
+      * V3 on a loaded YugabyteDB cluster.
+      */
+-    static final int MIGRATION_LOCK_RETRIES = 300;
++    static final int MIGRATION_LOCK_RETRIES = 0;
+ 
+     /** How far ahead the journal's monthly partitions reach; a maintenance job keeps it so. */
+     public static final int JOURNAL_HORIZON_MONTHS = 12;
