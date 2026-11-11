@@ -113,7 +113,8 @@ subprojects {
         }
         // In the fast build every test of some modules is tagged out.
         failOnNoDiscoveredTests = false
-        // The JVM's own default on this project's 16 GB machines; Gradle's is 512 MB.
+        // What the test JVMs had under Maven on this 16 GB machine (the JVM's default, a quarter
+        // of memory); Gradle's default is 512 MB.
         maxHeapSize = "4g"
     }
 }

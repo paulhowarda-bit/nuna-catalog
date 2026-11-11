@@ -53,11 +53,9 @@ main() {
         else
             git apply "$patch"
             current="$patch"
-            results="$root/$module/build/test-results/test"
-            rm -rf "$results"
             tests_of "$selector"
             "$root/gradlew" --console=plain -Pheavy ":$module:test" "${tests[@]}" >"$logs/$id.log" 2>&1
-            verdict=$(judge "$logs/$id.log" "$results")
+            verdict=$(judge "$logs/$id.log" "$module")
             revert_current
         fi
         if [ "$(tree_hash)" = "$before" ]; then
@@ -111,7 +109,8 @@ revert_current() {
 }
 
 # BITES when the selected tests ran and one failed; NO BITE when they ran and passed. The counts
-# come from the test task's result files ($2), which Gradle also restores for a reused result.
+# come from the result files of module $2's test task, which Gradle replaces whenever the task
+# runs or its result is reused; they are read only if this build reached the task.
 judge() {
     if grep -q "Compilation failed" "$1"; then
         echo "SETUP: does not compile"
@@ -121,7 +120,11 @@ judge() {
         echo "SETUP: no Gradle verdict"
         return
     fi
-    totals=$(cat "$2"/TEST-*.xml 2>/dev/null | grep "<testsuite " |
+    if ! grep -q "^> Task :$2:test\( \|$\)" "$1"; then
+        echo "SETUP: the test task did not run"
+        return
+    fi
+    totals=$(cat "$root/$2"/build/test-results/test/TEST-*.xml 2>/dev/null | grep "<testsuite " |
         sed -E 's/.* tests="([0-9]+)" skipped="[0-9]+" failures="([0-9]+)" errors="([0-9]+)".*/\1 \2 \3/' |
         awk '{ run += $1; bad += $2 + $3 } END { print run + 0, bad + 0 }')
     run=${totals% *}
