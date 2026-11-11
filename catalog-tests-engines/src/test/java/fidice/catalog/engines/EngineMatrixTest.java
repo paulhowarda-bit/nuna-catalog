@@ -35,10 +35,10 @@ import org.junit.jupiter.api.TestMethodOrder;
  *
  * <p>Spark runs first and leaves three tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
  * rows, one with the added column set), and v3 with a deletion vector. Every later engine reads all three,
- * SingleStore through its Iceberg pipelines. Results and timings go to {@code target/engines-run/}.
+ * SingleStore through its Iceberg pipelines. Results and timings go to {@code build/engines-run/}.
  *
- * <p>{@code -Dengines.keep-stack=true} leaves the stack up afterwards, with the token in
- * {@code target/engines-run/token}, to rerun one engine by hand.
+ * <p>{@code -Pengines.keep-stack=true} leaves the stack up afterwards, with the token in
+ * {@code build/engines-run/token}, to rerun one engine by hand.
  */
 @Tag("heavy")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -67,7 +67,7 @@ class EngineMatrixTest {
                 .claim("azp", "engine-matrix")
                 .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plusSeconds(6 * 3600)))
                 .build());
-        // Kept for rerunning one engine by hand against a stack left up with -Dengines.keep-stack=true.
+        // Kept for rerunning one engine by hand against a stack left up with -Pengines.keep-stack=true.
         Files.writeString(runDir.resolve("token"), token);
         Files.deleteIfExists(runDir.resolve("results.txt"));
         Path log = runDir.resolve("compose.log");

@@ -11,8 +11,8 @@ demo/demo.sh up
 ```
 
 - Needs bash (Git Bash on Windows), Docker with compose, `curl`, and JDK 25 (`JAVA_HOME`, or `java` on the
-  path). The first run builds the server jar (`./mvnw package -pl catalog-server -am`, tests skipped); set
-  `FIDICE_DEMO_BUILD=1` to rebuild it.
+  path). Every `up` builds the server jar from this checkout (`./gradlew :catalog-server:bootJar`, no tests
+  run), so the stack never runs a jar older than the code; when nothing changed, Gradle does nothing.
 - The stack is compose project `fidice-demo`, run from a copy in `~/.fidice-demo` (`FIDICE_DEMO_HOME`), so it
   keeps running if this checkout changes. The engine matrix's project `fidice-engines` is separate.
 - Host ports: **8181** (catalog and console) and **8183** (Trino). Nothing else is published.

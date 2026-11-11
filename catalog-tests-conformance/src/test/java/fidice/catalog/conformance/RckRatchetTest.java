@@ -13,9 +13,9 @@ import org.junit.platform.launcher.core.LauncherFactory;
 
 /**
  * Runs the Iceberg REST Compatibility Kit against our server (D31). Every test's outcome goes to
- * target/rck-results.txt. The build fails if a test recorded as PASS in rck-baseline.txt no longer
+ * build/rck-results.txt. The build fails if a test recorded as PASS in rck-baseline.txt no longer
  * passes, or if a test that does not pass has no stated reason in rck-reasons.txt (or one that
- * passes still has one). Re-record the baseline deliberately with {@code -Drck.record=true}.
+ * passes still has one). Re-record the baseline deliberately with {@code -Prck.record=true}.
  */
 class RckRatchetTest {
 
@@ -59,12 +59,12 @@ class RckRatchetTest {
         List<String> gained = Ratchet.newPasses(baseline, current);
         if (!gained.isEmpty()) {
             System.out.println(gained.size() + " tests now pass that rck-baseline.txt does not record;"
-                    + " re-record with -Drck.record=true");
+                    + " re-record with -Prck.record=true");
         }
 
         assertThat(current).as("RCK tests discovered").isNotEmpty();
         // Without a baseline the ratchet would guard nothing, so its absence fails the build.
-        assertThat(baselineFile).as("rck-baseline.txt (record it with -Drck.record=true)").exists();
+        assertThat(baselineFile).as("rck-baseline.txt (record it with -Prck.record=true)").exists();
         assertThat(Ratchet.regressions(baseline, current))
                 .as("tests that pass in rck-baseline.txt and no longer pass")
                 .isEmpty();

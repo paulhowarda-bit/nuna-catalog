@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The local demo of fidice-catalog and its web console. See demo/README.md.
 #
-#   demo/demo.sh up      build the server jar if needed, start the stack, load sample data once, print tokens
+#   demo/demo.sh up      build the server jar, start the stack, load sample data once, print tokens
 #   demo/demo.sh token   print the console URL and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh trino   open a Trino prompt on the catalog (catalog "fid")
 #   demo/demo.sh status  show the containers
@@ -49,15 +49,12 @@ trino_sql() {
   MSYS_NO_PATHCONV=1 docker exec "$PROJECT-trino-1" trino --catalog fid --output-format TSV --execute "$1"
 }
 
+# Built from this checkout on every up, so the stack never runs a jar older than the code; Gradle
+# does nothing when the jar is already current.
 build_jar() {
-  local jar
-  jar=$(ls "$REPO"/catalog-server/target/catalog-server-*-exec.jar 2>/dev/null | head -1 || true)
-  if [[ -z "$jar" || "${FIDICE_DEMO_BUILD:-}" == 1 ]]; then
-    say "building the catalog server jar (tests skipped)"
-    (cd "$REPO" && ./mvnw -q -DskipTests package -pl catalog-server -am)
-    jar=$(ls "$REPO"/catalog-server/target/catalog-server-*-exec.jar | head -1)
-  fi
-  cp "$jar" "$RUN/catalog.jar"
+  say "building the catalog server jar (no tests run)"
+  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar)
+  cp "$(ls -t "$REPO"/catalog-server/build/libs/catalog-server-*-exec.jar | head -1)" "$RUN/catalog.jar"
 }
 
 prepare() {
