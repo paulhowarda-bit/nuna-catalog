@@ -54,7 +54,8 @@ public final class SampleEvents {
                 new HoldChange(HoldChange.Action.PLACED, UUID.fromString("d0000000-0000-0000-0000-000000000001"),
                         NAMESPACE, "matter 2026-114", ACTOR),
                 new Undrop(TABLE, ACTOR),
-                new Purge(TABLE, ACTOR));
+                new Purge(TABLE, ACTOR),
+                new AuditRead(TABLE, 50, ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

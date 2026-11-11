@@ -1,0 +1,16 @@
+Breaks: The console's Content-Security-Policy lets inline scripts run.
+Module: catalog-server
+Test: ConsoleTest#thePageAndEveryFileAreServedWithoutATokenUnderTheContentSecurityPolicy
+
+diff --git a/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java
+--- a/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java
+@@ -39,7 +39,7 @@
+ 
+     /** The console's Content-Security-Policy; {@code idpOrigin} is null when no IdP is configured. */
+     static String contentSecurityPolicy(String idpOrigin) {
+-        return "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
++        return "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data:; "
+                 + "connect-src 'self'" + (idpOrigin == null ? "" : " " + idpOrigin) + "; "
+                 + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+     }

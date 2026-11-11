@@ -6,7 +6,8 @@ package fidice.catalog.audit;
  */
 public sealed interface EventData
         permits Commit, GrantChange, Drop, BreakGlass, ObjectRead, Denial, AuthFailure, CredentialIssue,
-        NamespaceChange, Rename, EngineChange, StorageSetup, GovernanceChange, HoldChange, Undrop, Purge {
+        NamespaceChange, Rename, EngineChange, StorageSetup, GovernanceChange, HoldChange, Undrop, Purge,
+        AuditRead {
 
     EventType type();
 
