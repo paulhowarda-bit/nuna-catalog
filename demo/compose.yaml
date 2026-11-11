@@ -1,0 +1,124 @@
+# The local demo: PostgreSQL, Kafka, Silo, the catalog server with its web console on host port 8181, and
+# Trino on host port 8183. demo.sh copies this file, the catalog jar and the configuration into the run
+# directory and starts it from there, so the stack does not depend on the checkout it came from.
+#
+# Its own compose project, fidice-demo: the engine matrix tears down fidice-engines, never this one.
+# Only 8181 (catalog and console) and 8183 (Trino) are published on the host.
+
+name: fidice-demo
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: catalog
+      POSTGRES_USER: catalog
+      POSTGRES_PASSWORD: catalog
+    command: ["postgres", "-c", "shared_buffers=64MB", "-c", "max_connections=50"]
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "catalog", "-d", "catalog"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  kafka:
+    image: apache/kafka:4.2.2
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx256m
+    mem_limit: 640m
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 9092"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  silo:
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
+    environment:
+      MINIO_ROOT_USER: fidicedemo
+      MINIO_ROOT_PASSWORD: fidicedemo-secret-key
+    command: ["server", "/data"]
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 2s
+      timeout: 5s
+      retries: 60
+
+  # Creates the warehouse bucket and publishes the demo issuer's JWKS as a public-read object, so the
+  # catalog fetches its keys from inside the network.
+  seed:
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
+    depends_on:
+      silo:
+        condition: service_healthy
+    entrypoint: ["sh", "-ec"]
+    command:
+      - |
+        mc alias set s http://silo:9000 fidicedemo fidicedemo-secret-key >/dev/null
+        mc mb --ignore-existing s/warehouse s/idp
+        mc anonymous set download s/idp
+        mc cp /seed/keys.json s/idp/keys.json
+    volumes:
+      - ./idp:/seed:ro
+
+  catalog:
+    image: eclipse-temurin:25.0.5_8-jre-noble
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog
+      SPRING_DATASOURCE_USERNAME: catalog
+      SPRING_DATASOURCE_PASSWORD: catalog
+      JAVA_TOOL_OPTIONS: -Xms256m -Xmx512m
+    command: ["java", "-jar", "/app/catalog.jar", "--spring.config.additional-location=file:/app/demo.properties"]
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./catalog.jar:/app/catalog.jar:ro
+      - ./demo.properties:/app/demo.properties:ro
+    mem_limit: 900m
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8181"]
+      interval: 2s
+      timeout: 5s
+      retries: 120
+
+  trino:
+    image: trinodb/trino:484
+    depends_on:
+      catalog:
+        condition: service_healthy
+    environment:
+      FIDICE_TOKEN: ${FIDICE_TOKEN:?FIDICE_TOKEN}
+    ports:
+      - "8183:8080"
+    volumes:
+      - ./trino/catalog:/etc/trino/catalog:ro
+      - ./trino:/scripts:ro
+    # The image sizes the heap at 80% of the container's memory.
+    mem_limit: 1400m
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/lib/trino/bin/health-check"]
+      interval: 5s
+      timeout: 5s
+      start_period: 5m
+      retries: 3

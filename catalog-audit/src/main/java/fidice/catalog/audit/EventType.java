@@ -6,7 +6,7 @@ import java.net.URI;
  * The event types of D23, each with its current payload schema version. Changes (commits, grants,
  * drops, undrops, purges, namespace changes, renames, governance attributes, holds, break-glass,
  * storage setup) travel through the outbox; reads, denials,
- * authentication failures and credential issues are published synchronously.
+ * authentication failures, credential issues and audit reads are published synchronously.
  */
 public enum EventType {
     COMMIT("commit", 1, Commit.class),
@@ -24,7 +24,8 @@ public enum EventType {
     GOVERNANCE_CHANGE("governance", 1, GovernanceChange.class),
     HOLD_CHANGE("hold", 1, HoldChange.class),
     UNDROP("undrop", 1, Undrop.class),
-    PURGE("purge", 1, Purge.class);
+    PURGE("purge", 1, Purge.class),
+    AUDIT_READ("audit-read", 1, AuditRead.class);
 
     private final String typeName;
     private final URI dataSchema;
