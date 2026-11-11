@@ -9,7 +9,7 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>catalog-store-sql</artifactId>
-  <description>PostgreSQL, CockroachDB and YugabyteDB backend.</description>
+  <description>PostgreSQL and CockroachDB backend.</description>
   <dependencies>
     <dependency>
       <groupId>fidice</groupId>
@@ -76,7 +76,6 @@
             <postgres.image>${postgres.image}</postgres.image>
             <toxiproxy.image>${toxiproxy.image}</toxiproxy.image>
             <cockroachdb.image>${cockroachdb.image}</cockroachdb.image>
-            <yugabytedb.image>${yugabytedb.image}</yugabytedb.image>
           </systemPropertyVariables>
         </configuration>
       </plugin>

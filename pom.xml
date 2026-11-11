@@ -52,7 +52,6 @@
     <kafka.image>apache/kafka:4.2.2</kafka.image>
     <toxiproxy.image>ghcr.io/shopify/toxiproxy:2.12.0</toxiproxy.image>
     <cockroachdb.image>cockroachdb/cockroach:v25.4.20</cockroachdb.image>
-    <yugabytedb.image>yugabytedb/yugabyte:2025.2.8.1-b8</yugabytedb.image>
     <!-- Silo, the maintained MinIO fork: the S3 store server and conformance tests run against. -->
     <silo.image>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</silo.image>
     <!-- Two realms stand in for Entra ID and Ping (D17a). -->
@@ -192,7 +191,7 @@
         <fidice.excluded-groups>cas</fidice.excluded-groups>
       </properties>
     </profile>
-    <!-- The overnight run, never part of a build: only the CAS test, on all five backends, at
+    <!-- The overnight run, never part of a build: only the CAS test, on all four backends, at
          1,000 rounds (each store module's nightly profile sets the rounds). -->
     <profile>
       <id>nightly</id>

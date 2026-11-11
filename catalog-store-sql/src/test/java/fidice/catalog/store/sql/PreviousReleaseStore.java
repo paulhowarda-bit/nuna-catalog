@@ -36,9 +36,9 @@ import org.flywaydb.core.api.FlywayException;
  * The previous release's store, frozen for suite test 10: the M1 SqlCatalogStore as committed in
  * bdde131, unchanged except for this comment, its name, and its migrate(), which stops at the
  * previous release's schema version and takes its schema steps from where the backend keeps them
- * (M2a: CockroachDB has its own; M1 shipped for PostgreSQL only, so on CockroachDB and YugabyteDB
+ * (M2a: CockroachDB has its own; M1 shipped for PostgreSQL only, so on CockroachDB
  * this store stands for the M1 code over that backend's V2, takes a COMMIT warning as a failure
- * on PostgreSQL only, and retries 40001 and 40P01 before COMMIT on the other two, as the current
+ * on PostgreSQL only, and retries 40001 and 40P01 before COMMIT on CockroachDB, as the current
  * release does).
  */
 final class PreviousReleaseStore implements CommitStore {
@@ -87,10 +87,8 @@ final class PreviousReleaseStore implements CommitStore {
     }
 
     /**
-     * M2a: no release without retries runs on CockroachDB or YugabyteDB, so there the stand-in
-     * runs a write again after 40001 or 40P01 before COMMIT, as the current release does. A schema
-     * step that changes a table aborts the open writes to it (YugabyteDB: "schema version
-     * mismatch").
+     * M2a: no release without retries runs on CockroachDB, so there the stand-in runs a write
+     * again after 40001 or 40P01 before COMMIT, as the current release does.
      */
     @Override
     public CommitResult commit(CommitBatch batch) {

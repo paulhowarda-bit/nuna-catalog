@@ -37,7 +37,7 @@ import org.testcontainers.toxiproxy.ToxiproxyContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Three nodes of a Raft-replicated database (CockroachDB, YugabyteDB) with every table replicated
+ * Three nodes of a Raft-replicated database (CockroachDB) with every table replicated
  * three ways, and Toxiproxy in front: the link leads to one node, the gateway, and one proxy per
  * node is never faulted, for the harness's direct reads.
  *
@@ -300,7 +300,7 @@ abstract class RaftCluster implements CatalogStoreUnderTest, Faults {
         return true;
     }
 
-    /** The lookup aborts a stalled transaction its client abandoned (sections 5.4 and 5.5). */
+    /** The lookup aborts a stalled transaction its client abandoned (section 5.4). */
     @Override
     public boolean stalledCommitCanBeLost() {
         return true;

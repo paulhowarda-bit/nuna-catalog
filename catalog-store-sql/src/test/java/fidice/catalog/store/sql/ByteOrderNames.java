@@ -26,7 +26,7 @@ import java.util.UUID;
 
 /**
  * Names compare and sort as the bytes of their normalized form (docs/storage-design.md 9 (d)):
- * PostgreSQL and YugabyteDB by COLLATE "C", CockroachDB by its STRING comparison. A linguistic
+ * PostgreSQL by COLLATE "C", CockroachDB by its STRING comparison. A linguistic
  * collation would list "ab" before "a-z", since it passes over the hyphen, and "ä" between "a"
  * and "b", and an accent-blind one would take "a" and "ä" for one name. The shared suite's names
  * sort the same either way, so this checks names that do not.
