@@ -12,6 +12,7 @@
 - `./mvnw install -Pheavy` runs every test, all five databases included, except the CAS test.
 - The CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`, tagged `cas`) never runs in a build, fast or heavy, and never in a build-and-test cycle: it takes too long. Paul's rule, 2026-11-10. It runs only overnight, on its own: `./mvnw install -Pnightly` runs just that test on all five backends at 10,000 rounds. Don't run it unless Paul asks.
 - A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`.
+- `.mvn/maven.config` sets `-T 2`: two modules build at once. Not more: Docker has 8 GB, and a three-node cluster plus one other stack is what fits. The CockroachDB and YugabyteDB suites live in `catalog-store-sql-raft`, which nothing depends on, so they run beside the `core` → `server` → `load` chain instead of ahead of it.
 
 ## Landing
 

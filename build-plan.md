@@ -37,7 +37,8 @@ These were not asked during the grilling; they are routine calls made to unblock
 | `catalog-core` | Domain types (names, principals, privileges, pointers, commit records, errors), the commit loop, idempotency, rules layer, authorization decisions, retention/hold logic. No Spring. | `catalog-iceberg`, `catalog-store-api` |
 | `catalog-iceberg` | The only module that imports `org.apache.iceberg`. Parses requests, applies updates (TableMetadata.Builder, MetadataUpdate.applyTo), validates requirements (UpdateRequirement.validate), builds view metadata, serializes responses. Exposes our own interfaces. | pinned iceberg-core |
 | `catalog-store-api` | The narrow storage interface (2.3) and the shared invariant/fault-injection suite, published as a test-jar. | — |
-| `catalog-store-sql` | PostgreSQL, CockroachDB and YugabyteDB: one PG-wire implementation with dialect switches [D7]. | `catalog-store-api` |
+| `catalog-store-sql` | PostgreSQL, CockroachDB and YugabyteDB: one PG-wire implementation with dialect switches [D7]. Its tests cover PostgreSQL; the cluster harness is published as a test-jar. | `catalog-store-api` |
+| `catalog-store-sql-raft` | Tests only: the SQL store's CockroachDB and YugabyteDB suites. Nothing depends on it, so under `-T 2` the modules that need `catalog-store-sql` don't wait for these clusters. | `catalog-store-sql` |
 | `catalog-store-oracle` | Oracle including Exadata/RAC: UCP + FAN, Transaction Guard, service affinity [D7]. | `catalog-store-api` |
 | `catalog-store-mongo` | MongoDB: multi-document transactions, `w:majority`, primary reads [D7]. | `catalog-store-api` |
 | `catalog-objectstore` | Storage profiles; metadata.json write/read with SHA-256; credential vending through STS AssumeRole for S3, MinIO and Ceph; location guardrails [D21, D26, D36a]. | `catalog-core` |

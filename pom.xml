@@ -24,15 +24,17 @@
     <module>catalog-iceberg</module>
     <module>catalog-store-api</module>
     <module>catalog-store-sql</module>
+    <module>catalog-store-sql-raft</module>
     <module>catalog-store-oracle</module>
     <module>catalog-store-mongo</module>
     <module>catalog-objectstore</module>
     <module>catalog-security</module>
     <module>catalog-audit</module>
     <module>catalog-server</module>
+    <!-- load first: under -T 2 the longest module after the server starts as soon as the server is built. -->
+    <module>catalog-tests-load</module>
     <module>catalog-tests-conformance</module>
     <module>catalog-tests-engines</module>
-    <module>catalog-tests-load</module>
   </modules>
 
   <properties>
