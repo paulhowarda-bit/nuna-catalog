@@ -116,7 +116,7 @@ Detail and sources are in `research_notes/Catalog database evaluation/`. What ea
 
 Lives in `catalog-store-api` as a test-jar. Every backend runs all of it; passing it is what "supported" means [D8.9]. Faults are injected with container stop/pause and a TCP proxy between server and database.
 
-1. **CAS linearizability**: N writers from one base, exactly one wins; repeated 10,000 times.
+1. **CAS linearizability**: N writers from one base, exactly one wins; repeated 1,000 times, only in the overnight run.
 2. **Atomicity**: break the connection at every step boundary of `commit`; pointer, journal, outbox and idempotency never disagree.
 3. **Ambiguity**: drop the link after COMMIT is sent; the outcome resolves correctly, is never reported as 409, and no acknowledged commit is lost.
 4. **Failover**: stop the primary mid-load; every acknowledged commit is present afterwards.
@@ -287,7 +287,7 @@ Three worktree sessions, each owning one module:
 - Artifact approval in the curated repository (PLT-6).
 - RAC/Exadata, real IdPs, real object stores, DBA review of the self-check thresholds.
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
-- A scheduled overnight job in work CI running `./mvnw install -Pnightly`: only the CAS test, at 10,000 rounds. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
+- A scheduled overnight job in work CI running `./mvnw install -Pnightly`: only the CAS test, at 1,000 rounds. On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
 
 ### v1.x milestones
 
@@ -383,7 +383,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Oracle Free 23.26.3 with Transaction Guard: 26 tests, 3 skipped by capability (no Data Guard on Free); 23 of 24 bite runs bite, and the one that does not is explained.
   - MongoDB 8.0.34 three-member replica set: 27 tests, none skipped; 27 of 28 bite runs bite, and the one that does not is the expected evidence for the open-create gap.
   - Main finding: every backend can report a commit as visible before it is durable (PostgreSQL's in-flight create, Oracle's Transaction Guard, MongoDB's snapshot reads), so findCommit on all three answers COMMITTED only after a durability barrier. Deviations and the suite changes M2 starts with are in `docs/storage-design.md`.
-  - Not run: the nightly 10,000-round CAS profile.
+  - Not run: the nightly CAS profile (then 10,000 rounds).
 - **Landed 2026-11-07: M2 prep and the first parts of M3, M5, M6 and M7.** `mvnw install` passes on the merged tree: 729 tests, 3 skipped by capability.
   - M2 prep: the whole storage contract (nine group interfaces, `docs/storage-design.md` section 9) on PostgreSQL, 149 tests; 70 of 71 bite runs bite, and the one that does not showed a redundant barrier, now removed. Oracle (28 tests, 3 skipped) and MongoDB (27) still pass the commit suite.
   - M3 part: the Iceberg metadata adapter in `catalog-iceberg`, 160 tests including 80 golden cases. The commit loop, rules layer and idempotency are not built yet.
@@ -462,6 +462,17 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Bites: 14 new in `bites/M7/`, one per new guard; `purge-by-anyone` and `provenance-optional`, M5's `unclassified-open` and M6's `delete-for-everyone`, `cache-shared-across-callers` and `renewed-inside-margin` regenerated for the changed code; `bites/M4/near-expiry-304.patch` removed, since M6's `real-near-expiry-304` covers its rule on the rewritten code. Checked with `git apply --check`, not run.
 - **Heavy pass done 2026-11-10, after M8 and before M9.** `./mvnw install -Pheavy`: 1,742 tests on all five backends, 0 failures, 1 h 52 min (SQL stores 50 min, load 21, MongoDB 19). Skipped: Oracle 3 (no Data Guard on Free) and `AwsVendingTest` 11, run separately against the `fidice-sandbox` account: 11 of 11.
   - Bites: all 85 in `bites/M2`–`bites/M8` bite, each in its named test. Four needed fixes: `bites/run.sh` now runs to `verify`, since below package the load tests copied the unpatched server jar from `~/.m2` (both M8 load bites then bit); `auth-filter-outage-escapes` was regenerated (it did not compile); `change-stream-unfiltered` now names `ChangeStreamTest#fansOut`; `grants-reach-across` needed a new test, `AuthorizerTest#aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain`, since the chain filter matters only in a batch check.
-  - The 10,000-round CAS test left the pass for M9's nightly CI job (see M9).
+  - The CAS test (then 10,000 rounds; 1,000 since 2026-11-11) left the pass for M9's overnight CI job (see M9).
   - Finding: on YugabyteDB, writers queued on one pointer row are released about 200 ms apart (PostgreSQL: under 2 ms), so 8 contending writers take 2.3 s a round. Not the store's backoff (no backoff sleeps) and not fsync (the winning COMMIT takes 10 ms); lowering `wait_queue_poll_interval_ms` and `wait_for_relock_unblocked_txn_keys_ms` to 10 ms cut it only to 2.1 s. Cause open.
+- **Heavy build speed-up landed 2026-11-11, not proven green.** Changes, each measured:
+  - The CAS test runs in no build, fast or heavy: only `-Pnightly`, on its own, at 1,000 rounds (Paul, 2026-11-10 and 2026-11-11). In the heavy pass it cost 81 s on CockroachDB and 11 min on YugabyteDB at 200 rounds.
+  - Raft harness: the connection a lost-answer, lost-COMMIT or stall fault struck waits 5 s, not 15. CockroachDB suite 745.7 s → 561.9 s (CAS dropped included); its 21 lost-answer cases 15.3 s → 5.4 s each.
+  - `-T 2`, and the CockroachDB and YugabyteDB suites moved to `catalog-store-sql-raft`, which nothing depends on. Peak Docker memory 5.5 GB of 8.
+  - Flyway's migration lock wait is 5 min, not 50 s: YugabyteDB's `migrateWhileThePreviousReleaseServes` failed twice under load without it (bite `bites/M8/migration-lock-no-wait.patch`). It passed in the next run.
+  - Raft harness: a cluster counts as started once its catalog database answers through the link.
+  - Not proven: none of the three `-Pheavy` runs on the new layout finished green, so whoever runs `-Pheavy` next is testing it. Their wall clock was 47 min and 51 min (1 h 52 min before), but both stopped early on a failure, so `catalog-tests-load` (21 min serially) never ran.
+    - Run 1: the Flyway lock (since fixed).
+    - Run 2: overlapped the fidice-demo stack starting. CockroachDB's first connection and Keycloak's start (`TwoIssuersTest`) timed out.
+    - Run 3: YugabyteDB's `exactlyOnePropertiesUpdateWins` could not connect (`StoreUnavailableException`), then the log stops partway through the YugabyteDB suite.
+  - Open: YugabyteDB connections fail under `-T 2` load; the next heavy run should check it is not the layout.
 - **Next:** M9, carried to work.

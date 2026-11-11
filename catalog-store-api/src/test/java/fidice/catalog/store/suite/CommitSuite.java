@@ -61,7 +61,7 @@ public abstract class CommitSuite {
 
     /**
      * Rounds of the CAS linearizability test. It is tagged {@code cas} and no build runs it, fast or
-     * heavy: it runs only overnight, on its own, at 10,000 rounds ({@code -Pnightly}).
+     * heavy: it runs only overnight, on its own, at 1,000 rounds ({@code -Pnightly}; Paul, 2026-11-11).
      */
     static final int CAS_ROUNDS = Integer.getInteger("fidice.suite.cas-rounds", 200);
     static final int CAS_WRITERS = 8;

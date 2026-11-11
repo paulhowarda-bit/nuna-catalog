@@ -193,7 +193,7 @@
       </properties>
     </profile>
     <!-- The overnight run, never part of a build: only the CAS test, on all five backends, at
-         10,000 rounds (each store module's nightly profile sets the rounds). -->
+         1,000 rounds (each store module's nightly profile sets the rounds). -->
     <profile>
       <id>nightly</id>
       <properties>
