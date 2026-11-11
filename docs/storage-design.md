@@ -125,7 +125,7 @@ An abstract JUnit class that each backend extends by supplying a `StoreUnderTest
 
 | # | Test | M1 |
 |---|---|---|
-| 1 | CAS linearizability: N writers from one base, exactly one `Committed`, the rest `Conflict`; version advances by exactly 1; repeated (10,000 in the nightly profile, 200 in CI). | yes |
+| 1 | CAS linearizability: N writers from one base, exactly one `Committed`, the rest `Conflict`; version advances by exactly 1; repeated 10,000 times. Tagged `cas`: no build runs it; it runs only overnight, on its own (`-Pnightly`). | yes |
 | 2 | Atomicity: cut the link before COMMIT; pointer, journal, outbox and idempotency rows are all absent. Multi-swap batch with one stale `expected` → `Conflict`, nothing written. | yes |
 | 3 | Ambiguity: cut the response path after COMMIT is sent → `CommitOutcomeUnknownException` → `findCommit` says `COMMITTED` and the pointer advanced. Cut the request path so COMMIT never arrives → `findCommit` says `NOT_COMMITTED`. Never a `Conflict`. | yes |
 | 4 | Failover: stop the primary during a stream of commits; every commit acknowledged before the stop is present after promotion. | PostgreSQL, MongoDB |

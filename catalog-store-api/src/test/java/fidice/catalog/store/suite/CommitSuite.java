@@ -59,7 +59,10 @@ import org.junit.jupiter.api.TestInstance;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class CommitSuite {
 
-    /** Rounds of the CAS linearizability test: 200 in CI, 10,000 in the nightly profile. */
+    /**
+     * Rounds of the CAS linearizability test. It is tagged {@code cas} and no build runs it, fast or
+     * heavy: it runs only overnight, on its own, at 10,000 rounds ({@code -Pnightly}).
+     */
     static final int CAS_ROUNDS = Integer.getInteger("fidice.suite.cas-rounds", 200);
     static final int CAS_WRITERS = 8;
 
@@ -95,6 +98,7 @@ public abstract class CommitSuite {
     // ---- 1. CAS linearizability ----
 
     @Test
+    @Tag("cas")
     @DisplayName("1 CAS: of N writers from one base exactly one commits and the version advances by 1, every round")
     void exactlyOneWriterWinsEachRound() throws Exception {
         PointerKey key = newKey();

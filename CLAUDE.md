@@ -9,7 +9,8 @@
 ## Builds
 
 - `./mvnw install` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB, CockroachDB and YugabyteDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover).
-- `./mvnw install -Pheavy` runs every test, all five databases included. `-Pheavy,nightly` also raises the CAS test from 200 rounds to 10,000.
+- `./mvnw install -Pheavy` runs every test, all five databases included, except the CAS test.
+- The CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`, tagged `cas`) never runs in a build, fast or heavy, and never in a build-and-test cycle: it takes too long. Paul's rule, 2026-11-10. It runs only overnight, on its own: `./mvnw install -Pnightly` runs just that test on all five backends at 10,000 rounds. Don't run it unless Paul asks.
 - A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`.
 
 ## Landing
@@ -31,4 +32,4 @@
 
 - The pass was planned for after M9. On 2026-11-10 Paul moved it to after M8, before M9: M9 happens at work, and he wants a fully checked build to carry there.
 - One run in a worktree: `./mvnw install -Pheavy`, then `bites/run.sh bites/M*` (every recorded bite). Fix anything that fails or does not bite.
-- The pass leaves out `nightly`: the CAS test at 10,000 rounds alone ran past 10 hours across the five backends (YugabyteDB 2.2 s a round). That depth check belongs to a scheduled nightly job in work CI (M9 in `build-plan.md`).
+- The pass leaves out the CAS test: at 10,000 rounds it alone ran past 10 hours across the five backends (YugabyteDB 2.2 s a round). It belongs to a scheduled overnight job in work CI (M9 in `build-plan.md`).
