@@ -3,12 +3,12 @@ Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Upgrade#migrateWhileThePreviousReleaseServes
 
 diff --git a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
-index e888cf2..34ab2ab 100644
+index 0c8f13f..04e7c59 100644
 --- a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
 +++ b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
-@@ -180,7 +180,7 @@ public final class SqlCatalogStore implements CatalogStore {
+@@ -171,7 +171,7 @@ public final class SqlCatalogStore implements CatalogStore {
       * migrates: 5 minutes. Flyway's default, 50, failed a second node's start while the first ran
-      * V3 on a loaded YugabyteDB cluster.
+      * V3 on a loaded YugabyteDB cluster (a backend until 2026-11-11, D7).
       */
 -    static final int MIGRATION_LOCK_RETRIES = 300;
 +    static final int MIGRATION_LOCK_RETRIES = 0;
