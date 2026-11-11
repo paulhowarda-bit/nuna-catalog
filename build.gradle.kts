@@ -4,10 +4,14 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 // fidice catalog: Iceberg REST catalog server. Author: Paul Howard.
 //
-//   ./gradlew build            the fast build: every test not tagged heavy or cas (PostgreSQL only)
-//   ./gradlew build -Pheavy    every test but the CAS test: the heavy pass (CLAUDE.md)
-//   ./gradlew build -Pnightly  the overnight run, never part of a build: only the CAS test, on all
-//                              four backends, at 1,000 rounds
+//   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas
+//                              (PostgreSQL only)
+//   ./gradlew build -Pheavy    every test but those tagged overnight or cas: the heavy pass (CLAUDE.md)
+//   ./gradlew build -Pnightly  the overnight run, never part of a build: the tests tagged overnight
+//                              (load, engine matrix, per-mutation fault sweeps) and the CAS test on
+//                              all four backends at 1,000 rounds
+//   -Pbites                    what bites/run.sh passes: every test but CAS, so a bite can select any
+//                              test, heavy and overnight ones included
 
 plugins {
     id("org.springframework.boot") version "4.1.2" apply false
@@ -16,6 +20,7 @@ plugins {
 
 val heavy = providers.gradleProperty("heavy").isPresent
 val nightly = providers.gradleProperty("nightly").isPresent
+val bites = providers.gradleProperty("bites").isPresent
 
 // OneDrive marks every new folder read-only within seconds, and Java cannot delete a read-only
 // folder. In a checkout under OneDrive, Gradle then fails as soon as a task replaces its own old
@@ -97,18 +102,21 @@ subprojects {
     }
 
     tasks.withType<Test>().configureEach {
-        // Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy.
-        // The CAS test (tagged cas) runs in no build: only overnight, on its own, with -Pnightly.
+        // Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. Tests
+        // tagged overnight (load, engine matrix, per-mutation fault sweeps) and the CAS test (tagged
+        // cas) run in no build: only overnight, with -Pnightly (Paul, 2026-11-11).
         useJUnitPlatform {
             when {
-                nightly -> includeTags("cas")
-                heavy -> excludeTags("cas")
-                else -> excludeTags("heavy", "cas")
+                nightly -> includeTags("cas", "overnight")
+                bites -> excludeTags("cas")
+                heavy -> excludeTags("cas", "overnight")
+                else -> excludeTags("heavy", "cas", "overnight")
             }
         }
         if (nightly) {
             systemProperty("fidice.suite.cas-rounds", "1000")
-            // The CAS test looks for a race, so each overnight run is a new sample: never reused.
+            // The CAS test looks for a race and the load runs measure, so each overnight run is a new
+            // sample: never reused.
             outputs.upToDateWhen { false }
             outputs.cacheIf { false }
         }

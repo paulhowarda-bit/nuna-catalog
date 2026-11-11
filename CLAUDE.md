@@ -8,10 +8,11 @@
 
 ## Builds
 
-- `./gradlew build` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB and CockroachDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover).
-- `./gradlew build -Pheavy` runs every test, all four databases included, except the CAS test.
-- The CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`, tagged `cas`) never runs in a build, fast or heavy, and never in a build-and-test cycle: it takes too long. Paul's rule, 2026-11-10. It runs only overnight, on its own: `./gradlew build -Pnightly` runs just that test on all four backends at 1,000 rounds (Paul cut it from 10,000 on 2026-11-11). Don't run it unless Paul asks.
-- A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`.
+- `./gradlew build` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB and CockroachDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover). It also leaves out the `overnight` and `cas` tests below.
+- `./gradlew build -Pheavy` runs every test, all four databases included, except the `overnight` tests and the CAS test.
+- Tests tagged `overnight` never run in a build, fast or heavy: all of `catalog-tests-load` (the M8 load, resilience and SLO runs), `EngineMatrixTest`, and the two `MutationSuite` sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type. Paul moved them out of the heavy build on 2026-11-11 to shorten it. The heavy build keeps the single lost-answer, lost-COMMIT, in-flight and failover tests on every database.
+- The CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`, tagged `cas`) never runs in a build, fast or heavy, and never in a build-and-test cycle: it takes too long. Paul's rule, 2026-11-10. It runs only overnight: `./gradlew build -Pnightly` runs the `overnight` tests and that test, on all four backends at 1,000 rounds (Paul cut it from 10,000 on 2026-11-11). Don't run `-Pnightly` or the CAS test unless Paul asks.
+- A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`. One that runs for minutes (load, soak, SLO, a sweep over every case) gets `@Tag("overnight")`.
 - `gradle.properties` sets `org.gradle.workers.max=2`: two tasks run at once, so at most two modules are under test at a time. Not more: Docker has 8 GB, and a three-node cluster plus one other stack is what fits. The CockroachDB suite lives in `catalog-store-sql-raft`, which nothing depends on; no module's tests wait for another module's tests, so it runs beside the others instead of ahead of them.
 
 ## Landing
@@ -27,10 +28,10 @@
 ## Bites
 
 - A branch that adds a guarded check records its bite instead of running it: `bites/<milestone>/<id>.patch`, made with `git diff` of the broken check, headed by a `Module:` line and a `Test:` line (the test that must fail: `Class`, `Class#method` or `Class#method+method`). The two patches in `bites/M2/` show the form. Check it with `git apply --check`, then restore the file.
-- `bites/run.sh bites/M*` applies each patch, runs its test with `-Pheavy`, expects a failure, reverts, and checks every tracked file's hash is restored.
+- `bites/run.sh bites/M*` applies each patch, runs its test with `-Pbites` (every test but CAS, so `overnight` tests can be selected too), expects a failure, reverts, and checks every tracked file's hash is restored.
 
 ## The heavy pass, once, after M8
 
 - The pass was planned for after M9. On 2026-11-10 Paul moved it to after M8, before M9: M9 happens at work, and he wants a fully checked build to carry there.
-- One run in a worktree: `./gradlew build -Pheavy`, then `bites/run.sh bites/M*` (every recorded bite). Fix anything that fails or does not bite.
+- One run in a worktree: `./gradlew build -Pheavy`, then `bites/run.sh bites/M*` (every recorded bite). The `overnight` tests are not part of it. Fix anything that fails or does not bite.
 - The pass leaves out the CAS test: at the old 10,000 rounds it alone ran past 10 hours across the five backends of that day (YugabyteDB, dropped on 2026-11-11, took 2.2 s a round). It belongs to a scheduled overnight job in work CI (M9 in `build-plan.md`).

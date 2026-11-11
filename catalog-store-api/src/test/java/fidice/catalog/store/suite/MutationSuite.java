@@ -152,7 +152,7 @@ public abstract class MutationSuite extends GroupSuite {
         }));
     }
 
-    @Tag("heavy")
+    @Tag("overnight")
     @TestFactory
     @DisplayName("3 Ambiguity: every mutation whose answer is lost is unknown, carries its change id, and was written")
     Stream<DynamicTest> everyMutationWithALostAnswerIsUnknown() {
@@ -166,7 +166,7 @@ public abstract class MutationSuite extends GroupSuite {
         }));
     }
 
-    @Tag("heavy")
+    @Tag("overnight")
     @TestFactory
     @DisplayName("2 Atomicity: every mutation whose link is cut just before COMMIT is unknown and wrote nothing")
     Stream<DynamicTest> everyMutationCutBeforeCommitWritesNothing() {

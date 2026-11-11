@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
  * to V4 (the journal becomes partitioned) while previous-release servers still commit. Each server leaves
  * only after the balancer has drained it. No request fails and no commit is lost or doubled.
  */
-@Tag("heavy")
+@Tag("overnight")
 class RollingUpgradeTest {
 
     private static final int WRITERS = 8;

@@ -128,8 +128,8 @@ An abstract JUnit class that each backend extends by supplying a `StoreUnderTest
 | # | Test | M1 |
 |---|---|---|
 | 1 | CAS linearizability: N writers from one base, exactly one `Committed`, the rest `Conflict`; version advances by exactly 1; repeated 1,000 times (Paul, 2026-11-11; it was 10,000). Tagged `cas`: no build runs it; it runs only overnight, on its own (`-Pnightly`). | yes |
-| 2 | Atomicity: cut the link before COMMIT; pointer, journal, outbox and idempotency rows are all absent. Multi-swap batch with one stale `expected` → `Conflict`, nothing written. | yes |
-| 3 | Ambiguity: cut the response path after COMMIT is sent → `CommitOutcomeUnknownException` → `findCommit` says `COMMITTED` and the pointer advanced. Cut the request path so COMMIT never arrives → `findCommit` says `NOT_COMMITTED`. Never a `Conflict`. | yes |
+| 2 | Atomicity: cut the link before COMMIT; pointer, journal, outbox and idempotency rows are all absent. Multi-swap batch with one stale `expected` → `Conflict`, nothing written. The cut repeated for every mutation type (`MutationSuite`) is tagged `overnight`: it runs only overnight (`-Pnightly`; Paul, 2026-11-11), and the heavy build keeps the single-commit cases. | yes |
+| 3 | Ambiguity: cut the response path after COMMIT is sent → `CommitOutcomeUnknownException` → `findCommit` says `COMMITTED` and the pointer advanced. Cut the request path so COMMIT never arrives → `findCommit` says `NOT_COMMITTED`. Never a `Conflict`. The lost answer repeated for every mutation type (`MutationSuite`) is tagged `overnight`, as in 2; the heavy build keeps the lost-answer, lost-COMMIT and in-flight cases. | yes |
 | 4 | Failover: stop the primary during a stream of commits; every commit acknowledged before the stop is present after promotion. | PostgreSQL, MongoDB |
 | 5 | Self-check: the safe environment reports no findings; each unsafe setting reports its finding code. | yes (Oracle: unsafe only; safe is a work gate) |
 | 6 | Read-after-commit with injected replica lag. | PostgreSQL, MongoDB (`hasReplica`) |

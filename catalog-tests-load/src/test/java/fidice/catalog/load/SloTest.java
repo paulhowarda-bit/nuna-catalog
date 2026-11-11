@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
  * where clients, servers, database and object store share one machine, the numbers are recorded in
  * {@code build/m8/results/slo.txt} as relative behaviour and the run checks only that nothing failed.
  */
-@Tag("heavy")
+@Tag("overnight")
 class SloTest {
 
     private static final int TABLES = 32;

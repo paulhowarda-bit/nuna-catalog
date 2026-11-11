@@ -2,7 +2,7 @@ plugins {
     `java-library`
 }
 
-description = "M8 hardening gates: load, contention, resilience and SLO runs against running servers. Every test is heavy."
+description = "M8 hardening gates: load, contention, resilience and SLO runs against running servers. Every test runs overnight only (tagged overnight)."
 
 // The release before this one, for the rolling upgrade: main as M7 landed it. Its servers migrate
 // only the shared steps (V1 to V3); this release adds PostgreSQL's V4.
