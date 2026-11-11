@@ -47,9 +47,10 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
 
 /**
- * PostgreSQL-wire implementation: PostgreSQL, CockroachDB and YugabyteDB (D7), told apart by
+ * PostgreSQL-wire implementation: PostgreSQL and CockroachDB (D7), told apart by
  * {@code version()}. Implements the whole storage interface on each (docs/storage-design.md
- * sections 4, 5.1, 5.4, 5.5, 7 and 9); each operation group lives in its own class.
+ * sections 4, 5.1, 5.4, 7 and 9); each operation group lives in its own class. YugabyteDB is not
+ * supported: {@link #migrate()}, {@link #selfCheck()} and every write refuse it.
  *
  * <p>The caller's DataSource must reach the primary, must never replay a statement, and sets the
  * socket timeout that bounds every wait. This class never retries a COMMIT (D8.4).
@@ -126,7 +127,7 @@ public final class SqlCatalogStore implements CatalogStore {
      * that updated the pointer holds its row lock, which SELECT FOR UPDATE waits for. One that
      * created it holds only the key in the unique index, and its row is invisible, so SELECT FOR
      * UPDATE finds nothing; then a placeholder insert (rolled back by the caller) waits for it. The
-     * same holds under READ COMMITTED on CockroachDB and YugabyteDB (sections 5.4 and 5.5).
+     * same holds under READ COMMITTED on CockroachDB (section 5.4).
      */
     private static void awaitInFlightCommit(Connection connection, PointerKey key, UUID commitId) throws SQLException {
         if (Jdbc.exists(connection, "SELECT 1 FROM pointer WHERE object_id = ? AND branch = ? FOR UPDATE",
@@ -141,13 +142,8 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public List<SafetyFinding> selfCheck() {
         Backend backend = transactions.backend();
-        try {
-            if (backend == Backend.YUGABYTEDB) {
-                return SelfChecks.yugabyte(dataSource);
-            }
-            try (Connection connection = dataSource.getConnection()) {
-                return backend == Backend.COCKROACHDB ? SelfChecks.cockroach(connection) : SelfChecks.postgres(connection);
-            }
+        try (Connection connection = dataSource.getConnection()) {
+            return backend == Backend.COCKROACHDB ? SelfChecks.cockroach(connection) : SelfChecks.postgres(connection);
         } catch (SQLException e) {
             throw new StoreException("self-check failed", e);
         }
@@ -161,8 +157,8 @@ public final class SqlCatalogStore implements CatalogStore {
     public void migrate() {
         try {
             Backend backend = transactions.backend();
-            // Flyway's PostgreSQL lock otherwise holds a transaction open for the whole migration,
-            // and a YugabyteDB online index build waits for every open transaction to end.
+            // Where steps run outside a transaction, Flyway's PostgreSQL lock must not hold one
+            // open for the whole migration either.
             Flyway.configure()
                     .configuration(Map.of("flyway.postgresql.transactional.lock",
                             String.valueOf(backend.transactionalSchemaSteps)))
@@ -178,7 +174,7 @@ public final class SqlCatalogStore implements CatalogStore {
     /**
      * How many times, a second apart, a node retries Flyway's migration lock while another node
      * migrates: 5 minutes. Flyway's default, 50, failed a second node's start while the first ran
-     * V3 on a loaded YugabyteDB cluster.
+     * V3 on a loaded YugabyteDB cluster (a backend until 2026-11-11, D7).
      */
     static final int MIGRATION_LOCK_RETRIES = 300;
 
@@ -189,7 +185,7 @@ public final class SqlCatalogStore implements CatalogStore {
      * Creates the journal's missing monthly partitions through the month holding {@code through},
      * moving any commits the default partition holds for those months into them. Returns how many
      * it created. Safe to call from several nodes at once. Only PostgreSQL partitions its journal;
-     * CockroachDB and YugabyteDB split it into ranges and tablets themselves, so there it creates none.
+     * CockroachDB splits it into ranges itself, so there it creates none.
      */
     public int extendJournal(Instant through) {
         if (!transactions.backend().partitionsJournal) {

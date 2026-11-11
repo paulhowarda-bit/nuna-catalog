@@ -12,8 +12,8 @@ import javax.sql.DataSource;
 /**
  * The store's DataSource for schema steps and journal partitioning: each connection waits up to
  * {@link #TIMEOUT} for an answer instead of the socket timeout the caller tuned for commits, and
- * runs in UTC. A schema step on CockroachDB runs as a job and a partition on YugabyteDB creates
- * tablets, and both take longer than a commit's timeout allows. On CockroachDB, Flyway serializes
+ * runs in UTC. A schema step on CockroachDB runs as a job, which takes longer than a
+ * commit's timeout allows. On CockroachDB, Flyway serializes
  * migrating nodes with a lock row stamped with the session's local time and expired against UTC,
  * so a session west of UTC would see another node's lock as expired and run the same step.
  */

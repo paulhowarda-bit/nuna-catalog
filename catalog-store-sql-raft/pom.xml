@@ -9,8 +9,8 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>catalog-store-sql-raft</artifactId>
-  <description>The SQL store's CockroachDB and YugabyteDB suites (heavy). A test-only module that nothing
-    depends on, so under -T the modules that need catalog-store-sql do not wait for these clusters.
+  <description>The SQL store's CockroachDB suite (heavy). A test-only module that nothing
+    depends on, so under -T the modules that need catalog-store-sql do not wait for its cluster.
     The cluster harness stays in catalog-store-sql's test-jar.</description>
   <dependencies>
     <dependency>
@@ -68,7 +68,6 @@
             <postgres.image>${postgres.image}</postgres.image>
             <toxiproxy.image>${toxiproxy.image}</toxiproxy.image>
             <cockroachdb.image>${cockroachdb.image}</cockroachdb.image>
-            <yugabytedb.image>${yugabytedb.image}</yugabytedb.image>
           </systemPropertyVariables>
         </configuration>
       </plugin>

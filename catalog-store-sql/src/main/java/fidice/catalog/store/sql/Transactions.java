@@ -23,8 +23,8 @@ import javax.sql.DataSource;
  * that carries a commit or change id is an unknown outcome (docs/storage-design.md section 4).
  *
  * <p>A serialization failure or deadlock (SQLSTATE 40001, 40P01) before COMMIT is sent rolls the
- * transaction back and runs it again, a bounded number of times: CockroachDB and YugabyteDB raise
- * them under READ COMMITTED too (sections 5.4 and 5.5). A COMMIT is never run again (D8.4).
+ * transaction back and runs it again, a bounded number of times: CockroachDB raises
+ * them under READ COMMITTED too (section 5.4). A COMMIT is never run again (D8.4).
  */
 final class Transactions {
 
@@ -45,7 +45,7 @@ final class Transactions {
         this.commitHook = commitHook;
     }
 
-    /** The database behind the DataSource, asked once. */
+    /** The database behind the DataSource, asked once. Throws on YugabyteDB, which is not supported. */
     Backend backend() {
         Backend known = backend;
         if (known == null) {
@@ -169,7 +169,7 @@ final class Transactions {
     /**
      * Returns once every commit this session could see is durable. On PostgreSQL it commits an
      * increment of the durability barrier: with synchronous commit it returns only once the standby
-     * has flushed WAL past those commits (section 5.1 step 3). On CockroachDB and YugabyteDB a
+     * has flushed WAL past those commits (section 5.1 step 3). On CockroachDB a
      * visible commit is already on a quorum, so there is nothing to wait for.
      */
     void awaitDurable(String what) {
@@ -194,7 +194,7 @@ final class Transactions {
     /**
      * Commits, and on PostgreSQL treats a warning as a failure: it answers a COMMIT whose wait for
      * the synchronous standby was cancelled with a warning, not an error, and that commit may not
-     * be replicated. A COMMIT on CockroachDB or YugabyteDB that answers is on a quorum; CockroachDB
+     * be replicated. A COMMIT on CockroachDB that answers is on a quorum; CockroachDB
      * warns on it of a missing license (section 5.4), which says nothing about the commit.
      */
     static void commitChecked(Connection connection, Backend backend) throws SQLException {

@@ -1,24 +1,21 @@
 package fidice.catalog.store.sql;
 
+import fidice.catalog.store.StoreException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 
 /**
- * The PostgreSQL-wire database behind a store, told apart by {@code version()}. The three share
+ * The PostgreSQL-wire database behind a store, told apart by {@code version()}. The two share
  * the statements of the store; they differ in schema steps, self-check, durability barrier and
- * journal partitioning (docs/storage-design.md sections 5.1, 5.4, 5.5 and 7).
+ * journal partitioning (docs/storage-design.md sections 5.1, 5.4 and 7). YugabyteDB speaks the
+ * same protocol and is refused: it is not a supported backend (decision-ledger.md D7).
  */
 enum Backend {
 
     /** The shared steps, then the journal's partitioning. */
     POSTGRESQL(new String[] {Locations.SHARED, "classpath:fidice/store/sql/postgresql"}, true, true, true),
-    /**
-     * PostgreSQL's steps but not the journal's partitioning: on YugabyteDB the renames it needs
-     * invalidate every open transaction, and its journal splits into tablets by itself (section 5.5).
-     */
-    YUGABYTEDB(new String[] {Locations.SHARED}, false, false, false),
     /** Its own steps, in CockroachDB's dialect; its journal splits into ranges by itself. */
     COCKROACHDB(new String[] {"classpath:fidice/store/sql/cockroachdb"}, false, false, false);
 
@@ -31,18 +28,15 @@ enum Backend {
     final String[] migrations;
     /**
      * A commit can be visible before it is durable: PostgreSQL shows a commit whose wait for the
-     * synchronous standby was cancelled, and answers that COMMIT with a warning. On the Raft
-     * backends a visible commit is on a quorum, and a warning on COMMIT says nothing about it.
+     * synchronous standby was cancelled, and answers that COMMIT with a warning. On CockroachDB
+     * a visible commit is on a quorum, and a warning on COMMIT says nothing about it.
      */
     final boolean needsDurabilityBarrier;
     /** The journal is range-partitioned by month, and its horizon is extended ahead of time. */
     final boolean partitionsJournal;
     /**
-     * A schema step runs in one transaction. CockroachDB and YugabyteDB commit each DDL statement
-     * by itself, so a transaction would undo nothing of a failed step; on YugabyteDB it would also
-     * build every index without online backfill, which is unsafe while the table takes writes.
-     * Without it, Flyway's lock must not hold a transaction open either: an online index build
-     * waits for every open transaction to end.
+     * A schema step runs in one transaction. CockroachDB commits each DDL statement by itself, so
+     * a transaction would undo nothing of a failed step.
      */
     final boolean transactionalSchemaSteps;
 
@@ -62,11 +56,19 @@ enum Backend {
         }
     }
 
-    /** CockroachDB answers "CockroachDB CCL v…", YugabyteDB "PostgreSQL 15.12-YB-2025.2…". */
+    /**
+     * CockroachDB answers "CockroachDB CCL v…", YugabyteDB "PostgreSQL 15.12-YB-2025.2…". YugabyteDB
+     * is refused, not taken for PostgreSQL: PostgreSQL's journal partitioning breaks on it, and
+     * PostgreSQL's self-check and durability barrier say nothing true about it.
+     */
     static Backend of(String version) {
         if (version.startsWith("CockroachDB")) {
             return COCKROACHDB;
         }
-        return version.contains("-YB-") ? YUGABYTEDB : POSTGRESQL;
+        if (version.contains("-YB-")) {
+            throw new StoreException("YugabyteDB is not a supported backend (the server reports \"" + version
+                    + "\"); the supported backends are PostgreSQL, CockroachDB, Oracle and MongoDB", null);
+        }
+        return POSTGRESQL;
     }
 }

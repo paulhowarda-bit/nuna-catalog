@@ -21,7 +21,7 @@ These were not asked during the grilling; they are routine calls made to unblock
 | P3 | **Spring MVC on virtual threads**, not WebFlux. | Blocking I/O with JDBC/Mongo sync drivers [D4]. |
 | P4 | **Hand-written controllers against the vendored OpenAPI spec**, plus a test that every advertised endpoint matches a spec operation. No code generator. | Generated code would add bloat and foreign names; the RCK proves conformance [D31]. |
 | P5 | **Iceberg JSON is written by iceberg-core's own parsers inside `catalog-iceberg`**; controllers return the JSON text, so Spring never serializes an Iceberg type. | Keeps the wire format identical to the reference implementation, and keeps it clear of Spring Boot 4's JSON stack: Jackson 3 is Boot's default and Spring is removing Jackson 2 support (M0 finding). |
-| P6 | **Flyway for the four SQL targets** (PostgreSQL, CockroachDB, YugabyteDB, Oracle); a small versioned-step runner of our own for MongoDB. | DBAs know Flyway. M0 verifies that the community edition covers all four targets at the pinned version (F4); if it does not, we write the same small runner for SQL too. |
+| P6 | **Flyway for the three SQL targets** (PostgreSQL, CockroachDB, Oracle; YugabyteDB was a fourth until it was dropped on 2026-11-11 [D7]); a small versioned-step runner of our own for MongoDB. | DBAs know Flyway. M0 verifies that the community edition covers every target at the pinned version (F4); if it does not, we write the same small runner for SQL too. |
 | P7 | **PostgreSQL is the default development backend.** No in-memory store. | An in-memory store would drift from the invariants [D8]. Unit tests of the commit loop mock the storage interface. |
 | P8 | **Testcontainers** for every backend, IdP, object store and Kafka in tests; **docker compose** for the nightly engine matrix. | Docker Desktop 27.1.1 is installed here. |
 | P9 | **Package root `fidice.catalog`**, Maven groupId `fidice`. | Follows the repo name. |
@@ -37,8 +37,8 @@ These were not asked during the grilling; they are routine calls made to unblock
 | `catalog-core` | Domain types (names, principals, privileges, pointers, commit records, errors), the commit loop, idempotency, rules layer, authorization decisions, retention/hold logic. No Spring. | `catalog-iceberg`, `catalog-store-api` |
 | `catalog-iceberg` | The only module that imports `org.apache.iceberg`. Parses requests, applies updates (TableMetadata.Builder, MetadataUpdate.applyTo), validates requirements (UpdateRequirement.validate), builds view metadata, serializes responses. Exposes our own interfaces. | pinned iceberg-core |
 | `catalog-store-api` | The narrow storage interface (2.3) and the shared invariant/fault-injection suite, published as a test-jar. | — |
-| `catalog-store-sql` | PostgreSQL, CockroachDB and YugabyteDB: one PG-wire implementation with dialect switches [D7]. Its tests cover PostgreSQL; the cluster harness is published as a test-jar. | `catalog-store-api` |
-| `catalog-store-sql-raft` | Tests only: the SQL store's CockroachDB and YugabyteDB suites. Nothing depends on it, so under `-T 2` the modules that need `catalog-store-sql` don't wait for these clusters. | `catalog-store-sql` |
+| `catalog-store-sql` | PostgreSQL and CockroachDB: one PG-wire implementation with dialect switches [D7]. It refuses a YugabyteDB server, which is not supported (dropped 2026-11-11). Its tests cover PostgreSQL; the cluster harness is published as a test-jar. | `catalog-store-api` |
+| `catalog-store-sql-raft` | Tests only: the SQL store's CockroachDB suite. Nothing depends on it, so under `-T 2` the modules that need `catalog-store-sql` don't wait for its cluster. | `catalog-store-sql` |
 | `catalog-store-oracle` | Oracle including Exadata/RAC: UCP + FAN, Transaction Guard, service affinity [D7]. | `catalog-store-api` |
 | `catalog-store-mongo` | MongoDB: multi-document transactions, `w:majority`, primary reads [D7]. | `catalog-store-api` |
 | `catalog-objectstore` | Storage profiles; metadata.json write/read with SHA-256; credential vending through STS AssumeRole for S3, MinIO and Ceph; location guardrails [D21, D26, D36a]. | `catalog-core` |
@@ -108,9 +108,10 @@ Detail and sources are in `research_notes/Catalog database evaluation/`. What ea
 |---|---|---|---|
 | PostgreSQL | `SELECT … FOR UPDATE` on the pointer row, conditional update, inserts, one transaction. | Durability barrier, and no COMMIT timeouts. After a broken connection, look up `commit_id` on a fresh connection once the barrier confirms. The pool never replays a commit (cf. Iceberg JdbcCatalog #18743). | Synchronous quorum replication is not configured, or `synchronous_commit` is off for the catalog role. |
 | CockroachDB | Same SQL under SERIALIZABLE; retry 40001 inside the bound. | 40003 (ambiguous result) → `findCommit`. | Replication factor < 3 for the catalog ranges. |
-| YugabyteDB | Same SQL; retry serialization errors. | No ambiguity code: every connection error mid-commit → `findCommit`. | Replication factor < 3. |
 | Oracle / Exadata RAC | Same logical steps; UCP with FAN; route each table's pointer row to one RAC service (affinity by object-ID hash) so hot rows don't move between instances. | Transaction Guard: on a recoverable error take the LTXID and call `DBMS_APP_CONT.GET_LTXID_OUTCOME`. | Data Guard is not in maximum-availability mode with zero apply delay where required, or Transaction Guard is off for the service. |
 | MongoDB | Multi-document transaction; `writeConcern: majority`, `readConcern: snapshot`, primary reads. | `UnknownTransactionCommitResult` → retry `commitTransaction`, then `findCommit`. | Not a replica set, default write concern below majority, or journaling off. |
+
+YugabyteDB had a row here until support for it was dropped on 2026-11-11 [D7]. The SQL store refuses a YugabyteDB server.
 
 ### 2.6 Shared invariant and fault-injection suite
 
@@ -154,7 +155,7 @@ Each milestone lists its scope, its gate, and what must wait for work hardware.
 ### M2 — Backends in parallel (second half of D7b)
 
 Three worktree sessions, each owning one module:
-- **M2a** `catalog-store-sql`: PostgreSQL, CockroachDB, YugabyteDB.
+- **M2a** `catalog-store-sql`: PostgreSQL, CockroachDB, YugabyteDB. (YugabyteDB was built and passed, then dropped on 2026-11-11 [D7].)
 - **M2b** `catalog-store-oracle`: Oracle Free container locally.
 - **M2c** `catalog-store-mongo`: three-node replica set.
 - **Gate:** each backend passes the full suite with bite runs.
@@ -287,7 +288,7 @@ Three worktree sessions, each owning one module:
 - Artifact approval in the curated repository (PLT-6).
 - RAC/Exadata, real IdPs, real object stores, DBA review of the self-check thresholds.
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
-- A scheduled overnight job in work CI running `./mvnw install -Pnightly`: only the CAS test, at 1,000 rounds. On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
+- A scheduled overnight job in work CI running `./mvnw install -Pnightly`: only the CAS test, at 1,000 rounds, on the four supported backends (YugabyteDB, measured below, was dropped on 2026-11-11 [D7]). On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
 
 ### UI v1 — web console
 
@@ -408,7 +409,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
 | SEC-8 | KMS key-policy owners per domain. | M6 |
 | SEC-9 | Which SIEM and archive; whether notarisation is required beyond hash chaining. | M7 |
 | SEC-10 | Whether Snowflake may receive vended credentials, and over which path. | M6 |
-| PLT-2 | DBA support commitments for each of the five backends at tier 1. | M9 |
+| PLT-2 | DBA support commitments for each of the four backends at tier 1. | M9 |
 | PLT-3 | On-prem MinIO/Ceph versions and STS support at work. | M6, M9 |
 | PLT-4 | Bucket naming per region; replication SLA. | M9 [D29] |
 | PLT-5 | AWS accounts and regions holding table storage; STS call spreading. | M6 |
@@ -424,7 +425,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
 
 | # | Risk | Response |
 |---|---|---|
-| R1 | Five backends cost roughly three implementations' worth of work (Polaris's pluggable persistence is ~26% of its code). | The shared suite is the gate: a backend that cannot pass it is not supported, and v1 ships without it rather than with a weaker guarantee [D8.9]. |
+| R1 | Four backends cost roughly three implementations' worth of work (Polaris's pluggable persistence is ~26% of its code). | The shared suite is the gate: a backend that cannot pass it is not supported, and v1 ships without it rather than with a weaker guarantee [D8.9]. |
 | R2 | Oracle RAC/Exadata behaviour cannot be tested on the laptop. | Oracle Free covers the logic; RAC items are listed as work gates in M2 and M9. |
 | R3 | JSON library conflict between Spring Boot 4 and iceberg-core (F2). | Settled at M0: P5 keeps Iceberg JSON out of Spring; Jackson 2 pinned to 2.22.2 and the dependency tree converges. |
 | R4 | MinIO community edition is unmaintained (F5). | Tests run on Ceph (single container, AWS's role-based credential model; Paul, 2026-11-07), with Silo for MinIO's model. RustFS was assessed as an alternative (F8). The production on-prem store still depends on what work runs (PLT-3). |
@@ -548,4 +549,11 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - Run 2: overlapped the fidice-demo stack starting. CockroachDB's first connection and Keycloak's start (`TwoIssuersTest`) timed out.
     - Run 3: YugabyteDB's `exactlyOnePropertiesUpdateWins` could not connect (`StoreUnavailableException`), then the log stops partway through the YugabyteDB suite.
   - Open: YugabyteDB connections fail under `-T 2` load; the next heavy run should check it is not the layout.
+- **YugabyteDB dropped 2026-11-11** (D7 amended; asked whether to drop it, Paul answered "Drop it"). The supported backends are four: PostgreSQL, CockroachDB, Oracle and MongoDB.
+  - Why: it took 33 of the heavy build's 112 minutes; writers queued on one pointer row are released about 200 ms apart, and the cause was never found; it failed in all three `-T 2` heavy runs. The cost: CockroachDB, under a proprietary licence since 24.3, is the only distributed-SQL backend left.
+  - Removed: the store's YugabyteDB entry and its switches, the `yb.*` self-check, `YugabyteCluster`, `YugabyteStoreSuiteTest`, `JournalTabletSplits` and the image property. They are in git history, and the shared suite could re-qualify the backend later.
+  - Flyway's `flyway.postgresql.transactional.lock` setting went too. Only YugabyteDB needed the session lock (M2a deviation 10): PostgreSQL always got Flyway's default, and Flyway's CockroachDB support takes a lock row and does not read the setting.
+  - The SQL store refuses a YugabyteDB server (a `version()` text holding `-YB-`) before any schema step or write, where it would otherwise run on it as PostgreSQL: `UnsupportedBackendTest`, bite `bites/M8/yugabyte-taken-for-postgresql.patch` (recorded, not run).
+  - Landed on the fast build, which tests PostgreSQL only. The CockroachDB suite compiles against the trimmed harness and has not run since; the next `-Pheavy` run tests it.
+  - The YugabyteDB results and findings in the entries above stand as measured. This closes the open item on YugabyteDB connections under `-T 2`; whether the `-T 2` layout itself runs green is still not proven.
 - **Next:** M9, carried to work.

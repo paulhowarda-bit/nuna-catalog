@@ -10,12 +10,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.sql.DataSource;
 
 /** The self-check of each backend (docs/storage-design.md section 7). */
 final class SelfChecks {
 
-    /** Voting replicas a Raft backend needs so a commit survives the loss of one node. */
+    /** Voting replicas CockroachDB needs so a commit survives the loss of one node. */
     static final int VOTERS = 3;
 
     private static final Pattern NUM_REPLICAS = Pattern.compile("num_replicas = (\\d+)");
@@ -105,54 +104,6 @@ final class SelfChecks {
                     + " verified under"));
         }
         return findings;
-    }
-
-    /**
-     * YugabyteDB (section 5.5): every tablet of the catalog's database has three replicas, READ
-     * COMMITTED is enabled, and sequences hand out values one at a time.
-     */
-    static List<SafetyFinding> yugabyte(DataSource dataSource) throws SQLException {
-        List<SafetyFinding> findings = new ArrayList<>();
-        try (Connection connection = dataSource.getConnection()) {
-            // No tablet visible reads as 0.
-            int fewest = Jdbc.first(connection, "SELECT coalesce(min(cardinality(replicas)), 0) FROM yb_tablet_metadata"
-                    + " WHERE db_name = current_database()", row -> row.getInt(1)).orElseThrow();
-            if (fewest < VOTERS) {
-                findings.add(new SafetyFinding("yb.replicas", "every tablet of the catalog's database needs " + VOTERS
-                        + " replicas; the fewest has " + fewest));
-            }
-            String isolation = effectiveIsolation(connection, "SHOW yb_effective_transaction_isolation_level");
-            if (!isolation.equals("read committed")) {
-                findings.add(new SafetyFinding("yb.read-committed-off", "a READ COMMITTED transaction runs as " + isolation
-                        + "; set the yb_enable_read_committed_isolation flag, the isolation the store's locking is"
-                        + " verified under"));
-            }
-        }
-        long jump = sequenceJump(dataSource);
-        if (jump != 1) {
-            findings.add(new SafetyFinding("yb.sequence-cache", "two connections drew outbox numbers " + jump
-                    + " apart; a connection caches a block of them, which breaks outbox order (section 9 b): set"
-                    + " ysql_sequence_cache_minval to 1"));
-        }
-        return findings;
-    }
-
-    /**
-     * The smallest step between the outbox numbers two open connections draw one after the other, in
-     * three tries: 1 when each draw takes the next number, the cache size when connections cache.
-     * Another writer drawing in between makes one try larger, not all three.
-     */
-    private static long sequenceJump(DataSource dataSource) throws SQLException {
-        String draw = "SELECT nextval(pg_get_serial_sequence('outbox', 'seq'))";
-        long smallest = Long.MAX_VALUE;
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try (Connection first = dataSource.getConnection(); Connection second = dataSource.getConnection()) {
-                long a = Jdbc.first(first, draw, row -> row.getLong(1)).orElseThrow();
-                long b = Jdbc.first(second, draw, row -> row.getLong(1)).orElseThrow();
-                smallest = Math.min(smallest, Math.abs(b - a));
-            }
-        }
-        return smallest;
     }
 
     /** What {@code show} reports inside a transaction begun as READ COMMITTED. */
