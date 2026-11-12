@@ -1,0 +1,20 @@
+# Creates the warehouse bucket in Silo or Ceph (Service s3).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      containers:
+        - name: seed
+          image: ${SILO_IMAGE}
+          imagePullPolicy: Never
+          command: ["sh", "-ec"]
+          args:
+            - |
+              mc alias set s ${S3_ENDPOINT} fidicetest fidicetest-secret-key >/dev/null
+              mc mb --ignore-existing s/warehouse

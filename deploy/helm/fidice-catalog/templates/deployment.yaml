@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "fidice-catalog.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "fidice-catalog.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "fidice-catalog.labels" . | nindent 8 }}
+      annotations:
+        # A changed config or secret rolls the pods.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: catalog
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8181
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ .Values.javaOptions | quote }}
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: file:/config/
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-env
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          # The server has no health route yet; it listens once startup (schema, storage profiles,
+          # catalogs) has succeeded.
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 2
+            failureThreshold: 120
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Release.Name }}-config

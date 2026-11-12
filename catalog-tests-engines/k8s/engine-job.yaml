@@ -1,0 +1,23 @@
+# One engine's run (${ENGINE}), as a Job: its image (built and loaded by the harness) prints RESULT and LIMIT
+# lines, which the harness reads from the Job's log. The token comes from Secret engine-token.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${ENGINE}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      enableServiceLinks: false
+      restartPolicy: Never
+      containers:
+        - name: ${ENGINE}
+          image: ${IMAGE}
+          imagePullPolicy: Never
+          command: ${COMMAND}
+          env:
+            - name: FIDICE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: engine-token, key: token}
+          resources:
+            limits: {memory: ${MEMORY}}

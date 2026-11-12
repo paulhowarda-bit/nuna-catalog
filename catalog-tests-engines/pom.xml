@@ -9,7 +9,7 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>catalog-tests-engines</artifactId>
-  <description>Nightly engine matrix: Spark, Flink, Trino, PyIceberg and SingleStore against the catalog, in docker compose.</description>
+  <description>Nightly engine matrix (the demo): the catalog's Helm chart in a kind cluster, with Spark, Kafka Connect, PyIceberg and SingleStore against it.</description>
 
   <dependencies>
     <!-- The run's S3 store: -Ds3=silo (default), ceph or aws. -->
@@ -18,8 +18,8 @@
       <artifactId>catalog-tests-s3</artifactId>
     </dependency>
     <dependency>
-      <!-- Not on the test classpath for its classes: it orders the reactor so the exec jar the compose
-           stack runs is built first. -->
+      <!-- Not on the test classpath for its classes: it orders the reactor so the exec jar the catalog image
+           packs is built first. -->
       <groupId>fidice</groupId>
       <artifactId>catalog-server</artifactId>
       <scope>test</scope>
@@ -54,9 +54,11 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
           <systemPropertyVariables>
-            <engines.compose>${project.basedir}/compose/compose.yaml</engines.compose>
-            <engines.catalog-jar>${project.basedir}/../catalog-server/target/catalog-server-${project.version}-exec.jar</engines.catalog-jar>
+            <engines.dir>${project.basedir}</engines.dir>
+            <engines.repo-root>${project.basedir}/..</engines.repo-root>
             <engines.run-dir>${project.build.directory}/engines-run</engines.run-dir>
+            <postgres.image>${postgres.image}</postgres.image>
+            <kafka.image>${kafka.image}</kafka.image>
           </systemPropertyVariables>
         </configuration>
       </plugin>

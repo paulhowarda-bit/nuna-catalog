@@ -23,7 +23,7 @@ These were not asked during the grilling; they are routine calls made to unblock
 | P5 | **Iceberg JSON is written by iceberg-core's own parsers inside `catalog-iceberg`**; controllers return the JSON text, so Spring never serializes an Iceberg type. | Keeps the wire format identical to the reference implementation, and keeps it clear of Spring Boot 4's JSON stack: Jackson 3 is Boot's default and Spring is removing Jackson 2 support (M0 finding). |
 | P6 | **Flyway for the four SQL targets** (PostgreSQL, CockroachDB, YugabyteDB, Oracle); a small versioned-step runner of our own for MongoDB. | DBAs know Flyway. M0 verifies that the community edition covers all four targets at the pinned version (F4); if it does not, we write the same small runner for SQL too. |
 | P7 | **PostgreSQL is the default development backend.** No in-memory store. | An in-memory store would drift from the invariants [D8]. Unit tests of the commit loop mock the storage interface. |
-| P8 | **Testcontainers** for every backend, IdP, object store and Kafka in tests; **docker compose** for the nightly engine matrix. | Docker Desktop 27.1.1 is installed here. |
+| P8 | **Testcontainers** for every backend, IdP, object store and Kafka in tests; **kind** (Kubernetes in Docker) for the nightly engine matrix, which deploys the catalog with its Helm chart (docker compose until 2026-11-12). | Docker Desktop 27.1.1 is installed here. |
 | P9 | **Package root `fidice.catalog`**, Maven groupId `fidice`. | Follows the repo name. |
 | P10 | Defaults that the ledger left to the plan: vended credential lifetime 30 min (bounds 15–60 [D21]); idempotency key lifetime PT24H [D10]; server-side commit retry: at most 4 attempts or 2 s [D9]; multi-table cap 100 [D15]; soft-drop window 30 days [D25]; clock-skew guard 60 s [D9, D11]. | Each is configuration, changeable without code. |
 | P11 | Branch and tag defaults [D33]: at most 50 open branches per catalog; a branch expires 30 days after its last commit unless renewed (max 180 days); tags never expire, at most 1,000 per catalog; a branch or tag blocks file cleanup for everything it references; merging or deleting a branch releases it. | The ledger asked the plan to set these. |
@@ -45,7 +45,7 @@ These were not asked during the grilling; they are routine calls made to unblock
 | `catalog-audit` | Outbox relay, synchronous Kafka publisher, CloudEvents change stream, hash-chained archive writer [D23]. | `catalog-core`, `catalog-store-api` |
 | `catalog-server` | Spring Boot app: REST routes, `/v1/config`, error mapping, management APIs (grants, holds, undrop, classification push, engines), startup self-checks. | all of the above |
 | `catalog-tests-conformance` | REST Compatibility Kit run plus a response diff against `apache/iceberg-rest-fixture` [D31]. | `catalog-server` |
-| `catalog-tests-engines` | Nightly engine matrix in docker compose [D31]. | built server image |
+| `catalog-tests-engines` | Nightly engine matrix in a kind cluster, the catalog deployed by its Helm chart [D31]. | built server image |
 | `catalog-tests-load` | Contention, large-metadata and throughput tests [D31]. | built server image |
 
 ### 2.2 Commit path
@@ -223,7 +223,7 @@ Three worktree sessions, each owning one module:
 
 ### M8 — Hardening gates
 
-- Nightly engine matrix in docker compose: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35].
+- Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35]. On 2026-11-12 (Paul) the catalog moved to Kubernetes: the matrix now deploys it with its Helm chart (`deploy/helm/fidice-catalog`) into a kind cluster, and runs Spark, Kafka Connect (the Iceberg sink, fed from a Kafka topic), PyIceberg and SingleStore. Kafka Connect replaced Flink; Trino and DuckDB were dropped.
 - Load: a 10k+-snapshot table; 8–32 concurrent writers on one table with zero 5xx, deadlocks, lost or duplicated commits.
 - Resilience: kill the primary mid-commit; rolling upgrade across a schema change; reconcile-from-storage DR drill (freeze cleanup and writes, fast-forward pointers along metadata-log chains) [D37].
 - SLO runs (load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, ≥ 500 commits/s); the laptop shows relative behaviour only.

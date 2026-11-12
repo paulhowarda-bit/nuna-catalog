@@ -1,0 +1,30 @@
+# The catalog server image: the catalog-server exec jar on a JDK 25 JRE (catalog-server/Dockerfile).
+image:
+  repository: fidice/catalog-server
+  tag: 0.1.0-SNAPSHOT
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 8181
+
+# JVM options (JAVA_TOOL_OPTIONS).
+javaOptions: "-Xms256m -Xmx512m"
+
+# Spring properties for the server, written to /config/application.properties: database URL, storage
+# profiles and catalogs (fidice.storage.*), token issuers (fidice.security.*), audit (fidice.audit.*).
+# Nothing secret goes here; see secretEnv.
+config: {}
+
+# Environment variables kept in a Secret: database password, store keys, AWS credentials, for example
+# SPRING_DATASOURCE_PASSWORD or AWS_ACCESS_KEY_ID.
+secretEnv: {}
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    memory: 900Mi

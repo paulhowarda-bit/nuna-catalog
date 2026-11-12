@@ -12,64 +12,43 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-/** Runs {@code docker} and {@code docker compose} for the engine matrix, logging every command and its output. */
-final class Compose {
+/**
+ * Runs the command-line tools the engine matrix drives ({@code kind}, {@code docker}, {@code kubectl},
+ * {@code helm}), with the run's environment, logging every command and its output.
+ */
+final class Cli {
 
     /** One finished command: its exit code and its combined stdout and stderr. */
     record Result(int exit, String output) {
     }
 
-    private final Path file;
     private final Map<String, String> env;
     private final Path log;
 
-    Compose(Path file, Map<String, String> env, Path log) {
-        this.file = file;
+    Cli(Map<String, String> env, Path log) {
         this.env = Map.copyOf(env);
         this.log = log;
     }
 
-    /** {@code docker compose <args>}; fails unless it exits 0. */
-    String compose(Duration timeout, String... args) {
-        Result result = composeResult(timeout, args);
-        if (result.exit() != 0) {
-            throw new IllegalStateException("docker compose " + String.join(" ", args) + " exited " + result.exit()
-                    + ":\n" + result.output());
-        }
-        return result.output();
-    }
-
-    Result composeResult(Duration timeout, String... args) {
-        List<String> command = new ArrayList<>(List.of("docker", "compose", "-f", file.toString()));
-        command.addAll(List.of(args));
-        return run(timeout, command, null);
-    }
-
-    /** Plain {@code docker <args>}; fails unless it exits 0. */
-    String docker(Duration timeout, String... args) {
-        Result result = dockerResult(timeout, args);
-        if (result.exit() != 0) {
-            throw new IllegalStateException("docker " + String.join(" ", args) + " exited " + result.exit()
-                    + ":\n" + result.output());
-        }
-        return result.output();
-    }
-
-    Result dockerResult(Duration timeout, String... args) {
-        return dockerResult(timeout, null, args);
+    /** Runs the command; fails unless it exits 0. */
+    String ok(Duration timeout, String... command) {
+        return ok(timeout, null, command);
     }
 
     /**
-     * Plain {@code docker <args>} with {@code input} (when not null) as its stdin. Text with double quotes
-     * goes this way: on Windows a quote inside a command-line argument does not survive.
+     * Runs the command with {@code input} (when not null) as its stdin; fails unless it exits 0. Text with
+     * double quotes goes this way: on Windows a quote inside a command-line argument does not survive.
      */
-    Result dockerResult(Duration timeout, Path input, String... args) {
-        List<String> command = new ArrayList<>(List.of("docker"));
-        command.addAll(List.of(args));
-        return run(timeout, command, input);
+    String ok(Duration timeout, Path input, String... command) {
+        Result result = run(timeout, input, command);
+        if (result.exit() != 0) {
+            throw new IllegalStateException(String.join(" ", command) + " exited " + result.exit() + ":\n"
+                    + result.output());
+        }
+        return result.output();
     }
 
-    private Result run(Duration timeout, List<String> command, Path input) {
+    Result run(Duration timeout, Path input, String... command) {
         ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
         builder.environment().putAll(env);
         append("$ " + String.join(" ", command) + (input == null ? "" : " < " + input));
@@ -96,11 +75,22 @@ final class Compose {
             append("(exit " + process.exitValue() + ")");
             return new Result(process.exitValue(), text);
         } catch (IOException e) {
-            throw new IllegalStateException("could not run " + command, e);
+            throw new IllegalStateException("could not run " + List.of(command), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted: " + command, e);
+            throw new IllegalStateException("interrupted: " + List.of(command), e);
         }
+    }
+
+    /** {@code kubectl <args>} against the run's cluster; fails unless it exits 0. */
+    String kubectl(Duration timeout, String... args) {
+        return ok(timeout, prepend("kubectl", args));
+    }
+
+    static String[] prepend(String first, String... rest) {
+        List<String> command = new ArrayList<>(List.of(first));
+        command.addAll(List.of(rest));
+        return command.toArray(String[]::new);
     }
 
     private static void copy(InputStream in, StringBuilder output) {
