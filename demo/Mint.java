@@ -42,6 +42,8 @@ public final class Mint {
         USERS.put("oscar", new String[] {"fidice-console", "demo-operators"});
         USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
         USERS.put("lake", new String[] {"lake-writer-demo", "demo-loaders"});
+        // The engine matrix's engines, run against the demo's stack by demo.sh engines.
+        USERS.put("engine-matrix", new String[] {"engine-matrix", "engine-clients"});
     }
 
     public static void main(String[] args) throws Exception {

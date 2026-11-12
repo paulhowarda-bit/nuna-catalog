@@ -31,11 +31,14 @@ tasks.test {
     inputs.dir("images").withPropertyName("images").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir("k8s").withPropertyName("k8s").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(rootProject.file("deploy")).withPropertyName("deploy").withPathSensitivity(PathSensitivity.RELATIVE)
+    // The stack the matrix shares with the demo.
+    inputs.dir(rootProject.file("demo/k8s")).withPropertyName("stack").withPathSensitivity(PathSensitivity.RELATIVE)
     listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
     // -Pengines.cluster=<kubectl context> deploys into that existing cluster instead of a new kind cluster;
     // -Pengines.keep-stack=true leaves everything up afterwards; -Pengines.skip-build=true uses the images
-    // already built.
-    listOf("engines.cluster", "engines.keep-stack", "engines.skip-build").forEach { name ->
+    // already built; -Pengines.stack=<namespace> with -Pengines.token-file=<file> runs the engines against the
+    // stack already up there (demo/demo.sh engines).
+    listOf("engines.cluster", "engines.keep-stack", "engines.skip-build", "engines.stack", "engines.token-file").forEach { name ->
         providers.gradleProperty(name).orNull?.let { systemProperty(name, it) }
     }
     doFirst {

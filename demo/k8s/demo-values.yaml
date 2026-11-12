@@ -1,0 +1,30 @@
+# The demo's catalog values, on top of catalog-values.yaml: its image tag, its issuer (demo/Mint.java, keys
+# served by Service idp) and profile s3 on the stack's Silo. Test keys only.
+image:
+  tag: demo
+
+config:
+  fidice:
+    storage:
+      require-tls: false
+      profiles:
+        s3:
+          kind: MINIO
+          endpoint: http://s3:9000
+          region: us-east-1
+          table-root: s3://warehouse/tables
+          allowed-prefixes: [s3://warehouse/tables]
+          access-key-id: fidicetest
+    security:
+      issuers:
+        - issuer: https://idp.demo/fidice
+          jwks-uri: http://idp:8080/keys.json
+          audiences: [fidice-catalog]
+          algorithms: [RS256]
+          user-id-claim: sub
+          groups-claim: groups
+          client-id-claim: azp
+
+secrets:
+  values:
+    fidice.storage.profiles.s3.secret-access-key: fidicetest-secret-key

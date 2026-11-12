@@ -1,0 +1,55 @@
+# SingleStore, part 4 of the shared stack. Iceberg pipelines load tables from the catalog; in the demo, the
+# change feed of its ops tables also commits to Iceberg through a connector pipeline. ${SINGLESTORE_IMAGE} is
+# the dev image: demo.sh's has the change-feed connector built in (singlestore.Dockerfile), tagged with the
+# jar's hash so a changed connector replaces the pod; a matrix run on its own uses the plain image. No volume:
+# the data goes with the pod (demo.sh seeds a new one). The demo publishes Studio on localhost:8183.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: singlestore
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels: {app: singlestore}
+  template:
+    metadata:
+      labels: {app: singlestore}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: singlestore
+          image: ${SINGLESTORE_IMAGE}
+          imagePullPolicy: Never
+          env:
+            - {name: ROOT_PASSWORD, value: fidice-test}
+            - {name: SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES, value: "1"}
+            - {name: SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST, value: "1"}
+          ports:
+            - containerPort: 3306
+            - containerPort: 8080
+          # The image's own health check: its start script has finished (/server/.ready), and the master and leaf
+          # answer. Port 3306 opens before the start script has set root's password, so a port check let
+          # clients in too early (Access denied for user 'root').
+          startupProbe:
+            exec:
+              command: ["/scripts/healthcheck.sh"]
+            timeoutSeconds: 5
+            periodSeconds: 5
+            failureThreshold: 120
+          resources:
+            requests: {memory: 2Gi}
+            limits: {memory: 3Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: singlestore
+spec:
+  selector: {app: singlestore}
+  ports:
+    - name: sql
+      port: 3306
+    - name: studio
+      port: 8080
