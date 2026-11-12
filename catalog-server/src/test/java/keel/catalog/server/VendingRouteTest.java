@@ -78,6 +78,10 @@ class VendingRouteTest {
     }
 
     private static final String TRUSTED_ENGINE = "trino-prod";
+    /** Holds only {@code select} on the catalog. */
+    private static final String READERS = "catalog-readers";
+    /** Holds only {@code create} on the catalog. */
+    private static final String BUILDERS = "catalog-builders";
 
     private static final String TABLE = """
             {"name":"t","schema":{"type":"struct","schema-id":0,"fields":[
@@ -149,6 +153,72 @@ class VendingRouteTest {
             assertDenied(() -> s3.listObjectsV2(b -> b.bucket(S3ForTests.bucket()).prefix("tables/")));
             assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key)));
         }
+    }
+
+    @Test
+    @DisplayName("a caller with only select gets credentials that read the table but write nothing; a writer's write")
+    void selectOnlyCallersGetReadOnlyCredentials() throws Exception {
+        ISSUED.clear();
+        String location = createTable("t", "alice");
+        String rows = key(location) + "/data/00000-0.parquet";
+        try (S3Client root = objectStore.client()) {
+            root.putObject(b -> b.bucket(S3ForTests.bucket()).key(rows), RequestBody.fromString("rows"));
+        }
+        IssuerForTests.grant(jdbc, "trading", READERS, "select");
+
+        String reader = IssuerForTests.bearer("rita", READERS);
+        for (String path : List.of(table("t"), table("t") + "/credentials")) {
+            HttpResponse<String> load = request("GET", "/v1/trading" + path, null, reader);
+            assertThat(load.statusCode()).as(load.body()).isEqualTo(200);
+            try (S3Client s3 = client(JsonPath.read(load.body(), "$.storage-credentials[0].config"))) {
+                assertThat(s3.getObjectAsBytes(b -> b.bucket(S3ForTests.bucket()).key(rows)).asUtf8String())
+                        .isEqualTo("rows");
+                assertThat(s3.listObjectsV2(b -> b.bucket(S3ForTests.bucket()).prefix(key(location) + "/")).contents())
+                        .extracting(o -> o.key()).contains(rows);
+                assertDenied(() -> s3.putObject(b -> b.bucket(S3ForTests.bucket())
+                        .key(key(location) + "/data/01a1d172-orphan.parquet"), RequestBody.fromString("x")));
+                assertDenied(() -> s3.putObject(b -> b.bucket(S3ForTests.bucket())
+                        .key(key(location) + "/metadata/snap-1-orphan.avro"), RequestBody.fromString("x")));
+                assertDenied(() -> s3.createMultipartUpload(b -> b.bucket(S3ForTests.bucket())
+                        .key(key(location) + "/data/big.parquet")));
+                assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(rows)));
+            }
+        }
+        HttpResponse<String> commit = request("POST", "/v1/trading" + table("t"), """
+                {"updates":[{"action":"set-snapshot-ref","ref-name":"main","snapshot-id":1,"type":"branch"}]}""",
+                reader);
+        assertThat(commit.statusCode()).as("the commit is refused as before").isEqualTo(403);
+        assertThat(ISSUED).filteredOn(issue -> issue.actor().principal().equals("rita"))
+                .as("one set, cached for the credentials route").singleElement()
+                .extracting(CredentialIssue::access).isEqualTo(CredentialIssue.Access.READ);
+
+        HttpResponse<String> load = send("GET", table("t"), null, "alice");
+        try (S3Client s3 = client(JsonPath.read(load.body(), "$.config"))) {
+            s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key(location) + "/data/00001-0.parquet"),
+                    RequestBody.fromString("more"));
+        }
+        assertThat(ISSUED).filteredOn(issue -> issue.actor().principal().equals("alice"))
+                .as("the create's set, which the load reuses").singleElement()
+                .extracting(CredentialIssue::access).isEqualTo(CredentialIssue.Access.READ_WRITE);
+    }
+
+    @Test
+    @DisplayName("a staged create vends read-write to a caller who may create the table, even without write")
+    void stagedCreateVendsReadWrite() throws Exception {
+        IssuerForTests.grant(jdbc, "trading", BUILDERS, "create");
+        ISSUED.clear();
+
+        HttpResponse<String> staged = request("POST", "/v1/trading/namespaces/" + namespace + "/tables",
+                TABLE.formatted(",\"stage-create\":true").replace("\"t\"", "\"ctas\""),
+                IssuerForTests.bearer("bert", BUILDERS));
+        assertThat(staged.statusCode()).as(staged.body()).isEqualTo(200);
+        String location = JsonPath.read(staged.body(), "$.metadata.location");
+        try (S3Client s3 = client(JsonPath.read(staged.body(), "$.storage-credentials[0].config"))) {
+            s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key(location) + "/data/00000-0.parquet"),
+                    RequestBody.fromString("rows"));
+        }
+        assertThat(ISSUED).singleElement().extracting(CredentialIssue::access)
+                .isEqualTo(CredentialIssue.Access.READ_WRITE);
     }
 
     @Test
