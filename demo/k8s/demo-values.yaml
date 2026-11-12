@@ -1,5 +1,7 @@
-# The demo's catalog values, on top of catalog-values.yaml: its image tag, its issuer (demo/Mint.java, keys
-# served by Service idp) and profile s3 on the stack's Silo. Test keys only.
+# The demo's catalog values, on top of catalog-values.yaml: its image tag, profile s3 on the stack's Silo, and
+# two issuers: demo/Mint.java's tokens (keys served by Service idp) and Keycloak's (keycloak.yaml), which the
+# console signs people in with by username and password. Both name a user by the same id (ana is ana at
+# either), so grants and audit see one person. Test keys only.
 image:
   tag: demo
 
@@ -24,6 +26,17 @@ config:
           user-id-claim: sub
           groups-claim: groups
           client-id-claim: azp
+        - issuer: http://localhost:8180/realms/keel
+          jwks-uri: http://keycloak:8080/realms/keel/protocol/openid-connect/certs
+          audiences: [keel-catalog]
+          algorithms: [RS256]
+          user-id-claim: preferred_username
+          groups-claim: groups
+          client-id-claim: azp
+    ui:
+      oidc:
+        issuer: http://localhost:8180/realms/keel
+        client-id: keel-console
 
 secrets:
   values:
