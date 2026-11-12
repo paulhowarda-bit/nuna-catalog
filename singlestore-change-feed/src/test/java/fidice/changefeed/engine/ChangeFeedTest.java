@@ -31,7 +31,8 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * The change feed against a real SingleStore (the dev image, 10.9.0), writing to an in-memory Iceberg catalog: the
  * snapshot, changes, a restart that resumes from the offsets in Iceberg, and a restart after SingleStore has dropped
- * the log the copy needed. Each step checks the copy holds exactly SingleStore's rows.
+ * the log the copy needed. Each step checks the copy holds exactly SingleStore's rows. Last, a restart from an
+ * earlier stored receipt sends the later receipts again, as they were.
  */
 @Tag("heavy")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -43,6 +44,8 @@ class ChangeFeedTest {
     static GenericContainer<?> singlestore;
     static String url;
     static ChangeFeed feed;
+    /** Every receipt the feed has returned, as SingleStore would have stored them. */
+    static final List<Map<String, Object>> stored = new ArrayList<>();
 
     @BeforeAll
     static void start() throws SQLException {
@@ -73,7 +76,7 @@ class ChangeFeedTest {
     @Test
     @Order(1)
     void copiesTheTableThenItsChanges() throws SQLException {
-        feed = new ChangeFeed(props());
+        feed = new ChangeFeed(props(), lastStored());
         List<Map<String, Object>> receipts = pollUntilCopied();
         assertThat(receipts).first().satisfies(r -> assertThat(r).containsEntry("kind", "snapshot"));
 
@@ -94,7 +97,7 @@ class ChangeFeedTest {
                 "INSERT INTO ops.orders VALUES (5,'BAS',300,47.2,'NEW')");
         String[] before = offsets();
 
-        feed = new ChangeFeed(props());
+        feed = new ChangeFeed(props(), lastStored());
         List<Map<String, Object>> receipts = pollUntilCopied();
 
         assertThat(receipts).isNotEmpty().allSatisfy(r -> assertThat(r).containsEntry("kind", "changes"));
@@ -113,13 +116,24 @@ class ChangeFeedTest {
                 "UPDATE ops.orders SET status = 'CANCELLED' WHERE order_id = 5", "SNAPSHOT DATABASE ops",
                 "SNAPSHOT DATABASE ops");
 
-        feed = new ChangeFeed(props());
+        feed = new ChangeFeed(props(), lastStored());
         List<Map<String, Object>> receipts = pollUntilCopied();
 
         assertThat(receipts).first().satisfies(r -> assertThat(r)
                 .containsEntry("kind", "resnapshot")
                 .containsEntry("gap_after", String.join(",", before)));
         assertThat(table().currentSnapshot().summary().get(IcebergCopy.GAP_AFTER)).isNotNull();
+    }
+
+    @Test
+    @Order(4)
+    void aRestartFromAnEarlierStoredReceiptSendsTheLaterOnesAgain() {
+        feed.close();
+        // SingleStore stored the first receipt and failed every batch after it.
+        feed = new ChangeFeed(props(), (Long) stored.getFirst().get("snapshot_id"));
+
+        assertThat(feed.apply(0L)).isEqualTo(stored.subList(1, stored.size()));
+        assertThat(feed.apply(0L)).isEmpty();
     }
 
     private static Map<String, String> props() {
@@ -145,12 +159,17 @@ class ChangeFeedTest {
         while (true) {
             receipts.addAll(feed.apply(500L));
             if (!receipts.isEmpty() && Fixtures.rows(table()).equals(expected)) {
+                stored.addAll(receipts);
                 return receipts;
             }
             if (System.nanoTime() > deadline) {
                 assertThat(Fixtures.rows(table())).as("the Iceberg copy after %s", receipts).isEqualTo(expected);
             }
         }
+    }
+
+    private static Long lastStored() {
+        return stored.isEmpty() ? null : (Long) stored.getLast().get("snapshot_id");
     }
 
     private static Table table() {

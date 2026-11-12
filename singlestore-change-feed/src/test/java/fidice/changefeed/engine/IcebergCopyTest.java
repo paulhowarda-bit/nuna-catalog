@@ -147,6 +147,32 @@ class IcebergCopyTest {
     }
 
     @Test
+    void theReceiptsOfCommitsAfterAGivenOneAreReadBackAsTheyWereSent() {
+        SourceTable source = orders(2);
+        IcebergCopy copy = IcebergCopy.open(catalog, config("orders", ""), source);
+        IcebergCopy.SnapshotWriter snapshot = copy.snapshotWriter();
+        snapshot.write(row(1, "SAP", 1, "1.000000", "NEW"));
+        snapshot.write(row(3, "ALV", 1, "1.000000", "NEW"));
+        IcebergCopy.Receipt first = snapshot.commit(new String[] {"a0", "b0"}, null);
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"});
+        transaction(batch, 0, "a1", update(0, row(1, "SAP", 2, "1.000000", "FILLED")), insert(0, row(2, "SIE", 2, "2.000000", "NEW")));
+        transaction(batch, 1, "b1", delete(1, 3));
+        IcebergCopy.Receipt second = copy.commit(batch);
+        IcebergCopy.SnapshotWriter again = copy.snapshotWriter();
+        again.write(row(2, "SIE", 3, "2.000000", "FILLED"));
+        IcebergCopy.Receipt third = again.commit(new String[] {"a9", "b9"}, new String[] {"a1", "b1"});
+
+        assertThat(copy.receiptsAfter(first.snapshotId())).containsExactly(second, third);
+        assertThat(copy.receiptsAfter(third.snapshotId())).isEmpty();
+        assertThat(copy.receiptsAfter(null)).containsExactly(first, second, third);
+        // A snapshot no longer in the history (expired, or of another table): every commit still in it.
+        assertThat(copy.receiptsAfter(42L)).containsExactly(first, second, third);
+        assertThat(second.rows()).isEqualTo(2);
+        assertThat(second.deletedKeys()).isEqualTo(1);
+        assertThat(third.gapAfter()).isEqualTo("a1,b1");
+    }
+
+    @Test
     void refusesAPartitionOutsideThePrimaryKey() {
         assertThatThrownBy(() -> IcebergCopy.open(catalog, config("orders", "symbol"), orders(1)))
                 .hasMessageContaining("partitioned on symbol, which is not in the primary key");

@@ -14,7 +14,8 @@ import org.apache.kafka.connect.source.SourceTask;
 
 /**
  * Runs one table's change feed. Each {@link #poll} returns a receipt for every Iceberg commit it made, which the
- * pipeline loads into SingleStore; the feed's position is kept in Iceberg, not in the pipeline's offsets.
+ * pipeline loads into SingleStore. The feed's position is kept in Iceberg; the pipeline's offset is only the last
+ * receipt SingleStore stored, from which a restarted task sends again the receipts of a batch SingleStore failed.
  */
 public final class ChangeFeedTask extends SourceTask {
 
@@ -46,14 +47,25 @@ public final class ChangeFeedTask extends SourceTask {
     @SuppressWarnings("unchecked")
     public void start(Map<String, String> props) {
         partition = Map.of("source", props.getOrDefault("singlestore.database", "") + "." + props.getOrDefault("singlestore.table", ""));
+        Long receiptedThrough = receiptedThrough(context.offsetStorageReader().offset(partition));
         try {
             feed = Isolation.within(() -> (Function<Long, List<Map<String, Object>>>)
-                    Class.forName(Isolation.ENGINE, true, Isolation.loader()).getConstructor(Map.class).newInstance(props));
+                    Class.forName(Isolation.ENGINE, true, Isolation.loader()).getConstructor(Map.class, Long.class)
+                            .newInstance(props, receiptedThrough));
         } catch (java.lang.reflect.InvocationTargetException e) {
             throw new ConnectException("starting the change feed: " + e.getCause(), e.getCause());
         } catch (Exception e) {
             throw new ConnectException("starting the change feed: " + e, e);
         }
+    }
+
+    /** The snapshot id of the stored offset; a converter may hand it back as any kind of number, or as text. */
+    static Long receiptedThrough(Map<String, Object> offset) {
+        Object id = offset == null ? null : offset.get("snapshot_id");
+        if (id == null) {
+            return null;
+        }
+        return id instanceof Number n ? n.longValue() : Long.parseLong(id.toString());
     }
 
     @Override

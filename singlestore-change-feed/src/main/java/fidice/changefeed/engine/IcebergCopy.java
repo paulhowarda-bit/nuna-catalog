@@ -74,11 +74,25 @@ final class IcebergCopy {
      * after them and before the snapshot were not seen one by one, only their result.
      */
     static final String GAP_AFTER = "fidice.changefeed.gap-after";
+    /** Rows the commit wrote, and keys it deleted (not counting keys whose rows it replaced). */
+    static final String ROWS = "fidice.changefeed.rows";
+    static final String KEYS_DELETED = "fidice.changefeed.keys-deleted";
     /** Parquet's default row group is 128 MB, the whole heap SingleStore may give a connector. */
     static final String ROW_GROUP_BYTES = String.valueOf(8L << 20);
 
-    /** What a commit did, for the receipt the pipeline writes into SingleStore; {@code gapAfter} is null but on a re-snapshot. */
-    record Receipt(long snapshotId, String kind, long rows, long deletedKeys, String offsets, String gapAfter) {}
+    /**
+     * What a commit did, for the receipt the pipeline writes into SingleStore; {@code gapAfter} is null but on a
+     * re-snapshot. Read from the snapshot alone, so a receipt sent again is the same row.
+     */
+    record Receipt(long snapshotId, String kind, long rows, long deletedKeys, String offsets, String gapAfter, long committedAt) {
+
+        static Receipt of(Snapshot snapshot) {
+            Map<String, String> summary = snapshot.summary();
+            return new Receipt(snapshot.snapshotId(), summary.get(KIND), Long.parseLong(summary.getOrDefault(ROWS, "0")),
+                    Long.parseLong(summary.getOrDefault(KEYS_DELETED, "0")), summary.get(OFFSETS), summary.get(GAP_AFTER),
+                    snapshot.timestampMillis());
+        }
+    }
 
     private final Table table;
     private final SourceTable source;
@@ -266,6 +280,22 @@ final class IcebergCopy {
         return offsets;
     }
 
+    /**
+     * Receipts of the feed's commits after snapshot {@code after}, oldest first: what a failed pipeline batch may have
+     * lost. All the commits still in the table's history when {@code after} is null or no longer in it.
+     */
+    List<Receipt> receiptsAfter(Long after) {
+        List<Receipt> receipts = new ArrayList<>();
+        Snapshot snapshot = table.currentSnapshot();
+        while (snapshot != null && (after == null || snapshot.snapshotId() != after)) {
+            if (snapshot.summary().containsKey(KIND)) {
+                receipts.add(Receipt.of(snapshot));
+            }
+            snapshot = snapshot.parentId() == null ? null : table.snapshot(snapshot.parentId());
+        }
+        return receipts.reversed();
+    }
+
     /** A writer for a snapshot's rows, whose files replace the whole copy when committed. */
     SnapshotWriter snapshotWriter() {
         return new SnapshotWriter();
@@ -300,13 +330,11 @@ final class IcebergCopy {
                 overwrite.validateFromSnapshot(base);
             }
             overwrite.conflictDetectionFilter(Expressions.alwaysTrue()).validateNoConflictingData().validateNoConflictingDeletes();
-            String kind = gapAfter == null ? "snapshot" : "resnapshot";
-            String gap = gapAfter == null ? null : join(gapAfter);
-            if (gap != null) {
-                overwrite.set(GAP_AFTER, gap);
+            if (gapAfter != null) {
+                overwrite.set(GAP_AFTER, join(gapAfter));
             }
-            long snapshotId = IcebergCopy.this.commit(overwrite, UUID.randomUUID().toString(), kind, offsets);
-            return new Receipt(snapshotId, kind, rows, 0, join(offsets), gap);
+            return IcebergCopy.this.commit(overwrite, UUID.randomUUID().toString(), gapAfter == null ? "snapshot" : "resnapshot",
+                    offsets, rows, 0);
         }
 
         void abort() {
@@ -363,9 +391,7 @@ final class IcebergCopy {
             delta.validateFromSnapshot(base);
         }
         delta.conflictDetectionFilter(Expressions.alwaysTrue()).validateNoConflictingDataFiles().validateNoConflictingDeleteFiles();
-        String[] offsets = batch.offsets();
-        long snapshotId = commit(delta, commitId, "changes", offsets);
-        return new Receipt(snapshotId, "changes", rows, deletedKeys, join(offsets), null);
+        return commit(delta, commitId, "changes", batch.offsets(), rows, deletedKeys);
     }
 
     /**
@@ -373,12 +399,15 @@ final class IcebergCopy {
      * is read back: a snapshot carrying the commit id means it landed. Otherwise the failure stands, the task stops,
      * and the next start resumes from the offsets the table holds.
      */
-    private long commit(SnapshotUpdate<?> update, String commitId, String kind, String[] offsets) {
+    private Receipt commit(SnapshotUpdate<?> update, String commitId, String kind, String[] offsets, long rows, long keysDeleted) {
         update.set(OFFSETS, join(offsets));
         update.set(COMMIT_ID, commitId);
         update.set(KIND, kind);
+        update.set(ROWS, String.valueOf(rows));
+        update.set(KEYS_DELETED, String.valueOf(keysDeleted));
         try {
             update.commit();
+            base = table.currentSnapshot().snapshotId();
         } catch (RuntimeException e) {
             Long landed = landed(commitId);
             if (landed == null) {
@@ -386,10 +415,8 @@ final class IcebergCopy {
             }
             LOG.warn("commit {} to {} failed with {} but landed as snapshot {}", commitId, table.name(), e, landed);
             base = landed;
-            return landed;
         }
-        base = table.currentSnapshot().snapshotId();
-        return base;
+        return Receipt.of(table.snapshot(base));
     }
 
     private Long landed(String commitId) {

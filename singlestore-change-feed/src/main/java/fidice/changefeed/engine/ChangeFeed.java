@@ -58,6 +58,8 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
     private Snapshotting snapshotting;
     private long lastCommit;
     private long lastGuard;
+    /** Receipts of commits SingleStore has not stored, sent before anything else. */
+    private List<Map<String, Object>> owed;
 
     /** The partitions' snapshots, written as they arrive and committed once every partition has sent its own. */
     private static final class Snapshotting {
@@ -75,11 +77,21 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
         }
     }
 
-    public ChangeFeed(Map<String, String> props) {
+    /**
+     * {@code receiptedThrough} is the snapshot of the last receipt SingleStore stored (the pipeline's offset), or
+     * null if it has stored none. A batch SingleStore failed to write lost its receipts, though their commits are in
+     * Iceberg; SingleStore then starts the task again from its stored offset, and the feed sends those receipts again.
+     */
+    public ChangeFeed(Map<String, String> props, Long receiptedThrough) {
         config = FeedConfig.from(props);
         watchdog = Executors.newSingleThreadScheduledExecutor(r -> Thread.ofPlatform().daemon().name("changefeed-watchdog").unstarted(r));
         watchdog.scheduleWithFixedDelay(this::closeIfIdle, 30, 30, TimeUnit.SECONDS);
         open(null);
+        owed = copy.receiptsAfter(receiptedThrough).stream().map(this::receipt).toList();
+        if (!owed.isEmpty()) {
+            LOG.info("{} -> {}: sending again the receipts of {} commits after {}", config.source(), config.icebergTable(),
+                    owed.size(), receiptedThrough);
+        }
     }
 
     /** Takes in what arrived within {@code waitMs}, commits if due, and returns the receipts of any commits. */
@@ -90,7 +102,9 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
             open(null);
         }
         try {
-            return poll(waitMs);
+            List<Map<String, Object>> receipts = poll(waitMs);
+            owed = List.of();
+            return receipts;
         } catch (RuntimeException e) {
             // Whatever was held is read again from the offsets in Iceberg.
             LOG.warn("change feed {} -> {} failed; it restarts from Iceberg's offsets on the next poll", config.source(),
@@ -101,7 +115,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
     }
 
     private List<Map<String, Object>> poll(long waitMs) {
-        List<Map<String, Object>> receipts = new ArrayList<>();
+        List<Map<String, Object>> receipts = new ArrayList<>(owed);
         long now = System.currentTimeMillis();
         if (now - lastGuard >= GUARD_EVERY_MS) {
             guard();
@@ -225,7 +239,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
         receipt.put("keys_deleted", r.deletedKeys());
         receipt.put("offsets", r.offsets());
         receipt.put("gap_after", r.gapAfter());
-        receipt.put("committed_at", System.currentTimeMillis());
+        receipt.put("committed_at", r.committedAt());
         return receipt;
     }
 

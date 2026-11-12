@@ -18,7 +18,7 @@ import java.util.jar.JarFile;
 
 /**
  * The class loader the change feed runs in. SingleStore puts every connector jar on one class path with its own
- * libraries, among them Iceberg 1.9, AWS SDK 2.25 and Jackson, so the feed's libraries (Iceberg 1.12 and what it
+ * libraries, among them AWS SDK 2.25.3 and Jackson 2.22.3, so the feed's libraries (Iceberg 1.12 and what it
  * needs) travel inside the connector jar under {@code lib/} and are loaded from there first. Only the JDK and SLF4J
  * come from SingleStore's side, so the feed logs where the extractor logs.
  */

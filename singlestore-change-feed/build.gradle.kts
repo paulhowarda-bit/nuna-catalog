@@ -21,8 +21,8 @@ val icebergVersion = property("iceberg.version")
 val hadoopVersion = "3.4.3"
 
 // The loader is the only code SingleStore's class path sees. It loads everything else from lib/ inside
-// the connector jar, so Iceberg, Parquet, Hadoop and the AWS SDK never meet the older copies SingleStore
-// keeps on that class path (Iceberg 1.9, AWS SDK 2.25, its own Jackson).
+// the connector jar, so the feed's libraries never meet the copies SingleStore 10.9.0 keeps on that class
+// path (AWS SDK 2.25.3, Jackson 2.22.3, Debezium, Kafka Connect and more).
 val loader = sourceSets.create("loader")
 
 dependencies {
