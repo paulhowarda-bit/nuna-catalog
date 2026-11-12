@@ -34,7 +34,7 @@ class IcebergClientConfigTest {
             Table table = client.loadTable(id);
 
             assertThat(client.listNamespaces()).contains(namespace);
-            assertThat(table.location()).startsWith("s3://warehouse/tables/");
+            assertThat(table.location()).startsWith("s3://" + ConformanceServer.bucket() + "/tables/");
             assertThat(client.dropTable(id)).isTrue();
             assertThat(client.tableExists(id)).isFalse();
         }

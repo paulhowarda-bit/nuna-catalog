@@ -17,6 +17,7 @@ dependencyResolutionManagement {
 rootProject.name = "fidice-catalog"
 
 include(
+    "catalog-tests-s3",
     "catalog-core",
     "catalog-iceberg",
     "catalog-store-api",

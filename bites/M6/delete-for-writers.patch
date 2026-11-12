@@ -1,6 +1,6 @@
 Breaks: every writer may delete, not only maintenance principals.
 Module: catalog-objectstore
-Test: SiloVendingTest#noDeleteWithoutMaintenance
+Test: VendingTest#noDeleteWithoutMaintenance
 
 diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/Access.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/Access.java
 index 4bfa6d0..528a051 100644

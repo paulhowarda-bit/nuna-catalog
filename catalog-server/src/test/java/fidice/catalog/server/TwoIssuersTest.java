@@ -39,7 +39,7 @@ import org.testcontainers.utility.MountableFile;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = TwoIssuersTest.Realms.class)
-@Import({PostgresForTests.class, SiloForTests.class, AuditSinkForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
 class TwoIssuersTest {
 
     /** The directory id both realms carry for the same person, in different claims. */

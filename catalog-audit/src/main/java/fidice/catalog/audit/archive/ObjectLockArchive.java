@@ -64,12 +64,22 @@ public final class ObjectLockArchive {
     private final String prefix;
     private final Duration retention;
     private final Clock clock;
+    private final ObjectLockMode mode;
 
     /**
      * @param prefix    the key prefix every chain lives under, without a trailing slash
      * @param retention how long each segment is locked; at least {@link #MINIMUM_RETENTION}
      */
     public ObjectLockArchive(S3Client s3, String bucket, String prefix, Duration retention, Clock clock) {
+        this(s3, bucket, prefix, retention, clock, ObjectLockMode.COMPLIANCE);
+    }
+
+    /**
+     * For tests on real AWS only: GOVERNANCE mode, so the test can delete what it wrote. Never reachable from
+     * the server, which always locks in COMPLIANCE mode (D23).
+     */
+    ObjectLockArchive(S3Client s3, String bucket, String prefix, Duration retention, Clock clock, ObjectLockMode mode) {
+        this.mode = Objects.requireNonNull(mode, "mode");
         this.s3 = Objects.requireNonNull(s3, "s3");
         this.bucket = Objects.requireNonNull(bucket, "bucket");
         this.prefix = Objects.requireNonNull(prefix, "prefix");
@@ -119,7 +129,7 @@ public final class ObjectLockArchive {
                         .contentType("application/x-ndjson")
                         .metadata(metadata)
                         .checksumAlgorithm(ChecksumAlgorithm.SHA256)
-                        .objectLockMode(ObjectLockMode.COMPLIANCE)
+                        .objectLockMode(mode)
                         .objectLockRetainUntilDate(clock.instant().plus(retention)),
                 RequestBody.fromBytes(records)).versionId();
         return new Segment(key, version, start, end, nextOffset);

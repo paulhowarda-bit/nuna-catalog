@@ -50,11 +50,11 @@ import org.springframework.test.context.ContextConfiguration;
         "fidice.security.grant-admin-groups=grant-admins",
         "fidice.security.platform-operator-groups=platform-ops",
         "fidice.security.refuse-identity-less-commits=true",
-        "fidice.storage.catalogs.gate.profile=silo",
+        "fidice.storage.catalogs.gate.profile=" + S3ForTests.PROFILE,
         "fidice.storage.catalogs.gate.kms-key-set=test-keys",
         "fidice.storage.catalogs.gate.legal-entity=Test Entity"})
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class, AuditSinkForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SecurityGateTest {
 

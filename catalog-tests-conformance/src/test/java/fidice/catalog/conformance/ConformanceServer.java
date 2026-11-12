@@ -5,30 +5,25 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import fidice.catalog.security.TestIdp;
 import fidice.catalog.server.CatalogServer;
+import fidice.catalog.tests.s3.TestS3;
 
 import java.net.URI;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
-import software.amazon.awssdk.regions.Region;
-import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * One catalog server on PostgreSQL and Silo (the maintained MinIO fork) for the whole test JVM, with
- * the RCK's warehouse seeded. Clients reach the same Silo through {@link #clientStorage()}, and authenticate with
+ * One catalog server on PostgreSQL and the run's S3 store ({@link TestS3}, chosen by {@code -Ps3}) for the whole
+ * test JVM, with the RCK's warehouse seeded. Clients reach the same store through {@link #clientStorage()}, and authenticate with
  * {@link #token()}: a local test issuer's token for a group that holds create and modify on the warehouse (M5).
  */
 final class ConformanceServer {
@@ -36,16 +31,12 @@ final class ConformanceServer {
     /** The warehouse name the RCK client asks for by default. */
     static final String WAREHOUSE = "rck_warehouse";
 
-    private static final String BUCKET = "warehouse";
-    private static final String ACCESS_KEY = "fidicetest";
-    private static final String SECRET_KEY = "fidicetest-secret-key";
-    private static final String REGION = "us-east-1";
+    private static final String PROFILE = "s3";
     private static final String ISSUER = "https://idp.test/conformance";
     private static final String AUDIENCE = "fidice-catalog";
     private static final String GROUP = "conformance-clients";
 
     private static URI uri;
-    private static URI storage;
     private static String token;
 
     private ConformanceServer() {
@@ -58,7 +49,7 @@ final class ConformanceServer {
         PostgreSQLContainer postgres =
                 new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image")));
         postgres.start();
-        storage = startSilo();
+        TestS3 s3 = TestS3.get();
         // Audit is on (M7): every load hands out credentials, and a credential issue needs Kafka's ack.
         KafkaContainer kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
                 .withEnv("KAFKA_HEAP_OPTS", "-Xms256m -Xmx256m");
@@ -78,20 +69,14 @@ final class ConformanceServer {
         } catch (Exception e) {
             throw new IllegalStateException("the conformance token issuer did not start", e);
         }
+        Map<String, Object> storage = new HashMap<>(s3.serverProperties(PROFILE, bucket()));
         ConfigurableApplicationContext server = new SpringApplicationBuilder(CatalogServer.class)
+                .properties(storage)
                 .properties(
                         "spring.datasource.url=" + postgres.getJdbcUrl(),
                         "spring.datasource.username=" + postgres.getUsername(),
                         "spring.datasource.password=" + postgres.getPassword(),
-                        "fidice.storage.require-tls=false",
-                        "fidice.storage.profiles.silo.kind=MINIO",
-                        "fidice.storage.profiles.silo.endpoint=" + storage,
-                        "fidice.storage.profiles.silo.region=" + REGION,
-                        "fidice.storage.profiles.silo.table-root=s3://" + BUCKET + "/tables",
-                        "fidice.storage.profiles.silo.allowed-prefixes=s3://" + BUCKET + "/tables",
-                        "fidice.storage.profiles.silo.access-key-id=" + ACCESS_KEY,
-                        "fidice.storage.profiles.silo.secret-access-key=" + SECRET_KEY,
-                        "fidice.storage.catalogs." + WAREHOUSE + ".profile=silo",
+                        "fidice.storage.catalogs." + WAREHOUSE + ".profile=" + PROFILE,
                         "fidice.storage.catalogs." + WAREHOUSE + ".kms-key-set=test-keys",
                         "fidice.storage.catalogs." + WAREHOUSE + ".legal-entity=Test Entity",
                         "fidice.security.issuers[0].issuer=" + ISSUER,
@@ -123,40 +108,30 @@ final class ConformanceServer {
         return token;
     }
 
+    /** The bucket the server's tables live in: {@code warehouse}, or on AWS this run's name for it. */
+    static String bucket() {
+        return TestS3.get().bucket("warehouse");
+    }
+
     /**
-     * Catalog properties that give a client's S3FileIO access to the server's Silo. M4 vends no
-     * credentials (that is M6), so clients bring their own.
+     * Catalog properties that give a client's S3FileIO direct access to the run's store, for clients that do
+     * not take vended credentials. On AWS the SDK's default chain finds the CLI profile {@code TestS3} set.
      */
     static Map<String, String> clientStorage() {
         start();
-        return Map.of(
+        TestS3 s3 = TestS3.get();
+        Map<String, String> properties = new HashMap<>(Map.of(
                 "io-impl", "org.apache.iceberg.aws.s3.S3FileIO",
-                "s3.endpoint", storage.toString(),
-                "s3.path-style-access", "true",
-                "s3.access-key-id", ACCESS_KEY,
-                "s3.secret-access-key", SECRET_KEY,
-                "client.region", REGION,
-                "http-client.type", "apache");
-    }
-
-    private static URI startSilo() {
-        GenericContainer<?> silo = new GenericContainer<>(DockerImageName.parse(System.getProperty("silo.image")))
-                .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
-                .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
-                .withCommand("server", "/data")
-                .withExposedPorts(9000)
-                .waitingFor(Wait.forHttp("/minio/health/live").forPort(9000)
-                        .withStartupTimeout(Duration.ofMinutes(2)));
-        silo.start();
-        URI endpoint = URI.create("http://" + silo.getHost() + ":" + silo.getMappedPort(9000));
-        try (S3Client s3 = S3Client.builder()
-                .endpointOverride(endpoint)
-                .region(Region.of(REGION))
-                .forcePathStyle(true)
-                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY)))
-                .build()) {
-            s3.createBucket(b -> b.bucket(BUCKET));
+                "client.region", TestS3.REGION,
+                "http-client.type", "apache"));
+        if (s3.kind != TestS3.Kind.AWS) {
+            properties.put("s3.endpoint", s3.endpoint.toString());
+            properties.put("s3.path-style-access", "true");
         }
-        return endpoint;
+        s3.keys().ifPresent(keys -> {
+            properties.put("s3.access-key-id", keys.accessKeyId());
+            properties.put("s3.secret-access-key", keys.secretAccessKey());
+        });
+        return Map.copyOf(properties);
     }
 }

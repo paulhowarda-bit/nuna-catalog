@@ -23,7 +23,7 @@ import org.springframework.test.context.ContextConfiguration;
         "fidice.ui.oidc.scopes=openid,api://fidice-catalog/catalog.access",
 })
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class})
 class ConsoleConfiguredTest {
 
     private final HttpClient http = HttpClient.newHttpClient();

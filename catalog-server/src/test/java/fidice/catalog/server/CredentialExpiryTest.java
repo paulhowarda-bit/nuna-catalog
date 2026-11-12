@@ -32,7 +32,7 @@ import org.springframework.context.annotation.Primary;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class, CredentialExpiryTest.Vending.class})
+@Import({PostgresForTests.class, S3ForTests.class, CredentialExpiryTest.Vending.class})
 class CredentialExpiryTest {
 
     private static final AtomicReference<Instant> EXPIRES = new AtomicReference<>();

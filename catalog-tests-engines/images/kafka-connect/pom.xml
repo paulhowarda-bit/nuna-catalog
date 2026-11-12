@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Not a module of the build: the image build resolves the Apache Iceberg sink for Kafka Connect and what it
+     needs at run time into a plugin directory. Iceberg publishes the connector's jars but no runtime bundle;
+     Kafka itself provides the Connect API. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>fidice.engines</groupId>
+  <artifactId>iceberg-sink-plugin</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <iceberg.version>1.12.0</iceberg.version>
+    <hadoop.version>3.4.3</hadoop.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-kafka-connect</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- Parquet data files, the sink's default format. Iceberg's generic writers register Parquet, Avro and
+         ORC together, so ORC must be present for Parquet to register at all (as in Iceberg's runtime bundle). -->
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-parquet</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-orc</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- S3FileIO and the AWS SDK it uses, for the catalog's vended credentials. -->
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-aws</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-aws-bundle</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- Parquet writers build a Hadoop Configuration; the shaded client, as the Flink image used. -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-api</artifactId>
+      <version>${hadoop.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-runtime</artifactId>
+      <version>${hadoop.version}</version>
+    </dependency>
+  </dependencies>
+</project>

@@ -2,7 +2,7 @@ package fidice.catalog.server.governance;
 
 import fidice.catalog.server.IssuerForTests;
 import fidice.catalog.server.PostgresForTests;
-import fidice.catalog.server.SiloForTests;
+import fidice.catalog.server.S3ForTests;
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -24,8 +24,8 @@ import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * The server every M7 server test shares (one Spring context): PostgreSQL, Silo and a Kafka broker,
- * M5's test issuer, M6's credential vending on Silo, and a clock tests can move forward. {@link Api}
+ * The server every M7 server test shares (one Spring context): PostgreSQL, the run's S3 store and a Kafka broker,
+ * M5's test issuer, M6's credential vending on that store, and a clock tests can move forward. {@link Api}
  * signs each request in as the caller its {@code X-Test-Principal} pseudo-header names.
  */
 @Target(ElementType.TYPE)
@@ -42,7 +42,7 @@ import org.testcontainers.utility.DockerImageName;
         "fidice.security.platform-operator-groups=" + GovernanceServer.PLATFORM_OPS,
 })
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class, GovernanceServer.Beans.class})
+@Import({PostgresForTests.class, S3ForTests.class, GovernanceServer.Beans.class})
 public @interface GovernanceServer {
 
     /** A pseudo-header {@link Api} turns into a token for this principal; the default is {@code tester}. */

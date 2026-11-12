@@ -1,0 +1,39 @@
+# -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+spec:
+  selector:
+    matchLabels: {app: s3}
+  template:
+    metadata:
+      labels: {app: s3}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: silo
+          image: ${SILO_IMAGE}
+          imagePullPolicy: Never
+          args: ["server", "/data"]
+          env:
+            - {name: MINIO_ROOT_USER, value: fidicetest}
+            - {name: MINIO_ROOT_PASSWORD, value: fidicetest-secret-key}
+          ports:
+            - containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            periodSeconds: 2
+          resources:
+            limits: {memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+spec:
+  selector: {app: s3}
+  ports:
+    - port: 9000

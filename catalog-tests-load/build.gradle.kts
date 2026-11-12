@@ -17,6 +17,8 @@ val serverJarFile = configurations.resolvable("serverJarFile") {
 dependencies {
     serverJar(project(path = ":catalog-server", configuration = "execJar"))
 
+    // The run's S3 store: -Ps3=silo (default), ceph or aws.
+    testImplementation(project(":catalog-tests-s3"))
     testImplementation(project(":catalog-server"))
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
     testImplementation("org.postgresql:postgresql")
@@ -33,7 +35,7 @@ tasks.test {
     val work = layout.buildDirectory.dir("m8")
     val root = rootDir
     inputs.files(jar).withPropertyName("serverJar").withPathSensitivity(PathSensitivity.NONE)
-    listOf("postgres.image", "silo.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
+    listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
     systemProperty("m8.previous-release", previousRelease)
     doFirst {
         // Paths of this checkout, set as the task starts so they stay out of the build cache key.

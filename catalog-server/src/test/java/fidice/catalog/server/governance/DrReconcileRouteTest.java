@@ -8,7 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import fidice.catalog.audit.Commit;
 import fidice.catalog.audit.EventType;
-import fidice.catalog.server.SiloForTests;
+import fidice.catalog.server.S3ForTests;
+import fidice.catalog.tests.s3.TestS3;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +42,7 @@ class DrReconcileRouteTest {
     private GovernanceServer.TestClock clock;
 
     @Autowired
-    private SiloForTests.Silo silo;
+    private TestS3 objectStore;
 
     @Value("${local.server.port}")
     private int port;
@@ -75,9 +76,9 @@ class DrReconcileRouteTest {
         jdbc.update("UPDATE pointer SET metadata_location = ?, version = ?, sha256 = ?, projection = ?,"
                 + " last_commit_id = ? WHERE object_id = ?::uuid AND branch = 'main'", first.get("metadata_location"),
                 first.get("version"), first.get("sha256"), first.get("projection"), first.get("last_commit_id"), id);
-        String stranger = "s3://" + SiloForTests.BUCKET + "/tables/" + UUID.randomUUID();
-        try (S3Client s3 = SiloForTests.rootClient(silo)) {
-            s3.putObject(b -> b.bucket(SiloForTests.BUCKET).key(stranger.substring(("s3://" + SiloForTests.BUCKET
+        String stranger = "s3://" + S3ForTests.bucket() + "/tables/" + UUID.randomUUID();
+        try (S3Client s3 = objectStore.client()) {
+            s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(stranger.substring(("s3://" + S3ForTests.bucket()
                     + "/").length()) + "/metadata/00001-" + UUID.randomUUID() + ".metadata.json"), RequestBody.fromString("{}"));
         }
 
@@ -100,13 +101,13 @@ class DrReconcileRouteTest {
                 AUTH, api.operator()), 200);
         String requestId = "m8-reconcile-" + UUID.randomUUID();
         HttpResponse<String> applied = expect(api.manage("POST", "/dr-reconcile",
-                "{\"apply\":true,\"accept\":[\"" + v3 + "\",\"s3://warehouse/tables/none\"]}",
+                "{\"apply\":true,\"accept\":[\"" + v3 + "\",\"s3://" + S3ForTests.bucket() + "/tables/none\"]}",
                 AUTH, api.operator(), Management.REQUEST_ID, requestId), 200);
         assertThat(JsonPath.<List<Integer>>read(applied.body(), table + ".steps-applied")).containsExactly(2);
         assertThat(JsonPath.<List<String>>read(applied.body(), table + ".steps[*].proof"))
                 .containsExactly("successor", "accepted");
         assertThat(JsonPath.<List<String>>read(applied.body(), "$.unused-accepts")).containsExactly(
-                "s3://warehouse/tables/none");
+                "s3://" + S3ForTests.bucket() + "/tables/none");
         assertThat(location(ns)).isEqualTo(v3);
         assertThat(jdbc.queryForObject("SELECT version FROM pointer WHERE object_id = ?::uuid AND branch = 'main'",
                 Long.class, id)).isEqualTo(3);

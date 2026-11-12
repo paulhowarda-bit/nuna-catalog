@@ -121,6 +121,9 @@ subprojects {
             outputs.upToDateWhen { false }
             outputs.cacheIf { false }
         }
+        // The one S3 store every test uses (catalog-tests-s3, TestS3): -Ps3=silo, ceph or aws.
+        listOf("s3", "silo.image", "ceph.image").forEach { systemProperty(it, project.property(it)!!) }
+        systemProperty("fidice.aws.profile", providers.gradleProperty("fidice.aws.profile").getOrElse(""))
         // In the fast build every test of some modules is tagged out.
         failOnNoDiscoveredTests = false
         // What the test JVMs had under Maven on this 16 GB machine (the JVM's default, a quarter

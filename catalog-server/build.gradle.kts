@@ -16,6 +16,8 @@ dependencies {
     api("org.springframework.boot:spring-boot-starter-jdbc")
     runtimeOnly("org.postgresql:postgresql")
 
+    // The run's S3 store: -Ps3=silo (default), ceph or aws.
+    testImplementation(project(":catalog-tests-s3"))
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
@@ -38,7 +40,7 @@ configurations.consumable("execJar") {
 }
 
 tasks.test {
-    listOf("postgres.image", "silo.image", "keycloak.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
+    listOf("postgres.image", "keycloak.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
     // IcebergImportBoundaryTest and NoKmsBoundaryTest read every module's main sources.
     inputs.files(rootProject.fileTree(rootDir) { include("*/src/main/java/**/*.java") })
         .withPropertyName("mainSources").withPathSensitivity(PathSensitivity.RELATIVE).ignoreEmptyDirectories()

@@ -15,6 +15,8 @@ dependencies {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
 
+    // The run's S3 store: -Ps3=silo (default), ceph or aws.
+    testImplementation(project(":catalog-tests-s3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.assertj:assertj-core")
     testImplementation("org.testcontainers:testcontainers-kafka")
@@ -23,5 +25,5 @@ dependencies {
 }
 
 tasks.test {
-    listOf("kafka.image", "toxiproxy.image", "silo.image").forEach { systemProperty(it, project.property(it)!!) }
+    listOf("kafka.image", "toxiproxy.image").forEach { systemProperty(it, project.property(it)!!) }
 }

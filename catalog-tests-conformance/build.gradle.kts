@@ -14,13 +14,15 @@ val hadoopVersion = "3.4.3"
 val fixtureJettyVersion = dependencyManagement.importedProperties["jetty.version"]
 
 dependencies {
+    // The run's S3 store: -Ps3=silo (default), ceph or aws.
+    testImplementation(project(":catalog-tests-s3"))
     testImplementation(project(":catalog-server"))
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
     testImplementation("org.apache.iceberg:iceberg-open-api:$icebergVersion:tests")
     testImplementation("org.apache.iceberg:iceberg-open-api:$icebergVersion:test-fixtures")
     testImplementation("org.apache.iceberg:iceberg-core:$icebergVersion:tests")
     testImplementation("org.apache.iceberg:iceberg-api:$icebergVersion:tests")
-    // The RCK client writes manifests and data files itself, to Silo, through S3FileIO.
+    // The RCK client writes manifests and data files itself, to the run's S3 store, through S3FileIO.
     testImplementation("org.apache.iceberg:iceberg-aws:$icebergVersion")
     testImplementation("software.amazon.awssdk:s3")
     testImplementation("software.amazon.awssdk:apache-client")
@@ -49,7 +51,7 @@ dependencies {
 tasks.test {
     // Only our harness runs here; it launches the RCK classes itself.
     include("fidice/**/*Test.class")
-    listOf("postgres.image", "silo.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
+    listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
 
     val reasons = file("rck-reasons.txt")
     val baseline = file("rck-baseline.txt")

@@ -30,7 +30,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class, AuditSinkForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
 class RestRoutesTest {
 
     private static final String TABLE = """
@@ -170,7 +170,7 @@ class RestRoutesTest {
                         + "\"location\":\"s3://elsewhere/t\""));
         assertThat(staged.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<String>read(staged.body(), "$.metadata.location"))
-                .startsWith("s3://" + SiloForTests.BUCKET + "/tables/");
+                .startsWith("s3://" + S3ForTests.bucket() + "/tables/");
         assertThat(JsonPath.<Map<String, Object>>read(staged.body(), "$")).doesNotContainKey("metadata-location");
         assertThat(send("HEAD", "/namespaces/" + ns(namespace) + "/tables/s", null).statusCode()).isEqualTo(404);
     }
@@ -204,7 +204,7 @@ class RestRoutesTest {
                 409, "AlreadyExistsException");
         assertError(send("POST", register, "{\"name\":\"x\",\"metadata-location\":\"s3://elsewhere/m.json\"}"),
                 400, "BadRequestException");
-        String missing = "s3://" + SiloForTests.BUCKET + "/tables/" + UUID.randomUUID() + "/metadata/1.metadata.json";
+        String missing = "s3://" + S3ForTests.bucket() + "/tables/" + UUID.randomUUID() + "/metadata/1.metadata.json";
         HttpResponse<String> notFound = send("POST", register,
                 "{\"name\":\"x\",\"metadata-location\":\"" + missing + "\"}");
         assertError(notFound, 404, "NotFoundException");
@@ -241,7 +241,7 @@ class RestRoutesTest {
         HttpResponse<String> loaded = send("GET", views + "/v", null);
         assertThat(loaded.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<String>read(loaded.body(), "$.metadata.location"))
-                .startsWith("s3://" + SiloForTests.BUCKET + "/tables/");
+                .startsWith("s3://" + S3ForTests.bucket() + "/tables/");
         assertThat(JsonPath.<List<String>>read(send("GET", views, null).body(), "$.identifiers[*].name"))
                 .containsExactly("v");
         assertError(send("GET", "/namespaces/" + ns(namespace) + "/tables/v", null), 404, "NoSuchTableException");
@@ -286,7 +286,7 @@ class RestRoutesTest {
         assertThat(credentials.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<List<String>>read(credentials.body(), "$.storage-credentials[*].prefix"))
                 .as("M6 vends credentials for the table's location").singleElement().asString()
-                .startsWith("s3://" + SiloForTests.BUCKET + "/tables/");
+                .startsWith("s3://" + S3ForTests.bucket() + "/tables/");
 
         HttpResponse<String> token = request("POST", URI.create("http://localhost:" + port + "/v1/oauth/tokens"),
                 "grant_type=client_credentials", "Content-Type", "application/x-www-form-urlencoded");
