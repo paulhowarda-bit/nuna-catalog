@@ -579,4 +579,13 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - `-Pheavy` from clean, without the build cache: green, 15 min 49 s, 1,458 tests, 0 failures; skipped as before: Oracle 3 (no Data Guard on Free) and `AwsVendingTest` 11. This is the first green `-Pheavy` under Gradle and since YugabyteDB was dropped, so the two-at-a-time layout is now shown to run green. The longest modules: MongoDB 405 s, CockroachDB 355 s, server 206 s, Oracle 201 s.
   - `bites/run.sh` passes `-Pbites` (every test but CAS) instead of `-Pheavy`, so a bite can select an `overnight` test. Both load bites still bite: `auth-filter-outage-escapes` (KillPrimaryTest, 1 of 1 failed) and `cas-lost-update-under-load` (ConcurrentWritersTest, 5 of 5 failed), tree restored, 7 min 31 s.
   - Not run: `-Pnightly`, so the moved tests have not run under Gradle; the paths to the server jar in the load tests were exercised only by those two bites.
+- **Kubernetes deployment added 2026-11-11** (Paul: "setup the deployment so that the catalog runs in Kubernetes. Create helm charts etc."). `deploy/README.md` has the details.
+  - Added: an image (`deploy/image/Dockerfile`, the runnable jar in Spring Boot's layers, non-root, base image a build argument for PLT-6), a Helm chart for the servers only (`deploy/helm/fidice-catalog`), and a local stack (`deploy/local/run.sh`).
+  - How settings reach the server: plain settings are Spring properties in a ConfigMap; secret ones come from a Secret read as a Spring config tree, whose key names are property names. No server code changed.
+  - Checked on Docker Desktop's Kubernetes 1.30 with Helm 4.3.1 (installed with winget for this, at Paul's choice), two servers:
+    - `helm lint` passes.
+    - Both servers start in about 14 s. Each reads its database password and storage key from the mounted Secret; PostgreSQL there demands a password for pod connections.
+    - `run.sh smoke` passes through each server separately: 401 without a token, config, create a namespace on one server and read it on the other, create a table, load it with vended credentials, drop both.
+    - A rolling restart under steady requests answered 550 of 550 with 200. With the preStop pause removed, 3 of 583 failed to connect, so the pause is what closes the gap.
+  - Not checked: an Ingress, IRSA or Pod Identity on EKS, OpenShift, more than one node or zone, and resource sizes under load. Before production, the ETag finding from M8 needs deciding: behind the default non-sticky Service, a conditional load answered by another server is a 200, not a 304. The server still wires only the PostgreSQL-wire store.
 - **Next:** M9, carried to work.

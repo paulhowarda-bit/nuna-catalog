@@ -1,0 +1,58 @@
+# The chart on a local cluster, against deploy/local/backing.yaml. The settings are demo/demo.properties':
+# http storage, a test issuer, the console's token box on. Never use these values anywhere else.
+replicaCount: 2
+
+image:
+  repository: fidice-catalog
+  tag: local
+  # Docker Desktop's cluster runs images straight from the local Docker engine.
+  pullPolicy: Never
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    memory: 768Mi
+
+config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://postgres:5432/catalog
+      username: catalog
+  fidice:
+    storage:
+      require-tls: false
+      profiles:
+        silo:
+          kind: MINIO
+          endpoint: http://silo:9000
+          region: us-east-1
+          table-root: s3://warehouse/tables
+          allowed-prefixes: [s3://warehouse/tables]
+          access-key-id: fidicedemo
+      catalogs:
+        lakehouse:
+          profile: silo
+          kms-key-set: demo-keys
+          legal-entity: Demo Entity
+    security:
+      issuers:
+        - issuer: https://idp.demo/fidice
+          jwks-uri: http://silo:9000/idp/keys.json
+          audiences: [fidice-catalog]
+          algorithms: [RS256]
+          user-id-claim: sub
+          groups-claim: groups
+          client-id-claim: azp
+      grant-admin-groups: [demo-grant-admins]
+      platform-operator-groups: [demo-operators]
+    audit:
+      kafka-bootstrap-servers: kafka:9092
+    ui:
+      dev-token-login: true
+
+secrets:
+  values:
+    spring.datasource.password: catalog
+    fidice.storage.profiles.silo.secret-access-key: fidicedemo-secret-key
