@@ -36,7 +36,7 @@ import software.amazon.awssdk.services.sts.model.StsException;
  *   <li><b>silo</b>: Silo, the maintained MinIO fork (research F5), as its root user. MinIO's STS model:
  *       sessions derive from the calling user, so there is no role.</li>
  *   <li><b>ceph</b>: Ceph RGW in one container (research F7), with STS on and a role
- *       {@value #CEPH_ROLE} that allows every S3 action: whatever confines vended credentials is their
+ *       {@value #CEPH_ROLE_ARN} that allows every S3 action: whatever confines vended credentials is their
  *       session policy.</li>
  *   <li><b>aws</b>: real AWS S3 and STS in us-east-1, signed in through the CLI profile named by
  *       {@code fidice.aws.profile} (short-lived credentials; nothing here reads, prints or stores them).
@@ -54,9 +54,12 @@ public final class TestS3 implements AutoCloseable {
     }
 
     public static final String REGION = "us-east-1";
-    static final String CEPH_ROLE = "fidice-vending";
-    private static final String ACCESS_KEY = "fidicetest";
-    private static final String SECRET_KEY = "fidicetest-secret-key";
+    /** The keys of Silo's root user and Ceph's S3 user. */
+    public static final String ACCESS_KEY = "fidicetest";
+    public static final String SECRET_KEY = "fidicetest-secret-key";
+    /** The role vended credentials assume on Ceph. */
+    public static final String CEPH_ROLE_ARN = "arn:aws:iam:::role/fidice-vending";
+    private static final String CEPH_ROLE = "fidice-vending";
     /** RGW's key for signing session tokens: 16 characters. */
     private static final String CEPH_STS_KEY = "fidicestskey0123";
 
@@ -67,7 +70,7 @@ public final class TestS3 implements AutoCloseable {
     public final URI endpoint;
     /** Full access to the store. */
     public final AwsCredentialsProvider credentials;
-    /** The role vended credentials assume: Ceph's {@value #CEPH_ROLE} or this run's AWS role; none on Silo. */
+    /** The role vended credentials assume: {@value #CEPH_ROLE_ARN} on Ceph, this run's role on AWS; none on Silo. */
     public final Optional<String> roleArn;
     /** The static keys behind {@link #credentials} on Silo and Ceph; none on AWS. */
     private final Optional<AwsBasicCredentials> keys;
@@ -232,17 +235,28 @@ public final class TestS3 implements AutoCloseable {
                 .waitingFor(Wait.forLogMessage(".*=== ceph-test setup complete ===.*", 1)
                         .withStartupTimeout(Duration.ofMinutes(6)));
         container.start();
-        admin(container, "role", "create", "--role-name=" + CEPH_ROLE, "--path=/", "--assume-role-policy-doc="
-                + "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
-                + "\"Principal\":{\"AWS\":[\"arn:aws:iam:::user/demo\"]},"
-                + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\"]}]}");
-        admin(container, "role-policy", "put", "--role-name=" + CEPH_ROLE, "--policy-name=everything",
-                "--policy-doc={\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
-                        + "\"Action\":[\"s3:*\"],\"Resource\":\"arn:aws:s3:::*\"}]}");
+        for (List<String> command : cephRoleCommands()) {
+            admin(container, command.subList(1, command.size()).toArray(String[]::new));
+        }
         AwsBasicCredentials keys = AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY);
         return new TestS3(Kind.CEPH, endpoint(container, 8080), StaticCredentialsProvider.create(keys),
-                Optional.of(keys), Optional.of("arn:aws:iam:::role/" + CEPH_ROLE), "", Optional.empty(),
-                container::stop);
+                Optional.of(keys), Optional.of(CEPH_ROLE_ARN), "", Optional.empty(), container::stop);
+    }
+
+    /**
+     * The {@code radosgw-admin} commands that create {@link #CEPH_ROLE_ARN} in a ceph-test container: user
+     * {@code demo} (whose keys are {@link #ACCESS_KEY}) may assume and tag it, and its own policy allows every
+     * S3 action, so whatever confines vended credentials is their session policy.
+     */
+    public static List<List<String>> cephRoleCommands() {
+        return List.of(
+                List.of("radosgw-admin", "role", "create", "--role-name=" + CEPH_ROLE, "--path=/",
+                        "--assume-role-policy-doc={\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
+                                + "\"Principal\":{\"AWS\":[\"arn:aws:iam:::user/demo\"]},"
+                                + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\"]}]}"),
+                List.of("radosgw-admin", "role-policy", "put", "--role-name=" + CEPH_ROLE, "--policy-name=everything",
+                        "--policy-doc={\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
+                                + "\"Action\":[\"s3:*\"],\"Resource\":\"arn:aws:s3:::*\"}]}"));
     }
 
     /**

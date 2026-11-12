@@ -7,6 +7,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import fidice.catalog.security.TestIdp;
+import fidice.catalog.tests.s3.TestS3;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -25,11 +26,13 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import software.amazon.awssdk.auth.credentials.AwsCredentials;
+import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 
 /**
  * The nightly engine matrix (M8, D31): each engine creates, writes, reads, evolves and drops v2 and v3
  * tables in a three-level namespace of the catalog server, running in docker compose on PostgreSQL, Kafka
- * and Silo. Every step an engine runs prints a {@code RESULT <engine> <check> <value>} line, and every
+ * and the run's S3 store ({@code -Ds3}: Silo or Ceph in the compose network, or real AWS). Every step an engine runs prints a {@code RESULT <engine> <check> <value>} line, and every
  * refusal it is expected to make prints {@code LIMIT <engine> <check> <reason>}; each test asserts the
  * whole set, so a skipped step fails as surely as a wrong answer.
  *
@@ -54,6 +57,50 @@ class EngineMatrixTest {
     private static Path runDir;
     private static Compose compose;
     private static String token;
+    private static String s3Endpoint;
+
+    /**
+     * Writes the catalog's storage profile {@code s3} for the run's store to {@code storage.properties} and
+     * returns what compose needs for it: {@code COMPOSE_PROFILES}, {@code S3_ENDPOINT} as engines inside the
+     * network reach the store, and on AWS the catalog's short-lived credentials. Silo and Ceph run in the
+     * compose network as {@code s3}, so every client there uses the same host; on AWS the bucket and role are
+     * {@link TestS3}'s, removed when the run ends.
+     */
+    private static Map<String, String> storage(TestS3.Kind kind) throws IOException {
+        Map<String, String> properties = new LinkedHashMap<>();
+        Map<String, String> env = new LinkedHashMap<>();
+        env.put("COMPOSE_PROFILES", kind.name().toLowerCase(java.util.Locale.ROOT));
+        String p = "fidice.storage.profiles.s3.";
+        if (kind == TestS3.Kind.AWS) {
+            TestS3 s3 = TestS3.get();
+            properties.putAll(s3.serverProperties("s3", s3.bucket("warehouse")));
+            env.put("S3_ENDPOINT", s3.endpoint.toString());
+            AwsCredentials credentials = s3.credentials.resolveCredentials();
+            env.put("AWS_ACCESS_KEY_ID", credentials.accessKeyId());
+            env.put("AWS_SECRET_ACCESS_KEY", credentials.secretAccessKey());
+            if (credentials instanceof AwsSessionCredentials session) {
+                env.put("AWS_SESSION_TOKEN", session.sessionToken());
+            }
+        } else {
+            String endpoint = kind == TestS3.Kind.CEPH ? "http://s3:8080" : "http://s3:9000";
+            env.put("S3_ENDPOINT", endpoint);
+            properties.put("fidice.storage.require-tls", "false");
+            properties.put(p + "kind", kind == TestS3.Kind.CEPH ? "CEPH" : "MINIO");
+            properties.put(p + "endpoint", endpoint);
+            properties.put(p + "region", TestS3.REGION);
+            properties.put(p + "table-root", "s3://warehouse/tables");
+            properties.put(p + "allowed-prefixes", "s3://warehouse/tables");
+            properties.put(p + "access-key-id", TestS3.ACCESS_KEY);
+            properties.put(p + "secret-access-key", TestS3.SECRET_KEY);
+            if (kind == TestS3.Kind.CEPH) {
+                properties.put(p + "sts-role", TestS3.CEPH_ROLE_ARN);
+            }
+        }
+        StringBuilder file = new StringBuilder("# Storage profile s3 for -Ds3=" + env.get("COMPOSE_PROFILES") + "\n");
+        properties.forEach((key, value) -> file.append(key).append('=').append(value).append('\n'));
+        Files.writeString(runDir.resolve("storage.properties"), file, StandardCharsets.UTF_8);
+        return env;
+    }
 
     @BeforeAll
     static void startBase() throws Exception {
@@ -72,13 +119,23 @@ class EngineMatrixTest {
         Files.deleteIfExists(runDir.resolve("results.txt"));
         Path log = runDir.resolve("compose.log");
         Files.deleteIfExists(log);
-        compose = new Compose(Path.of(System.getProperty("engines.compose")), Map.of(
+        Map<String, String> env = new LinkedHashMap<>(Map.of(
                 "CATALOG_JAR", Path.of(System.getProperty("engines.catalog-jar")).toAbsolutePath().normalize().toString(),
                 "RUN_DIR", runDir.toAbsolutePath().toString(),
-                "FIDICE_TOKEN", token), log);
+                "FIDICE_TOKEN", token));
+        env.putAll(storage(TestS3.kindFromSystemProperty()));
+        s3Endpoint = env.get("S3_ENDPOINT");
+        compose = new Compose(Path.of(System.getProperty("engines.compose")), env, log);
         compose.compose(Duration.ofMinutes(2), "--profile", "*", "down", "-v", "--remove-orphans");
         long started = System.nanoTime();
         compose.compose(Duration.ofMinutes(10), "up", "-d", "--wait", "catalog");
+        if (TestS3.kindFromSystemProperty() == TestS3.Kind.CEPH) {
+            for (List<String> command : TestS3.cephRoleCommands()) {
+                List<String> args = new ArrayList<>(List.of("exec", "-T", "ceph"));
+                args.addAll(command);
+                compose.compose(Duration.ofMinutes(1), args.toArray(String[]::new));
+            }
+        }
         // The catalog is declared in engines.properties and created at startup; the group gets create and
         // modify on it, as ConformanceServer grants.
         compose.compose(Duration.ofMinutes(1), "exec", "-T", "postgres", "psql", "-U", "catalog", "-d", "catalog",
@@ -201,12 +258,13 @@ class EngineMatrixTest {
         return result.output();
     }
 
-    /** The script with this run's token and the setting found before the test, written to the run directory. */
+    /** The script with this run's token, store endpoint and the setting found before the test, written to the run directory. */
     private static Path singlestoreScript(String name, String ingestBefore) throws IOException {
         Path source = Path.of(System.getProperty("engines.compose")).resolveSibling("singlestore").resolve(name);
         Path rendered = runDir.resolve("singlestore-" + name);
         Files.writeString(rendered, Files.readString(source, StandardCharsets.UTF_8)
-                .replace("${FIDICE_TOKEN}", token).replace("${ICEBERG_INGEST_BEFORE}", ingestBefore),
+                .replace("${FIDICE_TOKEN}", token).replace("${ICEBERG_INGEST_BEFORE}", ingestBefore)
+                .replace("${S3_ENDPOINT}", s3Endpoint),
                 StandardCharsets.UTF_8);
         return rendered;
     }

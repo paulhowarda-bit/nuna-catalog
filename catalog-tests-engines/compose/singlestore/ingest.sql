@@ -10,7 +10,7 @@ CREATE PIPELINE spark_v2_pipe AS LOAD DATA S3 ''
 CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v2", "catalog.token": "${FIDICE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
-         "endpoint_url": "http://silo:9000", "region": "us-east-1", "ingest_mode": "one_time"}'
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
 INTO TABLE spark_v2 (id <- id, name <- name, note <- note)
 FORMAT ICEBERG;
@@ -22,7 +22,7 @@ CREATE PIPELINE spark_v3_pipe AS LOAD DATA S3 ''
 CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v3", "catalog.token": "${FIDICE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
-         "endpoint_url": "http://silo:9000", "region": "us-east-1", "ingest_mode": "one_time"}'
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
 INTO TABLE spark_v3 (id <- id, name <- name, note <- note)
 FORMAT ICEBERG;
@@ -34,7 +34,7 @@ CREATE PIPELINE spark_v3_dv_pipe AS LOAD DATA S3 ''
 CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${FIDICE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
-         "endpoint_url": "http://silo:9000", "region": "us-east-1", "ingest_mode": "one_time"}'
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
 INTO TABLE spark_v3_dv (id <- id, name <- name, note <- note)
 FORMAT ICEBERG;

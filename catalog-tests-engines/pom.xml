@@ -12,6 +12,11 @@
   <description>Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB and SingleStore against the catalog, in docker compose.</description>
 
   <dependencies>
+    <!-- The run's S3 store: -Ds3=silo (default), ceph or aws. -->
+    <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-tests-s3</artifactId>
+    </dependency>
     <dependency>
       <!-- Not on the test classpath for its classes: it orders the reactor so the exec jar the compose
            stack runs is built first. -->

@@ -1,14 +1,24 @@
 # The nightly engine matrix (M8, D31). EngineMatrixTest drives it; see ../README.md.
 #
-# The base stack is PostgreSQL, Kafka, Silo and the catalog server (the catalog-server exec jar on a
-# JDK 25 JRE). Each engine is a profile, brought up on its own, run, and removed. Nothing publishes a
-# host port: every client runs inside this network, so the storage profile's endpoint
-# (http://silo:9000) is the one engines reach with vended credentials.
+# The base stack is PostgreSQL, Kafka, the S3 store, a file server for the test issuer's keys, and the
+# catalog server (the catalog-server exec jar on a JDK 25 JRE). Each engine is a profile, brought up on its
+# own, run, and removed. Nothing publishes a host port: every client runs inside this network.
+#
+# The S3 store follows the build's -Ds3 setting, through COMPOSE_PROFILES:
+#   silo  Silo as service s3, http://s3:9000
+#   ceph  Ceph RGW as service s3, http://s3:8080 (the harness creates its STS role)
+#   aws   no store here: real S3, a bucket and role the harness made for this run
+# The storage profile's endpoint (S3_ENDPOINT) is the one engines reach with vended credentials.
 #
 # The harness sets:
-#   CATALOG_JAR   the catalog-server exec jar
-#   RUN_DIR       a directory holding idp/keys.json (the test issuer's JWKS)
-#   FIDICE_TOKEN  a bearer token from that issuer, for group engine-clients
+#   CATALOG_JAR        the catalog-server exec jar
+#   RUN_DIR            a directory holding idp/keys.json (the test issuer's JWKS) and storage.properties
+#                      (the catalog's storage profile for this store)
+#   FIDICE_TOKEN       a bearer token from that issuer, for group engine-clients
+#   S3_ENDPOINT        the store's endpoint, as engines inside this network reach it
+#   COMPOSE_PROFILES   silo, ceph or aws
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN
+#                      on aws only: the catalog's short-lived credentials
 
 name: fidice-engines
 
@@ -53,10 +63,15 @@ services:
       timeout: 5s
       retries: 60
 
+  # Silo, the maintained MinIO fork, as s3.
   silo:
+    profiles: ["silo"]
     image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     environment: *silo-env
     command: ["server", "/data"]
+    networks:
+      default:
+        aliases: [s3]
     mem_limit: 512m
     healthcheck:
       test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
@@ -64,24 +79,54 @@ services:
       timeout: 5s
       retries: 60
 
-  # Creates the warehouse bucket and publishes the test issuer's JWKS as a public-read object, so the
-  # catalog fetches its keys from inside the network.
+  # Ceph RGW in one container, as s3. Its DNS name is s3, the only host clients use, so RGW reads every
+  # request as path-style; STS is on, and the harness creates the role vended credentials assume.
+  ceph:
+    profiles: ["ceph"]
+    image: ghcr.io/clyso/ceph-test:v20.2.5
+    environment:
+      CEPH_DEMO_ACCESS_KEY: fidicetest
+      CEPH_DEMO_SECRET_KEY: fidicetest-secret-key
+      CEPH_EXTRA_CONF: |-
+        rgw dns name = s3
+        rgw sts key = fidicestskey0123
+        rgw s3 auth use sts = true
+    networks:
+      default:
+        aliases: [s3]
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD", "ceph-test-health", "rgw"]
+      interval: 5s
+      timeout: 10s
+      start_period: 6m
+      retries: 60
+
+  # Creates the warehouse bucket in whichever of Silo and Ceph this run uses.
   seed:
+    profiles: ["silo", "ceph"]
     image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     depends_on:
       silo:
         condition: service_healthy
+        required: false
+      ceph:
+        condition: service_healthy
+        required: false
     entrypoint: ["sh", "-ec"]
     command:
       - |
-        mc alias set s http://silo:9000 fidicetest fidicetest-secret-key >/dev/null
-        mc mb --ignore-existing s/warehouse s/idp
-        mc anonymous set download s/idp
-        mc cp /seed/keys.json s/idp/keys.json
+        mc alias set s ${S3_ENDPOINT:?S3_ENDPOINT} fidicetest fidicetest-secret-key >/dev/null
+        mc mb --ignore-existing s/warehouse
+
+  # Serves the test issuer's JWKS, so the catalog fetches its keys inside the network.
+  idp:
+    image: busybox:1.37.0
+    command: ["httpd", "-f", "-p", "8080", "-h", "/srv"]
     volumes:
       - type: bind
         source: ${RUN_DIR:?RUN_DIR}/idp
-        target: /seed
+        target: /srv
         read_only: true
 
   catalog:
@@ -91,14 +136,21 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      idp:
+        condition: service_started
       seed:
         condition: service_completed_successfully
+        required: false
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/catalog
       SPRING_DATASOURCE_USERNAME: catalog
       SPRING_DATASOURCE_PASSWORD: catalog
       JAVA_TOOL_OPTIONS: -Xms256m -Xmx512m
-    command: ["java", "-jar", "/app/catalog.jar", "--spring.config.additional-location=file:/app/engines.properties"]
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    command: ["java", "-jar", "/app/catalog.jar",
+              "--spring.config.additional-location=file:/app/engines.properties,file:/app/storage.properties"]
     volumes:
       - type: bind
         source: ${CATALOG_JAR:?CATALOG_JAR}
@@ -107,6 +159,10 @@ services:
       - type: bind
         source: ./catalog/engines.properties
         target: /app/engines.properties
+        read_only: true
+      - type: bind
+        source: ${RUN_DIR:?RUN_DIR}/storage.properties
+        target: /app/storage.properties
         read_only: true
     mem_limit: 900m
     healthcheck:
@@ -142,6 +198,7 @@ services:
     image: trinodb/trino:484
     environment:
       FIDICE_TOKEN: ${FIDICE_TOKEN:?FIDICE_TOKEN}
+      S3_ENDPOINT: ${S3_ENDPOINT:?S3_ENDPOINT}
     volumes:
       - ./trino/catalog:/etc/trino/catalog:ro
       - ./trino:/scripts:ro
