@@ -5,9 +5,12 @@ shares with the demo (`demo/k8s`, see `demo/README.md`): the catalog deployed by
 (`deploy/helm/keel-catalog`), PostgreSQL, Kafka, kafbat, the S3 store and SingleStore. Spark and PyIceberg create, write, read,
 evolve (add a column, then write and read with it) and drop v2 and v3 tables in a three-level namespace
 `m8.deep.<engine>`. Kafka Connect's Iceberg sink consumes a Kafka topic and commits its records into a table it
-creates. PyIceberg and SingleStore read seven tables Spark left in `m8.shared.spark`: v2 and v3 (already
-evolved), v3 with a deletion vector, and four that took DELETE, UPDATE and MERGE INTO under copy-on-write or
-merge-on-read, on v2 and v3 (see "Row-level writes" below). (Trino, Flink and DuckDB were dropped on
+creates. PyIceberg and SingleStore read the tables Spark left in `m8.shared.spark`: v2 and v3 (already
+evolved), v3 with a deletion vector, four that took DELETE, UPDATE and MERGE INTO under copy-on-write or
+merge-on-read, on v2 and v3 (see "Row-level writes" below), and those of the cases after it: schema and
+partition evolution, time travel, branches and write-audit-publish, maintenance procedures, the v2 to v3
+upgrade, v3 features, CREATE OR REPLACE, a view and table statistics. PyIceberg also deletes, overwrites and
+upserts in a v2 table of its own, which SingleStore reads. (Trino, Flink and DuckDB were dropped on
 2026-11-12; the 2026-11-09 results below still show them.)
 
 ## Running it
@@ -145,6 +148,136 @@ On the demo stack (Silo), 2026-11-12, every value as predicted before the run:
 - No client refused any of the four tables, so there is no `LIMIT` line for them. SingleStore's docs promise
   v1/v2 only; 10.9.0 applied v2 position deletes and v3 deletion vectors alike.
 
+## Schema evolution (2026-11-12)
+
+Spark makes `t_schema` (v2) as `id INT, name STRING, old_note STRING, gone STRING, info STRUCT<a: INT>` and
+writes two rows. Then, one commit each: `RENAME COLUMN old_note TO note`, `DROP COLUMN gone`,
+`ALTER COLUMN id TYPE BIGINT`, `ADD COLUMN info.b STRING`, `ALTER COLUMN name FIRST`; and a third row in the
+new layout. Iceberg reads columns by field ID, so the old rows keep their notes and struct values under the new
+names and types.
+
+| Reader | Columns | Rows, sum of ids, notes, sum of `info.a`, `info.b` |
+|---|---|---|
+| Spark | `struct<name:string,id:bigint,note:string,info:struct<a:int,b:string>>` | 3, 6, `n1,n2,n3`, 60, `x` |
+| PyIceberg | `name,id,note,info`; field IDs kept: `note` 3, `info.b` 7 (new), `id` long | same |
+| SingleStore | its pipeline maps the current names (`note <- note`, `info_a <- info::a`) | same |
+
+SingleStore maps columns by name, but only the pipeline's mapping: its Iceberg reader resolves the old files
+by field ID, so the renamed column was not lost. No refusal, so no `LIMIT` line.
+
+## Partition evolution and sort order (2026-11-12)
+
+`t_partition` (v2) takes two rows at each step: unpartitioned (spec 0); `ADD PARTITION FIELD cat` (spec 1);
+`REPLACE PARTITION FIELD cat WITH bucket(4, id)` (spec 2); `DROP PARTITION FIELD bucket(4, id)`, which leaves
+a v2 spec with no fields, spec 0's twin, so Iceberg makes spec 0 the default again; and
+`WRITE ORDERED BY id`, with the rows sent as 10, 9.
+
+- Spark: ten rows, ids summing to 55; rows per spec `0:6,1:2,2:2`; `sort-order` `id ASC NULLS FIRST`, the two
+  rows written after it in files with sort order 1, 9 before 10 within the file.
+- PyIceberg: ten rows, 55; three specs, default spec 0, sort order 1. SingleStore: ten rows, 55.
+
+## Time travel (2026-11-12)
+
+`t_travel` (the catalog's default format, v3): ids 1-3 in the first snapshot, id 4 in the second, and
+`CREATE TAG first AS OF VERSION <first>`. In Spark, `VERSION AS OF <first snapshot id>`,
+`TIMESTAMP AS OF timestamp_millis(<its commit time>)` and `VERSION AS OF 'first'` each read three rows (sum 6);
+the table reads four (sum 10). PyIceberg reads three rows through `snapshot_by_name("first")` and through
+`snapshot_as_of_timestamp(<first commit time>)`, and four from the current snapshot.
+
+## Branches and write-audit-publish (2026-11-12)
+
+- `t_branch`: three rows on main, `CREATE BRANCH audit`, `CREATE TAG v1`, then
+  `INSERT INTO t_branch.branch_audit` one row. Main still reads three, the branch four.
+  `CALL fid.system.fast_forward('m8.shared.spark.t_branch', 'main', 'audit')` moves main to the branch's
+  snapshot (main reads four; tag `v1` still three). Refs: `audit` and `main` branches, `v1` a tag.
+  PyIceberg: main four rows, `v1` three, `audit` and `main` on the same snapshot.
+- `t_wap` with `write.wap.enabled=true`: three rows, then one with `spark.wap.id=wap-1`, which Spark stages (a
+  snapshot main does not reference, `wap.id` in its summary): main still reads three.
+  `cherrypick_snapshot` publishes it; its parent is main's snapshot, so Iceberg fast-forwards main to the staged
+  snapshot rather than writing a new one: four rows, two snapshots. PyIceberg reads the same.
+
+## Maintenance procedures (2026-11-12)
+
+`t_maint` is v2 merge-on-read: three appends of one file each (ids 1-2, 3-4, 5-6), then `DELETE ... WHERE id
+IN (1, 3)`, one position-delete file per data file. Then the procedures, each with the vended credentials Spark
+always gets (READ_WRITE, no `s3:DeleteObject`, D25):
+
+| Procedure | What it did | Data and delete files after |
+|---|---|---|
+| `rewrite_position_delete_files` (`rewrite-all`) | rewrote 2 delete files into 2 (still one per data file) | 3 data; 2 position deletes, 2 rows |
+| `rewrite_data_files` (`rewrite-all`) | rewrote 3 data files into 1 with the deletes applied; its commit removed the 2 file-scoped deletes (`removed-delete-files` 2 in the snapshot summary; the procedure's `removed_delete_files_count` is 0, as it counts only its optional `remove-dangling-deletes` pass); no failures | 1 data; none |
+| `rewrite_manifests` | before: 4 data manifests (the new file's and three holding only the replaced files as deleted entries) and 1 delete manifest (the two removed deletes); rewrote the 4 into 1, left the lone delete manifest | 1 data manifest, 1 delete manifest |
+| `expire_snapshots` (`older_than` now + 1 s, `retain_last` 1) | the catalog accepted the commit: 7 snapshots to 1. Deleted 0 data files, 0 position deletes, 0 manifests, 0 manifest lists: every delete was refused, and the three replaced data files are still in storage (`exists()` through the table's FileIO) | unchanged |
+| `remove_orphan_files` | default: fails, it lists through Hadoop's `FileSystem` and the image has no `s3` scheme (`LIMIT`); with `prefix_listing => true` it lists through S3FileIO and finds 0 orphans, as it only takes files older than 3 days; an `older_than` within 24 hours is refused (`LIMIT`) | unchanged |
+
+Four rows (2, 4, 5, 6, sum 17) throughout. PyIceberg reads 4 rows, 17, one snapshot; SingleStore 4 rows, 17.
+So engine-side maintenance works against the catalog for everything that is a commit; physical clean-up is the
+maintenance worker's (D25), and files an engine expires stay until it runs.
+
+## v2 to v3 upgrade (2026-11-12)
+
+`t_upgrade`: v2 merge-on-read, four rows in one file, `DELETE ... WHERE id = 2` (one Parquet position-delete
+file, 1 row), then `SET TBLPROPERTIES ('format-version'='3')` and `DELETE ... WHERE id = 3`. A v3 data file has
+at most one deletion vector, so Spark merges the old position delete into the new vector and removes the Parquet
+file: one deletion vector (Puffin) with 2 rows, ids 1 and 4 left (sum 5), operations append, delete, delete.
+PyIceberg reads format 3, 2 rows, 5; SingleStore 2 rows, 5.
+
+## v3 features (2026-11-12)
+
+| Feature | Spark 4.1.4 / Iceberg 1.12.0 | PyIceberg 0.12.0 |
+|---|---|---|
+| Row lineage (`t_lineage`) | three rows in one file: `_row_id` 0,1,2, `_last_updated_sequence_number` 1,1,1; after `UPDATE ... WHERE id = 2` (copy-on-write) row IDs 0,1,2 kept, sequence numbers 1,2,1 | `next-row-id` 6 (3 appended + 3 rewritten), first row IDs 0 and 3 |
+| Default values | refused both ways (`LIMIT`): `CREATE TABLE` with `DEFAULT` ("does not support column default value") and `ADD COLUMN ... DEFAULT` ("setting default values in Spark is currently unsupported") | — |
+| `variant` (`t_variant`) | two JSON documents written with `parse_json`, read with `variant_get`: 2 rows, `$.a` summing to 3, `$.b` `x,y` | cannot load the table (`LIMIT`): `Unsupported field type: 'variant'` |
+| `geometry(4326)`, `geography(4326)` (`t_geo`) | only with `spark.sql.geospatial.enabled=true` (refused without it, `LIMIT`); `POINT (1 2)` as WKB written to both and read back unchanged, SRID 4326 | cannot load the table (`LIMIT`): Iceberg Java writes the type as `geometry(OGC:CRS84)`, and PyIceberg 0.12 parses only a quoted CRS |
+
+## CREATE OR REPLACE TABLE (2026-11-12)
+
+`t_replace` (v3): two snapshots (ids 1-3, then 4), then `CREATE OR REPLACE TABLE ... AS SELECT` two rows. The
+table keeps its history: three snapshots, the new one an `overwrite` (Spark writes the query as an overwrite)
+with no parent, as main starts afresh; two rows (sum 30); the old snapshot still reads four rows. PyIceberg:
+three snapshots, two rows, the current one a root.
+
+A second replace whose query changes a column's type (`id` from bigint to string) is refused by the catalog:
+`Cannot change field 1 (id) from long to string: not a valid type promotion`. This looks like a catalog bug, so
+the run reports it as a `LIMIT` line (`replace.retype`) instead of failing: a replace starts main afresh, and
+Iceberg's reference handler accepts the new schema (it keeps field IDs by name, whatever the type), but
+`Backstops.schemas` judges a replace's schema against the replaced one as if it were evolved in place. Once
+fixed, Spark prints `RESULT spark replace.retype 4 1 string`; `EngineMatrixTest` names that expectation.
+
+## Views (2026-11-12)
+
+Spark creates view `v_rows` on `t_v2` (`id <= 2`: 2 rows, sum 3). Iceberg's Spark extensions refuse
+`ALTER VIEW ... AS` ("Use CREATE OR REPLACE VIEW instead", a `LIMIT` line), so `CREATE OR REPLACE VIEW` changes
+the query (rows with a note: 1 row, id 4) and `ALTER VIEW ... SET TBLPROPERTIES` sets its comment. A second view
+is created and dropped; `SHOW VIEWS` lists `v_rows` only. PyIceberg loads `v_rows`: current version 2 of 2,
+columns `id,name,note`, the comment, and the Spark SQL with its `WHERE note IS NOT NULL`.
+
+## Table statistics (2026-11-12)
+
+Iceberg 1.12's Spark runtime has `compute_table_stats`. On `t_v2` it writes a Puffin statistics file into the
+table's metadata folder and commits it (`set-statistics`). PyIceberg sees one statistics file, for the current
+snapshot, with one `apache-datasketches-theta-v1` blob per column and its distinct count: `id` 4, `name` 4,
+`note` 1.
+
+## PyIceberg writes (2026-11-12)
+
+PyIceberg creates `m8.shared.pyiceberg.t_writes` (v2), appends ids 1-4 (`a`-`d`), then `delete("id = 2")`,
+`overwrite` of id 3 with `c2` (`overwrite_filter="id = 3"`) and `upsert` of id 4 (to `d2`) and id 5 (`e`) with
+`join_cols=["id"]`. PyIceberg 0.12 rewrites files (copy-on-write; it has no merge-on-read): a delete that
+matches part of a file commits an `overwrite`; `overwrite` is that delete plus an `append`; `upsert` (1 row
+updated, 1 inserted) overwrites the changed row away, then appends it and the new row. Result: 4 rows, sum 13,
+`a,c2,d2,e`; operations append, overwrite, overwrite, append, overwrite, append, append. SingleStore runs after
+PyIceberg and reads the same 4 rows.
+
+## Kafka Connect upsert: not supported (2026-11-12)
+
+The Apache Iceberg 1.12.0 Kafka Connect sink has no upsert or equality-delete mode: its configuration
+(`IcebergSinkConfig`) has no upsert or CDC setting (the Tabular sink's `iceberg.tables.upsert-mode-enabled` and
+`iceberg.tables.cdc-field` were not carried over), and it writes through append-only writers
+(`UnpartitionedWriter`, `PartitionedAppendWriter`). `iceberg.tables.default-id-columns` only sets identifier
+fields on tables it creates. So the matrix has no Kafka Connect upsert case.
+
 ## Results (2026-11-09, docker compose, before the 2026-11-12 changes)
 
 All six tests pass (`Tests run: 6, Failures: 0`, 653 s). "pass" means the engine did the step and the value
@@ -190,9 +323,18 @@ extensions) adds a few minutes; later runs reuse them.
 
 ## What the engines showed about the catalog
 
-- No catalog defect turned up. In a full run whose stack was kept and inspected, the catalog log had no
-  errors (two Kafka "unknown topic" warnings while the audit topics were auto-created) and the audit topic
-  held no denial and no authentication failure.
+- Until 2026-11-12 no catalog defect turned up. In a full run whose stack was kept and inspected, the catalog
+  log had no errors (two Kafka "unknown topic" warnings while the audit topics were auto-created) and the
+  audit topic held no denial and no authentication failure.
+- Suspected defect (2026-11-12, `LIMIT spark replace.retype`): the catalog refuses a `CREATE OR REPLACE TABLE`
+  whose new schema changes a column's type (HTTP 400, `Cannot change field 1 (id) from long to string: not a
+  valid type promotion`). `Backstops.schemas` judges every added schema against the current one, which is
+  right for in-place evolution, but a replace starts main afresh and Iceberg's reference handler accepts it.
+  See "CREATE OR REPLACE TABLE" above.
+- Every commit an engine-side maintenance procedure makes is accepted: rewrites of data files, position
+  deletes and manifests, `expire_snapshots`, `fast_forward`, `cherrypick_snapshot`, statistics. The file
+  deletes those procedures attempt are refused by the vended credentials (D25), so expired files stay in
+  storage for the maintenance worker.
 - The scripts create each namespace level explicitly, because the catalog refuses a namespace whose parent
   does not exist (D28).
 - Drops are always soft (D25): Spark, PyIceberg and DuckDB ask for a purge, Flink does not, and the catalog
@@ -204,8 +346,11 @@ extensions) adds a few minutes; later runs reuse them.
 - **Spark:** `type=rest`, `token`, `header.X-Iceberg-Access-Delegation=vended-credentials`,
   `io-impl=S3FileIO`, `rest-catalog-purge=true` (F10: `DROP TABLE ... PURGE` asks the catalog to purge rather
   than deleting files itself; vended credentials cannot delete anyway). Nested namespaces work as
-  `fid.m8.deep.spark`.
-- **PyIceberg:** nested namespaces are tuples; `purge_table` sends `purgeRequested=true`.
+  `fid.m8.deep.spark`. `geometry` and `geography` columns need `spark.sql.geospatial.enabled=true`.
+  `remove_orphan_files` needs `prefix_listing => true`: by default it lists through Hadoop's `FileSystem`,
+  which has no `s3` scheme in the image.
+- **PyIceberg:** nested namespaces are tuples; `purge_table` sends `purgeRequested=true`. 0.12 cannot load a
+  table with a `variant`, `geometry` or `geography` column (see "v3 features").
 - **SingleStore:** `CREATE PIPELINE ... LOAD DATA S3 '' CONFIG '{"catalog_type": "REST", "catalog.uri",
   "catalog.warehouse", "table_id": "m8.shared.spark.t_v2", "catalog.token",
   "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,

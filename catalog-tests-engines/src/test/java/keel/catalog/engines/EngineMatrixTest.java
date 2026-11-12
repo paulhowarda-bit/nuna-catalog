@@ -39,11 +39,14 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * refusal it is expected to make prints {@code LIMIT <engine> <check> <reason>}; each test asserts the whole
  * set, so a skipped step fails as surely as a wrong answer.
  *
- * <p>Spark runs first and leaves seven tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
- * rows, one with the added column set), v3 with a deletion vector, and four that took DELETE, UPDATE and MERGE
- * INTO, copy-on-write or merge-on-read on v2 or v3 ({@link #rowLevelWrites()}). Kafka Connect's Iceberg sink
- * commits records from a Kafka topic into a table it creates; PyIceberg and SingleStore (through its Iceberg
- * pipelines) read Spark's tables. Results, timings and every command go to {@code build/engines-run/}.
+ * <p>Spark runs first and leaves its tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
+ * rows, one with the added column set), v3 with a deletion vector, four that took DELETE, UPDATE and MERGE
+ * INTO, copy-on-write or merge-on-read on v2 or v3 ({@link #rowLevelWrites()}), and those of the later cases:
+ * schema and partition evolution, time travel, branches and write-audit-publish, maintenance procedures, the v2
+ * to v3 upgrade, v3 types, CREATE OR REPLACE, a view and table statistics. Kafka Connect's Iceberg sink commits
+ * records from a Kafka topic into a table it creates; PyIceberg reads Spark's tables and view and writes a v2
+ * table of its own (delete, overwrite, upsert); SingleStore (through its Iceberg pipelines) reads Spark's tables
+ * and PyIceberg's. Results, timings and every command go to {@code build/engines-run/}.
  *
  * <p>Needs Docker, kubectl and Helm on the PATH, and kind unless {@code -Pengines.cluster} names a cluster.
  * On its own, everything runs in namespace {@value #NAMESPACE}.
@@ -278,6 +281,11 @@ class EngineMatrixTest {
                 "spark shared.v3", "3 4 1",
                 "spark shared.v3dv", "3 3 8 1"));
         assertThat(results).containsAllEntriesOf(rowLevelWrites());
+        assertThat(results).containsAllEntriesOf(evolution());
+        assertThat(results).containsAllEntriesOf(travelAndBranches());
+        assertThat(results).containsAllEntriesOf(maintenance());
+        assertThat(results).containsAllEntriesOf(upgradeAndV3());
+        assertThat(results).containsAllEntriesOf(replaceViewAndStats());
     }
 
     /**
@@ -315,6 +323,8 @@ class EngineMatrixTest {
                 "ValueError: Cannot write manifest for table version: 3");
         assertThat(results).containsAllEntriesOf(crossReads("pyiceberg"));
         assertThat(results).containsAllEntriesOf(rowLevelReads("pyiceberg"));
+        assertThat(results).containsAllEntriesOf(pyicebergReads());
+        assertThat(results).containsAllEntriesOf(pyicebergWrites());
     }
 
     /**
@@ -340,6 +350,13 @@ class EngineMatrixTest {
                 "singlestore cross.v3", "4 1",
                 "singlestore cross.v3dv", "3 8"));
         assertThat(results).containsAllEntriesOf(rowLevelReads("singlestore"));
+        // By pipeline, mapping the current column names: the rows written before the rename keep their notes.
+        assertThat(results).containsAllEntriesOf(Map.of(
+                "singlestore cross.schema", "3 6 n1,n2,n3 60 x",
+                "singlestore cross.partition", "10 55",
+                "singlestore cross.maint", "4 17",
+                "singlestore cross.upgrade", "2 5",
+                "singlestore cross.pyiceberg-writes", "4 13 a,c2,d2,e"));
     }
 
     /**
@@ -613,6 +630,178 @@ class EngineMatrixTest {
             expected.put(engine + " cross." + table, "4 13 u,m,n");
         }
         return expected;
+    }
+
+    /**
+     * Schema and partition evolution in Spark (v2 tables). {@code t_schema}: two rows, then a rename, a dropped
+     * column, int widened to bigint, a struct field added and a column moved first, then a row in the new layout;
+     * columns are read by field ID, so all three rows keep their notes and struct values. {@code t_partition}: two
+     * rows unpartitioned (spec 0), by {@code cat} (spec 1), by {@code bucket(4, id)} (spec 2), after the field is
+     * dropped (a v2 spec with no fields is spec 0's twin, so spec 0 again), and after {@code WRITE ORDERED BY id}
+     * with the rows sent as 10, 9: ten rows, the last file in sort order 1 with 9 before 10.
+     */
+    private static Map<String, String> evolution() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("spark shared.schema.columns", "struct<name:string,id:bigint,note:string,info:struct<a:int,b:string>>");
+        expected.put("spark shared.schema", "3 6 n1,n2,n3 60 x");
+        expected.put("spark shared.partition", "10 55");
+        expected.put("spark shared.partition.specs", "0:6,1:2,2:2");
+        expected.put("spark shared.partition.sorted", "id ASC NULLS FIRST 2 9,10");
+        return expected;
+    }
+
+    /**
+     * Time travel, branches and write-audit-publish in Spark. {@code t_travel}: ids 1-3, then id 4; the first
+     * snapshot read by id, by its commit time and by tag {@code first}. {@code t_branch}: a write to branch
+     * {@code audit} leaves main at three rows, {@code fast_forward} moves main to the branch's snapshot and tag
+     * {@code v1} stays at three. {@code t_wap}: with {@code write.wap.enabled} and {@code spark.wap.id} the insert
+     * is staged, main unchanged; its parent is main's snapshot, so {@code cherrypick_snapshot} fast-forwards main to
+     * it (two snapshots, no new one).
+     */
+    private static Map<String, String> travelAndBranches() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (String by : List.of("version", "timestamp", "tag")) {
+            expected.put("spark shared.travel." + by, "3 6");
+        }
+        expected.put("spark shared.travel.current", "4 10");
+        expected.put("spark shared.branch.write", "3 4");
+        expected.put("spark shared.branch.ff", "main same 4 3");
+        expected.put("spark shared.branch.refs", "audit:BRANCH,main:BRANCH,v1:TAG");
+        expected.put("spark shared.wap.staged", "3 1");
+        expected.put("spark shared.wap.publish", "4 fast-forward 2");
+        return expected;
+    }
+
+    /**
+     * Maintenance procedures on {@code t_maint}, v2 merge-on-read: three one-file appends (ids 1-6) and a DELETE
+     * of ids 1 and 3, one file-scoped position-delete file each. {@code rewrite_position_delete_files} rewrites the
+     * two into two. {@code rewrite_data_files} compacts three data files into one, and its commit removes the
+     * replaced files' file-scoped deletes (two, in the snapshot summary; the procedure's own
+     * {@code removed_delete_files_count} counts only its optional dangling-delete pass, so 0). That leaves four
+     * data manifests (one live, three holding only deleted entries) and a delete manifest; {@code rewrite_manifests}
+     * rewrites the four into one and skips the lone delete manifest. {@code expire_snapshots} commits (seven
+     * snapshots to one) but deletes nothing: vended credentials carry no s3:DeleteObject (D25), and the three
+     * replaced data files are still in storage. {@code remove_orphan_files} cannot list through Hadoop (no s3
+     * scheme), finds none older than its 3-day default through S3FileIO, and refuses a cut-off within 24 hours.
+     */
+    private static Map<String, String> maintenance() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("spark shared.maint.setup", "3 position-parquet 2 2");
+        expected.put("spark shared.maint.position-deletes", "2 2 position-parquet 2 2");
+        expected.put("spark shared.maint.data-files", "3 1 0 0 2 1 none 0 0");
+        expected.put("spark shared.maint.manifests", "4 1 4 1 1 1");
+        expected.put("spark shared.maint.expire", "7 1 0 0 0 0");
+        expected.put("spark shared.maint.expired-files", "3 3");
+        expected.put("spark shared.maint.orphans-hadoop", "remove_orphan_files lists the table location through"
+                + " Hadoop's FileSystem, which has no s3 scheme here (S3FileIO only); prefix_listing => true lists"
+                + " through S3FileIO");
+        expected.put("spark shared.maint.orphans", "0");
+        expected.put("spark shared.maint.orphans-recent", "the procedure refuses an older_than within 24 hours (the"
+                + " default is 3 days back), so files this run left unreferenced, the expired ones above, are never"
+                + " candidates");
+        expected.put("spark shared.maint", "4 17");
+        return expected;
+    }
+
+    /**
+     * The v2 to v3 upgrade and v3 features in Spark. {@code t_upgrade}: v2 merge-on-read, four rows in one file,
+     * DELETE id 2 (a Parquet position delete), format-version 3, DELETE id 3: a v3 data file has one deletion
+     * vector, so the old delete is merged into it (two rows) and the Parquet file removed. {@code t_lineage}: row
+     * IDs 0-2 at sequence number 1; a copy-on-write UPDATE of id 2 keeps every row ID and moves only that row's
+     * last-updated sequence number. Default values are refused both ways; variant, geometry and geography (the
+     * last two behind {@code spark.sql.geospatial.enabled}) write and read back.
+     */
+    private static Map<String, String> upgradeAndV3() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("spark shared.upgrade.v2", "2 position-parquet 1 1");
+        expected.put("spark shared.upgrade", "3 2 5 dv-puffin 1 2");
+        expected.put("spark shared.upgrade.ops", "append,delete,delete");
+        expected.put("spark v3.lineage.insert", "0,1,2 1,1,1");
+        expected.put("spark v3.lineage.update", "0,1,2 1,2,1");
+        expected.put("spark v3.default.create",
+                "CREATE TABLE with a DEFAULT: the Iceberg table does not support column default values");
+        expected.put("spark v3.default.add",
+                "Cannot add column d since setting default values in Spark is currently unsupported");
+        expected.put("spark v3.variant", "2 3 x,y");
+        expected.put("spark v3.geo.disabled",
+                "Spark 4.1 refuses geometry and geography columns unless spark.sql.geospatial.enabled=true");
+        String point = "0101000000000000000000F03F0000000000000040";
+        expected.put("spark v3.geo", "1 " + point + " 4326 " + point + " 4326");
+        return expected;
+    }
+
+    /**
+     * Suspected catalog bug, reported and not fixed (fixes go to the owner first). A CREATE OR REPLACE whose query
+     * changes a column's type (id from bigint to string) starts main afresh, and Iceberg's reference handler accepts
+     * it, keeping field IDs by name; the catalog refuses it, as {@code Backstops.schemas} judges a replace's schema
+     * against the replaced one as if it were evolved in place. Once fixed, Spark prints
+     * {@code RESULT spark replace.retype 4 1 string} (a fourth snapshot, one row, id a string) in place of this.
+     */
+    private static final String REPLACE_RETYPE_REFUSED ="suspected catalog bug: the catalog refuses a CREATE OR REPLACE"
+            + " that changes a column type (Cannot change field 1 (id) from long to string: not a valid type"
+            + " promotion), which Iceberg's reference handler accepts";
+
+    /**
+     * CREATE OR REPLACE TABLE ... AS SELECT, a view and table statistics in Spark. {@code t_replace} (v3, two
+     * snapshots, four rows) replaced by two rows: a third snapshot, an overwrite with no parent, and the old
+     * snapshot still reads four rows. View {@code v_rows} on {@code t_v2}: ids 1 and 2, then (by CREATE OR
+     * REPLACE VIEW, as ALTER VIEW ... AS is refused) the row with a note; a second view is created and dropped.
+     * {@code compute_table_stats} writes a statistics file into {@code t_v2}'s metadata folder.
+     */
+    private static Map<String, String> replaceViewAndStats() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("spark replace", "3 3 2 30 overwrite");
+        expected.put("spark replace.history", "4 10");
+        expected.put("spark replace.retype", REPLACE_RETYPE_REFUSED);
+        expected.put("spark view.create", "2 3");
+        expected.put("spark view.alter-as", "ALTER VIEW ... AS is not supported. Use CREATE OR REPLACE VIEW instead");
+        expected.put("spark view.replace", "1 4");
+        expected.put("spark view.list", "v_rows");
+        expected.put("spark stats", "metadata");
+        return expected;
+    }
+
+    /**
+     * PyIceberg 0.12 on the tables and view Spark left: field IDs kept across the rename (note 3, info.b 7);
+     * three specs with the default back at 0 and sort order 1; the tag and the snapshot as of the first commit's
+     * time; main fast-forwarded to the branch; one snapshot left after expiry; the upgraded table at v3;
+     * next-row-id 6 after three appended rows and three rewritten by the update (first row IDs 0 and 3); the
+     * replaced table's three snapshots, its current one a root; the view's two versions, columns, comment and
+     * Spark SQL; and the statistics file of {@code t_v2}'s current snapshot, one theta sketch per column with its
+     * distinct count. PyIceberg 0.12 cannot load a table with a variant column, nor parse Iceberg Java's
+     * {@code geometry(OGC:CRS84)} (it expects the CRS quoted).
+     */
+    private static Map<String, String> pyicebergReads() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("pyiceberg cross.schema", "name,id,note,info 3 6 n1,n2,n3 60 x");
+        expected.put("pyiceberg cross.schema.ids", "note=3 info.b=7 id=long");
+        expected.put("pyiceberg cross.partition", "10 55 3 0 1");
+        expected.put("pyiceberg cross.travel", "3 3 4");
+        expected.put("pyiceberg cross.branch", "4 3 same");
+        expected.put("pyiceberg cross.wap", "4 2");
+        expected.put("pyiceberg cross.maint", "4 17 1");
+        expected.put("pyiceberg cross.upgrade", "3 2 5");
+        expected.put("pyiceberg cross.lineage", "3 6 0,3");
+        expected.put("pyiceberg cross.variant", "PyIceberg 0.12 has no variant type: Unsupported field type: 'variant'");
+        expected.put("pyiceberg cross.geo", "PyIceberg 0.12 parses only a quoted CRS, geometry('...'); Iceberg Java"
+                + " writes geometry(OGC:CRS84): Could not parse geometry(OGC:CRS84) into a GeometryType");
+        expected.put("pyiceberg cross.replace", "3 2 30 root");
+        expected.put("pyiceberg cross.view", "2 2 id,name,note rows with a note note-filter");
+        expected.put("pyiceberg cross.stats", "1 current apache-datasketches-theta-v1 id:4,name:4,note:1");
+        return expected;
+    }
+
+    /**
+     * PyIceberg's own writes on a v2 table it creates, {@code m8.shared.pyiceberg.t_writes}: four rows appended,
+     * {@code delete("id = 2")}, {@code overwrite} of id 3 with c2, {@code upsert} of id 4 (to d2) and id 5. All
+     * copy-on-write: a delete that matches part of a file commits an overwrite; overwrite is that delete plus an
+     * append; upsert overwrites the changed row away, then appends it and the new row.
+     */
+    private static Map<String, String> pyicebergWrites() {
+        return Map.of(
+                "pyiceberg writes", "2 4 13 a,c2,d2,e",
+                "pyiceberg writes.upsert", "1 1",
+                "pyiceberg writes.ops", "append,overwrite,overwrite,append,overwrite,append,append");
     }
 
     private interface Run {
