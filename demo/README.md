@@ -1,8 +1,9 @@
-# Local demo: the catalog, its console, SingleStore both ways, and the engine matrix, on Kubernetes
+# Local demo: the catalog, its console, SingleStore both ways, DuckDB, and the engine matrix, on Kubernetes
 
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
-catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password. `up`
-writes sample Iceberg tables, syncs SingleStore and Iceberg in both directions and prints how to sign in;
+catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
+DuckDB with its UI. `up` writes sample Iceberg tables, syncs SingleStore and Iceberg in both directions and
+prints how to sign in;
 `engines` runs Spark, Kafka Connect, PyIceberg and
 SingleStore's ingest against the same stack. Everything is local and uses test keys; nothing here is fit for
 production.
@@ -33,13 +34,15 @@ demo/demo.sh up
   - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
+  - `duckdb.yaml`: DuckDB and its UI, image `keel-demo-duckdb:<DuckDB version>` (`duckdb.Dockerfile`).
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
-  console), **8182** (kafbat) and **8183** (SingleStore Studio). `up` stops if something else holds one of
-  them, such as a `kubectl port-forward`.
-- Memory: about 5 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and kafbat
-  768 MB each; Kafka 640 MB; Keycloak and Silo 512 MB each; PostgreSQL 384 MB), plus one job at a time: the
+  console), **8182** (kafbat), **8183** (SingleStore Studio) and **8184** (the DuckDB UI). `up` stops if
+  something else holds one of them, such as a `kubectl port-forward`.
+- Memory: about 5.3 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
+  kafbat 768 MB each; Kafka 640 MB; Keycloak and Silo 512 MB each; PostgreSQL 384 MB; DuckDB 256 MB, about
+  70 MB idle, up to 1 GB), plus one job at a time: the
   lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so
   nothing else of that size fits beside it.
 - No volumes: the data lives as long as the pods.
@@ -76,7 +79,7 @@ sign out at <http://localhost:8180/realms/keel/account>, or use a private window
 <http://localhost:8180/admin> (user `admin`, password `keel-test`); its users and sessions go with its pod.
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
-pipelines are then replaced so they carry the new one):
+pipelines are then replaced and DuckDB is restarted, so they carry the new ones):
 
 ```bash
 demo/demo.sh token
@@ -162,6 +165,31 @@ SingleStore reserves each pipeline extractor's Java heap from its own memory, an
 pooled. An Iceberg pipeline's data workers default to 500 MB each, so two loads and a feed are enough to stop
 all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 (`pipelines_iceberg_data_workers_heap_size`).
+
+## DuckDB
+
+The DuckDB UI is on <http://localhost:8184>: a SQL notebook in the browser. Its DuckDB is signed in to the
+catalog as `ana`, with both catalogs attached as `lakehouse` and `engines`, so it can do what `ana` can: read
+every table she may load, with the storage credentials the catalog vends, and nothing else.
+
+- Every namespace is listed at every depth (`SUPPORT_NESTED_NAMESPACES true`), as a schema named by its dotted
+  path; quote it in SQL:
+
+  ```sql
+  SELECT * FROM lakehouse."markets.equities.eu.xetra".trades;
+  SELECT * FROM engines."m8.shared.spark".t_v3_dv;   -- Spark's v3 table with a deletion vector
+  ```
+
+- `finance.ledger.accounts` is listed, but reading it gets the catalog's refusal (D27); the other tables still
+  work.
+- A write is refused at commit: `ana` holds select only. The files DuckDB wrote before it committed stay in
+  the table's folder, unreferenced, because the catalog vends read-write credentials to every caller today
+  (read-only vending for select-only callers is still open, `build-plan.md`).
+- The UI downloads its web page from `ui.duckdb.org` each time it opens, so it needs internet access; DuckDB
+  and its extensions are in the image. Notebooks last as long as the pod.
+- It is a single DuckDB for whoever opens the page, with no sign-in of its own. A DuckDB on your own machine
+  would attach the same way with your own token, but needs the vended storage address (`http://s3:9000`
+  here) to resolve where it runs.
 
 ## The engines
 

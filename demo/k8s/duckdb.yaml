@@ -1,0 +1,60 @@
+# DuckDB and its UI (image duckdb.Dockerfile), signed in to the catalog as ana: both catalogs attached, every
+# nested namespace listed, storage reached with the credentials the catalog vends. Only demo.sh applies this;
+# ports.yaml publishes the UI on localhost:8184.
+#
+# The UI listens on [::1]:8184 only, which no Service can reach, so container relay forwards the pod's port
+# 8185 to it. The UI keeps its own port 8184, the one the browser uses. If the catalog is not answering yet,
+# an ATTACH fails, DuckDB stops (.bail on) and Kubernetes starts it again. A new token (demo.sh token)
+# restarts the pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: duckdb
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: duckdb}
+  template:
+    metadata:
+      labels: {app: duckdb}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: duckdb
+          image: ${DUCKDB_IMAGE}
+          imagePullPolicy: Never
+          command: ["bash", "-c"]
+          args:
+            - |
+              exec duckdb < <(
+                printf "CREATE SECRET keel (TYPE iceberg, TOKEN '%s');\n" "$KEEL_TOKEN"
+                printf '%s\n' "$INIT_SQL"
+                exec sleep infinity)
+          env:
+            - name: KEEL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: demo-duckdb-token, key: token}
+            - name: INIT_SQL
+              value: |
+                .bail on
+                SET memory_limit = '512MB';
+                ATTACH 'lakehouse' AS lakehouse (TYPE iceberg, SECRET keel, URI 'http://keel-catalog:8181',
+                  SUPPORT_NESTED_NAMESPACES true);
+                ATTACH 'engines' AS engines (TYPE iceberg, SECRET keel, URI 'http://keel-catalog:8181',
+                  SUPPORT_NESTED_NAMESPACES true);
+                SET ui_local_port = 8184;
+                CALL start_ui_server();
+          readinessProbe:
+            exec:
+              command: ["socat", "-u", "OPEN:/dev/null", "TCP6:[::1]:8184"]
+            periodSeconds: 5
+          resources:
+            requests: {memory: 256Mi}
+            limits: {memory: 1Gi}
+        - name: relay
+          image: ${DUCKDB_IMAGE}
+          imagePullPolicy: Never
+          command: ["socat", "TCP-LISTEN:8185,fork,reuseaddr", "TCP6:[::1]:8184"]
+          resources:
+            requests: {memory: 16Mi}
+            limits: {memory: 64Mi}
