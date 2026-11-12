@@ -1,26 +1,31 @@
 #!/usr/bin/env bash
 # The local demo of fidice-catalog and its web console. See demo/README.md.
 #
-#   demo/demo.sh up      build the server jar, start the stack, load sample data once, print tokens
+#   demo/demo.sh up      build the jars, start the stack, load sample data once, print tokens
 #   demo/demo.sh token   print the console URL and the tokens again (re-mints them if they have expired)
-#   demo/demo.sh trino   open a Trino prompt on the catalog (catalog "fid")
+#   demo/demo.sh sql     open a SingleStore prompt (databases ops and lake)
+#   demo/demo.sh rate    append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
 #   demo/demo.sh status  show the containers
 #   demo/demo.sh down    stop and remove the stack and its data (keeps the signing key and tokens)
 #
-# Needs bash (Git Bash on Windows), Docker with compose, curl, and JDK 25 (JAVA_HOME or java on PATH).
-# The stack runs from a copy in FIDICE_DEMO_HOME (default ~/.fidice-demo), so it keeps running when the
-# checkout it came from changes or goes away.
+# Needs bash (Git Bash on Windows), Docker with compose, curl, unzip, and JDK 25 (JAVA_HOME or java on
+# PATH). The stack runs from a copy in FIDICE_DEMO_HOME (default ~/.fidice-demo), so it keeps running when
+# the checkout it came from changes or goes away. FIDICE_DEMO_PROJECT names the compose project (default
+# fidice-demo), to run a second copy beside it.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN="${FIDICE_DEMO_HOME:-$HOME/.fidice-demo}"
-PROJECT=fidice-demo
+PROJECT="${FIDICE_DEMO_PROJECT:-fidice-demo}"
 URL=http://localhost:8181
 CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+# SingleStore's root password, as compose.yaml sets it. Local only.
+S2_ROOT_PASSWORD=fidicedemo-root
 
+# FIDICE_TOKEN is the lake writer's token: the lake service is the only one that reads it.
 compose() {
-  FIDICE_TOKEN="$(cat "$RUN/tokens/trino.jwt" 2>/dev/null || echo unset)" docker compose -p "$PROJECT" -f "$RUN/compose.yaml" "$@"
+  FIDICE_TOKEN="$(cat "$RUN/tokens/lake.jwt" 2>/dev/null || echo unset)" docker compose -p "$PROJECT" -f "$RUN/compose.yaml" "$@"
 }
 
 say() { printf '\n== %s\n' "$*"; }
@@ -45,24 +50,36 @@ api() {
   rm -f "$out"
 }
 
-trino_sql() {
-  MSYS_NO_PATHCONV=1 docker exec "$PROJECT-trino-1" trino --catalog fid --output-format TSV --execute "$1"
+# Runs SQL from stdin in SingleStore as root; prints rows tab-separated, without column names.
+s2() {
+  MSYS_NO_PATHCONV=1 docker exec -i "$PROJECT-singlestore-1" singlestore -uroot -p"$S2_ROOT_PASSWORD" -N -B \
+    2> >(grep -v -e 'getopt: command not found' -e 'Using a password on the command line' >&2)
+}
+
+# A SQL file from demo/singlestore, with the singlestore user's catalog token and the root password put in.
+s2_file() {
+  sed -e "s|\${SINGLESTORE_TOKEN}|$(token_of singlestore)|g" -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$S2_ROOT_PASSWORD|g" \
+    "$RUN/singlestore/$1" | s2
 }
 
 # Built from this checkout on every up, so the stack never runs a jar older than the code; Gradle
-# does nothing when the jar is already current.
-build_jar() {
-  say "building the catalog server jar (no tests run)"
-  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar)
+# does nothing when the jars are already current. The connector jar is mounted into SingleStore; its
+# Iceberg libraries also run the lake writer.
+build_jars() {
+  say "building the catalog server and change-feed connector jars (no tests run)"
+  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :singlestore-change-feed:connectorJar)
   cp "$(ls -t "$REPO"/catalog-server/build/libs/catalog-server-*-exec.jar | head -1)" "$RUN/catalog.jar"
+  cp "$REPO/singlestore-change-feed/build/libs/fidice-changefeed-connector.jar" "$RUN/"
+  rm -rf "$RUN/lake/lib"
+  unzip -q -j "$RUN/fidice-changefeed-connector.jar" 'lib/*' -d "$RUN/lake/lib"
 }
 
 prepare() {
-  mkdir -p "$RUN/trino/catalog"
+  mkdir -p "$RUN/singlestore" "$RUN/lake"
   cp "$REPO/demo/compose.yaml" "$REPO/demo/demo.properties" "$RUN/"
-  cp "$REPO/demo/trino/seed.sql" "$RUN/trino/"
-  cp "$REPO/demo/trino/catalog/fid.properties" "$RUN/trino/catalog/"
-  build_jar
+  cp "$REPO"/demo/singlestore/*.sql "$RUN/singlestore/"
+  cp "$REPO/demo/LakeWriter.java" "$RUN/lake/"
+  build_jars
   mint
 }
 
@@ -101,27 +118,59 @@ ON CONFLICT DO NOTHING;
 SQL
 }
 
+# Starts a pipeline unless it is running already.
+start_pipeline() {
+  local db=$1 name=$2 state
+  state=$(echo "SELECT STATE FROM information_schema.PIPELINES WHERE DATABASE_NAME = '$db' AND PIPELINE_NAME = '$name';" | s2)
+  if [[ "$state" != Running* ]]; then
+    echo "START PIPELINE $db.$name;" | s2 >/dev/null
+  fi
+}
+
+# The two running pipelines, created or replaced with the current token, and started.
+feeds() {
+  s2_file feeds.sql >/dev/null
+  start_pipeline lake fx_rates_feed
+  start_pipeline ops orders_to_lake
+}
+
+# Waits until the change feed has made a commit of the given kind; fails after two minutes.
+wait_for_commit() {
+  local kind=$1
+  for _ in $(seq 1 60); do
+    [[ "$(echo "SELECT COUNT(*) FROM ops.lake_commits WHERE kind = '$kind';" | s2)" != 0* ]] && return 0
+    sleep 2
+  done
+  echo "the change feed made no '$kind' commit. In demo/demo.sh sql:" >&2
+  echo "  SELECT ERROR_MESSAGE FROM information_schema.PIPELINES_ERRORS ORDER BY ERROR_UNIX_TIMESTAMP DESC LIMIT 3;" >&2
+  return 1
+}
+
 seed() {
   if [[ -f "$RUN/seeded" ]]; then
     echo "sample data already loaded"
     return
   fi
-  say "loading sample data through Trino"
-  MSYS_NO_PATHCONV=1 docker exec "$PROJECT-trino-1" trino --catalog fid --file /scripts/seed.sql >/dev/null
+  say "writing the sample Iceberg tables through the catalog (demo/LakeWriter.java)"
+  compose run --rm lake seed
 
-  say "tagging and branching the trades table through the REST API"
-  local snapshots first current ns
-  snapshots=$(trino_sql "SELECT snapshot_id FROM \"markets.equities.eu.xetra\".\"trades\$snapshots\" ORDER BY committed_at")
-  first=$(echo "$snapshots" | tr -d '\r' | head -1)
-  current=$(echo "$snapshots" | tr -d '\r' | tail -1)
-  ns='markets%1Fequities%1Feu%1Fxetra'
-  api trino POST "/v1/$CATALOG/namespaces/$ns/tables/trades" \
-    "{\"requirements\":[],\"updates\":[{\"action\":\"set-snapshot-ref\",\"ref-name\":\"eod-2026-11-09\",\"type\":\"tag\",\"snapshot-id\":$first}]}"
-  api trino POST "/v1/$CATALOG/namespaces/$ns/tables/trades" \
-    "{\"requirements\":[],\"updates\":[{\"action\":\"set-snapshot-ref\",\"ref-name\":\"surveillance-review\",\"type\":\"branch\",\"snapshot-id\":$current}]}"
+  say "SingleStore: the ops and lake databases, and one-time loads from Iceberg"
+  s2_file seed.sql >/dev/null
+  s2_file load.sql >/dev/null
+
+  say "SingleStore: the change feed of ops.orders into Iceberg, and the FX rates feed from Iceberg"
+  feeds
+  wait_for_commit snapshot
+  s2 >/dev/null <<'SQL'
+UPDATE ops.orders SET status = 'FILLED', updated_at = NOW(6) WHERE order_id = 1001;
+UPDATE ops.orders SET qty = 60, status = 'PARTIAL', updated_at = NOW(6) WHERE order_id = 1002;
+DELETE FROM ops.orders WHERE order_id = 1003;
+INSERT INTO ops.orders VALUES (1005, 'SAP', 'SELL', 100, 182.500000, 'NEW', NOW(6));
+SQL
+  wait_for_commit changes
 
   say "governance: classification, owner, regulated area, a legal hold, a DR freeze"
-  local m=/management/v1/catalogs/$CATALOG
+  local m=/management/v1/catalogs/$CATALOG ns='markets%1Fequities%1Feu%1Fxetra'
   api stella PUT "$m/namespaces/finance/attributes/regulated" '{"value":"true","provenance":"demo-seed: compliance register"}'
   api stella PUT "$m/namespaces/finance%1Fledger/tables/journal/attributes/classification" '{"value":"confidential","provenance":"demo-seed: data catalogue"}'
   api stella PUT "$m/namespaces/markets/attributes/owner" '{"value":"markets-data-office","provenance":"demo-seed: HR feed"}'
@@ -132,10 +181,6 @@ seed() {
   say "grants through the management API, as the grant admin"
   api gary POST "$m/grants" '{"securable":{"type":"namespace","namespace":["markets"]},"group":"demo-auditors","privilege":"describe"}'
   api gary POST "$m/grants" "{\"securable\":{\"type\":\"table\",\"namespace\":[\"markets\",\"equities\",\"eu\",\"xetra\"],\"name\":\"trades\"},\"group\":\"demo-quants\",\"privilege\":\"select\"}"
-
-  say "a few reads, so the audit trail has some"
-  trino_sql "SELECT count(*) FROM \"markets.equities.eu.xetra\".trades" >/dev/null
-  trino_sql "SELECT * FROM \"markets.fx\".rates" >/dev/null
   touch "$RUN/seeded"
 }
 
@@ -153,9 +198,9 @@ $(token_of ana)
 Grant admin  gary  (group demo-grant-admins: manage grants and read the audit trail; no data access)
 $(token_of gary)
 
-Tag steward stella, platform operator oscar and the Trino loader have tokens too:
-  $RUN/tokens/{stella,oscar,trino}.jwt
-Trino:  demo/demo.sh trino   (or http://localhost:8183, user any name)
+Tag steward stella, platform operator oscar, SingleStore and the lake writer have tokens too:
+  $RUN/tokens/{stella,oscar,singlestore,lake}.jwt
+SingleStore:  demo/demo.sh sql   (or Studio on http://localhost:8183, user root, password $S2_ROOT_PASSWORD)
 EOF
 }
 
@@ -168,21 +213,24 @@ case "${1:-}" in
     compose up -d seed catalog
     wait_for_console
     grants
-    say "starting Trino"
-    compose up -d --wait trino
+    say "starting SingleStore"
+    compose up -d --wait singlestore
     seed
     print_access
     ;;
   token)
     if tokens_expired; then
       mint
-      say "re-minted; restarting Trino so it uses its new token"
-      compose up -d --force-recreate --wait trino
+      say "re-minted; replacing SingleStore's running pipelines so they use the new token"
+      feeds
     fi
     print_access
     ;;
-  trino)
-    MSYS_NO_PATHCONV=1 docker exec -it "$PROJECT-trino-1" trino --catalog fid
+  sql)
+    MSYS_NO_PATHCONV=1 docker exec -it "$PROJECT-singlestore-1" singlestore -uroot -p"$S2_ROOT_PASSWORD" ops
+    ;;
+  rate)
+    compose run --rm lake rate
     ;;
   status)
     compose ps
@@ -192,7 +240,7 @@ case "${1:-}" in
     rm -f "$RUN/seeded"
     ;;
   *)
-    sed -n '2,12p' "$0"
+    sed -n '2,14p' "$0"
     exit 2
     ;;
 esac

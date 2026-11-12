@@ -40,7 +40,8 @@ public final class Mint {
         USERS.put("gary", new String[] {"fidice-console", "demo-grant-admins"});
         USERS.put("stella", new String[] {"fidice-console", "demo-stewards"});
         USERS.put("oscar", new String[] {"fidice-console", "demo-operators"});
-        USERS.put("trino", new String[] {"trino-demo", "demo-loaders"});
+        USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
+        USERS.put("lake", new String[] {"lake-writer-demo", "demo-loaders"});
     }
 
     public static void main(String[] args) throws Exception {

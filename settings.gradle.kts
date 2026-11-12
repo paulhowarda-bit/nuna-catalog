@@ -31,4 +31,5 @@ include(
     "catalog-tests-load",
     "catalog-tests-conformance",
     "catalog-tests-engines",
+    "singlestore-change-feed",
 )

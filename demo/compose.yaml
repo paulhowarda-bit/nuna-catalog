@@ -1,9 +1,9 @@
 # The local demo: PostgreSQL, Kafka, Silo, the catalog server with its web console on host port 8181, and
-# Trino on host port 8183. demo.sh copies this file, the catalog jar and the configuration into the run
+# SingleStore with its Studio on host port 8183. demo.sh copies this file, the catalog jar and the configuration into the run
 # directory and starts it from there, so the stack does not depend on the checkout it came from.
 #
 # Its own compose project, fidice-demo: the engine matrix tears down fidice-engines, never this one.
-# Only 8181 (catalog and console) and 8183 (Trino) are published on the host.
+# Only 8181 (catalog and console) and 8183 (SingleStore Studio) are published on the host.
 
 name: fidice-demo
 
@@ -102,23 +102,36 @@ services:
       timeout: 5s
       retries: 120
 
-  trino:
-    image: trinodb/trino:484
+  # SingleStore: the change feed of its ops tables commits to Iceberg through a connector pipeline
+  # (the connector jar is mounted where the extractor looks for connectors), and Iceberg pipelines load
+  # tables from the catalog into its lake database. Studio is on host port 8183.
+  singlestore:
+    image: ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88
+    depends_on:
+      catalog:
+        condition: service_healthy
+    environment:
+      ROOT_PASSWORD: fidicedemo-root
+      SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES: 1
+      SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST: 1
+    ports:
+      - "8183:8080"
+    volumes:
+      - ./fidice-changefeed-connector.jar:/server/singlestoredb-server-10.9.0-d16d12a6ad/extractors/lib-extractor-connect/fidice-changefeed-connector.jar:ro
+    mem_limit: 3g
+
+  # Another engine writing Iceberg: demo/LakeWriter.java with the connector's Iceberg libraries, run on
+  # demand (demo.sh), never left running.
+  lake:
+    image: eclipse-temurin:25.0.5_8-jdk-noble
+    profiles: ["tools"]
     depends_on:
       catalog:
         condition: service_healthy
     environment:
       FIDICE_TOKEN: ${FIDICE_TOKEN:?FIDICE_TOKEN}
-    ports:
-      - "8183:8080"
+      JAVA_TOOL_OPTIONS: -Xmx384m
+    entrypoint: ["java", "-cp", "/lake/lib/*", "/lake/LakeWriter.java"]
     volumes:
-      - ./trino/catalog:/etc/trino/catalog:ro
-      - ./trino:/scripts:ro
-    # The image sizes the heap at 80% of the container's memory.
-    mem_limit: 1400m
-    healthcheck:
-      test: ["CMD-SHELL", "/usr/lib/trino/bin/health-check"]
-      interval: 5s
-      timeout: 5s
-      start_period: 5m
-      retries: 3
+      - ./lake:/lake:ro
+    mem_limit: 768m
