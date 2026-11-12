@@ -52,7 +52,7 @@ public class LakeWriter {
     public static void main(String[] args) throws Exception {
         try (RESTCatalog catalog = new RESTCatalog()) {
             catalog.initialize("lake", Map.of(
-                    "uri", "http://catalog:8181",
+                    "uri", "http://keel-catalog:8181",
                     "warehouse", "lakehouse",
                     "token", System.getenv("KEEL_TOKEN"),
                     "header.X-Iceberg-Access-Delegation", "vended-credentials"));

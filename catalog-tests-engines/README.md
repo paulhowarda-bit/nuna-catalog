@@ -1,7 +1,8 @@
-# catalog-tests-engines: the nightly engine matrix (M8, D31), the demo
+# catalog-tests-engines: the nightly engine matrix (M8, D31)
 
-The catalog server, deployed by its Helm chart (`deploy/helm/keel-catalog`) into a throwaway kind cluster,
-with Spark, Kafka Connect, PyIceberg and SingleStore against it. Spark and PyIceberg create, write, read,
+Spark, Kafka Connect, PyIceberg and SingleStore against the catalog server, on the Kubernetes stack the matrix
+shares with the demo (`demo/k8s`, see `demo/README.md`): the catalog deployed by its Helm chart
+(`deploy/helm/keel-catalog`), PostgreSQL, Kafka, kafbat, the S3 store and SingleStore. Spark and PyIceberg create, write, read,
 evolve (add a column, then write and read with it) and drop v2 and v3 tables in a three-level namespace
 `m8.deep.<engine>`. Kafka Connect's Iceberg sink consumes a Kafka topic and commits its records into a table it
 creates. PyIceberg and SingleStore read three tables Spark left in `m8.shared.spark`: v2 and v3 (already
@@ -17,7 +18,8 @@ results below still show them.)
 The test is tagged `overnight`: the fast and heavy builds compile it and start nothing; the overnight run
 (`-Pnightly`) runs it. It needs Docker, `kubectl` and
 `helm` on the PATH (and `kind` for the default cluster), and the internet the first time (images, Maven
-Central jars and PyPI packages are baked into local images). Everything runs in namespace `keel-engines`.
+Central jars and PyPI packages are baked into local images). On its own, everything runs in namespace
+`keel-engines`.
 
 | Switch | Effect |
 |---|---|
@@ -25,6 +27,7 @@ Central jars and PyPI packages are baked into local images). Everything runs in 
 | `-Pengines.cluster=<context>` | Deploy into an existing cluster, for example `docker-desktop`, instead of a kind cluster. The namespace is recreated at the start and deleted at the end; the cluster's nodes must see locally built images, as Docker Desktop's do. |
 | `-Pengines.keep-stack=true` | Leave everything up afterwards. |
 | `-Pengines.skip-build=true` | Use the images already built instead of building them. |
+| `-Pengines.stack=<namespace>` | Run the engines against the stack already up in that namespace of `-Pengines.cluster` instead of deploying one; nothing but the engines' Jobs is created or deleted. Needs `-Pengines.token-file=<file>`, a token the stack's issuer signed for group `engine-clients`. `demo/demo.sh engines` runs it against the demo. |
 
 By default the harness creates kind cluster `keel-engines` with its own kubeconfig,
 `build/engines-run/kubeconfig`, so the current kubectl context is never changed, and deletes it at the end.
@@ -43,19 +46,22 @@ then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--cont
 
 ## How it works
 
-- The harness creates kind cluster `keel-engines`, builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
+- On its own, the harness creates kind cluster `keel-engines`, builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
   and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
   cluster: nothing is pulled from inside it.
-- `k8s/infra.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`, a busybox file server for the test
-  issuer's JWKS, and `kafka-ui` (kafbat). The S3 store follows `-Ps3`: `k8s/store-silo.yaml` or `k8s/store-ceph.yaml` as Service `s3`
-  (`http://s3:9000` on Silo, `http://s3:8080` on Ceph), and a `seed` Job creates the bucket; on AWS there is no
+- The stack is the demo's manifests. `demo/k8s/stack.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`,
+  a busybox file server for the issuer's JWKS, and `kafka-ui` (kafbat). The S3 store follows `-Ps3`:
+  `demo/k8s/store-silo.yaml` or `demo/k8s/store-ceph.yaml` as Service `s3`
+  (`http://s3:9000` on Silo, `http://s3:8080` on Ceph), and a `seed` Job (`demo/k8s/seed.yaml`) creates the
+  bucket; on AWS there is no
   store in the cluster and the bucket and role are the run's own, deleted at the end. On Ceph the harness
   creates the STS role once the store is up. No pod gets Service environment variables: the Kafka image
   reads every `KAFKA_*` variable as broker configuration.
 - The catalog is installed with `helm upgrade --install keel-catalog deploy/helm/keel-catalog`, the chart
-  `deploy/` documents, with one server: engines reach it as Service `keel-catalog`. Its config is
-  `k8s/catalog.properties` plus the database settings and storage profile `s3` the harness adds for the store;
-  the database password and the store's secret key go in the chart's Secret.
+  `deploy/` documents, with one server: engines reach it as Service `keel-catalog`. Its values are the
+  stack's (`demo/k8s/catalog-values.yaml`: the database, catalogs `lakehouse` and `engines`), plus this run's:
+  the issuer in `k8s/catalog.properties` and storage profile `s3` for the store; the store's secret key goes
+  in the chart's Secret.
   The harness makes an RS256 key and token with `TestIdp` (issuer `https://idp.test/engines`, group
   `engine-clients`); grants (`create`, `modify` on catalog `engines`) are inserted by SQL, as
   `ConformanceServer` does.
@@ -64,8 +70,9 @@ then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--cont
   `RESULT <engine> <check> <value>` lines (and `LIMIT ...` for an expected refusal) to its log; the test asserts
   the whole set, so a skipped step fails like a wrong answer. Jobs are deleted after their test, and the whole
   cluster at the end.
-- SingleStore runs as a pod (`k8s/singlestore.yaml`) for its test only; the harness switches
-  `enable_iceberg_ingest` on (off in the dev image) and runs `k8s/singlestore/ingest.sql` in it.
+- SingleStore (`demo/k8s/singlestore.yaml`, the plain dev image) starts for its test only; the harness switches
+  `enable_iceberg_ingest` on (off in the dev image) and runs `k8s/singlestore/ingest.sql` in it, into database
+  `keel_m8`. Against the demo's stack it uses the demo's SingleStore, which also holds `ops` and `lake`.
 
 ## Versions
 

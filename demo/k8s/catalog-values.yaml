@@ -1,0 +1,45 @@
+# The catalog, part 3 of the shared stack: the Helm chart's values that demo.sh and EngineMatrixTest both use.
+# One server sized for a one-node cluster, its image from the local Docker engine. Two catalogs on one storage
+# profile, s3 (each table gets its own folder under the table root): lakehouse for the demo's data, engines
+# for the engine matrix. Each launcher adds the image tag, the issuer and profile s3 for its store: demo.sh
+# with demo-values.yaml, the harness with values of its own. Test settings only; the token box is on.
+replicaCount: 1
+
+image:
+  repository: keel-catalog
+  pullPolicy: Never
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    memory: 768Mi
+
+config:
+  spring:
+    datasource:
+      url: jdbc:postgresql://postgres:5432/catalog
+      username: catalog
+  keel:
+    storage:
+      catalogs:
+        lakehouse:
+          profile: s3
+          kms-key-set: demo-keys
+          legal-entity: Demo Entity
+        engines:
+          profile: s3
+          kms-key-set: test-keys
+          legal-entity: Test Entity
+    security:
+      grant-admin-groups: [demo-grant-admins]
+      platform-operator-groups: [demo-operators]
+    audit:
+      kafka-bootstrap-servers: kafka:9092
+    ui:
+      dev-token-login: true
+
+secrets:
+  values:
+    spring.datasource.password: catalog

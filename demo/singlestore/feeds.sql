@@ -6,10 +6,10 @@
 -- Iceberg to SingleStore: each append to markets.fx.rates is loaded into lake.fx_rates.
 USE lake;
 CREATE OR REPLACE PIPELINE fx_rates_feed AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "lakehouse",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "lakehouse",
          "table_id": "markets.fx.rates", "catalog.token": "${SINGLESTORE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
-         "endpoint_url": "http://silo:9000", "region": "us-east-1", "ingest_mode": "append"}'
+         "endpoint_url": "http://s3:9000", "region": "us-east-1", "ingest_mode": "append"}'
 CREDENTIALS '{}'
 REPLACE INTO TABLE fx_rates (pair <- pair, rate <- rate, @as_of <- as_of, source <- source)
 FORMAT ICEBERG
@@ -22,7 +22,7 @@ USE ops;
 CREATE OR REPLACE PIPELINE orders_to_lake AS LOAD DATA CONNECTOR 'ChangeFeedConnector'
 CONFIG '{"singlestore.url": "jdbc:mariadb://localhost:3306/ops", "singlestore.user": "root",
          "singlestore.database": "ops", "singlestore.table": "orders",
-         "iceberg.catalog.uri": "http://catalog:8181", "iceberg.catalog.warehouse": "lakehouse",
+         "iceberg.catalog.uri": "http://keel-catalog:8181", "iceberg.catalog.warehouse": "lakehouse",
          "iceberg.catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
          "iceberg.namespace": "markets.equities.eu.xetra", "iceberg.table": "orders",
          "iceberg.partition-by": "bucket(order_id, 4)", "commit.interval.ms": "5000"}'

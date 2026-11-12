@@ -1,8 +1,10 @@
-# Local demo: the catalog, its web console, and SingleStore both ways
+# Local demo: the catalog, its console, SingleStore both ways, and the engine matrix, on Kubernetes
 
-One command starts PostgreSQL, Kafka, Silo, the catalog server (with the console) and SingleStore, writes
-sample Iceberg tables, syncs SingleStore and Iceberg in both directions, and prints two sign-in tokens.
-Everything is local and uses test keys; nothing here is fit for production.
+One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
+catalog server (with the console) and SingleStore. `up` writes sample Iceberg tables, syncs SingleStore and
+Iceberg in both directions and prints sign-in tokens; `engines` runs Spark, Kafka Connect, PyIceberg and
+SingleStore's ingest against the same stack. Everything is local and uses test keys; nothing here is fit for
+production.
 
 ## Start
 
@@ -10,16 +12,33 @@ Everything is local and uses test keys; nothing here is fit for production.
 demo/demo.sh up
 ```
 
-- Needs bash (Git Bash on Windows), Docker with compose, `curl`, `unzip`, and JDK 25 (`JAVA_HOME`, or
-  `java` on the path). Every `up` builds the server jar and the change-feed connector jar from this
-  checkout (no tests run), so the stack never runs a jar older than the code; when nothing changed,
-  Gradle does nothing.
-- The stack is compose project `keel-demo` (`KEEL_DEMO_PROJECT`), run from a copy in `~/.keel-demo`
-  (`KEEL_DEMO_HOME`), so it keeps running if this checkout changes. The engine matrix's project
-  `keel-engines` is separate.
-- Host ports: **8181** (catalog and console) and **8183** (SingleStore Studio). Nothing else is published.
-- Memory: about 5.5 GB of container limits (SingleStore 3 GB, the catalog 900 MB, Kafka 640 MB, Silo
-  512 MB, PostgreSQL 384 MB), and 768 MB more while the lake writer runs.
+- Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, `kubectl`, `helm`, `curl`, `unzip`,
+  and JDK 25 (`JAVA_HOME`, or `java` on the path). Every `up` builds the server jar and the change-feed
+  connector jar from this checkout (no tests run) and the images below, so the stack never runs code older
+  than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
+  runs them from the local Docker engine, and `up` pulls the public ones there.
+- Everything runs in namespace `keel-demo` (`KEEL_DEMO_NAMESPACE`) of context `docker-desktop`
+  (`KEEL_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
+  same manifests the engine matrix deploys when it runs on its own:
+  - `stack.yaml`: PostgreSQL, Kafka, kafbat, and `idp`, which serves the demo issuer's keys
+    (`demo/Mint.java`).
+  - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, and the job that makes the warehouse bucket.
+  - The catalog: the Helm chart `deploy/helm/keel-catalog`, release `keel-catalog`, one server, image
+    `keel-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
+    `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's issuer and
+    Silo).
+  - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
+    connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
+    new one again.
+  - `ports.yaml`: the ports below.
+  - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
+- Ports on localhost, from Docker Desktop's LoadBalancer Services: **8181** (catalog and console), **8182**
+  (kafbat) and **8183** (SingleStore Studio). `up` stops if something else holds one of them, such as a
+  `kubectl port-forward`.
+- Memory: about 5 GB of requests (SingleStore 2 GB, up to 3 GB; the catalog and kafbat 768 MB each; Kafka
+  640 MB; Silo 512 MB; PostgreSQL 384 MB), plus one job at a time: the lake writer 768 MB, or an engine up to
+  2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so nothing else of that size fits beside it.
+- No volumes: the data lives as long as the pods.
 
 At the end it prints the console URL, <http://localhost:8181/ui/>, and the tokens.
 
@@ -35,6 +54,9 @@ The demo turns on the console's token box (`keel.ui.dev-token-login=true`, off b
 | `oscar` | `demo-operators` | platform operator: DR freeze |
 | `singlestore` | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
+| `engine-matrix` | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
+
+`ana` can also browse catalog `engines`, where the engine matrix's tables land.
 
 Separation of duties means no one group holds data rights and grant rights, so try the console as `ana` and as
 `gary`. Every refusal is the server's, shown as it answered.
@@ -75,11 +97,13 @@ Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the co
 demo/demo.sh sql
 ```
 
-Or Studio on <http://localhost:8183> (user `root`, password `keeldemo-root`). Two databases:
+Or Studio on <http://localhost:8183> (user `root`, password `keel-test`). Two databases, and a third once
+the engines have run:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
   view `xetra_daily`.
+- `keel_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
 
 ### SingleStore to Iceberg: the change feed
 
@@ -122,8 +146,26 @@ into `lake.fx_rates` within a few seconds.
 
 SingleStore reserves each pipeline extractor's Java heap from its own memory, and keeps idle extractors
 pooled. An Iceberg pipeline's data workers default to 500 MB each, so two loads and a feed are enough to stop
-all writes in the demo's 3 GB container. `seed.sql` caps them at 128 MB
+all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 (`pipelines_iceberg_data_workers_heap_size`).
+
+## The engines
+
+```bash
+demo/demo.sh engines
+```
+
+runs the engine matrix (`catalog-tests-engines`, `EngineMatrixTest`) against this stack instead of one of its
+own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's ingest in the demo's SingleStore,
+all into catalog `engines` as `engine-matrix`. It takes about 4 minutes once the engine images exist; the first
+run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
+shows, and SingleStore's copies in database `keel_m8`.
+Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
+
+## Kafka
+
+kafbat on <http://localhost:8182> shows the stack's Kafka: the catalog's audit and change topics, and once the
+engines have run, Kafka Connect's source topic `m8-kafka-events` and the sink's control topic.
 
 ## Stop
 
@@ -131,8 +173,8 @@ all writes in the demo's 3 GB container. `seed.sql` caps them at 128 MB
 demo/demo.sh down
 ```
 
-This removes the containers and their data. The signing key and tokens stay in `~/.keel-demo`; the next
-`up` loads the sample data again.
+This deletes the namespace and everything in it. The signing key and tokens stay in `~/.keel-demo`; the
+next `up` loads the sample data again.
 
 ```bash
 demo/demo.sh status

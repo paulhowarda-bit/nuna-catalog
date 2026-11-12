@@ -1,6 +1,9 @@
-# PostgreSQL, Kafka and the token issuer's key server for the engine matrix, in the kind cluster's default
-# namespace. Images are loaded into the cluster by the harness, never pulled by it. No pod gets Service
-# environment variables: the Kafka image reads every KAFKA_* variable as broker configuration.
+# The stack the demo and the engine matrix share, part 1: PostgreSQL, Kafka, kafbat and the token issuer's key
+# server. Part 2 is the S3 store (store-silo.yaml or store-ceph.yaml, then seed.yaml), part 3 the catalog (the
+# Helm chart with catalog-values.yaml), part 4 SingleStore (singlestore.yaml). demo/demo.sh and
+# EngineMatrixTest both apply them. Images are never pulled by the cluster: Docker Desktop's runs them from the
+# local Docker engine, and the harness loads them into kind. No pod gets Service environment variables: the
+# Kafka image reads every KAFKA_* variable as broker configuration.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,8 +90,8 @@ spec:
   ports:
     - port: 9092
 ---
-# Serves the test issuer's JWKS (ConfigMap idp-keys, made by the harness) so the catalog fetches its keys
-# inside the cluster.
+# Serves the issuer's JWKS (ConfigMap idp-keys: demo/Mint.java's key for the demo, the harness's own for a
+# matrix run on its own) so the catalog fetches its keys inside the cluster.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -127,9 +130,9 @@ spec:
   ports:
     - port: 8080
 ---
-# kafbat UI for the demo's Kafka: topics (the Kafka Connect source topic, the sink's control topic, the
-# catalog's audit and change topics), their messages and consumer groups. With -Pengines.keep-stack=true:
-# kubectl port-forward svc/kafka-ui 8080:8080, then http://localhost:8080.
+# kafbat UI for the stack's Kafka: topics (the Kafka Connect source topic, the sink's control topic, the
+# catalog's audit and change topics), their messages and consumer groups. The demo publishes it on
+# localhost:8182 (ports.yaml); otherwise kubectl port-forward svc/kafka-ui 8080:8080.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -147,7 +150,7 @@ spec:
           image: ${KAFKA_UI_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: KAFKA_CLUSTERS_0_NAME, value: keel-engines}
+            - {name: KAFKA_CLUSTERS_0_NAME, value: keel}
             - {name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS, value: "kafka:9092"}
             - {name: DYNAMIC_CONFIG_ENABLED, value: "false"}
           ports:

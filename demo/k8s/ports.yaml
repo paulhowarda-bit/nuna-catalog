@@ -1,0 +1,36 @@
+# The demo's ports on localhost, where Docker Desktop serves LoadBalancer Services: 8181 the catalog and its
+# console, 8182 kafbat, 8183 SingleStore Studio. Only demo.sh applies this; a matrix run publishes nothing.
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-public
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: keel-catalog
+    app.kubernetes.io/instance: keel-catalog
+  ports:
+    - port: 8181
+      targetPort: 8181
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui-public
+spec:
+  type: LoadBalancer
+  selector: {app: kafka-ui}
+  ports:
+    - port: 8182
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: singlestore-studio
+spec:
+  type: LoadBalancer
+  selector: {app: singlestore}
+  ports:
+    - port: 8183
+      targetPort: 8080

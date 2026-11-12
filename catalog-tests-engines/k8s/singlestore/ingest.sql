@@ -1,11 +1,14 @@
 -- SingleStore 10.9 ingests Spark's shared tables (namespace m8.shared.spark, three levels) through Iceberg
 -- pipelines, as a stock Iceberg Java REST client using the catalog's vended credentials. Its docs promise
 -- v1/v2 only (F9); the v3 tables, one with a deletion vector, show what 10.9.0 actually does.
-DROP DATABASE IF EXISTS keel_m8;
-CREATE DATABASE keel_m8;
+-- The database stays from run to run: in the demo's SingleStore, DROP DATABASE waits for as long as the change
+-- feed's pipeline (ops.orders_to_lake) runs. Emptying the tables and remaking the pipelines does not wait.
+CREATE DATABASE IF NOT EXISTS keel_m8;
 USE keel_m8;
 
-CREATE TABLE spark_v2 (id BIGINT, name TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS spark_v2 (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v2;
+DROP PIPELINE IF EXISTS spark_v2_pipe;
 CREATE PIPELINE spark_v2_pipe AS LOAD DATA S3 ''
 CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v2", "catalog.token": "${KEEL_TOKEN}",
@@ -17,7 +20,9 @@ FORMAT ICEBERG;
 START PIPELINE spark_v2_pipe FOREGROUND;
 SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v2' AS c, COUNT(*) AS n, COUNT(note) AS k FROM spark_v2;
 
-CREATE TABLE spark_v3 (id BIGINT, name TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS spark_v3 (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v3;
+DROP PIPELINE IF EXISTS spark_v3_pipe;
 CREATE PIPELINE spark_v3_pipe AS LOAD DATA S3 ''
 CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v3", "catalog.token": "${KEEL_TOKEN}",
@@ -29,7 +34,9 @@ FORMAT ICEBERG;
 START PIPELINE spark_v3_pipe FOREGROUND;
 SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v3' AS c, COUNT(*) AS n, COUNT(note) AS k FROM spark_v3;
 
-CREATE TABLE spark_v3_dv (id BIGINT, name TEXT, note TEXT);
+CREATE TABLE IF NOT EXISTS spark_v3_dv (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v3_dv;
+DROP PIPELINE IF EXISTS spark_v3_dv_pipe;
 CREATE PIPELINE spark_v3_dv_pipe AS LOAD DATA S3 ''
 CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${KEEL_TOKEN}",

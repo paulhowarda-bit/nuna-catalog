@@ -1,6 +1,6 @@
-# Throwaway backing services for trying the chart on a local cluster: PostgreSQL, Kafka and Silo, as in
-# demo/compose.yaml, plus a job that makes the warehouse bucket and publishes the test issuer's JWKS from the
-# ConfigMap keel-idp (deploy/local/run.sh makes it). No volumes: everything is lost with the pods. Test
+# Throwaway backing services for trying the chart on a local cluster: PostgreSQL, Kafka and Silo, as in the
+# demo's stack (demo/k8s), plus a job that makes the warehouse bucket and publishes the test issuer's JWKS from
+# the ConfigMap keel-idp (deploy/local/run.sh makes it). No volumes: everything is lost with the pods. Test
 # passwords and keys only; never use any of this outside a laptop.
 apiVersion: apps/v1
 kind: Deployment

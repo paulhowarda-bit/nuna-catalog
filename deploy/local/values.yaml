@@ -1,5 +1,6 @@
-# The chart on a local cluster, against deploy/local/backing.yaml. The settings are demo/demo.properties':
-# http storage, a test issuer, the console's token box on. Never use these values anywhere else.
+# The chart on a local cluster, against deploy/local/backing.yaml. The settings follow the demo's
+# (demo/k8s/demo-values.yaml): http storage, a test issuer, the console's token box on. Never use these values
+# anywhere else.
 replicaCount: 2
 
 image:
