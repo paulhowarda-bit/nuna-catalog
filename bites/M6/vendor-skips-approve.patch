@@ -1,6 +1,6 @@
 Breaks: the vendor scopes credentials to any location, not only those beneath the profile's allowed prefixes.
 Module: catalog-objectstore
-Test: SiloVendingTest#vendorRefusesLocationsOutsideTheProfile
+Test: VendingTest#vendorRefusesLocationsOutsideTheProfile
 
 diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/CredentialVendor.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/CredentialVendor.java
 index dc3f59d..8d59c25 100644

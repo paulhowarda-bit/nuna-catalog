@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import fidice.catalog.core.commit.TableFiles;
+import fidice.catalog.tests.s3.TestS3;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -17,49 +18,42 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
- * Metadata file I/O against a real S3-compatible store. Each store runs the same tests; a second
- * client with the same full-access user stands in for anyone who can reach the bucket directly.
+ * Metadata file I/O against the run's S3 store ({@link TestS3}: Silo, Ceph or AWS). A second client with
+ * the same full-access credentials stands in for anyone who can reach the bucket directly.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-abstract class MetadataFilesContract {
+class MetadataFilesTest {
 
-    private static final String REGION = "us-east-1";
-    private static final String BUCKET = "lake";
+    private static final String REGION = TestS3.REGION;
     private static final String JSON = """
             {"format-version":3,"table-uuid":"0d1c5b0a-6f3e-4c2a-9d7e-3b8f1a2c4e5f",\
             "properties":{"comment":"Zürich – 東京 – 📈"}}""";
 
-    private RunningStore store;
+    private TestS3 store;
+    /** The bucket these tests write in; on AWS, this run's name for it. */
+    private String lake;
     private S3Client direct;
     private StorageProfile profile;
     private MetadataFiles files;
 
-    protected abstract RunningStore start();
-
     @BeforeAll
     void startStore() {
-        store = start();
-        direct = S3Client.builder()
-                .endpointOverride(store.endpoint())
-                .region(Region.of(REGION))
-                .forcePathStyle(true)
-                .credentialsProvider(store.credentials())
-                .build();
-        direct.createBucket(request -> request.bucket(BUCKET));
-        profile = StorageProfile.of(store.kind(), store.endpoint().toString(), REGION, "s3://lake/warehouse",
-                List.of("s3://lake/warehouse"));
-        files = new MetadataFiles(profile, store.credentials());
+        store = TestS3.get();
+        lake = store.bucket("metadata");
+        direct = store.client();
+        profile = StorageProfile.of(StoreKind.valueOf(store.profileKind()), store.endpoint.toString(), REGION,
+                "s3://" + lake + "/warehouse", List.of("s3://" + lake + "/warehouse"));
+        files = new MetadataFiles(profile, store.credentials);
     }
 
+    /** The store itself is shared by the run and removed when the JVM exits. */
     @AfterAll
-    void stopStore() {
+    void closeClients() {
         files.close();
         direct.close();
-        store.close();
     }
 
     @Test
@@ -131,7 +125,8 @@ abstract class MetadataFilesContract {
     @DisplayName("a write aimed outside the allowed prefixes is refused before anything reaches the store")
     void writeOutsideTheProfileTouchesNothing() {
         String id = UUID.randomUUID().toString();
-        for (String table : List.of("s3://lake/elsewhere-" + id, "s3://lake/warehouse2/" + id, "s3://lake/warehouse")) {
+        for (String table : List.of("s3://" + lake + "/elsewhere-" + id, "s3://" + lake + "/warehouse2/" + id,
+                "s3://" + lake + "/warehouse")) {
             assertThatThrownBy(() -> files.write(table, 1, JSON)).isInstanceOf(LocationRejectedException.class);
         }
 
@@ -144,8 +139,8 @@ abstract class MetadataFilesContract {
     @DisplayName("a read aimed outside the allowed prefixes is refused even when the file exists")
     void readOutsideTheProfileIsRefused() {
         String id = UUID.randomUUID().toString();
-        for (String location : List.of("s3://lake/elsewhere-" + id + "/metadata/00001-x.metadata.json",
-                "s3://lake/warehouse2/" + id + "/metadata/00001-x.metadata.json")) {
+        for (String location : List.of("s3://" + lake + "/elsewhere-" + id + "/metadata/00001-x.metadata.json",
+                "s3://" + lake + "/warehouse2/" + id + "/metadata/00001-x.metadata.json")) {
             directPut(location, JSON);
 
             assertThatThrownBy(() -> files.read(location, sha256Hex(JSON), OnMismatch.FLAG))
@@ -208,7 +203,7 @@ abstract class MetadataFilesContract {
     }
 
     private List<String> directKeys(String prefix) {
-        return direct.listObjectsV2(request -> request.bucket(BUCKET).prefix(prefix)).contents().stream()
+        return direct.listObjectsV2(request -> request.bucket(lake).prefix(prefix)).contents().stream()
                 .map(object -> object.key())
                 .toList();
     }

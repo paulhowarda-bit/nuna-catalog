@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import fidice.catalog.tests.s3.TestS3;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -45,24 +46,25 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 /**
- * The M6 gate (D21): credentials vended for one table reach that table's prefix and nothing else, on a
- * real S3-compatible store whose role would allow everything. Attacks: a sibling sharing the prefix's
+ * The M6 gate (D21): credentials vended for one table reach that table's prefix and nothing else, on the
+ * run's S3 store ({@link TestS3}: Silo, Ceph or AWS) with a role, where there is one, that would allow
+ * everything. Attacks: a sibling sharing the prefix's
  * leading characters ({@code orders} vs {@code orders2}), the bare prefix object, listing wider, copying
  * from a sibling, other buckets, bucket-level actions, deletes without the maintenance level, writes
  * with read access, and raw requests whose paths use dot segments, percent-encoded dots, slashes and
  * backslashes, double encoding, overlong UTF-8 and NUL, each signed exactly as sent.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-abstract class VendingContract {
+class VendingTest {
 
-    private static final String REGION = "us-east-1";
+    private static final String REGION = TestS3.REGION;
     private static final String SECRET = "orders2-secret-" + UUID.randomUUID();
     /** Objects the tests seed outside {@code t/orders/}; nothing else may ever appear there. */
     private static final Set<String> OUTSIDE = Set.of("t/orders2/secret.json", "t/orders", "t/ordersX/secret.json",
             "outside.json");
     private static final String SEED = "t/orders/seed.json";
 
-    private RunningStore store;
+    private TestS3 store;
     private String bucket;
     private String otherBucket;
     /** The table credentials are vended for. */
@@ -71,38 +73,31 @@ abstract class VendingContract {
     private CredentialVendor vendor;
     private final HttpClient http = HttpClient.newHttpClient();
 
-    protected abstract RunningStore start();
-
     @BeforeAll
     void startStore() {
-        store = start();
-        bucket = store.bucket();
-        otherBucket = store.otherBucket();
+        store = TestS3.get();
+        bucket = store.bucket("vend");
+        otherBucket = store.bucket("vend-other");
         table = "s3://" + bucket + "/t/orders";
-        direct = client(store.credentials());
-        direct.createBucket(request -> request.bucket(bucket));
-        direct.createBucket(request -> request.bucket(otherBucket));
+        direct = client(store.credentials);
         for (String key : OUTSIDE) {
             directPut(bucket, key, SECRET);
         }
         directPut(otherBucket, "t/orders/secret.json", SECRET);
         directPut(bucket, SEED, "seed");
-        StorageProfile profile = StorageProfile.of(store.kind(), store.endpoint().toString(), REGION, "s3://" + bucket + "/t",
-                List.of("s3://" + bucket + "/t"));
-        vendor = new CredentialVendor(profile, store.roleArn(), store.credentials(), CredentialVendor.MIN_LIFETIME);
+        StorageProfile profile = StorageProfile.of(StoreKind.valueOf(store.profileKind()), store.endpoint.toString(),
+                REGION, "s3://" + bucket + "/t", List.of("s3://" + bucket + "/t"));
+        vendor = new CredentialVendor(profile, store.roleArn, store.credentials, CredentialVendor.MIN_LIFETIME);
     }
 
-    /** Runs after a failed start too, so whatever the store created (a real AWS role, say) is removed. */
+    /** The store itself is shared by the run and removed when the JVM exits. */
     @AfterAll
-    void stopStore() {
+    void closeClients() {
         if (vendor != null) {
             vendor.close();
         }
         if (direct != null) {
             direct.close();
-        }
-        if (store != null) {
-            store.close();
         }
     }
 
@@ -262,7 +257,7 @@ abstract class VendingContract {
                 "/" + bucket + "/t/orders/%00/../../orders2/secret.json",
                 "/" + bucket + "/t/orders/../../" + otherBucket + "/t/orders/secret.json",
                 "/" + bucket + "/t/orders/..");
-        StringBuilder report = new StringBuilder("raw path attacks on " + store.kind()
+        StringBuilder report = new StringBuilder("raw path attacks on " + store.kind
                 + " (* = signed for the path as the store decodes it):\n");
         for (String path : attacks) {
             RawResponse get = rawPastTheSignature(credentials, "GET", path, null);
@@ -293,7 +288,7 @@ abstract class VendingContract {
         Instant before = Instant.now();
         VendedCredentials credentials = vend(Access.READ);
 
-        assertThat(credentials.accessKeyId()).isNotEqualTo(store.credentials().resolveCredentials().accessKeyId());
+        assertThat(credentials.accessKeyId()).isNotEqualTo(store.credentials.resolveCredentials().accessKeyId());
         assertThat(credentials.sessionToken()).isNotBlank();
         assertThat(credentials.expiresAt()).isBetween(before.plus(Duration.ofMinutes(14)),
                 Instant.now().plus(Duration.ofMinutes(16)));
@@ -319,7 +314,7 @@ abstract class VendingContract {
 
     private S3Client client(software.amazon.awssdk.auth.credentials.AwsCredentialsProvider credentials) {
         return S3Client.builder()
-                .endpointOverride(store.endpoint())
+                .endpointOverride(store.endpoint)
                 .region(Region.of(REGION))
                 .forcePathStyle(true)
                 .credentialsProvider(credentials)
@@ -413,7 +408,7 @@ abstract class VendingContract {
     /** Sends a request whose path goes on the wire exactly as written, signed for {@code signedPath}. */
     private RawResponse raw(VendedCredentials credentials, String method, String rawPath, String signedPath,
                             byte[] body) throws IOException, InterruptedException {
-        URI endpoint = store.endpoint();
+        URI endpoint = store.endpoint;
         byte[] payload = body == null ? new byte[0] : body;
         SdkHttpRequest request = SdkHttpRequest.builder()
                 .method(SdkHttpMethod.fromValue(method))

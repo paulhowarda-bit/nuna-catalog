@@ -1,6 +1,6 @@
 Breaks: the object statement allows <key>* instead of <key>/*, so orders also reaches orders2.
 Module: catalog-objectstore
-Test: SiloVendingTest#siblingWithACommonStem
+Test: VendingTest#siblingWithACommonStem
 
 diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
 index 690452e..bb02561 100644
