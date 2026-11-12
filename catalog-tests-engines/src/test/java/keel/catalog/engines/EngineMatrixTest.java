@@ -39,9 +39,10 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * refusal it is expected to make prints {@code LIMIT <engine> <check> <reason>}; each test asserts the whole
  * set, so a skipped step fails as surely as a wrong answer.
  *
- * <p>Spark runs first and leaves three tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
- * rows, one with the added column set), and v3 with a deletion vector. Kafka Connect's Iceberg sink commits
- * records from a Kafka topic into a table it creates; PyIceberg and SingleStore (through its Iceberg
+ * <p>Spark runs first and leaves seven tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
+ * rows, one with the added column set), v3 with a deletion vector, and four that took DELETE, UPDATE and MERGE
+ * INTO, copy-on-write or merge-on-read on v2 or v3 ({@link #rowLevelWrites()}). Kafka Connect's Iceberg sink
+ * commits records from a Kafka topic into a table it creates; PyIceberg and SingleStore (through its Iceberg
  * pipelines) read Spark's tables. Results, timings and every command go to {@code build/engines-run/}.
  *
  * <p>Needs Docker, kubectl and Helm on the PATH, and kind unless {@code -Pengines.cluster} names a cluster.
@@ -276,6 +277,7 @@ class EngineMatrixTest {
                 "spark shared.v2", "2 4 1",
                 "spark shared.v3", "3 4 1",
                 "spark shared.v3dv", "3 3 8 1"));
+        assertThat(results).containsAllEntriesOf(rowLevelWrites());
     }
 
     /**
@@ -312,6 +314,7 @@ class EngineMatrixTest {
         assertThat(results).containsEntry("pyiceberg v3.write-refused",
                 "ValueError: Cannot write manifest for table version: 3");
         assertThat(results).containsAllEntriesOf(crossReads("pyiceberg"));
+        assertThat(results).containsAllEntriesOf(rowLevelReads("pyiceberg"));
     }
 
     /**
@@ -336,6 +339,7 @@ class EngineMatrixTest {
                 "singlestore cross.v2", "4 1",
                 "singlestore cross.v3", "4 1",
                 "singlestore cross.v3dv", "3 8"));
+        assertThat(results).containsAllEntriesOf(rowLevelReads("singlestore"));
     }
 
     /**
@@ -567,6 +571,48 @@ class EngineMatrixTest {
      */
     private static Map<String, String> crossReads(String engine) {
         return Map.of(engine + " cross.v2", "4 1", engine + " cross.v3", "4 1", engine + " cross.v3dv", "3 8");
+    }
+
+    /**
+     * Spark's row-level tables {@code t_v2_cow}, {@code t_v2_mor}, {@code t_v3_cow} and {@code t_v3_mor}, each
+     * with its {@code write.delete.mode}, {@code write.update.mode} and {@code write.merge.mode} set to
+     * copy-on-write or merge-on-read. Four rows go into one data file ({@code .files}), so no statement can be
+     * met by dropping a whole file from metadata. Then DELETE id 2, UPDATE id 3's note to u, and MERGE INTO that
+     * sets id 4's note to m and inserts id 5 with n: four rows left (ids 1, 3, 4, 5, summing to 13) with notes
+     * u, m, n in id order; a MERGE that missed id 4 would leave x, which count and sum alone would not notice.
+     *
+     * <p>The mechanism shows in the current snapshot's delete files ({@code .deletes}: kinds, files, rows
+     * deleted) and in the snapshot operations from first to current ({@code .ops}). Copy-on-write rewrites the
+     * data file each time, an overwrite, and leaves no delete files. Merge-on-read only adds delete files against
+     * it: position deletes in Parquet on v2, a deletion vector in Puffin on v3. Its DELETE adds nothing else, a
+     * delete; its UPDATE and MERGE also add the changed rows, overwrites. One delete file is left holding all
+     * three deleted rows, as Spark replaces a data file's earlier file-scoped deletes with merged ones (and a v3
+     * data file can have only one deletion vector).
+     */
+    private static Map<String, String> rowLevelWrites() {
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (String version : List.of("2", "3")) {
+            for (String mode : List.of("cow", "mor")) {
+                String table = "spark shared.v" + version + mode;
+                boolean copy = mode.equals("cow");
+                expected.put(table + ".files", "1");
+                expected.put(table, version + " 4 13 u,m,n");
+                expected.put(table + ".deletes", copy ? "none 0 0"
+                        : version.equals("2") ? "position-parquet 1 3" : "dv-puffin 1 3");
+                expected.put(table + ".ops", copy ? "append,overwrite,overwrite,overwrite"
+                        : "append,delete,overwrite,overwrite");
+            }
+        }
+        return expected;
+    }
+
+    /** Spark's row-level tables read by another engine: rows, sum of ids, notes in id order. */
+    private static Map<String, String> rowLevelReads(String engine) {
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (String table : List.of("v2cow", "v2mor", "v3cow", "v3mor")) {
+            expected.put(engine + " cross." + table, "4 13 u,m,n");
+        }
+        return expected;
     }
 
     private interface Run {

@@ -89,3 +89,11 @@ for version in (2, 3):
     result(f"cross.v{version}", rows, notes)
 rows, total, _ = counts(catalog.load_table(("m8", "shared", "spark", "t_v3_dv")))
 result("cross.v3dv", rows, total)
+
+# Spark's row-level tables (DELETE, UPDATE and MERGE INTO, copy-on-write or merge-on-read): the rows, their ids'
+# sum and the notes left, in id order.
+for name in ("v2_cow", "v2_mor", "v3_cow", "v3_mor"):
+    data = catalog.load_table(("m8", "shared", "spark", f"t_{name}")).scan().to_arrow()
+    rows = sorted(data.select(["id", "note"]).to_pylist(), key=lambda row: row["id"])
+    notes = ",".join(row["note"] for row in rows if row["note"] is not None)
+    result("cross." + name.replace("_", ""), len(rows), sum(row["id"] for row in rows), notes)

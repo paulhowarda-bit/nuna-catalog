@@ -225,7 +225,7 @@ Three worktree sessions, each owning one module:
 
 ### M8 — Hardening gates
 
-- Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35]. On 2026-11-12 (Paul) the catalog moved to Kubernetes: the matrix now deploys it with its Helm chart (`deploy/helm/keel-catalog`) into a kind cluster, and runs Spark, Kafka Connect (the Iceberg sink, fed from a Kafka topic), PyIceberg and SingleStore. Kafka Connect replaced Flink; Trino and DuckDB were dropped.
+- Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35]. On 2026-11-12 (Paul) the catalog moved to Kubernetes: the matrix now deploys it with its Helm chart (`deploy/helm/keel-catalog`) into a kind cluster, and runs Spark, Kafka Connect (the Iceberg sink, fed from a Kafka topic), PyIceberg and SingleStore. Kafka Connect replaced Flink; Trino and DuckDB were dropped. Also on 2026-11-12 (Paul): row-level DELETE, UPDATE and MERGE INTO under copy-on-write and merge-on-read, on v2 and v3, written by Spark (which reports the delete files and snapshot operations) and read back by PyIceberg and SingleStore.
 - Load: a 10k+-snapshot table; 8–32 concurrent writers on one table with zero 5xx, deadlocks, lost or duplicated commits.
 - Resilience: kill the primary mid-commit; rolling upgrade across a schema change; reconcile-from-storage DR drill (freeze cleanup and writes, fast-forward pointers along metadata-log chains) [D37].
 - SLO runs (load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, ≥ 500 commits/s); the laptop shows relative behaviour only.

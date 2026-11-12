@@ -1,6 +1,8 @@
 -- SingleStore 10.9 ingests Spark's shared tables (namespace m8.shared.spark, three levels) through Iceberg
 -- pipelines, as a stock Iceberg Java REST client using the catalog's vended credentials. Its docs promise
--- v1/v2 only (F9); the v3 tables, one with a deletion vector, show what 10.9.0 actually does.
+-- v1/v2 only (F9); the v3 tables, one with a deletion vector, show what 10.9.0 actually does. The last four
+-- tables took DELETE, UPDATE and MERGE INTO, copy-on-write or merge-on-read: their notes, in id order, show
+-- whether each change was read back.
 -- The database stays from run to run: in the demo's SingleStore, DROP DATABASE waits for as long as the change
 -- feed's pipeline (ops.orders_to_lake) runs. Emptying the tables and remaking the pipelines does not wait.
 CREATE DATABASE IF NOT EXISTS keel_m8;
@@ -47,3 +49,63 @@ INTO TABLE spark_v3_dv (id <- id, name <- name, note <- note)
 FORMAT ICEBERG;
 START PIPELINE spark_v3_dv_pipe FOREGROUND;
 SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v3dv' AS c, COUNT(*) AS n, SUM(id) AS s FROM spark_v3_dv;
+
+CREATE TABLE IF NOT EXISTS spark_v2_cow (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v2_cow;
+DROP PIPELINE IF EXISTS spark_v2_cow_pipe;
+CREATE PIPELINE spark_v2_cow_pipe AS LOAD DATA S3 ''
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v2_cow", "catalog.token": "${KEEL_TOKEN}",
+         "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
+CREDENTIALS '{}'
+INTO TABLE spark_v2_cow (id <- id, name <- name, note <- note)
+FORMAT ICEBERG;
+START PIPELINE spark_v2_cow_pipe FOREGROUND;
+SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v2cow' AS c, COUNT(*) AS n, SUM(id) AS s,
+       GROUP_CONCAT(note ORDER BY id SEPARATOR ',') AS notes FROM spark_v2_cow;
+
+CREATE TABLE IF NOT EXISTS spark_v2_mor (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v2_mor;
+DROP PIPELINE IF EXISTS spark_v2_mor_pipe;
+CREATE PIPELINE spark_v2_mor_pipe AS LOAD DATA S3 ''
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v2_mor", "catalog.token": "${KEEL_TOKEN}",
+         "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
+CREDENTIALS '{}'
+INTO TABLE spark_v2_mor (id <- id, name <- name, note <- note)
+FORMAT ICEBERG;
+START PIPELINE spark_v2_mor_pipe FOREGROUND;
+SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v2mor' AS c, COUNT(*) AS n, SUM(id) AS s,
+       GROUP_CONCAT(note ORDER BY id SEPARATOR ',') AS notes FROM spark_v2_mor;
+
+CREATE TABLE IF NOT EXISTS spark_v3_cow (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v3_cow;
+DROP PIPELINE IF EXISTS spark_v3_cow_pipe;
+CREATE PIPELINE spark_v3_cow_pipe AS LOAD DATA S3 ''
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3_cow", "catalog.token": "${KEEL_TOKEN}",
+         "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
+CREDENTIALS '{}'
+INTO TABLE spark_v3_cow (id <- id, name <- name, note <- note)
+FORMAT ICEBERG;
+START PIPELINE spark_v3_cow_pipe FOREGROUND;
+SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v3cow' AS c, COUNT(*) AS n, SUM(id) AS s,
+       GROUP_CONCAT(note ORDER BY id SEPARATOR ',') AS notes FROM spark_v3_cow;
+
+CREATE TABLE IF NOT EXISTS spark_v3_mor (id BIGINT, name TEXT, note TEXT);
+DELETE FROM spark_v3_mor;
+DROP PIPELINE IF EXISTS spark_v3_mor_pipe;
+CREATE PIPELINE spark_v3_mor_pipe AS LOAD DATA S3 ''
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3_mor", "catalog.token": "${KEEL_TOKEN}",
+         "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
+         "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
+CREDENTIALS '{}'
+INTO TABLE spark_v3_mor (id <- id, name <- name, note <- note)
+FORMAT ICEBERG;
+START PIPELINE spark_v3_mor_pipe FOREGROUND;
+SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v3mor' AS c, COUNT(*) AS n, SUM(id) AS s,
+       GROUP_CONCAT(note ORDER BY id SEPARATOR ',') AS notes FROM spark_v3_mor;
