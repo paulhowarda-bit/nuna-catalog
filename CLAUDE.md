@@ -10,6 +10,7 @@
 
 - `./mvnw install` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB, CockroachDB and YugabyteDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover).
 - `./mvnw install -Pheavy` runs every test, all five databases included. `-Pheavy,nightly` also raises the CAS test from 200 rounds to 10,000.
+- Every test that needs S3 uses one store, chosen with `-Ds3=silo|ceph|aws` (default `silo`). `aws` also needs `-Dfidice.aws.profile=<CLI profile>`; the run makes its own buckets and role there and deletes them at the end.
 - A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`.
 
 ## Landing

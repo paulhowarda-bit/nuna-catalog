@@ -25,7 +25,7 @@ import org.springframework.test.context.ContextConfiguration;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "fidice.rest.credential-refresh-margin=20m", "fidice.storage.credential-lifetime=15m"})
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class, AuditSinkForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
 class VendingNearExpiryTest {
 
     private final HttpClient http = HttpClient.newHttpClient();

@@ -20,6 +20,7 @@
   <description>Iceberg REST catalog server. Author: Paul Howard.</description>
 
   <modules>
+    <module>catalog-tests-s3</module>
     <module>catalog-core</module>
     <module>catalog-iceberg</module>
     <module>catalog-store-api</module>
@@ -51,8 +52,15 @@
     <toxiproxy.image>ghcr.io/shopify/toxiproxy:2.12.0</toxiproxy.image>
     <cockroachdb.image>cockroachdb/cockroach:v25.4.20</cockroachdb.image>
     <yugabytedb.image>yugabytedb/yugabyte:2025.2.8.1-b8</yugabytedb.image>
-    <!-- Silo, the maintained MinIO fork: the S3 store server and conformance tests run against. -->
+    <!-- The one S3 store every test uses: silo (the default), ceph or aws (catalog-tests-s3, TestS3). -->
+    <s3>silo</s3>
+    <!-- Silo, the maintained MinIO fork (research F5, 5.14). -->
     <silo.image>pgsty/silo:RELEASE.2026-10-26T00-00-00Z</silo.image>
+    <!-- Ceph RGW in one container (research F7). -->
+    <ceph.image>ghcr.io/clyso/ceph-test:v20.2.5</ceph.image>
+    <!-- With s3=aws: the AWS CLI profile to sign in through. Short-lived credentials only; the tests
+         never read, print or store them. -->
+    <fidice.aws.profile></fidice.aws.profile>
     <!-- Two realms stand in for Entra ID and Ping (D17a). -->
     <keycloak.image>quay.io/keycloak/keycloak:26.8.2</keycloak.image>
     <!-- Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. -->
@@ -61,6 +69,12 @@
 
   <dependencyManagement>
     <dependencies>
+      <dependency>
+        <groupId>fidice</groupId>
+        <artifactId>catalog-tests-s3</artifactId>
+        <version>${project.version}</version>
+        <scope>test</scope>
+      </dependency>
       <dependency>
         <groupId>software.amazon.awssdk</groupId>
         <artifactId>bom</artifactId>
@@ -141,6 +155,12 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <configuration>
             <excludedGroups>${fidice.excluded-groups}</excludedGroups>
+            <systemPropertyVariables>
+              <s3>${s3}</s3>
+              <silo.image>${silo.image}</silo.image>
+              <ceph.image>${ceph.image}</ceph.image>
+              <fidice.aws.profile>${fidice.aws.profile}</fidice.aws.profile>
+            </systemPropertyVariables>
           </configuration>
         </plugin>
       </plugins>

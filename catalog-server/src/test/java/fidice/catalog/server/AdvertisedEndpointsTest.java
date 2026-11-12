@@ -16,7 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 /** The endpoints list in /v1/config must name exactly the routes this server serves (D13). */
 @SpringBootTest
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class})
 class AdvertisedEndpointsTest {
 
     @Autowired

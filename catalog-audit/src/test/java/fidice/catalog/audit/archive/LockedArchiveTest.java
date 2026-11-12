@@ -8,6 +8,7 @@ import fidice.catalog.audit.SampleEvents;
 import fidice.catalog.audit.publish.KafkaBroker;
 import fidice.catalog.audit.publish.KafkaEventPublisher;
 import fidice.catalog.audit.publish.PublisherSettings;
+import fidice.catalog.tests.s3.TestS3;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Clock;
@@ -28,33 +29,47 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ObjectLockMode;
 import software.amazon.awssdk.services.s3.model.ObjectLockRetentionMode;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
- * The archive of D23 on Silo with Object Lock, fed from Kafka: segments locked in COMPLIANCE mode for
- * at least five years, written once, chained across segments, and archived exactly once per
- * partition across consumer restarts.
+ * The archive of D23 on the run's S3 store ({@link TestS3}) with Object Lock, fed from Kafka: segments locked
+ * for at least five years, written once, chained across segments, and archived exactly once per partition
+ * across consumer restarts. Segments are locked in COMPLIANCE mode, as the server always locks them, except on
+ * real AWS: there a COMPLIANCE lock would leave objects and a bucket nobody can delete for five years, so the
+ * test locks in GOVERNANCE mode and the run deletes them at the end.
  */
 class LockedArchiveTest {
 
-    private static SiloStore silo;
+    private static TestS3 store;
+    private static S3Client s3;
     private static KafkaBroker broker;
+    private static ObjectLockMode mode;
 
     @BeforeAll
     static void start() {
-        silo = new SiloStore();
+        store = TestS3.get();
+        s3 = store.client();
+        mode = store.kind == TestS3.Kind.AWS ? ObjectLockMode.GOVERNANCE : ObjectLockMode.COMPLIANCE;
         broker = new KafkaBroker();
     }
 
+    /** The store itself is shared by the run and removed when the JVM exits. */
     @AfterAll
     static void stop() {
         broker.close();
-        silo.close();
+        s3.close();
+    }
+
+    private static String newBucket(boolean objectLock) {
+        return store.bucket("archive-" + UUID.randomUUID().toString().substring(0, 8), objectLock);
     }
 
     private static ObjectLockArchive archive(String bucket) {
-        return new ObjectLockArchive(silo.s3, bucket, "audit", ObjectLockArchive.MINIMUM_RETENTION, Clock.systemUTC());
+        return new ObjectLockArchive(s3, bucket, "audit", ObjectLockArchive.MINIMUM_RETENTION, Clock.systemUTC(),
+                mode);
     }
 
     private static List<CatalogEvent> events(int from, int count) {
@@ -76,32 +91,35 @@ class LockedArchiveTest {
     @Test
     @DisplayName("a bucket without Object Lock is refused, and so is a retention under five years")
     void refusesUnlockedBucketAndShortRetention() {
-        assertThatThrownBy(() -> archive(silo.newBucket(false)).checkBucket())
+        assertThatThrownBy(() -> archive(newBucket(false)).checkBucket())
                 .isInstanceOf(IllegalStateException.class);
-        archive(silo.newBucket(true)).checkBucket();
-        assertThatThrownBy(() -> new ObjectLockArchive(silo.s3, "b", "audit",
+        archive(newBucket(true)).checkBucket();
+        assertThatThrownBy(() -> new ObjectLockArchive(s3, "b", "audit",
                 ObjectLockArchive.MINIMUM_RETENTION.minusDays(1), Clock.systemUTC()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("five-year floor");
     }
 
     @Test
-    @DisplayName("a segment is locked in COMPLIANCE mode for at least five years: it can be neither deleted nor replaced")
+    @DisplayName("a segment is locked in COMPLIANCE mode for at least five years: it can be neither deleted nor replaced"
+            + " (GOVERNANCE on AWS: not deleted without the bypass)")
     void segmentsAreLocked() throws IOException {
-        String bucket = silo.newBucket(true);
+        String bucket = newBucket(true);
         ObjectLockArchive archive = archive(bucket);
         Instant before = Instant.now();
         ObjectLockArchive.Segment segment = write(archive, "audit-0", ChainHead.GENESIS, events(1, 3), 3);
 
-        var retention = silo.s3.getObjectRetention(b -> b.bucket(bucket).key(segment.key())
+        var retention = s3.getObjectRetention(b -> b.bucket(bucket).key(segment.key())
                 .versionId(segment.versionId())).retention();
-        assertThat(retention.mode()).isEqualTo(ObjectLockRetentionMode.COMPLIANCE);
+        assertThat(retention.mode()).isEqualTo(ObjectLockRetentionMode.fromValue(mode.toString()));
         assertThat(retention.retainUntilDate()).isAfterOrEqualTo(before.plus(Duration.ofDays(5 * 365)));
 
-        assertThatThrownBy(() -> silo.s3.deleteObject(b -> b.bucket(bucket).key(segment.key())
+        assertThatThrownBy(() -> s3.deleteObject(b -> b.bucket(bucket).key(segment.key())
                 .versionId(segment.versionId()))).isInstanceOf(S3Exception.class);
-        assertThatThrownBy(() -> silo.s3.deleteObject(b -> b.bucket(bucket).key(segment.key())
-                .versionId(segment.versionId()).bypassGovernanceRetention(true))).isInstanceOf(S3Exception.class);
+        if (mode == ObjectLockMode.COMPLIANCE) {
+            assertThatThrownBy(() -> s3.deleteObject(b -> b.bucket(bucket).key(segment.key())
+                    .versionId(segment.versionId()).bypassGovernanceRetention(true))).isInstanceOf(S3Exception.class);
+        }
         assertThatThrownBy(() -> write(archive, "audit-0", ChainHead.GENESIS, events(9, 1), 1))
                 .as("a second writer of the same segment is refused").isInstanceOf(S3Exception.class);
         assertThat(archive.segments("audit-0")).containsExactly(segment);
@@ -110,7 +128,7 @@ class LockedArchiveTest {
     @Test
     @DisplayName("the chain runs across segments; a delete marker hides nothing; a lost tail shows against the anchor")
     void chainAcrossSegments() throws IOException {
-        String bucket = silo.newBucket(true);
+        String bucket = newBucket(true);
         ObjectLockArchive archive = archive(bucket);
         ObjectLockArchive.Segment first = write(archive, "audit-1", ChainHead.GENESIS, events(1, 3), 3);
         ObjectLockArchive.Segment second = write(archive, "audit-1", first.end(), events(4, 2), 5);
@@ -120,7 +138,7 @@ class LockedArchiveTest {
                 .isEqualTo(new Verification.Intact(5, second.end()));
         assertThat(archive.events("audit-1", Optional.of(second.end()))).containsExactlyElementsOf(events(1, 5));
 
-        silo.s3.deleteObject(b -> b.bucket(bucket).key(second.key()));
+        s3.deleteObject(b -> b.bucket(bucket).key(second.key()));
         assertThat(archive.segments("audit-1")).as("listed by version, past the delete marker")
                 .containsExactly(first, second);
 
@@ -132,7 +150,7 @@ class LockedArchiveTest {
     @Test
     @DisplayName("the consumer archives each partition once, in order, across restarts, and anchors the head in its committed offset")
     void consumerArchivesExactlyOnce() {
-        String bucket = silo.newBucket(true);
+        String bucket = newBucket(true);
         ObjectLockArchive archive = archive(bucket);
         String topic = broker.newTopic(2);
         String group = "archive-" + UUID.randomUUID();

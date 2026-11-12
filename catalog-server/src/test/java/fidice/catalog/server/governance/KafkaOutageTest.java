@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The M7 gate: a Kafka outage blocks credential issuance and nothing else (D23). While the broker is
- * paused, a load that would hand out new credentials (M6's vending, on Silo) answers 503, and a trusted
+ * paused, a load that would hand out new credentials (M6's vending, on the run's S3 store) answers 503, and a trusted
  * engine's load that declines credentials, commits, creates, drops and governance changes all succeed;
  * their records wait in the outbox and reach the audit topic once the broker is back. A commit's or
  * create's own load response then carries no credentials (M6).

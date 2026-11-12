@@ -1,6 +1,6 @@
 Breaks: the listing condition allows <key>* instead of <key>/*, so a sibling with a common stem can be listed.
 Module: catalog-objectstore
-Test: SiloVendingTest#listing
+Test: VendingTest#listing
 
 diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
 index 690452e..0ceefc3 100644

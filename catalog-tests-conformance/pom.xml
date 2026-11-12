@@ -21,6 +21,11 @@
   </properties>
 
   <dependencies>
+    <!-- The run's S3 store: -Ds3=silo (default), ceph or aws. -->
+    <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-tests-s3</artifactId>
+    </dependency>
     <dependency>
       <groupId>fidice</groupId>
       <artifactId>catalog-server</artifactId>
@@ -61,7 +66,7 @@
       <scope>test</scope>
     </dependency>
     <dependency>
-      <!-- The RCK client writes manifests and data files itself, to Silo, through S3FileIO. -->
+      <!-- The RCK client writes manifests and data files itself, to the run's S3 store, through S3FileIO. -->
       <groupId>org.apache.iceberg</groupId>
       <artifactId>iceberg-aws</artifactId>
       <version>${iceberg.version}</version>
@@ -192,7 +197,6 @@
           </includes>
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
-            <silo.image>${silo.image}</silo.image>
             <kafka.image>${kafka.image}</kafka.image>
             <rck.reasons>${project.basedir}/rck-reasons.txt</rck.reasons>
             <rck.baseline>${project.basedir}/rck-baseline.txt</rck.baseline>

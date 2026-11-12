@@ -117,7 +117,7 @@ class FixtureDiffTest {
     void responsesHaveTheReferenceShapeExceptWhereTheLedgerDecided() throws Exception {
         URI ours = ConformanceServer.start();
         Map<String, String> referenceCatalog = new HashMap<>(ConformanceServer.clientStorage());
-        referenceCatalog.put("warehouse", "s3://warehouse/reference");
+        referenceCatalog.put("warehouse", "s3://" + ConformanceServer.bucket() + "/reference");
         URI reference = ReferenceServer.start(referenceCatalog);
 
         Map<String, String> differences = new LinkedHashMap<>();

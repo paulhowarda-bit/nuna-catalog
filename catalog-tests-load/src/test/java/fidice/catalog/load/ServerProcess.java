@@ -32,12 +32,15 @@ final class ServerProcess implements AutoCloseable {
         this.log = log;
     }
 
-    static ServerProcess start(String name, Path jar, List<String> properties) {
+    /** @param jvmOptions extra JVM options, before {@code -jar}; {@code properties} go after it */
+    static ServerProcess start(String name, Path jar, List<String> jvmOptions, List<String> properties) {
         int port = freePort();
         Path logs = Path.of(System.getProperty("m8.work"), "logs");
         Path log = logs.resolve(name + ".log");
         List<String> command = new ArrayList<>(List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-Xmx1g", "-XX:+UseZGC", "-jar", jar.toString(), "--server.port=" + port));
+                "-Xmx1g", "-XX:+UseZGC"));
+        command.addAll(jvmOptions);
+        command.addAll(List.of("-jar", jar.toString(), "--server.port=" + port));
         command.addAll(properties);
         try {
             Files.createDirectories(logs);

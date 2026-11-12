@@ -11,6 +11,7 @@ import fidice.catalog.server.storage.CatalogStorage;
 import fidice.catalog.server.storage.StorageSettings;
 import fidice.catalog.objectstore.StoreKind;
 import fidice.catalog.store.CatalogStore;
+import fidice.catalog.tests.s3.TestS3;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -42,7 +43,7 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
- * Real STS credentials through the REST routes (D21, D23, D14), on Silo: what a load vends, that the
+ * Real STS credentials through the REST routes (D21, D23, D14), on the run's S3 store: what a load vends, that the
  * credentials reach the table's prefix and nothing else, that every new set is audited before it is handed
  * out and nothing is handed out when the audit fails, the maintenance and delegation rules, and the 304 rule
  * with real expiry. Callers sign in with tokens from the local test issuer; {@code trino-prod} is registered
@@ -52,7 +53,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
         "fidice.security.maintenance-principals=svc-maintenance",
         "fidice.security.platform-operator-groups=platform-ops"})
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class, VendingRouteTest.RecordingAudit.class})
+@Import({PostgresForTests.class, S3ForTests.class, VendingRouteTest.RecordingAudit.class})
 class VendingRouteTest {
 
     static final List<CredentialIssue> ISSUED = new CopyOnWriteArrayList<>();
@@ -88,7 +89,7 @@ class VendingRouteTest {
     private int port;
 
     @Autowired
-    private SiloForTests.Silo silo;
+    private TestS3 objectStore;
 
     @Autowired
     private CatalogStore store;
@@ -125,8 +126,13 @@ class VendingRouteTest {
         Map<String, String> config = JsonPath.read(load.body(), "$.config");
         assertThat(config).containsKeys("s3.access-key-id", "s3.secret-access-key", "s3.session-token",
                 "s3.session-token-expires-at-ms");
-        assertThat(config).containsEntry("s3.endpoint", silo.endpoint().toString())
-                .containsEntry("s3.path-style-access", "true")
+        if (objectStore.kind == TestS3.Kind.AWS) {
+            assertThat(config).doesNotContainKey("s3.endpoint").containsEntry("s3.path-style-access", "false");
+        } else {
+            assertThat(config).containsEntry("s3.endpoint", objectStore.endpoint.toString())
+                    .containsEntry("s3.path-style-access", "true");
+        }
+        assertThat(config)
                 .containsEntry("client.region", "us-east-1")
                 .containsEntry("client.refresh-credentials-enabled", "true")
                 .containsEntry("client.refresh-credentials-endpoint",
@@ -135,13 +141,13 @@ class VendingRouteTest {
 
         try (S3Client s3 = client(config)) {
             String key = key(location) + "/data/00000-0.parquet";
-            s3.putObject(b -> b.bucket(SiloForTests.BUCKET).key(key), RequestBody.fromString("rows"));
-            assertThat(s3.getObjectAsBytes(b -> b.bucket(SiloForTests.BUCKET).key(key)).asUtf8String())
+            s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key), RequestBody.fromString("rows"));
+            assertThat(s3.getObjectAsBytes(b -> b.bucket(S3ForTests.bucket()).key(key)).asUtf8String())
                     .isEqualTo("rows");
-            assertDenied(() -> s3.putObject(b -> b.bucket(SiloForTests.BUCKET).key(key(other) + "/data/x.parquet"),
+            assertDenied(() -> s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key(other) + "/data/x.parquet"),
                     RequestBody.fromString("x")));
-            assertDenied(() -> s3.listObjectsV2(b -> b.bucket(SiloForTests.BUCKET).prefix("tables/")));
-            assertDenied(() -> s3.deleteObject(b -> b.bucket(SiloForTests.BUCKET).key(key)));
+            assertDenied(() -> s3.listObjectsV2(b -> b.bucket(S3ForTests.bucket()).prefix("tables/")));
+            assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key)));
         }
     }
 
@@ -157,7 +163,7 @@ class VendingRouteTest {
             assertThat(issue.actor().principal()).isEqualTo("bob");
             assertThat(issue.actor().requestId()).isEqualTo("req-bob-1");
             assertThat(issue.locationPrefix()).isEqualTo(location);
-            assertThat(issue.storageProfile()).isEqualTo("silo");
+            assertThat(issue.storageProfile()).isEqualTo(S3ForTests.PROFILE);
             assertThat(issue.access()).isEqualTo(CredentialIssue.Access.READ_WRITE);
             assertThat(issue.sessionName()).isEqualTo("bob_req-bob-1");
             assertThat(issue.object().path()).containsExactly(namespace, "t");
@@ -180,8 +186,8 @@ class VendingRouteTest {
     void maintenanceMayDelete() throws Exception {
         String location = createTable("t", "alice");
         String other = createTable("u", "alice");
-        try (S3Client root = SiloForTests.rootClient(silo)) {
-            root.putObject(b -> b.bucket(SiloForTests.BUCKET).key(key(other) + "/data/keep.parquet"),
+        try (S3Client root = objectStore.client()) {
+            root.putObject(b -> b.bucket(S3ForTests.bucket()).key(key(other) + "/data/keep.parquet"),
                     RequestBody.fromString("keep"));
         }
         HttpResponse<String> load = send("GET", table("t") + "/credentials", null, "svc-maintenance");
@@ -189,9 +195,9 @@ class VendingRouteTest {
 
         try (S3Client s3 = client(config)) {
             String key = key(location) + "/data/old.parquet";
-            s3.putObject(b -> b.bucket(SiloForTests.BUCKET).key(key), RequestBody.fromString("old"));
-            s3.deleteObject(b -> b.bucket(SiloForTests.BUCKET).key(key));
-            assertDenied(() -> s3.deleteObject(b -> b.bucket(SiloForTests.BUCKET).key(key(other) + "/data/keep.parquet")));
+            s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key), RequestBody.fromString("old"));
+            s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key));
+            assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key(other) + "/data/keep.parquet")));
         }
         assertThat(ISSUED).anySatisfy(issue -> {
             assertThat(issue.actor().principal()).isEqualTo("svc-maintenance");
@@ -245,18 +251,21 @@ class VendingRouteTest {
     @Test
     @DisplayName("a declared catalog's boundary never changes, profiles never overlap, and endpoints use TLS")
     void startupGuardrails() {
-        StorageSettings.Profile silo = new StorageSettings.Profile(StoreKind.MINIO, this.silo.endpoint().toString(),
-                "us-east-1", "s3://warehouse/tables", List.of("s3://warehouse/tables"), null, "a", "b");
-        StorageSettings.Profile nested = new StorageSettings.Profile(StoreKind.MINIO, this.silo.endpoint().toString(),
-                "us-east-1", "s3://warehouse/tables/eu", List.of("s3://warehouse/tables/eu"), null, "a", "b");
+        StoreKind kind = StoreKind.valueOf(objectStore.profileKind());
+        String root = "s3://" + S3ForTests.bucket() + "/tables";
+        String role = objectStore.roleArn.orElse(null);
+        StorageSettings.Profile profile = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
+                "us-east-1", root, List.of(root), role, "a", "b");
+        StorageSettings.Profile nested = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
+                "us-east-1", root + "/eu", List.of(root + "/eu"), role, "a", "b");
         Clock clock = Clock.systemUTC();
 
-        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of("silo", silo,
+        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile,
                 "eu", nested), Map.of(), false), store, rest, clock)).hasMessageContaining("overlap");
-        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of("silo", silo), Map.of(), true), store, rest,
+        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile), Map.of(), true), store, rest,
                 clock)).hasMessageContaining("must use https");
-        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of("silo", silo),
-                Map.of("trading", new StorageSettings.Catalog("silo", "other-keys", "Test Entity")), false), store,
+        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile),
+                Map.of("trading", new StorageSettings.Catalog(S3ForTests.PROFILE, "other-keys", "Test Entity")), false), store,
                 rest, clock)).hasMessageContaining("a catalog's boundary never changes");
     }
 
@@ -277,12 +286,12 @@ class VendingRouteTest {
     }
 
     private static String key(String location) {
-        return location.substring(("s3://" + SiloForTests.BUCKET + "/").length());
+        return location.substring(("s3://" + S3ForTests.bucket() + "/").length());
     }
 
     private S3Client client(Map<String, String> config) {
         return S3Client.builder()
-                .endpointOverride(silo.endpoint())
+                .endpointOverride(objectStore.endpoint)
                 .region(Region.US_EAST_1)
                 .forcePathStyle(true)
                 .credentialsProvider(StaticCredentialsProvider.create(AwsSessionCredentials.create(

@@ -1,0 +1,49 @@
+# -Ds3=ceph: Ceph RGW in one container, as Service s3 (http://s3:8080). Its DNS name is s3, the only host
+# clients use, so RGW reads every request as path-style. STS is on; the harness creates the role vended
+# credentials assume (TestS3.cephRoleCommands).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+spec:
+  selector:
+    matchLabels: {app: s3}
+  template:
+    metadata:
+      labels: {app: s3}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: ceph
+          image: ${CEPH_IMAGE}
+          imagePullPolicy: Never
+          env:
+            - {name: CEPH_DEMO_ACCESS_KEY, value: fidicetest}
+            - {name: CEPH_DEMO_SECRET_KEY, value: fidicetest-secret-key}
+            - name: CEPH_EXTRA_CONF
+              value: |-
+                rgw dns name = s3
+                rgw sts key = fidicestskey0123
+                rgw s3 auth use sts = true
+          ports:
+            - containerPort: 8080
+          startupProbe:
+            exec:
+              command: ["ceph-test-health", "rgw"]
+            periodSeconds: 5
+            failureThreshold: 72
+          readinessProbe:
+            exec:
+              command: ["ceph-test-health", "rgw"]
+            periodSeconds: 10
+          resources:
+            limits: {memory: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+spec:
+  selector: {app: s3}
+  ports:
+    - port: 8080

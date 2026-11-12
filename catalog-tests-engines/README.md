@@ -1,9 +1,12 @@
-# catalog-tests-engines: the nightly engine matrix (M8, D31)
+# catalog-tests-engines: the nightly engine matrix (M8, D31), the demo
 
-Spark, Trino, Flink, PyIceberg, DuckDB and SingleStore run against the catalog server in docker compose.
-Each engine creates, writes, reads, evolves (adds a column, then writes and reads with it) and drops v2 and v3
-tables in a three-level namespace `m8.deep.<engine>`, then reads three tables Spark left in
-`m8.shared.spark`: v2 and v3 (already evolved), and v3 with a deletion vector.
+The catalog server, deployed by its Helm chart (`deploy/helm/fidice-catalog`) into a throwaway kind cluster,
+with Spark, Kafka Connect, PyIceberg and SingleStore against it. Spark and PyIceberg create, write, read,
+evolve (add a column, then write and read with it) and drop v2 and v3 tables in a three-level namespace
+`m8.deep.<engine>`. Kafka Connect's Iceberg sink consumes a Kafka topic and commits its records into a table it
+creates. PyIceberg and SingleStore read three tables Spark left in `m8.shared.spark`: v2 and v3 (already
+evolved), and v3 with a deletion vector. (Trino, Flink and DuckDB were dropped on 2026-11-12; the 2026-11-09
+results below still show them.)
 
 ## Running it
 
@@ -11,48 +14,89 @@ tables in a three-level namespace `m8.deep.<engine>`, then reads three tables Sp
 ./mvnw verify -pl catalog-tests-engines -am -Pheavy -Dtest='EngineMatrixTest*' -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-The test is tagged `heavy`, so the fast build compiles it and starts nothing. It needs Docker, the internet
-the first time (images, Maven Central jars and PyPI packages are baked into three local images), and the
-`singlestoredb-dev` container already running. `-Dengines.keep-stack=true` leaves the stack up afterwards;
-`target/engines-run/` then holds the token, `compose.log` (every command and its output) and `results.txt`.
+The test is tagged `heavy`, so the fast build compiles it and starts nothing. It needs Docker, `kubectl` and
+`helm` on the PATH (and `kind` for the default cluster), and the internet the first time (images, Maven
+Central jars and PyPI packages are baked into local images). Everything runs in namespace `fidice-engines`.
+
+| Switch | Effect |
+|---|---|
+| `-Ds3=silo\|ceph\|aws` | The S3 store, as for every other test (default `silo`). |
+| `-Dengines.cluster=<context>` | Deploy into an existing cluster, for example `docker-desktop`, instead of a kind cluster. The namespace is recreated at the start and deleted at the end; the cluster's nodes must see locally built images, as Docker Desktop's do. |
+| `-Dengines.keep-stack=true` | Leave everything up afterwards. |
+| `-Dengines.skip-build=true` | Use the images already built instead of building them. |
+
+By default the harness creates kind cluster `fidice-engines` with its own kubeconfig,
+`target/engines-run/kubeconfig`, so the current kubectl context is never changed, and deletes it at the end.
+`target/engines-run/` holds the token, `commands.log` (every command and its output), the rendered manifests
+and `results.txt`.
+
+With the stack kept, the kafbat UI shows the Kafka topics (the Kafka Connect source topic `m8-kafka-events`, the
+sink's control topic, the catalog's audit and change topics), their messages and consumer groups:
+
+```
+KUBECONFIG=target/engines-run/kubeconfig kubectl -n fidice-engines port-forward svc/kafka-ui 8080:8080
+```
+
+then http://localhost:8080 (with `-Dengines.cluster=docker-desktop`, use `--context docker-desktop` instead of
+`KUBECONFIG`).
 
 ## How it works
 
-- `compose/compose.yaml`, project `fidice-engines`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), Silo, and the
-  catalog server (the `catalog-server` exec jar on `eclipse-temurin:25.0.5_8-jre-noble`, configured by
-  `compose/catalog/engines.properties`, the shape of `ConformanceServer`). One profile per engine. No host
-  port is published: every client runs in the compose network, so the storage profile's endpoint
-  `http://silo:9000` is the one engines use with vended credentials.
-- The harness makes an RS256 key and token with `TestIdp` (issuer `https://idp.test/engines`, group
-  `engine-clients`). A one-shot `seed` container creates the bucket and publishes the JWKS as a public-read
-  Silo object, so the catalog never calls back into the Windows host. Grants (`create`, `modify` on catalog
-  `engines`) are inserted by SQL, as `ConformanceServer` does.
-- Every engine authenticates with the static bearer token and asks for `X-Iceberg-Access-Delegation:
-  vended-credentials`; none is given storage keys. Each prints `RESULT <engine> <check> <value>` lines (and
-  `LIMIT ...` for an expected refusal); the test asserts the whole set, so a skipped step fails like a wrong
-  answer. Flink SQL shows neither a table's format version nor whether a namespace exists, so its `run.sh`
-  asks the catalog's REST API for those between the two SQL scripts. The Flink SQL client stops at a failed
-  statement but exits 0, so `run.sh` fails on its `[ERROR]` output.
-- Engines run one at a time and are removed after their test; the whole stack is removed (`down -v`) at the
-  end. SingleStore is joined to the network for its test only; Iceberg ingest is off in the dev image, so the
-  test switches `enable_iceberg_ingest` on, records the previous value and sets it back, then drops its
-  database and detaches.
+- The harness creates kind cluster `fidice-engines`, builds the catalog image (`catalog-server/Dockerfile`)
+  and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
+  cluster: nothing is pulled from inside it.
+- `k8s/infra.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`, a busybox file server for the test
+  issuer's JWKS, and `kafka-ui` (kafbat). The S3 store follows `-Ds3`: `k8s/store-silo.yaml` or `k8s/store-ceph.yaml` as Service `s3`
+  (`http://s3:9000` on Silo, `http://s3:8080` on Ceph), and a `seed` Job creates the bucket; on AWS there is no
+  store in the cluster and the bucket and role are the run's own, deleted at the end. On Ceph the harness
+  creates the STS role once the store is up. No pod gets Service environment variables: the Kafka image
+  reads every `KAFKA_*` variable as broker configuration.
+- The catalog is installed with `helm upgrade --install catalog deploy/helm/fidice-catalog`, its config being
+  `k8s/catalog.properties` plus the database settings and storage profile `s3` the harness adds for the store.
+  The harness makes an RS256 key and token with `TestIdp` (issuer `https://idp.test/engines`, group
+  `engine-clients`); grants (`create`, `modify` on catalog `engines`) are inserted by SQL, as
+  `ConformanceServer` does.
+- Each engine runs as a Job (`k8s/engine-job.yaml`), authenticates with the static bearer token and asks for
+  `X-Iceberg-Access-Delegation: vended-credentials`; none is given storage keys. Each prints
+  `RESULT <engine> <check> <value>` lines (and `LIMIT ...` for an expected refusal) to its log; the test asserts
+  the whole set, so a skipped step fails like a wrong answer. Jobs are deleted after their test, and the whole
+  cluster at the end.
+- SingleStore runs as a pod (`k8s/singlestore.yaml`) for its test only; the harness switches
+  `enable_iceberg_ingest` on (off in the dev image) and runs `k8s/singlestore/ingest.sql` in it.
 
 ## Versions
 
 | Engine | Image / package | Iceberg |
 |---|---|---|
 | Spark 4.1.4 (Scala 2.13, Java 21) | `apache/spark:4.1.4-scala2.13-java21-python3-ubuntu` + `iceberg-spark-runtime-4.1_2.13`, `iceberg-aws-bundle` | 1.12.0 |
-| Trino 484 | `trinodb/trino:484` (native S3 file system) | 1.12.0 (bundled) |
-| Flink 2.3.0 (Java 21) | `flink:2.3.0-scala_2.12-java21` + `iceberg-flink-runtime-2.3`, `iceberg-aws-bundle`, `hadoop-client-api`/`-runtime` 3.4.3 | 1.12.0 |
+| Kafka Connect 4.2.2 | `apache/kafka:4.2.2` + the Iceberg sink (`iceberg-kafka-connect`, `-parquet`, `-orc`, `-aws`, `-aws-bundle`, `hadoop-client-api`/`-runtime` 3.4.3), resolved by `images/kafka-connect/pom.xml` | 1.12.0 |
 | PyIceberg 0.12.0 | `python:3.12-slim-bookworm` + `pyiceberg[pyarrow]==0.12.0` | — |
-| DuckDB 2.0.0 | same image + `duckdb==2.0.0`, extensions `iceberg`, `httpfs`, `avro` installed at build | — |
-| SingleStore 10.9.0 | the running `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
+| SingleStore 10.9.0 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
 
-Catalog stack: `postgres:18`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`,
-`eclipse-temurin:25.0.5_8-jre-noble`.
+Cluster: kind (or `-Dengines.cluster`), `postgres:18`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
+`ghcr.io/clyso/ceph-test:v20.2.5`, `busybox:1.37.0`; the catalog image is `eclipse-temurin:25.0.5_8-jre-noble`
+with the exec jar.
 
-## Results (2026-11-09)
+## Kafka Connect (2026-11-12)
+
+Checked on Silo against the catalog image on a plain Docker network (the cluster run is still to do): the sink
+created namespace `m8.deep.kafka` and v3 table `t_events` through the catalog, committed the three records
+produced to `m8-kafka-events`, added column `note` when a fourth record carried it, and the run script dropped
+both through the REST API. The settings that matter:
+
+- `iceberg.tables.auto-create-enabled=true` and `iceberg.tables.evolve-schema-enabled=true`, schemaless JSON
+  values (`value.converter.schemas.enable=false`); the sink creates missing namespaces itself.
+- `iceberg.catalog.type=rest`, `token`, `header.X-Iceberg-Access-Delegation=vended-credentials`,
+  `io-impl=S3FileIO`; the control topic is `m8-kafka-control`, committing every 2 s.
+- `iceberg-orc` is on the plugin path although the sink writes Parquet: Iceberg 1.12's generic writers register
+  Parquet, Avro and ORC together, and without ORC none registers, so nothing is ever written.
+- The worker sets `offset.flush.interval.ms=1000`. Connect polls an idle sink task about once per offset flush
+  (60 s by default), and the sink polls its control topic only then; at that pace the control consumer misses
+  its group join and every commit times out with nothing written.
+- Connect only writes, so `run.sh` reads the table back through the catalog's REST API (`Catalog.java`, a
+  small Java client: the Kafka image has no curl).
+
+## Results (2026-11-09, docker compose, before the 2026-11-12 changes)
 
 All six tests pass (`Tests run: 6, Failures: 0`, 653 s). "pass" means the engine did the step and the value
 it read back was the expected one: three rows summing to 6 after the first write, four rows with one value
@@ -103,7 +147,7 @@ extensions) adds a few minutes; later runs reuse them.
 - The scripts create each namespace level explicitly, because the catalog refuses a namespace whose parent
   does not exist (D28).
 - Drops are always soft (D25): Spark, PyIceberg and DuckDB ask for a purge, Flink does not, and the catalog
-  answers both the same way. Files stay until the maintenance worker (v1.x).
+  answers both the same way (2026-11-09 run). Files stay until the maintenance worker (v1.x).
 - Vended credentials (READ_WRITE, no delete) were enough for every engine; no engine was given storage keys.
 
 ## Engine settings that matter
@@ -112,23 +156,9 @@ extensions) adds a few minutes; later runs reuse them.
   `io-impl=S3FileIO`, `rest-catalog-purge=true` (F10: `DROP TABLE ... PURGE` asks the catalog to purge rather
   than deleting files itself; vended credentials cannot delete anyway). Nested namespaces work as
   `fid.m8.deep.spark`.
-- **Trino:** `iceberg.rest-catalog.nested-namespace-enabled=true` (schemas are dotted names such as
-  `"m8.deep.trino"`), `vended-credentials-enabled=true`, and
-  `server-assigned-table-location-enabled=true`: by default Trino derives a table location from the namespace,
-  but this catalog assigns every location (D28). `s3.endpoint` and path-style access are still set in the
-  catalog file. The image's health check gives up after about 40 s, so compose gives it a 5-minute start period.
-- **Flink:** a Flink database is one namespace level. Deep namespaces come from the Iceberg catalog option
-  `base-namespace`: three catalogs (`base-namespace` unset, `m8`, `m8.deep`) create the levels, and in the
-  last one database `flink` is namespace `m8.deep.flink`. The Iceberg Flink catalog needs Hadoop classes on
-  the classpath (the shaded `hadoop-client-*` jars). `DROP TABLE` does not request a purge.
 - **PyIceberg:** nested namespaces are tuples; `purge_table` sends `purgeRequested=true`.
-- **DuckDB:** `ATTACH ... (TYPE iceberg, SUPPORT_NESTED_NAMESPACES true, ACCESS_DELEGATION_MODE
-  'vended_credentials', PURGE_REQUESTED true)`; schemas are dotted names. With a nested namespace,
-  `iceberg_load_table_response` needs the table name as a string, and `iceberg_metadata`,
-  `iceberg_snapshots` and `iceberg_table_properties` refuse the name outright ("Too many identifiers", or a
-  version-hint lookup on storage); plain SQL on the tables is unaffected.
 - **SingleStore:** `CREATE PIPELINE ... LOAD DATA S3 '' CONFIG '{"catalog_type": "REST", "catalog.uri",
   "catalog.warehouse", "table_id": "m8.shared.spark.t_v2", "catalog.token",
   "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
-  "endpoint_url": "http://silo:9000", "region", "ingest_mode": "one_time"}' CREDENTIALS '{}' ... FORMAT
+  "endpoint_url": "${S3_ENDPOINT}", "region", "ingest_mode": "one_time"}' CREDENTIALS '{}' ... FORMAT
   ICEBERG`. Needs `SET GLOBAL enable_iceberg_ingest = 1` first (off in the dev image).
