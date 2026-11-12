@@ -27,6 +27,7 @@ import keel.catalog.store.KeyState;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.OutboxEvent;
 import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerHold;
 import keel.catalog.store.PointerKey;
 import keel.catalog.store.PointerSwap;
 import keel.catalog.store.StoreException;
@@ -135,8 +136,10 @@ public final class CommitEngine {
      * none. Each change is applied as {@link #commitTable} applies it, and every table that changes has its
      * pointer swapped in one store transaction, which locks them in key order. A missing table, a failed
      * requirement or a refusing rule refuses the whole transaction with nothing written; a swap lost to a
-     * concurrent commit retries all of it against the tables' new metadata. A change that changes nothing
-     * is checked against the metadata its attempt read; its pointer is not locked by the swap.
+     * concurrent commit retries all of it against the tables' new metadata. A table whose change changes
+     * nothing (requirements alone: a read guard) is held: its pointer is locked with the swapped ones and
+     * must still be the one its requirements were checked against, so nothing commits to it in between.
+     * A transaction that changes no table writes nothing, so its tables are not held.
      *
      * @param changes     one per table, in request order; the REST layer refuses an empty list, a table named
      *                    twice and a list over the cap
@@ -606,8 +609,9 @@ public final class CommitEngine {
 
     /**
      * Applies every change of a transaction to its table's current metadata and swaps the changed tables'
-     * pointers in one batch, retrying a lost swap as {@link #update} does (D15). Each table is resolved by
-     * name once, before the first attempt, as {@link #update} resolves its one table.
+     * pointers in one batch, holding the unchanged tables' pointers as read, and retries a lost swap or hold
+     * as {@link #update} retries a lost swap (D15). Each table is resolved by name once, before the first
+     * attempt, as {@link #update} resolves its one table.
      */
     private CommitReply transaction(Request request) {
         List<CatalogObject> objects = new ArrayList<>();
@@ -623,6 +627,7 @@ public final class CommitEngine {
         Instant started = clock.instant();
         for (int attempt = 1; ; attempt++) {
             List<Planned> planned = new ArrayList<>();
+            List<PointerHold> held = new ArrayList<>();
             for (int i = 0; i < objects.size(); i++) {
                 CatalogObject object = objects.get(i);
                 String table = request.targets().get(i).name().qualified();
@@ -645,8 +650,7 @@ public final class CommitEngine {
                                 && governance.get(i).regulated();
                         planned.add(new Planned(object, base, changed, json, regulated));
                     }
-                    case Outcome.NoChange noChange -> {
-                    }
+                    case Outcome.NoChange noChange -> held.add(new PointerHold(object.mainKey(), base));
                     case Outcome.RequirementFailed failed -> {
                         return new Failure(409, COMMIT_FAILED, table + ": " + failed.message());
                     }
@@ -667,7 +671,7 @@ public final class CommitEngine {
                         Projection.of(p.changed().after())));
             }).toList();
             try {
-                switch (store.commit(transactionBatch(request, written))) {
+                switch (store.commit(transactionBatch(request, written, held))) {
                     case CommitResult.Committed done -> {
                         return applied(written, request.commitId());
                     }
@@ -695,7 +699,7 @@ public final class CommitEngine {
         return new Applied(How.COMMITTED);
     }
 
-    private CommitBatch transactionBatch(Request request, List<Staged> written) {
+    private CommitBatch transactionBatch(Request request, List<Staged> written, List<PointerHold> held) {
         Instant at = clock.instant();
         Caller caller = request.caller();
         List<PointerSwap> swaps = new ArrayList<>();
@@ -712,7 +716,7 @@ public final class CommitEngine {
         }
         Optional<IdempotencyResult> result = request.key().map(key -> new IdempotencyResult(key.key(),
                 key.principal(), key.requestHash(), Replies.APPLIED, "", key.expiresAt()));
-        return new CommitBatch(request.commitId(), at, swaps, outbox, result);
+        return new CommitBatch(request.commitId(), at, swaps, held, outbox, result);
     }
 
     /**

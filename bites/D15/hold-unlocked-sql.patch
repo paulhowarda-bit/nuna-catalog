@@ -1,0 +1,17 @@
+Breaks: A held pointer is compared by a plain read and not locked, so it can move before COMMIT.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest#holdLastsUntilCommit
+
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+index 32fa4a3..28d76d6 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+@@ -84,7 +84,7 @@ final class Pointers {
+             boolean matched = switch (lock) {
+                 case PointerSwap swap when swap.expected().isEmpty() -> insert(connection, swap, batch);
+                 case PointerSwap swap -> lockedAt(connection, swap.key(), swap.expected().get());
+-                case PointerHold hold -> lockedAt(connection, hold.key(), hold.expected());
++                case PointerHold hold -> read(connection, hold.key()).filter(p -> p.version() == hold.expected().version()).isPresent();
+             };
+             if (!matched) {
+                 return Optional.of(new CommitResult.Conflict(lock.key(), read(connection, lock.key())));

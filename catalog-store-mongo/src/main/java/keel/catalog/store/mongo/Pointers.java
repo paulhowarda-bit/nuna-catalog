@@ -17,7 +17,9 @@ import com.mongodb.client.model.UpdateOptions;
 import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerHold;
 import keel.catalog.store.PointerKey;
+import keel.catalog.store.PointerLock;
 import keel.catalog.store.PointerSwap;
 import java.io.ByteArrayOutputStream;
 import java.time.Instant;
@@ -80,10 +82,10 @@ final class Pointers {
                 doc.getString("sha256").getValue(), projection);
     }
 
-    /** Counts the clocks of the batch's pointers (storage-design 9 b). Before the stamp is fixed. */
+    /** Counts the clocks of the batch's swapped and held pointers (storage-design 9 b). Before the stamp is fixed. */
     static void see(Tx tx, CommitBatch batch) {
-        for (PointerSwap swap : batch.swaps()) {
-            BsonDocument clock = tx.collection(POINTER).find(tx.session, keyFilter(swap.key()))
+        for (PointerLock lock : batch.locks()) {
+            BsonDocument clock = tx.collection(POINTER).find(tx.session, keyFilter(lock.key()))
                     .projection(new BsonDocument("clock", new BsonInt32(1))).first();
             if (clock != null) {
                 tx.see(clock);
@@ -92,35 +94,65 @@ final class Pointers {
     }
 
     /**
-     * Compares and writes every pointer in key order. Each write is conditional on the expected
-     * pointer, so it is the compare and the write at once; a create inserts only if no pointer
-     * exists. When nothing matched, the transaction's snapshot shows what is there instead.
+     * Compares and writes every swapped pointer, and compares and marks every held one, in key order.
+     * When nothing matched, the transaction's snapshot shows what is there instead.
      */
     static Optional<CommitResult.Conflict> swap(Tx tx, CommitBatch batch, int pieceBytes) {
-        MongoCollection<BsonDocument> pointers = tx.collection(POINTER);
-        for (PointerSwap swap : batch.swaps()) {
-            byte[][] pieces = pieces(swap.next().projection(), pieceBytes);
-            BsonDocument next = fields(swap.next(), pieces, batch.commitId(), batch.committedAt()).append("clock", tx.clock());
-            boolean written;
-            if (swap.expected().isEmpty()) {
-                written = pointers.updateOne(tx.session, keyFilter(swap.key()), new BsonDocument("$setOnInsert", next),
-                        new UpdateOptions().upsert(true)).getUpsertedId() != null;
-            } else {
-                Pointer expected = swap.expected().get();
-                BsonDocument filter = keyFilter(swap.key())
-                        .append("version", int64(expected.version()))
-                        .append("metadataLocation", new BsonString(expected.metadataLocation()));
-                written = pointers.updateOne(tx.session, filter, new BsonDocument("$set", next)).getMatchedCount() == 1;
-                if (written) {
-                    tx.collection(PROJECTION_PIECE).deleteMany(tx.session, keyFilter(swap.key()));
-                }
+        for (PointerLock lock : batch.locks()) {
+            boolean matched = switch (lock) {
+                case PointerSwap swap -> swapOne(tx, batch, swap, pieceBytes);
+                case PointerHold hold -> holdOne(tx, hold);
+            };
+            if (!matched) {
+                return Optional.of(new CommitResult.Conflict(lock.key(), read(tx.database, tx.session, lock.key())));
             }
-            if (!written) {
-                return Optional.of(new CommitResult.Conflict(swap.key(), read(tx.database, tx.session, swap.key())));
-            }
-            writePieces(tx, swap, pieces);
         }
         return Optional.empty();
+    }
+
+    /**
+     * The write is conditional on the expected pointer, so it is the compare and the write at once; a
+     * create inserts only if no pointer exists.
+     */
+    private static boolean swapOne(Tx tx, CommitBatch batch, PointerSwap swap, int pieceBytes) {
+        MongoCollection<BsonDocument> pointers = tx.collection(POINTER);
+        byte[][] pieces = pieces(swap.next().projection(), pieceBytes);
+        BsonDocument next = fields(swap.next(), pieces, batch.commitId(), batch.committedAt()).append("clock", tx.clock());
+        boolean written;
+        if (swap.expected().isEmpty()) {
+            written = pointers.updateOne(tx.session, keyFilter(swap.key()), new BsonDocument("$setOnInsert", next),
+                    new UpdateOptions().upsert(true)).getUpsertedId() != null;
+        } else {
+            written = pointers.updateOne(tx.session, expectedFilter(swap.key(), swap.expected().get()),
+                    new BsonDocument("$set", next)).getMatchedCount() == 1;
+            if (written) {
+                tx.collection(PROJECTION_PIECE).deleteMany(tx.session, keyFilter(swap.key()));
+            }
+        }
+        if (written) {
+            writePieces(tx, swap, pieces);
+        }
+        return written;
+    }
+
+    /**
+     * Marks the held pointer if it is the expected one. Reads take no lock here, so the mark, a real
+     * write of the clock alone, is what conflicts with a concurrent swap of it (section 9, Writes).
+     */
+    private static boolean holdOne(Tx tx, PointerHold hold) {
+        BsonDocument held = tx.collection(POINTER).find(tx.session, expectedFilter(hold.key(), hold.expected()))
+                .projection(new BsonDocument("clock", new BsonInt32(1))).first();
+        if (held == null) {
+            return false;
+        }
+        tx.mark(POINTER, held);
+        return true;
+    }
+
+    private static BsonDocument expectedFilter(PointerKey key, Pointer expected) {
+        return keyFilter(key)
+                .append("version", int64(expected.version()))
+                .append("metadataLocation", new BsonString(expected.metadataLocation()));
     }
 
     /** The journal entries of the batch, and its outbox events and idempotency result. */

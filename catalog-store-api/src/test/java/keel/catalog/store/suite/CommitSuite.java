@@ -4,6 +4,7 @@ import static keel.catalog.store.suite.Commits.advance;
 import static keel.catalog.store.suite.Commits.batch;
 import static keel.catalog.store.suite.Commits.before;
 import static keel.catalog.store.suite.Commits.fullBatch;
+import static keel.catalog.store.suite.Commits.holding;
 import static keel.catalog.store.suite.Commits.newKey;
 import static keel.catalog.store.suite.Commits.next;
 import static keel.catalog.store.suite.Commits.pointer;
@@ -20,6 +21,7 @@ import keel.catalog.store.CommitOutcomeUnknownException;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.CommitStore;
 import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerHold;
 import keel.catalog.store.PointerKey;
 import keel.catalog.store.SafetyFinding;
 import keel.catalog.store.StoreException;
@@ -238,6 +240,83 @@ public abstract class CommitSuite {
         assertThat(store.readPointer(keys.get(2))).contains(thirdV2);
         assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.NONE);
         assertThat(store.findCommit(batch.commitId(), keys.get(0))).isEqualTo(CommitLookup.NOT_COMMITTED);
+    }
+
+    @Test
+    @DisplayName("2 Atomicity: a held pointer is compared but not written: no new version and no journal entry")
+    void heldPointerIsComparedNotWritten() {
+        List<PointerKey> keys = sortedKeys(3);
+        Pointer first = commitNew(keys.get(0), "first");
+        Pointer held = commitNew(keys.get(1), "held");
+        Pointer third = commitNew(keys.get(2), "third");
+        // The held pointer sorts between the two swaps.
+        CommitBatch batch = holding(fullBatch(
+                        swap(keys.get(0), Optional.of(first), pointer("first-new", 2)),
+                        swap(keys.get(2), Optional.of(third), pointer("third-new", 2))),
+                new PointerHold(keys.get(1), held));
+
+        assertThat(store.commit(batch)).isEqualTo(new CommitResult.Committed(batch.commitId()));
+
+        assertThat(underTest.writtenRows(batch)).isEqualTo(new WrittenRows(2, 2, 2, 1));
+        assertThat(store.readPointer(keys.get(0))).contains(batch.swaps().get(0).next());
+        assertThat(store.readPointer(keys.get(1))).contains(held);
+        assertThat(store.readPointer(keys.get(2))).contains(batch.swaps().get(1).next());
+        assertThat(underTest.journalVersions(keys.get(1))).containsExactly(1L);
+        assertThat(commitNext(keys.get(1), held, "held-moved").version()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("2 Atomicity: a batch holding a pointer that has moved is a conflict and writes nothing")
+    void staleHoldInABatchWritesNothing() {
+        List<PointerKey> keys = sortedKeys(2);
+        Pointer first = commitNew(keys.get(0), "first");
+        Pointer heldV1 = commitNew(keys.get(1), "held");
+        Pointer heldV2 = commitNext(keys.get(1), heldV1, "held-moved");
+        // The stale hold sorts last, so the swap is already applied when it is compared.
+        CommitBatch batch = holding(fullBatch(swap(keys.get(0), Optional.of(first), pointer("first-new", 2))),
+                new PointerHold(keys.get(1), heldV1));
+
+        assertThat(store.commit(batch)).isEqualTo(new CommitResult.Conflict(keys.get(1), Optional.of(heldV2)));
+
+        assertThat(store.readPointer(keys.get(0))).contains(first);
+        assertThat(store.readPointer(keys.get(1))).contains(heldV2);
+        assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.findCommit(batch.commitId(), keys.get(0))).isEqualTo(CommitLookup.NOT_COMMITTED);
+    }
+
+    /**
+     * Write skew: each batch holds the pointer the other swaps, both from the same reads. Held only at the
+     * comparison, both would commit. Held to COMMIT, the second waits for the first, then finds the pointer
+     * it holds moved.
+     */
+    @Tag("heavy")
+    @Test
+    @DisplayName("2 Atomicity: a held pointer stays locked until COMMIT, so of two batches that each hold what the other swaps, one commits")
+    void holdLastsUntilCommit() throws Exception {
+        List<PointerKey> keys = sortedKeys(2);
+        Pointer a = commitNew(keys.get(0), "a");
+        Pointer b = commitNew(keys.get(1), "b");
+        CommitBatch first = holding(batch(advance(keys.get(0), Optional.of(a), "first")), new PointerHold(keys.get(1), b));
+        CommitBatch second = holding(batch(advance(keys.get(1), Optional.of(b), "second")), new PointerHold(keys.get(0), a));
+        CountDownLatch atCommit = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        CommitStore held = underTest.store(before(first, () -> {
+            atCommit.countDown();
+            awaitLatch(release);
+        }));
+        CompletableFuture<CommitResult> firstResult = CompletableFuture.supplyAsync(() -> held.commit(first), background);
+        assertThat(atCommit.await(60, TimeUnit.SECONDS)).as("the first batch reached COMMIT").isTrue();
+
+        CompletableFuture<CommitResult> secondResult = CompletableFuture.supplyAsync(() -> store.commit(second), background);
+        Thread.sleep(1_500);
+        assertThat(secondResult).as("the second batch must wait while the first holds what it swaps").isNotDone();
+        release.countDown();
+
+        assertThat(firstResult.get(60, TimeUnit.SECONDS)).isEqualTo(new CommitResult.Committed(first.commitId()));
+        assertThat(secondResult.get(60, TimeUnit.SECONDS))
+                .isEqualTo(new CommitResult.Conflict(keys.get(0), Optional.of(next(first))));
+        assertThat(store.readPointer(keys.get(0))).contains(next(first));
+        assertThat(store.readPointer(keys.get(1))).contains(b);
     }
 
     @Tag("heavy")

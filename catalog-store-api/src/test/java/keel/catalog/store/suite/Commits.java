@@ -8,6 +8,7 @@ import keel.catalog.store.IdempotencyResult;
 import keel.catalog.store.JournalEntry;
 import keel.catalog.store.OutboxEvent;
 import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerHold;
 import keel.catalog.store.PointerKey;
 import keel.catalog.store.PointerSwap;
 import java.security.MessageDigest;
@@ -62,6 +63,12 @@ public final class Commits {
                 sha256(commitId.toString()), 200, "{\"metadata-location\":\"" + swaps[0].next().metadataLocation() + "\"}",
                 now.plus(Duration.ofHours(24)));
         return new CommitBatch(commitId, now, List.of(swaps), outbox, Optional.of(idempotency));
+    }
+
+    /** {@code batch}, also holding {@code held}. */
+    public static CommitBatch holding(CommitBatch batch, PointerHold... held) {
+        return new CommitBatch(batch.commitId(), batch.committedAt(), batch.swaps(), List.of(held), batch.outbox(),
+                batch.idempotency());
     }
 
     /** A hook that runs {@code fault} just before {@code batch}'s COMMIT and does nothing for other commits. */
