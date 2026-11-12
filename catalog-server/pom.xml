@@ -11,6 +11,11 @@
   <artifactId>catalog-server</artifactId>
   <description>The Spring Boot server: REST routes, config, error mapping, self-checks.</description>
   <dependencies>
+    <!-- The run's S3 store: -Ds3=silo (default), ceph or aws. -->
+    <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-tests-s3</artifactId>
+    </dependency>
     <dependency>
       <groupId>fidice</groupId>
       <artifactId>catalog-core</artifactId>
@@ -88,7 +93,6 @@
         <configuration>
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
-            <silo.image>${silo.image}</silo.image>
             <keycloak.image>${keycloak.image}</keycloak.image>
             <kafka.image>${kafka.image}</kafka.image>
             <repo.root>${project.basedir}/..</repo.root>

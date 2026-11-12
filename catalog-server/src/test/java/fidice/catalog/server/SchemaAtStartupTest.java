@@ -15,7 +15,7 @@ import org.springframework.test.context.ContextConfiguration;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = IssuerForTests.class)
-@Import({PostgresForTests.class, SiloForTests.class})
+@Import({PostgresForTests.class, S3ForTests.class})
 class SchemaAtStartupTest {
 
     @Autowired

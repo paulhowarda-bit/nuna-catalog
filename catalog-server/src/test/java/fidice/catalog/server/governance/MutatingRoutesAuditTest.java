@@ -7,7 +7,8 @@ import com.jayway.jsonpath.JsonPath;
 import fidice.catalog.audit.CatalogEvent;
 import fidice.catalog.audit.EventType;
 import fidice.catalog.server.IssuerForTests;
-import fidice.catalog.server.SiloForTests;
+import fidice.catalog.server.S3ForTests;
+import fidice.catalog.tests.s3.TestS3;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -28,10 +29,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
-import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
-import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ObjectNode;
@@ -72,7 +70,7 @@ class MutatingRoutesAuditTest {
     private GovernanceServer.TestClock clock;
 
     @Autowired
-    private SiloForTests.Silo silo;
+    private TestS3 objectStore;
 
     @Value("${local.server.port}")
     private int port;
@@ -419,25 +417,19 @@ class MutatingRoutesAuditTest {
 
     /** A metadata file like the one at {@code location}, written as the first file of a table the catalog does not hold. */
     private String copiedMetadataWithNewUuid(String location) {
-        String key = location.substring(("s3://" + SiloForTests.BUCKET + "/").length());
+        String key = location.substring(("s3://" + S3ForTests.bucket() + "/").length());
         UUID uuid = UUID.randomUUID();
         String root = "tables/" + uuid;
         String newKey = root + "/metadata/00000-" + uuid + ".metadata.json";
-        try (S3Client s3 = S3Client.builder()
-                .endpointOverride(silo.endpoint())
-                .region(Region.US_EAST_1)
-                .forcePathStyle(true)
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(SiloForTests.ACCESS_KEY, SiloForTests.SECRET_KEY)))
-                .build()) {
+        try (S3Client s3 = objectStore.client()) {
             JsonMapper json = JsonMapper.builder().build();
-            ObjectNode metadata = (ObjectNode) json.readTree(s3.getObjectAsBytes(b -> b.bucket(SiloForTests.BUCKET)
+            ObjectNode metadata = (ObjectNode) json.readTree(s3.getObjectAsBytes(b -> b.bucket(S3ForTests.bucket())
                     .key(key)).asUtf8String());
             metadata.put("table-uuid", uuid.toString());
-            metadata.put("location", "s3://" + SiloForTests.BUCKET + "/" + root);
-            s3.putObject(b -> b.bucket(SiloForTests.BUCKET).key(newKey), RequestBody.fromString(
+            metadata.put("location", "s3://" + S3ForTests.bucket() + "/" + root);
+            s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(newKey), RequestBody.fromString(
                     json.writeValueAsString(metadata)));
         }
-        return "s3://" + SiloForTests.BUCKET + "/" + newKey;
+        return "s3://" + S3ForTests.bucket() + "/" + newKey;
     }
 }
