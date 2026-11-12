@@ -18,14 +18,18 @@ the first time (images, Maven Central jars and PyPI packages are baked into thre
 
 ## How it works
 
-- `compose/compose.yaml`, project `fidice-engines`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), Silo, and the
-  catalog server (the `catalog-server` exec jar on `eclipse-temurin:25.0.5_8-jre-noble`, configured by
-  `compose/catalog/engines.properties`, the shape of `ConformanceServer`). One profile per engine. No host
-  port is published: every client runs in the compose network, so the storage profile's endpoint
-  `http://silo:9000` is the one engines use with vended credentials.
+- `compose/compose.yaml`, project `fidice-engines`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), the S3 store
+  `-Ds3` chooses (Silo or Ceph as compose service `s3`, or real AWS), and the catalog server (the
+  `catalog-server` exec jar on `eclipse-temurin:25.0.5_8-jre-noble`, configured by
+  `compose/catalog/engines.properties`, the shape of `ConformanceServer`, plus the `storage.properties` the
+  harness writes for the store). One profile per engine. No host port is published: every client runs in the
+  compose network, so the storage profile's endpoint, `S3_ENDPOINT` (`http://s3:9000` on Silo,
+  `http://s3:8080` on Ceph), is the one engines use with vended credentials. On Ceph the harness creates the
+  STS role after the stack is up; on AWS the bucket and role are the run's own and are deleted at the end.
 - The harness makes an RS256 key and token with `TestIdp` (issuer `https://idp.test/engines`, group
-  `engine-clients`). A one-shot `seed` container creates the bucket and publishes the JWKS as a public-read
-  Silo object, so the catalog never calls back into the Windows host. Grants (`create`, `modify` on catalog
+  `engine-clients`). A one-shot `seed` container creates the bucket on Silo or Ceph. A small `idp` file
+  server serves the JWKS inside the network (AWS blocks public buckets), so the catalog never calls back into
+  the Windows host. Grants (`create`, `modify` on catalog
   `engines`) are inserted by SQL, as `ConformanceServer` does.
 - Every engine authenticates with the static bearer token and asks for `X-Iceberg-Access-Delegation:
   vended-credentials`; none is given storage keys. Each prints `RESULT <engine> <check> <value>` lines (and
@@ -49,8 +53,8 @@ the first time (images, Maven Central jars and PyPI packages are baked into thre
 | DuckDB 2.0.0 | same image + `duckdb==2.0.0`, extensions `iceberg`, `httpfs`, `avro` installed at build | — |
 | SingleStore 10.9.0 | the running `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
 
-Catalog stack: `postgres:18`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`,
-`eclipse-temurin:25.0.5_8-jre-noble`.
+Catalog stack: `postgres:18`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
+`ghcr.io/clyso/ceph-test:v20.2.5`, `busybox:1.37.0`, `eclipse-temurin:25.0.5_8-jre-noble`.
 
 ## Results (2026-11-09)
 
@@ -130,5 +134,5 @@ extensions) adds a few minutes; later runs reuse them.
 - **SingleStore:** `CREATE PIPELINE ... LOAD DATA S3 '' CONFIG '{"catalog_type": "REST", "catalog.uri",
   "catalog.warehouse", "table_id": "m8.shared.spark.t_v2", "catalog.token",
   "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
-  "endpoint_url": "http://silo:9000", "region", "ingest_mode": "one_time"}' CREDENTIALS '{}' ... FORMAT
+  "endpoint_url": "${S3_ENDPOINT}", "region", "ingest_mode": "one_time"}' CREDENTIALS '{}' ... FORMAT
   ICEBERG`. Needs `SET GLOBAL enable_iceberg_ingest = 1` first (off in the dev image).
