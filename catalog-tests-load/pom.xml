@@ -18,6 +18,11 @@
   </properties>
 
   <dependencies>
+    <!-- The run's S3 store: -Ds3=silo (default), ceph or aws. -->
+    <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-tests-s3</artifactId>
+    </dependency>
     <dependency>
       <!-- Only so the reactor builds the server first; the tests run its runnable jar. -->
       <groupId>fidice</groupId>
@@ -102,7 +107,6 @@
         <configuration>
           <systemPropertyVariables>
             <postgres.image>${postgres.image}</postgres.image>
-            <silo.image>${silo.image}</silo.image>
             <kafka.image>${kafka.image}</kafka.image>
             <m8.server-jar>${project.build.directory}/m8/catalog-server.jar</m8.server-jar>
             <m8.work>${project.build.directory}/m8</m8.work>

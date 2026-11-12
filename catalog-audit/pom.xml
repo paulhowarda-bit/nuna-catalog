@@ -12,6 +12,11 @@
   <description>Outbox relay, Kafka publishing, change stream, archive.</description>
 
   <dependencies>
+    <!-- The run's S3 store: -Ds3=silo (default), ceph or aws. -->
+    <dependency>
+      <groupId>fidice</groupId>
+      <artifactId>catalog-tests-s3</artifactId>
+    </dependency>
     <dependency>
       <groupId>fidice</groupId>
       <artifactId>catalog-core</artifactId>
@@ -76,7 +81,6 @@
           <systemPropertyVariables>
             <kafka.image>${kafka.image}</kafka.image>
             <toxiproxy.image>${toxiproxy.image}</toxiproxy.image>
-            <silo.image>${silo.image}</silo.image>
           </systemPropertyVariables>
         </configuration>
       </plugin>
