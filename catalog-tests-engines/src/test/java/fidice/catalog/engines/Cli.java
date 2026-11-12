@@ -7,7 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -80,17 +79,6 @@ final class Cli {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("interrupted: " + List.of(command), e);
         }
-    }
-
-    /** {@code kubectl <args>} against the run's cluster; fails unless it exits 0. */
-    String kubectl(Duration timeout, String... args) {
-        return ok(timeout, prepend("kubectl", args));
-    }
-
-    static String[] prepend(String first, String... rest) {
-        List<String> command = new ArrayList<>(List.of(first));
-        command.addAll(List.of(rest));
-        return command.toArray(String[]::new);
     }
 
     private static void copy(InputStream in, StringBuilder output) {

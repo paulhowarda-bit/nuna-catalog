@@ -126,3 +126,46 @@ spec:
   selector: {app: idp}
   ports:
     - port: 8080
+---
+# kafbat UI for the demo's Kafka: topics (the Kafka Connect source topic, the sink's control topic, the
+# catalog's audit and change topics), their messages and consumer groups. With -Dengines.keep-stack=true:
+# kubectl port-forward svc/kafka-ui 8080:8080, then http://localhost:8080.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-ui
+spec:
+  selector:
+    matchLabels: {app: kafka-ui}
+  template:
+    metadata:
+      labels: {app: kafka-ui}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: kafka-ui
+          image: ${KAFKA_UI_IMAGE}
+          imagePullPolicy: Never
+          env:
+            - {name: KAFKA_CLUSTERS_0_NAME, value: fidice-engines}
+            - {name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS, value: "kafka:9092"}
+            - {name: DYNAMIC_CONFIG_ENABLED, value: "false"}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            limits: {memory: 768Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-ui
+spec:
+  selector: {app: kafka-ui}
+  ports:
+    - port: 8080

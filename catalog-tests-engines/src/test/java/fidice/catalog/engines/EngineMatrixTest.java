@@ -43,16 +43,25 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * records from a Kafka topic into a table it creates; PyIceberg and SingleStore (through its Iceberg
  * pipelines) read Spark's tables. Results, timings and every command go to {@code target/engines-run/}.
  *
- * <p>Needs Docker, kind, kubectl and Helm on the PATH. The cluster gets its own kubeconfig in the run
- * directory, so the current kubectl context is never changed. {@code -Dengines.keep-stack=true} leaves the
- * cluster up afterwards ({@code KUBECONFIG=target/engines-run/kubeconfig kubectl get pods}), with the token in
- * {@code target/engines-run/token}, to rerun one engine by hand.
+ * <p>Needs Docker, kubectl and Helm on the PATH, and kind unless {@code -Dengines.cluster} names a cluster.
+ * Everything runs in namespace {@value #NAMESPACE}.
+ * <ul>
+ *   <li>By default the harness creates kind cluster {@value #CLUSTER} with its own kubeconfig in the run
+ *       directory, so the current kubectl context is never changed, and deletes the cluster at the end.</li>
+ *   <li>{@code -Dengines.cluster=<kubectl context>} (for example {@code docker-desktop}) deploys into that
+ *       existing cluster instead: namespace {@value #NAMESPACE} is recreated at the start and deleted at the
+ *       end. Its nodes must see the locally built images, as Docker Desktop's do; nothing is pushed.</li>
+ * </ul>
+ * {@code -Dengines.keep-stack=true} leaves everything up afterwards, with the token in
+ * {@code target/engines-run/token}, to rerun one engine by hand, and the kafbat UI on Service {@code kafka-ui}.
+ * {@code -Dengines.skip-build=true} uses the images already built instead of building them.
  */
 @Tag("heavy")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class EngineMatrixTest {
 
     private static final String CLUSTER = "fidice-engines";
+    private static final String NAMESPACE = "fidice-engines";
     private static final String ISSUER = "https://idp.test/engines";
     private static final String AUDIENCE = "fidice-catalog";
     private static final String GROUP = "engine-clients";
@@ -61,11 +70,16 @@ class EngineMatrixTest {
     private static final String KAFKA_CONNECT_IMAGE = "fidice-engines/kafka-connect:4.2.2-iceberg-1.12.0";
     private static final String PYTHON_IMAGE = "fidice-engines/python:pyiceberg-0.12.0";
     private static final String SINGLESTORE_IMAGE = "ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88";
+    private static final String KAFKA_UI_IMAGE = "kafbat/kafka-ui:v1.5.0";
     private static final Duration ENGINE_TIMEOUT = Duration.ofMinutes(15);
 
     private static Path runDir;
     private static Path engines;
     private static Cli cli;
+    /** Whether the harness made (and will delete) a kind cluster, rather than using an existing one. */
+    private static boolean kind;
+    /** The kubectl context everything is deployed through. */
+    private static String context;
     private static String token;
     private static String s3Endpoint;
     private static Map<String, String> placeholders;
@@ -90,22 +104,32 @@ class EngineMatrixTest {
         Path log = runDir.resolve("commands.log");
         Files.deleteIfExists(log);
         Path kubeconfig = runDir.resolve("kubeconfig");
-        cli = new Cli(Map.of("KUBECONFIG", kubeconfig.toAbsolutePath().toString()), log);
+        String cluster = System.getProperty("engines.cluster", "").strip();
+        kind = cluster.isEmpty() || cluster.equals("kind");
+        context = kind ? "kind-" + CLUSTER : cluster;
+        cli = new Cli(kind ? Map.of("KUBECONFIG", kubeconfig.toAbsolutePath().toString()) : Map.of(), log);
         TestS3.Kind store = TestS3.kindFromSystemProperty();
         placeholders = new LinkedHashMap<>(Map.of(
                 "SILO_IMAGE", System.getProperty("silo.image"),
                 "CEPH_IMAGE", System.getProperty("ceph.image"),
-                "SINGLESTORE_IMAGE", SINGLESTORE_IMAGE));
+                "SINGLESTORE_IMAGE", SINGLESTORE_IMAGE,
+                "KAFKA_UI_IMAGE", KAFKA_UI_IMAGE));
         Map<String, String> storage = new LinkedHashMap<>();
         Map<String, String> secretEnv = new LinkedHashMap<>(Map.of("SPRING_DATASOURCE_PASSWORD", "catalog"));
         storage(store, storage, secretEnv);
         placeholders.put("S3_ENDPOINT", s3Endpoint);
 
         long started = System.nanoTime();
-        cli.run(Duration.ofMinutes(2), null, "kind", "delete", "cluster", "--name", CLUSTER);
-        cli.ok(Duration.ofMinutes(5), "kind", "create", "cluster", "--name", CLUSTER, "--wait", "2m");
+        if (kind) {
+            cli.run(Duration.ofMinutes(2), null, "kind", "delete", "cluster", "--name", CLUSTER);
+            cli.ok(Duration.ofMinutes(5), "kind", "create", "cluster", "--name", CLUSTER, "--wait", "2m");
+        } else {
+            cli.ok(Duration.ofMinutes(6), "kubectl", "--context", context, "delete", "namespace", NAMESPACE,
+                    "--ignore-not-found", "--wait=true", "--timeout=5m");
+        }
+        cli.ok(Duration.ofMinutes(1), "kubectl", "--context", context, "create", "namespace", NAMESPACE);
         List<String> images = new ArrayList<>(List.of(System.getProperty("postgres.image"),
-                System.getProperty("kafka.image"), "busybox:1.37.0"));
+                System.getProperty("kafka.image"), "busybox:1.37.0", KAFKA_UI_IMAGE));
         if (store != TestS3.Kind.AWS) {
             images.add(System.getProperty("silo.image"));
         }
@@ -122,23 +146,24 @@ class EngineMatrixTest {
         build(PYTHON_IMAGE, engines.resolve("images/python"));
         images.addAll(List.of(CATALOG_IMAGE, SPARK_IMAGE, KAFKA_CONNECT_IMAGE, PYTHON_IMAGE));
         load(images);
-        record("cluster", "created and images loaded in " + seconds(started));
+        record("cluster", (kind ? "kind cluster created" : "namespace created in " + context)
+                + " and images ready in " + seconds(started));
 
         started = System.nanoTime();
-        cli.kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "engine-token", "--from-literal=token=" + token);
-        cli.kubectl(Duration.ofMinutes(1), "create", "configmap", "idp-keys", "--from-file=keys.json=" + keys);
+        kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "engine-token", "--from-literal=token=" + token);
+        kubectl(Duration.ofMinutes(1), "create", "configmap", "idp-keys", "--from-file=keys.json=" + keys);
         apply("infra.yaml");
-        List<String> deployments = new ArrayList<>(List.of("postgres", "kafka", "idp"));
+        List<String> deployments = new ArrayList<>(List.of("postgres", "kafka", "idp", "kafka-ui"));
         if (store != TestS3.Kind.AWS) {
             apply("store-" + store.name().toLowerCase(Locale.ROOT) + ".yaml");
             deployments.add("s3");
         }
         for (String deployment : deployments) {
-            cli.kubectl(Duration.ofMinutes(8), "rollout", "status", "deployment/" + deployment, "--timeout=8m");
+            kubectl(Duration.ofMinutes(8), "rollout", "status", "deployment/" + deployment, "--timeout=8m");
         }
         if (store != TestS3.Kind.AWS) {
             apply("seed.yaml");
-            cli.kubectl(Duration.ofMinutes(3), "wait", "--for=condition=complete", "job/seed", "--timeout=3m");
+            kubectl(Duration.ofMinutes(3), "wait", "--for=condition=complete", "job/seed", "--timeout=3m");
         }
         if (store == TestS3.Kind.CEPH) {
             StringBuilder script = new StringBuilder("set -e\n");
@@ -147,7 +172,7 @@ class EngineMatrixTest {
             }
             Path roles = runDir.resolve("ceph-roles.sh");
             Files.writeString(roles, script, StandardCharsets.UTF_8);
-            cli.ok(Duration.ofMinutes(1), roles, "kubectl", "exec", "-i", "deployment/s3", "--", "sh");
+            cli.ok(Duration.ofMinutes(1), roles, kubectlCommand("exec", "-i", "deployment/s3", "--", "sh"));
         }
 
         Map<String, String> config = properties(engines.resolve("k8s/catalog.properties"));
@@ -158,12 +183,13 @@ class EngineMatrixTest {
         Files.writeString(values, "{\"image\": {\"repository\": \"" + CATALOG_IMAGE.split(":")[0] + "\", \"tag\": \""
                 + CATALOG_IMAGE.split(":")[1] + "\", \"pullPolicy\": \"Never\"},\n \"config\": " + json(config)
                 + ",\n \"secretEnv\": " + json(secretEnv) + "}\n", StandardCharsets.UTF_8);
-        cli.ok(Duration.ofMinutes(6), "helm", "upgrade", "--install", "catalog",
-                repo.resolve("deploy/helm/fidice-catalog").toString(), "-f", values.toString(), "--wait",
+        cli.ok(Duration.ofMinutes(6), "helm", "--kube-context", context, "--namespace", NAMESPACE, "upgrade",
+                "--install", "catalog", repo.resolve("deploy/helm/fidice-catalog").toString(), "-f", values.toString(),
+                "--wait",
                 "--timeout", "5m");
         // The catalog is declared in the chart's config and created at startup; the group gets create and
         // modify on it, as ConformanceServer grants.
-        cli.kubectl(Duration.ofMinutes(1), "exec", "deployment/postgres", "--", "psql", "-U", "catalog", "-d", "catalog",
+        kubectl(Duration.ofMinutes(1), "exec", "deployment/postgres", "--", "psql", "-U", "catalog", "-d", "catalog",
                 "-v", "ON_ERROR_STOP=1", "-c",
                 "INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege,"
                         + " granted_by, granted_at) SELECT c.id, 'CATALOG', c.id, '" + GROUP + "', p.privilege,"
@@ -174,8 +200,14 @@ class EngineMatrixTest {
 
     @AfterAll
     static void stopBase() {
-        if (cli != null && !Boolean.getBoolean("engines.keep-stack")) {
+        if (cli == null || Boolean.getBoolean("engines.keep-stack")) {
+            return;
+        }
+        if (kind) {
             cli.run(Duration.ofMinutes(3), null, "kind", "delete", "cluster", "--name", CLUSTER);
+        } else {
+            cli.run(Duration.ofMinutes(6), null, "kubectl", "--context", context, "delete", "namespace", NAMESPACE,
+                    "--wait=true", "--timeout=5m");
         }
     }
 
@@ -238,7 +270,7 @@ class EngineMatrixTest {
             cli.ok(Duration.ofMinutes(20), "docker", "pull", "-q", SINGLESTORE_IMAGE);
             load(List.of(SINGLESTORE_IMAGE));
             apply("singlestore.yaml");
-            cli.kubectl(Duration.ofMinutes(11), "rollout", "status", "deployment/singlestore", "--timeout=10m");
+            kubectl(Duration.ofMinutes(11), "rollout", "status", "deployment/singlestore", "--timeout=10m");
             singlestoreSql("enable.sql");
             return singlestoreSql("ingest.sql");
         });
@@ -283,11 +315,19 @@ class EngineMatrixTest {
         }
     }
 
+    /** Builds an image, unless -Dengines.skip-build=true asks to use the ones already built. */
     private static void build(String image, Path context) {
+        if (Boolean.getBoolean("engines.skip-build")) {
+            return;
+        }
         cli.ok(Duration.ofMinutes(20), "docker", "build", "-q", "-t", image, context.toString());
     }
 
+    /** Loads images into the kind cluster; an existing cluster's nodes must already see them. */
     private static void load(List<String> images) {
+        if (!kind) {
+            return;
+        }
         List<String> command = new ArrayList<>(List.of("kind", "load", "docker-image", "--name", CLUSTER));
         command.addAll(images);
         cli.ok(Duration.ofMinutes(20), command.toArray(String[]::new));
@@ -306,7 +346,7 @@ class EngineMatrixTest {
         Path rendered = runDir.resolve(manifest.replace(".yaml", "") + "-" + values.getOrDefault("ENGINE", "base")
                 + ".yaml");
         Files.writeString(rendered, text, StandardCharsets.UTF_8);
-        cli.kubectl(Duration.ofMinutes(1), "apply", "-f", rendered.toString());
+        kubectl(Duration.ofMinutes(1), "apply", "-f", rendered.toString());
     }
 
     /** Runs one engine as a Job, waits for it to succeed or fail, and returns its log. */
@@ -320,15 +360,15 @@ class EngineMatrixTest {
         Instant deadline = Instant.now().plus(ENGINE_TIMEOUT);
         String status = "";
         while (Instant.now().isBefore(deadline)) {
-            status = cli.kubectl(Duration.ofMinutes(1), "get", "job", name, "-o",
+            status = kubectl(Duration.ofMinutes(1), "get", "job", name, "-o",
                     "jsonpath={.status.succeeded}/{.status.failed}").strip();
             if (status.startsWith("1/") || status.endsWith("/1")) {
                 break;
             }
             Thread.sleep(5_000);
         }
-        String output = cli.run(Duration.ofMinutes(1), null, "kubectl", "logs", "job/" + name).output();
-        cli.run(Duration.ofMinutes(1), null, "kubectl", "delete", "job", name, "--wait=false");
+        String output = cli.run(Duration.ofMinutes(1), null, kubectlCommand("logs", "job/" + name)).output();
+        cli.run(Duration.ofMinutes(1), null, kubectlCommand("delete", "job", name, "--wait=false"));
         if (!status.startsWith("1/")) {
             throw new IllegalStateException("job " + name + " did not succeed (succeeded/failed: " + status + "):\n"
                     + output);
@@ -345,9 +385,20 @@ class EngineMatrixTest {
         Files.writeString(rendered, Files.readString(engines.resolve("k8s/singlestore").resolve(name),
                 StandardCharsets.UTF_8).replace("${FIDICE_TOKEN}", token).replace("${S3_ENDPOINT}", s3Endpoint),
                 StandardCharsets.UTF_8);
-        return cli.ok(Duration.ofMinutes(5), rendered, "kubectl", "exec", "-i", "deployment/singlestore", "--",
+        return cli.ok(Duration.ofMinutes(5), rendered, kubectlCommand("exec", "-i", "deployment/singlestore", "--",
                 "sh", "-c", "exec /usr/lib/singlestore-client/singlestore-client -h 127.0.0.1 -P 3306 -uroot"
-                        + " -p$ROOT_PASSWORD --batch");
+                        + " -p$ROOT_PASSWORD --batch"));
+    }
+
+    /** {@code kubectl} in the run's context and namespace; fails unless it exits 0. */
+    private static String kubectl(Duration timeout, String... args) {
+        return cli.ok(timeout, kubectlCommand(args));
+    }
+
+    private static String[] kubectlCommand(String... args) {
+        List<String> command = new ArrayList<>(List.of("kubectl", "--context", context, "--namespace", NAMESPACE));
+        command.addAll(List.of(args));
+        return command.toArray(String[]::new);
     }
 
     /** A {@code .properties} file's entries, in file order. */

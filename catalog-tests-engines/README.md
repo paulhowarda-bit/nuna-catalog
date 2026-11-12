@@ -14,21 +14,39 @@ results below still show them.)
 ./mvnw verify -pl catalog-tests-engines -am -Pheavy -Dtest='EngineMatrixTest*' -Dsurefire.failIfNoSpecifiedTests=false
 ```
 
-The test is tagged `heavy`, so the fast build compiles it and starts nothing. It needs Docker, `kind`,
-`kubectl` and `helm` on the PATH, and the internet the first time (images, Maven Central jars and PyPI
-packages are baked into local images). `-Ds3=silo|ceph|aws` picks the S3 store, as for every other test.
-The cluster gets its own kubeconfig, `target/engines-run/kubeconfig`, so the current kubectl context is never
-changed. `-Dengines.keep-stack=true` leaves the cluster up afterwards
-(`KUBECONFIG=target/engines-run/kubeconfig kubectl get pods`); `target/engines-run/` holds the token,
-`commands.log` (every command and its output), the rendered manifests and `results.txt`.
+The test is tagged `heavy`, so the fast build compiles it and starts nothing. It needs Docker, `kubectl` and
+`helm` on the PATH (and `kind` for the default cluster), and the internet the first time (images, Maven
+Central jars and PyPI packages are baked into local images). Everything runs in namespace `fidice-engines`.
+
+| Switch | Effect |
+|---|---|
+| `-Ds3=silo\|ceph\|aws` | The S3 store, as for every other test (default `silo`). |
+| `-Dengines.cluster=<context>` | Deploy into an existing cluster, for example `docker-desktop`, instead of a kind cluster. The namespace is recreated at the start and deleted at the end; the cluster's nodes must see locally built images, as Docker Desktop's do. |
+| `-Dengines.keep-stack=true` | Leave everything up afterwards. |
+| `-Dengines.skip-build=true` | Use the images already built instead of building them. |
+
+By default the harness creates kind cluster `fidice-engines` with its own kubeconfig,
+`target/engines-run/kubeconfig`, so the current kubectl context is never changed, and deletes it at the end.
+`target/engines-run/` holds the token, `commands.log` (every command and its output), the rendered manifests
+and `results.txt`.
+
+With the stack kept, the kafbat UI shows the Kafka topics (the Kafka Connect source topic `m8-kafka-events`, the
+sink's control topic, the catalog's audit and change topics), their messages and consumer groups:
+
+```
+KUBECONFIG=target/engines-run/kubeconfig kubectl -n fidice-engines port-forward svc/kafka-ui 8080:8080
+```
+
+then http://localhost:8080 (with `-Dengines.cluster=docker-desktop`, use `--context docker-desktop` instead of
+`KUBECONFIG`).
 
 ## How it works
 
 - The harness creates kind cluster `fidice-engines`, builds the catalog image (`catalog-server/Dockerfile`)
   and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
   cluster: nothing is pulled from inside it.
-- `k8s/infra.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap) and `idp`, a busybox file server for the test
-  issuer's JWKS. The S3 store follows `-Ds3`: `k8s/store-silo.yaml` or `k8s/store-ceph.yaml` as Service `s3`
+- `k8s/infra.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`, a busybox file server for the test
+  issuer's JWKS, and `kafka-ui` (kafbat). The S3 store follows `-Ds3`: `k8s/store-silo.yaml` or `k8s/store-ceph.yaml` as Service `s3`
   (`http://s3:9000` on Silo, `http://s3:8080` on Ceph), and a `seed` Job creates the bucket; on AWS there is no
   store in the cluster and the bucket and role are the run's own, deleted at the end. On Ceph the harness
   creates the STS role once the store is up. No pod gets Service environment variables: the Kafka image
@@ -55,7 +73,7 @@ changed. `-Dengines.keep-stack=true` leaves the cluster up afterwards
 | PyIceberg 0.12.0 | `python:3.12-slim-bookworm` + `pyiceberg[pyarrow]==0.12.0` | — |
 | SingleStore 10.9.0 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
 
-Cluster: kind, `postgres:18`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
+Cluster: kind (or `-Dengines.cluster`), `postgres:18`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
 `ghcr.io/clyso/ceph-test:v20.2.5`, `busybox:1.37.0`; the catalog image is `eclipse-temurin:25.0.5_8-jre-noble`
 with the exec jar.
 
