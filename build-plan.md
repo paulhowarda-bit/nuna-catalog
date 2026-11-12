@@ -69,7 +69,7 @@ One request, start to finish [D3, D5, D8, D9, D10, D11]:
 Narrow by design [D7, D8.8]. Every operation is one atomic unit on every backend.
 
 - `readPointer(objectId, branch)` — primary-only.
-- `commit(CommitBatch)` — CAS on one or more (object, branch) pointers in fixed ID order, plus projection, hash, journal, outbox and idempotency. The same call serves single-table commits (v1) and multi-table commits and merges (v1.x) [D15, D33].
+- `commit(CommitBatch)` — CAS on one or more (object, branch) pointers in fixed ID order, plus projection, hash, journal, outbox and idempotency. The same call serves single-table commits (v1), multi-table commits (`/transactions/commit`, built 2026-11-12) and merges (v1.x) [D15, D33].
 - `findCommit(commitId)` — the ambiguity lookup; locks the pointer row before looking [D8.4].
 - Namespaces: create, drop, load, list children (paged), update properties (CAS on a namespace version).
 - Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan.
@@ -355,7 +355,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 ### v1.x milestones
 
-- `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15].
+- `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15]. **Done 2026-11-12** (see Status).
 - Branches, tags and merge over the v1 storage: REST prefix selects the branch (`trading@dev`), Nessie merge semantics per table, cleanup protects every ref, defaults from P11 [D33].
 - Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30].
 - unregister, register-view, labels [D13]; queryable audit tables [D23]; DR replication-watermark verifier.
@@ -588,4 +588,12 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - `run.sh smoke` passes through each server separately: 401 without a token, config, create a namespace on one server and read it on the other, create a table, load it with vended credentials, drop both.
     - A rolling restart under steady requests answered 550 of 550 with 200. With the preStop pause removed, 3 of 583 failed to connect, so the pause is what closes the gap.
   - Not checked: an Ingress, IRSA or Pod Identity on EKS, OpenShift, more than one node or zone, and resource sizes under load. Before production, the ETag finding from M8 needs deciding: behind the default non-sticky Service, a conditional load answered by another server is a 200, not a 304. The server still wires only the PostgreSQL-wire store.
+- **Multi-table transactions done 2026-11-12, on PostgreSQL** (D15, the first v1.x item; Paul: "We need to build support for Multi-table transactions"). `POST /v1/{prefix}/transactions/commit` is served and advertised.
+  - The route refuses more tables than `keel.rest.max-transaction-tables` (default 100, P10) and a table named twice (400), finds every table (404 if one is missing), and asks of each the right its table commit asks (WRITE for data only, else MODIFY).
+  - The commit engine applies every change with iceberg-core and judges every rule, then writes every metadata file, then swaps every pointer in one store transaction, in the fixed order `CommitBatch` already gave, with a journal entry and events per table. A failed requirement, a refused rule or a lost race leaves every table as it was. A lost swap is retried within P10's bound; an unknown outcome is settled as for one table; an Idempotency-Key replays the answer (204). No store changed: each already took several swaps in one transaction.
+  - Tests: `TransactionTest` 17 (the engine, with injected faults); `RestRoutesTest#transactionsCommitEveryTableOrNone`; `SecurityGateTest#aTransactionNeedsTheRightOnEveryTable`; the route in `MutatingRoutesAuditTest`; and the stock `RESTCatalog.commitTransaction` in `IcebergClientConfigTest`, which commits two tables and, when another writer moved one of them, changes neither.
+  - Fast build green after merging main: 1,067 tests in 114 classes, 0 failures. The first run failed at startup, before any request: the one Spring context that `ConfigRouteTest`, `ConsoleTest` and `SchemaAtStartupTest` share got no PostgreSQL connection for Flyway within 30 s (11 tests). The three classes passed alone and in the next full run.
+  - Bites: 5 recorded in `bites/D15/`, not run.
+  - Limits. A table whose part of the transaction changes nothing (requirements only, a read guard) is checked against the metadata read at the start of the attempt and is not swapped, so a commit to it can land between that check and the transaction's swap; holding it would need a check-only swap in all three stores. Readers get no view of the tables at one instant (D15). A staged create cannot join a transaction: a missing table is a 404.
+  - Not verified: CockroachDB, Oracle and MongoDB (the heavy build), and the bites.
 - **Next:** M9, carried to work.
