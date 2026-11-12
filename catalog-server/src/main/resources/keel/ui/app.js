@@ -135,7 +135,8 @@ function showWho() {
   const groups = Array.isArray(c.groups) ? c.groups : [];
   const expires = typeof c.exp === 'number' ? new Date(c.exp * 1000) : null;
   fill(who, h('span', {title: 'From the token, as the browser reads it; the server decides what it allows.'},
-    h('strong', null, c.sub || c.oid || c.preferred_username || 'signed in'),
+    // A person's name before an IdP's opaque ids: Keycloak's and Entra ID's sub are not meant to be read.
+    h('strong', null, c.preferred_username || c.sub || c.oid || 'signed in'),
     groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null,
     expires ? h('span', {class: 'muted'}, ' · until ' + expires.toLocaleString()) : null));
   signOutButton.hidden = false;

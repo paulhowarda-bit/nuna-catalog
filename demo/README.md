@@ -1,8 +1,9 @@
 # Local demo: the catalog, its console, SingleStore both ways, and the engine matrix, on Kubernetes
 
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
-catalog server (with the console) and SingleStore. `up` writes sample Iceberg tables, syncs SingleStore and
-Iceberg in both directions and prints sign-in tokens; `engines` runs Spark, Kafka Connect, PyIceberg and
+catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password. `up`
+writes sample Iceberg tables, syncs SingleStore and Iceberg in both directions and prints how to sign in;
+`engines` runs Spark, Kafka Connect, PyIceberg and
 SingleStore's ingest against the same stack. Everything is local and uses test keys; nothing here is fit for
 production.
 
@@ -25,41 +26,54 @@ demo/demo.sh up
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, and the job that makes the warehouse bucket.
   - The catalog: the Helm chart `deploy/helm/keel-catalog`, release `keel-catalog`, one server, image
     `keel-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
-    `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's issuer and
-    Silo).
+    `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
+    issuers, the console's sign-in, and Silo).
+  - `keycloak.yaml`: Keycloak in development mode, with realm `keel` (`keycloak-realm.json`): the people
+    below, their groups, and the console's client. Only the demo runs it; the engine matrix on its own does not.
   - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
-- Ports on localhost, from Docker Desktop's LoadBalancer Services: **8181** (catalog and console), **8182**
-  (kafbat) and **8183** (SingleStore Studio). `up` stops if something else holds one of them, such as a
-  `kubectl port-forward`.
-- Memory: about 5 GB of requests (SingleStore 2 GB, up to 3 GB; the catalog and kafbat 768 MB each; Kafka
-  640 MB; Silo 512 MB; PostgreSQL 384 MB), plus one job at a time: the lake writer 768 MB, or an engine up to
-  2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so nothing else of that size fits beside it.
+- Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
+  console), **8182** (kafbat) and **8183** (SingleStore Studio). `up` stops if something else holds one of
+  them, such as a `kubectl port-forward`.
+- Memory: about 5 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and kafbat
+  768 MB each; Kafka 640 MB; Keycloak and Silo 512 MB each; PostgreSQL 384 MB), plus one job at a time: the
+  lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so
+  nothing else of that size fits beside it.
 - No volumes: the data lives as long as the pods.
 
-At the end it prints the console URL, <http://localhost:8181/ui/>, and the tokens.
+At the end it prints the console URL, <http://localhost:8181/ui/>, the passwords and the tokens.
 
 ## Sign in
 
-The demo turns on the console's token box (`keel.ui.dev-token-login=true`, off by default). Paste a token:
+The console offers two ways in:
 
-| User | Group | What the catalog lets them do |
-|---|---|---|
-| `ana` | `demo-analysts` | select on the whole catalog: browse, load tables and views, read governance |
-| `gary` | `demo-grant-admins` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused |
-| `stella` | `demo-stewards` | manage-tags: classifications, owners, legal holds |
-| `oscar` | `demo-operators` | platform operator: DR freeze |
-| `singlestore` | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
-| `lake` | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
-| `engine-matrix` | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
+- **Sign in with localhost:8180**: Keycloak's login page, by username and password, standing in for a
+  directory (AD, Entra ID) until one is configured. The console signs in as it would with any IdP (OIDC
+  authorization code with PKCE, `keel.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
+  It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.
+- **The token box** (`keel.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
+  Machine users (`singlestore`, `lake`, `engine-matrix`) have tokens only.
+
+| User | Password | Group | What the catalog lets them do |
+|---|---|---|---|
+| `ana` | `ana-demo` | `demo-analysts` | select on the whole catalog: browse, load tables and views, read governance |
+| `gary` | `gary-demo` | `demo-grant-admins` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused |
+| `stella` | `stella-demo` | `demo-stewards` | manage-tags: classifications, owners, legal holds |
+| `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
+| `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
+| `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
+| `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 
 `ana` can also browse catalog `engines`, where the engine matrix's tables land.
 
 Separation of duties means no one group holds data rights and grant rights, so try the console as `ana` and as
-`gary`. Every refusal is the server's, shown as it answered.
+`gary`. Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but
+not Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
+sign out at <http://localhost:8180/realms/keel/account>, or use a private window. Keycloak's admin console is
+<http://localhost:8180/admin> (user `admin`, password `keel-test`); its users and sessions go with its pod.
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
 pipelines are then replaced so they carry the new one):
