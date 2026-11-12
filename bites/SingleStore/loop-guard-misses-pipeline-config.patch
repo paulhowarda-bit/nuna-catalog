@@ -1,0 +1,17 @@
+Breaks: the loop guard reads only CONFIG_JSON's top level, not the pipeline's CONFIG string inside it.
+Module: singlestore-change-feed
+Test: LoopGuardTest#findsTheTableInsideAnIcebergPipelinesConfig
+
+diff --git a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/LoopGuard.java b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/LoopGuard.java
+index 33f0764..5663ea9 100644
+--- a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/LoopGuard.java
++++ b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/LoopGuard.java
+@@ -60,7 +60,7 @@ final class LoopGuard {
+         if (node.isTextual()) {
+             String value = node.asText().strip();
+             // SingleStore keeps a pipeline's CONFIG as a JSON string inside CONFIG_JSON ("config": "{...}").
+-            if (value.startsWith("{")) {
++            if (false) {
+                 try {
+                     return names(JSON.readTree(value), table);
+                 } catch (IOException e) {

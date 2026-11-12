@@ -1,0 +1,17 @@
+Breaks: an update or delete never removes the key's rows from earlier commits.
+Module: singlestore-change-feed
+Test: IcebergCopyTest#theCopyEndsWithSingleStoresRows
+
+diff --git a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeBatch.java b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeBatch.java
+index f32193f..9c42dc7 100644
+--- a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeBatch.java
++++ b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeBatch.java
+@@ -76,7 +76,7 @@ final class ChangeBatch {
+             key.add(event.values()[position]);
+         }
+         Change earlier = changes.get(key);
+-        boolean replacesEarlier = earlier != null ? earlier.replacesEarlier() : event.type() != Type.INSERT;
++        boolean replacesEarlier = false;
+         changes.put(key, new Change(event.values(), event.type() == Type.DELETE, replacesEarlier));
+     }
+ 
