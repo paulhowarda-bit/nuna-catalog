@@ -4,7 +4,7 @@ image:
   tag: demo
 
 config:
-  fidice:
+  keel:
     storage:
       require-tls: false
       profiles:
@@ -14,12 +14,12 @@ config:
           region: us-east-1
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
-          access-key-id: fidicetest
+          access-key-id: keeltest
     security:
       issuers:
-        - issuer: https://idp.demo/fidice
+        - issuer: https://idp.demo/keel
           jwks-uri: http://idp:8080/keys.json
-          audiences: [fidice-catalog]
+          audiences: [keel-catalog]
           algorithms: [RS256]
           user-id-claim: sub
           groups-claim: groups
@@ -27,4 +27,4 @@ config:
 
 secrets:
   values:
-    fidice.storage.profiles.s3.secret-access-key: fidicetest-secret-key
+    keel.storage.profiles.s3.secret-access-key: keeltest-secret-key

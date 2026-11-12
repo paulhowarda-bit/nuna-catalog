@@ -12,11 +12,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: lake
-          image: fidice-demo-lake:local
+          image: keel-demo-lake:local
           imagePullPolicy: Never
           args: ["${MODE}"]
           env:
-            - name: FIDICE_TOKEN
+            - name: KEEL_TOKEN
               valueFrom:
                 secretKeyRef: {name: demo-lake-token, key: token}
           resources:

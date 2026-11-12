@@ -1,9 +1,10 @@
-# The chart on a local cluster, against deploy/local/backing.yaml. The settings are demo/demo.properties':
-# http storage, a test issuer, the console's token box on. Never use these values anywhere else.
+# The chart on a local cluster, against deploy/local/backing.yaml. The settings follow the demo's
+# (demo/k8s/demo-values.yaml): http storage, a test issuer, the console's token box on. Never use these values
+# anywhere else.
 replicaCount: 2
 
 image:
-  repository: fidice-catalog
+  repository: keel-catalog
   tag: local
   # Docker Desktop's cluster runs images straight from the local Docker engine.
   pullPolicy: Never
@@ -20,7 +21,7 @@ config:
     datasource:
       url: jdbc:postgresql://postgres:5432/catalog
       username: catalog
-  fidice:
+  keel:
     storage:
       require-tls: false
       profiles:
@@ -30,7 +31,7 @@ config:
           region: us-east-1
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
-          access-key-id: fidicedemo
+          access-key-id: keeldemo
       catalogs:
         lakehouse:
           profile: silo
@@ -38,9 +39,9 @@ config:
           legal-entity: Demo Entity
     security:
       issuers:
-        - issuer: https://idp.demo/fidice
+        - issuer: https://idp.demo/keel
           jwks-uri: http://silo:9000/idp/keys.json
-          audiences: [fidice-catalog]
+          audiences: [keel-catalog]
           algorithms: [RS256]
           user-id-claim: sub
           groups-claim: groups
@@ -55,4 +56,4 @@ config:
 secrets:
   values:
     spring.datasource.password: catalog
-    fidice.storage.profiles.silo.secret-access-key: fidicedemo-secret-key
+    keel.storage.profiles.silo.secret-access-key: keeldemo-secret-key

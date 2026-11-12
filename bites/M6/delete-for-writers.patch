@@ -2,10 +2,10 @@ Breaks: every writer may delete, not only maintenance principals.
 Module: catalog-objectstore
 Test: VendingTest#noDeleteWithoutMaintenance
 
-diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/Access.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/Access.java
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java
 index 4bfa6d0..528a051 100644
---- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/Access.java
-+++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/Access.java
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java
 @@ -8,7 +8,8 @@ import java.util.List;
   */
  public enum Access {

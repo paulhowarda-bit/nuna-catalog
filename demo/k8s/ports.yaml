@@ -7,8 +7,8 @@ metadata:
 spec:
   type: LoadBalancer
   selector:
-    app.kubernetes.io/name: fidice-catalog
-    app.kubernetes.io/instance: fidice-catalog
+    app.kubernetes.io/name: keel-catalog
+    app.kubernetes.io/instance: keel-catalog
   ports:
     - port: 8181
       targetPort: 8181

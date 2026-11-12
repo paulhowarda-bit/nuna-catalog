@@ -23,7 +23,7 @@ spec:
           image: ${SINGLESTORE_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: ROOT_PASSWORD, value: fidice-test}
+            - {name: ROOT_PASSWORD, value: keel-test}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES, value: "1"}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST, value: "1"}
           ports:

@@ -3,15 +3,15 @@
 -- v1/v2 only (F9); the v3 tables, one with a deletion vector, show what 10.9.0 actually does.
 -- The database stays from run to run: in the demo's SingleStore, DROP DATABASE waits for as long as the change
 -- feed's pipeline (ops.orders_to_lake) runs. Emptying the tables and remaking the pipelines does not wait.
-CREATE DATABASE IF NOT EXISTS fidice_m8;
-USE fidice_m8;
+CREATE DATABASE IF NOT EXISTS keel_m8;
+USE keel_m8;
 
 CREATE TABLE IF NOT EXISTS spark_v2 (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v2;
 DROP PIPELINE IF EXISTS spark_v2_pipe;
 CREATE PIPELINE spark_v2_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://fidice-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v2", "catalog.token": "${FIDICE_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v2", "catalog.token": "${KEEL_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -24,8 +24,8 @@ CREATE TABLE IF NOT EXISTS spark_v3 (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v3;
 DROP PIPELINE IF EXISTS spark_v3_pipe;
 CREATE PIPELINE spark_v3_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://fidice-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v3", "catalog.token": "${FIDICE_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3", "catalog.token": "${KEEL_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS spark_v3_dv (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v3_dv;
 DROP PIPELINE IF EXISTS spark_v3_dv_pipe;
 CREATE PIPELINE spark_v3_dv_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://fidice-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${FIDICE_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${KEEL_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'

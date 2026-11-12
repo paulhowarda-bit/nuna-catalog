@@ -1,0 +1,72 @@
+package keel.catalog.store.mongo;
+
+import static keel.catalog.store.mongo.Docs.byId;
+import static keel.catalog.store.mongo.Docs.in;
+import static keel.catalog.store.mongo.Docs.uuid;
+import static keel.catalog.store.mongo.MongoCatalogStore.CATALOG;
+import static keel.catalog.store.mongo.MongoCatalogStore.HOLD;
+import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
+import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
+
+import keel.catalog.store.CatalogObject;
+import keel.catalog.store.Securable;
+import keel.catalog.store.WriteResult;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import org.bson.BsonDocument;
+import org.bson.BsonString;
+import org.bson.BsonValue;
+
+/** Checks shared by the operation groups: securables that must exist, and legal holds. */
+final class Guards {
+
+    private Guards() {
+    }
+
+    static String collection(Securable.Kind kind) {
+        return switch (kind) {
+            case CATALOG -> CATALOG;
+            case NAMESPACE -> NAMESPACE;
+            case TABLE, VIEW -> OBJECT;
+        };
+    }
+
+    /** The document of a securable that exists: a catalog, a namespace, or a table or view not purged. */
+    static Optional<BsonDocument> live(Tx tx, Securable securable) {
+        BsonDocument filter = byId(uuid(securable.id()));
+        if (securable.kind() == Securable.Kind.TABLE || securable.kind() == Securable.Kind.VIEW) {
+            filter.append("kind", new BsonString(securable.kind().name()))
+                    .append("state", in(List.of(new BsonString(CatalogObject.State.ACTIVE.name()),
+                            new BsonString(CatalogObject.State.DROPPED.name()))));
+        }
+        return tx.find(collection(securable.kind()), filter);
+    }
+
+    /** The document of the record {@code target} names, in whatever state, to mark it. */
+    static Optional<BsonDocument> record(Tx tx, Securable target) {
+        return tx.find(collection(target.kind()), byId(uuid(target.id())));
+    }
+
+    static UUID catalogOf(Securable securable, BsonDocument doc) {
+        return securable.kind() == Securable.Kind.CATALOG ? securable.id() : uuid(doc.get("catalogId"));
+    }
+
+    static WriteResult missing(Securable securable) {
+        return new WriteResult.Missing(switch (securable.kind()) {
+            case CATALOG -> WriteResult.Subject.CATALOG;
+            case NAMESPACE -> WriteResult.Subject.NAMESPACE;
+            case TABLE, VIEW -> WriteResult.Subject.OBJECT;
+        });
+    }
+
+    /** Whether a legal hold sits on the record, on any namespace above it, or on its catalog. */
+    static boolean held(Tx tx, UUID id, UUID catalogId, List<UUID> path) {
+        List<BsonValue> targets = new ArrayList<>();
+        path.forEach(namespace -> targets.add(uuid(namespace)));
+        targets.add(uuid(id));
+        targets.add(uuid(catalogId));
+        return tx.exists(HOLD, new BsonDocument("targetId", in(targets)));
+    }
+}

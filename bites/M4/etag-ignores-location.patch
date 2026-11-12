@@ -2,10 +2,10 @@ Breaks: the table ETag leaves out the metadata location, so a commit does not ch
 Module: catalog-server
 Test: RestRoutesTest#tableLoadsAnswer304WhileThePointerHolds
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java b/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java b/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
 index 7a289c4..308a1b3 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/rest/ETags.java
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
 @@ -16,7 +16,7 @@ final class ETags {
      }
  

@@ -2,10 +2,10 @@ Breaks: D27 off: unclassified tables in regulated namespaces open like any other
 Module: catalog-security
 Test: AuthorizerTest#anUnclassifiedTableInARegulatedNamespaceIsClosedButStillVisible
 
-diff --git a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
+diff --git a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
 index 38ae889..488c437 100644
---- a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
-+++ b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
+--- a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
 @@ -199,7 +199,7 @@ public final class Authorizer {
          boolean regulated = attributes.stream().anyMatch(a -> chain.contains(a.target())
                  && a.kind() == GovernanceAttribute.Kind.REGULATED && "true".equalsIgnoreCase(a.value()));

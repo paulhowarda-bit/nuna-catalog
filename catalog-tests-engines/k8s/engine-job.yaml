@@ -16,7 +16,7 @@ spec:
           imagePullPolicy: Never
           command: ${COMMAND}
           env:
-            - name: FIDICE_TOKEN
+            - name: KEEL_TOKEN
               valueFrom:
                 secretKeyRef: {name: engine-token, key: token}
           resources:

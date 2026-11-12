@@ -56,9 +56,9 @@ iceberg.tables.evolve-schema-enabled=true
 iceberg.control.topic=m8-kafka-control
 iceberg.control.commit.interval-ms=2000
 iceberg.catalog.type=rest
-iceberg.catalog.uri=http://fidice-catalog:8181
+iceberg.catalog.uri=http://keel-catalog:8181
 iceberg.catalog.warehouse=engines
-iceberg.catalog.token=${FIDICE_TOKEN}
+iceberg.catalog.token=${KEEL_TOKEN}
 iceberg.catalog.header.X-Iceberg-Access-Delegation=vended-credentials
 iceberg.catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
 PROPS

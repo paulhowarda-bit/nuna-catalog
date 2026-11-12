@@ -17,8 +17,8 @@ spec:
           imagePullPolicy: Never
           args: ["server", "/data"]
           env:
-            - {name: MINIO_ROOT_USER, value: fidicetest}
-            - {name: MINIO_ROOT_PASSWORD, value: fidicetest-secret-key}
+            - {name: MINIO_ROOT_USER, value: keeltest}
+            - {name: MINIO_ROOT_PASSWORD, value: keeltest-secret-key}
           ports:
             - containerPort: 9000
           readinessProbe:

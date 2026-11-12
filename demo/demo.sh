@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The local demo of fidice-catalog, on Docker Desktop's Kubernetes: the stack it shares with the engine matrix
+# The local demo of keel-catalog, on Docker Desktop's Kubernetes: the stack it shares with the engine matrix
 # (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
 #
 #   demo/demo.sh up       build the jars and images, start the stack, load sample data once, print tokens
@@ -11,23 +11,23 @@
 #   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key and tokens)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, and JDK 25
-# (JAVA_HOME or java on PATH). kubectl and helm always use FIDICE_DEMO_CONTEXT (default docker-desktop), never
-# the current context, and the stack is namespace FIDICE_DEMO_NAMESPACE (default fidice-demo). Docker
+# (JAVA_HOME or java on PATH). kubectl and helm always use KEEL_DEMO_CONTEXT (default docker-desktop), never
+# the current context, and the stack is namespace KEEL_DEMO_NAMESPACE (default keel-demo). Docker
 # Desktop's cluster runs images from the local Docker engine and serves LoadBalancer Services on localhost.
-# The signing key and tokens are kept in FIDICE_DEMO_HOME (default ~/.fidice-demo).
+# The signing key and tokens are kept in KEEL_DEMO_HOME (default ~/.keel-demo).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN="${FIDICE_DEMO_HOME:-$HOME/.fidice-demo}"
-CONTEXT="${FIDICE_DEMO_CONTEXT:-docker-desktop}"
-NS="${FIDICE_DEMO_NAMESPACE:-fidice-demo}"
+RUN="${KEEL_DEMO_HOME:-$HOME/.keel-demo}"
+CONTEXT="${KEEL_DEMO_CONTEXT:-docker-desktop}"
+NS="${KEEL_DEMO_NAMESPACE:-keel-demo}"
 STACK="$REPO/demo/k8s"
-RELEASE=fidice-catalog
+RELEASE=keel-catalog
 URL=http://localhost:8181
 CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # SingleStore's root password, as demo/k8s/singlestore.yaml sets it. Local only.
-S2_ROOT_PASSWORD=fidice-test
+S2_ROOT_PASSWORD=keel-test
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
 
@@ -86,7 +86,7 @@ image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -
 build() {
   say "building the catalog server and change-feed connector jars (no tests run)"
   (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :singlestore-change-feed:connectorJar)
-  local jar="$REPO/singlestore-change-feed/build/libs/fidice-changefeed-connector.jar"
+  local jar="$REPO/singlestore-change-feed/build/libs/keel-changefeed-connector.jar"
   rm -rf "$RUN/images"
   mkdir -p "$RUN/images/singlestore" "$RUN/images/lake/lib"
   cp "$jar" "$RUN/images/singlestore/"
@@ -94,10 +94,10 @@ build() {
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
 
   say "building the images: the catalog, SingleStore with the connector, the lake writer"
-  docker build -q -f "$REPO/deploy/image/Dockerfile" -t fidice-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
-  SINGLESTORE_IMAGE="fidice-demo-singlestore:$(sha256sum "$jar" | cut -c1-12)"
+  docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
+  SINGLESTORE_IMAGE="keel-demo-singlestore:$(sha256sum "$jar" | cut -c1-12)"
   docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
-  docker build -q -f "$STACK/lake.Dockerfile" -t fidice-demo-lake:local "$RUN/images/lake" >/dev/null
+  docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
@@ -296,12 +296,12 @@ up() {
   apply seed.yaml
   k wait --for=condition=complete --timeout=3m job/seed >/dev/null
 
-  say "installing the catalog (chart deploy/helm/fidice-catalog) and publishing it on $URL"
+  say "installing the catalog (chart deploy/helm/keel-catalog) and publishing it on $URL"
   # The image's id as a pod annotation: a rebuilt image under the same tag rolls the server, an unchanged
   # one does not.
-  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/fidice-catalog" \
+  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/keel-catalog" \
     -f "$STACK/catalog-values.yaml" -f "$STACK/demo-values.yaml" \
-    --set-string "podAnnotations.fidice-demo/image=$(image_id fidice-catalog:demo)" --wait --timeout 10m >/dev/null
+    --set-string "podAnnotations.keel-demo/image=$(image_id keel-catalog:demo)" --wait --timeout 10m >/dev/null
   apply ports.yaml
   wait_for_console
   grants

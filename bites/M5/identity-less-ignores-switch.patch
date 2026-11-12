@@ -2,10 +2,10 @@ Breaks: D17's refusal applies with the switch off.
 Module: catalog-security
 Test: AuthorizerTest#theIdentityLessWriteSwitchIsOffUntilTurnedOn
 
-diff --git a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
+diff --git a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
 index 7eb5785..b2ad3a7 100644
---- a/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
-+++ b/catalog-security/src/main/java/fidice/catalog/security/Authorizer.java
+--- a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
 @@ -210,7 +210,7 @@ public final class Authorizer {
              return new Decision.Denied(Reason.FLAGGED_TABLE, null, "table " + object.name().display()
                      + " has a row/column policy; only a trusted engine that enforces it gets storage access");

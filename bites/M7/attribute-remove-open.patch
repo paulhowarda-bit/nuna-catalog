@@ -2,10 +2,10 @@ Breaks: anyone signed in may remove a governance attribute, without manage-tags.
 Module: catalog-server
 Test: ManagementAuthorizationTest#removingAnAttributeNeedsManageTags
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
 index 501b568..b64499a 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
 @@ -142,7 +142,6 @@ class GovernanceRoutes {
          GovernanceAttribute.Kind kind = pushed(attribute);
          Target target = management.target(prefix, namespace, table, view);

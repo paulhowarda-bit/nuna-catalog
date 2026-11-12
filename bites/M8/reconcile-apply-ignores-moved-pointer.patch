@@ -2,10 +2,10 @@ Breaks: the apply swaps against whatever the pointer is now, not the pointer it 
 Module: catalog-core
 Test: ReconcileTest#aPointerThatMovedSincePlanningStopsTheApply
 
-diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
 index 2771cfa..ef5bdab 100644
---- a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
-+++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
 @@ -173,7 +173,7 @@ public final class Reconcile {
              List<OutboxEvent> outbox = events.of(new CommitEvents.Commit(commitId, at, caller, table,
                      Optional.of(before), next, "[]", updates, false));

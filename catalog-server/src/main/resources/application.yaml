@@ -1,7 +1,7 @@
 # Database connection comes from the environment (SPRING_DATASOURCE_URL, _USERNAME, _PASSWORD).
 spring:
   application:
-    name: fidice-catalog
+    name: keel-catalog
   threads:
     virtual:
       enabled: true

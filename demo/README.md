@@ -17,21 +17,21 @@ demo/demo.sh up
   connector jar from this checkout (no tests run) and the images below, so the stack never runs code older
   than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
   runs them from the local Docker engine, and `up` pulls the public ones there.
-- Everything runs in namespace `fidice-demo` (`FIDICE_DEMO_NAMESPACE`) of context `docker-desktop`
-  (`FIDICE_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
+- Everything runs in namespace `keel-demo` (`KEEL_DEMO_NAMESPACE`) of context `docker-desktop`
+  (`KEEL_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
   - `stack.yaml`: PostgreSQL, Kafka, kafbat, and `idp`, which serves the demo issuer's keys
     (`demo/Mint.java`).
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, and the job that makes the warehouse bucket.
-  - The catalog: the Helm chart `deploy/helm/fidice-catalog`, release `fidice-catalog`, one server, image
-    `fidice-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
+  - The catalog: the Helm chart `deploy/helm/keel-catalog`, release `keel-catalog`, one server, image
+    `keel-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's issuer and
     Silo).
-  - `singlestore.yaml`: image `fidice-demo-singlestore:<connector hash>`, the dev image with the change-feed
+  - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
   - `ports.yaml`: the ports below.
-  - The lake writer runs as a job when needed (`lake-job.yaml`, image `fidice-demo-lake:local`).
+  - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8181** (catalog and console), **8182**
   (kafbat) and **8183** (SingleStore Studio). `up` stops if something else holds one of them, such as a
   `kubectl port-forward`.
@@ -44,7 +44,7 @@ At the end it prints the console URL, <http://localhost:8181/ui/>, and the token
 
 ## Sign in
 
-The demo turns on the console's token box (`fidice.ui.dev-token-login=true`, off by default). Paste a token:
+The demo turns on the console's token box (`keel.ui.dev-token-login=true`, off by default). Paste a token:
 
 | User | Group | What the catalog lets them do |
 |---|---|---|
@@ -68,10 +68,10 @@ pipelines are then replaced so they carry the new one):
 demo/demo.sh token
 ```
 
-Tokens are in `~/.fidice-demo/tokens/<user>.jwt`. A curl call as a user:
+Tokens are in `~/.keel-demo/tokens/<user>.jwt`. A curl call as a user:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.fidice-demo/tokens/ana.jwt)" "http://localhost:8181/v1/lakehouse/namespaces"
+curl -H "Authorization: Bearer $(cat ~/.keel-demo/tokens/ana.jwt)" "http://localhost:8181/v1/lakehouse/namespaces"
 ```
 
 ## What is loaded
@@ -97,13 +97,13 @@ Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the co
 demo/demo.sh sql
 ```
 
-Or Studio on <http://localhost:8183> (user `root`, password `fidice-test`). Two databases, and a third once
+Or Studio on <http://localhost:8183> (user `root`, password `keel-test`). Two databases, and a third once
 the engines have run:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
   view `xetra_daily`.
-- `fidice_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
+- `keel_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
 
 ### SingleStore to Iceberg: the change feed
 
@@ -159,7 +159,7 @@ runs the engine matrix (`catalog-tests-engines`, `EngineMatrixTest`) against thi
 own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's ingest in the demo's SingleStore,
 all into catalog `engines` as `engine-matrix`. It takes about 4 minutes once the engine images exist; the first
 run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
-shows, and SingleStore's copies in database `fidice_m8`.
+shows, and SingleStore's copies in database `keel_m8`.
 Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
 
 ## Kafka
@@ -173,7 +173,7 @@ engines have run, Kafka Connect's source topic `m8-kafka-events` and the sink's 
 demo/demo.sh down
 ```
 
-This deletes the namespace and everything in it. The signing key and tokens stay in `~/.fidice-demo`; the
+This deletes the namespace and everything in it. The signing key and tokens stay in `~/.keel-demo`; the
 next `up` loads the sample data again.
 
 ```bash

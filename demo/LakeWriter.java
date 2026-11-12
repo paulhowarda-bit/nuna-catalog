@@ -33,7 +33,7 @@ import org.apache.iceberg.types.Types;
 /**
  * Another engine writing Iceberg, for the demo: the tables SingleStore's Iceberg pipelines load, written through the
  * catalog with the Iceberg Java library and vended credentials. Run by demo.sh in the {@code lake} container, with
- * the catalog token in FIDICE_TOKEN.
+ * the catalog token in KEEL_TOKEN.
  *
  * <pre>
  * LakeWriter seed   the sample tables, each with a history: appends, added columns, a row deleted, a changed
@@ -52,9 +52,9 @@ public class LakeWriter {
     public static void main(String[] args) throws Exception {
         try (RESTCatalog catalog = new RESTCatalog()) {
             catalog.initialize("lake", Map.of(
-                    "uri", "http://fidice-catalog:8181",
+                    "uri", "http://keel-catalog:8181",
                     "warehouse", "lakehouse",
-                    "token", System.getenv("FIDICE_TOKEN"),
+                    "token", System.getenv("KEEL_TOKEN"),
                     "header.X-Iceberg-Access-Delegation", "vended-credentials"));
             switch (args.length == 0 ? "" : args[0]) {
                 case "seed" -> seed(catalog);

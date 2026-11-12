@@ -2,10 +2,10 @@ Breaks: a COMMIT that fails is reported as a clean failure instead of an unknown
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest#lostResponseResolvesToCommitted
 
-diff --git a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Transactions.java b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Transactions.java
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Transactions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Transactions.java
 index 1aed9da..db894d1 100644
---- a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Transactions.java
-+++ b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Transactions.java
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Transactions.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Transactions.java
 @@ -120,7 +120,7 @@ final class Transactions {
                  try {
                      commitChecked(connection, backend);
