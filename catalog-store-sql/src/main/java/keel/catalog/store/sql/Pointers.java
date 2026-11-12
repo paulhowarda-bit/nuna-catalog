@@ -6,7 +6,9 @@ import static keel.catalog.store.sql.Jdbc.utc;
 import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerHold;
 import keel.catalog.store.PointerKey;
+import keel.catalog.store.PointerLock;
 import keel.catalog.store.PointerSwap;
 import java.io.ByteArrayOutputStream;
 import java.sql.Connection;
@@ -71,30 +73,33 @@ final class Pointers {
     }
 
     /**
-     * A create inserts its row here: the unique key is its lock, and a concurrent creator waits on
-     * it. An update locks the row alone, then reads the whole pointer only to report a conflict:
-     * a locking read that joins the pieces could see pieces of an older snapshot.
+     * Swapped and held pointers are locked together in key order. A create inserts its row here: the
+     * unique key is its lock, and a concurrent creator waits on it. An update or a hold locks the row
+     * alone, then reads the whole pointer only to report a conflict: a locking read that joins the
+     * pieces could see pieces of an older snapshot.
      */
     private static Optional<CommitResult.Conflict> lockAndCompare(Connection connection, CommitBatch batch)
             throws SQLException {
-        for (PointerSwap swap : batch.swaps()) {
-            if (swap.expected().isEmpty()) {
-                if (insert(connection, swap, batch)) {
-                    continue;
-                }
-            } else {
-                Pointer expected = swap.expected().get();
-                Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
-                                + " WHERE object_id = ? AND branch = ? FOR UPDATE",
-                        row -> new Locked(row.getLong(1), row.getString(2)), swap.key().objectId(), swap.key().branch());
-                if (locked.isPresent() && locked.get().version() == expected.version()
-                        && locked.get().location().equals(expected.metadataLocation())) {
-                    continue;
-                }
+        for (PointerLock lock : batch.locks()) {
+            boolean matched = switch (lock) {
+                case PointerSwap swap when swap.expected().isEmpty() -> insert(connection, swap, batch);
+                case PointerSwap swap -> lockedAt(connection, swap.key(), swap.expected().get());
+                case PointerHold hold -> lockedAt(connection, hold.key(), hold.expected());
+            };
+            if (!matched) {
+                return Optional.of(new CommitResult.Conflict(lock.key(), read(connection, lock.key())));
             }
-            return Optional.of(new CommitResult.Conflict(swap.key(), read(connection, swap.key())));
         }
         return Optional.empty();
+    }
+
+    /** Locks the pointer row until the transaction ends, and says whether it is {@code expected}. */
+    private static boolean lockedAt(Connection connection, PointerKey key, Pointer expected) throws SQLException {
+        Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
+                        + " WHERE object_id = ? AND branch = ? FOR UPDATE",
+                row -> new Locked(row.getLong(1), row.getString(2)), key.objectId(), key.branch());
+        return locked.isPresent() && locked.get().version() == expected.version()
+                && locked.get().location().equals(expected.metadataLocation());
     }
 
     private record Locked(long version, String location) {

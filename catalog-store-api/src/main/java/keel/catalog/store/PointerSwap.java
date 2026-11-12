@@ -7,7 +7,8 @@ import java.util.Optional;
  * Compare-and-swap of one pointer. {@code expected} empty means create. The swap succeeds only
  * if the stored pointer equals {@code expected} on both location and version.
  */
-public record PointerSwap(PointerKey key, Optional<Pointer> expected, Pointer next, JournalEntry journal) {
+public record PointerSwap(PointerKey key, Optional<Pointer> expected, Pointer next, JournalEntry journal)
+        implements PointerLock {
 
     public PointerSwap {
         Objects.requireNonNull(key, "key");

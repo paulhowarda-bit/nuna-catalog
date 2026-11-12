@@ -79,7 +79,32 @@ class ValueTypesTest {
                 .isInstanceOf(IllegalArgumentException.class);
         List<PointerSwap> twice = List.of(swap(key, Optional.empty(), pointer("a", 1)), swap(key, Optional.empty(), pointer("b", 1)));
         assertThatThrownBy(() -> new CommitBatch(UUID.randomUUID(), Instant.now(), twice, List.of(), Optional.empty()))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("swapped twice");
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("in the batch twice");
+    }
+
+    @Test
+    void batchLocksSwapsAndHoldsInOneKeyOrder() {
+        List<PointerSwap> swaps = Stream.generate(() -> swap(newKey(), Optional.empty(), pointer("a", 1))).limit(20).toList();
+        List<PointerHold> holds = Stream.generate(() -> new PointerHold(newKey(), pointer("b", 3))).limit(20).toList();
+
+        CommitBatch batch = new CommitBatch(UUID.randomUUID(), Instant.now(), swaps, holds, List.of(), Optional.empty());
+
+        assertThat(batch.holds()).extracting(PointerHold::key).isSorted().hasSize(20);
+        assertThat(batch.locks()).extracting(PointerLock::key).isSorted().hasSize(40);
+        assertThat(batch.locks()).containsAll(swaps).containsAll(holds);
+    }
+
+    @Test
+    void batchRejectsAPointerBothSwappedAndHeld() {
+        PointerKey key = newKey();
+        List<PointerSwap> swaps = List.of(swap(key, Optional.of(pointer("a", 1)), pointer("b", 2)));
+        List<PointerHold> held = List.of(new PointerHold(key, pointer("a", 1)));
+        assertThatThrownBy(() -> new CommitBatch(UUID.randomUUID(), Instant.now(), swaps, held, List.of(), Optional.empty()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("in the batch twice");
+        PointerKey other = newKey();
+        List<PointerHold> heldTwice = List.of(new PointerHold(other, pointer("a", 1)), new PointerHold(other, pointer("a", 1)));
+        assertThatThrownBy(() -> new CommitBatch(UUID.randomUUID(), Instant.now(), swaps, heldTwice, List.of(), Optional.empty()))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("in the batch twice");
     }
 
     @Test

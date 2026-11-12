@@ -22,6 +22,8 @@ import keel.catalog.store.CommitOutcomeUnknownException;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.JournalRecord;
+import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerHold;
 import keel.catalog.store.StoreException;
 import java.util.Arrays;
 import java.util.List;
@@ -180,13 +182,16 @@ class TransactionTest {
         }
 
         @Test
-        @DisplayName("a table whose change changes nothing is left alone, and the others commit")
+        @DisplayName("a table whose change changes nothing is held at the pointer it was checked against, not written, and the others commit")
         void someChange() {
             h.createTable("Orders");
             h.createTable("Lines");
+            Pointer orders = h.pointer("Orders");
             h.faults.once("commit", (args, proceed) -> {
-                assertThat(((CommitBatch) args[0]).swaps()).singleElement()
+                CommitBatch batch = (CommitBatch) args[0];
+                assertThat(batch.swaps()).singleElement()
                         .satisfies(s -> assertThat(s.key()).isEqualTo(h.object("Lines").mainKey()));
+                assertThat(batch.holds()).containsExactly(new PointerHold(h.object("Orders").mainKey(), orders));
                 return proceed.call();
             });
 
@@ -252,6 +257,60 @@ class TransactionTest {
             assertThat(h.faults.calls("commit")).isEqualTo(1);
             assertThat(h.pointer("Orders").version()).isEqualTo(1);
             assertThat(h.pointer("Lines").version()).isEqualTo(2);
+        }
+
+        /**
+         * The write-skew race: the guard's requirement held when the attempt read it, and the guarded table
+         * moves before the store commit. Held, the guard makes the store refuse the batch; the retry finds
+         * the requirement false.
+         */
+        @Test
+        @DisplayName("a read guard whose table moves before the swap is not passed: the retry finds the requirement false, 409, and no table changes")
+        void guardMovedBeforeTheSwap() {
+            h.createTable("Orders");
+            h.createTable("Lines", Map.of("format-version", "2"));
+            long now = h.clock.millis();
+            h.faults.once("commit", (args, proceed) -> {
+                assertThat(h.engine(h.faults.real).commitTable(h.name("Lines"),
+                        update(assertMain(null), addSnapshot(7, null, 1, now), setMain(7)), BOB, Optional.empty()))
+                        .isInstanceOf(Success.class);
+                return proceed.call();
+            });
+
+            CommitReply reply = transact(change("Orders", set("Orders", "a", "1")), change("Lines", update(assertMain(null))));
+
+            assertThat(reply).isInstanceOfSatisfying(Failure.class, f -> {
+                assertThat(f.status()).isEqualTo(409);
+                assertThat(f.type()).isEqualTo("CommitFailedException");
+                assertThat(f.message()).startsWith("Lines: ");
+            });
+            assertThat(h.faults.calls("commit")).isEqualTo(1);
+            assertThat(h.waits).hasSize(1);
+            assertThat(h.pointer("Orders").version()).isEqualTo(1);
+            assertThat(h.journal("Orders")).hasSize(1);
+            assertThat(h.pointer("Lines").version()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("a read guard whose table moves in a way its requirement allows is retried, and the transaction commits")
+        void guardMovedWithinItsRequirement() {
+            h.createTable("Orders");
+            h.createTable("Lines", Map.of("format-version", "2"));
+            h.faults.once("commit", (args, proceed) -> {
+                assertThat(h.engine(h.faults.real).commitTable(h.name("Lines"), set("Lines", "b", "2"), BOB,
+                        Optional.empty())).isInstanceOf(Success.class);
+                return proceed.call();
+            });
+
+            assertThat(transact(change("Orders", set("Orders", "a", "1")), change("Lines", update(assertMain(null)))))
+                    .isEqualTo(new Applied(How.COMMITTED));
+
+            assertThat(h.faults.calls("commit")).isEqualTo(2);
+            assertThat(h.waits).hasSize(1);
+            assertThat(h.pointer("Orders").version()).isEqualTo(2);
+            assertThat(h.journal("Orders")).hasSize(2);
+            assertThat(h.pointer("Lines").version()).isEqualTo(2);
+            assertThat(h.journal("Lines")).hasSize(2);
         }
 
         @Test
