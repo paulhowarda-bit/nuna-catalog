@@ -1,6 +1,6 @@
 apiVersion: v2
 name: fidice-catalog
-description: The fidice Iceberg REST catalog server.
+description: The fidice Iceberg REST catalog server. Runs the stateless servers only; the database, Kafka, object stores and identity provider are run elsewhere and named in the values.
 type: application
 version: 0.1.0
-appVersion: "0.1.0-SNAPSHOT"
+appVersion: 0.1.0-SNAPSHOT

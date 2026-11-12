@@ -58,7 +58,7 @@ class PublicSignatureTest {
 
     /** The classes compiled from src/main, loaded without initializing them. */
     private static List<Class<?>> mainClasses() throws IOException, ClassNotFoundException {
-        Path root = Path.of(System.getProperty("basedir", "."), "target", "classes");
+        Path root = Path.of(System.getProperty("basedir", "."), "build", "classes", "java", "main");
         List<Class<?>> classes = new ArrayList<>();
         try (Stream<Path> files = Files.walk(root)) {
             for (Path file : files.filter(f -> f.toString().endsWith(".class")).toList()) {

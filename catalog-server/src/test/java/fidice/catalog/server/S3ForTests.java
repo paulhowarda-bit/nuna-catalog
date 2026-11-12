@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 
 /**
- * The run's S3 store ({@link TestS3}, chosen by {@code -Ds3}) for server tests: storage profile
+ * The run's S3 store ({@link TestS3}, chosen by {@code -Ps3}) for server tests: storage profile
  * {@value #PROFILE}, with tables under {@code s3://<bucket()>/tables}, and the catalog {@code trading} on it.
  */
 @TestConfiguration(proxyBeanMethods = false)

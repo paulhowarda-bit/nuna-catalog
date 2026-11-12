@@ -18,7 +18,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  * A table with more than ten thousand snapshots (M8): it commits, loads in full and by refs, answers 304 to a
  * client that has it, and its history is whole. The latencies are recorded as the table grows.
  */
-@Tag("heavy")
+@Tag("overnight")
 class TenThousandSnapshotsTest {
 
     private static final int COMMITS = 101;

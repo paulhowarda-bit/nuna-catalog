@@ -1,4 +1,4 @@
-# -Ds3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000).
+# -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000).
 apiVersion: apps/v1
 kind: Deployment
 metadata:

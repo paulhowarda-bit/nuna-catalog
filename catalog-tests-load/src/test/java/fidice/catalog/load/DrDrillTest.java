@@ -29,7 +29,7 @@ import tools.jackson.databind.JsonNode;
  * writers were told committed, lift the freeze, register the table the DR database never heard of. Every
  * acknowledged commit is then in its table's history, and commits resume.
  */
-@Tag("heavy")
+@Tag("overnight")
 class DrDrillTest {
 
     private static final List<String> NAMESPACE = List.of("dr", "drill", "tables");

@@ -13,6 +13,7 @@ import fidice.catalog.security.TrustedEngine;
 import fidice.catalog.server.rest.AuditPublisher;
 import fidice.catalog.server.rest.RestSettings;
 import fidice.catalog.server.StoreOutage;
+import fidice.catalog.server.ui.UiWiring;
 import fidice.catalog.store.GovernanceStore;
 import fidice.catalog.store.StoreException;
 import fidice.catalog.store.StoreUnavailableException;
@@ -71,8 +72,9 @@ final class Authentication extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        // The fixed OAuth error names the IdP for clients that have no token yet (D13).
-        return path.equals("/v1/oauth/tokens");
+        // The fixed OAuth error names the IdP for clients that have no token yet (D13). The console's own files
+        // are what a browser loads before it can sign in; the API calls they make carry a token.
+        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path);
     }
 
     @Override

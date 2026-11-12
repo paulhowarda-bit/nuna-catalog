@@ -22,7 +22,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * One catalog server on PostgreSQL and the run's S3 store ({@link TestS3}, chosen by {@code -Ds3}) for the whole
+ * One catalog server on PostgreSQL and the run's S3 store ({@link TestS3}, chosen by {@code -Ps3}) for the whole
  * test JVM, with the RCK's warehouse seeded. Clients reach the same store through {@link #clientStorage()}, and authenticate with
  * {@link #token()}: a local test issuer's token for a group that holds create and modify on the warehouse (M5).
  */
@@ -73,7 +73,6 @@ final class ConformanceServer {
         ConfigurableApplicationContext server = new SpringApplicationBuilder(CatalogServer.class)
                 .properties(storage)
                 .properties(
-                        "server.port=0",
                         "spring.datasource.url=" + postgres.getJdbcUrl(),
                         "spring.datasource.username=" + postgres.getUsername(),
                         "spring.datasource.password=" + postgres.getPassword(),
@@ -88,7 +87,9 @@ final class ConformanceServer {
                         "fidice.security.issuers[0].groups-claim=groups",
                         "fidice.security.issuers[0].client-id-claim=azp",
                         "fidice.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers())
-                .run();
+                // A free port, as an argument: builder properties are only defaults, and application.yaml's 8181
+                // would win over them, clashing with any catalog already running here (the demo).
+                .run("--server.port=0");
         JdbcTemplate jdbc = server.getBean(JdbcTemplate.class);
         UUID catalog = jdbc.queryForObject("SELECT id FROM catalog WHERE name_norm = ?", UUID.class, WAREHOUSE);
         for (String privilege : List.of("create", "modify")) {

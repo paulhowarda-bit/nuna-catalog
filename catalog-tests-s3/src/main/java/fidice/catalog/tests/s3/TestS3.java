@@ -102,13 +102,13 @@ public final class TestS3 implements AutoCloseable {
         return shared;
     }
 
-    /** The kind {@code -Ds3} names, without starting anything. */
+    /** The kind {@code -Ps3} names, without starting anything. */
     public static Kind kindFromSystemProperty() {
         String name = System.getProperty("s3", "silo").trim();
         try {
             return Kind.valueOf(name.toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("-Ds3=" + name + " is not one of silo, ceph, aws", e);
+            throw new IllegalStateException("-Ps3=" + name + " is not one of silo, ceph, aws", e);
         }
     }
 
@@ -267,7 +267,7 @@ public final class TestS3 implements AutoCloseable {
     private static TestS3 aws() {
         String profile = System.getProperty("fidice.aws.profile", "").trim();
         if (profile.isEmpty()) {
-            throw new IllegalStateException("-Ds3=aws needs -Dfidice.aws.profile=<an AWS CLI profile signed in with"
+            throw new IllegalStateException("-Ps3=aws needs -Pfidice.aws.profile=<an AWS CLI profile signed in with"
                     + " short-lived credentials>");
         }
         System.setProperty("aws.profile", profile);

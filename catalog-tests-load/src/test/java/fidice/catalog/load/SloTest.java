@@ -19,9 +19,9 @@ import org.junit.jupiter.api.Test;
  * The SLO runs of M8, through two servers on one PostgreSQL cluster. The targets (load p99 under 50 ms, 304
  * p99 under 10 ms, commit p99 under 300 ms, 500 commits a second) are for production hardware; on a laptop,
  * where clients, servers, database and object store share one machine, the numbers are recorded in
- * {@code target/m8/results/slo.txt} as relative behaviour and the run checks only that nothing failed.
+ * {@code build/m8/results/slo.txt} as relative behaviour and the run checks only that nothing failed.
  */
-@Tag("heavy")
+@Tag("overnight")
 class SloTest {
 
     private static final int TABLES = 32;

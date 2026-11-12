@@ -7,7 +7,7 @@ USE fidice_m8;
 
 CREATE TABLE spark_v2 (id BIGINT, name TEXT, note TEXT);
 CREATE PIPELINE spark_v2_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "engines",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://fidice-catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v2", "catalog.token": "${FIDICE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
@@ -19,7 +19,7 @@ SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v2' AS c, COUNT(*) AS n, COUNT(
 
 CREATE TABLE spark_v3 (id BIGINT, name TEXT, note TEXT);
 CREATE PIPELINE spark_v3_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "engines",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://fidice-catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v3", "catalog.token": "${FIDICE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
@@ -31,7 +31,7 @@ SELECT 'RESULT' AS r, 'singlestore' AS e, 'cross.v3' AS c, COUNT(*) AS n, COUNT(
 
 CREATE TABLE spark_v3_dv (id BIGINT, name TEXT, note TEXT);
 CREATE PIPELINE spark_v3_dv_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://catalog:8181", "catalog.warehouse": "engines",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://fidice-catalog:8181", "catalog.warehouse": "engines",
          "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${FIDICE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'

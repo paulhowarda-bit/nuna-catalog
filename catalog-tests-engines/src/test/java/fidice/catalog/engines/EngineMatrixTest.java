@@ -32,8 +32,9 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 
 /**
  * The nightly engine matrix (M8, D31), the demo: the catalog server deployed by its Helm chart
- * ({@code deploy/helm/fidice-catalog}) into a throwaway kind cluster, with PostgreSQL, Kafka and the run's S3
- * store ({@code -Ds3}: Silo or Ceph as Service {@code s3}, or real AWS) beside it, and each engine run as a
+ * ({@code deploy/helm/fidice-catalog}, as Service {@value #RELEASE}) into a throwaway kind cluster, with
+ * PostgreSQL, Kafka and the run's S3 store ({@code -Ps3}: Silo or Ceph as Service {@code s3}, or real AWS)
+ * beside it, and each engine run as a
  * Kubernetes Job. Every step an engine runs prints a {@code RESULT <engine> <check> <value>} line, and every
  * refusal it is expected to make prints {@code LIMIT <engine> <check> <reason>}; each test asserts the whole
  * set, so a skipped step fails as surely as a wrong answer.
@@ -41,22 +42,22 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * <p>Spark runs first and leaves three tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
  * rows, one with the added column set), and v3 with a deletion vector. Kafka Connect's Iceberg sink commits
  * records from a Kafka topic into a table it creates; PyIceberg and SingleStore (through its Iceberg
- * pipelines) read Spark's tables. Results, timings and every command go to {@code target/engines-run/}.
+ * pipelines) read Spark's tables. Results, timings and every command go to {@code build/engines-run/}.
  *
- * <p>Needs Docker, kubectl and Helm on the PATH, and kind unless {@code -Dengines.cluster} names a cluster.
+ * <p>Needs Docker, kubectl and Helm on the PATH, and kind unless {@code -Pengines.cluster} names a cluster.
  * Everything runs in namespace {@value #NAMESPACE}.
  * <ul>
  *   <li>By default the harness creates kind cluster {@value #CLUSTER} with its own kubeconfig in the run
  *       directory, so the current kubectl context is never changed, and deletes the cluster at the end.</li>
- *   <li>{@code -Dengines.cluster=<kubectl context>} (for example {@code docker-desktop}) deploys into that
+ *   <li>{@code -Pengines.cluster=<kubectl context>} (for example {@code docker-desktop}) deploys into that
  *       existing cluster instead: namespace {@value #NAMESPACE} is recreated at the start and deleted at the
  *       end. Its nodes must see the locally built images, as Docker Desktop's do; nothing is pushed.</li>
  * </ul>
- * {@code -Dengines.keep-stack=true} leaves everything up afterwards, with the token in
- * {@code target/engines-run/token}, to rerun one engine by hand, and the kafbat UI on Service {@code kafka-ui}.
- * {@code -Dengines.skip-build=true} uses the images already built instead of building them.
+ * {@code -Pengines.keep-stack=true} leaves everything up afterwards, with the token in
+ * {@code build/engines-run/token}, to rerun one engine by hand, and the kafbat UI on Service {@code kafka-ui}.
+ * {@code -Pengines.skip-build=true} uses the images already built instead of building them.
  */
-@Tag("heavy")
+@Tag("overnight")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class EngineMatrixTest {
 
@@ -65,7 +66,9 @@ class EngineMatrixTest {
     private static final String ISSUER = "https://idp.test/engines";
     private static final String AUDIENCE = "fidice-catalog";
     private static final String GROUP = "engine-clients";
-    private static final String CATALOG_IMAGE = "fidice/catalog-server:engines";
+    /** The chart's release, and so its Service: engines reach the catalog on http://fidice-catalog:8181. */
+    private static final String RELEASE = "fidice-catalog";
+    private static final String CATALOG_IMAGE = "fidice-catalog:engines";
     private static final String SPARK_IMAGE = "fidice-engines/spark:4.1.4-iceberg-1.12.0";
     private static final String KAFKA_CONNECT_IMAGE = "fidice-engines/kafka-connect:4.2.2-iceberg-1.12.0";
     private static final String PYTHON_IMAGE = "fidice-engines/python:pyiceberg-0.12.0";
@@ -98,7 +101,7 @@ class EngineMatrixTest {
                 .claim("azp", "engine-matrix")
                 .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plusSeconds(6 * 3600)))
                 .build());
-        // Kept for rerunning one engine by hand against a cluster left up with -Dengines.keep-stack=true.
+        // Kept for rerunning one engine by hand against a cluster left up with -Pengines.keep-stack=true.
         Files.writeString(runDir.resolve("token"), token);
         Files.deleteIfExists(runDir.resolve("results.txt"));
         Path log = runDir.resolve("commands.log");
@@ -115,8 +118,9 @@ class EngineMatrixTest {
                 "SINGLESTORE_IMAGE", SINGLESTORE_IMAGE,
                 "KAFKA_UI_IMAGE", KAFKA_UI_IMAGE));
         Map<String, String> storage = new LinkedHashMap<>();
-        Map<String, String> secretEnv = new LinkedHashMap<>(Map.of("SPRING_DATASOURCE_PASSWORD", "catalog"));
-        storage(store, storage, secretEnv);
+        Map<String, String> secrets = new LinkedHashMap<>(Map.of("spring.datasource.password", "catalog"));
+        Map<String, String> awsCredentials = new LinkedHashMap<>();
+        storage(store, storage, secrets, awsCredentials);
         placeholders.put("S3_ENDPOINT", s3Endpoint);
 
         long started = System.nanoTime();
@@ -140,10 +144,12 @@ class EngineMatrixTest {
             cli.ok(Duration.ofMinutes(10), "docker", "pull", "-q", image);
         }
         Path repo = Path.of(System.getProperty("engines.repo-root"));
-        build(CATALOG_IMAGE, repo.resolve("catalog-server"));
-        build(SPARK_IMAGE, engines.resolve("images/spark"));
-        build(KAFKA_CONNECT_IMAGE, engines.resolve("images/kafka-connect"));
-        build(PYTHON_IMAGE, engines.resolve("images/python"));
+        // The server's own image (deploy/image/Dockerfile), from the folder holding the runnable jar.
+        build(CATALOG_IMAGE, "-f", repo.resolve("deploy/image/Dockerfile").toString(),
+                Path.of(System.getProperty("engines.catalog-jar")).getParent().toString());
+        build(SPARK_IMAGE, engines.resolve("images/spark").toString());
+        build(KAFKA_CONNECT_IMAGE, engines.resolve("images/kafka-connect").toString());
+        build(PYTHON_IMAGE, engines.resolve("images/python").toString());
         images.addAll(List.of(CATALOG_IMAGE, SPARK_IMAGE, KAFKA_CONNECT_IMAGE, PYTHON_IMAGE));
         load(images);
         record("cluster", (kind ? "kind cluster created" : "namespace created in " + context)
@@ -179,12 +185,29 @@ class EngineMatrixTest {
         config.put("spring.datasource.url", "jdbc:postgresql://postgres:5432/catalog");
         config.put("spring.datasource.username", "catalog");
         config.putAll(storage);
+        // The chart's values (deploy/helm/fidice-catalog/values.yaml): one server, sized for a one-node cluster,
+        // its settings in config and its secret ones in the Secret the chart reads as a config tree.
+        Map<String, Object> chart = new LinkedHashMap<>();
+        chart.put("replicaCount", 1);
+        chart.put("image", Map.of("repository", CATALOG_IMAGE.split(":")[0], "tag", CATALOG_IMAGE.split(":")[1],
+                "pullPolicy", "Never"));
+        chart.put("resources", Map.of("requests", Map.of("cpu", "250m", "memory", "768Mi"),
+                "limits", Map.of("memory", "768Mi")));
+        chart.put("config", nested(config));
+        chart.put("secrets", Map.of("values", secrets));
+        if (!awsCredentials.isEmpty()) {
+            // The AWS SDK reads these from the environment, not from Spring's settings: a Secret of their own.
+            Path secret = runDir.resolve("catalog-aws.json");
+            Files.writeString(secret, json(Map.of("apiVersion", "v1", "kind", "Secret",
+                    "metadata", Map.of("name", "catalog-aws"), "stringData", awsCredentials)), StandardCharsets.UTF_8);
+            kubectl(Duration.ofMinutes(1), "apply", "-f", secret.toString());
+            chart.put("env", awsCredentials.keySet().stream().map(name -> Map.of("name", name,
+                    "valueFrom", Map.of("secretKeyRef", Map.of("name", "catalog-aws", "key", name)))).toList());
+        }
         Path values = runDir.resolve("catalog-values.json");
-        Files.writeString(values, "{\"image\": {\"repository\": \"" + CATALOG_IMAGE.split(":")[0] + "\", \"tag\": \""
-                + CATALOG_IMAGE.split(":")[1] + "\", \"pullPolicy\": \"Never\"},\n \"config\": " + json(config)
-                + ",\n \"secretEnv\": " + json(secretEnv) + "}\n", StandardCharsets.UTF_8);
+        Files.writeString(values, json(chart) + "\n", StandardCharsets.UTF_8);
         cli.ok(Duration.ofMinutes(6), "helm", "--kube-context", context, "--namespace", NAMESPACE, "upgrade",
-                "--install", "catalog", repo.resolve("deploy/helm/fidice-catalog").toString(), "-f", values.toString(),
+                "--install", RELEASE, repo.resolve("deploy/helm/fidice-catalog").toString(), "-f", values.toString(),
                 "--wait",
                 "--timeout", "5m");
         // The catalog is declared in the chart's config and created at startup; the group gets create and
@@ -282,22 +305,24 @@ class EngineMatrixTest {
     }
 
     /**
-     * Sets the catalog's storage profile {@code s3} for the run's store into {@code storage}, and on AWS the
-     * catalog's short-lived credentials into {@code secretEnv}. Silo and Ceph run in the cluster as Service
+     * Sets the catalog's storage profile {@code s3} for the run's store: its settings into {@code storage}, its
+     * secret key into {@code secrets}, and on AWS the catalog's short-lived credentials, as the AWS SDK's
+     * environment variables, into {@code awsCredentials}. Silo and Ceph run in the cluster as Service
      * {@code s3}, so every client there uses the same host; on AWS the bucket and role are {@link TestS3}'s,
      * removed when the run ends.
      */
-    private static void storage(TestS3.Kind kind, Map<String, String> storage, Map<String, String> secretEnv) {
+    private static void storage(TestS3.Kind kind, Map<String, String> storage, Map<String, String> secrets,
+                                Map<String, String> awsCredentials) {
         String p = "fidice.storage.profiles.s3.";
         if (kind == TestS3.Kind.AWS) {
             TestS3 s3 = TestS3.get();
             storage.putAll(s3.serverProperties("s3", s3.bucket("warehouse")));
             s3Endpoint = s3.endpoint.toString();
             AwsCredentials credentials = s3.credentials.resolveCredentials();
-            secretEnv.put("AWS_ACCESS_KEY_ID", credentials.accessKeyId());
-            secretEnv.put("AWS_SECRET_ACCESS_KEY", credentials.secretAccessKey());
+            awsCredentials.put("AWS_ACCESS_KEY_ID", credentials.accessKeyId());
+            awsCredentials.put("AWS_SECRET_ACCESS_KEY", credentials.secretAccessKey());
             if (credentials instanceof AwsSessionCredentials session) {
-                secretEnv.put("AWS_SESSION_TOKEN", session.sessionToken());
+                awsCredentials.put("AWS_SESSION_TOKEN", session.sessionToken());
             }
             return;
         }
@@ -309,18 +334,23 @@ class EngineMatrixTest {
         storage.put(p + "table-root", "s3://warehouse/tables");
         storage.put(p + "allowed-prefixes", "s3://warehouse/tables");
         storage.put(p + "access-key-id", TestS3.ACCESS_KEY);
-        storage.put(p + "secret-access-key", TestS3.SECRET_KEY);
+        secrets.put(p + "secret-access-key", TestS3.SECRET_KEY);
         if (kind == TestS3.Kind.CEPH) {
             storage.put(p + "sts-role", TestS3.CEPH_ROLE_ARN);
         }
     }
 
-    /** Builds an image, unless -Dengines.skip-build=true asks to use the ones already built. */
-    private static void build(String image, Path context) {
+    /**
+     * Builds an image from {@code source} (a folder, after {@code -f <Dockerfile>} when the Dockerfile is
+     * elsewhere), unless -Pengines.skip-build=true asks to use the ones already built.
+     */
+    private static void build(String image, String... source) {
         if (Boolean.getBoolean("engines.skip-build")) {
             return;
         }
-        cli.ok(Duration.ofMinutes(20), "docker", "build", "-q", "-t", image, context.toString());
+        List<String> command = new ArrayList<>(List.of("docker", "build", "-q", "-t", image));
+        command.addAll(List.of(source));
+        cli.ok(Duration.ofMinutes(20), command.toArray(String[]::new));
     }
 
     /** Loads images into the kind cluster; an existing cluster's nodes must already see them. */
@@ -415,14 +445,49 @@ class EngineMatrixTest {
         return properties;
     }
 
-    private static String json(Map<String, String> map) {
-        List<String> entries = new ArrayList<>();
-        map.forEach((key, value) -> entries.add(quote(key) + ": " + quote(value)));
-        return "{" + String.join(", ", entries) + "}";
+    /**
+     * Spring property names to the nested form the chart's {@code config} takes: {@code a.b.c=v} becomes
+     * {@code {a: {b: {c: v}}}}, and {@code a.list[0].c=v} puts a map in a list. Only {@code catalog.properties}
+     * and the storage settings come here, and none of them is a list of plain values.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> nested(Map<String, String> properties) {
+        Map<String, Object> root = new LinkedHashMap<>();
+        properties.forEach((name, value) -> {
+            Map<String, Object> node = root;
+            String[] parts = name.split("\\.");
+            for (int i = 0; i < parts.length - 1; i++) {
+                String part = parts[i];
+                int bracket = part.indexOf('[');
+                if (bracket < 0) {
+                    node = (Map<String, Object>) node.computeIfAbsent(part, k -> new LinkedHashMap<String, Object>());
+                } else {
+                    List<Object> list = (List<Object>) node.computeIfAbsent(part.substring(0, bracket),
+                            k -> new ArrayList<>());
+                    int index = Integer.parseInt(part.substring(bracket + 1, part.length() - 1));
+                    while (list.size() <= index) {
+                        list.add(new LinkedHashMap<String, Object>());
+                    }
+                    node = (Map<String, Object>) list.get(index);
+                }
+            }
+            node.put(parts[parts.length - 1], value);
+        });
+        return root;
     }
 
-    private static String json(List<String> list) {
-        return "[" + String.join(", ", list.stream().map(EngineMatrixTest::quote).toList()) + "]";
+    /** JSON for maps, lists, strings and numbers. */
+    private static String json(Object value) {
+        return switch (value) {
+            case Map<?, ?> map -> {
+                List<String> entries = new ArrayList<>();
+                map.forEach((key, entry) -> entries.add(quote(key.toString()) + ": " + json(entry)));
+                yield "{" + String.join(", ", entries) + "}";
+            }
+            case List<?> list -> "[" + String.join(", ", list.stream().map(EngineMatrixTest::json).toList()) + "]";
+            case Number number -> number.toString();
+            default -> quote(value.toString());
+        };
     }
 
     private static String quote(String text) {

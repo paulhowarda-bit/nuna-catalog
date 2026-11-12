@@ -13,8 +13,8 @@ import javax.sql.DataSource;
 
 /**
  * Two writes lock two rows in opposite orders, so the database aborts one of them as a deadlock
- * (CockroachDB: 40001; PostgreSQL, YugabyteDB: 40P01) before its COMMIT is sent. The store rolls
- * it back and runs it again, and both commit (docs/storage-design.md sections 5.4 and 5.5).
+ * (CockroachDB: 40001; PostgreSQL: 40P01) before its COMMIT is sent. The store rolls
+ * it back and runs it again, and both commit (docs/storage-design.md section 5.4).
  */
 final class DeadlockRetry {
 

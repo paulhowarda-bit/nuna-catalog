@@ -1,4 +1,4 @@
-# -Ds3=ceph: Ceph RGW in one container, as Service s3 (http://s3:8080). Its DNS name is s3, the only host
+# -Ps3=ceph: Ceph RGW in one container, as Service s3 (http://s3:8080). Its DNS name is s3, the only host
 # clients use, so RGW reads every request as path-style. STS is on; the harness creates the role vended
 # credentials assume (TestS3.cephRoleCommands).
 apiVersion: apps/v1

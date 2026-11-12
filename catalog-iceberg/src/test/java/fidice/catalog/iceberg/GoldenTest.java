@@ -30,7 +30,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * output, so they are also the ratchet: after an iceberg-core bump, {@code referenceMatchesGolden} shows
  * every byte the reference changed, and {@code adapterMatchesGolden} shows whether the adapter followed.
  *
- * <p>Re-record only after reading that diff: {@code -Dgolden.record=true} rewrites the goldens from the
+ * <p>Re-record only after reading that diff: {@code -Pgolden.record=true} rewrites the goldens from the
  * reference, in case order, so a changed base flows into the cases built on it.
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

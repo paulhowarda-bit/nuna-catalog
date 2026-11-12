@@ -20,7 +20,7 @@ import org.junit.jupiter.params.provider.CsvSource;
  * Many writers appending to one table through two servers, as engines committing to a hot table do (M8): no
  * 5xx, no deadlock in PostgreSQL, and main's history holds every acknowledged commit exactly once.
  */
-@Tag("heavy")
+@Tag("overnight")
 class ConcurrentWritersTest {
 
     private static final int COMMITS_PER_WRITER = 25;

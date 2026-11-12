@@ -128,7 +128,7 @@ spec:
     - port: 8080
 ---
 # kafbat UI for the demo's Kafka: topics (the Kafka Connect source topic, the sink's control topic, the
-# catalog's audit and change topics), their messages and consumer groups. With -Dengines.keep-stack=true:
+# catalog's audit and change topics), their messages and consumer groups. With -Pengines.keep-stack=true:
 # kubectl port-forward svc/kafka-ui 8080:8080, then http://localhost:8080.
 apiVersion: apps/v1
 kind: Deployment

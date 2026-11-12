@@ -16,15 +16,15 @@ These were not asked during the grilling; they are routine calls made to unblock
 
 | # | Choice | Why |
 |---|---|---|
-| P1 | **Maven multi-module build**, with the Maven wrapper pinned. | Maven 3.9.8 is already installed here; Gradle is not. Work's package index is blocked, and Maven with a corporate mirror (`settings.xml`) is the lowest-friction path there. |
+| P1 | **Gradle multi-module build** (Kotlin build files), with the Gradle wrapper pinned and its checksum set. Amended 2026-11-11 by Paul ("ok then lets switch"); until then it was a Maven build. | Work builds Java with Gradle, and this project is carried there at M9. Paul knows Gradle and does not know Maven. Maven re-ran every module's tests on every build; Gradle skips a module whose inputs did not change, and the bite loop no longer restarts the build tool and rebuilds every upstream module for each patch. Libraries and plugins come from the Maven-format repository work mirrors; only the Gradle distribution does not. The original reason for Maven was wrong: it assumed Maven through the corporate mirror was the easiest path at work, which Paul corrected on 2026-11-10. Gradle does not make the heavy database suites faster: they are slow because of what they do. |
 | P2 | **JDK 25 (Amazon Corretto 25)**. | Matches the Corretto 21 already installed. JDK 25 is not installed yet: prerequisite for M0, Paul installs it. |
 | P3 | **Spring MVC on virtual threads**, not WebFlux. | Blocking I/O with JDBC/Mongo sync drivers [D4]. |
 | P4 | **Hand-written controllers against the vendored OpenAPI spec**, plus a test that every advertised endpoint matches a spec operation. No code generator. | Generated code would add bloat and foreign names; the RCK proves conformance [D31]. |
 | P5 | **Iceberg JSON is written by iceberg-core's own parsers inside `catalog-iceberg`**; controllers return the JSON text, so Spring never serializes an Iceberg type. | Keeps the wire format identical to the reference implementation, and keeps it clear of Spring Boot 4's JSON stack: Jackson 3 is Boot's default and Spring is removing Jackson 2 support (M0 finding). |
-| P6 | **Flyway for the four SQL targets** (PostgreSQL, CockroachDB, YugabyteDB, Oracle); a small versioned-step runner of our own for MongoDB. | DBAs know Flyway. M0 verifies that the community edition covers all four targets at the pinned version (F4); if it does not, we write the same small runner for SQL too. |
+| P6 | **Flyway for the three SQL targets** (PostgreSQL, CockroachDB, Oracle; YugabyteDB was a fourth until it was dropped on 2026-11-11 [D7]); a small versioned-step runner of our own for MongoDB. | DBAs know Flyway. M0 verifies that the community edition covers every target at the pinned version (F4); if it does not, we write the same small runner for SQL too. |
 | P7 | **PostgreSQL is the default development backend.** No in-memory store. | An in-memory store would drift from the invariants [D8]. Unit tests of the commit loop mock the storage interface. |
 | P8 | **Testcontainers** for every backend, IdP, object store and Kafka in tests; **kind** (Kubernetes in Docker) for the nightly engine matrix, which deploys the catalog with its Helm chart (docker compose until 2026-11-12). | Docker Desktop 27.1.1 is installed here. |
-| P9 | **Package root `fidice.catalog`**, Maven groupId `fidice`. | Follows the repo name. |
+| P9 | **Package root `fidice.catalog`**, group `fidice`. | Follows the repo name. |
 | P10 | Defaults that the ledger left to the plan: vended credential lifetime 30 min (bounds 15–60 [D21]); idempotency key lifetime PT24H [D10]; server-side commit retry: at most 4 attempts or 2 s [D9]; multi-table cap 100 [D15]; soft-drop window 30 days [D25]; clock-skew guard 60 s [D9, D11]. | Each is configuration, changeable without code. |
 | P11 | Branch and tag defaults [D33]: at most 50 open branches per catalog; a branch expires 30 days after its last commit unless renewed (max 180 days); tags never expire, at most 1,000 per catalog; a branch or tag blocks file cleanup for everything it references; merging or deleting a branch releases it. | The ledger asked the plan to set these. |
 
@@ -36,8 +36,9 @@ These were not asked during the grilling; they are routine calls made to unblock
 |---|---|---|
 | `catalog-core` | Domain types (names, principals, privileges, pointers, commit records, errors), the commit loop, idempotency, rules layer, authorization decisions, retention/hold logic. No Spring. | `catalog-iceberg`, `catalog-store-api` |
 | `catalog-iceberg` | The only module that imports `org.apache.iceberg`. Parses requests, applies updates (TableMetadata.Builder, MetadataUpdate.applyTo), validates requirements (UpdateRequirement.validate), builds view metadata, serializes responses. Exposes our own interfaces. | pinned iceberg-core |
-| `catalog-store-api` | The narrow storage interface (2.3) and the shared invariant/fault-injection suite, published as a test-jar. | — |
-| `catalog-store-sql` | PostgreSQL, CockroachDB and YugabyteDB: one PG-wire implementation with dialect switches [D7]. | `catalog-store-api` |
+| `catalog-store-api` | The narrow storage interface (2.3) and the shared invariant/fault-injection suite, handed to each backend as a test jar. | — |
+| `catalog-store-sql` | PostgreSQL and CockroachDB: one PG-wire implementation with dialect switches [D7]. It refuses a YugabyteDB server, which is not supported (dropped 2026-11-11). Its tests cover PostgreSQL; the cluster harness is handed to `catalog-store-sql-raft` as a test jar. | `catalog-store-api` |
+| `catalog-store-sql-raft` | Tests only: the SQL store's CockroachDB suite. Nothing depends on it. | `catalog-store-sql` |
 | `catalog-store-oracle` | Oracle including Exadata/RAC: UCP + FAN, Transaction Guard, service affinity [D7]. | `catalog-store-api` |
 | `catalog-store-mongo` | MongoDB: multi-document transactions, `w:majority`, primary reads [D7]. | `catalog-store-api` |
 | `catalog-objectstore` | Storage profiles; metadata.json write/read with SHA-256; credential vending through STS AssumeRole for S3, MinIO and Ceph; location guardrails [D21, D26, D36a]. | `catalog-core` |
@@ -107,17 +108,18 @@ Detail and sources are in `research_notes/Catalog database evaluation/`. What ea
 |---|---|---|---|
 | PostgreSQL | `SELECT … FOR UPDATE` on the pointer row, conditional update, inserts, one transaction. | Durability barrier, and no COMMIT timeouts. After a broken connection, look up `commit_id` on a fresh connection once the barrier confirms. The pool never replays a commit (cf. Iceberg JdbcCatalog #18743). | Synchronous quorum replication is not configured, or `synchronous_commit` is off for the catalog role. |
 | CockroachDB | Same SQL under SERIALIZABLE; retry 40001 inside the bound. | 40003 (ambiguous result) → `findCommit`. | Replication factor < 3 for the catalog ranges. |
-| YugabyteDB | Same SQL; retry serialization errors. | No ambiguity code: every connection error mid-commit → `findCommit`. | Replication factor < 3. |
 | Oracle / Exadata RAC | Same logical steps; UCP with FAN; route each table's pointer row to one RAC service (affinity by object-ID hash) so hot rows don't move between instances. | Transaction Guard: on a recoverable error take the LTXID and call `DBMS_APP_CONT.GET_LTXID_OUTCOME`. | Data Guard is not in maximum-availability mode with zero apply delay where required, or Transaction Guard is off for the service. |
 | MongoDB | Multi-document transaction; `writeConcern: majority`, `readConcern: snapshot`, primary reads. | `UnknownTransactionCommitResult` → retry `commitTransaction`, then `findCommit`. | Not a replica set, default write concern below majority, or journaling off. |
 
+YugabyteDB had a row here until support for it was dropped on 2026-11-11 [D7]. The SQL store refuses a YugabyteDB server.
+
 ### 2.6 Shared invariant and fault-injection suite
 
-Lives in `catalog-store-api` as a test-jar. Every backend runs all of it; passing it is what "supported" means [D8.9]. Faults are injected with container stop/pause and a TCP proxy between server and database.
+Lives in `catalog-store-api` as a test jar. Every backend runs all of it; passing it is what "supported" means [D8.9]. Faults are injected with container stop/pause and a TCP proxy between server and database.
 
-1. **CAS linearizability**: N writers from one base, exactly one wins; repeated 10,000 times.
-2. **Atomicity**: break the connection at every step boundary of `commit`; pointer, journal, outbox and idempotency never disagree.
-3. **Ambiguity**: drop the link after COMMIT is sent; the outcome resolves correctly, is never reported as 409, and no acknowledged commit is lost.
+1. **CAS linearizability**: N writers from one base, exactly one wins; repeated 1,000 times, only in the overnight run.
+2. **Atomicity**: break the connection at every step boundary of `commit`; pointer, journal, outbox and idempotency never disagree. Repeated for every mutation type only in the overnight run.
+3. **Ambiguity**: drop the link after COMMIT is sent; the outcome resolves correctly, is never reported as 409, and no acknowledged commit is lost. Repeated for every mutation type only in the overnight run.
 4. **Failover**: stop the primary mid-load; every acknowledged commit is present afterwards.
 5. **Self-check**: boot against each unsafe setting in 2.5; startup fails with a clear message.
 6. **Read-after-commit**: inject replica lag; a load after an acknowledged commit always sees it.
@@ -153,7 +155,7 @@ Each milestone lists its scope, its gate, and what must wait for work hardware.
 ### M2 — Backends in parallel (second half of D7b)
 
 Three worktree sessions, each owning one module:
-- **M2a** `catalog-store-sql`: PostgreSQL, CockroachDB, YugabyteDB.
+- **M2a** `catalog-store-sql`: PostgreSQL, CockroachDB, YugabyteDB. (YugabyteDB was built and passed, then dropped on 2026-11-11 [D7].)
 - **M2b** `catalog-store-oracle`: Oracle Free container locally.
 - **M2c** `catalog-store-mongo`: three-node replica set.
 - **Gate:** each backend passes the full suite with bite runs.
@@ -230,6 +232,8 @@ Three worktree sessions, each owning one module:
 - **Gate:** all of the above green on the personal machine.
 - **Work hardware:** absolute SLOs, three-site quorum latency, async DR region.
 
+Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overnight job (M9), not in the heavy build.
+
 **Status (2026-11-09): gate met on the personal machine, PostgreSQL only.** Every M8 suite is tagged `heavy`, so `./mvnw verify` stays the everyday fast build. Each suite was run on its own with `-Pheavy -Dtest=…`; the whole `-Pheavy` pass and `bites/run.sh` wait for the after-M9 pass. Bites are recorded in `bites/M8/` (12 patches), not run.
 
 - **What M8 changed in the server.**
@@ -286,7 +290,68 @@ Three worktree sessions, each owning one module:
 - Artifact approval in the curated repository (PLT-6).
 - RAC/Exadata, real IdPs, real object stores, DBA review of the self-check thresholds.
 - Bucket naming per region and replication SLA (PLT-4) for the DR runbook [D29].
-- A scheduled nightly job in work CI running `./mvnw install -Pheavy,nightly` (the CAS test at 10,000 rounds). It left the heavy pass on 2026-11-10: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
+- The build at work [P1]: point `settings.gradle.kts` (both `mavenCentral()` lines) at the internal Maven-format repository; every library and plugin resolves from that one repository. The Gradle distribution is the one download that does not: `gradle/wrapper/gradle-wrapper.properties` fetches `gradle-9.9.1-bin.zip` from `services.gradle.org` and checks it against `distributionSha256Sum`, so work needs that zip from an internal location (change `distributionUrl`, keep the checksum). JDK 25 must be installed: Gradle finds it and never downloads one.
+- A scheduled overnight job in work CI running `./gradlew build -Pnightly`: the tests tagged `overnight` and the CAS test, nothing else. The `overnight` tests (Paul, 2026-11-11, to shorten the heavy build) are every M8 suite (`catalog-tests-load`: concurrent writers, rolling upgrade, SLO runs, ten thousand snapshots, kill the primary, DR drill), the engine matrix, and the two fault sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type, on the four backends. The CAS test runs at 1,000 rounds on the four supported backends (YugabyteDB, measured below, was dropped on 2026-11-11 [D7]). On 2026-11-11 Paul cut the rounds from 10,000 to 1,000: 10,000 took 23 min on PostgreSQL and 42 min on CockroachDB and never finished on YugabyteDB, and nothing in the plan or design gave a reason for 10,000. On 2026-11-10 Paul took the CAS test out of every build, fast and heavy, because it takes too long; it runs only in this overnight job. It left the heavy pass that day: per round it cost 0.14 s on PostgreSQL, 0.25 s on CockroachDB and 2.2–2.4 s on YugabyteDB, so 10,000 rounds on five backends ran past 10 hours. PostgreSQL and CockroachDB passed all 10,000 rounds then; YugabyteDB passed 5,157 before the run was stopped; Oracle and MongoDB were not reached.
+
+### UI v1 — web console
+
+A browser console for people: browse catalogs, read governance, manage grants, and read an object's recent audit records. The server stays the only place permissions are decided; the console shows every refusal as the server answered it.
+
+**Decisions**
+
+- **Hosting.** `catalog-server` serves the console from `classpath:/fidice/ui/` under `/ui/`. There is no separate module or build step: plain HTML, CSS and ES modules, no npm and no third-party code.
+- **Public files, private data.** Only the console's flat files (`/ui/`, `/ui/<name>.(html|js|css|json|svg)`) skip authentication. Every API call they make carries a bearer token and goes through the same filter, guards and audit as an engine's.
+- **Headers.** Every `/ui` response carries a strict Content-Security-Policy: `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'` plus the IdP's origin when OIDC is set; `base-uri 'none'; form-action 'none'; frame-ancestors 'none'`. It also carries nosniff, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and COOP. The scripts build the page with text nodes only; no catalog data reaches `innerHTML`.
+- **Sign-in.**
+  - Production uses the OIDC authorization code flow with PKCE (S256) against `fidice.ui.oidc.{issuer,client-id,scopes,redirect-uri}`. The settings are published, with nothing secret, at the unauthenticated `/ui/config.json`.
+  - The access token lives in `sessionStorage` only, never `localStorage` or a cookie, and a 401 signs the console out.
+  - Token paste is a development aid, `fidice.ui.dev-token-login=true`, off by default.
+  - The console reads the token's claims for display only.
+- **Browsing uses the Iceberg REST API**, with no second read path. Tables load with `snapshots=all`.
+  - Exception: one small route, `GET /management/v1/catalogs`, lists the declared catalog names to any signed-in caller, unfiltered. These are the warehouse names every engine is configured with, and `/v1/config` already tells any signed-in caller whether a name exists.
+- **Vended credentials reach the browser.** D21 vends to every caller who loads a table; only a trusted engine may decline with `X-Iceberg-Access-Delegation: none`, and a bite guards that rule. The console asks for `none`, then drops `storage-credentials` and `config` from each load before keeping it, and never shows or stores them. Whether non-engine callers may decline is open (below).
+- **Audit trail read.**
+  - Route: `GET .../audit?limit=` on a catalog, namespace, table or view (default 50, at most 200). It needs `manage-grants` on the object or above. The trail shows who used the object and who was refused, which is the evidence an access review needs (D19), and separation of duties keeps grant admins away from the data itself (D18). A refusal is audited as a `Denial`, and each read as a new event, `AuditRead` (`fidice.catalog.audit-read`, v1: target, number returned, actor).
+  - Source: the audit topic itself. Records are keyed by subject, so the route works out the subject's partition with Kafka's default partitioner, reads that partition backwards from its end, at most 20,000 offsets in chunks of 2,000, and keeps the subject's records. The answer is sorted by record time, newest first: the outbox relay publishes changes after the synchronous records made meanwhile, so topic order is not time order.
+  - Limits: the answer reports the window it scanned and whether it reached the partition's start. Older records, and any search across objects or people, are the SIEM's job (D23), later joined by the v1.x queryable audit tables. There is no second store.
+- **Demo.** `demo/demo.sh up` starts compose project `fidice-demo`: PostgreSQL, Kafka, Silo, the catalog with the console on 8181, and SingleStore with Studio on 8183. SingleStore replaced Trino on 2026-11-11 (D35's amendment).
+  - It loads sample data, written through the catalog by `demo/LakeWriter.java`: deep namespaces, v2 and v3 tables, evolved schemas, a second partition spec, a tag and a branch, a view with two versions, classifications, a regulated namespace, a legal hold and a DR freeze.
+  - It syncs both ways: SingleStore's Iceberg pipelines load Iceberg tables into its `lake` database, and the change feed of `ops.orders` (`singlestore-change-feed`, a connector pipeline) commits to `markets.equities.eu.xetra.orders`.
+  - It mints a local test key and 7-day tokens for five users in five groups; see `demo/README.md`.
+
+**In v1**
+
+- Catalog picker and a lazy namespace tree with tables and views, a filter box, and deep links (`#c=…&k=…&ns=…&n=…&tab=…`).
+- Tables: overview (format version, location, metadata location, UUID, properties), current schema and every earlier one (field ids, types, required or optional, nested types, defaults, fields added since the previous schema), every partition spec and sort order, snapshots newest first with the current one marked and refs beside them, and the metadata log.
+- Views: versions newest first with their SQL per dialect, and the schema.
+- Governance: DR freeze, hold status, holds, attributes with the level each comes from, and effective values.
+- Grants: by object and by group; grant and revoke. Errors, including separation-of-duties refusals, are shown verbatim.
+- Audit: an object's recent records, each with its raw JSON.
+- Light and dark themes, following the system with a manual override.
+
+**Out of v1**
+
+- Writing governance (tags, holds, freeze) from the console: it reads them only. The management API already does all three.
+- Table maintenance, schema changes, drops and any data preview.
+- Engine registry and storage profiles.
+
+**Tests and bites**
+
+- `ConsoleTest`, `ConsoleConfiguredTest` and `AuditReadRouteTest` cover the fast-build guards:
+  - `/ui` files are served without a token, under the CSP;
+  - only console files skip authentication;
+  - `config.json` holds no secret, and dev mode is off by default;
+  - the files hold no inline code and never write markup;
+  - the audit route needs `manage-grants`, a refusal is a `Denial`, each read is an `AuditRead`, and the answer is limited and newest first.
+- Five bites in `bites/UI/`, checked with `git apply --check`, not run.
+
+**Open**
+
+- **D21 for people:** should a non-engine caller (the console) be allowed to decline vending, or get no credentials at all? Today it is vended to and discards the credentials client-side. Paul's decision.
+- **OIDC against a real IdP:** the PKCE flow is not yet tested against Entra ID, Ping or Keycloak. The demo uses token paste. The IdP's token endpoint must allow CORS from the console's origin.
+- **Catalog names** are listed unfiltered to any signed-in caller (see above). Filter them if a deployment treats names as secret.
+- **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
+- **Browser end-to-end tests:** none yet. The screens were checked by hand against the demo (see Status).
 
 ### v1.x milestones
 
@@ -348,7 +413,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
 | SEC-8 | KMS key-policy owners per domain. | M6 |
 | SEC-9 | Which SIEM and archive; whether notarisation is required beyond hash chaining. | M7 |
 | SEC-10 | Whether Snowflake may receive vended credentials, and over which path. | M6 |
-| PLT-2 | DBA support commitments for each of the five backends at tier 1. | M9 |
+| PLT-2 | DBA support commitments for each of the four backends at tier 1. | M9 |
 | PLT-3 | On-prem MinIO/Ceph versions and STS support at work. | M6, M9 |
 | PLT-4 | Bucket naming per region; replication SLA. | M9 [D29] |
 | PLT-5 | AWS accounts and regions holding table storage; STS call spreading. | M6 |
@@ -364,10 +429,10 @@ From the report's question list, reduced to those the ledger did not settle, wit
 
 | # | Risk | Response |
 |---|---|---|
-| R1 | Five backends cost roughly three implementations' worth of work (Polaris's pluggable persistence is ~26% of its code). | The shared suite is the gate: a backend that cannot pass it is not supported, and v1 ships without it rather than with a weaker guarantee [D8.9]. |
+| R1 | Four backends cost roughly three implementations' worth of work (Polaris's pluggable persistence is ~26% of its code). | The shared suite is the gate: a backend that cannot pass it is not supported, and v1 ships without it rather than with a weaker guarantee [D8.9]. |
 | R2 | Oracle RAC/Exadata behaviour cannot be tested on the laptop. | Oracle Free covers the logic; RAC items are listed as work gates in M2 and M9. |
 | R3 | JSON library conflict between Spring Boot 4 and iceberg-core (F2). | Settled at M0: P5 keeps Iceberg JSON out of Spring; Jackson 2 pinned to 2.22.2 and the dependency tree converges. |
-| R4 | MinIO community edition is unmaintained (F5). | Every test that needs S3 runs on one store, chosen per build with `-Ds3`: `silo` (the default, MinIO's model), `ceph` (single container, AWS's role-based model) or `aws` (Paul, 2026-11-12; the 2026-11-07 decision put the tests on Ceph). RustFS was assessed as an alternative (F8). The production on-prem store still depends on what work runs (PLT-3). |
+| R4 | MinIO community edition is unmaintained (F5). | Every test that needs S3 runs on one store, chosen per build with `-Ps3`: `silo` (the default, MinIO's model), `ceph` (single container, AWS's role-based model) or `aws` (Paul, 2026-11-12; the 2026-11-07 decision put the tests on Ceph). RustFS was assessed as an alternative (F8). The production on-prem store still depends on what work runs (PLT-3). |
 | R5 | Defaulting new tables to v3 breaks v2-only readers (SingleStore) and PyIceberg writers (F9). | Clients can create v2 explicitly [D12]; the engine matrix tests both. Revisit the default if PyIceberg writers are common. |
 | R6 | v1 storage commits to branch-ready keys before branches ship. | Design review in M1; the shared suite covers (object, branch) keys from the start. |
 | R7 | Laptop performance is not representative. | Relative SLO tracking here; absolute SLOs are a work gate. |
@@ -382,7 +447,7 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Oracle Free 23.26.3 with Transaction Guard: 26 tests, 3 skipped by capability (no Data Guard on Free); 23 of 24 bite runs bite, and the one that does not is explained.
   - MongoDB 8.0.34 three-member replica set: 27 tests, none skipped; 27 of 28 bite runs bite, and the one that does not is the expected evidence for the open-create gap.
   - Main finding: every backend can report a commit as visible before it is durable (PostgreSQL's in-flight create, Oracle's Transaction Guard, MongoDB's snapshot reads), so findCommit on all three answers COMMITTED only after a durability barrier. Deviations and the suite changes M2 starts with are in `docs/storage-design.md`.
-  - Not run: the nightly 10,000-round CAS profile.
+  - Not run: the nightly CAS profile (then 10,000 rounds).
 - **Landed 2026-11-07: M2 prep and the first parts of M3, M5, M6 and M7.** `mvnw install` passes on the merged tree: 729 tests, 3 skipped by capability.
   - M2 prep: the whole storage contract (nine group interfaces, `docs/storage-design.md` section 9) on PostgreSQL, 149 tests; 70 of 71 bite runs bite, and the one that does not showed a redundant barrier, now removed. Oracle (28 tests, 3 skipped) and MongoDB (27) still pass the commit suite.
   - M3 part: the Iceberg metadata adapter in `catalog-iceberg`, 160 tests including 80 golden cases. The commit loop, rules layer and idempotency are not built yet.
@@ -461,6 +526,66 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Bites: 14 new in `bites/M7/`, one per new guard; `purge-by-anyone` and `provenance-optional`, M5's `unclassified-open` and M6's `delete-for-everyone`, `cache-shared-across-callers` and `renewed-inside-margin` regenerated for the changed code; `bites/M4/near-expiry-304.patch` removed, since M6's `real-near-expiry-304` covers its rule on the rewritten code. Checked with `git apply --check`, not run.
 - **Heavy pass done 2026-11-10, after M8 and before M9.** `./mvnw install -Pheavy`: 1,742 tests on all five backends, 0 failures, 1 h 52 min (SQL stores 50 min, load 21, MongoDB 19). Skipped: Oracle 3 (no Data Guard on Free) and `AwsVendingTest` 11, run separately against the `fidice-sandbox` account: 11 of 11.
   - Bites: all 85 in `bites/M2`–`bites/M8` bite, each in its named test. Four needed fixes: `bites/run.sh` now runs to `verify`, since below package the load tests copied the unpatched server jar from `~/.m2` (both M8 load bites then bit); `auth-filter-outage-escapes` was regenerated (it did not compile); `change-stream-unfiltered` now names `ChangeStreamTest#fansOut`; `grants-reach-across` needed a new test, `AuthorizerTest#aBatchCheckGivesEachTargetOnlyTheGrantsOnItsOwnChain`, since the chain filter matters only in a batch check.
-  - The 10,000-round CAS test left the pass for M9's nightly CI job (see M9).
+  - The CAS test (then 10,000 rounds; 1,000 since 2026-11-11) left the pass for M9's overnight CI job (see M9).
   - Finding: on YugabyteDB, writers queued on one pointer row are released about 200 ms apart (PostgreSQL: under 2 ms), so 8 contending writers take 2.3 s a round. Not the store's backoff (no backoff sleeps) and not fsync (the winning COMMIT takes 10 ms); lowering `wait_queue_poll_interval_ms` and `wait_for_relock_unblocked_txn_keys_ms` to 10 ms cut it only to 2.1 s. Cause open.
+- **UI v1 done 2026-11-10, on PostgreSQL** (section 3, UI v1). The console is served at `/ui/` by `catalog-server` (`fidice.catalog.server.ui`, files in `src/main/resources/fidice/ui`), with one new read route, `GET .../audit`, and one new audit event, `AuditRead`.
+  - Tests: `ConsoleTest` 6, `ConsoleConfiguredTest` 2 and `AuditReadRouteTest` 6 pass; `EventCodecTest` covers `AuditRead`.
+  - Checked by hand against the demo (`demo/demo.sh up`), signed in as `ana` and `gary`, light and dark:
+    - the deep tree;
+    - the v2 and v3 table tabs: three schemas with added fields marked, two partition specs and the sort order, seven snapshots with the current one, a tag and a branch, the metadata log;
+    - the view's two versions with their SQL;
+    - governance: a hold, the DR freeze, an inherited owner;
+    - the D27 refusal of `accounts`;
+    - grant and revoke, grants by group;
+    - a separation-of-duties refusal shown verbatim;
+    - `ana`'s 403s on grants and audit, and `gary`'s 403 on loading data;
+    - the audit trail with reads, denials, a credential issue and commits.
+  - Bites: 5 recorded in `bites/UI/`, not run.
+  - Not verified: OIDC sign-in against a real IdP, the other four backends, and the heavy profile.
+- **Heavy build speed-up landed 2026-11-11, not proven green.** Changes, each measured:
+  - The CAS test runs in no build, fast or heavy: only `-Pnightly`, on its own, at 1,000 rounds (Paul, 2026-11-10 and 2026-11-11). In the heavy pass it cost 81 s on CockroachDB and 11 min on YugabyteDB at 200 rounds.
+  - Raft harness: the connection a lost-answer, lost-COMMIT or stall fault struck waits 5 s, not 15. CockroachDB suite 745.7 s → 561.9 s (CAS dropped included); its 21 lost-answer cases 15.3 s → 5.4 s each.
+  - `-T 2`, and the CockroachDB and YugabyteDB suites moved to `catalog-store-sql-raft`, which nothing depends on. Peak Docker memory 5.5 GB of 8.
+  - Flyway's migration lock wait is 5 min, not 50 s: YugabyteDB's `migrateWhileThePreviousReleaseServes` failed twice under load without it (bite `bites/M8/migration-lock-no-wait.patch`). It passed in the next run.
+  - Raft harness: a cluster counts as started once its catalog database answers through the link.
+  - Not proven: none of the three `-Pheavy` runs on the new layout finished green, so whoever runs `-Pheavy` next is testing it. Their wall clock was 47 min and 51 min (1 h 52 min before), but both stopped early on a failure, so `catalog-tests-load` (21 min serially) never ran.
+    - Run 1: the Flyway lock (since fixed).
+    - Run 2: overlapped the fidice-demo stack starting. CockroachDB's first connection and Keycloak's start (`TwoIssuersTest`) timed out.
+    - Run 3: YugabyteDB's `exactlyOnePropertiesUpdateWins` could not connect (`StoreUnavailableException`), then the log stops partway through the YugabyteDB suite.
+  - Open: YugabyteDB connections fail under `-T 2` load; the next heavy run should check it is not the layout.
+- **YugabyteDB dropped 2026-11-11** (D7 amended; asked whether to drop it, Paul answered "Drop it"). The supported backends are four: PostgreSQL, CockroachDB, Oracle and MongoDB.
+  - Why: it took 33 of the heavy build's 112 minutes; writers queued on one pointer row are released about 200 ms apart, and the cause was never found; it failed in all three `-T 2` heavy runs. The cost: CockroachDB, under a proprietary licence since 24.3, is the only distributed-SQL backend left.
+  - Removed: the store's YugabyteDB entry and its switches, the `yb.*` self-check, `YugabyteCluster`, `YugabyteStoreSuiteTest`, `JournalTabletSplits` and the image property. They are in git history, and the shared suite could re-qualify the backend later.
+  - Flyway's `flyway.postgresql.transactional.lock` setting went too. Only YugabyteDB needed the session lock (M2a deviation 10): PostgreSQL always got Flyway's default, and Flyway's CockroachDB support takes a lock row and does not read the setting.
+  - The SQL store refuses a YugabyteDB server (a `version()` text holding `-YB-`) before any schema step or write, where it would otherwise run on it as PostgreSQL: `UnsupportedBackendTest`, bite `bites/M8/yugabyte-taken-for-postgresql.patch` (recorded, not run).
+  - Landed on the fast build, which tests PostgreSQL only. The CockroachDB suite compiles against the trimmed harness and has not run since; the next `-Pheavy` run tests it.
+  - The YugabyteDB results and findings in the entries above stand as measured. This closes the open item on YugabyteDB connections under `-T 2`; whether the `-T 2` layout itself runs green is still not proven.
+- **Build moved from Maven to Gradle 2026-11-11** (P1 amended; Paul: "ok then lets switch"). Checked on the fast build only: no heavy test, no CAS test and one bite were run.
+  - For a reader: `./gradlew build` is the fast build, `./gradlew build -Pheavy` the heavy one, `./gradlew build -Pnightly` the overnight CAS run. One module's tests: `./gradlew :catalog-core:test`; one class: add `--tests CommitEngineTest`. Output is in `build/` where it was in `target/`. A test option is `-Pname=value` where it was `-Dname=value` (`rck.record`, `golden.record`, `engines.keep-stack`, `fidice.aws.profile`). `bites/run.sh` and `demo/demo.sh` run Gradle; patch headers are unchanged. No `pom.xml`, `mvnw` or `.mvn/` is left. The entries above name Maven commands as they were run then.
+  - Gradle 9.9.1 through the wrapper, with `distributionSha256Sum` set to the checksum gradle.org publishes; a wrapper given a wrong checksum refused the download. Libraries and plugins come from Maven Central alone: a build from an empty Gradle home asked `repo.maven.apache.org` for everything and `services.gradle.org` only for the distribution.
+  - Same tests: 1,044 tests in 107 classes, with the same count in every class as `./mvnw verify` on the same commit, and the RCK outcomes line for line (133 of 160 pass). Maven took 7 min 49 s; Gradle from clean 6 min 20 s.
+  - Same tag rules, checked without running a test (Gradle's `--test-dry-run`, which lists a parameterized test once): the fast build selects 594 test methods, `-Pheavy` 967, `-Pnightly` 4 (the CAS test on the four backends, at 1,000 rounds) out of 971, and each list is exactly what the `@Tag`s in the source say. Every recorded bite's `Test:` line selects tests under Gradle (85 distinct lines for 92 patches).
+  - Same server: the runnable jar holds the same 111 libraries. The 104 from outside are byte for byte the same files, and every class of ours is byte for byte what Maven compiled. No class is in two libraries, so their order in the jar cannot matter.
+  - Test classpaths differ in four test-only libraries, where Gradle takes the highest version asked for and Maven took the nearest: `error_prone_annotations` 2.49.0 for 2.41.0 in `catalog-audit`, and `commons-io` 2.20.0 for 2.16.1, `commons-compress` 1.28.0 for 1.26.1 and `snappy-java` 1.1.10.7 for 1.1.10.4 in `catalog-tests-conformance`. JUnit's `apiguardian-api` (and `jspecify` in the store modules) is on the compile classpath only.
+  - Dependency convergence is checked on the compile and runtime classpaths, as the Maven enforcer rule did: that rule leaves test scope out unless told otherwise.
+  - Java 25 comes from an installed JDK that Gradle finds itself; it downloads none. Nothing has to be set: from a shell with Java 21 first and no `JAVA_HOME`, every module compiled with JDK 25.
+  - Two tasks at a time (`org.gradle.workers.max=2`), so two test JVMs at most: sampled every 3 s through a clean build, never more than two.
+  - The local build cache is on, and a module whose inputs did not change is not tested again. Measured: clean build 6 min 20 s; again with no change 13 s; after one added line in `catalog-server` 3 min 6 s (its tests and the conformance tests ran, ten modules' did not); the same commit in a second, fresh checkout 11 s (every test result came from the cache). The CAS run is never reused.
+  - Under OneDrive Gradle needed one fix. OneDrive marks new folders read-only and Java cannot delete those, so the second test run in a checkout, a result reused from the cache, and `clean` all failed with "Unable to delete directory" (on JDK 21 as on 25). The root build file clears the mark before each task. It uses a hook Gradle has deprecated; nothing else runs early enough.
+  - Seen once and not reproduced: a build failed with "Cannot snapshot …: not a regular file" on a class file OneDrive was taking in at that moment. The next run passed, and 40 rebuilds straight after a clean compile all passed.
+  - Not run under Gradle: `-Pheavy`, `-Pnightly`, the engine matrix, the demo stack, and every bite but `bites/M8/yugabyte-taken-for-postgresql.patch` (it bites: 2 of 3 tests fail). So the load and engine tests' paths to the server jar, and the 4 GB test heap under heavy load, are untested. The rolling-upgrade test still builds the previous release (`75df4ff`) with that release's own Maven wrapper.
+- **Load, engine matrix and per-mutation fault sweeps moved to the overnight run 2026-11-11** (Paul: "Can you plan to move more tests to the overnight run", then "Go ahead"). A new tag, `overnight`, on every `catalog-tests-load` suite, `EngineMatrixTest`, and the two `MutationSuite` sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type. `-Pnightly` runs them with the CAS test; the fast and heavy builds do not. The heavy build keeps the single lost-answer, lost-COMMIT, in-flight and failover tests on every backend.
+  - Selection, by `--test-dry-run`: fast 594 test methods (unchanged), `-Pheavy` 947 (was 967), `-Pnightly` 24 (the 20 moved and the CAS test on four backends). No test is in two of the three lists and together they hold all 971.
+  - `-Pheavy` from clean, without the build cache: green, 15 min 49 s, 1,458 tests, 0 failures; skipped as before: Oracle 3 (no Data Guard on Free) and `AwsVendingTest` 11. This is the first green `-Pheavy` under Gradle and since YugabyteDB was dropped, so the two-at-a-time layout is now shown to run green. The longest modules: MongoDB 405 s, CockroachDB 355 s, server 206 s, Oracle 201 s.
+  - `bites/run.sh` passes `-Pbites` (every test but CAS) instead of `-Pheavy`, so a bite can select an `overnight` test. Both load bites still bite: `auth-filter-outage-escapes` (KillPrimaryTest, 1 of 1 failed) and `cas-lost-update-under-load` (ConcurrentWritersTest, 5 of 5 failed), tree restored, 7 min 31 s.
+  - Not run: `-Pnightly`, so the moved tests have not run under Gradle; the paths to the server jar in the load tests were exercised only by those two bites.
+- **Kubernetes deployment added 2026-11-11** (Paul: "setup the deployment so that the catalog runs in Kubernetes. Create helm charts etc."). `deploy/README.md` has the details.
+  - Added: an image (`deploy/image/Dockerfile`, the runnable jar in Spring Boot's layers, non-root, base image a build argument for PLT-6), a Helm chart for the servers only (`deploy/helm/fidice-catalog`), and a local stack (`deploy/local/run.sh`).
+  - How settings reach the server: plain settings are Spring properties in a ConfigMap; secret ones come from a Secret read as a Spring config tree, whose key names are property names. No server code changed.
+  - Checked on Docker Desktop's Kubernetes 1.30 with Helm 4.3.1 (installed with winget for this, at Paul's choice), two servers:
+    - `helm lint` passes.
+    - Both servers start in about 14 s. Each reads its database password and storage key from the mounted Secret; PostgreSQL there demands a password for pod connections.
+    - `run.sh smoke` passes through each server separately: 401 without a token, config, create a namespace on one server and read it on the other, create a table, load it with vended credentials, drop both.
+    - A rolling restart under steady requests answered 550 of 550 with 200. With the preStop pause removed, 3 of 583 failed to connect, so the pause is what closes the gap.
+  - Not checked: an Ingress, IRSA or Pod Identity on EKS, OpenShift, more than one node or zone, and resource sizes under load. Before production, the ETag finding from M8 needs deciding: behind the default non-sticky Service, a conditional load answered by another server is a 200, not a 304. The server still wires only the PostgreSQL-wire store.
 - **Next:** M9, carried to work.
