@@ -28,9 +28,11 @@ public interface CredentialVending {
      * @param requestId   the request's id, carried into the STS session name and tags
      * @param delegation  the client's {@code X-Iceberg-Access-Delegation} header, if any
      * @param refreshPath the table's credentials route, relative to the catalog's base URI
+     * @param write       whether the caller may write the table's data: a commit of data would be allowed, or a
+     *                    staged create's caller may create the table. Otherwise the credentials only read (D21).
      */
     record Request(CatalogRecord catalog, UUID tableId, List<String> path, String location, Caller caller,
-                   String requestId, Optional<String> delegation, String refreshPath) {
+                   String requestId, Optional<String> delegation, String refreshPath, boolean write) {
 
         public Request {
             Objects.requireNonNull(catalog, "catalog");

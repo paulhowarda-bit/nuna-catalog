@@ -38,7 +38,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Vends STS credentials scoped to one table's prefix (D21). Each caller's credentials are cached for most
+ * Vends STS credentials scoped to one table's prefix (D21): read-write to a caller who may write the table's data,
+ * read-write-delete to a maintenance principal acting as itself, read-only to anyone else. Each caller's credentials are cached for most
  * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
  * thrown away (D23). A trusted engine that asks for no delegation gets none.
  */
@@ -77,7 +78,8 @@ public final class StsCredentialVending implements CredentialVending {
             return Vended.NONE;
         }
         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
-        Access access = security.isMaintenance(caller) ? Access.READ_WRITE_DELETE : Access.READ_WRITE;
+        Access access = security.isMaintenance(caller) ? Access.READ_WRITE_DELETE
+                : request.write() ? Access.READ_WRITE : Access.READ;
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
                 caller.principal().id(), subject, caller.engine());

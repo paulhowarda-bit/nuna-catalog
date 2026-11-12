@@ -130,9 +130,10 @@ class TableRoutes {
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
         RequestContext request = RequestContext.of(http, callers);
-        guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_TABLE);
+        boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
+                Guard.LOAD_TABLE);
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
-                object.id(), object.locationRoot());
+                object.id(), object.locationRoot(), write);
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         if (cacheable && pointer.isPresent()) {
@@ -245,9 +246,10 @@ class TableRoutes {
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
         RequestContext request = RequestContext.of(http, callers);
-        guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_CREDENTIALS);
+        boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
+                Guard.LOAD_CREDENTIALS);
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
-                object.id(), object.locationRoot());
+                object.id(), object.locationRoot(), write);
         return Http.json(200, RestResponse.credentials(vended.credentials()));
     }
 
@@ -266,7 +268,8 @@ class TableRoutes {
         String location = engines.newLocation(target.catalog(), id);
         return switch (Metadata.createTable(json, id.toString(), location)) {
             case Outcome.NewMetadata created -> {
-                Vended vended = vend(target, id, location);
+                // Its caller may create the table, and its create commit may carry data files written first.
+                Vended vended = vend(target, id, location, true);
                 yield Http.json(200, MetadataViews.stagedTable(created.json(), vended.config(), vended.credentials()));
             }
             case Outcome.BadRequest bad -> Http.error(400, bad.type(), bad.message());
@@ -285,7 +288,7 @@ class TableRoutes {
         String location = done.metadataLocation();
         Vended vended = store.readObject(done.objectId()).map(object -> {
             try {
-                return vend(target, object.id(), object.locationRoot());
+                return vend(target, object.id(), object.locationRoot(), guard.mayWrite(target.request(), object));
             } catch (CatalogError e) {
                 if (e.status() != 503) {
                     throw e;
@@ -305,12 +308,12 @@ class TableRoutes {
                           RequestContext request, Optional<String> delegation) {
     }
 
-    private Vended vend(Target target, UUID tableId, String location) {
+    private Vended vend(Target target, UUID tableId, String location, boolean write) {
         String refresh = "v1/" + segment(target.prefix()) + "/namespaces/" + segment(target.namespace()) + "/tables/"
                 + segment(target.table()) + "/credentials";
         return vending.vend(new CredentialVending.Request(target.catalog(), tableId,
                 AuditEvents.path(Lookup.levels(target.namespace()), target.table()), location,
-                target.request().caller(), target.request().requestId(), target.delegation(), refresh));
+                target.request().caller(), target.request().requestId(), target.delegation(), refresh, write));
     }
 
     private static String segment(String value) {

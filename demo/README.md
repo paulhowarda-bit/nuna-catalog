@@ -182,9 +182,9 @@ every table she may load, with the storage credentials the catalog vends, and no
 
 - `finance.ledger.accounts` is listed, but reading it gets the catalog's refusal (D27); the other tables still
   work.
-- A write is refused at commit: `ana` holds select only. The files DuckDB wrote before it committed stay in
-  the table's folder, unreferenced, because the catalog vends read-write credentials to every caller today
-  (read-only vending for select-only callers is still open, `build-plan.md`).
+- A write is refused: `ana` holds select only, so the catalog vends her read-only storage credentials, and
+  DuckDB's first upload of a data file gets `HTTP 403 Forbidden ... AccessDenied` from the store. Nothing
+  reaches the table's folder.
 - The UI downloads its web page from `ui.duckdb.org` each time it opens, so it needs internet access; DuckDB
   and its extensions are in the image. Notebooks last as long as the pod.
 - It is a single DuckDB for whoever opens the page, with no sign-in of its own. A DuckDB on your own machine
