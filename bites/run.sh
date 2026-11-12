@@ -2,6 +2,7 @@
 # Runs recorded bites. For each patch: apply it, run the test it names, expect that test to fail,
 # revert the patch, and check every tracked file hashes as it did before. Prints a table.
 #
+#   bites/run.sh                          every bite, in every folder under bites/
 #   bites/run.sh bites/M4                 every bite of a milestone
 #   bites/run.sh bites/M4/some-check.patch one bite
 #
@@ -34,9 +35,8 @@ main() {
             patches+=("$arg")
         fi
     done
-    if [ ${#patches[@]} -eq 0 ]; then
-        echo "usage: bites/run.sh <milestone dir | patch>..." >&2
-        exit 2
+    if [ $# -eq 0 ]; then
+        patches=(bites/*/*.patch)
     fi
 
     trap 'revert_current; exit 130' INT TERM
