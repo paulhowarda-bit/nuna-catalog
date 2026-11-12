@@ -1,0 +1,17 @@
+Breaks: a restarted feed does not send the receipts after the last one SingleStore stored.
+Module: singlestore-change-feed
+Test: ChangeFeedTest
+
+diff --git a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeFeed.java b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeFeed.java
+index cee2325..1c02e27 100644
+--- a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeFeed.java
++++ b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/ChangeFeed.java
+@@ -115,7 +115,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
+     }
+ 
+     private List<Map<String, Object>> poll(long waitMs) {
+-        List<Map<String, Object>> receipts = new ArrayList<>(owed);
++        List<Map<String, Object>> receipts = new ArrayList<>();
+         long now = System.currentTimeMillis();
+         if (now - lastGuard >= GUARD_EVERY_MS) {
+             guard();
