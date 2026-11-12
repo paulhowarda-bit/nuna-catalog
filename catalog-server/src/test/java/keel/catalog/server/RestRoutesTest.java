@@ -295,6 +295,53 @@ class RestRoutesTest {
         assertThat(JsonPath.<String>read(token.body(), "$.error_description")).contains("identity provider");
     }
 
+    /** D15 on the wire: 204 for all or nothing, the request refused whole for any table's fault, replayed by key. */
+    @Test
+    void transactionsCommitEveryTableOrNone() throws Exception {
+        String namespace = namespace();
+        for (String table : List.of("a", "b")) {
+            assertThat(send("POST", "/namespaces/" + ns(namespace) + "/tables", TABLE.formatted(table)).statusCode())
+                    .isEqualTo(200);
+        }
+        String uuidB = JsonPath.read(send("GET", "/namespaces/" + ns(namespace) + "/tables/b", null).body(),
+                "$.metadata.table-uuid");
+
+        HttpResponse<String> applied = send("POST", "/transactions/commit",
+                transaction(change(namespace, "a", "", setK("1")), change(namespace, "b", assertUuid(uuidB), setK("1"))));
+        assertThat(applied.statusCode()).as(applied.body()).isEqualTo(204);
+        assertThat(applied.body()).isEmpty();
+        assertThat(property(namespace, "a")).isEqualTo("1");
+        assertThat(property(namespace, "b")).isEqualTo("1");
+
+        String a = location(namespace, "a");
+        assertError(send("POST", "/transactions/commit", transaction(change(namespace, "a", "", setK("2")),
+                change(namespace, "b", assertUuid(UUID.randomUUID().toString()), setK("2")))),
+                409, "CommitFailedException");
+        assertError(send("POST", "/transactions/commit", transaction(change(namespace, "a", "", setK("2")),
+                change(namespace, "ghost", "", setK("2")))), 404, "NoSuchTableException");
+        assertError(send("POST", "/transactions/commit", transaction(change(namespace, "a", "", setK("2")),
+                change(namespace, "A", "", setK("3")))), 400, "BadRequestException");
+        assertError(send("POST", "/transactions/commit", transaction(change(namespace, "a", "", setK("2")),
+                change(namespace, "b", "", "{\"action\":\"no-such-update\"}"))), 400, "BadRequestException");
+        assertError(send("POST", "/transactions/commit",
+                "{\"table-changes\":[{\"requirements\":[],\"updates\":[" + setK("2") + "]}]}"), 400, "BadRequestException");
+        assertError(send("POST", "/transactions/commit", "{\"table-changes\":[]}"), 400, "BadRequestException");
+        String[] overTheCap = new String[101];
+        Arrays.fill(overTheCap, change(namespace, "a", "", setK("2")));
+        HttpResponse<String> tooMany = send("POST", "/transactions/commit", transaction(overTheCap));
+        assertError(tooMany, 400, "BadRequestException");
+        assertThat(JsonPath.<String>read(tooMany.body(), "$.error.message")).contains("at most 100 tables");
+        assertThat(location(namespace, "a")).as("no refused transaction changed a").isEqualTo(a);
+        assertThat(property(namespace, "b")).isEqualTo("1");
+
+        String key = UUID.randomUUID().toString();
+        String request = transaction(change(namespace, "a", "", setK("4")), change(namespace, "b", "", setK("4")));
+        assertThat(send("POST", "/transactions/commit", request, "Idempotency-Key", key).statusCode()).isEqualTo(204);
+        String committed = location(namespace, "a");
+        assertThat(send("POST", "/transactions/commit", request, "Idempotency-Key", key).statusCode()).isEqualTo(204);
+        assertThat(location(namespace, "a")).as("replayed, not applied again").isEqualTo(committed);
+    }
+
     @Test
     void metadataTablesAreNoSuchTable() throws Exception {
         String namespace = namespace();
@@ -315,6 +362,33 @@ class RestRoutesTest {
         String ref = ",{\"action\":\"set-snapshot-ref\",\"ref-name\":\"main\",\"snapshot-id\":" + id
                 + ",\"type\":\"branch\"}";
         return "{\"requirements\":[],\"updates\":[" + update + (setMain ? ref : "") + "]}";
+    }
+
+    private static String transaction(String... changes) {
+        return "{\"table-changes\":[" + String.join(",", changes) + "]}";
+    }
+
+    private static String change(String namespace, String table, String requirement, String update) {
+        return "{\"identifier\":{\"namespace\":[\"" + namespace + "\"],\"name\":\"" + table + "\"},\"requirements\":["
+                + requirement + "],\"updates\":[" + update + "]}";
+    }
+
+    private static String setK(String value) {
+        return "{\"action\":\"set-properties\",\"updates\":{\"k\":\"" + value + "\"}}";
+    }
+
+    private static String assertUuid(String uuid) {
+        return "{\"type\":\"assert-table-uuid\",\"uuid\":\"" + uuid + "\"}";
+    }
+
+    private String property(String namespace, String table) throws Exception {
+        return JsonPath.read(send("GET", "/namespaces/" + ns(namespace) + "/tables/" + table, null).body(),
+                "$.metadata.properties.k");
+    }
+
+    private String location(String namespace, String table) throws Exception {
+        return JsonPath.read(send("GET", "/namespaces/" + ns(namespace) + "/tables/" + table, null).body(),
+                "$.metadata-location");
     }
 
     private static String rename(String fromNamespace, String from, String toNamespace, String to) {

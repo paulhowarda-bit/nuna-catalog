@@ -186,6 +186,36 @@ class SecurityGateTest {
         assertThat(audit.denials().getLast().privilege()).as("select gives no modify").isEqualTo("modify");
     }
 
+    /** D15: a transaction asks for each table what that table's own commit route asks; one refusal refuses all. */
+    @Test
+    void aTransactionNeedsTheRightOnEveryTable() throws Exception {
+        String tia = IssuerForTests.bearer("tia", "txn-writers");
+        noContent(grant(GINA, tableSpec("sales/eu/orders"), "txn-writers", "modify"));
+        long orders = store.readPointer(table("sales/eu/orders").mainKey()).orElseThrow().version();
+        long staff = store.readPointer(table("hr/staff").mainKey()).orElseThrow().version();
+
+        assertDenied(send(tia, "POST", "/v1/gate/transactions/commit",
+                transaction(List.of("sales", "eu", "orders"), List.of("hr", "staff"))), "updateTable", "no_privilege");
+        assertThat(audit.denials().getLast().securable().path()).containsExactly("hr", "staff");
+        assertThat(store.readPointer(table("sales/eu/orders").mainKey()).orElseThrow().version()).isEqualTo(orders);
+        assertThat(store.readPointer(table("hr/staff").mainKey()).orElseThrow().version()).isEqualTo(staff);
+
+        noContent(send(tia, "POST", "/v1/gate/transactions/commit", transaction(List.of("sales", "eu", "orders"))));
+        assertThat(store.readPointer(table("sales/eu/orders").mainKey()).orElseThrow().version()).isEqualTo(orders + 1);
+    }
+
+    @SafeVarargs
+    private static String transaction(List<String>... tables) {
+        StringBuilder body = new StringBuilder("{\"table-changes\":[");
+        for (int i = 0; i < tables.length; i++) {
+            List<String> path = tables[i];
+            body.append(i == 0 ? "" : ",").append("{\"identifier\":{\"namespace\":")
+                    .append(json(path.subList(0, path.size() - 1))).append(",\"name\":\"").append(path.getLast())
+                    .append("\"},").append(SET_PROPERTY.formatted("tia").substring(1));
+        }
+        return body.append("]}").toString();
+    }
+
     @Test
     void separationOfDutiesHoldsForEveryGrant() throws Exception {
         noContent(grant(GINA, catalogSpec(), "loaders-two", "write"));

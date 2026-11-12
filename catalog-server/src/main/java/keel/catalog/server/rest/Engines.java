@@ -1,11 +1,13 @@
 package keel.catalog.server.rest;
 
 import keel.catalog.core.commit.CommitEngine;
+import keel.catalog.core.commit.CommitEvents;
 import keel.catalog.core.commit.CommitRule;
 import keel.catalog.core.commit.CommitSettings;
 import keel.catalog.core.commit.MetadataCache;
 import keel.catalog.core.commit.Rules;
 import keel.catalog.server.storage.CatalogStorage;
+import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogStore;
 import java.time.Clock;
@@ -15,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -54,10 +57,19 @@ class Engines {
     }
 
     CommitEngine forRequest(CatalogRecord catalog, List<String> path, RequestContext request) {
+        return forRequest(catalog, audit.commits(catalog.name(), path, request.actor()));
+    }
+
+    /** For a transaction, whose audit events name each table by {@code path}. */
+    CommitEngine forTransaction(CatalogRecord catalog, Function<CatalogObject, List<String>> path,
+                                RequestContext request) {
+        return forRequest(catalog, audit.commits(catalog.name(), path, request.actor()));
+    }
+
+    private CommitEngine forRequest(CatalogRecord catalog, CommitEvents events) {
         Profile profile = profile(catalog);
-        return new CommitEngine(store, profile.bound().files(), cache, profile.rules(),
-                audit.commits(catalog.name(), path, request.actor()), alerts, CommitSettings.DEFAULTS, clock,
-                CommitEngine.Sleeper.THREAD);
+        return new CommitEngine(store, profile.bound().files(), cache, profile.rules(), events, alerts,
+                CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
     }
 
     /** For reading current metadata only. */

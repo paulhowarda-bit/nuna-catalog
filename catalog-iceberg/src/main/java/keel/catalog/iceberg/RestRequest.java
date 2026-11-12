@@ -14,6 +14,8 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.UnprocessableEntityException;
 import org.apache.iceberg.metrics.CommitReport;
 import org.apache.iceberg.metrics.ScanReport;
+import org.apache.iceberg.rest.requests.CommitTransactionRequest;
+import org.apache.iceberg.rest.requests.CommitTransactionRequestParser;
 import org.apache.iceberg.rest.requests.CreateNamespaceRequest;
 import org.apache.iceberg.rest.requests.CreateTableRequest;
 import org.apache.iceberg.rest.requests.CreateViewRequest;
@@ -23,6 +25,7 @@ import org.apache.iceberg.rest.requests.RenameTableRequest;
 import org.apache.iceberg.rest.requests.ReportMetricsRequest;
 import org.apache.iceberg.rest.requests.ReportMetricsRequestParser;
 import org.apache.iceberg.rest.requests.UpdateNamespacePropertiesRequest;
+import org.apache.iceberg.rest.requests.UpdateTableRequestParser;
 
 /**
  * Reads the Iceberg REST request bodies the routes need, with iceberg-core's own request classes, and
@@ -63,6 +66,10 @@ public final class RestRequest {
 
     /** The parts of a create-table request a route needs before the commit engine sees it. */
     public record NewTable(String name, boolean stageCreate) {
+    }
+
+    /** One table's part of a transaction: the table it names, and its commit request as a commit route takes it. */
+    public record TableCommit(Identifier identifier, String json) {
     }
 
     /** What the server forwards to telemetry from a metrics report (D13); the full report is {@code json}. */
@@ -148,6 +155,21 @@ public final class RestRequest {
         return request.name();
     }
 
+    /**
+     * A commit-transaction request's table changes, in request order (D15). Each must name its table, and
+     * each is parsed, so an unknown requirement or update anywhere refuses the whole request with 400.
+     */
+    public static List<TableCommit> commitTransaction(String json) {
+        CommitTransactionRequest request = guarded(() -> {
+            CommitTransactionRequest parsed = CommitTransactionRequestParser.fromJson(json);
+            parsed.validate();
+            return parsed;
+        });
+        return request.tableChanges().stream()
+                .map(change -> new TableCommit(identifier(change.identifier()), UpdateTableRequestParser.toJson(change)))
+                .toList();
+    }
+
     public static MetricsSummary reportMetrics(String json) {
         ReportMetricsRequest request = guarded(() -> ReportMetricsRequestParser.fromJson(json));
         // Written again by the parser: one compact line, whatever whitespace the client sent.
@@ -227,7 +249,10 @@ public final class RestRequest {
         });
     }
 
-    /** iceberg-core reports a bad request as IllegalArgumentException, or 422 for clashing property keys. */
+    /**
+     * iceberg-core reports a bad request as IllegalArgumentException (UnsupportedOperationException for an
+     * unknown update action), or 422 for clashing property keys.
+     */
     private static <T> T guarded(Supplier<T> work) {
         try {
             return work.get();
@@ -236,7 +261,7 @@ public final class RestRequest {
         } catch (UnprocessableEntityException e) {
             throw new InvalidRequest(422, "UnprocessableEntityException", e.getMessage());
         } catch (IllegalArgumentException | IllegalStateException | NullPointerException
-                 | java.io.UncheckedIOException e) {
+                 | UnsupportedOperationException | java.io.UncheckedIOException e) {
             throw badRequest(e.getMessage());
         } catch (RuntimeException e) {
             if (e.getCause() instanceof UnprocessableEntityException unprocessable) {

@@ -109,6 +109,7 @@ class CommitEnginePropertyTest {
                         s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
                 case CommitReply.Unavailable first -> assertThat(again).isInstanceOfSatisfying(Success.class,
                         s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
+                case CommitReply.Applied first -> throw new AssertionError("a table commit answered " + first);
             }
             retried.add(new Sent(sent.property(), sent.request(), sent.key(),
                     again instanceof Success s && s.how() == How.REPLAYED ? sent.reply() : again));
