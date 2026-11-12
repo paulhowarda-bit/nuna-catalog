@@ -255,7 +255,7 @@ class EngineMatrixTest {
     @Order(2)
     void kafkaConnect() {
         Map<String, String> results = runEngine("kafka", () -> job("kafka-connect", KAFKA_CONNECT_IMAGE,
-                List.of("bash", "/scripts/run.sh"), "1Gi"));
+                List.of("bash", "/scripts/run.sh"), "1536Mi"));
         assertThat(results).containsAllEntriesOf(Map.of(
                 "kafka ns.create", "m8.deep.kafka",
                 "kafka t.create", "3",

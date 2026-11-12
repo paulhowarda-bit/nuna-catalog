@@ -26,7 +26,12 @@ await_records() { # waits up to three minutes for the table to hold $1 records
   exit 1
 }
 
-produce() { printf '%s\n' "$@" | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 --topic "$TOPIC"; }
+# Kafka's scripts size each JVM for a machine of its own (Connect -Xmx2G, the producer -Xmx512M); in the Job's
+# memory limit (EngineMatrixTest), with Connect and the producer running at once, the kernel killed Connect.
+produce() {
+  printf '%s\n' "$@" | KAFKA_HEAP_OPTS=-Xmx128m /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:9092 \
+    --topic "$TOPIC"
+}
 
 cat > /tmp/worker.properties <<PROPS
 bootstrap.servers=kafka:9092
@@ -58,7 +63,8 @@ iceberg.catalog.header.X-Iceberg-Access-Delegation=vended-credentials
 iceberg.catalog.io-impl=org.apache.iceberg.aws.s3.S3FileIO
 PROPS
 
-/opt/kafka/bin/connect-standalone.sh /tmp/worker.properties /tmp/iceberg-sink.properties > /tmp/connect.log 2>&1 &
+KAFKA_HEAP_OPTS="-Xms256m -Xmx512m" /opt/kafka/bin/connect-standalone.sh /tmp/worker.properties \
+  /tmp/iceberg-sink.properties > /tmp/connect.log 2>&1 &
 CONNECT=$!
 trap 'kill $CONNECT 2>/dev/null || true; echo "--- connect.log (tail)"; tail -40 /tmp/connect.log' EXIT
 
