@@ -2,10 +2,10 @@ Breaks: Anyone may list any group's grants.
 Module: catalog-server
 Test: SecurityGateTest#grantsAreListedByPrincipalAndByObjectCheckedInBatchAndExported
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/security/GrantRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java
 index c4b77cc..c42fbb7 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/security/GrantRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/security/GrantRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java
 @@ -126,7 +126,7 @@ class GrantRoutes {
          Securables securables = new Securables(store, record);
          Set<String> own = request.caller().subject().groups();

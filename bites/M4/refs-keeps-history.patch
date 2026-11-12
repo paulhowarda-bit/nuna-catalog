@@ -2,10 +2,10 @@ Breaks: snapshots=refs serves every snapshot instead of only those a ref points 
 Module: catalog-server
 Test: RestRoutesTest#snapshotsRefsDropsUnreferencedSnapshotsWithTheirStatistics
 
-diff --git a/catalog-iceberg/src/main/java/fidice/catalog/iceberg/MetadataViews.java b/catalog-iceberg/src/main/java/fidice/catalog/iceberg/MetadataViews.java
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/MetadataViews.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/MetadataViews.java
 index 660d652..e76d3e8 100644
---- a/catalog-iceberg/src/main/java/fidice/catalog/iceberg/MetadataViews.java
-+++ b/catalog-iceberg/src/main/java/fidice/catalog/iceberg/MetadataViews.java
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/MetadataViews.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/MetadataViews.java
 @@ -100,7 +100,6 @@ public final class MetadataViews {
                  // changes; they describe no file change, so they are discarded to keep the file's location.
                  entry.refsOnly = TableMetadata.buildFrom(full)

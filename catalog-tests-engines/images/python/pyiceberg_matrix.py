@@ -21,9 +21,9 @@ def limit(check, reason):
 
 catalog = load_catalog("fid", **{
     "type": "rest",
-    "uri": "http://fidice-catalog:8181",
+    "uri": "http://keel-catalog:8181",
     "warehouse": "engines",
-    "token": os.environ["FIDICE_TOKEN"],
+    "token": os.environ["KEEL_TOKEN"],
     "header.X-Iceberg-Access-Delegation": "vended-credentials",
 })
 

@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "fidice-catalog"
+rootProject.name = "keel-catalog"
 
 include(
     "catalog-tests-s3",

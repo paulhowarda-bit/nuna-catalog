@@ -2,10 +2,10 @@ Breaks: anyone signed in may set a DR freeze, not only a platform operator.
 Module: catalog-server
 Test: ManagementAuthorizationTest#settingADrFreezeNeedsAPlatformOperator
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
 index 501b568..7cb1631 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
 @@ -305,7 +305,6 @@ class GovernanceRoutes {
                                    HttpServletRequest http) {
          Target target = management.target(prefix, namespace, table, view);

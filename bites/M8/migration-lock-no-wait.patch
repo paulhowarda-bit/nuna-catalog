@@ -2,10 +2,10 @@ Breaks: a node starting while another migrates does not wait for the migration l
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Upgrade#migrateWhileThePreviousReleaseServes
 
-diff --git a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlCatalogStore.java
 index 0c8f13f..04e7c59 100644
---- a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
-+++ b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/SqlCatalogStore.java
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlCatalogStore.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlCatalogStore.java
 @@ -171,7 +171,7 @@ public final class SqlCatalogStore implements CatalogStore {
       * migrates: 5 minutes. Flyway's default, 50, failed a second node's start while the first ran
       * V3 on a loaded YugabyteDB cluster (a backend until 2026-11-11, D7).

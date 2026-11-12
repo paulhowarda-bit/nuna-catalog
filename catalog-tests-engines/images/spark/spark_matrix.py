@@ -6,7 +6,7 @@ Also leaves m8.shared.spark.t_v2 and t_v3 (evolved, four rows) for the other eng
 from pyspark.sql import SparkSession
 
 ENGINE = "spark"
-spark = SparkSession.builder.appName("fidice-engine-matrix").getOrCreate()
+spark = SparkSession.builder.appName("keel-engine-matrix").getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
 

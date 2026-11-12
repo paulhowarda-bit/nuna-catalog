@@ -2,16 +2,16 @@ Breaks: the server's store migrates only the shared steps, so PostgreSQL never r
 Module: catalog-server
 Test: SchemaAtStartupTest
 
-diff --git a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
 index a00c7c0..69faec8 100644
---- a/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java
-+++ b/catalog-store-sql/src/main/java/fidice/catalog/store/sql/Backend.java
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
 @@ -15,7 +15,7 @@ import java.sql.Statement;
  enum Backend {
  
      /** The shared steps, then the journal's partitioning. */
--    POSTGRESQL(new String[] {Locations.SHARED, "classpath:fidice/store/sql/postgresql"}, true, true, true),
+-    POSTGRESQL(new String[] {Locations.SHARED, "classpath:keel/store/sql/postgresql"}, true, true, true),
 +    POSTGRESQL(new String[] {Locations.SHARED}, true, true, true),
      /** Its own steps, in CockroachDB's dialect; its journal splits into ranges by itself. */
-     COCKROACHDB(new String[] {"classpath:fidice/store/sql/cockroachdb"}, false, false, false);
+     COCKROACHDB(new String[] {"classpath:keel/store/sql/cockroachdb"}, false, false, false);
  

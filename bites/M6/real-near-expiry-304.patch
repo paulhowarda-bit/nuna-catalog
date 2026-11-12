@@ -2,10 +2,10 @@ Breaks: a load carries an ETag, and may answer 304, although its real STS creden
 Module: catalog-server
 Test: VendingNearExpiryTest
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
 index ff7377e..1081cf5 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/rest/TableRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
 @@ -130,7 +130,7 @@ class TableRoutes {
          guard.onObject(request, catalog, object, AuditEvents.path(levels, table), Guard.LOAD_TABLE);
          Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),

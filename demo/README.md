@@ -14,9 +14,9 @@ demo/demo.sh up
   `java` on the path). Every `up` builds the server jar and the change-feed connector jar from this
   checkout (no tests run), so the stack never runs a jar older than the code; when nothing changed,
   Gradle does nothing.
-- The stack is compose project `fidice-demo` (`FIDICE_DEMO_PROJECT`), run from a copy in `~/.fidice-demo`
-  (`FIDICE_DEMO_HOME`), so it keeps running if this checkout changes. The engine matrix's project
-  `fidice-engines` is separate.
+- The stack is compose project `keel-demo` (`KEEL_DEMO_PROJECT`), run from a copy in `~/.keel-demo`
+  (`KEEL_DEMO_HOME`), so it keeps running if this checkout changes. The engine matrix's project
+  `keel-engines` is separate.
 - Host ports: **8181** (catalog and console) and **8183** (SingleStore Studio). Nothing else is published.
 - Memory: about 5.5 GB of container limits (SingleStore 3 GB, the catalog 900 MB, Kafka 640 MB, Silo
   512 MB, PostgreSQL 384 MB), and 768 MB more while the lake writer runs.
@@ -25,7 +25,7 @@ At the end it prints the console URL, <http://localhost:8181/ui/>, and the token
 
 ## Sign in
 
-The demo turns on the console's token box (`fidice.ui.dev-token-login=true`, off by default). Paste a token:
+The demo turns on the console's token box (`keel.ui.dev-token-login=true`, off by default). Paste a token:
 
 | User | Group | What the catalog lets them do |
 |---|---|---|
@@ -46,10 +46,10 @@ pipelines are then replaced so they carry the new one):
 demo/demo.sh token
 ```
 
-Tokens are in `~/.fidice-demo/tokens/<user>.jwt`. A curl call as a user:
+Tokens are in `~/.keel-demo/tokens/<user>.jwt`. A curl call as a user:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.fidice-demo/tokens/ana.jwt)" "http://localhost:8181/v1/lakehouse/namespaces"
+curl -H "Authorization: Bearer $(cat ~/.keel-demo/tokens/ana.jwt)" "http://localhost:8181/v1/lakehouse/namespaces"
 ```
 
 ## What is loaded
@@ -75,7 +75,7 @@ Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the co
 demo/demo.sh sql
 ```
 
-Or Studio on <http://localhost:8183> (user `root`, password `fidicedemo-root`). Two databases:
+Or Studio on <http://localhost:8183> (user `root`, password `keeldemo-root`). Two databases:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
@@ -131,7 +131,7 @@ all writes in the demo's 3 GB container. `seed.sql` caps them at 128 MB
 demo/demo.sh down
 ```
 
-This removes the containers and their data. The signing key and tokens stay in `~/.fidice-demo`; the next
+This removes the containers and their data. The signing key and tokens stay in `~/.keel-demo`; the next
 `up` loads the sample data again.
 
 ```bash

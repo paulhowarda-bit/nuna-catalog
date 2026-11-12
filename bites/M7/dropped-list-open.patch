@@ -2,10 +2,10 @@ Breaks: anyone signed in may list a namespace's dropped objects, without describ
 Module: catalog-server
 Test: ManagementAuthorizationTest#listingDroppedObjectsNeedsDescribe
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
 index 7397391..f20c866 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
 @@ -95,8 +95,6 @@ class LifecycleRoutes {
          CatalogRecord catalog = management.catalog(prefix);
          List<String> levels = RestRequest.namespaceLevels(namespace);

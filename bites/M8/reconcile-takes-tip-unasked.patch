@@ -2,10 +2,10 @@ Breaks: an unproven tip is taken without the operator naming it in accept.
 Module: catalog-core
 Test: ReconcileTest#movesThroughProvenFilesAndLeavesTheTipToTheOperator
 
-diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
 index 2771cfa..d2d7f98 100644
---- a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
-+++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
 @@ -126,7 +126,7 @@ public final class Reconcile {
                  chosen = proven.getFirst();
                  proof = Proof.SUCCESSOR;

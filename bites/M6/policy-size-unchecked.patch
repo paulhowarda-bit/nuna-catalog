@@ -2,10 +2,10 @@ Breaks: a session policy over 2,048 characters is sent to STS instead of refused
 Module: catalog-objectstore
 Test: SessionPolicyTest#sizeLimit
 
-diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java
 index 690452e..af21972 100644
---- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
-+++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java
 @@ -35,7 +35,7 @@ public final class SessionPolicy {
                  + "\"Resource\":\"" + bucketArn + "/" + prefix + "*\"},"
                  + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"" + bucketArn + "\","

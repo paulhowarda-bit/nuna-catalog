@@ -2,10 +2,10 @@ Breaks: the archive accepts a lock shorter than five years.
 Module: catalog-audit
 Test: LockedArchiveTest#refusesUnlockedBucketAndShortRetention
 
-diff --git a/catalog-audit/src/main/java/fidice/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/fidice/catalog/audit/archive/ObjectLockArchive.java
+diff --git a/catalog-audit/src/main/java/keel/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/keel/catalog/audit/archive/ObjectLockArchive.java
 index 9bfa673..d76c052 100644
---- a/catalog-audit/src/main/java/fidice/catalog/audit/archive/ObjectLockArchive.java
-+++ b/catalog-audit/src/main/java/fidice/catalog/audit/archive/ObjectLockArchive.java
+--- a/catalog-audit/src/main/java/keel/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/keel/catalog/audit/archive/ObjectLockArchive.java
 @@ -75,7 +75,7 @@ public final class ObjectLockArchive {
          this.prefix = Objects.requireNonNull(prefix, "prefix");
          this.retention = Objects.requireNonNull(retention, "retention");

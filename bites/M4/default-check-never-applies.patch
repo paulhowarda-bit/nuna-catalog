@@ -2,10 +2,10 @@ Breaks: main never counts as keeping its rows, so a new required field never nee
 Module: catalog-iceberg
 Test: BackstopTest$Schemas#aNewRequiredFieldNeedsAnInitialDefault
 
-diff --git a/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Backstops.java
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
 index dcfb3cc..d4fc754 100644
---- a/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Backstops.java
-+++ b/catalog-iceberg/src/main/java/fidice/catalog/iceberg/Backstops.java
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
 @@ -111,7 +111,7 @@ final class Backstops {
       * commit that points main back at an old snapshot reads its rows through the replaced schema.
       */

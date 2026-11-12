@@ -1,6 +1,6 @@
 # catalog-tests-engines: the nightly engine matrix (M8, D31), the demo
 
-The catalog server, deployed by its Helm chart (`deploy/helm/fidice-catalog`) into a throwaway kind cluster,
+The catalog server, deployed by its Helm chart (`deploy/helm/keel-catalog`) into a throwaway kind cluster,
 with Spark, Kafka Connect, PyIceberg and SingleStore against it. Spark and PyIceberg create, write, read,
 evolve (add a column, then write and read with it) and drop v2 and v3 tables in a three-level namespace
 `m8.deep.<engine>`. Kafka Connect's Iceberg sink consumes a Kafka topic and commits its records into a table it
@@ -17,7 +17,7 @@ results below still show them.)
 The test is tagged `overnight`: the fast and heavy builds compile it and start nothing; the overnight run
 (`-Pnightly`) runs it. It needs Docker, `kubectl` and
 `helm` on the PATH (and `kind` for the default cluster), and the internet the first time (images, Maven
-Central jars and PyPI packages are baked into local images). Everything runs in namespace `fidice-engines`.
+Central jars and PyPI packages are baked into local images). Everything runs in namespace `keel-engines`.
 
 | Switch | Effect |
 |---|---|
@@ -26,7 +26,7 @@ Central jars and PyPI packages are baked into local images). Everything runs in 
 | `-Pengines.keep-stack=true` | Leave everything up afterwards. |
 | `-Pengines.skip-build=true` | Use the images already built instead of building them. |
 
-By default the harness creates kind cluster `fidice-engines` with its own kubeconfig,
+By default the harness creates kind cluster `keel-engines` with its own kubeconfig,
 `build/engines-run/kubeconfig`, so the current kubectl context is never changed, and deletes it at the end.
 `build/engines-run/` holds the token, `commands.log` (every command and its output), the rendered manifests
 and `results.txt`.
@@ -35,7 +35,7 @@ With the stack kept, the kafbat UI shows the Kafka topics (the Kafka Connect sou
 sink's control topic, the catalog's audit and change topics), their messages and consumer groups:
 
 ```
-KUBECONFIG=build/engines-run/kubeconfig kubectl -n fidice-engines port-forward svc/kafka-ui 8080:8080
+KUBECONFIG=build/engines-run/kubeconfig kubectl -n keel-engines port-forward svc/kafka-ui 8080:8080
 ```
 
 then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--context docker-desktop` instead of
@@ -43,7 +43,7 @@ then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--cont
 
 ## How it works
 
-- The harness creates kind cluster `fidice-engines`, builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
+- The harness creates kind cluster `keel-engines`, builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
   and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
   cluster: nothing is pulled from inside it.
 - `k8s/infra.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`, a busybox file server for the test
@@ -52,8 +52,8 @@ then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--cont
   store in the cluster and the bucket and role are the run's own, deleted at the end. On Ceph the harness
   creates the STS role once the store is up. No pod gets Service environment variables: the Kafka image
   reads every `KAFKA_*` variable as broker configuration.
-- The catalog is installed with `helm upgrade --install fidice-catalog deploy/helm/fidice-catalog`, the chart
-  `deploy/` documents, with one server: engines reach it as Service `fidice-catalog`. Its config is
+- The catalog is installed with `helm upgrade --install keel-catalog deploy/helm/keel-catalog`, the chart
+  `deploy/` documents, with one server: engines reach it as Service `keel-catalog`. Its config is
   `k8s/catalog.properties` plus the database settings and storage profile `s3` the harness adds for the store;
   the database password and the store's secret key go in the chart's Secret.
   The harness makes an RS256 key and token with `TestIdp` (issuer `https://idp.test/engines`, group

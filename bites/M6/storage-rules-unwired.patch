@@ -2,10 +2,10 @@ Breaks: the commit engines leave out the storage profile's rules, so a client ca
 Module: catalog-server
 Test: VendingRouteTest#fileIoPropertiesAreRefused
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java b/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Engines.java b/catalog-server/src/main/java/keel/catalog/server/rest/Engines.java
 index 554aed8..2790415 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/rest/Engines.java
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Engines.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Engines.java
 @@ -74,7 +74,6 @@ class Engines {
          CatalogStorage.Bound bound = storage.forCatalog(catalog.id());
          return profiles.computeIfAbsent(bound.id(), id -> {

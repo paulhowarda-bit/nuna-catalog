@@ -17,7 +17,7 @@ spec:
           image: ${SINGLESTORE_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: ROOT_PASSWORD, value: fidice-test}
+            - {name: ROOT_PASSWORD, value: keel-test}
           ports:
             - containerPort: 3306
           # The image's own health check: its start script has finished (/server/.ready), and the master and leaf

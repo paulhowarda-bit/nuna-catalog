@@ -2,9 +2,9 @@ Breaks: The console's Content-Security-Policy lets inline scripts run.
 Module: catalog-server
 Test: ConsoleTest#thePageAndEveryFileAreServedWithoutATokenUnderTheContentSecurityPolicy
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java
---- a/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/ui/UiWiring.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/ui/UiWiring.java b/catalog-server/src/main/java/keel/catalog/server/ui/UiWiring.java
+--- a/catalog-server/src/main/java/keel/catalog/server/ui/UiWiring.java
++++ b/catalog-server/src/main/java/keel/catalog/server/ui/UiWiring.java
 @@ -39,7 +39,7 @@
  
      /** The console's Content-Security-Policy; {@code idpOrigin} is null when no IdP is configured. */

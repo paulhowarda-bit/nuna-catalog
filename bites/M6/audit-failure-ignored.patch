@@ -2,10 +2,10 @@ Breaks: credentials are handed out when their issue cannot be audited.
 Module: catalog-server
 Test: VendingRouteTest#auditedBeforeHandOutAndFailsClosed
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 index 899e3cd..acc34c5 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+--- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 @@ -109,7 +109,7 @@ public final class StsCredentialVending implements CredentialVending {
                      CredentialIssue.Access.valueOf(access.name()), credentials.sessionName(),
                      credentials.expiresAt(), actor)));

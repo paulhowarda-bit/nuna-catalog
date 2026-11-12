@@ -2,14 +2,14 @@ Breaks: any caller may purge, not only a maintenance principal.
 Module: catalog-server
 Test: LifecycleTest#onlyTheMaintenancePrincipalPurgesAndOnlyAfterTheWindow
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
 index 7397391..76134f5 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
 @@ -169,7 +169,6 @@ class LifecycleRoutes {
          Request request = management.request(http);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
-         fidice.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
+         keel.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
 -        guard.requireMaintenance(request, audit, "purge");
          if (object.state() != CatalogObject.State.DROPPED) {
              throw notDropped(id);

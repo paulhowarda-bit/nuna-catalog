@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The local demo of fidice-catalog and its web console. See demo/README.md.
+# The local demo of keel-catalog and its web console. See demo/README.md.
 #
 #   demo/demo.sh up      build the jars, start the stack, load sample data once, print tokens
 #   demo/demo.sh token   print the console URL and the tokens again (re-mints them if they have expired)
@@ -9,23 +9,23 @@
 #   demo/demo.sh down    stop and remove the stack and its data (keeps the signing key and tokens)
 #
 # Needs bash (Git Bash on Windows), Docker with compose, curl, unzip, and JDK 25 (JAVA_HOME or java on
-# PATH). The stack runs from a copy in FIDICE_DEMO_HOME (default ~/.fidice-demo), so it keeps running when
-# the checkout it came from changes or goes away. FIDICE_DEMO_PROJECT names the compose project (default
-# fidice-demo), to run a second copy beside it.
+# PATH). The stack runs from a copy in KEEL_DEMO_HOME (default ~/.keel-demo), so it keeps running when
+# the checkout it came from changes or goes away. KEEL_DEMO_PROJECT names the compose project (default
+# keel-demo), to run a second copy beside it.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN="${FIDICE_DEMO_HOME:-$HOME/.fidice-demo}"
-PROJECT="${FIDICE_DEMO_PROJECT:-fidice-demo}"
+RUN="${KEEL_DEMO_HOME:-$HOME/.keel-demo}"
+PROJECT="${KEEL_DEMO_PROJECT:-keel-demo}"
 URL=http://localhost:8181
 CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # SingleStore's root password, as compose.yaml sets it. Local only.
-S2_ROOT_PASSWORD=fidicedemo-root
+S2_ROOT_PASSWORD=keeldemo-root
 
-# FIDICE_TOKEN is the lake writer's token: the lake service is the only one that reads it.
+# KEEL_TOKEN is the lake writer's token: the lake service is the only one that reads it.
 compose() {
-  FIDICE_TOKEN="$(cat "$RUN/tokens/lake.jwt" 2>/dev/null || echo unset)" docker compose -p "$PROJECT" -f "$RUN/compose.yaml" "$@"
+  KEEL_TOKEN="$(cat "$RUN/tokens/lake.jwt" 2>/dev/null || echo unset)" docker compose -p "$PROJECT" -f "$RUN/compose.yaml" "$@"
 }
 
 say() { printf '\n== %s\n' "$*"; }
@@ -69,9 +69,9 @@ build_jars() {
   say "building the catalog server and change-feed connector jars (no tests run)"
   (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :singlestore-change-feed:connectorJar)
   cp "$(ls -t "$REPO"/catalog-server/build/libs/catalog-server-*-exec.jar | head -1)" "$RUN/catalog.jar"
-  cp "$REPO/singlestore-change-feed/build/libs/fidice-changefeed-connector.jar" "$RUN/"
+  cp "$REPO/singlestore-change-feed/build/libs/keel-changefeed-connector.jar" "$RUN/"
   rm -rf "$RUN/lake/lib"
-  unzip -q -j "$RUN/fidice-changefeed-connector.jar" 'lib/*' -d "$RUN/lake/lib"
+  unzip -q -j "$RUN/keel-changefeed-connector.jar" 'lib/*' -d "$RUN/lake/lib"
 }
 
 prepare() {

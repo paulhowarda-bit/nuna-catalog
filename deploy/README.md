@@ -1,7 +1,7 @@
 # Running the catalog in Kubernetes
 
 - `image/Dockerfile`: the server's container image.
-- `helm/fidice-catalog/`: the Helm chart. It runs the catalog servers only. The database, Kafka, the object
+- `helm/keel-catalog/`: the Helm chart. It runs the catalog servers only. The database, Kafka, the object
   stores and the identity provider run elsewhere [D36], and the values name them.
 - `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
 
@@ -9,7 +9,7 @@
 
 ```bash
 ./gradlew :catalog-server:bootJar
-docker build -f deploy/image/Dockerfile -t <registry>/fidice-catalog:<version> catalog-server/build/libs
+docker build -f deploy/image/Dockerfile -t <registry>/keel-catalog:<version> catalog-server/build/libs
 ```
 
 - The build context is the folder holding the runnable jar (`*-exec.jar`), so Docker is sent nothing else.
@@ -23,27 +23,27 @@ docker build -f deploy/image/Dockerfile -t <registry>/fidice-catalog:<version> c
 ## The chart
 
 ```bash
-helm install fidice-catalog deploy/helm/fidice-catalog -n <namespace> -f <your-values.yaml>
+helm install keel-catalog deploy/helm/keel-catalog -n <namespace> -f <your-values.yaml>
 ```
 
 Settings come in two parts.
 
 **`config`** holds Spring Boot properties in YAML form. The chart renders them into `application.yaml` in a
-ConfigMap. Every `fidice.*` setting is documented on its settings class in `catalog-server`:
+ConfigMap. Every `keel.*` setting is documented on its settings class in `catalog-server`:
 `StorageSettings`, `SecuritySettings`, `AuditSettings`, `GovernanceSettings`, `RestSettings` and
 `UiSettings`. `deploy/local/values.yaml` is a complete example. The chart refuses to render without
-`config.spring.datasource.url` and at least one entry in `config.fidice.security.issuers`.
+`config.spring.datasource.url` and at least one entry in `config.keel.security.issuers`.
 
 **`secrets`** names a Secret that Spring Boot reads as a config tree. Each key of the Secret is a property
 name and its value is that property's value:
 
 ```bash
-kubectl -n <namespace> create secret generic fidice-catalog-secrets \
+kubectl -n <namespace> create secret generic keel-catalog-secrets \
   --from-literal=spring.datasource.password=... \
-  --from-literal=fidice.storage.profiles.onprem.secret-access-key=...
+  --from-literal=keel.storage.profiles.onprem.secret-access-key=...
 ```
 
-Then set `secrets.existingSecret: fidice-catalog-secrets`. Instead of making the Secret yourself, you can
+Then set `secrets.existingSecret: keel-catalog-secrets`. Instead of making the Secret yourself, you can
 pass `secrets.values` and the chart makes it; keep that values file out of git. A change to `config` or
 `secrets.values` restarts the servers. A change to an existing Secret does not, so run
 `kubectl rollout restart deployment/<release>` after it.
@@ -87,7 +87,7 @@ What the chart sets up:
 - **TLS.** TLS from clients to the catalog is the Ingress's job. TLS from the catalog to the database goes
   in the JDBC URL.
 - **Resources.** The defaults (1 CPU, 2 GiB, heap at 75 % of that) are a starting point, not a measurement.
-  Each metadata cache may hold up to `fidice.rest.metadata-cache-chars` (256 M characters by default).
+  Each metadata cache may hold up to `keel.rest.metadata-cache-chars` (256 M characters by default).
   Size the limit on work hardware.
 
 ## Trying it locally
@@ -95,15 +95,15 @@ What the chart sets up:
 On Docker Desktop with Kubernetes switched on:
 
 ```bash
-deploy/local/run.sh up      # jar, image fidice-catalog:local, PostgreSQL, Kafka, Silo, the chart (2 servers)
+deploy/local/run.sh up      # jar, image keel-catalog:local, PostgreSQL, Kafka, Silo, the chart (2 servers)
 deploy/local/run.sh smoke   # through each server: 401, config, namespace, table, vended credentials, drops
 deploy/local/run.sh down    # uninstall and delete the namespace
 ```
 
-- It uses namespace `fidice-local`, and always passes `--context docker-desktop`
-  (`FIDICE_K8S_CONTEXT`), never the current context.
-- The test issuer is `demo/Mint.java`. Its key and tokens are in `~/.fidice-k8s` (`FIDICE_K8S_HOME`).
+- It uses namespace `keel-local`, and always passes `--context docker-desktop`
+  (`KEEL_K8S_CONTEXT`), never the current context.
+- The test issuer is `demo/Mint.java`. Its key and tokens are in `~/.keel-k8s` (`KEEL_K8S_HOME`).
 - Memory limits add up to 3 GiB: two servers at 768 MiB, Kafka 640, Silo 512, PostgreSQL 384.
 - `up` takes about 2 minutes. To reach the console:
-  `kubectl --context docker-desktop -n fidice-local port-forward svc/fidice-catalog 8181:8181`, then open
-  <http://localhost:8181/ui/> and paste a token from `~/.fidice-k8s/tokens/`.
+  `kubectl --context docker-desktop -n keel-local port-forward svc/keel-catalog 8181:8181`, then open
+  <http://localhost:8181/ui/> and paste a token from `~/.keel-k8s/tokens/`.

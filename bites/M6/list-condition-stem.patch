@@ -2,10 +2,10 @@ Breaks: the listing condition allows <key>* instead of <key>/*, so a sibling wit
 Module: catalog-objectstore
 Test: VendingTest#listing
 
-diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java
 index 690452e..0ceefc3 100644
---- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
-+++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/SessionPolicy.java
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/SessionPolicy.java
 @@ -34,7 +34,7 @@ public final class SessionPolicy {
                  + "{\"Effect\":\"Allow\",\"Action\":[" + quoted(access) + "],"
                  + "\"Resource\":\"" + bucketArn + "/" + prefix + "*\"},"

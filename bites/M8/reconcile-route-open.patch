@@ -2,15 +2,15 @@ Breaks: anyone authenticated may reconcile from storage, not only a platform ope
 Module: catalog-server
 Test: DrReconcileRouteTest#onlyAPlatformOperatorReconciles
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/ReconcileRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/ReconcileRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/ReconcileRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/ReconcileRoutes.java
 index 2202c3d..a88ae34 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/ReconcileRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/ReconcileRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/ReconcileRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/ReconcileRoutes.java
 @@ -69,8 +69,6 @@ class ReconcileRoutes {
                                       HttpServletRequest http) {
          CatalogRecord catalog = management.catalog(prefix);
          Request request = management.request(http);
--        guard.requireOperator(request, new fidice.catalog.audit.Securable(fidice.catalog.audit.Securable.Kind.CATALOG,
+-        guard.requireOperator(request, new keel.catalog.audit.Securable(keel.catalog.audit.Securable.Kind.CATALOG,
 -                catalog.id(), catalog.name(), List.of()), "reconcileFromStorage");
          JsonNode json = Management.body(body);
          boolean apply = json.has("apply") && json.get("apply").asBoolean();

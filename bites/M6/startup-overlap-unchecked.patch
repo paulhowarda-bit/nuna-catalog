@@ -2,10 +2,10 @@ Breaks: the server starts with storage profiles whose prefixes overlap.
 Module: catalog-server
 Test: VendingRouteTest#startupGuardrails
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
 index 8d564ce..d36d4fe 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
+--- a/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
 @@ -58,7 +58,6 @@ public final class CatalogStorage implements AutoCloseable {
          this.store = store;
          Map<String, StorageProfile> parsed = new LinkedHashMap<>();

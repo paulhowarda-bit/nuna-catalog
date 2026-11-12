@@ -2,10 +2,10 @@ Breaks: a new or registered object may sit anywhere in the profile, not only at 
 Module: catalog-objectstore
 Test: StorageRulesTest#assignedOnCreate
 
-diff --git a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java
 index b7b0dce..893718e 100644
---- a/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
-+++ b/catalog-objectstore/src/main/java/fidice/catalog/objectstore/StorageRules.java
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java
 @@ -38,7 +38,7 @@ public final class StorageRules {
              return Optional.empty();
          }

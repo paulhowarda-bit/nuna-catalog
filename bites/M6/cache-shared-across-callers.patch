@@ -2,10 +2,10 @@ Breaks: cached credentials are shared by every caller, so one caller is handed a
 Module: catalog-server
 Test: VendingRouteTest#auditedBeforeHandOutAndFailsClosed
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 index 686fd12..290da61 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+--- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 @@ -80,7 +80,7 @@ public final class StsCredentialVending implements CredentialVending {
          Access access = security.isMaintenance(caller) ? Access.READ_WRITE_DELETE : Access.READ_WRITE;
          String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());

@@ -2,10 +2,10 @@ Breaks: Every commit needs only write, even one that changes the schema or prope
 Module: catalog-server
 Test: SecurityGateTest#privilegesInheritDownTheTreeAndNeverSideways
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/rest/Guard.java b/catalog-server/src/main/java/fidice/catalog/server/rest/Guard.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
 index acdb678..1c899a1 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/rest/Guard.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/rest/Guard.java
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
 @@ -80,7 +80,7 @@ class Guard {
              JsonNode updates = JSON.readTree(body == null ? "" : body).path("updates");
              for (JsonNode update : updates) {

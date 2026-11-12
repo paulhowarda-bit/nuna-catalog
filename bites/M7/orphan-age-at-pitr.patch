@@ -2,10 +2,10 @@ Breaks: an orphan age equal to the PITR window is accepted.
 Module: catalog-server
 Test: MaintenancePolicyTest#canonicalFormChecksKeysTypesAndFloors
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/MaintenancePolicy.java b/catalog-server/src/main/java/fidice/catalog/server/governance/MaintenancePolicy.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java
 index 0535ed8..b1847cf 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/MaintenancePolicy.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/MaintenancePolicy.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java
 @@ -89,7 +89,7 @@ public final class MaintenancePolicy {
              throw CatalogError.badRequest(EXPIRY_MAX_AGE + " must be at least " + minimum + ", the minimum snapshot age");
          }
