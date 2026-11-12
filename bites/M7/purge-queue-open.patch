@@ -2,10 +2,10 @@ Breaks: anyone signed in may read the purge queue, not only a maintenance princi
 Module: catalog-server
 Test: ManagementAuthorizationTest#thePurgeQueueIsForTheMaintenancePrincipal
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
 index 7397391..1cac62d 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/LifecycleRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
 @@ -200,7 +200,6 @@ class LifecycleRoutes {
      ResponseEntity<String> purgeEligible(@RequestParam(required = false) String pageToken,
                                           @RequestParam(required = false) Integer pageSize,

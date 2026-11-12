@@ -2,9 +2,9 @@ Breaks: Reading an object's audit trail needs only describe, not manage-grants.
 Module: catalog-server
 Test: AuditReadRouteTest#readingTheTrailNeedsManageGrants
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java
 @@ -65,7 +65,7 @@
                                    HttpServletRequest http) {
          Target target = management.target(prefix, namespace, table, view);

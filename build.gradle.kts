@@ -2,7 +2,7 @@ import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
 import java.nio.file.Files
 import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
-// fidice catalog: Iceberg REST catalog server. Author: Paul Howard.
+// keel catalog: Iceberg REST catalog server. Author: Paul Howard.
 //
 //   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas
 //                              (PostgreSQL only)
@@ -50,7 +50,7 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "io.spring.dependency-management")
 
-    group = "fidice"
+    group = "keel"
     version = "0.1.0-SNAPSHOT"
 
     configure<JavaPluginExtension> {
@@ -115,7 +115,7 @@ subprojects {
             }
         }
         if (nightly) {
-            systemProperty("fidice.suite.cas-rounds", "1000")
+            systemProperty("keel.suite.cas-rounds", "1000")
             // The CAS test looks for a race and the load runs measure, so each overnight run is a new
             // sample: never reused.
             outputs.upToDateWhen { false }
@@ -123,7 +123,7 @@ subprojects {
         }
         // The one S3 store every test uses (catalog-tests-s3, TestS3): -Ps3=silo, ceph or aws.
         listOf("s3", "silo.image", "ceph.image").forEach { systemProperty(it, project.property(it)!!) }
-        systemProperty("fidice.aws.profile", providers.gradleProperty("fidice.aws.profile").getOrElse(""))
+        systemProperty("keel.aws.profile", providers.gradleProperty("keel.aws.profile").getOrElse(""))
         // In the fast build every test of some modules is tagged out.
         failOnNoDiscoveredTests = false
         // What the test JVMs had under Maven on this 16 GB machine (the JVM's default, a quarter

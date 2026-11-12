@@ -2,10 +2,10 @@ Breaks: the copy forgets the offsets its last commit recorded, so the feed start
 Module: singlestore-change-feed
 Test: IcebergCopyTest#theOffsetsAreReadBackFromTheTable
 
-diff --git a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java
+diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
 index 4c307c6..08653a4 100644
---- a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java
-+++ b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java
+--- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
++++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
 @@ -261,7 +261,7 @@ final class IcebergCopy {
                      + source.database() + " has " + offsets.length + " partitions");
          }

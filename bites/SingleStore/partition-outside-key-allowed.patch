@@ -2,10 +2,10 @@ Breaks: the copy may be partitioned on a column outside the primary key, where a
 Module: singlestore-change-feed
 Test: IcebergCopyTest#refusesAPartitionOutsideThePrimaryKey
 
-diff --git a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java
+diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
 index 4c307c6..8316d48 100644
---- a/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java
-+++ b/singlestore-change-feed/src/main/java/fidice/changefeed/engine/IcebergCopy.java
+--- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
++++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
 @@ -136,7 +136,7 @@ final class IcebergCopy {
          Set<String> key = Set.copyOf(source.primaryKey());
          for (PartitionField field : table.spec().fields()) {

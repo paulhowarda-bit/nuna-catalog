@@ -18,12 +18,12 @@ spec:
           image: ${CEPH_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: CEPH_DEMO_ACCESS_KEY, value: fidicetest}
-            - {name: CEPH_DEMO_SECRET_KEY, value: fidicetest-secret-key}
+            - {name: CEPH_DEMO_ACCESS_KEY, value: keeltest}
+            - {name: CEPH_DEMO_SECRET_KEY, value: keeltest-secret-key}
             - name: CEPH_EXTRA_CONF
               value: |-
                 rgw dns name = s3
-                rgw sts key = fidicestskey0123
+                rgw sts key = keelstskey012345
                 rgw s3 auth use sts = true
           ports:
             - containerPort: 8080

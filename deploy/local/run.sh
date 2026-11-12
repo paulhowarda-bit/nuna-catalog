@@ -6,25 +6,25 @@
 #   deploy/local/run.sh down    uninstall and delete the namespace
 #
 # Needs bash (Git Bash on Windows), Docker, kubectl, helm, curl and JDK 25. Works on Docker Desktop's cluster,
-# which runs images from the local Docker engine; kubectl and helm are always pointed at FIDICE_K8S_CONTEXT
-# (default docker-desktop), never at the current context. Test keys and tokens are kept in FIDICE_K8S_HOME
-# (default ~/.fidice-k8s).
+# which runs images from the local Docker engine; kubectl and helm are always pointed at KEEL_K8S_CONTEXT
+# (default docker-desktop), never at the current context. Test keys and tokens are kept in KEEL_K8S_HOME
+# (default ~/.keel-k8s).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONTEXT="${FIDICE_K8S_CONTEXT:-docker-desktop}"
-NS="${FIDICE_K8S_NAMESPACE:-fidice-local}"
-RUN="${FIDICE_K8S_HOME:-$HOME/.fidice-k8s}"
-RELEASE=fidice-catalog
+CONTEXT="${KEEL_K8S_CONTEXT:-docker-desktop}"
+NS="${KEEL_K8S_NAMESPACE:-keel-local}"
+RUN="${KEEL_K8S_HOME:-$HOME/.keel-k8s}"
+RELEASE=keel-catalog
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 say() { printf '\n== %s\n' "$*"; }
 
 up() {
-  say "building the server jar (no tests run) and the image fidice-catalog:local"
+  say "building the server jar (no tests run) and the image keel-catalog:local"
   (cd "$REPO" && ./gradlew -q :catalog-server:bootJar)
-  docker build -q -f "$REPO/deploy/image/Dockerfile" -t fidice-catalog:local "$REPO/catalog-server/build/libs"
+  docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:local "$REPO/catalog-server/build/libs"
 
   say "minting the test issuer's key and tokens into $RUN"
   mkdir -p "$RUN"
@@ -32,13 +32,13 @@ up() {
 
   say "starting PostgreSQL, Kafka and Silo in namespace $NS (context $CONTEXT)"
   kubectl --context "$CONTEXT" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CONTEXT" apply -f -
-  k create configmap fidice-idp --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f -
+  k create configmap keel-idp --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f -
   k apply -f "$REPO/deploy/local/backing.yaml"
   k wait --for=condition=available --timeout=5m deployment/postgres deployment/kafka deployment/silo
   k wait --for=condition=complete --timeout=3m job/seed
 
   say "installing the chart"
-  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/fidice-catalog" \
+  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/keel-catalog" \
     -f "$REPO/deploy/local/values.yaml" --wait --timeout 10m
   # A new image under the same tag is not a change Helm sees.
   k rollout restart deployment/"$RELEASE"

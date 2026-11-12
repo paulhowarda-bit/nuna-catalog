@@ -2,10 +2,10 @@ Breaks: two proven files at one version go unnoticed and the walk picks one.
 Module: catalog-core
 Test: ReconcileTest#twoProvenFilesAtOneVersionStopTheWalk
 
-diff --git a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
 index 2771cfa..d13ba76 100644
---- a/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
-+++ b/catalog-core/src/main/java/fidice/catalog/core/commit/Reconcile.java
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/Reconcile.java
 @@ -116,7 +116,7 @@ public final class Reconcile {
                  return new Plan(table, from, steps, List.of(), Optional.empty());
              }

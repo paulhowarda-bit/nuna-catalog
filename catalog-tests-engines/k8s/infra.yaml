@@ -147,7 +147,7 @@ spec:
           image: ${KAFKA_UI_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: KAFKA_CLUSTERS_0_NAME, value: fidice-engines}
+            - {name: KAFKA_CLUSTERS_0_NAME, value: keel-engines}
             - {name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS, value: "kafka:9092"}
             - {name: DYNAMIC_CONFIG_ENABLED, value: "false"}
           ports:

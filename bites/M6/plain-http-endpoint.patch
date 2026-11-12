@@ -2,16 +2,16 @@ Breaks: a profile may use a plain-http endpoint although TLS is required.
 Module: catalog-server
 Test: VendingRouteTest#startupGuardrails
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
 index 8d564ce..27d344e 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/storage/CatalogStorage.java
+--- a/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
 @@ -111,7 +111,7 @@ public final class CatalogStorage implements AutoCloseable {
-             throw new IllegalStateException("fidice.storage.profiles." + name
+             throw new IllegalStateException("keel.storage.profiles." + name
                      + " needs kind, endpoint, table-root and allowed-prefixes");
          }
 -        if (requireTls && !config.endpoint().startsWith("https://")) {
 +        if (requireTls && config.endpoint().startsWith("ftp://")) {
-             throw new IllegalStateException("fidice.storage.profiles." + name + ".endpoint must use https, got "
+             throw new IllegalStateException("keel.storage.profiles." + name + ".endpoint must use https, got "
                      + config.endpoint());
          }

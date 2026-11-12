@@ -2,10 +2,10 @@ Breaks: cached credentials are reused inside the refresh margin, so loads keep h
 Module: catalog-server
 Test: VendingNearExpiryTest
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 index 686fd12..dd7c722 100644
---- a/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/storage/StsCredentialVending.java
+--- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 @@ -65,7 +65,7 @@ public final class StsCredentialVending implements CredentialVending {
          this.clock = clock;
          Duration quarter = settings.credentialLifetime().dividedBy(4);

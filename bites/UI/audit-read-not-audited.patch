@@ -2,9 +2,9 @@ Breaks: A read of the audit trail is answered without publishing its AuditRead.
 Module: catalog-server
 Test: AuditReadRouteTest#eachReadIsAudited
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java
---- a/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/governance/AuditReadRoutes.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/AuditReadRoutes.java
 @@ -78,7 +78,6 @@
              LOG.warn("audit topic could not be read for {}: {}", target.securable().id(), e.getMessage());
              throw CatalogError.of(503, "ServiceUnavailableException", "The audit topic cannot be read now; retry later");

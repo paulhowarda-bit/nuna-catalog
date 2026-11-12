@@ -2,13 +2,13 @@ Breaks: The console's token-paste sign-in is on unless a deployment turns it off
 Module: catalog-server
 Test: ConsoleTest#devTokenLoginIsOffByDefaultAndConfigHoldsNoSecret
 
-diff --git a/catalog-server/src/main/java/fidice/catalog/server/ui/UiSettings.java b/catalog-server/src/main/java/fidice/catalog/server/ui/UiSettings.java
---- a/catalog-server/src/main/java/fidice/catalog/server/ui/UiSettings.java
-+++ b/catalog-server/src/main/java/fidice/catalog/server/ui/UiSettings.java
+diff --git a/catalog-server/src/main/java/keel/catalog/server/ui/UiSettings.java b/catalog-server/src/main/java/keel/catalog/server/ui/UiSettings.java
+--- a/catalog-server/src/main/java/keel/catalog/server/ui/UiSettings.java
++++ b/catalog-server/src/main/java/keel/catalog/server/ui/UiSettings.java
 @@ -15,7 +15,7 @@
   * @param oidc          the IdP the console signs people in with (authorization code with PKCE), or null
   */
- @ConfigurationProperties("fidice.ui")
+ @ConfigurationProperties("keel.ui")
 -public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc) {
 +public record UiSettings(@DefaultValue("true") boolean devTokenLogin, Oidc oidc) {
  

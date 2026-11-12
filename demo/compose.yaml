@@ -2,10 +2,10 @@
 # SingleStore with its Studio on host port 8183. demo.sh copies this file, the catalog jar and the configuration into the run
 # directory and starts it from there, so the stack does not depend on the checkout it came from.
 #
-# Its own compose project, fidice-demo: the engine matrix tears down fidice-engines, never this one.
+# Its own compose project, keel-demo: the engine matrix tears down keel-engines, never this one.
 # Only 8181 (catalog and console) and 8183 (SingleStore Studio) are published on the host.
 
-name: fidice-demo
+name: keel-demo
 
 services:
   postgres:
@@ -47,8 +47,8 @@ services:
   silo:
     image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     environment:
-      MINIO_ROOT_USER: fidicedemo
-      MINIO_ROOT_PASSWORD: fidicedemo-secret-key
+      MINIO_ROOT_USER: keeldemo
+      MINIO_ROOT_PASSWORD: keeldemo-secret-key
     command: ["server", "/data"]
     mem_limit: 512m
     healthcheck:
@@ -67,7 +67,7 @@ services:
     entrypoint: ["sh", "-ec"]
     command:
       - |
-        mc alias set s http://silo:9000 fidicedemo fidicedemo-secret-key >/dev/null
+        mc alias set s http://silo:9000 keeldemo keeldemo-secret-key >/dev/null
         mc mb --ignore-existing s/warehouse s/idp
         mc anonymous set download s/idp
         mc cp /seed/keys.json s/idp/keys.json
@@ -111,13 +111,13 @@ services:
       catalog:
         condition: service_healthy
     environment:
-      ROOT_PASSWORD: fidicedemo-root
+      ROOT_PASSWORD: keeldemo-root
       SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES: 1
       SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST: 1
     ports:
       - "8183:8080"
     volumes:
-      - ./fidice-changefeed-connector.jar:/server/singlestoredb-server-10.9.0-d16d12a6ad/extractors/lib-extractor-connect/fidice-changefeed-connector.jar:ro
+      - ./keel-changefeed-connector.jar:/server/singlestoredb-server-10.9.0-d16d12a6ad/extractors/lib-extractor-connect/keel-changefeed-connector.jar:ro
     mem_limit: 3g
 
   # Another engine writing Iceberg: demo/LakeWriter.java with the connector's Iceberg libraries, run on
@@ -129,7 +129,7 @@ services:
       catalog:
         condition: service_healthy
     environment:
-      FIDICE_TOKEN: ${FIDICE_TOKEN:?FIDICE_TOKEN}
+      KEEL_TOKEN: ${KEEL_TOKEN:?KEEL_TOKEN}
       JAVA_TOOL_OPTIONS: -Xmx384m
     entrypoint: ["java", "-cp", "/lake/lib/*", "/lake/LakeWriter.java"]
     volumes:

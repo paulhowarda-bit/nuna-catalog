@@ -27,19 +27,19 @@ import java.util.UUID;
  */
 public final class Mint {
 
-    static final String ISSUER = "https://idp.demo/fidice";
-    static final String AUDIENCE = "fidice-catalog";
-    static final String KEY_ID = "fidice-demo-1";
+    static final String ISSUER = "https://idp.demo/keel";
+    static final String AUDIENCE = "keel-catalog";
+    static final String KEY_ID = "keel-demo-1";
     static final Duration LIFETIME = Duration.ofDays(7);
 
     /** user -> {client id, groups}. */
     static final Map<String, String[]> USERS = new LinkedHashMap<>();
 
     static {
-        USERS.put("ana", new String[] {"fidice-console", "demo-analysts"});
-        USERS.put("gary", new String[] {"fidice-console", "demo-grant-admins"});
-        USERS.put("stella", new String[] {"fidice-console", "demo-stewards"});
-        USERS.put("oscar", new String[] {"fidice-console", "demo-operators"});
+        USERS.put("ana", new String[] {"keel-console", "demo-analysts"});
+        USERS.put("gary", new String[] {"keel-console", "demo-grant-admins"});
+        USERS.put("stella", new String[] {"keel-console", "demo-stewards"});
+        USERS.put("oscar", new String[] {"keel-console", "demo-operators"});
         USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
         USERS.put("lake", new String[] {"lake-writer-demo", "demo-loaders"});
     }
