@@ -256,6 +256,59 @@ class MetadataTest {
         assertThat(((BadRequest) outcome).message()).startsWith("Cannot replace view due to loss of view dialects");
     }
 
+    /**
+     * geometry, geography and unknown are v3 types (spec, "Schemas and Data Types"). iceberg-core's builder refuses
+     * them in a v2 schema with IllegalStateException, which the reference answers 500; the request is at fault,
+     * so 400. A v3 schema with them is golden case v3-geo-unknown.
+     */
+    @Test
+    void v3TypesInAV2SchemaAreABadRequest() {
+        String request = """
+                {"requirements": [],
+                 "updates": [{"action": "add-schema", "schema": {"type": "struct", "schema-id": 1, "fields": [
+                                {"id": 1, "name": "id", "required": true, "type": "long"},
+                                {"id": 2, "name": "symbol", "required": false, "type": "string"},
+                                {"id": 3, "name": "qty", "required": false, "type": "int"},
+                                {"id": 4, "name": "pickup", "required": false, "type": "geometry"},
+                                {"id": 5, "name": "route", "required": false, "type": "geography"},
+                                {"id": 6, "name": "pending", "required": false, "type": "unknown"}]}},
+                             {"action": "set-current-schema", "schema-id": -1}]}""";
+        GoldenCase v2 = new GoldenCase("v2-v3-types", GoldenCase.Kind.COMMIT_TABLE, "v2-append", BadRequest.class, null);
+
+        Outcome outcome = Metadata.commitTable(request, base("v2-append"), location("v2-append"));
+
+        assertThat(outcome).isInstanceOf(BadRequest.class);
+        assertThat(((BadRequest) outcome).type()).isEqualTo("BadRequestException");
+        assertThat(((BadRequest) outcome).message()).startsWith("Invalid schema for v2:").contains(
+                "Invalid type for pickup: geometry", "Invalid type for route: geography",
+                "Invalid type for pending: unknown is not supported until v3");
+        assertThatThrownBy(() -> Reference.run(v2, request)).isInstanceOf(IllegalStateException.class);
+    }
+
+    /**
+     * An unknown column is always null (spec), so a non-null default for one cannot be read. iceberg-core's parser
+     * throws UnsupportedOperationException, which the reference answers 406; the request is at fault, so 400. A
+     * required unknown column is golden case bad-unknown-required, where the reference answers 400 too.
+     */
+    @Test
+    void anUnknownFieldWithADefaultIsABadRequest() {
+        String request = """
+                {"requirements": [],
+                 "updates": [{"action": "add-schema", "schema": {"type": "struct", "schema-id": 1, "fields": [
+                                {"id": 1, "name": "id", "required": true, "type": "long"},
+                                {"id": 2, "name": "data", "required": false, "type": "string"},
+                                {"id": 3, "name": "ts", "required": false, "type": "timestamptz"},
+                                {"id": 4, "name": "pending", "required": false, "type": "unknown",
+                                 "initial-default": 1, "write-default": 1}]}},
+                             {"action": "set-current-schema", "schema-id": -1}]}""";
+        GoldenCase v3 = new GoldenCase("v3-unknown-default", GoldenCase.Kind.COMMIT_TABLE, "v3-create", BadRequest.class,
+                null);
+
+        assertThat(Metadata.commitTable(request, base("v3-create"), location("v3-create")))
+                .isEqualTo(new BadRequest("Type: unknown is not supported"));
+        assertThatThrownBy(() -> Reference.run(v3, request)).isInstanceOf(UnsupportedOperationException.class);
+    }
+
     // 404
 
     @Test

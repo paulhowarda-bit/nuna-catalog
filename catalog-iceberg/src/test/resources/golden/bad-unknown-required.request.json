@@ -1,0 +1,50 @@
+{
+  "requirements": [
+    {
+      "type": "assert-current-schema-id",
+      "current-schema-id": 0
+    }
+  ],
+  "updates": [
+    {
+      "action": "add-schema",
+      "schema": {
+        "type": "struct",
+        "schema-id": 1,
+        "identifier-field-ids": [
+          1
+        ],
+        "fields": [
+          {
+            "id": 1,
+            "name": "id",
+            "required": true,
+            "type": "long"
+          },
+          {
+            "id": 2,
+            "name": "data",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "id": 3,
+            "name": "ts",
+            "required": false,
+            "type": "timestamptz"
+          },
+          {
+            "id": 4,
+            "name": "pending",
+            "required": true,
+            "type": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "action": "set-current-schema",
+      "schema-id": -1
+    }
+  ]
+}

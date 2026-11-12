@@ -25,6 +25,7 @@ import org.testcontainers.utility.DockerImageName;
  * One catalog server on PostgreSQL and the run's S3 store ({@link TestS3}, chosen by {@code -Ps3}) for the whole
  * test JVM, with the RCK's warehouse seeded. Clients reach the same store through {@link #clientStorage()}, and authenticate with
  * {@link #token()}: a local test issuer's token for a group that holds create and modify on the warehouse (M5).
+ * {@link #stewardToken()} is the same issuer's token for a separate group that holds manage-tags there.
  */
 final class ConformanceServer {
 
@@ -35,9 +36,12 @@ final class ConformanceServer {
     private static final String ISSUER = "https://idp.test/conformance";
     private static final String AUDIENCE = "keel-catalog";
     private static final String GROUP = "conformance-clients";
+    /** Tag stewards: manage-tags on the warehouse, which places legal holds (D24). D18 keeps it from the writers' group. */
+    private static final String STEWARDS = "conformance-stewards";
 
     private static URI uri;
     private static String token;
+    private static String stewardToken;
 
     private ConformanceServer() {
     }
@@ -64,6 +68,11 @@ final class ConformanceServer {
             token = TestIdp.sign(key, JWSAlgorithm.RS256, new JWTClaimsSet.Builder()
                     .issuer(ISSUER).audience(AUDIENCE).subject("conformance").claim("groups", List.of(GROUP))
                     .claim("azp", "conformance-clients")
+                    .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plusSeconds(6 * 3600)))
+                    .build());
+            stewardToken = TestIdp.sign(key, JWSAlgorithm.RS256, new JWTClaimsSet.Builder()
+                    .issuer(ISSUER).audience(AUDIENCE).subject("steward").claim("groups", List.of(STEWARDS))
+                    .claim("azp", "conformance-stewards")
                     .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plusSeconds(6 * 3600)))
                     .build());
         } catch (Exception e) {
@@ -97,6 +106,9 @@ final class ConformanceServer {
                     + " granted_by, granted_at) VALUES (?, 'CATALOG', ?, ?, ?, 'conformance', now())",
                     catalog, catalog, GROUP, privilege);
         }
+        jdbc.update("INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege,"
+                + " granted_by, granted_at) VALUES (?, 'CATALOG', ?, ?, 'manage-tags', 'conformance', now())",
+                catalog, catalog, STEWARDS);
         int port = server.getEnvironment().getRequiredProperty("local.server.port", Integer.class);
         uri = URI.create("http://localhost:" + port + "/");
         return uri;
@@ -106,6 +118,12 @@ final class ConformanceServer {
     static String token() {
         start();
         return token;
+    }
+
+    /** The bearer token of a tag steward, for the management API's legal holds; it holds no data access. */
+    static String stewardToken() {
+        start();
+        return stewardToken;
     }
 
     /** The bucket the server's tables live in: {@code warehouse}, or on AWS this run's name for it. */
