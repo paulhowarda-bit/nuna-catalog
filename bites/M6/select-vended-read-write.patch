@@ -1,0 +1,17 @@
+Breaks: every caller who may load a table gets read-write credentials, select-only callers too.
+Module: catalog-server
+Test: VendingRouteTest#selectOnlyCallersGetReadOnlyCredentials
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
+index 013ad33..68fe211 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
+@@ -79,7 +79,7 @@ public final class StsCredentialVending implements CredentialVending {
+         }
+         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
+         Access access = security.isMaintenance(caller) ? Access.READ_WRITE_DELETE
+-                : request.write() ? Access.READ_WRITE : Access.READ;
++                : Access.READ_WRITE;
+         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
+         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
+                 caller.principal().id(), subject, caller.engine());

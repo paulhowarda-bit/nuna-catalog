@@ -55,6 +55,8 @@ class Guard {
     static final Operation DROP_VIEW = new Operation("dropView", MODIFY, false);
     static final Operation RENAME_VIEW = new Operation("renameView", MODIFY, false);
     static final Operation RENAME_VIEW_INTO = new Operation("renameView", CREATE, false);
+    /** The least a table commit needs: a caller allowed it gets read-write credentials, any other read-only (D21). */
+    static final Operation WRITE_DATA = new Operation("updateTable", WRITE, true);
 
     /** Updates that change only data and its bookkeeping: {@code write}. Anything else changes the definition. */
     private static final Set<String> DATA_UPDATES = Set.of("add-snapshot", "remove-snapshots", "set-snapshot-ref",
@@ -116,8 +118,30 @@ class Guard {
         require(request, new Target.TableOrView(object), AuditEvents.securable(object, catalog.name(), path), operation);
     }
 
+    /**
+     * {@link #onObject} for a route that vends storage access. Answers whether the caller may also commit data to
+     * the table, decided as a commit would be, in the same batch; a no is not a refusal and is not audited.
+     */
+    boolean onObjectMayWrite(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
+                             Operation operation) {
+        Target target = new Target.TableOrView(object);
+        List<Decision> decisions = authorizer.decide(request.caller(),
+                List.of(new Authorizer.Request(target, operation), new Authorizer.Request(target, WRITE_DATA)));
+        refuseIfDenied(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst());
+        return decisions.get(1).allowed();
+    }
+
+    /** Whether the caller may commit data to the table, decided as a commit would be; not audited. */
+    boolean mayWrite(RequestContext request, CatalogObject object) {
+        return authorizer.decide(request.caller(), new Target.TableOrView(object), WRITE_DATA).allowed();
+    }
+
     private void require(RequestContext request, Target target, Securable named, Operation operation) {
-        if (!(authorizer.decide(request.caller(), target, operation) instanceof Decision.Denied denied)) {
+        refuseIfDenied(request, named, operation, authorizer.decide(request.caller(), target, operation));
+    }
+
+    private void refuseIfDenied(RequestContext request, Securable named, Operation operation, Decision decision) {
+        if (!(decision instanceof Decision.Denied denied)) {
             return;
         }
         throw denials.refuse(request.actor(), operation.name(), named,
