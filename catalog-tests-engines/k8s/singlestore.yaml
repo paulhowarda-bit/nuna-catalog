@@ -20,9 +20,13 @@ spec:
             - {name: ROOT_PASSWORD, value: fidice-test}
           ports:
             - containerPort: 3306
+          # The image's own health check: its start script has finished (/server/.ready), and the master and leaf
+          # answer. Port 3306 opens before the start script has set root's password, so a port check let the
+          # harness in too early (Access denied for user 'root').
           startupProbe:
-            tcpSocket:
-              port: 3306
+            exec:
+              command: ["/scripts/healthcheck.sh"]
+            timeoutSeconds: 5
             periodSeconds: 5
             failureThreshold: 120
           resources:
