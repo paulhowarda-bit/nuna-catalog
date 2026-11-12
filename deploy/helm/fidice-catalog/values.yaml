@@ -1,0 +1,120 @@
+# fidice-catalog. One release is one deployment: one database and any number of catalogs (D28). The servers
+# are stateless; the database, Kafka, object stores and identity provider run elsewhere (D36) and are named
+# in `config` and `secrets`. See deploy/README.md.
+
+# One per zone of the region's three (D37). Any number can run against one database.
+replicaCount: 3
+
+image:
+  repository: fidice-catalog
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The server's settings, as Spring Boot properties in YAML form: rendered into application.yaml in a ConfigMap.
+# Nothing secret goes here; secrets go in `secrets`. Every fidice.* setting is documented on its settings class
+# in catalog-server (StorageSettings, SecuritySettings, AuditSettings, GovernanceSettings, RestSettings,
+# UiSettings). The server refuses to start without a database URL or a trusted issuer.
+config:
+  spring:
+    datasource:
+      # jdbc:postgresql://<host>:<port>/<database>
+      url: ""
+      username: ""
+  fidice:
+    security:
+      # Each: issuer, jwks-uri, audiences, algorithms, user-id-claim, groups-claim, client-id-claim.
+      issuers: []
+      grant-admin-groups: []
+      platform-operator-groups: []
+    storage:
+      profiles: {}
+      catalogs: {}
+    audit:
+      kafka-bootstrap-servers: ""
+
+# Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
+# the property's value, e.g. spring.datasource.password or fidice.storage.profiles.<profile>.secret-access-key.
+secrets:
+  # A Secret you manage in the release's namespace. Takes precedence over `values`.
+  existingSecret: ""
+  # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
+  values: {}
+
+# The JVM sizes its heap from the container's memory limit.
+javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+
+# Extra environment variables for the server container.
+env: []
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    memory: 2Gi
+
+service:
+  type: ClusterIP
+  port: 8181
+  # None spreads requests over every server. A conditional load (304) is only answered by the server that
+  # minted the caller's credentials; see deploy/README.md before choosing ClientIP.
+  sessionAffinity: None
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: catalog.example.internal
+  # e.g. [{secretName: catalog-tls, hosts: [catalog.example.internal]}]
+  tls: []
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  # e.g. eks.amazonaws.com/role-arn for IRSA: the AWS SDK's default chain then vends from that role.
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# Spread over zones first, then nodes. The chart adds the release's pod selector to each.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# Long enough for the preStop pause and Spring's graceful shutdown (30 s) to finish in-flight requests.
+terminationGracePeriodSeconds: 45
+
+# Start-up runs the schema migrations, so it may take minutes on the first start of a release.
+startupProbe:
+  periodSeconds: 5
+  failureThreshold: 120
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

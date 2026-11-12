@@ -1,0 +1,13 @@
+{{- $_ := required "config.spring.datasource.url is required: the catalog's database" .Values.config.spring.datasource.url -}}
+{{- if not .Values.config.fidice.security.issuers -}}
+{{- fail "config.fidice.security.issuers needs at least one trusted token issuer" -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "fidice-catalog.fullname" . }}
+  labels:
+    {{- include "fidice-catalog.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}
