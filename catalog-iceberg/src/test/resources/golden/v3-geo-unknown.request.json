@@ -1,0 +1,78 @@
+{
+  "requirements": [
+    {
+      "type": "assert-current-schema-id",
+      "current-schema-id": 0
+    },
+    {
+      "type": "assert-last-assigned-field-id",
+      "last-assigned-field-id": 3
+    }
+  ],
+  "updates": [
+    {
+      "action": "add-schema",
+      "schema": {
+        "type": "struct",
+        "schema-id": 1,
+        "identifier-field-ids": [
+          1
+        ],
+        "fields": [
+          {
+            "id": 1,
+            "name": "id",
+            "required": true,
+            "type": "long"
+          },
+          {
+            "id": 2,
+            "name": "data",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "id": 3,
+            "name": "ts",
+            "required": false,
+            "type": "timestamptz"
+          },
+          {
+            "id": 4,
+            "name": "pickup",
+            "required": false,
+            "type": "geometry"
+          },
+          {
+            "id": 5,
+            "name": "footprint",
+            "required": false,
+            "type": "geometry(srid:3857)"
+          },
+          {
+            "id": 6,
+            "name": "route",
+            "required": false,
+            "type": "geography"
+          },
+          {
+            "id": 7,
+            "name": "region",
+            "required": false,
+            "type": "geography(srid:4326, karney)"
+          },
+          {
+            "id": 8,
+            "name": "pending",
+            "required": false,
+            "type": "unknown"
+          }
+        ]
+      }
+    },
+    {
+      "action": "set-current-schema",
+      "schema-id": -1
+    }
+  ]
+}
