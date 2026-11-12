@@ -186,6 +186,36 @@ Unity and Hadoop appear in the docs but in no release note, so they are undated.
 
 ## 2. Egress: SingleStore → Iceberg
 
+> **Update 2026-11-11: built.** The committer this section calls for now exists: `singlestore-change-feed`, a
+> connector pipeline (SingleStore's Kafka Connect runtime, no Kafka) that reads a table's change feed
+> (`OBSERVE`) and commits it to Iceberg through our catalog with vended credentials. See D35's amendment and
+> `demo/README.md`. Found by running SingleStore 10.9.0 (the `singlestoredb-dev:0.2.88` image):
+>
+> - `OBSERVE` sends, per partition, `BeginSnapshot`, the rows as `Insert`s, `CommitSnapshot`, then
+>   transactions (`BeginTransaction`, row events, `CommitTransaction`); partitions interleave. An update
+>   carries the whole new row, a delete only the key. `BEGIN AT ('<offset>', ...)`, one offset per partition,
+>   resumes after them. An offset older than the oldest snapshot SingleStore keeps (`snapshots_to_keep`, 2)
+>   fails with error 2851. A shard-key column cannot be updated. `ALTER` and `DROP` wait while `OBSERVE` runs.
+> - Connector pipelines need `experimental_features_config = 'connector_pipelines_enabled=true'`. The
+>   extractor runs on `java_path` (JDK 25) with `-Xmx` from `pipelines_cdc_java_heap_size` (default 128 MB).
+>   Every jar in `extractors/lib-extractor-connect/` is on one class path with SingleStore's own (AWS SDK
+>   2.25.3, Jackson 2.22.3, Debezium, Kafka Connect 3.9.1), so the connector loads Iceberg 1.12 from inside
+>   its own jar, in a child-first class loader. The Iceberg pipelines' extractor bundles Iceberg 1.9.0.
+> - `CREDENTIALS` are merged into the connector's configuration. `information_schema.PIPELINES.CONFIG_JSON`
+>   keeps each pipeline's `CONFIG` as a JSON string under `"config"`; an Iceberg pipeline names its table in
+>   `table_id` there.
+> - `pipelines_stop_on_error` is ON: a connector error stops the pipeline after
+>   `pipelines_max_retries_per_batch_partition` (4) retries.
+> - The connect extractor implements Kafka Connect's `OffsetStorageReader` (`TaskOffsetAccessor`) and
+>   restarts the task when SingleStore asks for a batch from offsets other than the ones it last sent, as after
+>   a failed batch. `information_schema.PIPELINES_CURSORS` shows only a counter for a connector pipeline.
+> - Each Java extractor's `-Xmx` is reserved from the leaf's memory (`Alloc_pipelines`), and idle extractors
+>   stay pooled. An Iceberg pipeline's data workers get `pipelines_iceberg_data_workers_heap_size` (500 MB)
+>   each; with two pooled one-time loads and the connector (1,384 MB in all) a 3 GB container's leaf refused
+>   every write. `ALTER TABLE` on a pipeline's target cannot rename it, nor change a columnstore column's type.
+>
+> The text below is the November 2026 research as it was.
+
 **No public SingleStore feature writes Iceberg tables or commits through a catalog.**
 
 - The docs sitemap has no Iceberg page other than ingest and `PIPELINES_ICEBERG_FILES`. [read]
