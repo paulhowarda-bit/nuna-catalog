@@ -93,7 +93,8 @@ with the exec jar unpacked into Spring Boot's layers.
 
 ## Kafka Connect (2026-11-12)
 
-Checked on Silo against the catalog image on a plain Docker network (the cluster run is still to do): the sink
+Checked first on Silo against the catalog image on a plain Docker network, then on 2026-11-12 in the cluster,
+against the demo's stack (`demo/demo.sh engines`, 104 s): the sink
 created namespace `m8.deep.kafka` and v3 table `t_events` through the catalog, committed the three records
 produced to `m8-kafka-events`, added column `note` when a fourth record carried it, and the run script dropped
 both through the REST API. The settings that matter:
@@ -277,6 +278,15 @@ The Apache Iceberg 1.12.0 Kafka Connect sink has no upsert or equality-delete mo
 `iceberg.tables.cdc-field` were not carried over), and it writes through append-only writers
 (`UnpartitionedWriter`, `PartitionedAppendWriter`). `iceberg.tables.default-id-columns` only sets identifier
 fields on tables it creates. So the matrix has no Kafka Connect upsert case.
+
+## Run time (2026-11-12)
+
+Against the demo's stack on Docker Desktop (`demo/demo.sh engines`), shared with other Docker work: 4 tests,
+0 failures, 508 s for the class (341 s before the cases above were added). Spark 202 s, Kafka Connect 104 s,
+PyIceberg 100 s, SingleStore 82 s. Spark prints a `TIME` line per case (seconds, ignored by the test): lifecycle
+37, the shared tables 13, row-level writes 36, schema 4, partition 6, time travel 3, branches and WAP 5,
+maintenance 27, upgrade 3, v3 features 5, replace 3, views 1, statistics 1. The rest of Spark's time is
+starting the pod and the session. Times vary by about a factor of two between runs on the shared laptop.
 
 ## Results (2026-11-09, docker compose, before the 2026-11-12 changes)
 
