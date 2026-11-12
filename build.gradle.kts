@@ -6,7 +6,8 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 //
 //   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas
 //                              (PostgreSQL only)
-//   ./gradlew build -Pheavy    every test but those tagged overnight or cas: the heavy pass (CLAUDE.md)
+//   ./gradlew build -Pheavy    every test but those tagged overnight or cas: the build half of the
+//                              heavy pass, which ./heavy.sh runs before every bite
 //   ./gradlew build -Pnightly  the overnight run, never part of a build: the tests tagged overnight
 //                              (load, engine matrix, per-mutation fault sweeps) and the CAS test on
 //                              all four backends at 1,000 rounds
