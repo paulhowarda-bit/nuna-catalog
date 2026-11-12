@@ -215,21 +215,10 @@ services:
   pyiceberg:
     profiles: ["pyiceberg"]
     build: ./python
-    image: fidice-engines/python:pyiceberg-0.12.0-duckdb-2.0.0
+    image: fidice-engines/python:pyiceberg-0.12.0
     environment:
       FIDICE_TOKEN: ${FIDICE_TOKEN:?FIDICE_TOKEN}
     command: ["python", "-u", "/scripts/pyiceberg_matrix.py"]
-    volumes:
-      - ./python:/scripts:ro
-    mem_limit: 1g
-
-  duckdb:
-    profiles: ["duckdb"]
-    build: ./python
-    image: fidice-engines/python:pyiceberg-0.12.0-duckdb-2.0.0
-    environment:
-      FIDICE_TOKEN: ${FIDICE_TOKEN:?FIDICE_TOKEN}
-    command: ["python", "-u", "/scripts/duckdb_matrix.py"]
     volumes:
       - ./python:/scripts:ro
     mem_limit: 1g

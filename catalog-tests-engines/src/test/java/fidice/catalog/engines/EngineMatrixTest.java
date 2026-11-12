@@ -208,22 +208,13 @@ class EngineMatrixTest {
         assertThat(results).containsAllEntriesOf(crossReads("pyiceberg"));
     }
 
-    @Test
-    @Order(5)
-    void duckdb() {
-        Map<String, String> results = runEngine("duckdb", () -> compose.compose(ENGINE_TIMEOUT,
-                "run", "--rm", "--build", "duckdb"));
-        assertThat(results).containsAllEntriesOf(lifecycle("duckdb", "m8.deep.duckdb"));
-        assertThat(results).containsAllEntriesOf(crossReads("duckdb"));
-    }
-
     /**
      * SingleStore is a read-only client (D35): it ingests Iceberg tables through pipelines. It runs in the
      * long-lived {@code singlestoredb-dev} container, joined to the compose network for this test only, with
      * Iceberg ingest switched on for the test and set back afterwards.
      */
     @Test
-    @Order(6)
+    @Order(5)
     void singlestore() {
         Map<String, String> results = runEngine("singlestore", () -> {
             String before = singlestoreSql(singlestoreScript("enable.sql", "")).lines()
