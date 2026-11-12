@@ -225,7 +225,7 @@ Three worktree sessions, each owning one module:
 
 ### M8 — Hardening gates
 
-- Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35]. On 2026-11-12 (Paul) the catalog moved to Kubernetes: the matrix now deploys it with its Helm chart (`deploy/helm/keel-catalog`) into a kind cluster, and runs Spark, Kafka Connect (the Iceberg sink, fed from a Kafka topic), PyIceberg and SingleStore. Kafka Connect replaced Flink; Trino and DuckDB were dropped.
+- Nightly engine matrix: Spark, Flink, Trino, PyIceberg, DuckDB, SingleStore — create, write, read, evolve, drop; deep namespaces; v2 and v3 tables [D31, D35]. On 2026-11-12 (Paul) the catalog moved to Kubernetes: the matrix now deploys it with its Helm chart (`deploy/helm/keel-catalog`) into a kind cluster, and runs Spark, Kafka Connect (the Iceberg sink, fed from a Kafka topic), PyIceberg and SingleStore. Kafka Connect replaced Flink; Trino and DuckDB were dropped. Also on 2026-11-12 (Paul): row-level DELETE, UPDATE and MERGE INTO under copy-on-write and merge-on-read, on v2 and v3, written by Spark (which reports the delete files and snapshot operations) and read back by PyIceberg and SingleStore.
 - Load: a 10k+-snapshot table; 8–32 concurrent writers on one table with zero 5xx, deadlocks, lost or duplicated commits.
 - Resilience: kill the primary mid-commit; rolling upgrade across a schema change; reconcile-from-storage DR drill (freeze cleanup and writes, fast-forward pointers along metadata-log chains) [D37].
 - SLO runs (load p99 < 50 ms, 304 p99 < 10 ms, commit p99 < 300 ms, ≥ 500 commits/s); the laptop shows relative behaviour only.
@@ -348,7 +348,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 **Open**
 
 - **D21 for people:** should a non-engine caller (the console) be allowed to decline vending, or get no credentials at all? Today it is vended to and discards the credentials client-side. Paul's decision.
-- **OIDC against a real IdP:** the PKCE flow is not yet tested against Entra ID, Ping or Keycloak. The demo uses token paste. The IdP's token endpoint must allow CORS from the console's origin.
+- **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12. It is not yet tested against Entra ID or Ping, and no automated test covers it. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
 - **Catalog names** are listed unfiltered to any signed-in caller (see above). Filter them if a deployment treats names as secret.
 - **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
 - **Browser end-to-end tests:** none yet. The screens were checked by hand against the demo (see Status).

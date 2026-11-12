@@ -1,0 +1,112 @@
+{
+  "realm": "keel",
+  "enabled": true,
+  "sslRequired": "none",
+  "accessTokenLifespan": 3600,
+  "ssoSessionIdleTimeout": 28800,
+  "ssoSessionMaxLifespan": 36000,
+  "loginWithEmailAllowed": false,
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "groups": [
+    {"name": "demo-analysts"},
+    {"name": "demo-grant-admins"},
+    {"name": "demo-stewards"},
+    {"name": "demo-operators"}
+  ],
+  "users": [
+    {
+      "username": "ana",
+      "enabled": true,
+      "firstName": "Ana",
+      "lastName": "Analyst",
+      "email": "ana@keel.demo",
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "ana-demo", "temporary": false}],
+      "groups": ["/demo-analysts"]
+    },
+    {
+      "username": "gary",
+      "enabled": true,
+      "firstName": "Gary",
+      "lastName": "Grants",
+      "email": "gary@keel.demo",
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "gary-demo", "temporary": false}],
+      "groups": ["/demo-grant-admins"]
+    },
+    {
+      "username": "stella",
+      "enabled": true,
+      "firstName": "Stella",
+      "lastName": "Steward",
+      "email": "stella@keel.demo",
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "stella-demo", "temporary": false}],
+      "groups": ["/demo-stewards"]
+    },
+    {
+      "username": "oscar",
+      "enabled": true,
+      "firstName": "Oscar",
+      "lastName": "Operator",
+      "email": "oscar@keel.demo",
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "oscar-demo", "temporary": false}],
+      "groups": ["/demo-operators"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "keel-console",
+      "name": "Keel console",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://localhost:8181/ui/*"],
+      "webOrigins": ["http://localhost:8181"],
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "keel-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.custom.audience": "keel-catalog"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "full.path": "false"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -5,9 +5,10 @@ shares with the demo (`demo/k8s`, see `demo/README.md`): the catalog deployed by
 (`deploy/helm/keel-catalog`), PostgreSQL, Kafka, kafbat, the S3 store and SingleStore. Spark and PyIceberg create, write, read,
 evolve (add a column, then write and read with it) and drop v2 and v3 tables in a three-level namespace
 `m8.deep.<engine>`. Kafka Connect's Iceberg sink consumes a Kafka topic and commits its records into a table it
-creates. PyIceberg and SingleStore read three tables Spark left in `m8.shared.spark`: v2 and v3 (already
-evolved), and v3 with a deletion vector. (Trino, Flink and DuckDB were dropped on 2026-11-12; the 2026-11-09
-results below still show them.)
+creates. PyIceberg and SingleStore read seven tables Spark left in `m8.shared.spark`: v2 and v3 (already
+evolved), v3 with a deletion vector, and four that took DELETE, UPDATE and MERGE INTO under copy-on-write or
+merge-on-read, on v2 and v3 (see "Row-level writes" below). (Trino, Flink and DuckDB were dropped on
+2026-11-12; the 2026-11-09 results below still show them.)
 
 ## Running it
 
@@ -105,6 +106,44 @@ both through the REST API. The settings that matter:
   its group join and every commit times out with nothing written.
 - Connect only writes, so `run.sh` reads the table back through the catalog's REST API (`Catalog.java`, a
   small Java client: the Kafka image has no curl).
+
+## Row-level writes (2026-11-12)
+
+Spark makes four tables in `m8.shared.spark`, one per format version and write mode: `t_v2_cow`, `t_v2_mor`,
+`t_v3_cow` and `t_v3_mor`, with `write.delete.mode`, `write.update.mode` and `write.merge.mode` all
+`copy-on-write` or all `merge-on-read`. Each gets four rows in one data file
+(`INSERT ... SELECT /*+ COALESCE(1) */ ...`, and the test asserts one file: with a file per row, Spark could
+meet `DELETE WHERE id = 2` by dropping a whole file from metadata, and no row-level path would run). Then:
+
+1. `DELETE FROM t WHERE id = 2`
+2. `UPDATE t SET note = 'u' WHERE id = 3`
+3. `MERGE INTO t USING (VALUES (4, 'd', 'm'), (5, 'e', 'n')) s ON t.id = s.id WHEN MATCHED THEN UPDATE SET
+   note = s.note WHEN NOT MATCHED THEN INSERT *`
+
+Four rows are left, ids summing to 13, notes `u,m,n` in id order; a MERGE that missed id 4 would leave `x`,
+which count and sum alone would not notice. Spark also reports the mechanism: the current snapshot's delete
+files (`<table>.delete_files`: kinds, files, rows deleted) and the snapshot operations from first to current
+(`<table>.snapshots`, following each parent). PyIceberg and SingleStore read the four tables back: rows, sum
+and notes.
+
+On the demo stack (Silo), 2026-11-12, every value as predicted before the run:
+
+| Table | Spark: format, rows, sum, notes | Delete files in the current snapshot | Snapshot operations | PyIceberg 0.12.0 / SingleStore 10.9.0 |
+|---|---|---|---|---|
+| `t_v2_cow` | 2, 4, 13, `u,m,n` | none | append, overwrite, overwrite, overwrite | 4, 13, `u,m,n` / same |
+| `t_v2_mor` | 2, 4, 13, `u,m,n` | one position-delete file (Parquet), 3 rows | append, delete, overwrite, overwrite | 4, 13, `u,m,n` / same |
+| `t_v3_cow` | 3, 4, 13, `u,m,n` | none | append, overwrite, overwrite, overwrite | 4, 13, `u,m,n` / same |
+| `t_v3_mor` | 3, 4, 13, `u,m,n` | one deletion vector (Puffin), 3 rows | append, delete, overwrite, overwrite | 4, 13, `u,m,n` / same |
+
+- Copy-on-write rewrites the data file at each statement; a commit that removes and adds data files is an
+  `overwrite`, and no delete file is ever written.
+- Merge-on-read leaves the data file and adds delete files against it. The DELETE adds only a delete file,
+  which Iceberg records as `delete`; UPDATE and MERGE also add the changed rows, so `overwrite`.
+- One delete file is left holding all three deleted rows: Spark (Iceberg 1.12, file-granularity deletes by
+  default) merges a data file's earlier deletes into the new delete file and removes the old one, and a v3
+  data file may have only one deletion vector.
+- No client refused any of the four tables, so there is no `LIMIT` line for them. SingleStore's docs promise
+  v1/v2 only; 10.9.0 applied v2 position deletes and v3 deletion vectors alike.
 
 ## Results (2026-11-09, docker compose, before the 2026-11-12 changes)
 

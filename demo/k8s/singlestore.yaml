@@ -2,7 +2,9 @@
 # change feed of its ops tables also commits to Iceberg through a connector pipeline. ${SINGLESTORE_IMAGE} is
 # the dev image: demo.sh's has the change-feed connector built in (singlestore.Dockerfile), tagged with the
 # jar's hash so a changed connector replaces the pod; a matrix run on its own uses the plain image. No volume:
-# the data goes with the pod (demo.sh seeds a new one). The demo publishes Studio on localhost:8183.
+# the data goes with the pod (demo.sh seeds a new one). The demo publishes Studio on localhost:8183. It
+# reserves 1.5 GB though it uses over 2 GB: with Keycloak, a fuller reservation leaves no room on Docker
+# Desktop's node for Spark's 2 GB job.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,7 +41,7 @@ spec:
             periodSeconds: 5
             failureThreshold: 120
           resources:
-            requests: {memory: 2Gi}
+            requests: {memory: 1536Mi}
             limits: {memory: 3Gi}
 ---
 apiVersion: v1

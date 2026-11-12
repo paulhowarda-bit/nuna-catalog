@@ -44,6 +44,8 @@ image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 apply() {
   sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
+    -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
+    -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
     "$STACK/$1" | k apply -f - >/dev/null
 }
 
@@ -101,7 +103,7 @@ build() {
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
-      "$KAFKA_UI_IMAGE"; do
+      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)"; do
     docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
   done
 }
@@ -129,11 +131,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8181 8182 8183; do
+  for port in 8180 8181 8182 8183; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8181, 8182 and 8183. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8183. Stop what holds them." >&2
     return 1
   fi
 }
@@ -262,7 +264,9 @@ print_access() {
   cat <<EOF
 
 The console:  $URL/ui/   (catalogs lakehouse and engines)
-Sign in by pasting one of these tokens (valid until $expires).
+Sign in with localhost:8180 (Keycloak) by username and password: ana / ana-demo, gary / gary-demo,
+stella / stella-demo, oscar / oscar-demo. To change user, sign out there too (http://localhost:8180/realms/keel/account).
+Or paste one of these tokens (valid until $expires).
 
 Data user  ana   (group demo-analysts: select on both catalogs)
 $(token_of ana)
@@ -274,6 +278,7 @@ Tag steward stella, platform operator oscar, SingleStore, the lake writer and th
   $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix}.jwt
 SingleStore:  demo/demo.sh sql   (or Studio on http://localhost:8183, user root, password $S2_ROOT_PASSWORD)
 Kafka:        kafbat on http://localhost:8182
+Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 Kubernetes:   namespace $NS, context $CONTEXT
 EOF
@@ -287,11 +292,14 @@ up() {
   check_ports
   publish_tokens
 
-  say "starting PostgreSQL, Kafka, kafbat, the issuer's key server and Silo (namespace $NS, context $CONTEXT)"
+  say "starting PostgreSQL, Kafka, kafbat, the issuer's key server, Keycloak and Silo (namespace $NS, context $CONTEXT)"
   apply stack.yaml
   apply store-silo.yaml
+  k create configmap keycloak-realm --from-file=keel.json="$STACK/keycloak-realm.json" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  apply keycloak.yaml
   k wait --for=condition=available --timeout=8m deployment/postgres deployment/kafka deployment/idp \
-    deployment/kafka-ui deployment/s3 >/dev/null
+    deployment/kafka-ui deployment/keycloak deployment/s3 >/dev/null
   # The seed job makes the warehouse bucket; a completed job is left as it is.
   apply seed.yaml
   k wait --for=condition=complete --timeout=3m job/seed >/dev/null
