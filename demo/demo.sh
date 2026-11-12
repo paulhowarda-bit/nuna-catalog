@@ -30,6 +30,8 @@ JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 S2_ROOT_PASSWORD=keel-test
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
+DUCKDB_VERSION=2.0.0
+DUCKDB_IMAGE=keel-demo-duckdb:$DUCKDB_VERSION
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 
@@ -44,6 +46,7 @@ image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 apply() {
   sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
+    -e "s|\${DUCKDB_IMAGE}|$DUCKDB_IMAGE|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
     "$STACK/$1" | k apply -f - >/dev/null
@@ -95,11 +98,14 @@ build() {
   unzip -q -j "$jar" 'lib/*' -d "$RUN/images/lake/lib"
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
 
-  say "building the images: the catalog, SingleStore with the connector, the lake writer"
+  say "building the images: the catalog, SingleStore with the connector, the lake writer, DuckDB"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
   SINGLESTORE_IMAGE="keel-demo-singlestore:$(sha256sum "$jar" | cut -c1-12)"
   docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
   docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
+  mkdir -p "$RUN/images/duckdb"
+  docker build -q -f "$STACK/duckdb.Dockerfile" --build-arg "DUCKDB_VERSION=$DUCKDB_VERSION" -t "$DUCKDB_IMAGE" \
+    "$RUN/images/duckdb" >/dev/null
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
@@ -112,10 +118,11 @@ mint() {
   "$JAVA" "$REPO/demo/Mint.java" "$RUN"
 }
 
-# The issuer's public keys (served by Service idp) and the lake writer's token.
+# The issuer's public keys (served by Service idp), the lake writer's token, and ana's for DuckDB.
 publish_tokens() {
   k create configmap idp-keys --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-lake-token --from-literal=token="$(token_of lake)" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic demo-duckdb-token --from-literal=token="$(token_of ana)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
 tokens_expired() {
@@ -131,11 +138,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183; do
+  for port in 8180 8181 8182 8183 8184; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8183. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8184. Stop what holds them." >&2
     return 1
   fi
 }
@@ -277,6 +284,7 @@ $(token_of gary)
 Tag steward stella, platform operator oscar, SingleStore, the lake writer and the engine matrix have tokens too:
   $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix}.jwt
 SingleStore:  demo/demo.sh sql   (or Studio on http://localhost:8183, user root, password $S2_ROOT_PASSWORD)
+DuckDB:       its UI on http://localhost:8184, signed in to the catalog as ana (catalogs lakehouse and engines)
 Kafka:        kafbat on http://localhost:8182
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
@@ -318,6 +326,10 @@ up() {
   apply singlestore.yaml
   k rollout status deployment/singlestore --timeout=15m >/dev/null
   seed
+
+  say "starting DuckDB and its UI ($DUCKDB_IMAGE), signed in as ana"
+  apply duckdb.yaml
+  k rollout status deployment/duckdb --timeout=3m >/dev/null
   print_access
 }
 
@@ -344,8 +356,9 @@ case "${1:-}" in
     if tokens_expired; then
       mint
       publish_tokens
-      say "re-minted; replacing SingleStore's running pipelines so they use the new token"
+      say "re-minted; replacing SingleStore's running pipelines and restarting DuckDB so they use the new tokens"
       feeds
+      k rollout restart deployment/duckdb >/dev/null
     fi
     print_access
     ;;
