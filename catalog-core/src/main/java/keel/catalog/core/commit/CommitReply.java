@@ -3,7 +3,7 @@ package keel.catalog.core.commit;
 import java.util.UUID;
 
 /**
- * What a create or commit request gets back. {@code type} is the Iceberg error class name clients map
+ * What a create, commit or transaction request gets back. {@code type} is the Iceberg error class name clients map
  * to an exception.
  */
 public sealed interface CommitReply {
@@ -20,6 +20,10 @@ public sealed interface CommitReply {
     /** The metadata the response carries, and the id the catalog knows the object by. */
     record Success(UUID objectId, String metadataLocation, String metadataSha256, String metadataJson, How how)
             implements CommitReply {
+    }
+
+    /** A multi-table transaction went through (D15): every table's change, or none was needed. Answered 204. */
+    record Applied(How how) implements CommitReply {
     }
 
     /** A definite 4xx: 400 BadRequest, 403 Forbidden, 404 NoSuch*, 409 CommitFailed or AlreadyExists. */

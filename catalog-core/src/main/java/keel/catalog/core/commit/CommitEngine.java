@@ -1,5 +1,6 @@
 package keel.catalog.core.commit;
 
+import keel.catalog.core.commit.CommitReply.Applied;
 import keel.catalog.core.commit.CommitReply.Failure;
 import keel.catalog.core.commit.CommitReply.How;
 import keel.catalog.core.commit.CommitReply.ServerError;
@@ -26,6 +27,7 @@ import keel.catalog.store.KeyState;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.OutboxEvent;
 import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerKey;
 import keel.catalog.store.PointerSwap;
 import keel.catalog.store.StoreException;
 import keel.catalog.store.StoreUnavailableException;
@@ -36,12 +38,14 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Supplier;
 
 /**
  * The commit loop of build-plan 2.2 for one table or view: idempotency (D10), apply the request with
@@ -49,7 +53,8 @@ import java.util.concurrent.ThreadLocalRandom;
  * its journal, outbox and idempotency records in one transaction (D5), and retry a lost swap within
  * the bounds of P10 (D9). It answers as iceberg-core's CatalogHandlers does: a request that changes
  * nothing writes nothing, a requirement that fails against current metadata is a 409, and a
- * swap lost to a concurrent commit is retried against the new metadata.
+ * swap lost to a concurrent commit is retried against the new metadata. A multi-table transaction runs
+ * the same loop over every table it names and swaps all their pointers in one store transaction (D15).
  *
  * <p>The REST layer resolves the catalog and namespace, authorizes the caller and maps the reply to
  * a response; this class never throws for an outcome it can answer.
@@ -101,12 +106,12 @@ public final class CommitEngine {
 
     /** {@code POST .../tables} without stage-create. */
     public CommitReply createTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.CREATE_TABLE, name, requestJson, caller, idempotencyKey);
+        return run(Operation.CREATE_TABLE, one(name, requestJson), requestJson, caller, idempotencyKey);
     }
 
     /** {@code POST .../tables/{table}}, including the commit of a staged create. */
     public CommitReply commitTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.COMMIT_TABLE, name, requestJson, caller, idempotencyKey);
+        return run(Operation.COMMIT_TABLE, one(name, requestJson), requestJson, caller, idempotencyKey);
     }
 
     /**
@@ -114,7 +119,39 @@ public final class CommitEngine {
      * file's table UUID and location; the pointer names the file as it is, hashed as read.
      */
     public CommitReply registerTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.REGISTER_TABLE, name, requestJson, caller, idempotencyKey);
+        return run(Operation.REGISTER_TABLE, one(name, requestJson), requestJson, caller, idempotencyKey);
+    }
+
+    /** An object as a request names it, with its own commit request. */
+    public record TableChange(ObjectName name, String json) {
+        public TableChange {
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(json, "json");
+        }
+    }
+
+    /**
+     * {@code POST .../transactions/commit} (D15): changes to existing tables of one catalog, all committed or
+     * none. Each change is applied as {@link #commitTable} applies it, and every table that changes has its
+     * pointer swapped in one store transaction, which locks them in key order. A missing table, a failed
+     * requirement or a refusing rule refuses the whole transaction with nothing written; a swap lost to a
+     * concurrent commit retries all of it against the tables' new metadata. A change that changes nothing
+     * is checked against the metadata its attempt read; its pointer is not locked by the swap.
+     *
+     * @param changes     one per table, in request order; the REST layer refuses an empty list, a table named
+     *                    twice and a list over the cap
+     * @param requestJson the whole request body, which an idempotency key binds to
+     */
+    public CommitReply commitTransaction(List<TableChange> changes, String requestJson, Caller caller,
+                                         Optional<String> idempotencyKey) {
+        if (changes.isEmpty()) {
+            throw new IllegalArgumentException("a transaction changes at least one table");
+        }
+        return run(Operation.COMMIT_TRANSACTION, List.copyOf(changes), requestJson, caller, idempotencyKey);
+    }
+
+    private static List<TableChange> one(ObjectName name, String json) {
+        return List.of(new TableChange(name, json));
     }
 
     /**
@@ -141,17 +178,18 @@ public final class CommitEngine {
 
     /** {@code POST .../views}. */
     public CommitReply createView(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.CREATE_VIEW, name, requestJson, caller, idempotencyKey);
+        return run(Operation.CREATE_VIEW, one(name, requestJson), requestJson, caller, idempotencyKey);
     }
 
     /** {@code POST .../views/{view}}: replace a view. */
     public CommitReply commitView(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.COMMIT_VIEW, name, requestJson, caller, idempotencyKey);
+        return run(Operation.COMMIT_VIEW, one(name, requestJson), requestJson, caller, idempotencyKey);
     }
 
     private enum Operation {
         CREATE_TABLE(CatalogObject.Kind.TABLE), COMMIT_TABLE(CatalogObject.Kind.TABLE),
-        REGISTER_TABLE(CatalogObject.Kind.TABLE), CREATE_VIEW(CatalogObject.Kind.VIEW), COMMIT_VIEW(CatalogObject.Kind.VIEW);
+        REGISTER_TABLE(CatalogObject.Kind.TABLE), CREATE_VIEW(CatalogObject.Kind.VIEW), COMMIT_VIEW(CatalogObject.Kind.VIEW),
+        COMMIT_TRANSACTION(CatalogObject.Kind.TABLE);
 
         final CatalogObject.Kind kind;
 
@@ -167,21 +205,30 @@ public final class CommitEngine {
     /**
      * One request. {@code commitId} is also the idempotency claim's change id, and stays the same
      * across attempts: an attempt that lost its swap, or was found not committed, wrote nothing.
+     *
+     * @param targets the one object a single-object request names, or each table of a transaction
+     * @param json    the whole request body
      */
-    private record Request(Operation operation, ObjectName name, String json, Caller caller, UUID commitId,
+    private record Request(Operation operation, List<TableChange> targets, String json, Caller caller, UUID commitId,
                            Optional<Key> key) {
+
+        /** The object of a single-object request. */
+        ObjectName name() {
+            return targets.getFirst().name();
+        }
     }
 
     // ---- idempotency (D10) ----
 
-    private CommitReply run(Operation operation, ObjectName name, String json, Caller caller, Optional<String> key) {
+    private CommitReply run(Operation operation, List<TableChange> targets, String json, Caller caller,
+                            Optional<String> key) {
         UUID commitId = UUID.randomUUID();
         if (key.isEmpty()) {
-            return work(new Request(operation, name, json, caller, commitId, Optional.empty()));
+            return work(new Request(operation, targets, json, caller, commitId, Optional.empty()));
         }
-        Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, name, json, caller),
+        Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, targets, json, caller),
                 clock.instant().plus(settings.keyLifetime()));
-        Request request = new Request(operation, name, json, caller, commitId, Optional.of(fixed));
+        Request request = new Request(operation, targets, json, caller, commitId, Optional.of(fixed));
         RuntimeException lastClaimFailure = null;
         for (int round = 0; round < CLAIM_ROUNDS; round++) {
             KeyState state;
@@ -250,6 +297,9 @@ public final class CommitEngine {
             }
             case Success success -> complete(key, request.commitId(), 200,
                     Replies.success(success.objectId(), success.metadataLocation(), success.metadataSha256()));
+            case Applied applied when applied.how() == How.COMMITTED -> {
+            }
+            case Applied applied -> complete(key, request.commitId(), Replies.APPLIED, "");
             case Failure failure -> complete(key, request.commitId(), failure.status(),
                     Replies.failure(failure.type(), failure.message()));
             case ServerError error -> release(key, request.commitId());
@@ -279,6 +329,7 @@ public final class CommitEngine {
     private CommitReply replay(IdempotencyResult result) {
         return switch (Replies.decode(result)) {
             case Replies.Failure failure -> new Failure(failure.status(), failure.type(), failure.message());
+            case Replies.Applied applied -> new Applied(How.REPLAYED);
             case Replies.Success success -> {
                 String cached = cache.get(success.location());
                 if (cached != null) {
@@ -296,10 +347,16 @@ public final class CommitEngine {
         };
     }
 
-    /** Binds a key to one request: what it does, to which object, for whom, with which body. */
-    private static String requestHash(Operation operation, ObjectName name, String json, Caller caller) {
-        String canonical = String.join("\n", operation.name(), name.catalogId().toString(),
-                name.namespaceId().toString(), name.name().normalized(),
+    /**
+     * Binds a key to one request: what it does, to which object, for whom, with which body. A transaction
+     * names its tables in its body, so it is bound to its catalog and the body.
+     */
+    private static String requestHash(Operation operation, List<TableChange> targets, String json, Caller caller) {
+        ObjectName name = targets.getFirst().name();
+        List<String> scope = operation == Operation.COMMIT_TRANSACTION
+                ? List.of(name.catalogId().toString())
+                : List.of(name.catalogId().toString(), name.namespaceId().toString(), name.name().normalized());
+        String canonical = String.join("\n", operation.name(), String.join("\n", scope),
                 caller.endUser().map(Principal::id).orElse(""), json);
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
@@ -317,6 +374,7 @@ public final class CommitEngine {
                 case CREATE_TABLE, CREATE_VIEW -> create(request);
                 case COMMIT_TABLE, COMMIT_VIEW -> commit(request);
                 case REGISTER_TABLE -> register(request);
+                case COMMIT_TRANSACTION -> transaction(request);
             };
         } catch (StoreUnavailableException e) {
             // Thrown only before a COMMIT was sent: an attempt whose COMMIT was lost is settled by findCommit,
@@ -464,7 +522,8 @@ public final class CommitEngine {
                     default -> throw new IllegalStateException("createObject answered " + result);
                 }
             } catch (CommitOutcomeUnknownException e) {
-                Optional<CommitReply> settled = settle(request, object, first, created.json(), false, attempt, started);
+                Optional<CommitReply> settled = settle(request, object.mainKey(),
+                        () -> committed(object, first, created.json(), false, request.commitId()), attempt, started);
                 if (settled.isPresent()) {
                     return settled.get();
                 }
@@ -526,7 +585,8 @@ public final class CommitEngine {
                     }
                 }
             } catch (CommitOutcomeUnknownException e) {
-                Optional<CommitReply> settled = settle(request, object, next, changed.json(), regulatedChange,
+                Optional<CommitReply> settled = settle(request, object.mainKey(),
+                        () -> committed(object, next, changed.json(), regulatedChange, request.commitId()),
                         attempt, started);
                 if (settled.isPresent()) {
                     return settled.get();
@@ -535,22 +595,142 @@ public final class CommitEngine {
         }
     }
 
+    /** One table of a transaction attempt that changes: what it read, and the metadata its change makes. */
+    private record Planned(CatalogObject object, Pointer base, Outcome.NewMetadata changed, String requestJson,
+                           boolean regulatedChange) {
+    }
+
+    /** A planned change whose metadata file is written: {@code next} is the pointer it swaps in. */
+    private record Staged(Planned plan, Pointer next) {
+    }
+
     /**
-     * Decides a commit whose outcome was unknown (D9). Empty means it did not commit and another
-     * attempt may run.
+     * Applies every change of a transaction to its table's current metadata and swaps the changed tables'
+     * pointers in one batch, retrying a lost swap as {@link #update} does (D15). Each table is resolved by
+     * name once, before the first attempt, as {@link #update} resolves its one table.
      */
-    private Optional<CommitReply> settle(Request request, CatalogObject object, Pointer next, String json,
-                                         boolean regulatedChange, int attempt, Instant started) {
+    private CommitReply transaction(Request request) {
+        List<CatalogObject> objects = new ArrayList<>();
+        for (TableChange change : request.targets()) {
+            Optional<CatalogObject> found = store.findObject(change.name().namespaceId(),
+                    change.name().name().normalized());
+            if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE) {
+                return new Failure(404, "NoSuchTableException", "Table does not exist: " + change.name().qualified());
+            }
+            objects.add(found.get());
+        }
+        List<GovernanceChain> governance = objects.stream().map(o -> GovernanceChain.of(store, o)).toList();
+        Instant started = clock.instant();
+        for (int attempt = 1; ; attempt++) {
+            List<Planned> planned = new ArrayList<>();
+            for (int i = 0; i < objects.size(); i++) {
+                CatalogObject object = objects.get(i);
+                String table = request.targets().get(i).name().qualified();
+                String json = request.targets().get(i).json();
+                Pointer base = store.readPointer(object.mainKey())
+                        .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
+                Optional<String> current = load(object, base, governance.get(i));
+                if (current.isEmpty()) {
+                    return new ServerError(SERVICE_FAILURE, "Metadata file " + base.metadataLocation()
+                            + " of " + table + " does not match the hash its pointer recorded");
+                }
+                switch (Metadata.commitTable(json, current.get(), base.metadataLocation())) {
+                    case Outcome.NewMetadata changed -> {
+                        Optional<Failure> refused = judge(object, changed.before(), changed.after(), governance.get(i));
+                        if (refused.isPresent()) {
+                            Failure f = refused.get();
+                            return new Failure(f.status(), f.type(), table + ": " + f.message());
+                        }
+                        boolean regulated = schemaOrSpecChanged(changed.before(), changed.after())
+                                && governance.get(i).regulated();
+                        planned.add(new Planned(object, base, changed, json, regulated));
+                    }
+                    case Outcome.NoChange noChange -> {
+                    }
+                    case Outcome.RequirementFailed failed -> {
+                        return new Failure(409, COMMIT_FAILED, table + ": " + failed.message());
+                    }
+                    case Outcome.BadRequest bad -> {
+                        return new Failure(400, bad.type(), table + ": " + bad.message());
+                    }
+                    case Outcome.NotFound notFound -> throw new IllegalStateException("current metadata was given");
+                }
+            }
+            if (planned.isEmpty()) {
+                return new Applied(How.UNCHANGED);
+            }
+            // Files are written only once every table has passed, so a refused transaction leaves none behind.
+            List<Staged> written = planned.stream().map(p -> {
+                long version = p.base().version() + 1;
+                TableFiles.Written file = files.write(p.object().locationRoot(), version, p.changed().json());
+                return new Staged(p, new Pointer(file.location(), version, file.sha256(),
+                        Projection.of(p.changed().after())));
+            }).toList();
+            try {
+                switch (store.commit(transactionBatch(request, written))) {
+                    case CommitResult.Committed done -> {
+                        return applied(written, request.commitId());
+                    }
+                    case CommitResult.Conflict conflict -> {
+                        if (!backOff(attempt, started)) {
+                            return new Failure(409, COMMIT_FAILED, "Transaction lost to concurrent commits " + attempt
+                                    + " times; its tables changed too often to apply it");
+                        }
+                    }
+                }
+            } catch (CommitOutcomeUnknownException e) {
+                Optional<CommitReply> settled = settle(request, written.getFirst().plan().object().mainKey(),
+                        () -> applied(written, request.commitId()), attempt, started);
+                if (settled.isPresent()) {
+                    return settled.get();
+                }
+            }
+        }
+    }
+
+    private CommitReply applied(List<Staged> written, UUID commitId) {
+        for (Staged s : written) {
+            committed(s.plan().object(), s.next(), s.plan().changed().json(), s.plan().regulatedChange(), commitId);
+        }
+        return new Applied(How.COMMITTED);
+    }
+
+    private CommitBatch transactionBatch(Request request, List<Staged> written) {
+        Instant at = clock.instant();
+        Caller caller = request.caller();
+        List<PointerSwap> swaps = new ArrayList<>();
+        List<OutboxEvent> outbox = new ArrayList<>();
+        for (Staged s : written) {
+            Planned p = s.plan();
+            Metadata.Journal journal = Metadata.journal(p.requestJson());
+            swaps.add(new PointerSwap(p.object().mainKey(), Optional.of(p.base()), s.next(),
+                    new JournalEntry(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
+                            caller.engine(), journal.requirementsJson(), journal.updatesJson())));
+            outbox.addAll(events.of(new CommitEvents.Commit(request.commitId(), at, caller, p.object(),
+                    Optional.of(p.base()), s.next(), journal.requirementsJson(), journal.updatesJson(),
+                    p.regulatedChange())));
+        }
+        Optional<IdempotencyResult> result = request.key().map(key -> new IdempotencyResult(key.key(),
+                key.principal(), key.requestHash(), Replies.APPLIED, "", key.expiresAt()));
+        return new CommitBatch(request.commitId(), at, swaps, outbox, result);
+    }
+
+    /**
+     * Decides a commit whose outcome was unknown (D9), by any one key it swapped. Empty means it did not
+     * commit and another attempt may run.
+     */
+    private Optional<CommitReply> settle(Request request, PointerKey anyKey, Supplier<CommitReply> landed,
+                                         int attempt, Instant started) {
         CommitLookup lookup;
         try {
-            lookup = store.findCommit(request.commitId(), object.mainKey());
+            lookup = store.findCommit(request.commitId(), anyKey);
         } catch (StoreException e) {
             LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
             return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()
                     + " may or may not have been applied: " + e.getMessage()));
         }
         if (lookup == CommitLookup.COMMITTED) {
-            return Optional.of(committed(object, next, json, regulatedChange, request.commitId()));
+            return Optional.of(landed.get());
         }
         if (backOff(attempt, started)) {
             return Optional.empty();

@@ -237,6 +237,12 @@ class MutatingRoutesAuditTest {
             expect(api.rest("DELETE", "/namespaces/" + withView() + "/views/v", null, rid(id)), 204);
             return EventType.DROP;
         });
+        cases.put("POST /v1/{prefix}/transactions/commit", id -> {
+            String ns = withTable();
+            expect(api.rest("POST", "/transactions/commit", "{\"table-changes\":[{\"identifier\":{\"namespace\":[\""
+                    + ns + "\"],\"name\":\"t\"}," + Api.SET_PROPERTY.formatted("1").substring(1) + "]}", rid(id)), 204);
+            return EventType.COMMIT;
+        });
         cases.put("POST /v1/{prefix}/views/rename", id -> {
             String ns = withView();
             expect(api.rest("POST", "/views/rename", rename(ns, "v", "v2"), rid(id)), 204);

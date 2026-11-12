@@ -18,6 +18,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *                                client keeps a loaded table for 5 minutes
  * @param identityProvider        named in the {@code /v1/oauth/tokens} error: where tokens come from (D13)
  * @param auditSource             the CloudEvents {@code source} of this deployment's audit events
+ * @param maxTransactionTables    the most tables one {@code /transactions/commit} may change; its store
+ *                                transaction locks that many pointers (D15, P10)
  */
 @ConfigurationProperties("keel.rest")
 public record RestSettings(
@@ -29,12 +31,16 @@ public record RestSettings(
         @DefaultValue("30d") Duration dropRetention,
         @DefaultValue("5m") Duration credentialRefreshMargin,
         @DefaultValue("the organisation's identity provider") String identityProvider,
-        @DefaultValue("urn:keel:deployment:keel-catalog") URI auditSource) {
+        @DefaultValue("urn:keel:deployment:keel-catalog") URI auditSource,
+        @DefaultValue("100") int maxTransactionTables) {
 
     public RestSettings {
         if (defaultPageSize < 1 || maxPageSize < defaultPageSize) {
             throw new IllegalArgumentException("need 1 <= default-page-size <= max-page-size, got "
                     + defaultPageSize + " and " + maxPageSize);
+        }
+        if (maxTransactionTables < 1) {
+            throw new IllegalArgumentException("max-transaction-tables must be at least 1, got " + maxTransactionTables);
         }
     }
 }

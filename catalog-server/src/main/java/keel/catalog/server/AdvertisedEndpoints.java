@@ -34,7 +34,9 @@ final class AdvertisedEndpoints {
             "HEAD /v1/{prefix}/namespaces/{namespace}/views/{view}",
             "POST /v1/{prefix}/namespaces/{namespace}/views/{view}",
             "DELETE /v1/{prefix}/namespaces/{namespace}/views/{view}",
-            "POST /v1/{prefix}/views/rename");
+            "POST /v1/{prefix}/views/rename",
+            // Atomic on every supported store: one transaction swaps every pointer (D15).
+            "POST /v1/{prefix}/transactions/commit");
 
     private AdvertisedEndpoints() {
     }

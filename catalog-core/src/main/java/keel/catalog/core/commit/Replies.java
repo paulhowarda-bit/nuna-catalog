@@ -6,9 +6,12 @@ import java.util.UUID;
 /**
  * How an idempotency key's answer is stored (D10). A success keeps only where its metadata file is
  * and the file's hash: the replay reads the file again and checks it, so a key never holds a copy
- * of the metadata. A definite 4xx keeps its error type and message.
+ * of the metadata. A transaction's success is a 204 with no body. A definite 4xx keeps its error type
+ * and message.
  */
 final class Replies {
+
+    static final int APPLIED = 204;
 
     private Replies() {
     }
@@ -17,6 +20,9 @@ final class Replies {
     }
 
     record Success(UUID objectId, String location, String sha256) implements Stored {
+    }
+
+    record Applied() implements Stored {
     }
 
     record Failure(int status, String type, String message) implements Stored {
@@ -35,6 +41,9 @@ final class Replies {
         if (result.status() == 200) {
             String[] parts = result.body().split("\n", 3);
             return new Success(UUID.fromString(parts[0]), parts[1], parts[2]);
+        }
+        if (result.status() == APPLIED) {
+            return new Applied();
         }
         String[] parts = result.body().split("\n", 2);
         return new Failure(result.status(), parts[0], parts.length > 1 ? parts[1] : "");

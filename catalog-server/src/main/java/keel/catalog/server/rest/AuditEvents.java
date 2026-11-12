@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
 import org.springframework.stereotype.Component;
 
 /**
@@ -39,8 +40,13 @@ public class AuditEvents {
 
     /** The commit events of one request against {@code path} (namespace levels, then the name) in {@code catalog}. */
     public CommitEvents commits(String catalog, List<String> path, Actor actor) {
+        return commits(catalog, object -> path, actor);
+    }
+
+    /** The commit events of a request that changes several objects, each named by {@code path}. */
+    CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
         return commit -> List.of(event(commit.at(), new Commit(commit.commitId(),
-                securable(commit.object(), catalog, path), PointerKey.MAIN,
+                securable(commit.object(), catalog, path.apply(commit.object())), PointerKey.MAIN,
                 commit.before().map(AuditEvents::state).orElse(null), state(commit.after()),
                 commit.updatesJson(), actor)));
     }
