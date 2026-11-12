@@ -157,8 +157,9 @@ demo/demo.sh engines
 
 runs the engine matrix (`catalog-tests-engines`, `EngineMatrixTest`) against this stack instead of one of its
 own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's ingest in the demo's SingleStore,
-all into catalog `engines` as `engine-matrix`. It takes about 10 minutes the first time (the engine images are
-built; later runs reuse them) and leaves Spark's shared tables in `m8.shared.spark`, which the console shows.
+all into catalog `engines` as `engine-matrix`. It takes about 4 minutes once the engine images exist; the first
+run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
+shows, and SingleStore's copies in database `fidice_m8`.
 Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
 
 ## Kafka

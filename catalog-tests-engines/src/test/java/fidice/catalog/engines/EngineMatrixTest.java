@@ -156,6 +156,9 @@ class EngineMatrixTest {
         long started = System.nanoTime();
         if (existing) {
             buildEngineImages();
+            // The engines' Jobs read the token from Secret engine-token, as on a stack of the harness's own.
+            kubectl(Duration.ofMinutes(1), "delete", "secret", "engine-token", "--ignore-not-found");
+            kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "engine-token", "--from-literal=token=" + token);
             record("cluster", "the stack in namespace " + namespace + " of " + context + ", engine images ready in "
                     + seconds(started));
             return;
@@ -435,6 +438,13 @@ class EngineMatrixTest {
             status = kubectl(Duration.ofMinutes(1), "get", "job", name, "-o",
                     "jsonpath={.status.succeeded}/{.status.failed}").strip();
             if (status.startsWith("1/") || status.endsWith("/1")) {
+                break;
+            }
+            // A pod that can never start (a missing Secret, an image the node does not have) waits, not fails.
+            String waiting = kubectl(Duration.ofMinutes(1), "get", "pods", "-l", "job-name=" + name, "-o",
+                    "jsonpath={.items[*].status.containerStatuses[*].state.waiting.reason}");
+            if (waiting.contains("CreateContainerConfigError") || waiting.contains("ErrImageNeverPull")) {
+                status = "cannot start: " + waiting.strip();
                 break;
             }
             Thread.sleep(5_000);
