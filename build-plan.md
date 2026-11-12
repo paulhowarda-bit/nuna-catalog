@@ -608,5 +608,6 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Fast build green: 1,075 tests in 114 classes, 0 failures.
   - Bites: 1 recorded, `bites/M6/select-vended-read-write.patch`, checked with `git apply --check`, not run.
   - Credentials vended before a privilege is revoked keep working until they expire (30 minutes by default), as before.
-  - Not verified: Ceph and AWS, the heavy build, the bite, and the demo's INSERT as `ana` (the demo runs the catalog image built before this change).
+  - Checked in the demo after `demo/demo.sh up` rolled the catalog: the same INSERT as `ana` from DuckDB now fails at its first upload (`HTTP PUT error uploading to '…/data/as_of_month=682/01a1d1a0-….parquet' (HTTP 403 Forbidden) AccessDenied`). The table's folder still holds the same 17 objects, and her reads work.
+  - Not verified: Ceph and AWS, the heavy build, and the bite.
 - **Next:** M9, carried to work.
