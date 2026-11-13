@@ -122,10 +122,10 @@ final class Pointers {
 
     /**
      * The first swap whose object is no longer active: dropped, unregistered or purged since the commit
-     * read it. The object row is locked after the pointers, shared, so commits of one object do not wait for each other. Unregister locks the
-     * pointers and then the object too; a drop locks the object alone, so either it waits for this
-     * commit, or this commit waits for it and reads its new state. An object the store has no row for is
-     * not checked.
+     * read it. The object row is locked after the pointers, shared, so commits of one object do not wait
+     * for each other. Unregister locks the pointers and then the object too; a drop locks the object
+     * alone, so either it waits for this commit, or this commit waits for it and reads its new state. An
+     * object the store has no row for is not checked.
      */
     private static Optional<CommitResult.Inactive> inactive(Connection connection, CommitBatch batch)
             throws SQLException {

@@ -350,6 +350,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
     }
 
+    @Tag("heavy")
     @Test
     @DisplayName("Objects: of a commit and an unregister of one table racing, exactly one applies, every round")
     void commitRacingTheUnregisterExactlyOneApplies() throws Exception {
@@ -420,6 +421,28 @@ public abstract class CatalogObjectSuite extends GroupSuite {
             assertThat(underTest().writtenRows(revive)).isEqualTo(WrittenRows.allOf(revive));
             assertThat(store.findCommit(revive.commitId(), table.mainKey())).isEqualTo(CommitLookup.COMMITTED);
         }
+    }
+
+    @Tag("heavy")
+    @Test
+    @DisplayName("Objects: a revive whose answer is lost is unknown, and findCommit resolves it to COMMITTED")
+    void lostReviveAnswerResolvesToCommitted() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        assertApplied(store.unregisterObject(table.id(), base, change()));
+        CommitBatch revive = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "lost-" + table.id()));
+        CatalogStore dropping = underTest().store(Commits.before(revive, faults::dropResponses));
+
+        Assertions.assertThatThrownBy(() -> dropping.reviveObject(table.id(), CatalogObject.State.UNREGISTERED,
+                        namespace.id(), name("t"), revive))
+                .isInstanceOfSatisfying(CommitOutcomeUnknownException.class,
+                        unknown -> assertThat(unknown.commitId()).isEqualTo(revive.commitId()));
+        faults.healLink();
+
+        assertThat(store.findCommit(revive.commitId(), table.mainKey())).isEqualTo(CommitLookup.COMMITTED);
+        assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.ACTIVE);
+        assertThat(underTest().writtenRows(revive)).isEqualTo(WrittenRows.allOf(revive));
     }
 
     @Test

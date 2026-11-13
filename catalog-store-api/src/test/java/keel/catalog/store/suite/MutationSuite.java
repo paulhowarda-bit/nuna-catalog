@@ -18,6 +18,7 @@ import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Grant;
 import keel.catalog.store.LegalHold;
 import keel.catalog.store.NamespaceRecord;
+import keel.catalog.store.Pointer;
 import keel.catalog.store.Securable;
 import keel.catalog.store.StorageProfile;
 import keel.catalog.store.TrustedEngine;
@@ -84,6 +85,10 @@ public abstract class MutationSuite extends GroupSuite {
                 onTable("undropObject", table -> {
                     assertApplied(store.dropObject(table.id(), now().plus(Duration.ofDays(30)), change()));
                     return (target, change) -> target.undropObject(table.id(), table.namespaceId(), name("back"), change);
+                }),
+                onTable("unregisterObject", table -> {
+                    Pointer current = store.readPointer(table.mainKey()).orElseThrow();
+                    return (target, change) -> target.unregisterObject(table.id(), current, change);
                 }),
                 onTable("purgeObject", table -> {
                     assertApplied(store.dropObject(table.id(), now().minusSeconds(60), change()));
