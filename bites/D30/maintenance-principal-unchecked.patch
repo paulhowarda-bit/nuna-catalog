@@ -2,10 +2,10 @@ Breaks: a maintenance principal with a quote in it writes its own statements int
 Module: catalog-objectstore
 Test: DeletePolicyTest#refusals
 diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
-index 2e38b5b..803fabd 100644
+index 00c2047..c2d97e8 100644
 --- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
 +++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
-@@ -48,7 +48,7 @@ public final class DeletePolicy {
+@@ -69,7 +69,7 @@ public final class DeletePolicy {
       * @throws IllegalArgumentException when it cannot
       */
      public static void requirePrincipal(StoreKind kind, String principal) {

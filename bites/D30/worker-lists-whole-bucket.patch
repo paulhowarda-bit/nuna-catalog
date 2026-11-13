@@ -1,0 +1,16 @@
+Breaks: the worker's listing is not limited to its prefixes, so it lists the whole bucket, other profiles' prefixes included.
+Module: catalog-objectstore
+Test: DeletePolicyTest#aws+ceph+minio+sharedBucket
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+index 00c2047..1ec676a 100644
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+@@ -173,7 +173,7 @@ public final class DeletePolicy {
+     private static String listing(String sid, String principal, String bucketArn, List<ObjectLocation> prefixes) {
+         String statement = "{\"Sid\":\"" + sid + "\",\"Effect\":\"Allow\"," + principal + "\"Action\":" + json(LISTING)
+                 + ",\"Resource\":" + bucketArn;
+-        if (prefixes.stream().anyMatch(prefix -> prefix.segments().isEmpty())) {
++        if (!prefixes.isEmpty()) {
+             return statement + "}";
+         }
+         return statement + ",\"Condition\":{\"StringLike\":{\"s3:prefix\":"
