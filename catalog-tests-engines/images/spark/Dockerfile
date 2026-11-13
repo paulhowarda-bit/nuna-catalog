@@ -4,4 +4,4 @@ ADD --chown=spark:spark https://repo1.maven.org/maven2/org/apache/iceberg/iceber
 ADD --chown=spark:spark https://repo1.maven.org/maven2/org/apache/iceberg/iceberg-aws-bundle/1.12.0/iceberg-aws-bundle-1.12.0.jar /opt/spark/jars/
 
 # The run script and its Spark job, baked in so a Kubernetes Job needs no volume.
-COPY --chown=spark:spark run.sh spark_matrix.py /scripts/
+COPY --chown=spark:spark run.sh spark_matrix.py compaction_matrix.py /scripts/

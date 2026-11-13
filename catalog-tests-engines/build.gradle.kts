@@ -16,6 +16,8 @@ dependencies {
     // The run's S3 store: -Ps3=silo (default), ceph or aws.
     testImplementation(project(":catalog-tests-s3"))
     testImplementation(project(":catalog-server"))
+    // The maintenance worker's compaction Job path (EngineMatrixTest#compaction).
+    testImplementation(project(":catalog-maintenance"))
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.junit.platform:junit-platform-launcher")

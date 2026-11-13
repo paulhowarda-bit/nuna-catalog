@@ -1,6 +1,7 @@
 package keel.catalog.engines;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -8,18 +9,24 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import keel.catalog.security.TestIdp;
 import keel.catalog.tests.s3.TestS3;
+import keel.maintenance.MatrixCompaction;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
@@ -38,6 +45,9 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * run as a Kubernetes Job. Every step an engine runs prints a {@code RESULT <engine> <check> <value>} line, and every
  * refusal it is expected to make prints {@code LIMIT <engine> <check> <reason>}; each test asserts the whole
  * set, so a skipped step fails as surely as a wrong answer.
+ *
+ * <p>Compaction ({@link #compaction()}) runs the maintenance worker's own compaction Job (D30 (3)) on a table of
+ * small files, in a namespace of its own beside {@value #NAMESPACE}.
  *
  * <p>Spark runs first and leaves its tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
  * rows, one with the added column set), v3 with a deletion vector, four that took DELETE, UPDATE and MERGE
@@ -75,6 +85,9 @@ class EngineMatrixTest {
     private static final String ISSUER = "https://idp.test/engines";
     private static final String AUDIENCE = "keel-catalog";
     private static final String GROUP = "engine-clients";
+    /** The maintenance worker's principal (in the catalog's keel.security.maintenance-principals) and group. */
+    private static final String WORKER = "keel-maintenance";
+    private static final String WORKERS = "maintainers";
     /** The chart's release, and so its Service: engines reach the catalog on http://keel-catalog:8181. */
     private static final String RELEASE = "keel-catalog";
     private static final String CATALOG_IMAGE = "keel-catalog:engines";
@@ -98,6 +111,8 @@ class EngineMatrixTest {
     /** The kubectl context everything is deployed through. */
     private static String context;
     private static String token;
+    /** The run's token issuer key; none against a stack already up. */
+    private static RSAKey key;
     private static String s3Endpoint;
     private static Map<String, String> placeholders;
 
@@ -116,7 +131,7 @@ class EngineMatrixTest {
             token = Files.readString(Path.of(System.getProperty("engines.token-file", "")), StandardCharsets.UTF_8)
                     .strip();
         } else {
-            RSAKey key = TestIdp.rsaKey("engines");
+            key = TestIdp.rsaKey("engines");
             Files.writeString(keys, new JWKSet(key).toPublicJWKSet().toString());
             Instant now = Instant.now();
             token = TestIdp.sign(key, JWSAlgorithm.RS256, new JWTClaimsSet.Builder()
@@ -247,12 +262,14 @@ class EngineMatrixTest {
                 "--wait",
                 "--timeout", "5m");
         // The catalog is declared in the chart's config and created at startup; the group gets create and
-        // modify on it, as ConformanceServer grants.
+        // modify on it, as ConformanceServer grants, and the maintenance worker's group write, as a deployment
+        // grants it (catalog-maintenance/README.md).
         kubectl(Duration.ofMinutes(1), "exec", "deployment/postgres", "--", "psql", "-U", "catalog", "-d", "catalog",
                 "-v", "ON_ERROR_STOP=1", "-c",
                 "INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege,"
-                        + " granted_by, granted_at) SELECT c.id, 'CATALOG', c.id, '" + GROUP + "', p.privilege,"
-                        + " 'engine-matrix', now() FROM catalog c, (VALUES ('create'), ('modify')) p(privilege)"
+                        + " granted_by, granted_at) SELECT c.id, 'CATALOG', c.id, p.grantee, p.privilege,"
+                        + " 'engine-matrix', now() FROM catalog c, (VALUES ('" + GROUP + "', 'create'), ('" + GROUP
+                        + "', 'modify'), ('" + WORKERS + "', 'write')) p(grantee, privilege)"
                         + " WHERE c.name_norm = 'engines'");
         record("base", "stack up on " + store.name().toLowerCase(Locale.ROOT) + " and grants in " + seconds(started));
     }
@@ -266,7 +283,7 @@ class EngineMatrixTest {
             cli.run(Duration.ofMinutes(3), null, "kind", "delete", "cluster", "--name", CLUSTER);
         } else {
             cli.run(Duration.ofMinutes(6), null, "kubectl", "--context", context, "delete", "namespace", namespace,
-                    "--wait=true", "--timeout=5m");
+                    jobsNamespace(), "--ignore-not-found", "--wait=true", "--timeout=5m");
         }
     }
 
@@ -289,12 +306,140 @@ class EngineMatrixTest {
     }
 
     /**
+     * Compaction (D30 (3)) through the maintenance worker's own Job path. The matrix's Spark makes
+     * {@code m8.compaction.t}, v2 and identity-partitioned four ways, from eight inserts of a row per partition: 32
+     * rows in 32 small files ({@code images/spark/compaction_matrix.py}). The worker's {@code KubernetesJobs} then
+     * launches its Job for the table, in namespace {@code <namespace>-compaction} with the maintenance chart's Role
+     * and Job service account, signed in to the catalog as the worker ({@value #WORKER}, group {@value #WORKERS},
+     * granted write); its {@code compact.py} checks the table's id and runs rewrite_data_files: 32 files rewritten
+     * into 4. After it, Spark reads the same 32 rows from 4 files in a {@code replace} snapshot, and the snapshot
+     * before it still reads all 32, so no replaced file was deleted: they wait for expiry, and the catalog lists no
+     * pending deletion for the table (only the worker's expiry hands files over).
+     *
+     * <p>Runs right after Spark, before SingleStore takes its memory. Not against a stack already up
+     * ({@code -Pengines.stack}): it adds a namespace, a service account and a Role, and needs the run's token issuer
+     * for the worker's token.
+     */
+    @Test
+    @Order(2)
+    void compaction() {
+        assumeFalse(existing, "-Pengines.stack: the worker's principal, group and grant are the run's own stack's");
+        Map<String, String> results = runEngine("compaction", () -> {
+            String setup = job("compaction-setup", SPARK_IMAGE, List.of("bash", "/scripts/run.sh",
+                    "/scripts/compaction_matrix.py", "setup"), "2Gi");
+            String[] table = results("compaction", setup).getOrDefault("compaction table", "").split(" ");
+            if (table.length != 2) {
+                throw new IllegalStateException("the setup printed no table id and location:\n" + setup);
+            }
+            String compacted = compact(UUID.fromString(table[0]), table[1]);
+            String check = job("compaction-check", SPARK_IMAGE, List.of("bash", "/scripts/run.sh",
+                    "/scripts/compaction_matrix.py", "check"), "2Gi");
+            return setup + "\n" + compacted + "\n" + check;
+        });
+        assertThat(results).containsAllEntriesOf(Map.of(
+                "compaction setup", "32 32 496",
+                "compaction job", "32 4",
+                "compaction check", "4 32 496 replace",
+                "compaction before", "32 496",
+                "compaction pending", "0"));
+    }
+
+    /**
+     * Sets up the worker's side of compaction as the maintenance chart does and launches the worker's Job for the
+     * table: the worker's service account in the stack's namespace, and the Jobs' namespace with the chart's Role
+     * and Job service account, rendered by Helm from {@code deploy/helm/keel-maintenance}. The Jobs reach the
+     * catalog and the store by the stack's Service names, through ExternalName Services of the same names. Returns
+     * the Job's log with {@code RESULT compaction job <rewritten> <added>} and the table's pending deletions in the
+     * catalog's database.
+     */
+    private static String compact(UUID id, String location) throws Exception {
+        String jobs = jobsNamespace();
+        cli.ok(Duration.ofMinutes(6), "kubectl", "--context", context, "delete", "namespace", jobs,
+                "--ignore-not-found", "--wait=true", "--timeout=5m");
+        cli.ok(Duration.ofMinutes(1), "kubectl", "--context", context, "create", "namespace", jobs);
+        List<String> services = new ArrayList<>(List.of(RELEASE));
+        if (s3Endpoint.startsWith("http://s3:")) {
+            services.add("s3");
+        }
+        for (String service : services) {
+            Path manifest = runDir.resolve("compaction-service-" + service + ".json");
+            Files.writeString(manifest, json(Map.of("apiVersion", "v1", "kind", "Service",
+                    "metadata", Map.of("name", service, "namespace", jobs),
+                    "spec", Map.of("type", "ExternalName",
+                            "externalName", service + "." + namespace + ".svc.cluster.local"))), StandardCharsets.UTF_8);
+            cli.ok(Duration.ofMinutes(1), "kubectl", "--context", context, "apply", "-f", manifest.toString());
+        }
+        // Into files, as Helm's warnings would spoil its output; --show-only does not combine with --output-dir.
+        Path rendered = runDir.resolve("compaction-chart");
+        cli.ok(Duration.ofMinutes(1), "helm", "template", WORKER,
+                Path.of(System.getProperty("engines.repo-root")).resolve("deploy/helm/keel-maintenance").toString(),
+                "--namespace", namespace, "--output-dir", rendered.toString(),
+                "--set", "config.keel.maintenance.catalog-uri=http://" + RELEASE + ":8181/",
+                "--set", "config.keel.maintenance.storage.s3.prefixes[0]=s3://warehouse/tables",
+                "--set", "config.keel.maintenance.compaction.image=" + SPARK_IMAGE,
+                "--set", "config.keel.maintenance.compaction.namespace=" + jobs);
+        Path templates = rendered.resolve("keel-maintenance/templates");
+        kubectl(Duration.ofMinutes(1), "apply", "-f", templates.resolve("serviceaccount.yaml").toString());
+        cli.ok(Duration.ofMinutes(1), "kubectl", "--context", context, "apply", "-f",
+                templates.resolve("rbac.yaml").toString());
+
+        Path account = runDir.resolve("compaction-account");
+        Files.createDirectories(account);
+        Files.writeString(account.resolve("token"), kubectl(Duration.ofMinutes(1), "create", "token", WORKER,
+                "--duration=2h").strip());
+        Files.writeString(account.resolve("namespace"), namespace);
+        Files.write(account.resolve("ca.crt"), Base64.getDecoder().decode(kubectl(Duration.ofMinutes(1), "config",
+                "view", "--raw", "--minify", "-o",
+                "jsonpath={.clusters[0].cluster.certificate-authority-data}").strip()));
+        URI apiServer = URI.create(kubectl(Duration.ofMinutes(1), "config", "view", "--minify", "-o",
+                "jsonpath={.clusters[0].cluster.server}").strip());
+        Instant now = Instant.now();
+        String workerToken = TestIdp.sign(key, JWSAlgorithm.RS256, new JWTClaimsSet.Builder()
+                .issuer(ISSUER).audience(AUDIENCE).subject(WORKER).claim("groups", List.of(WORKERS))
+                .claim("azp", WORKER)
+                .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plusSeconds(2 * 3600)))
+                .build());
+        String job = MatrixCompaction.launch(SPARK_IMAGE, jobs, apiServer, account,
+                URI.create("http://" + RELEASE + ":8181/"), "engines", id, List.of("m8", "compaction"), "t", location,
+                workerToken);
+
+        Instant deadline = Instant.now().plus(ENGINE_TIMEOUT);
+        String status = "";
+        while (Instant.now().isBefore(deadline)) {
+            status = cli.ok(Duration.ofMinutes(1), "kubectl", "--context", context, "--namespace", jobs, "get", "job",
+                    job, "-o", "jsonpath={.status.succeeded}/{.status.failed}").strip();
+            if (status.startsWith("1/") || status.endsWith("/1")) {
+                break;
+            }
+            Thread.sleep(5_000);
+        }
+        String log = cli.run(Duration.ofMinutes(1), null, "kubectl", "--context", context, "--namespace", jobs,
+                "logs", "job/" + job).output();
+        if (!status.startsWith("1/")) {
+            throw new IllegalStateException("compaction Job " + job + " did not succeed (succeeded/failed: " + status
+                    + "):\n" + log);
+        }
+        Matcher compacted = Pattern.compile("COMPACTED .*rewritten_data_files_count=(\\d+) "
+                + "added_data_files_count=(\\d+)").matcher(log);
+        String counts = compacted.find() ? compacted.group(1) + " " + compacted.group(2) : "none";
+        String pending = kubectl(Duration.ofMinutes(1), "exec", "deployment/postgres", "--", "psql", "-U", "catalog",
+                "-d", "catalog", "-tA", "-c", "SELECT count(*) FROM pending_deletion WHERE object_id = '" + id + "'")
+                .strip();
+        return log + "\nRESULT compaction job " + counts + "\nRESULT compaction pending " + pending + "\n";
+    }
+
+    /** The compaction Jobs' namespace: never the stack's, as the maintenance chart requires. */
+    private static String jobsNamespace() {
+        return namespace + "-compaction";
+    }
+
+    /**
      * Kafka Connect only writes: its Iceberg sink creates the namespace and table through the catalog, commits
      * the topic's records with vended credentials, and adds a column when a record carries a new field. The
      * run script reads the results back from the catalog's REST API and drops what the sink made.
      */
     @Test
-    @Order(2)
+    @Order(3)
     void kafkaConnect() {
         Map<String, String> results = runEngine("kafka", () -> job("kafka-connect", KAFKA_CONNECT_IMAGE,
                 List.of("bash", "/scripts/run.sh"), "1536Mi"));
@@ -308,7 +453,7 @@ class EngineMatrixTest {
     }
 
     @Test
-    @Order(3)
+    @Order(4)
     void pyiceberg() {
         Map<String, String> results = runEngine("pyiceberg", () -> job("pyiceberg", PYTHON_IMAGE,
                 List.of("python", "-u", "/scripts/pyiceberg_matrix.py"), "1Gi"));
@@ -332,7 +477,7 @@ class EngineMatrixTest {
      * harness starts it (the plain dev image) for this test only; an existing stack already has it.
      */
     @Test
-    @Order(4)
+    @Order(5)
     void singlestore() {
         Map<String, String> results = runEngine("singlestore", () -> {
             if (!existing) {
