@@ -6,6 +6,7 @@ import static keel.catalog.server.governance.Management.ROOT;
 
 import keel.catalog.audit.ObjectRead;
 import keel.catalog.audit.Purge;
+import keel.catalog.audit.PurgeClaim;
 import keel.catalog.audit.Undrop;
 import keel.catalog.core.CatalogError;
 import keel.catalog.core.Names;
@@ -50,10 +51,10 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * Dropped tables and views (D25): listing them, undrop within the window, purge after it by the
- * maintenance principal only and at a bounded rate, and the snapshot-and-journal export of any object.
- * The maintenance worker that deletes a purged object's files is v1.x; it calls purge once they are gone.
- * Each route asks {@link ManagementGuard} once the object or namespace it names is found.
+ * Dropped tables and views (D25): listing them, undrop within the window, purge after it by a maintenance
+ * principal only and at a bounded rate, and the snapshot-and-journal export of any object. A purge is a claim,
+ * the deletion of the object's files by the maintenance worker with its own storage identity, then its
+ * completion (D30). Each route asks {@link ManagementGuard} once the object or namespace it names is found.
  */
 @RestController
 class LifecycleRoutes {
@@ -61,6 +62,7 @@ class LifecycleRoutes {
     static final String DROPPED = NAMESPACE + "/dropped";
     static final String OBJECT = CATALOG + "/objects/{id}";
     static final String UNDROP = OBJECT + "/undrop";
+    static final String PURGE_CLAIM = OBJECT + "/purge-claim";
     static final String PURGE = OBJECT + "/purge";
     static final String EXPORT = OBJECT + "/export";
     static final String PURGE_ELIGIBLE = ROOT + "/maintenance/purge-eligible";
@@ -75,11 +77,13 @@ class LifecycleRoutes {
     private final AuditTrail trail;
     private final CatalogStorage storage;
     private final Clock clock;
+    private final CatalogNames catalogs;
     private final Deque<Instant> recentPurges = new ArrayDeque<>();
 
     LifecycleRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
-                    AuditTrail trail, CatalogStorage storage, Clock clock) {
+                    AuditTrail trail, CatalogStorage storage, CatalogNames catalogs, Clock clock) {
         this.store = store;
+        this.catalogs = catalogs;
         this.management = management;
         this.guard = guard;
         this.settings = settings;
@@ -103,7 +107,7 @@ class LifecycleRoutes {
             PageRequest page = PageRequest.first(PAGE);
             while (true) {
                 Page<CatalogObject> listed = store.listObjects(record.id(), kind, CatalogObject.State.DROPPED, page);
-                listed.items().forEach(o -> objects.add(object(o)));
+                listed.items().forEach(o -> objects.add(object(catalog, o)));
                 if (listed.nextToken().isEmpty()) {
                     break;
                 }
@@ -147,7 +151,7 @@ class LifecycleRoutes {
                         && o.name().equals(name)).isPresent());
         return switch (result) {
             case WriteResult.Applied applied -> GovernanceRoutes.json(200,
-                    object(store.readObject(object.id()).orElseThrow()));
+                    object(catalog, store.readObject(object.id()).orElseThrow()));
             case WriteResult.NameTaken taken -> throw CatalogError.of(409, "AlreadyExistsException",
                     "The name " + name.display() + " is taken in its namespace; undrop it under another name");
             case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.NAMESPACE ->
@@ -158,18 +162,29 @@ class LifecycleRoutes {
     }
 
     /**
-     * Marks a dropped object purged once its undrop window has closed (D25, CMP-5): only a maintenance
-     * principal may, at most {@code purges-per-minute} a server, and never a held or frozen object. A
-     * refused caller is recorded as a denial.
+     * Claims a dropped object's purge for the calling maintenance principal once its undrop window has closed
+     * (D25, D30): from the claim on, the object can no longer be undropped, and a hold placed after it does not
+     * stop the purge. Only a maintenance principal may claim, at most {@code purges-per-minute} a server (each
+     * replica counts its own), and never a held or frozen object. The claimant then deletes the object's files
+     * with its own storage identity and completes the purge; its claim asked again answers the same, so a worker
+     * that stopped part way resumes. A refused caller is recorded as a denial.
      */
-    @PostMapping(path = PURGE, produces = MediaType.APPLICATION_JSON_VALUE)
-    ResponseEntity<String> purge(@PathVariable("catalog") String prefix, @PathVariable String id, HttpServletRequest http) {
+    @PostMapping(path = PURGE_CLAIM, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> claimPurge(@PathVariable("catalog") String prefix, @PathVariable String id,
+                                      HttpServletRequest http) {
         CatalogRecord catalog = management.catalog(prefix);
         CatalogObject object = existing(catalog, id);
         Request request = management.request(http);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
         keel.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
-        guard.requireMaintenance(request, audit, "purge");
+        guard.requireMaintenance(request, audit, "claimPurge");
+        String claimant = request.caller().principal().id();
+        if (object.state() == CatalogObject.State.PURGING) {
+            if (object.purgeClaimant().orElseThrow().equals(claimant)) {
+                return GovernanceRoutes.json(200, object(catalog, object));
+            }
+            throw claimedByAnother(id);
+        }
         if (object.state() != CatalogObject.State.DROPPED) {
             throw notDropped(id);
         }
@@ -180,22 +195,68 @@ class LifecycleRoutes {
                     .body(keel.catalog.iceberg.Wire.error(429, "TooManyRequestsException", "More than "
                             + settings.purgesPerMinute() + " purges in a minute; retry later"));
         }
-        WriteResult result = Management.write("Purging " + id, () -> store.purgeObject(object.id(),
+        WriteResult result = Management.write("Claiming the purge of " + id, () -> store.claimPurge(object.id(),
+                        claimant, management.change(now, new PurgeClaim(audit, request.actor()))),
+                () -> store.readObject(object.id()).flatMap(CatalogObject::purgeClaimant).filter(claimant::equals)
+                        .isPresent());
+        return switch (result) {
+            case WriteResult.Applied applied -> GovernanceRoutes.json(200,
+                    object(catalog, store.readObject(object.id()).orElseThrow()));
+            case WriteResult.Unchanged unchanged -> GovernanceRoutes.json(200,
+                    object(catalog, store.readObject(object.id()).orElseThrow()));
+            case WriteResult.Missing missing -> throw notDropped(id);
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
+                    throw CatalogError.of(403, "ForbiddenException", id + " is under a legal hold and cannot be purged");
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN ->
+                    throw CatalogError.of(403, "ForbiddenException", "The namespace of " + id
+                            + " is frozen for DR reconcile");
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_DUE ->
+                    throw CatalogError.of(409, "PurgeNotDueException", id + " may not be purged before "
+                            + object.purgeAfter().orElseThrow());
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_HOLDER ->
+                    throw claimedByAnother(id);
+            default -> throw new IllegalStateException("claimPurge answered " + result);
+        };
+    }
+
+    /**
+     * Completes a purge the caller claimed, once it has deleted the object's files (D25, D30): the object is
+     * marked purged, its grants and pending deletions are deleted, and its record is kept as history. Only the
+     * maintenance principal that holds the claim may; a hold placed after the claim does not stop it.
+     */
+    @PostMapping(path = PURGE, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> purge(@PathVariable("catalog") String prefix, @PathVariable String id, HttpServletRequest http) {
+        CatalogRecord catalog = management.catalog(prefix);
+        CatalogObject object = existing(catalog, id);
+        Request request = management.request(http);
+        List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
+        keel.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
+        guard.requireMaintenance(request, audit, "purge");
+        String claimant = request.caller().principal().id();
+        if (object.state() == CatalogObject.State.DROPPED) {
+            throw CatalogError.of(409, "PurgeNotClaimedException", id + " is not claimed for purge; claim it first,"
+                    + " then delete its files");
+        }
+        if (object.state() != CatalogObject.State.PURGING) {
+            throw notDropped(id);
+        }
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
+        WriteResult result = Management.write("Purging " + id, () -> store.completePurge(object.id(), claimant,
                         management.change(now, new Purge(audit, request.actor()))),
                 () -> store.readObject(object.id()).filter(o -> o.state() == CatalogObject.State.PURGED).isPresent());
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
             case WriteResult.Missing missing -> throw notDropped(id);
-            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
-                    throw CatalogError.of(403, "ForbiddenException", id + " is under a legal hold and cannot be purged");
-            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_DUE ->
-                    throw CatalogError.of(409, "PurgeNotDueException", id + " may not be purged before "
-                            + object.purgeAfter().orElseThrow());
-            default -> throw new IllegalStateException("purgeObject answered " + result);
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_HOLDER ->
+                    throw claimedByAnother(id);
+            default -> throw new IllegalStateException("completePurge answered " + result);
         };
     }
 
-    /** Dropped objects whose undrop window has closed and that no hold covers: the maintenance worker's queue. */
+    /**
+     * Dropped objects whose undrop window has closed and that no hold or DR freeze covers, and every claimed
+     * object: the maintenance worker's purge queue.
+     */
     @GetMapping(path = PURGE_ELIGIBLE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> purgeEligible(@RequestParam(required = false) String pageToken,
                                          @RequestParam(required = false) Integer pageSize,
@@ -211,7 +272,7 @@ class LifecycleRoutes {
         }
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode objects = body.putArray("objects");
-        listed.items().forEach(o -> objects.add(object(o)));
+        listed.items().forEach(o -> objects.add(object(catalogs.name(o.catalogId()), o)));
         listed.nextToken().ifPresent(token -> body.put("next-page-token", token));
         return GovernanceRoutes.json(200, body);
     }
@@ -229,7 +290,7 @@ class LifecycleRoutes {
         guard.require(request, Authorizer.Target.of(object),
                 Management.audit(catalog, levels, object.name().display(), object), "exportObject", Privilege.SELECT);
         ObjectNode body = Management.JSON.createObjectNode();
-        body.set("object", object(object));
+        body.set("object", object(catalog, object));
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         if (pointer.isPresent()) {
             TableFiles.Read read = storage.forCatalog(catalog.id()).files().read(pointer.get().metadataLocation(), pointer.get().sha256());
@@ -293,15 +354,29 @@ class LifecycleRoutes {
         return CatalogError.of(409, "NotDroppedException", id + " is not a dropped table or view");
     }
 
-    private static ObjectNode object(CatalogObject object) {
+    static CatalogError claimedByAnother(String id) {
+        return CatalogError.of(409, "PurgeClaimedException", id + " is claimed for purge by another maintenance"
+                + " principal");
+    }
+
+    private static ObjectNode object(CatalogRecord catalog, CatalogObject object) {
+        return object(catalog.name(), object);
+    }
+
+    /** An object as the lifecycle and maintenance routes show it; {@code catalog} is its catalog's name. */
+    static ObjectNode object(String catalog, CatalogObject object) {
         ObjectNode node = Management.JSON.createObjectNode();
         node.put("id", object.id().toString());
+        if (catalog != null) {
+            node.put("catalog", catalog);
+        }
         node.put("kind", object.kind().name().toLowerCase(java.util.Locale.ROOT));
         node.put("name", object.name().display());
         node.put("namespace-id", object.namespaceId().toString());
         node.put("state", object.state().name().toLowerCase(java.util.Locale.ROOT));
         object.droppedAt().ifPresent(at -> node.put("dropped-at", at.toString()));
         object.purgeAfter().ifPresent(at -> node.put("purge-after", at.toString()));
+        object.purgeClaimant().ifPresent(claimant -> node.put("purge-claimant", claimant));
         node.put("location", object.locationRoot());
         return node;
     }

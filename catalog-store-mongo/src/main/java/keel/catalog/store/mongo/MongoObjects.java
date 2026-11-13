@@ -11,16 +11,20 @@ import static keel.catalog.store.mongo.Docs.time;
 import static keel.catalog.store.mongo.Docs.uuid;
 import static keel.catalog.store.mongo.Docs.uuidList;
 import static keel.catalog.store.mongo.Docs.uuids;
+import static keel.catalog.store.mongo.MongoCatalogStore.ATTRIBUTE;
 import static keel.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static keel.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
+import static keel.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static keel.catalog.store.mongo.MongoCatalogStore.POINTER;
 
+import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.Change;
+import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.Name;
@@ -39,6 +43,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
 import org.bson.BsonNull;
@@ -54,9 +59,10 @@ import org.bson.BsonValue;
 final class MongoObjects {
 
     /** Dropped objects whose holds are checked at once when listing purge candidates. */
-    private static final int PURGE_CHUNK = 100;
+    static final int PURGE_CHUNK = 100;
     private static final String ACTIVE = CatalogObject.State.ACTIVE.name();
     private static final String DROPPED = CatalogObject.State.DROPPED.name();
+    private static final String PURGING = CatalogObject.State.PURGING.name();
 
     private final Transactions transactions;
 
@@ -90,6 +96,7 @@ final class MongoObjects {
                     .append("droppedAt", BsonNull.VALUE)
                     .append("purgeAfter", BsonNull.VALUE)
                     .append("locationRoot", new BsonString(object.locationRoot()))
+                    .append("purgeClaimant", BsonNull.VALUE)
                     .append("clock", tx.clock()));
             if (Pointers.swap(tx, first, transactions.pieceBytes()).isPresent()) {
                 throw new StoreException("object " + object.id() + " already has a pointer", null);
@@ -222,19 +229,19 @@ final class MongoObjects {
     }
 
     /**
-     * Objects dropped long enough ago, in purge order, without those under a legal hold. The
-     * dropped objects are read in order and their holds checked a chunk at a time, all in one
+     * Objects dropped long enough ago, in purge order, without those under a legal hold or a DR
+     * freeze, and every claimed object, whatever came after its claim. The dropped and claimed
+     * objects are read in order and their holds and freezes checked a chunk at a time, all in one
      * snapshot.
      */
     Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page) {
         Optional<List<BsonValue>> after = after(page, 2,
                 parts -> List.of(time(Instant.parse(parts.get(0))), uuid(UUID.fromString(parts.get(1)))));
         return transactions.snapshot("purge scan", session -> {
-            BsonDocument filter = new BsonDocument("state", new BsonString(DROPPED))
+            BsonDocument filter = new BsonDocument("state", in(List.of(new BsonString(DROPPED), new BsonString(PURGING))))
                     .append("purgeAfter", new BsonDocument("$lte", time(now)));
-            after.ifPresent(values -> filter.append("$and", new org.bson.BsonArray(List.of(
+            after.ifPresent(values -> filter.append("$and", new BsonArray(List.of(
                     Docs.after(List.of("purgeAfter", "_id"), values)))));
-            MongoCollection<BsonDocument> holds = transactions.database().getCollection(HOLD, BsonDocument.class);
             List<CatalogObject> eligible = new ArrayList<>();
             List<BsonDocument> chunk = new ArrayList<>();
             try (MongoCursor<BsonDocument> dropped = objects().find(session, filter).sort(ascending("purgeAfter", "_id"))
@@ -242,16 +249,10 @@ final class MongoObjects {
                 while (eligible.size() <= page.size() && dropped.hasNext()) {
                     chunk.add(dropped.next());
                     if (chunk.size() == PURGE_CHUNK || !dropped.hasNext()) {
-                        List<BsonValue> targets = new ArrayList<>();
+                        Set<BsonValue> covered = covered(transactions, session, chunk);
                         for (BsonDocument object : chunk) {
-                            targets.addAll(holdTargets(object));
-                        }
-                        Set<BsonValue> held = new HashSet<>();
-                        holds.find(session, new BsonDocument("targetId", in(targets)))
-                                .projection(new BsonDocument("targetId", new BsonInt32(1)))
-                                .forEach(hold -> held.add(hold.get("targetId")));
-                        for (BsonDocument object : chunk) {
-                            if (holdTargets(object).stream().noneMatch(held::contains)) {
+                            if (object.getString("state").getValue().equals(PURGING)
+                                    || holdTargets(object).stream().noneMatch(covered::contains)) {
                                 eligible.add(object(object));
                             }
                         }
@@ -264,11 +265,44 @@ final class MongoObjects {
         });
     }
 
-    WriteResult purge(UUID objectId, Change change) {
-        return transactions.change(change, "object purge", tx -> {
-            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(DROPPED)));
+    /**
+     * The targets among those of {@code objects} (each object, the namespaces above it and its catalog) that
+     * carry a legal hold or a DR freeze, as {@code session} reads them (D24, D30, D37).
+     */
+    static Set<BsonValue> covered(Transactions transactions, ClientSession session, List<BsonDocument> objects) {
+        List<BsonValue> targets = new ArrayList<>();
+        for (BsonDocument object : objects) {
+            targets.addAll(holdTargets(object));
+        }
+        Set<BsonValue> covered = new HashSet<>();
+        transactions.database().getCollection(HOLD, BsonDocument.class)
+                .find(session, new BsonDocument("targetId", in(targets)))
+                .projection(new BsonDocument("targetId", new BsonInt32(1)))
+                .forEach(hold -> covered.add(hold.get("targetId")));
+        transactions.database().getCollection(ATTRIBUTE, BsonDocument.class)
+                .find(session, new BsonDocument("targetId", in(targets))
+                        .append("kind", new BsonString(GovernanceAttribute.Kind.DR_FREEZE.name())))
+                .projection(new BsonDocument("targetId", new BsonInt32(1)))
+                .forEach(freeze -> covered.add(freeze.get("targetId")));
+        return covered;
+    }
+
+    /**
+     * Claims a dropped object's purge for {@code claimant}. The claim writes the object, so a hold or DR
+     * freeze placed on the object at the same moment conflicts with it; holds and freezes above the
+     * object are read in the same snapshot, as a drop reads holds.
+     */
+    WriteResult claimPurge(UUID objectId, String claimant, Change change) {
+        return transactions.change(change, "purge claim", tx -> {
+            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId))
+                    .append("state", in(List.of(new BsonString(DROPPED), new BsonString(PURGING)))));
             if (object.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            Optional<String> holder = claimant(object.get());
+            if (holder.isPresent()) {
+                return holder.get().equals(claimant) ? WriteResult.UNCHANGED
+                        : new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER);
             }
             if (instant(object.get().get("purgeAfter")).isAfter(change.at())) {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_DUE);
@@ -276,11 +310,47 @@ final class MongoObjects {
             if (held(tx, object.get())) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }
+            if (Guards.frozen(tx, objectId, uuid(object.get().get("catalogId")),
+                    uuidList(object.get().get("namespacePath")))) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
             tx.see(object.get());
             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
-                    new BsonDocument("state", new BsonString(CatalogObject.State.PURGED.name())).append("clock", tx.clock())));
-            tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
+                    new BsonDocument("state", new BsonString(PURGING)).append("purgeClaimant", new BsonString(claimant))
+                            .append("clock", tx.clock())));
             return WriteResult.APPLIED;
+        });
+    }
+
+    /** Marks a claimed object purged and deletes its grants and its pending deletions. */
+    WriteResult completePurge(UUID objectId, String claimant, Change change) {
+        return transactions.change(change, "purge complete", tx -> {
+            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(PURGING)));
+            if (object.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            if (!claimant(object.get()).orElseThrow().equals(claimant)) {
+                return new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER);
+            }
+            tx.see(object.get());
+            tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
+                    new BsonDocument("state", new BsonString(CatalogObject.State.PURGED.name()))
+                            .append("purgeClaimant", BsonNull.VALUE).append("clock", tx.clock())));
+            tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
+            tx.collection(PENDING_DELETION).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId)));
+            return WriteResult.APPLIED;
+        });
+    }
+
+    Page<CatalogObject> listActive(CatalogObject.Kind kind, PageRequest page) {
+        Optional<BsonValue> after = after(page, 1, parts -> uuid(UUID.fromString(parts.get(0))));
+        return transactions.read("active object scan", () -> {
+            BsonDocument filter = new BsonDocument("state", new BsonString(ACTIVE))
+                    .append("kind", new BsonString(kind.name()));
+            after.ifPresent(id -> filter.append("_id", new BsonDocument("$gt", id)));
+            List<CatalogObject> found = objects().find(filter).sort(ascending("_id")).limit(page.size() + 1)
+                    .map(MongoObjects::object).into(new ArrayList<>());
+            return page(found, page, object -> PageToken.encode(object.id().toString()));
         });
     }
 
@@ -337,7 +407,12 @@ final class MongoObjects {
                 uuidList(object.get("namespacePath")));
     }
 
-    private static List<BsonValue> holdTargets(BsonDocument object) {
+    private static Optional<String> claimant(BsonDocument object) {
+        BsonValue claimant = object.get("purgeClaimant");
+        return claimant == null || claimant.isNull() ? Optional.empty() : Optional.of(claimant.asString().getValue());
+    }
+
+    static List<BsonValue> holdTargets(BsonDocument object) {
         List<BsonValue> targets = new ArrayList<>(object.getArray("namespacePath").getValues());
         targets.add(object.get("_id"));
         targets.add(object.get("catalogId"));
@@ -354,6 +429,6 @@ final class MongoObjects {
                 CatalogObject.Kind.valueOf(doc.getString("kind").getValue()),
                 CatalogObject.State.valueOf(doc.getString("state").getValue()),
                 optionalInstant(doc, "droppedAt"), optionalInstant(doc, "purgeAfter"),
-                doc.getString("locationRoot").getValue());
+                doc.getString("locationRoot").getValue(), claimant(doc));
     }
 }

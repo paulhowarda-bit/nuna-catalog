@@ -17,7 +17,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-/** Soft drop, undrop within the window, purge after it by the maintenance principal only, and export (D25). */
+/**
+ * Soft drop, undrop within the window, purge after it by a maintenance principal only, as a claim then its
+ * completion (D25, D30), and export.
+ */
 @GovernanceServer
 class LifecycleTest {
 
@@ -70,23 +73,36 @@ class LifecycleTest {
     }
 
     @Test
-    void onlyTheMaintenancePrincipalPurgesAndOnlyAfterTheWindow() {
+    void onlyAMaintenancePrincipalPurgesAndOnlyAfterTheWindow() {
         String ns = api.namespace();
         api.table(ns, "t");
         String id = api.id(ns, "tables", "t");
         expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
 
-        String denied = "denied-" + UUID.randomUUID();
-        expectError(api.manage("POST", "/objects/" + id + "/purge", null, GovernanceServer.PRINCIPAL, "analyst",
-                "X-Request-ID", denied), 403, "ForbiddenException");
-        assertThat(api.awaitRequest(denied).data().type()).isEqualTo(EventType.DENIAL);
+        for (String route : List.of("/purge-claim", "/purge")) {
+            String denied = "denied-" + UUID.randomUUID();
+            expectError(api.manage("POST", "/objects/" + id + route, null, GovernanceServer.PRINCIPAL, "analyst",
+                    "X-Request-ID", denied), 403, "ForbiddenException");
+            assertThat(api.awaitRequest(denied).data().type()).as(route).isEqualTo(EventType.DENIAL);
+        }
 
-        expectError(purge(id), 409, "PurgeNotDueException");
+        expectError(claim(id, "maintenance"), 409, "PurgeNotDueException");
         clock.advance(Duration.ofDays(31));
-        expect(purge(id), 204);
+        expectError(complete(id, "maintenance"), 409, "PurgeNotClaimedException");
+        HttpResponse<String> claimed = expect(claim(id, "maintenance"), 200);
+        assertThat(JsonPath.<String>read(claimed.body(), "$.state")).isEqualTo("purging");
+        assertThat(JsonPath.<String>read(claimed.body(), "$.purge-claimant")).isEqualTo("maintenance");
+        expect(claim(id, "maintenance"), 200);
+        expectError(claim(id, "maintenance-2"), 409, "PurgeClaimedException");
+        expectError(complete(id, "maintenance-2"), 409, "PurgeClaimedException");
+        expectError(api.manage("POST", "/objects/" + id + "/undrop", "{\"name\":\"back\"}"), 409, "NotDroppedException");
+
+        expect(complete(id, "maintenance"), 204);
+
         HttpResponse<String> export = expect(api.manage("GET", "/objects/" + id + "/export", null), 200);
         assertThat(JsonPath.<String>read(export.body(), "$.object.state")).isEqualTo("purged");
-        expectError(purge(id), 409, "NotDroppedException");
+        expectError(complete(id, "maintenance"), 409, "NotDroppedException");
+        expectError(claim(id, "maintenance"), 409, "NotDroppedException");
     }
 
     @Test
@@ -100,14 +116,18 @@ class LifecycleTest {
         }
         clock.advance(Duration.ofDays(31));
         for (int i = 0; i < 3; i++) {
-            expect(purge(ids.get(i)), 204);
+            expect(claim(ids.get(i), "maintenance"), 200);
         }
-        HttpResponse<String> limited = purge(ids.get(3));
+        HttpResponse<String> limited = claim(ids.get(3), "maintenance");
         expectError(limited, 429, "TooManyRequestsException");
         assertThat(limited.headers().firstValue("Retry-After")).contains("60");
+        expect(claim(ids.get(0), "maintenance"), 200);
 
         clock.advance(Duration.ofMinutes(2));
-        expect(purge(ids.get(3)), 204);
+        expect(claim(ids.get(3), "maintenance"), 200);
+        for (String id : ids) {
+            expect(complete(id, "maintenance"), 204);
+        }
     }
 
     @Test
@@ -127,7 +147,11 @@ class LifecycleTest {
         expectError(api.manage("GET", "/objects/" + UUID.randomUUID() + "/export", null), 404, "NoSuchObjectException");
     }
 
-    private HttpResponse<String> purge(String id) {
-        return api.manage("POST", "/objects/" + id + "/purge", null, GovernanceServer.PRINCIPAL, "maintenance");
+    private HttpResponse<String> claim(String id, String principal) {
+        return api.manage("POST", "/objects/" + id + "/purge-claim", null, GovernanceServer.PRINCIPAL, principal);
+    }
+
+    private HttpResponse<String> complete(String id, String principal) {
+        return api.manage("POST", "/objects/" + id + "/purge", null, GovernanceServer.PRINCIPAL, principal);
     }
 }

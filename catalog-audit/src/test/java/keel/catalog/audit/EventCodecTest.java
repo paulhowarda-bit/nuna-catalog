@@ -48,7 +48,10 @@ class EventCodecTest {
             Map.entry(EventType.PURGE, List.of("object", "actor")),
             Map.entry(EventType.AUDIT_READ, List.of("target", "returned", "actor")),
             Map.entry(EventType.UNREGISTER, List.of("object", "pointer", "actor")),
-            Map.entry(EventType.LABEL_CHANGE, List.of("target", "label", "actor")));
+            Map.entry(EventType.LABEL_CHANGE, List.of("target", "label", "actor")),
+            Map.entry(EventType.PURGE_CLAIM, List.of("object", "actor")),
+            Map.entry(EventType.FILE_DELETION, List.of("action", "object", "files", "actor")),
+            Map.entry(EventType.MAINTENANCE_EXEMPTION, List.of("object", "operation", "actor")));
     private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
             Map.entry(EventType.COMMIT, List.of("before")),
             Map.entry(EventType.GRANT_CHANGE, List.of()),
@@ -68,7 +71,10 @@ class EventCodecTest {
             Map.entry(EventType.PURGE, List.of()),
             Map.entry(EventType.AUDIT_READ, List.of()),
             Map.entry(EventType.UNREGISTER, List.of()),
-            Map.entry(EventType.LABEL_CHANGE, List.of("value")));
+            Map.entry(EventType.LABEL_CHANGE, List.of("value")),
+            Map.entry(EventType.PURGE_CLAIM, List.of()),
+            Map.entry(EventType.FILE_DELETION, List.of("notBefore")),
+            Map.entry(EventType.MAINTENANCE_EXEMPTION, List.of()));
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
     private static final List<String> NESTED_REQUIRED = List.of("actor.principal", "actor.requestId", "object.kind",
             "object.id", "object.catalog", "object.path", "after.metadataLocation", "after.version", "after.sha256");

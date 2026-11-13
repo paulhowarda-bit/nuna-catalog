@@ -18,6 +18,8 @@ import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Grant;
 import keel.catalog.store.LegalHold;
 import keel.catalog.store.NamespaceRecord;
+import keel.catalog.store.PageRequest;
+import keel.catalog.store.PendingDeletion;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.Securable;
 import keel.catalog.store.StorageProfile;
@@ -90,9 +92,23 @@ public abstract class MutationSuite extends GroupSuite {
                     Pointer current = store.readPointer(table.mainKey()).orElseThrow();
                     return (target, change) -> target.unregisterObject(table.id(), current, change);
                 }),
-                onTable("purgeObject", table -> {
+                onTable("claimPurge", table -> {
                     assertApplied(store.dropObject(table.id(), now().minusSeconds(60), change()));
-                    return (target, change) -> target.purgeObject(table.id(), change);
+                    return (target, change) -> target.claimPurge(table.id(), "worker", change);
+                }),
+                onTable("completePurge", table -> {
+                    assertApplied(store.dropObject(table.id(), now().minusSeconds(60), change()));
+                    assertApplied(store.claimPurge(table.id(), "worker", change()));
+                    return (target, change) -> target.completePurge(table.id(), "worker", change);
+                }),
+                onTable("recordDeletions", table -> (target, change) -> target.recordDeletions(table.id(),
+                        List.of(table.locationRoot() + "/data/a.parquet"), change.at().plus(Duration.ofDays(7)), change)),
+                onTable("completeDeletions", table -> {
+                    assertApplied(store.recordDeletions(table.id(), List.of(table.locationRoot() + "/data/a.parquet"),
+                            now().minusSeconds(60), change()));
+                    List<UUID> ids = store.listDueDeletions(now(), PageRequest.first(1000)).items().stream()
+                            .filter(deletion -> deletion.objectId().equals(table.id())).map(PendingDeletion::id).toList();
+                    return (target, change) -> target.completeDeletions(table.id(), ids, change);
                 }),
                 new Mutation("putGrant", () -> {
                     UUID catalog = newCatalog();

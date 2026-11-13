@@ -386,7 +386,8 @@ class MongoStoreSuiteTest extends CommitSuite {
                 CatalogObject.Kind.TABLE, "s3://suite-warehouse/" + UUID.randomUUID());
         assertApplied(store.createObject(creation(table)));
         assertApplied(store.dropObject(table.id(), now().minus(Duration.ofDays(1)), Changes.change()));
-        WriteResult granted = whileHeldOpen((held, purge) -> held.purgeObject(table.id(), purge),
+        assertApplied(store.claimPurge(table.id(), "worker", Changes.change()));
+        WriteResult granted = whileHeldOpen((held, purge) -> held.completePurge(table.id(), "worker", purge),
                 () -> store.putGrant(new Grant(catalogId, table.securable(), "analysts", "READ"), "admin", Changes.change()),
                 "grant on a table being purged");
         assertThat(granted).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));

@@ -20,6 +20,7 @@ import keel.catalog.store.LegalHold;
 import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.PageRequest;
+import keel.catalog.store.PendingDeletion;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.Securable;
 import keel.catalog.store.WriteResult;
@@ -158,8 +159,8 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("Objects: of a hold and a purge of one object racing, exactly one applies, every round")
-    void holdRacingThePurgeExactlyOneApplies() throws Exception {
+    @DisplayName("Objects: of a hold and a purge claim racing, a hold first refuses the claim, and a hold after the claim does not stop the purge")
+    void holdRacingThePurgeClaim() throws Exception {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         for (int round = 0; round < 30; round++) {
             CatalogObject table = newTable(namespace, "t-" + round);
@@ -172,20 +173,22 @@ public abstract class CatalogObjectSuite extends GroupSuite {
                 start.await();
                 return store.placeHold(hold, change());
             });
-            Future<WriteResult> purge = background.submit(() -> {
+            Future<WriteResult> claim = background.submit(() -> {
                 start.await();
-                return store.purgeObject(table.id(), due);
+                return store.claimPurge(table.id(), "worker", due);
             });
             WriteResult placed = place.get(60, TimeUnit.SECONDS);
-            WriteResult purged = purge.get(60, TimeUnit.SECONDS);
+            WriteResult claimed = claim.get(60, TimeUnit.SECONDS);
 
-            if (placed.equals(WriteResult.APPLIED)) {
-                assertThat(purged).as("round %d", round).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-                assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
+            assertThat(placed).as("round %d: a claimed object is not purged yet, so the hold applies", round)
+                    .isEqualTo(WriteResult.APPLIED);
+            if (claimed.equals(WriteResult.APPLIED)) {
+                assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.PURGING);
+                assertThat(store.completePurge(table.id(), "worker", change())).as("round %d", round)
+                        .isEqualTo(WriteResult.APPLIED);
             } else {
-                assertThat(placed).as("round %d", round).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
-                assertThat(purged).isEqualTo(WriteResult.APPLIED);
-                assertThat(store.holdsOn(Set.of(hold.target()))).isEmpty();
+                assertThat(claimed).as("round %d", round).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+                assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
             }
         }
     }
@@ -265,7 +268,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
 
         assertThat(store.readObject(table.id())).contains(new CatalogObject(table.catalogId(), table.id(),
                 namespace.id(), table.name(), table.kind(), CatalogObject.State.DROPPED, Optional.of(drop.at()),
-                Optional.of(purgeAfter), table.locationRoot()));
+                Optional.of(purgeAfter), table.locationRoot(), Optional.empty()));
         assertThat(underTest().changeRows(drop)).isEqualTo(WrittenRows.allOf(drop));
         assertThat(store.findObject(namespace.id(), "orders")).isEmpty();
         assertThat(store.readPointer(table.mainKey())).isPresent();
@@ -301,7 +304,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
 
         assertThat(store.readObject(table.id())).contains(new CatalogObject(table.catalogId(), table.id(),
                 namespace.id(), table.name(), table.kind(), CatalogObject.State.UNREGISTERED,
-                Optional.of(unregister.at()), Optional.empty(), table.locationRoot()));
+                Optional.of(unregister.at()), Optional.empty(), table.locationRoot(), Optional.empty()));
         assertThat(underTest().changeRows(unregister)).isEqualTo(WrittenRows.allOf(unregister));
         assertThat(store.findObject(namespace.id(), "orders")).isEmpty();
         assertThat(store.readPointer(table.mainKey())).contains(base);
@@ -314,8 +317,11 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         assertThat(store.undropObject(table.id(), namespace.id(), name("Orders"), change()))
                 .as("an unregistered object is not undropped").isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
-        assertThat(store.purgeObject(table.id(), change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.claimPurge(table.id(), "worker", change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         assertThat(purgeEligible(now().plus(Duration.ofDays(36500)))).doesNotContain(table.id());
+        assertThat(store.recordDeletions(table.id(), List.of(table.locationRoot() + "/data/f.parquet"), now(), change()))
+                .as("the files of an unregistered table are not the catalog's to delete")
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         CatalogObject again = newTable(namespace, "ORDERS");
         assertThat(store.findObject(namespace.id(), "orders")).contains(again);
     }
@@ -556,59 +562,107 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("Objects: the purge scan finds dropped objects past their purge time, not held, by purge time")
-    void purgeScanFindsDueUnheldObjects() {
+    @DisplayName("Objects: the purge scan finds dropped objects past their purge time, neither held nor frozen, and every claimed object, by purge time")
+    void purgeScanFindsDueUncoveredAndClaimedObjects() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         Instant base = Instant.parse("2001-01-01T00:00:00Z").plus(Duration.ofMinutes(UUID.randomUUID().hashCode() & 0xffff));
         CatalogObject late = newTable(namespace, "late");
         CatalogObject early = newTable(namespace, "early");
         CatalogObject held = newTable(namespace, "held");
+        CatalogObject frozen = newTable(namespace, "frozen");
+        CatalogObject claimed = newTable(namespace, "claimed");
         CatalogObject future = newTable(namespace, "future");
         CatalogObject active = newTable(namespace, "active");
         assertThat(store.dropObject(late.id(), base.plusSeconds(20), change())).isEqualTo(WriteResult.APPLIED);
         assertThat(store.dropObject(early.id(), base.plusSeconds(10), change())).isEqualTo(WriteResult.APPLIED);
         assertThat(store.dropObject(held.id(), base.plusSeconds(5), change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.dropObject(frozen.id(), base.plusSeconds(7), change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.dropObject(claimed.id(), base.plusSeconds(15), change())).isEqualTo(WriteResult.APPLIED);
         assertThat(store.dropObject(future.id(), base.plusSeconds(100), change())).isEqualTo(WriteResult.APPLIED);
         assertThat(store.placeHold(new LegalHold(UUID.randomUUID(), held.securable(), "matter-1", "legal", now()),
                 change())).isEqualTo(WriteResult.APPLIED);
+        assertApplied(store.putAttribute(new GovernanceAttribute(frozen.securable(), GovernanceAttribute.Kind.DR_FREEZE,
+                "drill", "suite", "admin", now()), change()));
+        assertApplied(store.claimPurge(claimed.id(), "worker", change()));
+        assertApplied(store.placeHold(new LegalHold(UUID.randomUUID(), claimed.securable(), "matter-2", "legal", now()),
+                change()));
 
         List<UUID> eligible = allPages(1, page -> store.listPurgeEligible(base.plusSeconds(30), page)).stream()
                 .filter(o -> o.namespaceId().equals(namespace.id())).map(CatalogObject::id).toList();
 
-        assertThat(eligible).containsExactly(early.id(), late.id());
+        assertThat(eligible).as("a claim is finished whatever came after it")
+                .containsExactly(early.id(), claimed.id(), late.id());
         assertThat(active.state()).isEqualTo(CatalogObject.State.ACTIVE);
     }
 
     @Test
-    @DisplayName("Objects: purge refuses an object before its purge time or under a hold, then marks it purged")
-    void purgeRefusesNotDueAndHeld() {
+    @DisplayName("Objects: a purge claim refuses an object not due, held or frozen; its claimant resumes and completes it, nobody else, and a hold after the claim does not stop it")
+    void purgeIsClaimedThenCompleted() {
         UUID catalog = newCatalog();
         NamespaceRecord namespace = newNamespace(catalog, "ns");
         CatalogObject table = newTable(namespace, "t");
         Securable securable = table.securable();
         assertThat(store.putGrant(new Grant(catalog, securable, "readers", "select"), "admin", change())).isEqualTo(WriteResult.APPLIED);
         Change drop = change();
-        assertThat(store.purgeObject(table.id(), change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.claimPurge(table.id(), "worker-a", change())).as("an active object")
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertApplied(store.recordDeletions(table.id(), List.of(table.locationRoot() + "/metadata/old.avro"),
+                drop.at().minusSeconds(1), change()));
         assertThat(store.dropObject(table.id(), drop.at().plusSeconds(60), drop)).isEqualTo(WriteResult.APPLIED);
+        Change refused = fullChange();
 
-        assertThat(store.purgeObject(table.id(), change())).isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_DUE));
+        assertThat(store.claimPurge(table.id(), "worker-a", refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_DUE));
         LegalHold hold = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.NAMESPACE, namespace.id()),
                 "matter-2", "legal", now());
         assertThat(store.placeHold(hold, change())).isEqualTo(WriteResult.APPLIED);
-        Change late = new Change(UUID.randomUUID(), drop.at().plusSeconds(61), change().outbox(), Optional.empty());
-        assertThat(store.purgeObject(table.id(), late)).as("a hold on the namespace holds its objects")
+        Change late = new Change(refused.id(), drop.at().plusSeconds(61), refused.outbox(), refused.idempotency());
+        assertThat(store.claimPurge(table.id(), "worker-a", late)).as("a hold on the namespace holds its objects")
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
         assertThat(store.releaseHold(hold.id(), change())).isEqualTo(WriteResult.APPLIED);
-        Change purge = new Change(UUID.randomUUID(), drop.at().plusSeconds(61), change().outbox(), Optional.empty());
+        Securable top = new Securable(Securable.Kind.CATALOG, catalog);
+        assertApplied(store.putAttribute(new GovernanceAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                "suite", "admin", now()), change()));
+        assertThat(store.claimPurge(table.id(), "worker-a", late)).as("a DR freeze on the catalog freezes its objects")
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.FROZEN));
+        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, change()));
+        assertThat(store.completePurge(table.id(), "worker-a", late)).as("an unclaimed object")
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+        Change full = fullChange();
+        Change claim = new Change(full.id(), drop.at().plusSeconds(61), full.outbox(), full.idempotency());
 
-        assertThat(store.purgeObject(table.id(), purge)).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.claimPurge(table.id(), "worker-a", claim)).isEqualTo(WriteResult.APPLIED);
 
-        assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.PURGED);
+        assertThat(underTest().changeRows(claim)).isEqualTo(WrittenRows.allOf(claim));
+        CatalogObject claimed = store.readObject(table.id()).orElseThrow();
+        assertThat(claimed.state()).isEqualTo(CatalogObject.State.PURGING);
+        assertThat(claimed.purgeClaimant()).contains("worker-a");
+        assertThat(claimed.purgeAfter()).contains(drop.at().plusSeconds(60));
+        assertThat(store.claimPurge(table.id(), "worker-a", change())).as("the claimant resumes its claim")
+                .isEqualTo(WriteResult.UNCHANGED);
+        assertThat(store.claimPurge(table.id(), "worker-b", change())).isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER));
+        assertThat(store.completePurge(table.id(), "worker-b", change())).isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER));
+        assertThat(store.undropObject(table.id(), namespace.id(), name("t"), change())).as("a claimed object is not undropped")
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.recordDeletions(table.id(), List.of(table.locationRoot() + "/data/f.parquet"), now(), change()))
+                .as("a claimed object's files go with the purge").isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertApplied(store.placeHold(new LegalHold(UUID.randomUUID(), securable, "matter-3", "legal", now()), change()));
+        Change complete = fullChange();
+
+        assertThat(store.completePurge(table.id(), "worker-a", complete)).as("a hold after the claim does not stop it")
+                .isEqualTo(WriteResult.APPLIED);
+
+        assertThat(underTest().changeRows(complete)).isEqualTo(WrittenRows.allOf(complete));
+        CatalogObject purged = store.readObject(table.id()).orElseThrow();
+        assertThat(purged.state()).isEqualTo(CatalogObject.State.PURGED);
+        assertThat(purged.purgeClaimant()).isEmpty();
         assertThat(store.grantsFor(Set.of(securable), Set.of("readers"))).isEmpty();
+        assertThat(dueDeletions(now())).extracting(PendingDeletion::objectId).doesNotContain(table.id());
+        assertThat(store.claimPurge(table.id(), "worker-a", change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.completePurge(table.id(), "worker-a", change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         assertThat(store.undropObject(table.id(), namespace.id(), name("t"), change()))
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
-        assertThat(store.listPurgeEligible(drop.at().plusSeconds(3600), PageRequest.first(1000)).items())
-                .extracting(CatalogObject::id).doesNotContain(table.id());
+        assertThat(purgeEligible(drop.at().plusSeconds(3600))).doesNotContain(table.id());
     }
 
     @Test
@@ -634,7 +688,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("Objects: the purge scan skips an object held through its namespace, an ancestor or its catalog")
+    @DisplayName("Objects: the purge scan skips an object held or frozen through its namespace, an ancestor or its catalog")
     void purgeScanSkipsObjectsHeldAbove() {
         UUID catalog = newCatalog();
         NamespaceRecord parent = newNamespace(catalog, "parent");
@@ -650,6 +704,12 @@ public abstract class CatalogObjectSuite extends GroupSuite {
             assertThat(purgeEligible(due)).as("held by %s", target).doesNotContain(table.id());
 
             assertApplied(store.releaseHold(hold.id(), change()));
+            assertApplied(store.putAttribute(new GovernanceAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                    "suite", "admin", now()), change()));
+
+            assertThat(purgeEligible(due)).as("frozen by %s", target).doesNotContain(table.id());
+
+            assertApplied(store.removeAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, change()));
         }
         assertThat(purgeEligible(due)).contains(table.id());
     }
@@ -680,6 +740,108 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         holdOn(newParent);
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("no longer under the namespace it was renamed into")
                 .isEqualTo(WriteResult.APPLIED);
+    }
+
+    @Test
+    @DisplayName("Maintenance: pending deletions come due at their time, in order, page by page, and each is completed once")
+    void pendingDeletionsComeDueInOrder() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject active = newTable(namespace, "active");
+        CatalogObject dropped = newTable(namespace, "dropped");
+        assertApplied(store.dropObject(dropped.id(), now().plus(WINDOW), change()));
+        Instant base = Instant.parse("2001-01-01T00:00:00Z").plus(Duration.ofMinutes(UUID.randomUUID().hashCode() & 0xffff));
+        Change record = fullChange();
+        String first = active.locationRoot() + "/data/a.parquet";
+        String second = active.locationRoot() + "/metadata/b.avro";
+
+        assertThat(store.recordDeletions(active.id(), List.of(first, second), base.plusSeconds(10), record))
+                .isEqualTo(WriteResult.APPLIED);
+
+        assertThat(underTest().changeRows(record)).isEqualTo(WrittenRows.allOf(record));
+        assertApplied(store.recordDeletions(dropped.id(), List.of(dropped.locationRoot() + "/data/c.parquet"),
+                base.plusSeconds(5), change()));
+        assertThat(store.recordDeletions(UUID.randomUUID(), List.of("s3://suite-warehouse/x"), base, change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(ours(dueDeletions(base.plusSeconds(9)), namespace)).extracting(PendingDeletion::location)
+                .containsExactly(dropped.locationRoot() + "/data/c.parquet");
+        List<PendingDeletion> due = ours(allPages(1, page -> store.listDueDeletions(base.plusSeconds(10), page)), namespace);
+        assertThat(due).extracting(PendingDeletion::location).as("by time, every deletion once")
+                .containsExactlyInAnyOrder(first, second, dropped.locationRoot() + "/data/c.parquet");
+        assertThat(due.getFirst().objectId()).isEqualTo(dropped.id());
+        PendingDeletion done = due.get(1);
+        assertThat(done.objectId()).isEqualTo(active.id());
+        assertThat(done.catalogId()).isEqualTo(active.catalogId());
+        assertThat(done.notBefore()).isEqualTo(base.plusSeconds(10));
+        assertThat(done.recordedAt()).isEqualTo(record.at());
+        Change complete = fullChange();
+
+        assertThat(store.completeDeletions(active.id(), List.of(done.id()), complete)).isEqualTo(WriteResult.APPLIED);
+
+        assertThat(underTest().changeRows(complete)).isEqualTo(WrittenRows.allOf(complete));
+        assertThat(ours(dueDeletions(base.plusSeconds(10)), namespace)).extracting(PendingDeletion::id)
+                .doesNotContain(done.id()).hasSize(2);
+        Change again = fullChange();
+        assertThat(store.completeDeletions(active.id(), List.of(done.id()), again)).isEqualTo(WriteResult.UNCHANGED);
+        assertThat(store.completeDeletions(dropped.id(), List.of(due.get(2).id()), again)).as("another object's deletion")
+                .isEqualTo(WriteResult.UNCHANGED);
+        assertThat(underTest().changeRows(again)).isEqualTo(WrittenRows.NONE);
+    }
+
+    @Test
+    @DisplayName("Maintenance: a hold or a DR freeze on an object, a namespace above it or its catalog keeps its pending deletions back")
+    void pendingDeletionsWaitOutHoldsAndFreezes() {
+        UUID catalog = newCatalog();
+        NamespaceRecord parent = newNamespace(catalog, "parent");
+        NamespaceRecord namespace = newNamespace(parent, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Instant due = Instant.parse("2001-01-01T00:00:00Z").plus(Duration.ofMinutes(UUID.randomUUID().hashCode() & 0xffff));
+        assertApplied(store.recordDeletions(table.id(), List.of(table.locationRoot() + "/data/a.parquet"), due, change()));
+        for (Securable target : List.of(table.securable(), new Securable(Securable.Kind.NAMESPACE, parent.id()),
+                new Securable(Securable.Kind.CATALOG, catalog))) {
+            LegalHold hold = new LegalHold(UUID.randomUUID(), target, "matter", "legal", now());
+            assertApplied(store.placeHold(hold, change()));
+
+            assertThat(ours(dueDeletions(due), namespace)).as("held by %s", target).isEmpty();
+
+            assertApplied(store.releaseHold(hold.id(), change()));
+            assertApplied(store.putAttribute(new GovernanceAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                    "suite", "admin", now()), change()));
+
+            assertThat(ours(dueDeletions(due), namespace)).as("frozen by %s", target).isEmpty();
+
+            assertApplied(store.removeAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, change()));
+        }
+        assertThat(ours(dueDeletions(due), namespace)).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("Maintenance: the active-object scan pages through every active object of a kind once, and nothing dropped")
+    void activeObjectScanPagesByKind() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        List<UUID> tables = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            tables.add(newTable(namespace, "t-" + i).id());
+        }
+        CatalogObject view = newObject(namespace, "v", CatalogObject.Kind.VIEW);
+        CatalogObject dropped = newTable(namespace, "dropped");
+        assertApplied(store.dropObject(dropped.id(), now().plus(WINDOW), change()));
+
+        List<CatalogObject> scanned = allPages(2, page -> store.listActiveObjects(CatalogObject.Kind.TABLE, page));
+
+        assertThat(scanned).extracting(CatalogObject::id).doesNotHaveDuplicates().containsAll(tables)
+                .doesNotContain(view.id(), dropped.id());
+        assertThat(allPages(50, page -> store.listActiveObjects(CatalogObject.Kind.VIEW, page)))
+                .extracting(CatalogObject::id).contains(view.id()).doesNotContainAnyElementsOf(tables);
+    }
+
+    private List<PendingDeletion> dueDeletions(Instant now) {
+        return allPages(100, page -> store.listDueDeletions(now, page));
+    }
+
+    /** The deletions of objects in {@code namespace}, which other tests' deletions share the store with. */
+    private List<PendingDeletion> ours(List<PendingDeletion> deletions, NamespaceRecord namespace) {
+        return deletions.stream().filter(deletion -> store.readObject(deletion.objectId())
+                .map(object -> object.namespaceId().equals(namespace.id())).orElse(false)).toList();
     }
 
     private LegalHold holdOn(NamespaceRecord namespace) {

@@ -37,6 +37,7 @@ import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.OutboxBatch;
 import keel.catalog.store.Page;
 import keel.catalog.store.PageRequest;
+import keel.catalog.store.PendingDeletion;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.PointerKey;
 import keel.catalog.store.SafetyFinding;
@@ -91,6 +92,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String ATTRIBUTE = "governance_attribute";
     static final String HOLD = "legal_hold";
     static final String ENGINE = "trusted_engine";
+    static final String PENDING_DELETION = "pending_deletion";
 
     /** Projections longer than this are stored in pieces (section 7). */
     public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
@@ -115,6 +117,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoIdempotency idempotency;
     private final MongoOutbox outbox;
     private final MongoGovernance governance;
+    private final MongoDeletions deletions;
 
     public MongoCatalogStore(MongoClient client, String databaseName) {
         this(client, databaseName, CommitHook.NONE);
@@ -143,6 +146,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.idempotency = new MongoIdempotency(transactions);
         this.outbox = new MongoOutbox(transactions);
         this.governance = new MongoGovernance(transactions);
+        this.deletions = new MongoDeletions(transactions);
     }
 
     // ---- commit core (sections 4, 5.3 and 7) ----
@@ -383,8 +387,35 @@ public final class MongoCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult purgeObject(UUID objectId, Change change) {
-        return objects.purge(objectId, change);
+    public WriteResult claimPurge(UUID objectId, String claimant, Change change) {
+        return objects.claimPurge(objectId, claimant, change);
+    }
+
+    @Override
+    public WriteResult completePurge(UUID objectId, String claimant, Change change) {
+        return objects.completePurge(objectId, claimant, change);
+    }
+
+    // ---- maintenance (D30) ----
+
+    @Override
+    public Page<CatalogObject> listActiveObjects(CatalogObject.Kind kind, PageRequest page) {
+        return objects.listActive(kind, page);
+    }
+
+    @Override
+    public WriteResult recordDeletions(UUID objectId, List<String> locations, Instant notBefore, Change change) {
+        return deletions.record(objectId, locations, notBefore, change);
+    }
+
+    @Override
+    public Page<PendingDeletion> listDueDeletions(Instant now, PageRequest page) {
+        return deletions.listDue(now, page);
+    }
+
+    @Override
+    public WriteResult completeDeletions(UUID objectId, List<UUID> ids, Change change) {
+        return deletions.complete(objectId, ids, change);
     }
 
     // ---- grants ----

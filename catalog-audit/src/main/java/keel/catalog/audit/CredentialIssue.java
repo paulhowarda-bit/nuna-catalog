@@ -11,7 +11,8 @@ import java.util.Objects;
  * @param object         the table whose prefix the credentials cover
  * @param storageProfile the storage profile they came from
  * @param locationPrefix the prefix the session policy allows
- * @param access         read only; read and write; or, for a maintenance principal, read, write and delete
+ * @param access         read only, or read and write; {@code READ_WRITE_DELETE} names what maintenance
+ *                       principals were vended before D30 (amended 2026-11-12), and is never vended now
  * @param sessionName    the STS session name, which carries the principal and request id
  * @param expiresAt      when the credentials expire
  * @param actor          who received them

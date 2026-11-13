@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The M7 gate, held tables cannot lose snapshots, and the other commit-time guards: a hold on the
- * table or a level above it refuses snapshot removal, drop, unregister (D13) and purge (D24); every
+ * table or a level above it refuses snapshot removal, drop, unregister (D13) and a purge claim (D24, D30); every
  * snapshot is kept for the deployment's minimum age, and a retention class's longer one (D30); a DR freeze
  * refuses writes (D37).
  */
@@ -93,11 +93,48 @@ class HeldTablesTest {
         clock.advance(Duration.ofDays(31));
 
         assertThat(eligible().body()).doesNotContain(id);
-        expectError(purge(id), 403, "ForbiddenException");
+        expectError(claim(id), 403, "ForbiddenException");
 
         expect(api.manage("DELETE", "/namespaces/" + ns + "/holds/" + hold, null, "Authorization", api.steward()), 204);
         assertThat(eligible().body()).contains(id);
-        expect(purge(id), 204);
+        expect(claim(id), 200);
+        expect(complete(id), 204);
+    }
+
+    @Test
+    void aFrozenDroppedTableIsNeitherEligibleNorClaimed() {
+        String ns = api.namespace();
+        api.table(ns, "t");
+        String id = api.id(ns, "tables", "t");
+        expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
+        expect(api.manage("PUT", "/namespaces/" + ns + "/dr-freeze", "{\"reason\":\"drill\"}",
+                "Authorization", api.operator()), 200);
+        clock.advance(Duration.ofDays(31));
+
+        assertThat(eligible().body()).doesNotContain(id);
+        expectError(claim(id), 403, "ForbiddenException");
+
+        expect(api.manage("DELETE", "/namespaces/" + ns + "/dr-freeze", null, "Authorization", api.operator()), 204);
+        assertThat(eligible().body()).contains(id);
+        expect(claim(id), 200);
+        expect(complete(id), 204);
+    }
+
+    @Test
+    void aHoldAfterTheClaimDoesNotStopThePurge() {
+        String ns = api.namespace();
+        api.table(ns, "t");
+        String id = api.id(ns, "tables", "t");
+        expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
+        clock.advance(Duration.ofDays(31));
+        expect(claim(id), 200);
+
+        hold("/namespaces/" + ns);
+
+        assertThat(eligible().body()).as("a claimed object stays in the queue until it is purged").contains(id);
+        expect(claim(id), 200);
+        expect(complete(id), 204);
+        assertThat(eligible().body()).doesNotContain(id);
     }
 
     @Test
@@ -172,7 +209,11 @@ class HeldTablesTest {
                 "Authorization", api.maintenance()), 200);
     }
 
-    private HttpResponse<String> purge(String id) {
+    private HttpResponse<String> claim(String id) {
+        return api.manage("POST", "/objects/" + id + "/purge-claim", null, GovernanceServer.PRINCIPAL, "maintenance");
+    }
+
+    private HttpResponse<String> complete(String id) {
         return api.manage("POST", "/objects/" + id + "/purge", null, GovernanceServer.PRINCIPAL, "maintenance");
     }
 }

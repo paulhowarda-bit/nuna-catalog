@@ -57,7 +57,10 @@ public final class SampleEvents {
                 new Purge(TABLE, ACTOR),
                 new AuditRead(TABLE, 50, ACTOR),
                 new Unregister(TABLE, V2, ACTOR),
-                new LabelChange(NAMESPACE, "classification", "confidential", ACTOR));
+                new LabelChange(NAMESPACE, "classification", "confidential", ACTOR),
+                new PurgeClaim(TABLE, ACTOR),
+                new FileDeletion(FileDeletion.Action.RECORDED, TABLE, 3, Instant.parse("2026-11-14T10:15:30.123Z"), ACTOR),
+                new MaintenanceExemption(TABLE, "loadTable", ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

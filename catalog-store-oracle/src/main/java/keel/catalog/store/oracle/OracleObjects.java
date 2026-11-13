@@ -36,7 +36,18 @@ import java.util.UUID;
 final class OracleObjects {
 
     private static final String COLUMNS = "id, catalog_id, namespace_id, name_norm, name, kind, state, dropped_at,"
-            + " purge_after, location_root";
+            + " purge_after, location_root, purge_claimant";
+    /**
+     * No legal hold and no DR freeze on object {@code o}, a namespace that held it when it was last placed or
+     * its catalog: what the purge queue and the due pending deletions ask of an object (D24, D30, D37).
+     */
+    static final String UNCOVERED = "NOT EXISTS (SELECT 1 FROM legal_hold h WHERE h.target_id IN (o.id, o.catalog_id))"
+            + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN legal_hold h ON h.target_id = p.namespace_id"
+            + " WHERE p.object_id = o.id)"
+            + " AND NOT EXISTS (SELECT 1 FROM governance_attribute a WHERE a.kind = 'DR_FREEZE'"
+            + " AND a.target_id IN (o.id, o.catalog_id))"
+            + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN governance_attribute a ON a.target_id = p.namespace_id"
+            + " WHERE p.object_id = o.id AND a.kind = 'DR_FREEZE')";
     private static final String ACTIVE_NAME_INDEX = "CATALOG_OBJECT_ACTIVE_NAME";
     /** The active-name lookup, written with the unique index's own expressions so it can use the index. */
     private static final String ACTIVE_NAME = "CASE WHEN state = 'ACTIVE' THEN namespace_id END = ?"
@@ -205,31 +216,76 @@ final class OracleObjects {
                     ? " AND " + Jdbc.greater(List.of("o.purge_after", "o.id"), after.get(), parameters) : "";
             parameters.add(page.size() + 1);
             List<CatalogObject> objects = query(connection, "SELECT " + COLUMNS + " FROM catalog_object o"
-                    + " WHERE o.state = 'DROPPED' AND o.purge_after <= ?" + keyset
-                    + " AND NOT EXISTS (SELECT 1 FROM legal_hold h WHERE h.target_id IN (o.id, o.catalog_id))"
-                    + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN legal_hold h ON h.target_id = p.namespace_id"
-                    + " WHERE p.object_id = o.id) ORDER BY o.purge_after, o.id FETCH FIRST ? ROWS ONLY",
+                    + " WHERE o.state IN ('DROPPED', 'PURGING') AND o.purge_after <= ?" + keyset
+                    + " AND (o.state = 'PURGING' OR (" + UNCOVERED + "))"
+                    + " ORDER BY o.purge_after, o.id FETCH FIRST ? ROWS ONLY",
                     OracleObjects::object, parameters.toArray());
             return Jdbc.page(objects, page,
                     object -> PageToken.encode(object.purgeAfter().orElseThrow().toString(), object.id().toString()));
         });
     }
 
-    WriteResult purge(UUID objectId, Change change) {
-        return transactions.change(change, "object purge", connection -> {
-            Optional<Held> locked = lockForRetention(connection, objectId, CatalogObject.State.DROPPED);
+    /**
+     * Locks the dropped or claimed object, then judges the claim under the lock: the holds and DR freezes
+     * are read as a drop reads holds, so one placed before the claim refuses it.
+     */
+    WriteResult claimPurge(UUID objectId, String claimant, Change change) {
+        return transactions.change(change, "purge claim", connection -> {
+            Optional<Claim> locked = lockForPurge(connection, objectId);
             if (locked.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
-            if (locked.get().purgeAfter().isAfter(change.at())) {
+            Claim claim = locked.get();
+            if (claim.claimant() != null) {
+                return claim.claimant().equals(claimant) ? WriteResult.UNCHANGED
+                        : new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER);
+            }
+            if (claim.purgeAfter().isAfter(change.at())) {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_DUE);
             }
-            if (Guards.held(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
+            List<UUID> path = path(connection, objectId);
+            if (Guards.held(connection, objectId, claim.catalogId(), path)) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);
             }
-            update(connection, "UPDATE catalog_object SET state = 'PURGED' WHERE id = ?", objectId);
-            update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
+            if (Guards.frozen(connection, objectId, claim.catalogId(), path)) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            update(connection, "UPDATE catalog_object SET state = 'PURGING', purge_claimant = ? WHERE id = ?",
+                    claimant, objectId);
             return WriteResult.APPLIED;
+        });
+    }
+
+    WriteResult completePurge(UUID objectId, String claimant, Change change) {
+        return transactions.change(change, "purge complete", connection -> {
+            Optional<Claim> locked = lockForPurge(connection, objectId);
+            if (locked.isEmpty() || locked.get().claimant() == null) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            if (!locked.get().claimant().equals(claimant)) {
+                return new WriteResult.Refused(WriteResult.Reason.NOT_HOLDER);
+            }
+            update(connection, "UPDATE catalog_object SET state = 'PURGED', purge_claimant = NULL WHERE id = ?", objectId);
+            update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
+            update(connection, "DELETE FROM pending_deletion WHERE object_id = ?", objectId);
+            return WriteResult.APPLIED;
+        });
+    }
+
+    Page<CatalogObject> listActive(CatalogObject.Kind kind, PageRequest page) {
+        Optional<UUID> after = Jdbc.after(page, 1, parts -> UUID.fromString(parts.get(0)));
+        return transactions.autocommit("active object scan", connection -> {
+            List<Object> parameters = new ArrayList<>(List.of(kind.name()));
+            String keyset = "";
+            if (after.isPresent()) {
+                keyset = " AND id > ?";
+                parameters.add(after.get());
+            }
+            parameters.add(page.size() + 1);
+            List<CatalogObject> objects = query(connection, "SELECT " + COLUMNS + " FROM catalog_object"
+                    + " WHERE state = 'ACTIVE' AND kind = ?" + keyset + " ORDER BY id FETCH FIRST ? ROWS ONLY",
+                    OracleObjects::object, parameters.toArray());
+            return Jdbc.page(objects, page, object -> PageToken.encode(object.id().toString()));
         });
     }
 
@@ -286,14 +342,23 @@ final class OracleObjects {
                 row -> Jdbc.uuid(row, "catalog_id"), objectId, state.name());
     }
 
-    private record Held(UUID catalogId, Instant purgeAfter) {
+    private record Held(UUID catalogId) {
     }
 
     private static Optional<Held> lockForRetention(Connection connection, UUID objectId, CatalogObject.State state)
             throws SQLException {
-        return first(connection, "SELECT catalog_id, purge_after FROM catalog_object WHERE id = ? AND state = ?"
-                + " FOR UPDATE", row -> new Held(Jdbc.uuid(row, "catalog_id"), instant(row, "purge_after")),
-                objectId, state.name());
+        return first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ? AND state = ? FOR UPDATE",
+                row -> new Held(Jdbc.uuid(row, "catalog_id")), objectId, state.name());
+    }
+
+    /** A dropped or claimed object, locked: {@code claimant} is null until it is claimed. */
+    private record Claim(UUID catalogId, Instant purgeAfter, String claimant) {
+    }
+
+    private static Optional<Claim> lockForPurge(Connection connection, UUID objectId) throws SQLException {
+        return first(connection, "SELECT catalog_id, purge_after, purge_claimant FROM catalog_object WHERE id = ?"
+                + " AND state IN ('DROPPED', 'PURGING') FOR UPDATE", row -> new Claim(Jdbc.uuid(row, "catalog_id"),
+                instant(row, "purge_after"), Jdbc.text(row, "purge_claimant")), objectId);
     }
 
     private static CatalogObject object(ResultSet row) throws SQLException {
@@ -301,6 +366,6 @@ final class OracleObjects {
                 new Name(Jdbc.text(row, "name_norm"), Jdbc.text(row, "name")),
                 CatalogObject.Kind.valueOf(row.getString("kind")), CatalogObject.State.valueOf(row.getString("state")),
                 Optional.ofNullable(instant(row, "dropped_at")), Optional.ofNullable(instant(row, "purge_after")),
-                Jdbc.text(row, "location_root"));
+                Jdbc.text(row, "location_root"), Optional.ofNullable(Jdbc.text(row, "purge_claimant")));
     }
 }

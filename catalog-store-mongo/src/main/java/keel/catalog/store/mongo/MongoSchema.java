@@ -12,16 +12,19 @@ import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
 import static keel.catalog.store.mongo.MongoCatalogStore.OUTBOX;
 import static keel.catalog.store.mongo.MongoCatalogStore.OUTBOX_RELAY;
+import static keel.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static keel.catalog.store.mongo.MongoCatalogStore.POINTER;
 import static keel.catalog.store.mongo.MongoCatalogStore.PROJECTION_PIECE;
 
 import com.mongodb.ErrorCategory;
+import com.mongodb.MongoCommandException;
 import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.UpdateOptions;
 import java.util.List;
 import java.util.function.Consumer;
+import org.bson.BsonArray;
 import org.bson.BsonDateTime;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
@@ -43,6 +46,10 @@ final class MongoSchema {
 
     private static final BsonDocument ACTIVE = new BsonDocument("state", new BsonString("ACTIVE"));
     private static final BsonDocument DROPPED = new BsonDocument("state", new BsonString("DROPPED"));
+    private static final BsonDocument PURGE_QUEUE = new BsonDocument("state", new BsonDocument("$in",
+            new BsonArray(List.of(new BsonString("DROPPED"), new BsonString("PURGING")))));
+    /** The server's code for dropping an index that does not exist. */
+    private static final int INDEX_NOT_FOUND = 27;
 
     static final List<Step> STEPS = List.of(
             new Step(1, "catalogs", database -> index(database, CATALOG, "catalog_name", true, null, "nameNorm")),
@@ -88,6 +95,21 @@ final class MongoSchema {
             // no index or partial filter names it, so nothing is built; the step is recorded so the
             // schema version marks the first release that writes it.
             new Step(4, "unregistered objects", database -> {
+            }),
+            // v1.x (D30): a purge is claimed first (PURGING, with purgeClaimant), and the purge scan
+            // reads dropped and claimed objects, so its index covers both. pending_deletion holds the
+            // files the maintenance worker deletes once the PITR window has passed (notBefore).
+            new Step(5, "purge claims and pending deletions", database -> {
+                index(database, OBJECT, "object_purge_queue", false, PURGE_QUEUE, "purgeAfter", "_id");
+                try {
+                    database.getCollection(OBJECT, BsonDocument.class).dropIndex("object_purge");
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != INDEX_NOT_FOUND) {
+                        throw e;
+                    }
+                }
+                index(database, PENDING_DELETION, "pending_deletion_due", false, null, "notBefore", "_id");
+                index(database, PENDING_DELETION, "pending_deletion_object", false, null, "objectId");
             }));
 
     private MongoSchema() {

@@ -176,8 +176,15 @@ class MutatingRoutesAuditTest {
                 null, rid(id)));
         cases.put("POST " + M + "/objects/{id}/undrop", id -> api.manage("POST", "/objects/" + dropped() + "/undrop",
                 null, rid(id, api.steward())));
+        cases.put("POST " + M + "/objects/{id}/purge-claim", id -> api.manage("POST",
+                "/objects/" + dropped() + "/purge-claim", null, rid(id)));
         cases.put("POST " + M + "/objects/{id}/purge", id -> api.manage("POST", "/objects/" + dropped() + "/purge",
                 null, rid(id)));
+        cases.put("POST " + M + "/objects/{id}/pending-deletions", id -> api.manage("POST",
+                "/objects/" + dropped() + "/pending-deletions", "{\"locations\":[\"s3://x/y\"]}", rid(id)));
+        cases.put("POST " + M + "/objects/{id}/pending-deletions/complete", id -> api.manage("POST",
+                "/objects/" + dropped() + "/pending-deletions/complete", "{\"ids\":[\"" + UUID.randomUUID() + "\"]}",
+                rid(id)));
         cases.put("POST " + M + "/dr-reconcile", id -> api.manage("POST", "/dr-reconcile", null, rid(id)));
         return cases;
     }
@@ -350,12 +357,37 @@ class MutatingRoutesAuditTest {
             expect(api.manage("POST", "/objects/" + object + "/undrop", null, rid(id)), 200);
             return EventType.UNDROP;
         });
+        cases.put("POST " + M + "/objects/{id}/purge-claim", id -> {
+            String object = dropped();
+            clock.advance(Duration.ofDays(31));
+            expect(api.manage("POST", "/objects/" + object + "/purge-claim", null, "X-Request-ID", id,
+                    GovernanceServer.PRINCIPAL, "maintenance"), 200);
+            return EventType.PURGE_CLAIM;
+        });
         cases.put("POST " + M + "/objects/{id}/purge", id -> {
             String object = dropped();
             clock.advance(Duration.ofDays(31));
+            expect(api.manage("POST", "/objects/" + object + "/purge-claim", null,
+                    GovernanceServer.PRINCIPAL, "maintenance"), 200);
             expect(api.manage("POST", "/objects/" + object + "/purge", null, "X-Request-ID", id,
                     GovernanceServer.PRINCIPAL, "maintenance"), 204);
             return EventType.PURGE;
+        });
+        cases.put("POST " + M + "/objects/{id}/pending-deletions", id -> {
+            String object = dropped();
+            expect(api.manage("POST", "/objects/" + object + "/pending-deletions", deletions(object), "X-Request-ID", id,
+                    GovernanceServer.PRINCIPAL, "maintenance"), 201);
+            return EventType.FILE_DELETION;
+        });
+        cases.put("POST " + M + "/objects/{id}/pending-deletions/complete", id -> {
+            String object = dropped();
+            expect(api.manage("POST", "/objects/" + object + "/pending-deletions", deletions(object),
+                    GovernanceServer.PRINCIPAL, "maintenance"), 201);
+            String deletion = jdbc.queryForObject("SELECT id::text FROM pending_deletion WHERE object_id = ?::uuid",
+                    String.class, object);
+            expect(api.manage("POST", "/objects/" + object + "/pending-deletions/complete",
+                    "{\"ids\":[\"" + deletion + "\"]}", "X-Request-ID", id, GovernanceServer.PRINCIPAL, "maintenance"), 204);
+            return EventType.FILE_DELETION;
         });
         cases.put("POST " + M + "/dr-reconcile", id -> {
             String ns = behindItsStorage();
@@ -430,6 +462,13 @@ class MutatingRoutesAuditTest {
         String id = api.id(ns, "tables", "t");
         expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
         return id;
+    }
+
+    /** A pending-deletions body naming one file beneath the object's location. */
+    private String deletions(String object) {
+        String location = JsonPath.read(expect(api.manage("GET", "/objects/" + object + "/export", null), 200).body(),
+                "$.object.location");
+        return "{\"locations\":[\"" + location + "/data/expired.parquet\"]}";
     }
 
     private static String rename(String namespace, String from, String to) {
