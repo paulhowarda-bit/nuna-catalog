@@ -11,6 +11,7 @@ import keel.catalog.server.storage.StorageSettings;
 import keel.catalog.store.CatalogStore;
 import java.net.URI;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -26,8 +27,8 @@ import software.amazon.awssdk.services.s3.S3ClientBuilder;
 
 /**
  * Governance and audit (M7): audit delivery, the archive, the synchronous audit trail and the commit
- * rule for retention classes. The server refuses to start with a maintenance default the guardrails
- * forbid, or an archive bucket without Object Lock.
+ * rule for the minimum snapshot age. The server refuses to start with a maintenance default the guardrails
+ * forbid, a soft-drop window no longer than the PITR window, or an archive bucket without Object Lock.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties({AuditSettings.class, GovernanceSettings.class})
@@ -60,10 +61,25 @@ class GovernanceWiring {
         return Optional.of(archive);
     }
 
+    /**
+     * A dropped table is purged only after its soft-drop window, and that window must be longer than the
+     * database's PITR window (D25, D30): a database restored to any point it still holds then never has a live
+     * table whose files were purged.
+     */
+    static void requireDropWindowBeyondPitr(Duration dropRetention, Duration pitrWindow) {
+        if (dropRetention.compareTo(pitrWindow) <= 0) {
+            throw new IllegalStateException("keel.rest.drop-retention (" + dropRetention
+                    + ") must be longer than keel.governance.pitr-window (" + pitrWindow
+                    + "), so a database restored within its PITR window never holds a live table whose files"
+                    + " were purged");
+        }
+    }
+
     @Bean(destroyMethod = "close")
     AuditRuntime auditRuntime(AuditSettings audit, StorageSettings storage, CatalogStore store,
-                              GovernanceSettings governance, Clock clock) {
+                              GovernanceSettings governance, RestSettings rest, Clock clock) {
         MaintenancePolicy.canonical(governance.maintenanceDefaults(), governance);
+        requireDropWindowBeyondPitr(rest.dropRetention(), governance.pitrWindow());
         return new AuditRuntime(audit, store, archive(audit, storage, clock), clock);
     }
 
@@ -90,9 +106,12 @@ class GovernanceWiring {
         };
     }
 
-    /** A retention class's minimum snapshot age, enforced when a commit removes snapshots (D24). */
+    /**
+     * The deployment's minimum snapshot age and a retention class's, enforced when a commit removes snapshots
+     * (D24, D30).
+     */
     @Bean
-    CommitRule retentionClassMinimumAge(GovernanceSettings governance) {
-        return Rules.snapshotMinimumAge(governance::minimumAgeOf);
+    CommitRule snapshotMinimumAge(GovernanceSettings governance) {
+        return Rules.snapshotMinimumAge(governance.minimumSnapshotAge(), governance::minimumAgeOf);
     }
 }

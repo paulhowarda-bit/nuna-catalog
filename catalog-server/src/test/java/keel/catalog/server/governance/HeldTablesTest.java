@@ -17,8 +17,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The M7 gate, held tables cannot lose snapshots, and the other commit-time guards: a hold on the
- * table or a level above it refuses snapshot removal, drop, unregister (D13) and purge (D24); a
- * retention class keeps snapshots for its minimum age; a DR freeze refuses writes (D37).
+ * table or a level above it refuses snapshot removal, drop, unregister (D13) and purge (D24); every
+ * snapshot is kept for the deployment's minimum age, and a retention class's longer one (D30); a DR freeze
+ * refuses writes (D37).
  */
 @GovernanceServer
 class HeldTablesTest {
@@ -52,8 +53,11 @@ class HeldTablesTest {
         String ns = api.namespace();
         String table = "/namespaces/" + ns + "/tables/t";
         String location = api.table(ns, "t");
-        expect(api.rest("POST", table, Api.snapshot(location, 1, System.currentTimeMillis())), 200);
-        expect(api.rest("POST", table, Api.snapshot(location, 2, System.currentTimeMillis())), 200);
+        // Two hours before the wall clock, which the test clock never trails: past the deployment's minimum
+        // snapshot age (1 h), so only the holds refuse.
+        long earlier = System.currentTimeMillis() - Duration.ofHours(2).toMillis();
+        expect(api.rest("POST", table, Api.snapshot(location, 1, earlier)), 200);
+        expect(api.rest("POST", table, Api.snapshot(location, 2, earlier)), 200);
 
         String tableHold = hold(table);
         expectError(api.rest("POST", table, Api.removeSnapshot(1)), 403, "ForbiddenException");
@@ -97,12 +101,28 @@ class HeldTablesTest {
     }
 
     @Test
+    void everySnapshotIsKeptForTheDeploymentMinimumAge() {
+        String ns = api.namespace();
+        String table = "/namespaces/" + ns + "/tables/t";
+        String location = api.table(ns, "t");
+        expect(api.rest("POST", table, Api.stagedSnapshot(location, 1, clock.millis())), 200);
+
+        HttpResponse<String> refused = api.rest("POST", table, Api.removeSnapshot(1));
+        expectError(refused, 403, "ForbiddenException");
+        assertThat(refused.body()).contains("PT1H", "the deployment's minimum snapshot age");
+
+        clock.advance(Duration.ofMinutes(61));
+        expect(api.rest("POST", table, Api.removeSnapshot(1)), 200);
+    }
+
+    @Test
     void aRetentionClassKeepsSnapshotsForItsMinimumAge() {
         String ns = api.namespace();
         String table = "/namespaces/" + ns + "/tables/t";
         String location = api.table(ns, "t");
-        expect(api.rest("POST", table, Api.snapshot(location, 1, clock.millis())), 200);
-        expect(api.rest("POST", table, Api.snapshot(location, 2, clock.millis())), 200);
+        // Older than the deployment's minimum snapshot age (1 h), younger than the class's (30 days).
+        expect(api.rest("POST", table, Api.stagedSnapshot(location, 1,
+                clock.millis() - Duration.ofHours(2).toMillis())), 200);
 
         expectError(api.manage("PUT", "/namespaces/" + ns + "/attributes/retention-class",
                 "{\"value\":\"no-such-class\",\"provenance\":\"records-office\"}", "Authorization", api.steward()), 400,

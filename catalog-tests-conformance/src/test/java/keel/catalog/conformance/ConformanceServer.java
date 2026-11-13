@@ -95,6 +95,9 @@ final class ConformanceServer {
                         "keel.security.issuers[0].user-id-claim=sub",
                         "keel.security.issuers[0].groups-claim=groups",
                         "keel.security.issuers[0].client-id-claim=azp",
+                        // The RCK and the client tests expire snapshots made a moment earlier; the deployment's
+                        // minimum snapshot age (1 h by default, D30) is tested in catalog-core and catalog-server.
+                        "keel.governance.minimum-snapshot-age=0s",
                         "keel.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers())
                 // A free port, as an argument: builder properties are only defaults, and application.yaml's 8181
                 // would win over them, clashing with any catalog already running here (the demo).

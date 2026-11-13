@@ -193,7 +193,7 @@ class RulesInTheLoopTest {
         @Test
         @DisplayName("the table's own retention class overrides its namespace's: the nearest level wins")
         void nearestRetentionClass() {
-            h.rules = List.of(Rules.snapshotMinimumAge(name -> name.equals("long")
+            h.rules = List.of(Rules.snapshotMinimumAge(java.time.Duration.ZERO, name -> name.equals("long")
                     ? Optional.of(java.time.Duration.ofDays(30)) : Optional.empty()));
             twoSnapshots();
             h.attribute(h.namespace(), GovernanceAttribute.Kind.RETENTION_CLASS, "long");
