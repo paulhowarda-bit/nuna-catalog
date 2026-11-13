@@ -4,11 +4,7 @@ plugins {
 
 description = "Oracle backend, including Exadata/RAC."
 
-// 23.26.4.0.0 is the first ojdbc17 certified for JDK 25; Boot 4.1.2 manages 23.26.3.0.0
-// (research_notes/Build plan facts/java_platform.md).
-extra["oracle-database.version"] = "23.26.4.0.0"
-// Oracle AI Database Free 23.26.3, slim (fewer components) and faststart (pre-created database).
-val oracleImage = "gvenzl/oracle-free:23.26.3-slim-faststart"
+// The driver's version (oracle-database.version) and the test image are pinned in gradle.properties.
 
 dependencies {
     api(project(":catalog-store-api"))
@@ -26,6 +22,5 @@ dependencies {
 }
 
 tasks.test {
-    systemProperty("oracle.image", oracleImage)
-    systemProperty("toxiproxy.image", project.property("toxiproxy.image")!!)
+    listOf("oracle.image", "toxiproxy.image").forEach { systemProperty(it, project.property(it)!!) }
 }
