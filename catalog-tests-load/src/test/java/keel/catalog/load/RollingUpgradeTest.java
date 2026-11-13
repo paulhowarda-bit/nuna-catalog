@@ -18,11 +18,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
- * A rolling upgrade across a schema change (M8). Two servers of the previous release, whose schema stops at V3,
- * take traffic; servers of this release replace them one at a time, the first of them migrating PostgreSQL
- * to V5 (V4: the journal becomes partitioned; V5: objects can be unregistered) while previous-release
- * servers still commit. Each server leaves only after the balancer has drained it. No request fails and
- * no commit is lost or doubled.
+ * A rolling upgrade across schema changes (M8). Two servers of the previous release, whose PostgreSQL schema
+ * stops at V4 (the journal partitioned), take traffic; servers of this release replace them one at a time, the
+ * first of them migrating to V7 (V5: objects can be unregistered; V6: purges are claimed and expired files wait
+ * in pending_deletion; V7: a file is pending once) while previous-release servers still commit. Each server
+ * leaves only after the balancer has drained it. No request fails and no commit is lost or doubled.
  */
 @Tag("overnight")
 class RollingUpgradeTest {
@@ -48,12 +48,12 @@ class RollingUpgradeTest {
     }
 
     @Test
-    void upgradingOneServerAtATimeAcrossV4LosesNothing() throws Exception {
+    void upgradingOneServerAtATimeAcrossV5ToV7LosesNothing() throws Exception {
         String url = stack.postgres.serverUrl();
         ServerProcess old1 = stack.server("upgrade-old-1", previous, url);
         stack.grantWriters();
         ServerProcess old2 = stack.server("upgrade-old-2", previous, url);
-        assertThat(schemaVersion()).as("the previous release's schema").isEqualTo("3");
+        assertThat(schemaVersion()).as("the previous release's schema").isEqualTo("4");
 
         Catalog catalog = new Catalog(stack.token("m8-writer", Stack.WRITERS), old1.uri(), old2.uri());
         catalog.createNamespace(NAMESPACE);
@@ -80,24 +80,29 @@ class RollingUpgradeTest {
                     }
                 }));
             }
-            ServerProcess.pause(Duration.ofSeconds(5));
-            beforeUpgrade = ledger.acknowledged.size();
+            // The writers stop however this ends; otherwise a server that fails to start leaves them writing
+            // and the pool's close waiting on them forever.
+            try {
+                ServerProcess.pause(Duration.ofSeconds(5));
+                beforeUpgrade = ledger.acknowledged.size();
 
-            new1 = stack.server("upgrade-new-1");
-            assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("7");
-            catalog.add(new1.uri());
-            ServerProcess.pause(Duration.ofSeconds(5));
-            catalog.drain(old1.uri());
-            old1.close();
+                new1 = stack.server("upgrade-new-1");
+                assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("7");
+                catalog.add(new1.uri());
+                ServerProcess.pause(Duration.ofSeconds(5));
+                catalog.drain(old1.uri());
+                old1.close();
 
-            new2 = stack.server("upgrade-new-2");
-            catalog.add(new2.uri());
-            ServerProcess.pause(Duration.ofSeconds(5));
-            catalog.drain(old2.uri());
-            old2.close();
+                new2 = stack.server("upgrade-new-2");
+                catalog.add(new2.uri());
+                ServerProcess.pause(Duration.ofSeconds(5));
+                catalog.drain(old2.uri());
+                old2.close();
 
-            ServerProcess.pause(Duration.ofSeconds(5));
-            running.set(false);
+                ServerProcess.pause(Duration.ofSeconds(5));
+            } finally {
+                running.set(false);
+            }
             for (Future<?> f : done) {
                 f.get();
             }
@@ -124,7 +129,7 @@ class RollingUpgradeTest {
         assertThat(catalog.unreachable.get()).as("requests that reached no server").isZero();
         assertThat(ledger.unknown).as("commits never acknowledged").isEmpty();
         assertThat(history).isEqualTo(ledger.acknowledged.size());
-        assertThat(journal).as("journal rows: one per commit and create, across the partitioning")
+        assertThat(journal).as("journal rows: one per commit and create, across the upgrade")
                 .isGreaterThanOrEqualTo(ledger.acknowledged.size());
         assertThat(stack.postgres.value("SELECT relkind FROM pg_class WHERE relname = 'journal'")).isEqualTo("p");
         assertThat(new1.alive() && new2.alive()).isTrue();

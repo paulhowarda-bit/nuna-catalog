@@ -96,10 +96,6 @@ final class Stack implements AutoCloseable {
                 "--keel.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers(),
                 "--logging.level.root=WARN",
                 "--logging.level.keel.audit.fallback=ERROR"));
-        // The previous release predates the rename to keel: its settings and loggers are named fidice.
-        if (!jar.equals(Path.of(System.getProperty("m8.server-jar")))) {
-            properties.replaceAll(p -> p.replace("--keel.", "--fidice.").replace("logging.level.keel.", "logging.level.fidice."));
-        }
         ServerProcess server = ServerProcess.start(name, jar, s3.jvmOptions(), properties);
         servers.add(server);
         server.awaitReady(token("m8-writer", WRITERS), CATALOG);
