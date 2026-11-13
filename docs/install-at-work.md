@@ -25,9 +25,12 @@ today.
   - The AWS S3 and MinIO delete policies, which have never been applied to a real store.
 - Paul will run the heavy pass (`./heavy.sh`) after the install to harden these. Do not run `-Pheavy`, the
   bites or `-Pnightly` unless he asks.
-- **The server runs on PostgreSQL or CockroachDB only.** `StoreWiring` builds the PostgreSQL-wire store and
-  nothing else. The Oracle and MongoDB stores pass the shared suite, but no server setting selects them. An
-  install on Oracle (RAC, Exadata) needs that wiring first: ask Paul before writing it.
+- **The server runs on PostgreSQL, CockroachDB, Oracle or MongoDB**, one per deployment, chosen with
+  `keel.database.backend` (deploy/README.md, "The database"). Oracle and MongoDB were wired on 2026-11-13;
+  their server tests (`OracleBackendTest`, `MongodbBackendTest`) ran on Oracle Free and a one-member replica
+  set, not yet on RAC, Exadata or a real replica set.
+- **The server does not run the stores' self-checks** (`selfCheck`), which the storage design says it does at
+  startup. Check the database's safety settings by hand, and ask Paul before wiring it.
 
 ## CLAUDE.md at work
 
@@ -106,8 +109,9 @@ catalog chart's preStop pause).
 
 The charts run the catalog servers and the worker only. Everything else runs elsewhere [D36]:
 
-- **Database.** PostgreSQL or CockroachDB (see above): a database and a user that may create tables. The first
-  server of a release migrates the schema (Flyway) while older servers keep serving.
+- **Database.** PostgreSQL, CockroachDB, Oracle or MongoDB (see above): a database and a user that may create
+  tables, with the extra rights deploy/README.md lists for Oracle and MongoDB. The first server of a release
+  migrates the schema while older servers keep serving.
 - **Kafka** for audit and change events (`keel.audit.kafka-bootstrap-servers`). A load that vends credentials
   waits for Kafka's acknowledgement.
 - **Object stores** (AWS S3, Ceph or MinIO; PLT-3, PLT-5), with their buckets, named per region (PLT-4), and:
@@ -227,8 +231,8 @@ failed jobs.
 From `build-plan.md`; the open questions are in its section 6.
 
 - Approved artifacts in the curated repository (PLT-6).
-- RAC and Exadata (needs the server's Oracle wiring, above), real IdPs, real object stores, and a DBA review
-  of the self-check thresholds (PLT-2).
+- RAC and Exadata, real IdPs, real object stores, and a DBA review of the self-check thresholds (PLT-2; the
+  server does not run the self-checks yet, above).
 - Bucket naming per region and the replication SLA for the DR runbook (PLT-4, D29).
 - Trusted engines and who attests to them (SEC-2, SEC-5); token exchange and workload identity (SEC-1);
   on-prem MinIO and Ceph versions and their STS support (PLT-3).

@@ -14,15 +14,20 @@ imagePullSecrets: []
 
 # The server's settings, as Spring Boot properties in YAML form: rendered into application.yaml in a ConfigMap.
 # Nothing secret goes here; secrets go in `secrets`. Every keel.* setting is documented on its settings class
-# in catalog-server (StorageSettings, SecuritySettings, AuditSettings, GovernanceSettings, RestSettings,
-# UiSettings). The server refuses to start without a database URL or a trusted issuer.
+# in catalog-server (DatabaseSettings, StorageSettings, SecuritySettings, AuditSettings, GovernanceSettings,
+# RestSettings, UiSettings). The server refuses to start without its database or a trusted issuer.
 config:
   spring:
     datasource:
-      # jdbc:postgresql://<host>:<port>/<database>
+      # jdbc:postgresql://<host>:<port>/<database>, or jdbc:oracle:thin:@//<host>:<port>/<catalog service>.
+      # Unused on MongoDB.
       url: ""
       username: ""
   keel:
+    database:
+      # postgresql (PostgreSQL or CockroachDB), oracle or mongodb; deploy/README.md, "The database". MongoDB's
+      # connection string goes in `secrets`, as keel.database.mongodb.uri.
+      backend: postgresql
     security:
       # Each: issuer, jwks-uri, audiences, algorithms, user-id-claim, groups-claim, client-id-claim.
       issuers: []

@@ -8,7 +8,10 @@ description = "The Spring Boot server: REST routes, config, error mapping, self-
 dependencies {
     api(project(":catalog-core"))
     api(project(":catalog-iceberg"))
+    // One backend per deployment, chosen by keel.database.backend (StoreWiring).
     api(project(":catalog-store-sql"))
+    api(project(":catalog-store-oracle"))
+    api(project(":catalog-store-mongo"))
     api(project(":catalog-objectstore"))
     api(project(":catalog-audit"))
     api(project(":catalog-security"))
@@ -21,6 +24,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
+    testImplementation("org.testcontainers:testcontainers-oracle-free")
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:testcontainers-kafka")
@@ -40,7 +44,7 @@ configurations.consumable("execJar") {
 }
 
 tasks.test {
-    listOf("postgres.image", "keycloak.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
+    listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image").forEach { systemProperty(it, project.property(it)!!) }
     // IcebergImportBoundaryTest and NoKmsBoundaryTest read every module's main sources.
     inputs.files(rootProject.fileTree(rootDir) { include("*/src/main/java/**/*.java") })
         .withPropertyName("mainSources").withPathSensitivity(PathSensitivity.RELATIVE).ignoreEmptyDirectories()

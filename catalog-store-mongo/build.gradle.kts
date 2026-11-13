@@ -4,9 +4,7 @@ plugins {
 
 description = "MongoDB backend."
 
-// Boot 4.1.2 manages 5.8.1; 5.14.0 is current (research_notes/Build plan facts/java_platform.md F3).
-extra["mongodb.version"] = "5.14.0"
-val mongoImage = "mongo:8.0.34"
+// The driver's version (mongodb.version) and the test image are pinned in gradle.properties.
 
 dependencies {
     api(project(":catalog-store-api"))
@@ -19,6 +17,5 @@ dependencies {
 }
 
 tasks.test {
-    systemProperty("mongo.image", mongoImage)
-    systemProperty("toxiproxy.image", project.property("toxiproxy.image")!!)
+    listOf("mongo.image", "toxiproxy.image").forEach { systemProperty(it, project.property(it)!!) }
 }

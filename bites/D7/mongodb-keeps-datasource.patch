@@ -1,0 +1,15 @@
+Breaks: a MongoDB deployment keeps Boot's DataSource, which refuses to start without a JDBC URL.
+Module: catalog-server
+Test: DatabaseSettingsTest#onlyAMongodbDeploymentLeavesOutTheDataSource
+diff --git a/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java b/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java
+index fa3dbcd..e4576eb 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java
++++ b/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java
+@@ -29,7 +29,6 @@ public final class MongodbHasNoDataSource implements EnvironmentPostProcessor {
+             return;
+         }
+         List<String> excluded = new ArrayList<>(binder.bind(EXCLUDE, Bindable.listOf(String.class)).orElse(List.of()));
+-        excluded.add(DATA_SOURCE);
+         environment.getPropertySources().addFirst(new MapPropertySource("keel-mongodb-has-no-datasource",
+                 Map.of(EXCLUDE, String.join(",", excluded))));
+     }
