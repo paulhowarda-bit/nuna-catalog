@@ -47,11 +47,12 @@ final class Backstops {
     /**
      * Every schema this commit adds evolves the table's current schema by the spec's rules. A new required
      * field needs an initial default only when main keeps its rows: a replace that starts main afresh
-     * has no rows to fill, and the reference allows it. Such a replace (CREATE OR REPLACE) may also change a
-     * primitive field's type to one that is not a promotion of it (D11, amended 2026-11-12): main reads none
-     * of the old rows through the new schema, and the reference handler accepts it, keeping field IDs by name
-     * whatever the type. A replace is still refused a primitive turned nested, or the reverse, and an optional
-     * field made required, as before; a change in place, which keeps main's rows, is held to every rule.
+     * has no rows to fill, and the reference allows it. Such a replace (CREATE OR REPLACE) is exempt from
+     * every check on a field the current schema has (D11, amended 2026-11-12 and widened by Paul on
+     * 2026-11-13): its type may change to one that is not a promotion of it, a primitive may turn nested or
+     * the reverse, and an optional field may become required. Main reads none of the old rows through the
+     * new schema, and the reference handler accepts it, keeping field IDs by name whatever the type. A new
+     * field's ID must still be fresh; a change in place, which keeps main's rows, is held to every rule.
      */
     private static Optional<String> schemas(TableMetadata before, TableMetadata after) {
         boolean keepsRows = keepsRows(before, after);
@@ -64,8 +65,11 @@ final class Backstops {
             Map<Integer, Integer> parents = TypeUtil.indexParents(added.asStruct());
             for (Types.NestedField field : TypeUtil.indexById(added.asStruct()).values()) {
                 Types.NestedField old = current.get(field.fieldId());
+                if (old != null && replaced) {
+                    continue;
+                }
                 Optional<String> problem = old != null
-                        ? evolved(old, field, after, replaced)
+                        ? evolved(old, field, after)
                         : added(field, parents.get(field.fieldId()), current, before.lastColumnId(), keepsRows);
                 if (problem.isPresent()) {
                     return problem;
@@ -75,16 +79,14 @@ final class Backstops {
         return Optional.empty();
     }
 
-    /** {@code replaced}: the commit is a replace, which may change a primitive type that is not a promotion. */
-    private static Optional<String> evolved(Types.NestedField old, Types.NestedField field, TableMetadata after,
-                                            boolean replaced) {
+    private static Optional<String> evolved(Types.NestedField old, Types.NestedField field, TableMetadata after) {
         Type from = old.type();
         Type to = field.type();
         if (from.isPrimitiveType() != to.isPrimitiveType() || (!from.isPrimitiveType() && from.typeId() != to.typeId())) {
             return Optional.of("Cannot change field " + field.fieldId() + " (" + field.name() + ") from " + from
                     + " to " + to);
         }
-        if (from.isPrimitiveType() && !replaced && !promotable(from, to.asPrimitiveType(), field.fieldId(), after)) {
+        if (from.isPrimitiveType() && !promotable(from, to.asPrimitiveType(), field.fieldId(), after)) {
             return Optional.of("Cannot change field " + field.fieldId() + " (" + field.name() + ") from " + from
                     + " to " + to + ": not a valid type promotion");
         }

@@ -109,7 +109,7 @@ class BackstopTest {
         }
 
         @Test
-        void aReplaceMayStillNotMakeAnOptionalFieldRequiredNorTurnAPrimitiveIntoAStruct() {
+        void aReplaceMayAlsoMakeAnOptionalFieldRequiredOrTurnAPrimitiveIntoAStruct() {
             String required = replace(ID, "{\"id\": 2, \"name\": \"data\", \"required\": true, \"type\": \"string\"}");
             String nested = replace(ID, """
                     {"id": 2, "name": "data", "required": false,
@@ -117,9 +117,9 @@ class BackstopTest {
 
             assertReferenceAccepts(required);
             assertReferenceAccepts(nested);
-            assertThat(ours(required)).as("only the type-promotion check is waived for a replace")
-                    .isEqualTo(new BadRequest("Cannot make optional field 2 (data) required"));
-            assertThat(((BadRequest) ours(nested)).message()).startsWith("Cannot change field 2 (data) from string to struct");
+            assertThat(ours(required)).as("D11, widened 2026-11-13: a replace is exempt from every evolution check")
+                    .isInstanceOf(NewMetadata.class);
+            assertThat(ours(nested)).isInstanceOf(NewMetadata.class);
         }
 
         @Test
