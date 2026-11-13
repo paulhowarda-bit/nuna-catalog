@@ -12,8 +12,8 @@ import java.util.zip.ZipInputStream;
 
 /**
  * The runnable jar of the previous release ({@code m8.previous-release}, a commit of this repository), built
- * once from a {@code git archive} of that commit into {@code build/m8/previous}, without installing anything.
- * That release still built with Maven, so it is built with the Maven wrapper in its own tree.
+ * once from a {@code git archive} of that commit into {@code build/m8/previous}, without installing anything,
+ * with the Gradle wrapper in its own tree.
  */
 final class PreviousRelease {
 
@@ -36,10 +36,10 @@ final class PreviousRelease {
             unzip(zip, source);
             boolean windows = System.getProperty("os.name").startsWith("Windows");
             List<String> build = windows
-                    ? List.of("cmd", "/c", source.resolve("mvnw.cmd").toAbsolutePath().toString(), "-q", "-B", "package", "-DskipTests", "-pl", "catalog-server", "-am")
-                    : List.of("sh", "mvnw", "-q", "-B", "package", "-DskipTests", "-pl", "catalog-server", "-am");
+                    ? List.of("cmd", "/c", source.resolve("gradlew.bat").toAbsolutePath().toString(), "-q", "--no-daemon", ":catalog-server:bootJar")
+                    : List.of("sh", "gradlew", "-q", "--no-daemon", ":catalog-server:bootJar");
             run(source, home.resolve("build.log"), build);
-            try (var built = Files.list(source.resolve("catalog-server/target"))) {
+            try (var built = Files.list(source.resolve("catalog-server/build/libs"))) {
                 Path exec = built.filter(p -> p.getFileName().toString().endsWith("-exec.jar")).findFirst()
                         .orElseThrow(() -> new IllegalStateException("the previous release built no exec jar"));
                 Files.copy(exec, jar, StandardCopyOption.REPLACE_EXISTING);

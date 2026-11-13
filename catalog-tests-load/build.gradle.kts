@@ -4,9 +4,9 @@ plugins {
 
 description = "M8 hardening gates: load, contention, resilience and SLO runs against running servers. Every test runs overnight only (tagged overnight)."
 
-// The release before this one, for the rolling upgrade: main as M7 landed it. Its servers migrate
-// only the shared steps (V1 to V3); this release adds PostgreSQL's V4.
-val previousRelease = "75df4ff"
+// The release before this one, for the rolling upgrade: main as the heavy pass left it, after the rename
+// to keel and before v1.x's phase 1. Its PostgreSQL schema stops at V4; this release adds V5 to V7.
+val previousRelease = "2b1af36"
 
 // The server under test runs as its own process, from the runnable jar this build just made.
 val serverJar = configurations.dependencyScope("serverJar")

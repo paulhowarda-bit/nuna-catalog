@@ -10,6 +10,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.testcontainers.kafka.KafkaContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -23,6 +24,8 @@ final class Stack implements AutoCloseable {
     static final String CATALOG = "m8";
     static final String WRITERS = "m8-writers";
     static final String OPERATORS = "platform-ops";
+    /** Numbers each stack's bucket: the run's S3 store is shared, and a DR drill must see only its own tables. */
+    private static final AtomicInteger STACKS = new AtomicInteger();
     private static final String PROFILE = "s3";
     private static final String ISSUER = "https://idp.test/m8";
     private static final String AUDIENCE = "keel-catalog";
@@ -41,7 +44,7 @@ final class Stack implements AutoCloseable {
                 .withEnv("KAFKA_HEAP_OPTS", "-Xms384m -Xmx384m");
         kafka.start();
         s3 = TestS3.get();
-        bucket = s3.bucket("warehouse");
+        bucket = s3.bucket("warehouse-" + STACKS.incrementAndGet());
         try {
             idp = new TestIdp(ISSUER, AUDIENCE);
             key = TestIdp.rsaKey("m8");

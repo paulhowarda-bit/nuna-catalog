@@ -906,7 +906,8 @@ class EngineMatrixTest {
      * three specs with the default back at 0 and sort order 1; the tag and the snapshot as of the first commit's
      * time; main fast-forwarded to the branch; one snapshot left after expiry; the upgraded table at v3;
      * next-row-id 6 after three appended rows and three rewritten by the update (first row IDs 0 and 3); the
-     * replaced table's three snapshots, its current one a root; the view's two versions, columns, comment and
+     * replaced table after Spark's retyping replace: four snapshots, one row, id a string, its current snapshot a
+     * root; the view's two versions, columns, comment and
      * Spark SQL; and the statistics file of {@code t_v2}'s current snapshot, one theta sketch per column with its
      * distinct count. PyIceberg 0.12 cannot load a table with a variant column, nor parse Iceberg Java's
      * {@code geometry(OGC:CRS84)} (it expects the CRS quoted).
@@ -925,7 +926,7 @@ class EngineMatrixTest {
         expected.put("pyiceberg cross.variant", "PyIceberg 0.12 has no variant type: Unsupported field type: 'variant'");
         expected.put("pyiceberg cross.geo", "PyIceberg 0.12 parses only a quoted CRS, geometry('...'); Iceberg Java"
                 + " writes geometry(OGC:CRS84): Could not parse geometry(OGC:CRS84) into a GeometryType");
-        expected.put("pyiceberg cross.replace", "3 2 30 root");
+        expected.put("pyiceberg cross.replace", "4 1 string root");
         expected.put("pyiceberg cross.view", "2 2 id,name,note rows with a note note-filter");
         expected.put("pyiceberg cross.stats", "1 current apache-datasketches-theta-v1 id:4,name:4,note:1");
         return expected;

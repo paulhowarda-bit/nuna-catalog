@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -109,12 +110,20 @@ final class ServerProcess implements AutoCloseable {
         return log;
     }
 
+    /**
+     * A free port below the ephemeral ranges (49152 and up on Windows, 32768 and up on Linux): the writers open
+     * many connections, and one of them could take an ephemeral port between this check and the server's bind.
+     */
     private static int freePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        } catch (IOException e) {
-            throw new IllegalStateException(e);
+        for (int attempt = 0; attempt < 100; attempt++) {
+            int port = 20000 + ThreadLocalRandom.current().nextInt(12000);
+            try (ServerSocket socket = new ServerSocket(port)) {
+                return port;
+            } catch (IOException e) {
+                // taken or reserved; try another
+            }
         }
+        throw new IllegalStateException("no free port between 20000 and 31999");
     }
 
     static void pause(Duration duration) {
