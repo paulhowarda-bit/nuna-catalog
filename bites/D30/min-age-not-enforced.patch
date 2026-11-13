@@ -1,0 +1,16 @@
+Breaks: snapshot removal ignores the deployment's minimum snapshot age; only a retention class's minimum holds.
+Module: catalog-core
+Test: RulesTest$SnapshotMinimumAge#aSnapshotYoungerThanTheDeploymentMinimumStays
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java b/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java
+index bab2d2a..9cdfcd4 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java
+@@ -108,7 +108,7 @@ public final class Rules {
+                     || after.snapshotTimestamps().keySet().containsAll(before.snapshotTimestamps().keySet())) {
+                 return Optional.empty();
+             }
+-            Optional<Rejection> deployment = youngestRemoved(change, before, after, deploymentMinimum,
++            Optional<Rejection> deployment = youngestRemoved(change, before, after, Duration.ZERO,
+                     "the deployment's minimum snapshot age");
+             if (deployment.isPresent()) {
+                 return deployment;

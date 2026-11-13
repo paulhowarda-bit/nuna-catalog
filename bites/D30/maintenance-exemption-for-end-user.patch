@@ -1,0 +1,16 @@
+Breaks: a maintenance principal acting for an end user, or an engine naming one, gets the exemption from the row/column rule.
+Module: catalog-security
+Test: AuthorizerTest#aMaintenancePrincipalActingAsItselfIsExemptedOnAFlaggedTableAndNeverForAnEndUser
+diff --git a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+index 4fffc2d..a6878b8 100644
+--- a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+@@ -160,7 +160,7 @@ public final class Authorizer {
+      * not: the maintenance exemption is never an end user's.
+      */
+     public boolean maintenance(Caller caller) {
+-        return caller.endUser().isEmpty() && maintenancePrincipals.contains(caller.principal().id());
++        return maintenancePrincipals.contains(caller.principal().id());
+     }
+ 
+     public Decision decide(Caller caller, Target target, Operation operation) {

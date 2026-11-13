@@ -1,0 +1,18 @@
+Breaks: storage access under the maintenance exemption is given without its audit event.
+Module: catalog-server
+Test: SecurityGateTest#theMaintenanceExemptionIsAuditedAndNeverAnEndUsers
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
+index 6589a69..8c75fb2 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
+@@ -194,8 +194,8 @@ class Guard {
+                     denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+             case Decision.Exempted exempted -> {
+                 try {
+-                    audit.publish(CatalogEvent.create(settings.auditSource(), clock.instant(),
+-                            new MaintenanceExemption(named, operation.name(), request.actor())));
++                    CatalogEvent.create(settings.auditSource(), clock.instant(),
++                            new MaintenanceExemption(named, operation.name(), request.actor()));
+                 } catch (RuntimeException e) {
+                     LOG.warn("no maintenance exemption for {} on {}: its audit failed", operation.name(), named.id(), e);
+                     throw CatalogError.of(503, "ServiceUnavailableException",
