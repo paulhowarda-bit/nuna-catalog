@@ -740,4 +740,24 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - the bites.
 
     Whether Ceph lets a bucket policy refuse its owner a policy change was not checked. The chart was rendered and linted, not installed.
+- **Follow-ups to phases 1 and 2 done 2026-11-13, on PostgreSQL and Silo** (D11, D13, D21, D25, D30; Paul's answers of 2026-11-13 to the three review follow-ups, and his blanket OK, "I give my OK for whatever I need to").
+  - CREATE OR REPLACE (D11), Paul's choice of 2026-11-13: a commit that counts as a replace (`Backstops.replaced`, unchanged) skips every check on a field the current schema has, not only type promotion. An optional field made required, or a primitive made nested, is accepted in a replace, as Iceberg's reference handler accepts it. A new field's ID must still be fresh, and a change in place is refused as before.
+  - Engine matrix: a Spark case, `replace.required`. `t_replace_required` (`id INT`, rows 1 and null) is replaced by `SELECT 1 AS id`. Iceberg's Spark catalog makes every CTAS and RTAS column optional unless `use-nullable-query-schema` is false (true by default, read in the 1.12.0 runtime jar), so the script replaces through `fidstrict`, a second handle on the same catalog with that option off. `EngineMatrixTest` expects `RESULT spark replace.required 2 1 required`. The Spark side ran once in the local Spark image against a Hadoop catalog and printed that line; the matrix itself has not run it.
+  - Delete policies (D21, D25): applied as they are, they now let the worker list and delete beneath its prefixes on every store, so no statement is added by hand.
+    - AWS S3 and Ceph: the bucket policy allows the worker delete beneath its prefixes (before, on Ceph only) and `s3:ListBucket` on the bucket, limited by `s3:prefix` to those prefixes (the whole bucket for a worker of the whole bucket). On AWS that is enough for a worker role in the bucket's own account.
+    - MinIO: `GET …/delete-policies` gives a second user policy per profile, to attach to the worker (`to`), beside the deny for every other user (`except`).
+    - `TestCatalog.protectDeletes` applies the Ceph policy as it comes; its own `WorkerLists` statement is gone.
+  - Docs: the ledger (D11, D13, D21, D30) and this plan carry Paul's answers wherever a line of 2026-11-12/13 waited on him: the revive readings, the replace exemption, the listing, the Ceph bucket owner, the in-memory scan times, and compaction in the matrix. deploy/README.md and catalog-maintenance/README.md drop the step that added the listing by hand. CLAUDE.md's heavy pass names the Ceph leg, as `heavy.sh` runs it.
+  - Tests: `BackstopTest$Schemas#aReplaceMayAlsoMakeAnOptionalFieldRequiredOrTurnAPrimitiveIntoAStruct` (was `aReplaceMayStillNot…`, now asserting acceptance); `DeletePolicyTest` (the listing on each store, a MinIO worker policy over two buckets, each worker's own prefixes in a shared bucket); `MaintenanceRoutesTest#theDeletePoliciesLeaveDeleteToTheWorker` (the second MinIO policy and the listing). `DeletePolicyCephTest` (heavy) now lists as the worker beneath the prefix, and is refused outside it and with no prefix.
+  - Fast build green after merging main (already up to date at 60bef0c): 1,213 tests in 131 classes, 0 failures, 9 min 18 s, in one run. The store modules' and the change feed's tests came from the build cache. No test was added: one was inverted and the others widened.
+  - Bites:
+    - Removed: `D11/replace-waives-every-evolution-check`, which now encodes the wanted behaviour.
+    - Added in `bites/D30/`: `delete-policy-omits-listing` and `worker-lists-whole-bucket`.
+    - Recorded again: `D11/replace-exemption-in-place` and `D11/rollback-counts-as-a-replace` (their context moved two lines); `D30/delete-policy-allows-policy-change` (it no longer applied); `D30/delete-policy-allows-lifecycle`, `D30/maintenance-principal-unchecked` and `D30/delete-policies-open` (offsets).
+    - Run by hand, each failing its named tests: the two D11 bites and the two new ones, one at a time; `delete-policy-allows-policy-change` alone; the other three together. All 200 apply.
+  - Not verified:
+    - `DeletePolicyCephTest` and the worker's tests on Ceph with the folded policy (the heavy pass's Ceph leg), including whether RGW honours the `s3:prefix` condition;
+    - the AWS bucket policy and the MinIO worker policy, which no test applies;
+    - the engine matrix's `replace.required` and `replace.retype` lines (the nightly);
+    - the other bites.
 - **Next:** M9, carried to work.
