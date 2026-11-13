@@ -3,6 +3,8 @@
 - `image/Dockerfile`: the server's container image.
 - `helm/keel-catalog/`: the Helm chart. It runs the catalog servers only. The database, Kafka, the object
   stores and the identity provider run elsewhere [D36], and the values name them.
+- `image/maintenance.Dockerfile` and `helm/keel-maintenance/`: the maintenance worker's image and chart
+  [D30], one release beside each catalog deployment. See catalog-maintenance/README.md.
 - `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
 
 ## The image
@@ -92,7 +94,9 @@ What the chart sets up:
   - `bucket-policy` (AWS S3, Ceph): `aws s3api put-bucket-policy --bucket <bucket> --policy '<policy>'`,
     with `--endpoint-url <endpoint>` for Ceph. It denies delete beneath the profiles' prefixes to every
     principal but the worker, the catalog's own role or user included; on Ceph it also lets the worker delete
-    there, since nothing else grants a Ceph user rights in another user's bucket. A bucket holds one policy,
+    there, since nothing else grants a Ceph user rights in another user's bucket. It does not let the worker
+    list the bucket, which the worker's orphan scans and purges need: on Ceph, add a statement that allows the
+    worker's user `s3:ListBucket` on the bucket (catalog-maintenance/README.md). A bucket holds one policy,
     so merge these statements into any it already has.
   - `user-policy` (MinIO): `mc admin policy create <alias> keel-no-delete <file>`, then
     `mc admin policy attach <alias> keel-no-delete --user <user>` for every user but the worker, the
