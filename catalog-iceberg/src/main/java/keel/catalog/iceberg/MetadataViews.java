@@ -6,6 +6,8 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.iceberg.ImmutableLabels;
+import org.apache.iceberg.Labels;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.rest.credentials.Credential;
@@ -54,33 +56,44 @@ public final class MetadataViews {
      * what makes the reference fixture answer 400 here).
      */
     public String loadTable(String location, String json, boolean refsOnly, Map<String, String> config,
-                            List<StorageCredential> credentials) {
+                            List<StorageCredential> credentials, Map<String, String> labels) {
         TableMetadata metadata = table(location, json, refsOnly);
         return LoadTableResponseParser.toJson(LoadTableResponse.builder()
                 .withTableMetadata(metadata)
                 .addAllConfig(new HashMap<>(config))
                 .addAllCredentials(credentials(credentials))
+                .withLabels(labels(labels))
                 .build());
     }
 
     /** The response to a staged create: the new table's metadata, with no metadata file yet. */
     public static String stagedTable(String metadataJson, Map<String, String> config,
-                                     List<StorageCredential> credentials) {
+                                     List<StorageCredential> credentials, Map<String, String> labels) {
         return LoadTableResponseParser.toJson(LoadTableResponse.builder()
                 .withTableMetadata(TableMetadataParser.fromJson(metadataJson))
                 .addAllConfig(new HashMap<>(config))
                 .addAllCredentials(credentials(credentials))
+                .withLabels(labels(labels))
                 .build());
     }
 
-    /** {@code GET .../views/{view}}, and the create and replace responses. */
-    public String loadView(String location, String json, Map<String, String> config) {
+    /** {@code GET .../views/{view}}, and the create, replace and register responses. */
+    public String loadView(String location, String json, Map<String, String> config, Map<String, String> labels) {
         ViewMetadata metadata = (ViewMetadata) parsed(location, json, false);
         return LoadViewResponseParser.toJson(ImmutableLoadViewResponse.builder()
                 .metadataLocation(location)
                 .metadata(metadata)
                 .config(new HashMap<>(config))
+                .labels(labels(labels))
                 .build());
+    }
+
+    /**
+     * The object labels of a load response (D27): the catalog sends no field labels. The parser leaves
+     * the {@code labels} field out when there are none.
+     */
+    static Labels labels(Map<String, String> objectLabels) {
+        return ImmutableLabels.builder().putAllObjectLabels(objectLabels).build();
     }
 
     public TableStats tableStats(String location, String json) {

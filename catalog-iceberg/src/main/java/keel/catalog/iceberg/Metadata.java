@@ -116,6 +116,17 @@ public final class Metadata {
     }
 
     /**
+     * {@code POST .../register-view}: an existing view metadata file, taken as it is. Where it may live is
+     * the commit rules' concern (D28), as for a registered table.
+     */
+    public static Outcome registerView(String metadataJson, String metadataLocation) {
+        return guarded(() -> {
+            ViewMetadata metadata = ViewMetadataParser.fromJson(metadataLocation, metadataJson);
+            return new NewMetadata(metadataJson, null, facts(metadata));
+        });
+    }
+
+    /**
      * {@code POST .../tables/{table}}: an update-table request. A request whose requirements include
      * {@code assert-create} creates the table (a staged create being committed).
      *

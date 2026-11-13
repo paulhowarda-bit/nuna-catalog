@@ -21,6 +21,8 @@ import org.apache.iceberg.rest.requests.CreateTableRequest;
 import org.apache.iceberg.rest.requests.CreateViewRequest;
 import org.apache.iceberg.rest.requests.RegisterTableRequest;
 import org.apache.iceberg.rest.requests.RegisterTableRequestParser;
+import org.apache.iceberg.rest.requests.RegisterViewRequest;
+import org.apache.iceberg.rest.requests.RegisterViewRequestParser;
 import org.apache.iceberg.rest.requests.RenameTableRequest;
 import org.apache.iceberg.rest.requests.ReportMetricsRequest;
 import org.apache.iceberg.rest.requests.ReportMetricsRequestParser;
@@ -136,6 +138,12 @@ public final class RestRequest {
     public static Registration register(String json) {
         RegisterTableRequest request = guarded(() -> RegisterTableRequestParser.fromJson(json));
         return new Registration(request.name(), request.metadataLocation(), request.overwrite());
+    }
+
+    /** {@code POST .../register-view}: the name and metadata file of a view that already exists. */
+    public static Registration registerView(String json) {
+        RegisterViewRequest request = guarded(() -> RegisterViewRequestParser.fromJson(json));
+        return new Registration(request.name(), request.metadataLocation(), false);
     }
 
     public static NewTable createTable(String json) {

@@ -14,7 +14,7 @@ import java.util.List;
  */
 record GoldenCase(String name, Kind kind, String base, Class<? extends Outcome> expected, String uuid) {
 
-    enum Kind { CREATE_TABLE, COMMIT_TABLE, CREATE_VIEW, COMMIT_VIEW }
+    enum Kind { CREATE_TABLE, COMMIT_TABLE, CREATE_VIEW, COMMIT_VIEW, REGISTER_VIEW }
 
     static final String V1_UUID = "a1000000-0000-4000-8000-000000000001";
     static final String V2_UUID = "a2000000-0000-4000-8000-000000000002";
@@ -63,7 +63,9 @@ record GoldenCase(String name, Kind kind, String base, Class<? extends Outcome> 
             commitView("view-replace", "view-create", NewMetadata.class),
             commitView("view-rollback", "view-replace", NewMetadata.class),
             commitView("view-no-op", "view-create", NoChange.class),
-            commitView("fail-view-uuid", "view-create", RequirementFailed.class));
+            commitView("fail-view-uuid", "view-create", RequirementFailed.class),
+            // A registered view's metadata is its file as it is: the base, byte for byte (D13).
+            new GoldenCase("view-register", Kind.REGISTER_VIEW, "view-replace", NewMetadata.class, null));
 
     static GoldenCase named(String name) {
         return ALL.stream().filter(c -> c.name.equals(name)).findFirst().orElseThrow();
@@ -74,7 +76,7 @@ record GoldenCase(String name, Kind kind, String base, Class<? extends Outcome> 
     }
 
     boolean isView() {
-        return kind == Kind.CREATE_VIEW || kind == Kind.COMMIT_VIEW;
+        return kind == Kind.CREATE_VIEW || kind == Kind.COMMIT_VIEW || kind == Kind.REGISTER_VIEW;
     }
 
     @Override
