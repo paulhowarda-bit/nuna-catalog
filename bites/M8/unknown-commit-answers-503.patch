@@ -3,13 +3,13 @@ Module: catalog-core
 Test: CommitEngineTest$Idempotency#outageWhileSettlingStaysUnknown
 
 diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-index b5d6935..9ce29ee 100644
+index 49ae41b..493d5e0 100644
 --- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-@@ -544,6 +544,8 @@ public final class CommitEngine {
+@@ -728,6 +728,8 @@ public final class CommitEngine {
          CommitLookup lookup;
          try {
-             lookup = store.findCommit(request.commitId(), object.mainKey());
+             lookup = store.findCommit(request.commitId(), anyKey);
 +        } catch (StoreUnavailableException e) {
 +            return Optional.of(new Unavailable("Catalog store unavailable: " + e.getMessage()));
          } catch (StoreException e) {
