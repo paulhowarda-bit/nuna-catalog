@@ -20,8 +20,9 @@ import org.junit.jupiter.api.Test;
 /**
  * A rolling upgrade across a schema change (M8). Two servers of the previous release, whose schema stops at V3,
  * take traffic; servers of this release replace them one at a time, the first of them migrating PostgreSQL
- * to V4 (the journal becomes partitioned) while previous-release servers still commit. Each server leaves
- * only after the balancer has drained it. No request fails and no commit is lost or doubled.
+ * to V5 (V4: the journal becomes partitioned; V5: objects can be unregistered) while previous-release
+ * servers still commit. Each server leaves only after the balancer has drained it. No request fails and
+ * no commit is lost or doubled.
  */
 @Tag("overnight")
 class RollingUpgradeTest {
@@ -83,7 +84,7 @@ class RollingUpgradeTest {
             beforeUpgrade = ledger.acknowledged.size();
 
             new1 = stack.server("upgrade-new-1");
-            assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("4");
+            assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("5");
             catalog.add(new1.uri());
             ServerProcess.pause(Duration.ofSeconds(5));
             catalog.drain(old1.uri());

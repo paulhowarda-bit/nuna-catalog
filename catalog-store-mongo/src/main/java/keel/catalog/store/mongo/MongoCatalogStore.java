@@ -367,6 +367,17 @@ public final class MongoCatalogStore implements CatalogStore {
     }
 
     @Override
+    public WriteResult unregisterObject(UUID objectId, Pointer expected, Change change) {
+        return objects.unregister(objectId, expected, change);
+    }
+
+    @Override
+    public WriteResult reviveObject(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name,
+                                    CommitBatch batch) {
+        return objects.revive(objectId, from, namespaceId, name, batch);
+    }
+
+    @Override
     public Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page) {
         return objects.listPurgeEligible(now, page);
     }

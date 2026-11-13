@@ -7,12 +7,14 @@ import static keel.catalog.store.sql.Jdbc.update;
 
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.Change;
+import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.Name;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.Page;
 import keel.catalog.store.PageRequest;
 import keel.catalog.store.PageToken;
+import keel.catalog.store.Pointer;
 import keel.catalog.store.StoreException;
 import keel.catalog.store.WriteResult;
 import java.sql.Connection;
@@ -118,6 +120,56 @@ final class SqlObjects {
                     change.at(), purgeAfter, objectId);
             return WriteResult.APPLIED;
         });
+    }
+
+    /**
+     * Locks the object's pointers, as a commit locks them, then the object: a commit either landed
+     * before this, and the main pointer is not {@code expected}, or waits and then finds the object
+     * unregistered. The holds and DR freezes are checked under the object's lock, as a drop checks holds.
+     */
+    WriteResult unregister(UUID objectId, Pointer expected, Change change) {
+        return transactions.change(change, "object unregister", connection -> {
+            Optional<Pointers.Locked> main = Pointers.lockObject(connection, objectId);
+            Optional<Held> locked = lockForRetention(connection, objectId, CatalogObject.State.ACTIVE);
+            if (locked.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            if (main.isEmpty() || !main.get().is(expected)) {
+                return new WriteResult.VersionMismatch(main.map(Pointers.Locked::version).orElse(0L));
+            }
+            if (Guards.held(connection, objectId, locked.get().catalogId(), locked.get().path())) {
+                return new WriteResult.Refused(WriteResult.Reason.HELD);
+            }
+            if (Guards.frozen(connection, objectId, locked.get().catalogId(), locked.get().path())) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            update(connection, "UPDATE catalog_object SET state = 'UNREGISTERED', dropped_at = ? WHERE id = ?",
+                    change.at(), objectId);
+            return WriteResult.APPLIED;
+        });
+    }
+
+    /**
+     * Locks the batch's pointers, then the object, as unregister does; puts the object at the name as
+     * undrop does, and writes the batch, all in the batch's transaction.
+     */
+    WriteResult revive(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch) {
+        return transactions.write(batch.commitId(), "object revive", connection -> {
+            Optional<CommitResult.Conflict> conflict = Pointers.lock(connection, batch);
+            if (conflict.isPresent()) {
+                return new WriteResult.VersionMismatch(conflict.get().actual().map(Pointer::version).orElse(0L));
+            }
+            Optional<UUID> catalogId = lock(connection, objectId, from);
+            if (catalogId.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            WriteResult placed = place(connection, objectId, catalogId.get(), namespaceId, name,
+                    ", state = 'ACTIVE', dropped_at = NULL, purge_after = NULL");
+            if (placed.equals(WriteResult.APPLIED)) {
+                Pointers.record(connection, batch);
+            }
+            return placed;
+        }, WriteResult.APPLIED::equals);
     }
 
     WriteResult undrop(UUID objectId, UUID namespaceId, Name name, Change change) {

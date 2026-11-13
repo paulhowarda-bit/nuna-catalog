@@ -46,6 +46,8 @@ public sealed interface WriteResult {
         /** The object's purge-after time has not come (D25). */
         NOT_DUE,
         /** Another claimant holds the idempotency key or the outbox relay lease. */
-        NOT_HOLDER
+        NOT_HOLDER,
+        /** A DR freeze on the record or one of its ancestors forbids it. */
+        FROZEN
     }
 }

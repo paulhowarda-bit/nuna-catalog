@@ -2,6 +2,7 @@ package keel.catalog.store.sql;
 
 import static keel.catalog.store.sql.Jdbc.first;
 
+import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Securable;
 import keel.catalog.store.StoreException;
 import keel.catalog.store.WriteResult;
@@ -50,6 +51,15 @@ final class Guards {
         targets.add(catalogId);
         return Jdbc.exists(connection, "SELECT 1 FROM legal_hold WHERE target_id = ANY(?)",
                 (Object) targets.toArray(UUID[]::new));
+    }
+
+    /** Whether a DR freeze is set on the record itself, any namespace in {@code path}, or its catalog. */
+    static boolean frozen(Connection connection, UUID id, UUID catalogId, List<UUID> path) throws SQLException {
+        List<UUID> targets = new ArrayList<>(path);
+        targets.add(id);
+        targets.add(catalogId);
+        return Jdbc.exists(connection, "SELECT 1 FROM governance_attribute WHERE kind = ? AND target_id = ANY(?)",
+                GovernanceAttribute.Kind.DR_FREEZE.name(), targets.toArray(UUID[]::new));
     }
 
     /** The holder of a name a write just failed to take; it committed, since the write waited for it. */

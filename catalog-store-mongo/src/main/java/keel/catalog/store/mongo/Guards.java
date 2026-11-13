@@ -3,12 +3,14 @@ package keel.catalog.store.mongo;
 import static keel.catalog.store.mongo.Docs.byId;
 import static keel.catalog.store.mongo.Docs.in;
 import static keel.catalog.store.mongo.Docs.uuid;
+import static keel.catalog.store.mongo.MongoCatalogStore.ATTRIBUTE;
 import static keel.catalog.store.mongo.MongoCatalogStore.CATALOG;
 import static keel.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
 
 import keel.catalog.store.CatalogObject;
+import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Securable;
 import keel.catalog.store.WriteResult;
 import java.util.ArrayList;
@@ -38,8 +40,7 @@ final class Guards {
         BsonDocument filter = byId(uuid(securable.id()));
         if (securable.kind() == Securable.Kind.TABLE || securable.kind() == Securable.Kind.VIEW) {
             filter.append("kind", new BsonString(securable.kind().name()))
-                    .append("state", in(List.of(new BsonString(CatalogObject.State.ACTIVE.name()),
-                            new BsonString(CatalogObject.State.DROPPED.name()))));
+                    .append("state", new BsonDocument("$ne", new BsonString(CatalogObject.State.PURGED.name())));
         }
         return tx.find(collection(securable.kind()), filter);
     }
@@ -59,6 +60,16 @@ final class Guards {
             case NAMESPACE -> WriteResult.Subject.NAMESPACE;
             case TABLE, VIEW -> WriteResult.Subject.OBJECT;
         });
+    }
+
+    /** Whether a DR freeze is set on the record, on any namespace above it, or on its catalog. */
+    static boolean frozen(Tx tx, UUID id, UUID catalogId, List<UUID> path) {
+        List<BsonValue> targets = new ArrayList<>();
+        path.forEach(namespace -> targets.add(uuid(namespace)));
+        targets.add(uuid(id));
+        targets.add(uuid(catalogId));
+        return tx.exists(ATTRIBUTE, new BsonDocument("targetId", in(targets))
+                .append("kind", new BsonString(GovernanceAttribute.Kind.DR_FREEZE.name())));
     }
 
     /** Whether a legal hold sits on the record, on any namespace above it, or on its catalog. */
