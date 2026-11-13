@@ -3,10 +3,10 @@ Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$CatalogObjects#unregisterRefusals
 
 diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
-index c3394da..b5dd32e 100644
+index 93f8d6e..e4a2bfa 100644
 --- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
 +++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
-@@ -140,7 +140,7 @@ final class SqlObjects {
+@@ -141,7 +141,7 @@ final class SqlObjects {
              if (Guards.held(connection, objectId, locked.get().catalogId(), locked.get().path())) {
                  return new WriteResult.Refused(WriteResult.Reason.HELD);
              }
@@ -14,4 +14,4 @@ index c3394da..b5dd32e 100644
 +            if (false && Guards.frozen(connection, objectId, locked.get().catalogId(), locked.get().path())) {
                  return new WriteResult.Refused(WriteResult.Reason.FROZEN);
              }
-             update(connection, "UPDATE catalog_object SET state = 'UNREGISTERED', dropped_at = ? WHERE id = ?",
+             if (Guards.flagged(connection, objectId, locked.get().catalogId(), locked.get().path())) {

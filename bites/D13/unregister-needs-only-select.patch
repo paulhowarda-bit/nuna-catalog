@@ -1,6 +1,6 @@
 Breaks: unregister asks for select instead of modify.
 Module: catalog-server
-Test: SecurityGateTest#unregisterNeedsModifyAndRegisteringADroppedTableNeedsTheUndropRight
+Test: SecurityGateTest#unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace
 
 diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
 index 056e012..eec46f5 100644

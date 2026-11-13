@@ -1,0 +1,16 @@
+Breaks: register-view asks nothing, so any caller registers views in any namespace.
+Module: catalog-server
+Test: SecurityGateTest#registerViewNeedsCreateAndADroppedViewComesBackOnlyInItsOwnNamespace
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/ViewRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/ViewRoutes.java
+index 8d0c044..c378b86 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/ViewRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/ViewRoutes.java
+@@ -143,7 +143,6 @@ class ViewRoutes {
+         RestRequest.Registration registration = RestRequest.registerView(json);
+         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+         RequestContext request = RequestContext.of(http, callers);
+-        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_VIEW);
+         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
+                 .registerView(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
+                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));

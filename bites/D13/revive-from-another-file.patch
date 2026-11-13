@@ -1,0 +1,17 @@
+Breaks: a register brings a table back from any file with its UUID, such as an older one, skipping the rules a commit is held to.
+Module: catalog-core
+Test: RegisteringTest$Reviving#onlyTheFileItLeftAt
+
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+index de49253..3ae7199 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+@@ -559,7 +559,7 @@ public final class CommitEngine {
+         for (int attempt = 1; ; attempt++) {
+             Pointer base = store.readPointer(holder.mainKey())
+                     .orElseThrow(() -> new IllegalStateException("object " + holder.id() + " has no pointer"));
+-            if (!base.metadataLocation().equals(file.location())) {
++            if (false && !base.metadataLocation().equals(file.location())) {
+                 return new Failure(409, "AlreadyExistsException", what + " " + holder.id() + " is brought back only"
+                         + " by the metadata file it was " + holder.state().name().toLowerCase(java.util.Locale.ROOT)
+                         + " at, not " + file.location());

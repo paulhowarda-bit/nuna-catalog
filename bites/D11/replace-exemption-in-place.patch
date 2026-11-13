@@ -3,15 +3,15 @@ Module: catalog-iceberg
 Test: BackstopTest$Schemas#theSameRetypeInPlaceIsRefused
 
 diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
-index 5568f13..5693324 100644
+index 4c6c89a..7ed1808 100644
 --- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
 +++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
-@@ -54,7 +54,7 @@ final class Backstops {
+@@ -121,7 +121,7 @@ final class Backstops {
       */
-     private static Optional<String> schemas(TableMetadata before, TableMetadata after) {
-         boolean keepsRows = keepsRows(before, after);
--        boolean replaced = before.currentSnapshot() != null && !keepsRows;
-+        boolean replaced = before.currentSnapshot() != null;
-         Map<Integer, Types.NestedField> current = TypeUtil.indexById(before.schema().asStruct());
-         for (Schema added : after.schemas()) {
-             if (before.schemasById().containsKey(added.schemaId())) {
+     private static boolean replaced(TableMetadata before, TableMetadata after, boolean keepsRows) {
+         Snapshot main = after.currentSnapshot();
+-        return !keepsRows && (main == null ? before.currentSnapshot() != null : before.snapshot(main.snapshotId()) == null);
++        return true;
+     }
+ 
+     /**

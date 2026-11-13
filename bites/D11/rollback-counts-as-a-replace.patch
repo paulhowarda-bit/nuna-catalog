@@ -1,0 +1,17 @@
+Breaks: pointing main back at a snapshot the table had counts as a replace, so a retype in the same commit reads that snapshot's rows through a type they were not written in.
+Module: catalog-iceberg
+Test: BackstopTest$Schemas#aRollbackOfMainThatAlsoRetypesIsRefused
+
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
+index 4c6c89a..4585451 100644
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
+@@ -121,7 +121,7 @@ final class Backstops {
+      */
+     private static boolean replaced(TableMetadata before, TableMetadata after, boolean keepsRows) {
+         Snapshot main = after.currentSnapshot();
+-        return !keepsRows && (main == null ? before.currentSnapshot() != null : before.snapshot(main.snapshotId()) == null);
++        return !keepsRows && (main == null ? before.currentSnapshot() != null : true);
+     }
+ 
+     /**

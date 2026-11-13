@@ -3,10 +3,10 @@ Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#unregisterRefusals
 
 diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
-index 8ab4ab5..dd126ff 100644
+index c5c88d0..c5f720f 100644
 --- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
 +++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
-@@ -148,7 +148,7 @@ final class OracleObjects {
+@@ -149,7 +149,7 @@ final class OracleObjects {
              if (Guards.held(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
                  return new WriteResult.Refused(WriteResult.Reason.HELD);
              }
@@ -14,4 +14,4 @@ index 8ab4ab5..dd126ff 100644
 +            if (false && Guards.frozen(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
                  return new WriteResult.Refused(WriteResult.Reason.FROZEN);
              }
-             update(connection, "UPDATE catalog_object SET state = 'UNREGISTERED', dropped_at = ? WHERE id = ?",
+             if (Guards.flagged(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {

@@ -1,0 +1,19 @@
+Breaks: unregister ignores a main pointer moved since it was read, so it applies at the old metadata, and re-registering the file it names loses the later commit from main.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+index 1a0b677..3c39cee 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+@@ -163,8 +163,8 @@ final class MongoObjects {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+             Optional<BsonDocument> main = tx.find(POINTER, Docs.keyFilter(new PointerKey(objectId, PointerKey.MAIN)));
+-            if (main.isEmpty() || main.get().getInt64("version").getValue() != expected.version()
+-                    || !main.get().getString("metadataLocation").getValue().equals(expected.metadataLocation())) {
++            if (false && (main.isEmpty() || main.get().getInt64("version").getValue() != expected.version()
++                    || !main.get().getString("metadataLocation").getValue().equals(expected.metadataLocation()))) {
+                 return new WriteResult.VersionMismatch(main.map(p -> p.getInt64("version").getValue()).orElse(0L));
+             }
+             if (held(tx, object.get())) {

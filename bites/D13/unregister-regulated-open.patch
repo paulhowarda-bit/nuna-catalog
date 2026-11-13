@@ -1,6 +1,6 @@
 Breaks: a table in a regulated area can be unregistered.
 Module: catalog-server
-Test: SecurityGateTest#unregisterNeedsModifyAndRegisteringADroppedTableNeedsTheUndropRight
+Test: SecurityGateTest#unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace
 
 diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
 index 12ff24f..e046158 100644

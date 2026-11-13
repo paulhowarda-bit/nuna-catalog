@@ -1,0 +1,18 @@
+Breaks: the engine unregisters whatever table holds the name, so one that took it after the route checked another, or found none, is unregistered unchecked.
+Module: catalog-core
+Test: RegisteringTest$Unregistering#onlyTheAuthorizedTable
+
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+index de49253..9579c23 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+@@ -617,8 +617,7 @@ public final class CommitEngine {
+     private CommitReply unregister(Request request) {
+         Optional<CatalogObject> found = store.findObject(request.name().namespaceId(),
+                 request.name().name().normalized());
+-        if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE
+-                || !request.authorized().equals(Optional.of(found.get().id()))) {
++        if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE) {
+             return noSuch(request);
+         }
+         CatalogObject object = found.get();
