@@ -2,15 +2,15 @@ Breaks: the delete policies leave the bucket policy open to change, so a princip
 Module: catalog-objectstore
 Test: DeletePolicyTest#aws+minio
 diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
-index ecfaabd..180d477 100644
+index 00c2047..68ccda3 100644
 --- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
 +++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
-@@ -32,7 +32,7 @@ public final class DeletePolicy {
+@@ -36,7 +36,7 @@ public final class DeletePolicy {
       * both; on Ceph the bucket's owner may, so the catalog's user must not own the bucket. On MinIO a bucket policy
       * opens a bucket to anonymous requests, deletes included.
       */
 -    static final List<String> BUCKET_POLICY = List.of("s3:PutBucketPolicy", "s3:DeleteBucketPolicy");
 +    static final List<String> BUCKET_POLICY = List.of();
-     private static final String DELETES_JSON = json(DELETES);
-     /** IAM's characters for user and role names and ARNs; MinIO's user names fit in them too. */
-     private static final Pattern PRINCIPAL = Pattern.compile("[A-Za-z0-9+=,.@_:/-]+");
+     /**
+      * Allowed to the worker, on the bucket: listing it, which the worker does with its own identity to find the
+      * files beneath a table's location. A condition on {@code s3:prefix} keeps it to the worker's prefixes.

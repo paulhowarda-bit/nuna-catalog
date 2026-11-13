@@ -2,8 +2,6 @@ package keel.maintenance;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -211,24 +209,18 @@ final class TestCatalog {
     }
 
     /**
-     * On Ceph, the delete policy an operator applies (D30): beneath {@code tables/} only the worker's own user
-     * deletes. The worker's user also gets the listing it needs; it reads files through vended credentials. Silo
-     * enforces no bucket policy, and the AWS run's identity is the worker's.
+     * On Ceph, the delete policy an operator applies (D30), as it is: beneath {@code tables/} only the worker's own
+     * user deletes, and it lists there too; it reads files through vended credentials. Silo enforces no bucket
+     * policy, and the AWS run's identity is the worker's.
      */
     private void protectDeletes() {
         if (s3.kind != TestS3.Kind.CEPH) {
             return;
         }
-        String principal = s3.maintenancePrincipal();
-        ObjectNode policy = (ObjectNode) read(DeletePolicy.bucketPolicy(StoreKind.CEPH, TestS3.REGION, bucket,
-                List.of(new DeletePolicy.Worker(principal, List.of(ObjectLocation.parse("s3://" + bucket + "/tables"))))));
-        ObjectNode list = ((ArrayNode) policy.get("Statement")).addObject().put("Sid", "WorkerLists")
-                .put("Effect", "Allow");
-        list.putObject("Principal").putArray("AWS").add(principal);
-        list.putArray("Action").add("s3:ListBucket");
-        list.putArray("Resource").add("arn:aws:s3:::" + bucket);
+        String policy = DeletePolicy.bucketPolicy(StoreKind.CEPH, TestS3.REGION, bucket, List.of(new DeletePolicy.Worker(
+                s3.maintenancePrincipal(), List.of(ObjectLocation.parse("s3://" + bucket + "/tables")))));
         try (S3Client client = s3.client()) {
-            client.putBucketPolicy(r -> r.bucket(bucket).policy(policy.toString()));
+            client.putBucketPolicy(r -> r.bucket(bucket).policy(policy));
         }
     }
 

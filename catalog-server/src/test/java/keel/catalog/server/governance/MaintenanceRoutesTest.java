@@ -167,7 +167,7 @@ class MaintenanceRoutesTest {
         List<Map<String, Object>> policies = JsonPath.read(body, "$.policies");
 
         assertThat(JsonPath.<List<String>>read(body, "$.unprotected")).isEmpty();
-        assertThat(policies).hasSize(1);
+        assertThat(policies).hasSize(s3.kind == TestS3.Kind.SILO ? 2 : 1);
         Map<String, Object> policy = policies.get(0);
         assertThat(policy.get("profiles")).isEqualTo(List.of(S3ForTests.PROFILE));
         assertThat(policy.get("endpoint")).isEqualTo(s3.endpoint.toString());
@@ -176,14 +176,25 @@ class MaintenanceRoutesTest {
         assertThat(JsonPath.<List<String>>read(text, "$.Statement[0].Action")).contains("s3:DeleteObject");
         assertThat(JsonPath.<List<String>>read(text, "$.Statement[0].Resource"))
                 .containsExactly("arn:aws:s3:::" + S3ForTests.bucket() + "/tables/*");
+        String workers = text;
         if (s3.kind == TestS3.Kind.SILO) {
             assertThat(policy.get("apply-as")).isEqualTo("user-policy");
             assertThat(policy.get("except")).isEqualTo(s3.maintenancePrincipal());
+            Map<String, Object> worker = policies.get(1);
+            assertThat(worker.get("apply-as")).isEqualTo("user-policy");
+            assertThat(worker.get("profiles")).isEqualTo(List.of(S3ForTests.PROFILE));
+            assertThat(worker.get("to")).isEqualTo(s3.maintenancePrincipal());
+            workers = (String) worker.get("policy");
         } else {
             assertThat(policy.get("apply-as")).isEqualTo("bucket-policy");
             assertThat(policy.get("bucket")).isEqualTo(S3ForTests.bucket());
             assertThat(text).contains(s3.maintenancePrincipal());
         }
+        assertThat(JsonPath.<List<String>>read(workers, "$.Statement[?(@.Effect == 'Allow')].Action[*]"))
+                .as("the worker may delete and list beneath the prefix, with nothing added by hand")
+                .contains("s3:DeleteObject", "s3:ListBucket");
+        assertThat(JsonPath.<List<List<String>>>read(workers, "$.Statement[?(@.Action[0] == 's3:ListBucket')]"
+                + ".Condition.StringLike['s3:prefix']")).containsExactly(List.of("tables/*"));
     }
 
     private HttpResponse<String> record(String id, String... locations) {

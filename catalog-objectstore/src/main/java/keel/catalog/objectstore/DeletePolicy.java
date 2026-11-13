@@ -1,7 +1,9 @@
 package keel.catalog.objectstore;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -11,8 +13,10 @@ import java.util.stream.Collectors;
  * credentials never carry delete ({@link Access}); these policies take it from every other principal the store
  * knows as well, the catalog's own role or user included, so neither a vended session nor the catalog's own key
  * can delete, and with it the bucket settings that would delete for them or drop the deny ({@link #LIFECYCLE},
- * {@link #BUCKET_POLICY}). The catalog never applies them, since its own credentials would then need the right to change them
- * back: an operator applies them once, from {@code GET /management/v1/maintenance/delete-policies}.
+ * {@link #BUCKET_POLICY}). They also give the worker what it needs beneath its prefixes, delete and the listing
+ * its orphan scans and purges make ({@link #LISTING}), so they are all an operator applies. The catalog never
+ * applies them, since its own credentials would then need the right to change them back: an operator applies
+ * them once, from {@code GET /management/v1/maintenance/delete-policies}.
  *
  * <p>Locations come in as canonical {@link ObjectLocation}s and principals pass {@link #requirePrincipal}, so
  * nothing in a policy needs JSON escaping or reads as a wildcard.
@@ -33,6 +37,11 @@ public final class DeletePolicy {
      * opens a bucket to anonymous requests, deletes included.
      */
     static final List<String> BUCKET_POLICY = List.of("s3:PutBucketPolicy", "s3:DeleteBucketPolicy");
+    /**
+     * Allowed to the worker, on the bucket: listing it, which the worker does with its own identity to find the
+     * files beneath a table's location. A condition on {@code s3:prefix} keeps it to the worker's prefixes.
+     */
+    static final List<String> LISTING = List.of("s3:ListBucket");
     private static final String DELETES_JSON = json(DELETES);
     /** IAM's characters for user and role names and ARNs; MinIO's user names fit in them too. */
     private static final Pattern PRINCIPAL = Pattern.compile("[A-Za-z0-9+=,.@_:/-]+");
@@ -74,8 +83,9 @@ public final class DeletePolicy {
     /**
      * The bucket policy for {@code bucket} on AWS S3 or Ceph RGW: beneath each worker's prefixes, every principal
      * but that worker is denied delete. AWS matches {@code aws:PrincipalArn}, which for a role session is the role,
-     * so the worker may be a role. RGW names the worker in {@code NotPrincipal} instead, and also allows it to
-     * delete there, since a Ceph user has no rights in another user's bucket but what the bucket grants. On the
+     * so the worker may be a role. RGW names the worker in {@code NotPrincipal} instead. Each worker is allowed to
+     * delete beneath its prefixes and to list the bucket there, since a Ceph user has no rights in another user's
+     * bucket but what the bucket grants, and on AWS a principal of the bucket's account needs nothing more. On the
      * bucket itself every principal but the workers is denied a lifecycle rule, and on AWS also a new or deleted
      * bucket policy (on Ceph the catalog's user must not own the bucket instead). Nothing else is allowed or denied:
      * every other right still comes from where it came from before.
@@ -87,25 +97,27 @@ public final class DeletePolicy {
             throw new IllegalArgumentException("MinIO does not enforce a bucket policy on signed requests;"
                     + " use a user policy");
         }
+        String bucketArn = "[\"arn:" + SessionPolicy.partition(region) + ":s3:::" + bucket + "\"]";
         List<String> statements = new ArrayList<>();
         for (int i = 0; i < workers.size(); i++) {
             Worker worker = workers.get(i);
             requirePrincipal(kind, worker.principal());
             String resources = resources(SessionPolicy.partition(region), bucket, worker.prefixes());
+            String principal = "{\"AWS\":[\"" + worker.principal() + "\"]}";
             if (kind == StoreKind.S3) {
                 statements.add("{\"Sid\":\"KeelOnlyTheWorkerDeletes" + i + "\",\"Effect\":\"Deny\",\"Principal\":\"*\","
                         + "\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources + ","
                         + "\"Condition\":{\"ArnNotEquals\":{\"aws:PrincipalArn\":\"" + worker.principal() + "\"}}}");
             } else {
-                String principal = "{\"AWS\":[\"" + worker.principal() + "\"]}";
                 statements.add("{\"Sid\":\"KeelOnlyTheWorkerDeletes" + i + "\",\"Effect\":\"Deny\",\"NotPrincipal\":"
                         + principal + ",\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources + "}");
-                statements.add("{\"Sid\":\"KeelTheWorkerDeletes" + i + "\",\"Effect\":\"Allow\",\"Principal\":"
-                        + principal + ",\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources + "}");
             }
+            statements.add("{\"Sid\":\"KeelTheWorkerDeletes" + i + "\",\"Effect\":\"Allow\",\"Principal\":"
+                    + principal + ",\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources + "}");
+            statements.add(listing("KeelTheWorkerLists" + i, "\"Principal\":" + principal + ",", bucketArn,
+                    worker.prefixes()));
         }
         String principals = json(workers.stream().map(Worker::principal).distinct().toList());
-        String bucketArn = "[\"arn:" + SessionPolicy.partition(region) + ":s3:::" + bucket + "\"]";
         if (kind == StoreKind.S3) {
             List<String> settings = new ArrayList<>(LIFECYCLE);
             settings.addAll(BUCKET_POLICY);
@@ -124,7 +136,7 @@ public final class DeletePolicy {
      * on 2026-11-12), the deny goes into a user policy instead: attached to every user but the worker, the
      * catalog's own included, with a deny of lifecycle rules and bucket policies on each prefix's bucket. The
      * sessions the catalog vends derive from its user and keep the deny. The root user ignores every policy, so the
-     * catalog must not run as root.
+     * catalog must not run as root. The worker gets {@link #workerPolicy} instead.
      */
     public static String userPolicy(List<ObjectLocation> prefixes) {
         List<String> settings = new ArrayList<>(LIFECYCLE);
@@ -134,6 +146,38 @@ public final class DeletePolicy {
                 + "\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources("aws", null, prefixes) + "},"
                 + "{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\",\"Action\":" + json(settings)
                 + ",\"Resource\":" + buckets + "}]}";
+    }
+
+    /**
+     * On MinIO, the user policy to attach to the worker, whose user has no rights but what its policies give: delete
+     * beneath the prefixes, and listing each prefix's bucket there.
+     */
+    public static String workerPolicy(List<ObjectLocation> prefixes) {
+        List<String> statements = new ArrayList<>();
+        statements.add("{\"Sid\":\"KeelTheWorkerDeletes\",\"Effect\":\"Allow\",\"Action\":" + DELETES_JSON
+                + ",\"Resource\":" + resources("aws", null, prefixes) + "}");
+        Map<String, List<ObjectLocation>> byBucket = prefixes.stream()
+                .collect(Collectors.groupingBy(ObjectLocation::bucket, LinkedHashMap::new, Collectors.toList()));
+        int i = 0;
+        for (Map.Entry<String, List<ObjectLocation>> bucket : byBucket.entrySet()) {
+            statements.add(listing("KeelTheWorkerLists" + i++, "", "[\"arn:aws:s3:::" + bucket.getKey() + "\"]",
+                    bucket.getValue()));
+        }
+        return "{\"Version\":\"2012-10-17\",\"Statement\":[" + String.join(",", statements) + "]}";
+    }
+
+    /**
+     * Allows listing {@code bucketArn} beneath {@code prefixes} only ({@code s3:prefix}), or all of it when one of
+     * them is the whole bucket. {@code principal} is the statement's Principal element and a comma, or empty.
+     */
+    private static String listing(String sid, String principal, String bucketArn, List<ObjectLocation> prefixes) {
+        String statement = "{\"Sid\":\"" + sid + "\",\"Effect\":\"Allow\"," + principal + "\"Action\":" + json(LISTING)
+                + ",\"Resource\":" + bucketArn;
+        if (prefixes.stream().anyMatch(prefix -> prefix.segments().isEmpty())) {
+            return statement + "}";
+        }
+        return statement + ",\"Condition\":{\"StringLike\":{\"s3:prefix\":"
+                + json(prefixes.stream().map(prefix -> prefix.key() + "/*").distinct().toList()) + "}}}";
     }
 
     /** A JSON array of strings that need no escaping. */

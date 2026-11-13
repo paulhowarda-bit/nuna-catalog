@@ -880,8 +880,11 @@ class EngineMatrixTest {
      * snapshots, four rows) replaced by two rows: a third snapshot, an overwrite with no parent, and the old
      * snapshot still reads four rows. A second replace whose query changes id from bigint to string is accepted
      * (D11, amended 2026-11-12: a replace starts main afresh, as Iceberg's reference handler takes it): a fourth
-     * snapshot, one row, id a string. View {@code v_rows} on {@code t_v2}: ids 1 and 2, then (by CREATE OR
-     * REPLACE VIEW, as ALTER VIEW ... AS is refused) the row with a note; a second view is created and dropped.
+     * snapshot, one row, id a string. A replace that makes a nullable column required is accepted too (D11,
+     * widened 2026-11-13): {@code t_replace_required}, id INT with rows 1 and null, replaced by
+     * {@code SELECT 1 AS id} through a handle with use-nullable-query-schema=false, has two snapshots, one row,
+     * id required. View {@code v_rows} on {@code t_v2}: ids 1 and 2, then (by CREATE OR REPLACE VIEW, as
+     * ALTER VIEW ... AS is refused) the row with a note; a second view is created and dropped.
      * {@code compute_table_stats} writes a statistics file into {@code t_v2}'s metadata folder.
      */
     private static Map<String, String> replaceViewAndStats() {
@@ -889,6 +892,7 @@ class EngineMatrixTest {
         expected.put("spark replace", "3 3 2 30 overwrite");
         expected.put("spark replace.history", "4 10");
         expected.put("spark replace.retype", "4 1 string");
+        expected.put("spark replace.required", "2 1 required");
         expected.put("spark view.create", "2 3");
         expected.put("spark view.alter-as", "ALTER VIEW ... AS is not supported. Use CREATE OR REPLACE VIEW instead");
         expected.put("spark view.replace", "1 4");

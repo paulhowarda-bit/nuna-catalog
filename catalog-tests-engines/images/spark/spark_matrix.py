@@ -431,6 +431,31 @@ except Exception as error:  # noqa: BLE001 - the catalog's answer is the evidenc
     limit("replace.retype", "suspected catalog bug: the catalog refuses a CREATE OR REPLACE that changes a "
           "column type (Cannot change field 1 (id) from long to string: not a valid type promotion), which "
           "Iceberg's reference handler accepts")
+# A replace whose query makes a nullable column required: the literal 1 is never null. Iceberg's Spark catalog
+# makes every CTAS and RTAS column optional unless use-nullable-query-schema is false, so the replace goes through
+# fidstrict, a second handle on the same catalog with that set. Main starts afresh, so the catalog accepts it
+# since 2026-11-13 (D11), as Iceberg's reference handler does: two snapshots, one row, id required. A refusal
+# is reported as a suspected catalog bug, as above.
+for key, value in spark.sparkContext.getConf().getAll():
+    if key == "spark.sql.catalog.fid" or key.startswith("spark.sql.catalog.fid."):
+        spark.conf.set("spark.sql.catalog.fidstrict" + key[len("spark.sql.catalog.fid"):], value)
+spark.conf.set("spark.sql.catalog.fidstrict.use-nullable-query-schema", "false")
+table = f"{SHARED}.t_replace_required"
+fresh(table, "id INT", "'format-version'='3'")
+sql(f"INSERT INTO {table} VALUES (1), (NULL)")
+try:
+    sql(f"CREATE OR REPLACE TABLE fidstrict.{table[len('fid.'):]} USING iceberg TBLPROPERTIES ('format-version'='3') "
+        "AS SELECT 1 AS id")
+    spark.catalog.refreshTable(table)
+    result("replace.required", snapshots(table), sql(f"SELECT count(*) FROM {table}")[0][0],
+           "optional" if spark.table(table).schema["id"].nullable else "required")
+except Exception as error:  # noqa: BLE001 - the catalog's answer is the evidence
+    if "Cannot make optional field" not in str(error):
+        raise
+    limit("replace.required", "suspected catalog bug: the catalog refuses a CREATE OR REPLACE that makes a "
+          "nullable column required (Cannot make optional field 1 (id) required), which Iceberg's reference "
+          "handler accepts")
+sql(f"DROP TABLE {table} PURGE")
 timed("replace")
 
 # 9. A view on t_v2: created (ids 1 and 2), then replaced (the row with a note, id 4) and given a comment, while

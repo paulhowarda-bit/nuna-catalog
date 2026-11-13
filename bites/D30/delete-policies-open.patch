@@ -2,10 +2,10 @@ Breaks: anyone signed in reads the delete policies, with every profile and its w
 Module: catalog-server
 Test: ManagementAuthorizationTest#theDeletePoliciesAreForAPlatformOperator
 diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/DeletePolicyRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/DeletePolicyRoutes.java
-index d83b520..e3aa87a 100644
+index b6f09b1..e8e5eee 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/governance/DeletePolicyRoutes.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/governance/DeletePolicyRoutes.java
-@@ -55,7 +55,6 @@ class DeletePolicyRoutes {
+@@ -56,7 +56,6 @@ class DeletePolicyRoutes {
       */
      @GetMapping(path = DELETE_POLICIES, produces = MediaType.APPLICATION_JSON_VALUE)
      ResponseEntity<String> deletePolicies(HttpServletRequest http) {

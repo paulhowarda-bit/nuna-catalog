@@ -7,7 +7,10 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** The policies that leave delete to the maintenance worker alone (D30), as text; DeletePolicyCephTest applies one. */
+/**
+ * The policies that leave delete to the maintenance worker alone and let it list beneath its prefixes (D30), as
+ * text; DeletePolicyCephTest applies one.
+ */
 class DeletePolicyTest {
 
     private static final ObjectLocation TABLES = ObjectLocation.parse("s3://lake/tables");
@@ -16,7 +19,7 @@ class DeletePolicyTest {
 
     @Test
     @DisplayName("on AWS every principal but the worker's role is denied delete beneath the prefixes, and lifecycle rules"
-            + " and bucket policies on the bucket, and nothing else")
+            + " and bucket policies on the bucket; the worker may delete there and list the bucket beneath them")
     void aws() {
         assertThat(DeletePolicy.bucketPolicy(StoreKind.S3, "us-east-1", "lake",
                 List.of(new DeletePolicy.Worker(ROLE, List.of(TABLES, EU))))).isEqualTo(
@@ -24,21 +27,29 @@ class DeletePolicyTest {
                         + "\"Principal\":\"*\",\"Action\":[\"s3:DeleteObject\",\"s3:DeleteObjectVersion\"],"
                         + "\"Resource\":[\"arn:aws:s3:::lake/tables/*\",\"arn:aws:s3:::lake/eu/*\"],"
                         + "\"Condition\":{\"ArnNotEquals\":{\"aws:PrincipalArn\":\"" + ROLE + "\"}}},"
+                        + "{\"Sid\":\"KeelTheWorkerDeletes0\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"" + ROLE + "\"]},"
+                        + "\"Action\":[\"s3:DeleteObject\",\"s3:DeleteObjectVersion\"],"
+                        + "\"Resource\":[\"arn:aws:s3:::lake/tables/*\",\"arn:aws:s3:::lake/eu/*\"]},"
+                        + "{\"Sid\":\"KeelTheWorkerLists0\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"" + ROLE + "\"]},"
+                        + "\"Action\":[\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::lake\"],"
+                        + "\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"tables/*\",\"eu/*\"]}}},"
                         + "{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\",\"Principal\":\"*\","
                         + "\"Action\":[\"s3:PutLifecycleConfiguration\",\"s3:PutBucketPolicy\",\"s3:DeleteBucketPolicy\"],"
                         + "\"Resource\":[\"arn:aws:s3:::lake\"],"
                         + "\"Condition\":{\"ArnNotEquals\":{\"aws:PrincipalArn\":[\"" + ROLE + "\"]}}}]}");
         assertThat(DeletePolicy.bucketPolicy(StoreKind.S3, "cn-north-1", "lake",
                 List.of(new DeletePolicy.Worker("arn:aws-cn:iam::1:role/w", List.of(TABLES)))))
-                .contains("arn:aws-cn:s3:::lake/tables/*");
+                .contains("arn:aws-cn:s3:::lake/tables/*", "\"Resource\":[\"arn:aws-cn:s3:::lake\"],\"Condition\"");
         assertThat(DeletePolicy.bucketPolicy(StoreKind.S3, "us-east-1", "lake",
                 List.of(new DeletePolicy.Worker(ROLE, List.of(ObjectLocation.parse("s3://lake"))))))
-                .contains("\"Resource\":[\"arn:aws:s3:::lake/*\"]");
+                .contains("\"Resource\":[\"arn:aws:s3:::lake/*\"]")
+                .as("a worker of the whole bucket lists all of it")
+                .contains("\"Action\":[\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::lake\"]}");
     }
 
     @Test
-    @DisplayName("on Ceph the worker is named in NotPrincipal and allowed to delete there, since nothing else grants it;"
-            + " everyone else is denied lifecycle rules on the bucket")
+    @DisplayName("on Ceph the worker is named in NotPrincipal and allowed to delete and list there, since nothing else"
+            + " grants it; everyone else is denied lifecycle rules on the bucket")
     void ceph() {
         String worker = "arn:aws:iam:::user/keel-maintenance";
         assertThat(DeletePolicy.bucketPolicy(StoreKind.CEPH, "us-east-1", "lake",
@@ -50,6 +61,9 @@ class DeletePolicyTest {
                         + "{\"Sid\":\"KeelTheWorkerDeletes0\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"" + worker + "\"]},"
                         + "\"Action\":[\"s3:DeleteObject\",\"s3:DeleteObjectVersion\"],"
                         + "\"Resource\":[\"arn:aws:s3:::lake/tables/*\"]},"
+                        + "{\"Sid\":\"KeelTheWorkerLists0\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":[\"" + worker + "\"]},"
+                        + "\"Action\":[\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::lake\"],"
+                        + "\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"tables/*\"]}}},"
                         + "{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\","
                         + "\"NotPrincipal\":{\"AWS\":[\"" + worker + "\"]},\"Action\":[\"s3:PutLifecycleConfiguration\"],"
                         + "\"Resource\":[\"arn:aws:s3:::lake\"]}]}");
@@ -65,6 +79,10 @@ class DeletePolicyTest {
         assertThat(policy).contains("KeelOnlyTheWorkerDeletes0", "KeelOnlyTheWorkerDeletes1",
                 "\"Resource\":[\"arn:aws:s3:::lake/eu/*\"],\"Condition\":{\"ArnNotEquals\":{\"aws:PrincipalArn\":"
                         + "\"arn:aws:iam::123456789012:role/eu-maintenance\"}}");
+        assertThat(policy).as("each worker lists the bucket beneath its own prefixes only").contains(
+                "{\"Sid\":\"KeelTheWorkerLists1\",\"Effect\":\"Allow\",\"Principal\":{\"AWS\":"
+                        + "[\"arn:aws:iam::123456789012:role/eu-maintenance\"]},\"Action\":[\"s3:ListBucket\"],"
+                        + "\"Resource\":[\"arn:aws:s3:::lake\"],\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"eu/*\"]}}}");
         assertThat(policy).as("one bucket-settings deny, which neither worker falls under")
                 .containsOnlyOnce("KeelOnlyTheWorkerSetsTheBucket")
                 .contains("\"Resource\":[\"arn:aws:s3:::lake\"],\"Condition\":{\"ArnNotEquals\":{\"aws:PrincipalArn\":"
@@ -73,7 +91,8 @@ class DeletePolicyTest {
 
     @Test
     @DisplayName("MinIO gets a user policy, since it enforces no bucket policy on signed requests; it denies lifecycle"
-            + " rules and bucket policies on the bucket too")
+            + " rules and bucket policies on the bucket too. The worker's own user policy lets it delete beneath the"
+            + " prefixes and list each bucket beneath them")
     void minio() {
         assertThat(DeletePolicy.userPolicy(List.of(TABLES, EU))).isEqualTo(
                 "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"KeelOnlyTheWorkerDeletes\",\"Effect\":\"Deny\","
@@ -82,6 +101,17 @@ class DeletePolicyTest {
                         + "{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\","
                         + "\"Action\":[\"s3:PutLifecycleConfiguration\",\"s3:PutBucketPolicy\",\"s3:DeleteBucketPolicy\"],"
                         + "\"Resource\":[\"arn:aws:s3:::lake\"]}]}");
+        assertThat(DeletePolicy.workerPolicy(List.of(TABLES, EU, ObjectLocation.parse("s3://archive/old")))).isEqualTo(
+                "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"KeelTheWorkerDeletes\",\"Effect\":\"Allow\","
+                        + "\"Action\":[\"s3:DeleteObject\",\"s3:DeleteObjectVersion\"],"
+                        + "\"Resource\":[\"arn:aws:s3:::lake/tables/*\",\"arn:aws:s3:::lake/eu/*\","
+                        + "\"arn:aws:s3:::archive/old/*\"]},"
+                        + "{\"Sid\":\"KeelTheWorkerLists0\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\"],"
+                        + "\"Resource\":[\"arn:aws:s3:::lake\"],"
+                        + "\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"tables/*\",\"eu/*\"]}}},"
+                        + "{\"Sid\":\"KeelTheWorkerLists1\",\"Effect\":\"Allow\",\"Action\":[\"s3:ListBucket\"],"
+                        + "\"Resource\":[\"arn:aws:s3:::archive\"],"
+                        + "\"Condition\":{\"StringLike\":{\"s3:prefix\":[\"old/*\"]}}}]}");
         assertThatThrownBy(() -> DeletePolicy.bucketPolicy(StoreKind.MINIO, "us-east-1", "lake",
                 List.of(new DeletePolicy.Worker("keel-maintenance", List.of(TABLES)))))
                 .hasMessageContaining("user policy");
