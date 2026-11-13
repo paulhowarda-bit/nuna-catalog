@@ -34,6 +34,10 @@ public record StorageSettings(
      * @param stsRole         the role STS assumes to vend credentials; MinIO needs none
      * @param accessKeyId     with {@code secretAccessKey}, the catalog's own static credentials; without,
      *                        the AWS SDK's default provider chain
+     * @param maintenancePrincipal the maintenance worker's own storage identity, the one principal the profile's
+     *                        delete policy lets delete (D30): an IAM role or user ARN on AWS S3, a user ARN on
+     *                        Ceph ({@code arn:aws:iam::<tenant>:user/<uid>}), a user name on MinIO; without it the
+     *                        profile has no delete policy
      */
     public record Profile(
             StoreKind kind,
@@ -43,7 +47,8 @@ public record StorageSettings(
             List<String> allowedPrefixes,
             String stsRole,
             String accessKeyId,
-            String secretAccessKey) {
+            String secretAccessKey,
+            String maintenancePrincipal) {
     }
 
     /** A catalog's boundary: its storage profile, the KMS key set its data is encrypted under, its legal entity. */

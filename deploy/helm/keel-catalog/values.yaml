@@ -29,6 +29,8 @@ config:
       grant-admin-groups: []
       platform-operator-groups: []
     storage:
+      # Each: kind, endpoint, region, table-root, allowed-prefixes, sts-role, access-key-id, and
+      # maintenance-principal, the maintenance worker's own storage identity (deploy/README.md, delete rights).
       profiles: {}
       catalogs: {}
     audit:

@@ -45,7 +45,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 /**
  * Real STS credentials through the REST routes (D21, D23, D14), on the run's S3 store: what a load vends, that the
  * credentials reach the table's prefix and nothing else, that every new set is audited before it is handed
- * out and nothing is handed out when the audit fails, the maintenance and delegation rules, and the 304 rule
+ * out and nothing is handed out when the audit fails, that no credentials delete (D30), the delegation rules, and the 304 rule
  * with real expiry. Callers sign in with tokens from the local test issuer; {@code trino-prod} is registered
  * as a trusted engine.
  */
@@ -252,26 +252,24 @@ class VendingRouteTest {
     }
 
     @Test
-    @DisplayName("only a maintenance principal's credentials may delete, and only inside the table")
-    void maintenanceMayDelete() throws Exception {
+    @DisplayName("no vended credentials delete, a maintenance principal's included: the worker uses its own identity")
+    void noCredentialsDelete() throws Exception {
         String location = createTable("t", "alice");
-        String other = createTable("u", "alice");
-        try (S3Client root = objectStore.client()) {
-            root.putObject(b -> b.bucket(S3ForTests.bucket()).key(key(other) + "/data/keep.parquet"),
-                    RequestBody.fromString("keep"));
-        }
         HttpResponse<String> load = send("GET", table("t") + "/credentials", null, "svc-maintenance");
         Map<String, String> config = JsonPath.read(load.body(), "$.storage-credentials[0].config");
+        String key = key(location) + "/data/old.parquet";
 
         try (S3Client s3 = client(config)) {
-            String key = key(location) + "/data/old.parquet";
             s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key), RequestBody.fromString("old"));
-            s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key));
-            assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key(other) + "/data/keep.parquet")));
+            assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(key)));
+        }
+        try (S3Client root = objectStore.client()) {
+            assertThat(root.getObjectAsBytes(b -> b.bucket(S3ForTests.bucket()).key(key)).asUtf8String())
+                    .isEqualTo("old");
         }
         assertThat(ISSUED).anySatisfy(issue -> {
             assertThat(issue.actor().principal()).isEqualTo("svc-maintenance");
-            assertThat(issue.access()).isEqualTo(CredentialIssue.Access.READ_WRITE_DELETE);
+            assertThat(issue.access()).isEqualTo(CredentialIssue.Access.READ_WRITE);
         });
     }
 
@@ -319,21 +317,26 @@ class VendingRouteTest {
     }
 
     @Test
-    @DisplayName("a declared catalog's boundary never changes, profiles never overlap, and endpoints use TLS")
+    @DisplayName("a declared catalog's boundary never changes, profiles never overlap, endpoints use TLS,"
+            + " and a maintenance principal needs no escaping")
     void startupGuardrails() {
         StoreKind kind = StoreKind.valueOf(objectStore.profileKind());
         String root = "s3://" + S3ForTests.bucket() + "/tables";
         String role = objectStore.roleArn.orElse(null);
         StorageSettings.Profile profile = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
-                "us-east-1", root, List.of(root), role, "a", "b");
+                "us-east-1", root, List.of(root), role, "a", "b", null);
         StorageSettings.Profile nested = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
-                "us-east-1", root + "/eu", List.of(root + "/eu"), role, "a", "b");
+                "us-east-1", root + "/eu", List.of(root + "/eu"), role, "a", "b", null);
+        StorageSettings.Profile injected = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
+                "us-east-1", root, List.of(root), role, "a", "b", "arn:aws:iam:::user/w\"}],\"Statement\":[{\"x");
         Clock clock = Clock.systemUTC();
 
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile,
                 "eu", nested), Map.of(), false), store, rest, clock)).hasMessageContaining("overlap");
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile), Map.of(), true), store, rest,
                 clock)).hasMessageContaining("must use https");
+        assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, injected), Map.of(), false), store,
+                rest, clock)).hasMessageContaining("maintenance-principal").hasMessageContaining("character outside");
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile),
                 Map.of("trading", new StorageSettings.Catalog(S3ForTests.PROFILE, "other-keys", "Test Entity")), false), store,
                 rest, clock)).hasMessageContaining("a catalog's boundary never changes");

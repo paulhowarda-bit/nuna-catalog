@@ -5,6 +5,8 @@ import static keel.catalog.server.governance.Api.expectError;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import keel.catalog.server.S3ForTests;
+import keel.catalog.tests.s3.TestS3;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
@@ -23,7 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * The maintenance worker's routes (D30): the work list of tables whose policy runs a job, the purge queue and
  * the due pending deletions, and the pending deletions it records and completes, which wait out the database's
- * PITR window (7 days here).
+ * PITR window (7 days here); and the delete policies an operator applies so that the worker alone deletes.
  */
 @GovernanceServer
 class MaintenanceRoutesTest {
@@ -148,6 +150,33 @@ class MaintenanceRoutesTest {
         expectError(record(id, root + "/data/a.parquet"), 409, "NotDeletableException");
         expectError(api.manage("GET", "/maintenance/work?section=nothing", null, AUTH, api.maintenance()), 400,
                 "BadRequestException");
+    }
+
+    @Test
+    void theDeletePoliciesLeaveDeleteToTheWorker() {
+        TestS3 s3 = TestS3.get();
+        String body = expect(api.manage("GET", "/maintenance/delete-policies", null, AUTH, api.operator()), 200).body();
+
+        List<Map<String, Object>> policies = JsonPath.read(body, "$.policies");
+
+        assertThat(JsonPath.<List<String>>read(body, "$.unprotected")).isEmpty();
+        assertThat(policies).hasSize(1);
+        Map<String, Object> policy = policies.get(0);
+        assertThat(policy.get("profiles")).isEqualTo(List.of(S3ForTests.PROFILE));
+        assertThat(policy.get("endpoint")).isEqualTo(s3.endpoint.toString());
+        String text = (String) policy.get("policy");
+        assertThat(JsonPath.<String>read(text, "$.Statement[0].Effect")).isEqualTo("Deny");
+        assertThat(JsonPath.<List<String>>read(text, "$.Statement[0].Action")).contains("s3:DeleteObject");
+        assertThat(JsonPath.<List<String>>read(text, "$.Statement[0].Resource"))
+                .containsExactly("arn:aws:s3:::" + S3ForTests.bucket() + "/tables/*");
+        if (s3.kind == TestS3.Kind.SILO) {
+            assertThat(policy.get("apply-as")).isEqualTo("user-policy");
+            assertThat(policy.get("except")).isEqualTo(s3.maintenancePrincipal());
+        } else {
+            assertThat(policy.get("apply-as")).isEqualTo("bucket-policy");
+            assertThat(policy.get("bucket")).isEqualTo(S3ForTests.bucket());
+            assertThat(text).contains(s3.maintenancePrincipal());
+        }
     }
 
     private HttpResponse<String> record(String id, String... locations) {

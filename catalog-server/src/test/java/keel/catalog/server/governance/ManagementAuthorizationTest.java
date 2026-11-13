@@ -170,6 +170,13 @@ class ManagementAuthorizationTest {
     }
 
     @Test
+    void theDeletePoliciesAreForAPlatformOperator() {
+        refused(api.manage("GET", "/maintenance/delete-policies", null));
+        refused(api.manage("GET", "/maintenance/delete-policies", null, AUTH, api.maintenance()));
+        expect(api.manage("GET", "/maintenance/delete-policies", null, AUTH, api.operator()), 200);
+    }
+
+    @Test
     void aStewardCanClassifyATableTheRegulatedRuleKeepsClosed() {
         expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/regulated",
                 "{\"value\":\"true\",\"provenance\":\"records-office\"}", AUTH, api.steward()), 200);

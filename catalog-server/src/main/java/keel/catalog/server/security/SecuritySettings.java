@@ -21,8 +21,10 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
  * @param grantAdminGroups          groups that hold {@code manage-grants} on every catalog and nothing else (D18)
  * @param platformOperatorGroups    groups that run the trusted-engine registry and the DR freeze, and hold no data
  *                                  access (D18, D37)
- * @param maintenancePrincipals     the maintenance tier (D25), by principal id: acting as themselves, their vended
- *                                  credentials may delete, and they alone purge and read the purge queue
+ * @param maintenancePrincipals     the maintenance tier (D25, D30), by principal id: acting as themselves, they alone
+ *                                  claim and complete purges, record pending deletions and read the work list, and
+ *                                  pass D20's row/column rule (audited); their vended credentials delete nothing,
+ *                                  as nobody's do
  * @param refuseIdentityLessCommits D17's switch (CMP-7): refuse writes to regulated areas by a trusted engine
  *                                  that names no end user
  */
