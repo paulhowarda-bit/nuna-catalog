@@ -186,7 +186,8 @@ every table she may load, with the storage credentials the catalog vends, and no
   DuckDB's first upload of a data file gets `HTTP 403 Forbidden ... AccessDenied` from the store. Nothing
   reaches the table's folder.
 - The UI downloads its web page from `ui.duckdb.org` each time it opens, so it needs internet access; DuckDB
-  and its extensions are in the image. Notebooks last as long as the pod.
+  and its extensions are in the image, and automatic extension installs are off, so a query that needs an
+  extension not in the image fails instead of downloading it. Notebooks last as long as the pod.
 - It is a single DuckDB for whoever opens the page, with no sign-in of its own. A DuckDB on your own machine
   would attach the same way with your own token, but needs the vended storage address (`http://s3:9000`
   here) to resolve where it runs.

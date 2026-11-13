@@ -251,3 +251,40 @@ running there, but start it only when he asks. Two things to check:
 - Docker memory: the pass runs a three-node cluster beside one other stack.
 - `KubernetesCompactionTest` names the `docker-desktop` context in its code (`CONTEXT`), so it needs a cluster
   of that name or a change in a branch.
+
+## 10. The demo
+
+`demo/demo.sh up` (`demo/README.md`) runs the demo on a local Kubernetes cluster (`KEEL_DEMO_CONTEXT`,
+default `docker-desktop`). That cluster never pulls: every image comes from the local Docker engine. So pull
+each image below from the internal registry and tag it with the name shown
+(`docker tag <registry>/postgres:18 postgres:18`). `demo.sh` then pulls nothing, and its Dockerfiles build on
+the tagged images.
+
+| Image | Used for |
+|---|---|
+| `postgres:18`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`, `quay.io/keycloak/keycloak:26.8.2`, `kafbat/kafka-ui:v1.5.0` | the stack (also in section 2) |
+| `busybox:1.37.0` | the key server (Service `idp`) |
+| `eclipse-temurin:25.0.5_8-jre-noble` | the catalog image (`deploy/image/Dockerfile`) |
+| `eclipse-temurin:25.0.5_8-jdk-noble` | the lake writer (`demo/k8s/lake.Dockerfile`) |
+| `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | SingleStore with the change-feed connector |
+| `debian:bookworm-slim` | DuckDB (`demo/k8s/duckdb.Dockerfile`) |
+
+What reaches beyond the machine (checked 2026-11-13):
+
+- **DuckDB cannot be built at work.** Its Dockerfile downloads socat from Debian's mirrors, the DuckDB program
+  from github.com and its extensions from extensions.duckdb.org, and `demo.sh up` stops when that build
+  fails. Its UI also loads its page from ui.duckdb.org through the DuckDB process, so the UI needs the internet
+  even when the image is built. Ask Paul how DuckDB gets to work, or whether it stays home.
+- **Turned off:** SingleStore's critical diagnostics, which its dev license turns on and which send DDL and
+  table metadata to phone-home.singlestore.com (`singlestore.yaml`); Studio's browser telemetry (Segment,
+  Google Analytics, Mixpanel, Intercom) and upgrade check (`singlestore.Dockerfile`); kafbat's hourly release
+  check against api.github.com (`stack.yaml`); and DuckDB's automatic and community extension installs
+  (`duckdb.yaml`). An explicit `INSTALL` in DuckDB still tries extensions.duckdb.org.
+- Everything else in the stack talks only to the cluster: the catalog and its console, Keycloak, Silo,
+  PostgreSQL, Kafka, the key server and the lake writer. `demo.sh engines` builds the engine images, which
+  need the mirrors in section 2.
+
+The demo runs without TLS, and every page works that way at `localhost`: the console with its Keycloak
+sign-in, Keycloak's admin console, kafbat, Studio and the DuckDB UI (checked 2026-11-13). Opened by the
+machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
+Crypto only on localhost, and Keycloak's issuer and the console's redirect address are both localhost.

@@ -85,8 +85,8 @@ s2_file() {
 image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -c1-12; }
 
 # Built from this checkout on every up, so the stack never runs code older than the checkout; Gradle and
-# Docker do nothing when nothing changed. SingleStore's image is tagged with the connector jar's hash, so a
-# changed connector replaces the pod (and up seeds the new one). The cluster never pulls: images it runs
+# Docker do nothing when nothing changed. SingleStore's image is tagged with the hash of the connector jar and
+# its Dockerfile, so a change to either replaces the pod (and up seeds the new one). The cluster never pulls: images it runs
 # come from the local Docker engine.
 build() {
   say "building the catalog server and change-feed connector jars (no tests run)"
@@ -100,7 +100,7 @@ build() {
 
   say "building the images: the catalog, SingleStore with the connector, the lake writer, DuckDB"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
-  SINGLESTORE_IMAGE="keel-demo-singlestore:$(sha256sum "$jar" | cut -c1-12)"
+  SINGLESTORE_IMAGE="keel-demo-singlestore:$(cat "$jar" "$STACK/singlestore.Dockerfile" | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
   docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
   mkdir -p "$RUN/images/duckdb"

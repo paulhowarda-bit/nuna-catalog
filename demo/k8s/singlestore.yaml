@@ -1,7 +1,7 @@
 # SingleStore, part 4 of the shared stack. Iceberg pipelines load tables from the catalog; in the demo, the
 # change feed of its ops tables also commits to Iceberg through a connector pipeline. ${SINGLESTORE_IMAGE} is
-# the dev image: demo.sh's has the change-feed connector built in (singlestore.Dockerfile), tagged with the
-# jar's hash so a changed connector replaces the pod; a matrix run on its own uses the plain image. No volume:
+# the dev image: demo.sh's has the change-feed connector built in and Studio's browser telemetry off
+# (singlestore.Dockerfile), tagged with the hash of the jar and the Dockerfile so a change replaces the pod; a matrix run on its own uses the plain image. No volume:
 # the data goes with the pod (demo.sh seeds a new one). The demo publishes Studio on localhost:8183. It
 # reserves 1.5 GB though it uses over 2 GB: with Keycloak, a fuller reservation leaves no room on Docker
 # Desktop's node for Spark's 2 GB job.
@@ -28,6 +28,9 @@ spec:
             - {name: ROOT_PASSWORD, value: keel-test}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES, value: "1"}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST, value: "1"}
+            # The dev image's license turns this on at every start: crash reports, DDL and table metadata to
+            # phone-home.singlestore.com. The start script applies these variables after the license.
+            - {name: SINGLESTORE_SET_GLOBAL_CRITICAL_DIAGNOSTICS, value: "OFF"}
           ports:
             - containerPort: 3306
             - containerPort: 8080
