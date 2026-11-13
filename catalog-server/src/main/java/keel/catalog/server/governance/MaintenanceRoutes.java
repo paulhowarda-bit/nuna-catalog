@@ -19,10 +19,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import keel.catalog.core.commit.GovernanceChain;
 import org.springframework.http.MediaType;
@@ -147,7 +149,8 @@ class MaintenanceRoutes {
     /**
      * Records files of an active or dropped table that the worker no longer needs, to delete once the database's
      * PITR window has passed (D30). Body: {@code {"locations": [...]}}, each beneath the table's location, at most
-     * 1,000. Answers when they may be deleted.
+     * 1,000. Answers 201 with how many are now pending and when the new ones may be deleted. A file already pending
+     * keeps its earlier time; when every one was, nothing is written and the answer is 200.
      */
     @PostMapping(path = DELETIONS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> record(@PathVariable("catalog") String prefix, @PathVariable String id,
@@ -158,7 +161,7 @@ class MaintenanceRoutes {
         keel.catalog.audit.Securable audit = audit(catalog, object);
         guard.requireMaintenance(request, audit, "recordPendingDeletions");
         String root = object.locationRoot().endsWith("/") ? object.locationRoot() : object.locationRoot() + "/";
-        List<String> locations = new ArrayList<>();
+        Set<String> locations = new LinkedHashSet<>();
         for (JsonNode location : list(Management.body(body), "locations")) {
             if (!location.isString() || !location.asString().startsWith(root)) {
                 throw CatalogError.badRequest("Every location must lie beneath the table's location " + root
@@ -169,16 +172,15 @@ class MaintenanceRoutes {
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         Instant notBefore = now.plus(settings.pitrWindow());
         WriteResult result = Management.write("Recording deletions of " + id, () -> store.recordDeletions(object.id(),
-                        locations, notBefore, management.change(now, new FileDeletion(FileDeletion.Action.RECORDED, audit,
-                                locations.size(), notBefore, request.actor()))),
+                        List.copyOf(locations), notBefore, management.change(now, new FileDeletion(
+                                FileDeletion.Action.RECORDED, audit, locations.size(), notBefore, request.actor()))),
                 () -> false);
+        ObjectNode answer = Management.JSON.createObjectNode();
+        answer.put("recorded", locations.size());
+        answer.put("not-before", notBefore.toString());
         return switch (result) {
-            case WriteResult.Applied applied -> {
-                ObjectNode answer = Management.JSON.createObjectNode();
-                answer.put("recorded", locations.size());
-                answer.put("not-before", notBefore.toString());
-                yield GovernanceRoutes.json(201, answer);
-            }
+            case WriteResult.Applied applied -> GovernanceRoutes.json(201, answer);
+            case WriteResult.Unchanged unchanged -> GovernanceRoutes.json(200, answer);
             case WriteResult.Missing missing -> throw notLive(id, store.readObject(object.id()).orElse(object));
             default -> throw new IllegalStateException("recordDeletions answered " + result);
         };

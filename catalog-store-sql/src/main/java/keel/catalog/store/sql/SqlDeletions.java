@@ -14,13 +14,16 @@ import keel.catalog.store.WriteResult;
 import java.sql.PreparedStatement;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Files the maintenance worker deletes once the database's PITR window has passed (D30). Recording
  * share-locks the object, so a purge completing at the same moment waits, then deletes them with it.
+ * A file already pending for the object is skipped and keeps its earlier time.
  */
 final class SqlDeletions {
 
@@ -39,9 +42,18 @@ final class SqlDeletions {
             if (catalogId.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
+            Set<String> fresh = new LinkedHashSet<>(locations);
+            fresh.removeAll(query(connection, "SELECT location FROM pending_deletion WHERE object_id = ?"
+                    + " AND location = ANY(?)", row -> row.getString("location"), objectId,
+                    fresh.toArray(String[]::new)));
+            if (fresh.isEmpty()) {
+                return WriteResult.UNCHANGED;
+            }
+            // A recorder racing this one under the same share lock may record the same file first.
             try (PreparedStatement insert = connection.prepareStatement("INSERT INTO pending_deletion (id, object_id,"
-                    + " catalog_id, location, not_before, recorded_at) VALUES (?, ?, ?, ?, ?, ?)")) {
-                for (String location : locations) {
+                    + " catalog_id, location, not_before, recorded_at) VALUES (?, ?, ?, ?, ?, ?)"
+                    + " ON CONFLICT (object_id, location) DO NOTHING")) {
+                for (String location : fresh) {
                     Jdbc.bind(connection, insert, UUID.randomUUID(), objectId, catalogId.get(), location, notBefore,
                             change.at());
                     insert.addBatch();

@@ -6,6 +6,7 @@ import static keel.catalog.store.suite.Changes.fullChange;
 import static keel.catalog.store.suite.Changes.name;
 import static keel.catalog.store.suite.Changes.now;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogStore;
@@ -785,6 +786,32 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertThat(store.completeDeletions(dropped.id(), List.of(due.get(2).id()), again)).as("another object's deletion")
                 .isEqualTo(WriteResult.UNCHANGED);
         assertThat(underTest().changeRows(again)).isEqualTo(WrittenRows.NONE);
+    }
+
+    @Test
+    @DisplayName("Maintenance: a file is pending once per object; recording it again keeps its time, and only files already pending write nothing")
+    void pendingDeletionsAreRecordedOncePerFile() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        CatalogObject other = newTable(namespace, "other");
+        Instant base = Instant.parse("2001-01-01T00:00:00Z").plus(Duration.ofMinutes(UUID.randomUUID().hashCode() & 0xffff));
+        String first = table.locationRoot() + "/data/a.parquet";
+        String second = table.locationRoot() + "/data/b.parquet";
+        assertApplied(store.recordDeletions(table.id(), List.of(first, first), base, change()));
+        Change again = fullChange();
+
+        assertThat(store.recordDeletions(table.id(), List.of(first), base.plusSeconds(60), again))
+                .isEqualTo(WriteResult.UNCHANGED);
+
+        assertThat(underTest().changeRows(again)).isEqualTo(WrittenRows.NONE);
+        assertApplied(store.recordDeletions(table.id(), List.of(first, second), base.plusSeconds(60), change()));
+        assertApplied(store.recordDeletions(other.id(), List.of(first), base.plusSeconds(60), change()));
+        List<PendingDeletion> due = ours(dueDeletions(base.plusSeconds(60)), namespace);
+        assertThat(due).filteredOn(d -> d.objectId().equals(table.id())).as("each file once, the first time kept")
+                .extracting(PendingDeletion::location, PendingDeletion::notBefore)
+                .containsExactlyInAnyOrder(tuple(first, base), tuple(second, base.plusSeconds(60)));
+        assertThat(due).filteredOn(d -> d.objectId().equals(other.id())).as("per object")
+                .extracting(PendingDeletion::location).containsExactly(first);
     }
 
     @Test

@@ -16,9 +16,12 @@ public interface MaintenanceStore {
 
     /**
      * Records files of an active or dropped object for deletion at or after {@code notBefore}, each
-     * with a new id, at {@code change.at()}.
+     * with a new id, at {@code change.at()}. A file already pending for the object is skipped and keeps
+     * its earlier time, so the worker's scans, which find the same unreferenced files until they are
+     * deleted, record each once.
      *
-     * @return {@code Applied}, or {@code Missing(OBJECT)} when no active or dropped object has that id
+     * @return {@code Applied}; {@code Unchanged}, writing nothing, when every file was already pending;
+     *         or {@code Missing(OBJECT)} when no active or dropped object has that id
      */
     WriteResult recordDeletions(UUID objectId, List<String> locations, Instant notBefore, Change change);
 

@@ -110,6 +110,18 @@ final class MongoSchema {
                 }
                 index(database, PENDING_DELETION, "pending_deletion_due", false, null, "notBefore", "_id");
                 index(database, PENDING_DELETION, "pending_deletion_object", false, null, "objectId");
+            }),
+            // A file is pending deletion once per object: every orphan scan finds the same unreferenced files
+            // again until they are deleted, and recording skips a location already pending.
+            new Step(6, "pending deletions once per file", database -> {
+                try {
+                    database.getCollection(PENDING_DELETION, BsonDocument.class).dropIndex("pending_deletion_object");
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != INDEX_NOT_FOUND) {
+                        throw e;
+                    }
+                }
+                index(database, PENDING_DELETION, "pending_deletion_object", true, null, "objectId", "location");
             }));
 
     private MongoSchema() {

@@ -23,6 +23,7 @@ import keel.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,7 +37,8 @@ import org.bson.BsonValue;
 /**
  * Files the maintenance worker deletes once the database's PITR window has passed (D30). Recording
  * marks the object, so a purge completing at the same moment conflicts with it and one of them
- * retries; the purge then deletes them with the object.
+ * retries; the purge then deletes them with the object. Two recorders of the same object conflict
+ * the same way. A file already pending for the object is skipped and keeps its earlier time.
  */
 final class MongoDeletions {
 
@@ -56,20 +58,25 @@ final class MongoDeletions {
             if (object.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
+            Set<String> fresh = new LinkedHashSet<>(locations);
+            tx.collection(PENDING_DELETION).find(tx.session, new BsonDocument("objectId", uuid(objectId))
+                            .append("location", in(fresh.stream().<BsonValue>map(BsonString::new).toList())))
+                    .forEach(pending -> fresh.remove(pending.getString("location").getValue()));
+            if (fresh.isEmpty()) {
+                return WriteResult.UNCHANGED;
+            }
             tx.see(object.get());
             tx.mark(OBJECT, object.get());
-            if (!locations.isEmpty()) {
-                List<BsonDocument> documents = new ArrayList<>();
-                for (String location : locations) {
-                    documents.add(byId(uuid(UUID.randomUUID())).append("objectId", uuid(objectId))
-                            .append("catalogId", object.get().get("catalogId"))
-                            .append("location", new BsonString(location))
-                            .append("notBefore", time(notBefore))
-                            .append("recordedAt", time(change.at()))
-                            .append("clock", tx.clock()));
-                }
-                tx.collection(PENDING_DELETION).insertMany(tx.session, documents);
+            List<BsonDocument> documents = new ArrayList<>();
+            for (String location : fresh) {
+                documents.add(byId(uuid(UUID.randomUUID())).append("objectId", uuid(objectId))
+                        .append("catalogId", object.get().get("catalogId"))
+                        .append("location", new BsonString(location))
+                        .append("notBefore", time(notBefore))
+                        .append("recordedAt", time(change.at()))
+                        .append("clock", tx.clock()));
             }
+            tx.collection(PENDING_DELETION).insertMany(tx.session, documents);
             return WriteResult.APPLIED;
         });
     }

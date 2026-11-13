@@ -13,14 +13,17 @@ import keel.catalog.store.PendingDeletion;
 import keel.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * Files the maintenance worker deletes once the database's PITR window has passed (D30). Recording
  * locks the object (Oracle has no shared row lock), so a purge completing at the same moment waits,
- * then deletes them with it.
+ * then deletes them with it, and two recorders of the same object take turns. A file already pending
+ * for the object is skipped and keeps its earlier time.
  */
 final class OracleDeletions {
 
@@ -39,8 +42,16 @@ final class OracleDeletions {
             if (catalogId.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
+            Set<String> fresh = new LinkedHashSet<>(locations);
+            List<Object> parameters = new ArrayList<>(List.of(objectId));
+            String in = Jdbc.in("location", fresh, parameters);
+            fresh.removeAll(query(connection, "SELECT location FROM pending_deletion WHERE object_id = ? AND " + in,
+                    row -> Jdbc.text(row, "location"), parameters.toArray()));
+            if (fresh.isEmpty()) {
+                return WriteResult.UNCHANGED;
+            }
             Jdbc.batch(connection, "INSERT INTO pending_deletion (id, object_id, catalog_id, location, not_before,"
-                    + " recorded_at) VALUES (?, ?, ?, ?, ?, ?)", locations.stream().map(location -> new Object[] {
+                    + " recorded_at) VALUES (?, ?, ?, ?, ?, ?)", fresh.stream().map(location -> new Object[] {
                     UUID.randomUUID(), objectId, catalogId.get(), location, notBefore, change.at()}).toList());
             return WriteResult.APPLIED;
         });

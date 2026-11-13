@@ -118,9 +118,12 @@ class MaintenanceRoutesTest {
         assertThat(JsonPath.<Integer>read(recorded.body(), "$.recorded")).isEqualTo(2);
         assertThat(Instant.parse(JsonPath.read(recorded.body(), "$.not-before")))
                 .isAfterOrEqualTo(before.plus(Duration.ofDays(7)));
+        clock.advance(Duration.ofDays(1));
+        assertThat(JsonPath.<Integer>read(expect(record(id, root + "/data/a.parquet"), 200).body(), "$.recorded"))
+                .as("already pending: kept as it was").isEqualTo(1);
 
         assertThat(due(id)).isEmpty();
-        clock.advance(Duration.ofDays(6));
+        clock.advance(Duration.ofDays(5));
         assertThat(due(id)).as("not before the PITR window has passed").isEmpty();
         clock.advance(Duration.ofDays(1).plusMinutes(1));
 
