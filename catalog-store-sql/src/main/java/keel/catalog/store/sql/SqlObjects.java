@@ -60,7 +60,7 @@ final class SqlObjects {
             if (inserted == 0) {
                 return Guards.nameTaken(connection, ACTIVE_HOLDER, object.namespaceId(), object.name().normalized());
             }
-            if (Pointers.apply(connection, creation.firstCommit()) instanceof CommitResult.Conflict) {
+            if (!(Pointers.apply(connection, creation.firstCommit()) instanceof CommitResult.Committed)) {
                 throw new StoreException("object " + object.id() + " already has a pointer", null);
             }
             return WriteResult.APPLIED;

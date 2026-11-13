@@ -176,7 +176,11 @@ public final class Reconcile {
                     List.of(new PointerSwap(table.mainKey(), Optional.of(before), next, entry)), outbox, Optional.empty());
             boolean committed;
             try {
-                committed = store.commit(batch) instanceof CommitResult.Committed;
+                CommitResult result = store.commit(batch);
+                if (result instanceof CommitResult.Inactive) {
+                    return new Applied(plan, applied, Optional.of("the table was dropped or unregistered"));
+                }
+                committed = result instanceof CommitResult.Committed;
             } catch (CommitOutcomeUnknownException e) {
                 committed = store.findCommit(commitId, table.mainKey()) == CommitLookup.COMMITTED;
             }

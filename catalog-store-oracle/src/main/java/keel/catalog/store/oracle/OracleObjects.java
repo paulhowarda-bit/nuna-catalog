@@ -72,7 +72,7 @@ final class OracleObjects {
                                 object.namespaceId(), object.name().normalized());
                     }
                     writePath(connection, object.id(), path.get());
-                    if (Pointers.apply(connection, creation.firstCommit()) instanceof CommitResult.Conflict) {
+                    if (!(Pointers.apply(connection, creation.firstCommit()) instanceof CommitResult.Committed)) {
                         throw new StoreException("object " + object.id() + " already has a pointer", null);
                     }
                     return WriteResult.APPLIED;

@@ -67,6 +67,10 @@ final class Pointers {
         if (conflict.isPresent()) {
             return conflict.get();
         }
+        Optional<CommitResult.Inactive> inactive = inactive(connection, batch);
+        if (inactive.isPresent()) {
+            return inactive.get();
+        }
         write(connection, batch);
         ChangeRecords.write(connection, batch.commitId(), batch.committedAt(), batch.outbox(), batch.idempotency());
         return new CommitResult.Committed(batch.commitId());
@@ -104,6 +108,25 @@ final class Pointers {
             }
             return false;
         }
+    }
+
+    /**
+     * The first swap whose object is no longer active: dropped, unregistered or purged since the commit
+     * read it. The object row is locked after the pointers, for update, since Oracle has no shared row lock. Unregister locks the
+     * pointers and then the object too; a drop locks the object alone, so either it waits for this
+     * commit, or this commit waits for it and reads its new state. An object the store has no row for is
+     * not checked.
+     */
+    private static Optional<CommitResult.Inactive> inactive(Connection connection, CommitBatch batch)
+            throws SQLException {
+        for (PointerSwap swap : batch.swaps()) {
+            Optional<String> state = Jdbc.first(connection, "SELECT state FROM catalog_object WHERE id = ? FOR UPDATE",
+                    row -> row.getString(1), swap.key().objectId());
+            if (state.isPresent() && !state.get().equals("ACTIVE")) {
+                return Optional.of(new CommitResult.Inactive(swap.key()));
+            }
+        }
+        return Optional.empty();
     }
 
     /** Locks the pointer row until the transaction ends, and says whether it is {@code expected}. */

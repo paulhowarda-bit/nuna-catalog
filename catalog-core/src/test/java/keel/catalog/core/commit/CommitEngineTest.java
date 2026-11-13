@@ -28,7 +28,9 @@ import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.StoreException;
 import keel.catalog.store.StoreUnavailableException;
+import keel.catalog.store.WriteResult;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -237,6 +239,27 @@ class CommitEngineTest {
             assertThat(journal.get(1).entry().updatesJson()).contains("set-properties");
             assertThat(journal.get(1).oldLocation()).contains(created.metadataLocation());
             assertThat(h.events.getLast().before().map(Pointer::version)).contains(1L);
+        }
+
+        @Test
+        @DisplayName("a commit that loses the race with the table's drop is 404, and the pointer stays")
+        void dropWinsTheRace() {
+            h.createTable("Orders");
+            CatalogObject orders = h.object("Orders");
+            Pointer before = h.pointer("orders");
+            h.faults.once("commit", (args, proceed) -> {
+                assertThat(h.faults.real.dropObject(orders.id(), Instant.now().plus(Duration.ofDays(7)),
+                        Harness.change())).isEqualTo(WriteResult.APPLIED);
+                return proceed.call();
+            });
+
+            CommitReply reply = commit("Orders", setA("Orders", "1"));
+
+            assertThat(reply).isInstanceOfSatisfying(Failure.class, f -> {
+                assertThat(f.status()).isEqualTo(404);
+                assertThat(f.type()).isEqualTo("NoSuchTableException");
+            });
+            assertThat(h.faults.real.readPointer(orders.mainKey())).contains(before);
         }
 
         @Test

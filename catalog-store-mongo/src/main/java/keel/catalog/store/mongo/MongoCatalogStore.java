@@ -165,6 +165,10 @@ public final class MongoCatalogStore implements CatalogStore {
     public CommitResult commit(CommitBatch batch) {
         return transactions.write(batch.commitId(), "commit " + batch.commitId(), tx -> {
             Pointers.see(tx, batch);
+            Optional<CommitResult.Inactive> inactive = Pointers.markObjects(tx, batch);
+            if (inactive.isPresent()) {
+                return inactive.get();
+            }
             Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
             if (conflict.isPresent()) {
                 return conflict.get();

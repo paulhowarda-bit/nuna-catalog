@@ -10,13 +10,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.Change;
+import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitLookup;
 import keel.catalog.store.CommitOutcomeUnknownException;
+import keel.catalog.store.CommitResult;
 import keel.catalog.store.Grant;
 import keel.catalog.store.LegalHold;
 import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.PageRequest;
+import keel.catalog.store.Pointer;
 import keel.catalog.store.Securable;
 import keel.catalog.store.WriteResult;
 import java.time.Duration;
@@ -268,6 +271,21 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertThat(store.dropObject(table.id(), purgeAfter, change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         CatalogObject again = newTable(namespace, "ORDERS");
         assertThat(store.findObject(namespace.id(), "orders")).contains(again);
+    }
+
+    @Test
+    @DisplayName("Objects: a commit built before its object was dropped is refused and writes nothing")
+    void aCommitAfterTheDropIsRefused() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        CommitBatch late = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "late-" + table.id()));
+        assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
+
+        assertThat(store.commit(late)).isEqualTo(new CommitResult.Inactive(table.mainKey()));
+
+        assertThat(store.readPointer(table.mainKey())).contains(base);
+        assertThat(underTest().writtenRows(late)).isEqualTo(WrittenRows.NONE);
     }
 
     @Test

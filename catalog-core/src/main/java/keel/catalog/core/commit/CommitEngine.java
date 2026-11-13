@@ -586,6 +586,9 @@ public final class CommitEngine {
                                     + " times; the table changed too often to apply it");
                         }
                     }
+                    case CommitResult.Inactive inactive -> {
+                        return noSuch(request);
+                    }
                 }
             } catch (CommitOutcomeUnknownException e) {
                 Optional<CommitReply> settled = settle(request, object.mainKey(),
@@ -680,6 +683,11 @@ public final class CommitEngine {
                             return new Failure(409, COMMIT_FAILED, "Transaction lost to concurrent commits " + attempt
                                     + " times; its tables changed too often to apply it");
                         }
+                    }
+                    case CommitResult.Inactive inactive -> {
+                        int gone = objects.stream().map(CatalogObject::mainKey).toList().indexOf(inactive.key());
+                        return new Failure(404, "NoSuchTableException", "Table does not exist: "
+                                + request.targets().get(gone).name().qualified());
                     }
                 }
             } catch (CommitOutcomeUnknownException e) {

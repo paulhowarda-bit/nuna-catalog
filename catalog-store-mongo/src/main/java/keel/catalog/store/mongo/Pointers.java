@@ -7,6 +7,7 @@ import static keel.catalog.store.mongo.Docs.text;
 import static keel.catalog.store.mongo.Docs.time;
 import static keel.catalog.store.mongo.Docs.uuid;
 import static keel.catalog.store.mongo.MongoCatalogStore.JOURNAL;
+import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
 import static keel.catalog.store.mongo.MongoCatalogStore.POINTER;
 import static keel.catalog.store.mongo.MongoCatalogStore.PROJECTION_PIECE;
 
@@ -14,6 +15,7 @@ import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.UpdateOptions;
+import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitResult;
 import keel.catalog.store.Pointer;
@@ -91,6 +93,30 @@ final class Pointers {
                 tx.see(clock);
             }
         }
+    }
+
+    /**
+     * The first swap whose object is no longer active (dropped, unregistered or purged), or else marks
+     * the object of every swap. Reads take no lock, so the mark, a write of the object's clock, is what
+     * makes a concurrent drop or unregister of the object conflict with this commit. An object the store
+     * has no document for is not checked. Call after {@link #see}, before the stamp is fixed.
+     */
+    static Optional<CommitResult.Inactive> markObjects(Tx tx, CommitBatch batch) {
+        List<BsonDocument> objects = new ArrayList<>();
+        for (PointerSwap swap : batch.swaps()) {
+            Optional<BsonDocument> object = tx.find(OBJECT, Docs.byId(uuid(swap.key().objectId())));
+            if (object.isEmpty()) {
+                continue;
+            }
+            if (!object.get().getString("state").getValue().equals(CatalogObject.State.ACTIVE.name())) {
+                return Optional.of(new CommitResult.Inactive(swap.key()));
+            }
+            if (objects.stream().noneMatch(seen -> seen.get("_id").equals(object.get().get("_id")))) {
+                objects.add(tx.see(object.get()));
+            }
+        }
+        objects.forEach(object -> tx.mark(OBJECT, object));
+        return Optional.empty();
     }
 
     /**
