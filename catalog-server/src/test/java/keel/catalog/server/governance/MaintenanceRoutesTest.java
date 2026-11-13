@@ -147,6 +147,10 @@ class MaintenanceRoutesTest {
 
         expectError(record(id, "s3://elsewhere/x.parquet"), 400, "BadRequestException");
         expectError(record(id, root + "-twin/x.parquet"), 400, "BadRequestException");
+        for (String path : List.of("/data/../../" + id + "-other/data/f.parquet", "/data/./f.parquet",
+                "/data//f.parquet", "/data/f.parquet/", "/")) {
+            expectError(record(id, root + "/data/a.parquet", root + path), 400, "BadRequestException");
+        }
         expectError(api.manage("POST", "/objects/" + id + "/pending-deletions", "{\"locations\":[]}",
                 GovernanceServer.PRINCIPAL, "maintenance"), 400, "BadRequestException");
         expect(api.rest("POST", "/namespaces/" + ns + "/tables/t/unregister", null), 200);

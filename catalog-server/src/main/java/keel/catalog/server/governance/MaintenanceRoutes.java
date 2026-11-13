@@ -163,9 +163,9 @@ class MaintenanceRoutes {
         String root = object.locationRoot().endsWith("/") ? object.locationRoot() : object.locationRoot() + "/";
         Set<String> locations = new LinkedHashSet<>();
         for (JsonNode location : list(Management.body(body), "locations")) {
-            if (!location.isString() || !location.asString().startsWith(root)) {
+            if (!location.isString() || !beneath(location.asString(), root)) {
                 throw CatalogError.badRequest("Every location must lie beneath the table's location " + root
-                        + ", not " + location);
+                        + ", with no empty, . or .. segment, not " + location);
             }
             locations.add(location.asString());
         }
@@ -264,6 +264,23 @@ class MaintenanceRoutes {
     private keel.catalog.audit.Securable audit(CatalogRecord catalog, CatalogObject object) {
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
         return Management.audit(catalog, levels, object.name().display(), object);
+    }
+
+    /**
+     * Whether {@code location} lies beneath {@code root} (which ends in {@code /}) as written: a writer chooses its
+     * data files' paths, and a store or proxy that resolved a {@code ..} would delete another table's file, so no
+     * segment after the root may be empty, {@code .} or {@code ..}.
+     */
+    static boolean beneath(String location, String root) {
+        if (!location.startsWith(root) || location.length() == root.length()) {
+            return false;
+        }
+        for (String segment : location.substring(root.length()).split("/", -1)) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** A required array field of 1 to 1,000 items. */
