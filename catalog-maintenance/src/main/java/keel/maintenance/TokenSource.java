@@ -30,7 +30,7 @@ public interface TokenSource {
 
     /**
      * How an Iceberg client started on the worker's behalf (a compaction Job) signs in: the client-credentials grant,
-     * so it renews its own token, or else the worker's current token.
+     * with the worker's scope and audience, so it renews its own token for as long as the Job runs.
      */
     Map<String, String> clientProperties();
 
@@ -65,9 +65,11 @@ public interface TokenSource {
             }
         }
 
+        /** Never: a Job may outlive the token in the file (the settings refuse compaction with one). */
         @Override
         public Map<String, String> clientProperties() {
-            return Map.of("token", token());
+            throw new IllegalStateException("compaction needs the client-credentials grant: a token file's token"
+                    + " could expire while a Job runs");
         }
     }
 

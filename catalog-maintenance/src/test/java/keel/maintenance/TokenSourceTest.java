@@ -1,6 +1,7 @@
 package keel.maintenance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -21,7 +23,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The worker's own sign-in (D30): the client-credentials grant, its token kept until a minute before it expires; or a
- * token file another process keeps fresh, read again when it changes.
+ * token file another process keeps fresh, read again when it changes. A compaction Job signs in with the grant itself,
+ * asking for the worker's scope, so compaction is refused with a token file or without a scope, and outside a
+ * namespace of its own.
  */
 class TokenSourceTest {
 
@@ -46,7 +50,7 @@ class TokenSourceTest {
             FakeClock clock = new FakeClock();
             WorkerSettings.Token settings = new WorkerSettings.Token(null,
                     URI.create("http://127.0.0.1:" + idp.getAddress().getPort() + "/token"), "keel-maintenance",
-                    "s3cret", null, "keel-catalog");
+                    "s3cret", "catalog-access", "keel-catalog");
             TokenSource tokens = new TokenSource.ClientCredentials(settings, HttpClient.newHttpClient(), clock);
 
             assertThat(tokens.token()).isEqualTo("t1");
@@ -56,8 +60,9 @@ class TokenSourceTest {
             assertThat(tokens.token()).as("within a minute of expiry").isEqualTo("t2");
 
             assertThat(forms.getFirst()).contains("grant_type=client_credentials", "client_id=keel-maintenance",
-                    "client_secret=s3cret", "audience=keel-catalog");
-            assertThat(tokens.clientProperties()).containsEntry("credential", "keel-maintenance:s3cret")
+                    "client_secret=s3cret", "scope=catalog-access", "audience=keel-catalog");
+            assertThat(tokens.clientProperties()).as("the Job asks for what the worker asks for")
+                    .containsEntry("credential", "keel-maintenance:s3cret").containsEntry("scope", "catalog-access")
                     .containsEntry("audience", "keel-catalog").doesNotContainKey("token");
         } finally {
             idp.stop(0);
@@ -76,6 +81,39 @@ class TokenSourceTest {
         Files.setLastModifiedTime(file, FileTime.from(Instant.parse("2026-11-12T00:05:00Z")));
 
         assertThat(tokens.token()).isEqualTo("second");
-        assertThat(tokens.clientProperties()).containsEntry("token", "second");
+        assertThatThrownBy(tokens::clientProperties).as("a Job could outlive the file's token")
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn() {
+        URI endpoint = URI.create("https://idp.test/token");
+        WorkerSettings.Token grant = new WorkerSettings.Token(null, endpoint, "keel-maintenance", "s3cret",
+                "catalog-access", null);
+        WorkerSettings.Token noScope = new WorkerSettings.Token(null, endpoint, "keel-maintenance", "s3cret", null,
+                null);
+        WorkerSettings.Token file = new WorkerSettings.Token(folder.resolve("token"), null, null, null, "catalog-access",
+                null);
+        WorkerSettings.Compaction compaction = compaction("keel/spark:test", "keel-compaction");
+
+        assertThat(settings(grant, compaction).compaction().enabled()).isTrue();
+        assertThat(settings(file, compaction(null, null)).compaction().enabled()).as("compaction off")
+                .isFalse();
+        assertThatThrownBy(() -> settings(file, compaction)).hasMessageContaining("client-credentials grant");
+        assertThatThrownBy(() -> settings(noScope, compaction)).hasMessageContaining("token.scope");
+        assertThatThrownBy(() -> settings(grant, compaction("keel/spark:test", null)))
+                .hasMessageContaining("compaction.namespace");
+    }
+
+    private static WorkerSettings settings(WorkerSettings.Token token, WorkerSettings.Compaction compaction) {
+        return new WorkerSettings(URI.create("http://keel-catalog:8181/"), Duration.ofMinutes(10), Duration.ofDays(1),
+                Duration.ofDays(1), 100, token, Map.of("s3", new WorkerSettings.StorageProfile(
+                        List.of("s3://lake/tables"), null, "us-east-1", false, null, null)), compaction);
+    }
+
+    private static WorkerSettings.Compaction compaction(String image, String namespace) {
+        return new WorkerSettings.Compaction(image, "IfNotPresent", namespace, "keel-compaction",
+                URI.create("https://kubernetes.default.svc"), Path.of("/var/run/secrets/kubernetes.io/serviceaccount"),
+                null, "2Gi", "1g", Duration.ofHours(2), 185, Map.of());
     }
 }

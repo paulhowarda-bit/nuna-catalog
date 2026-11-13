@@ -23,6 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
@@ -31,11 +32,15 @@ import javax.net.ssl.TrustManagerFactory;
  * ({@code catalog-tests-engines/images/spark}) runs Iceberg's rewrite_data_files, signed in to the catalog as the
  * worker. The Job is named after the table, so at most one runs per table; a finished Job stays for the compaction
  * interval ({@code ttlSecondsAfterFinished}), which is what spaces two compactions of one table apart, across
- * restarts of the worker too. The worker's sign-in goes into a Secret the Job owns, so Kubernetes deletes it with
- * the Job.
+ * restarts of the worker too. The worker's sign-in (the client-credentials grant, so the Job renews its own token)
+ * goes into a Secret of a name never used before, created after the Job and owned by it, so Kubernetes deletes it
+ * with the Job. The Job names the table by its levels and by its id, and its script stops unless the table it loads
+ * has that id: another table may have taken the name before the pod starts.
  *
- * <p>Talks to the API server with the worker's service account: it needs {@code get} and {@code create} on Jobs
- * and {@code create} and {@code update} on Secrets in the Jobs' namespace (the Helm chart's Role).
+ * <p>The Jobs run in a namespace of their own, never the worker's (nor the catalog's): a pod may run as any service
+ * account and mount any Secret of its namespace. Their pods run as {@code job-service-account}, which needs no
+ * rights. Talks to the API server with the worker's service account: it needs {@code get} and {@code create} on Jobs
+ * and {@code create} on Secrets in the Jobs' namespace, and nothing else (the Helm chart's Role).
  */
 final class KubernetesJobs implements Compactor {
 
@@ -56,8 +61,12 @@ final class KubernetesJobs implements Compactor {
         this.interval = interval;
         this.catalogUri = settings.catalogUri() != null ? settings.catalogUri() : workerCatalogUri;
         this.tokens = tokens;
-        this.namespace = settings.namespace() != null ? settings.namespace()
-                : read(settings.serviceAccount().resolve("namespace"));
+        this.namespace = settings.namespace();
+        Path own = settings.serviceAccount().resolve("namespace");
+        if (Files.exists(own) && read(own).equals(namespace)) {
+            throw new IllegalArgumentException("keel.maintenance.compaction.namespace " + namespace + " is the worker's"
+                    + " own namespace: compaction Jobs need one of their own");
+        }
         this.http = HttpClient.newBuilder().sslContext(trust(settings.serviceAccount().resolve("ca.crt")))
                 .connectTimeout(Duration.ofSeconds(10)).build();
     }
@@ -75,23 +84,21 @@ final class KubernetesJobs implements Compactor {
             return Launch.RUNNING;
         }
         expect("reading Job " + name, existing, 404);
-        HttpResponse<String> created = send("POST", "/apis/batch/v1/namespaces/" + namespace + "/jobs", job(table));
+        // A name no earlier Job's Secret has, so it never meets one Kubernetes has not collected yet. The pod waits
+        // for it to appear.
+        String secretName = name + "-" + UUID.randomUUID().toString().substring(0, 8);
+        HttpResponse<String> created = send("POST", "/apis/batch/v1/namespaces/" + namespace + "/jobs",
+                job(table, secretName));
         if (created.statusCode() == 409) {
             return Launch.RUNNING;
         }
         String uid = read(expect("creating Job " + name, created, 201).body()).path("metadata").path("uid").asText();
-        ObjectNode secret = secret(name, uid);
-        HttpResponse<String> stored = send("POST", "/api/v1/namespaces/" + namespace + "/secrets", secret);
-        if (stored.statusCode() == 409) {
-            stored = send("PUT", "/api/v1/namespaces/" + namespace + "/secrets/" + name, secret);
-            expect("replacing Secret " + name, stored, 200);
-        } else {
-            expect("creating Secret " + name, stored, 201);
-        }
+        expect("creating Secret " + secretName, send("POST", "/api/v1/namespaces/" + namespace + "/secrets",
+                secret(secretName, name, uid)), 201);
         return Launch.STARTED;
     }
 
-    private ObjectNode job(Management.TableWork table) {
+    private ObjectNode job(Management.TableWork table, String secretName) {
         String name = jobName(table);
         ObjectNode job = JSON.createObjectNode().put("apiVersion", "batch/v1").put("kind", "Job");
         ObjectNode metadata = job.putObject("metadata").put("name", name);
@@ -105,6 +112,9 @@ final class KubernetesJobs implements Compactor {
         labels(template.putObject("metadata"), table);
         ObjectNode pod = template.putObject("spec").put("restartPolicy", "Never").put("enableServiceLinks", false)
                 .put("automountServiceAccountToken", false);
+        if (settings.jobServiceAccount() != null) {
+            pod.put("serviceAccountName", settings.jobServiceAccount());
+        }
         pod.putObject("securityContext").put("runAsUser", settings.runAsUser()).put("runAsNonRoot", true);
         ObjectNode container = pod.putArray("containers").addObject().put("name", "compaction")
                 .put("image", settings.image()).put("imagePullPolicy", settings.imagePullPolicy());
@@ -113,6 +123,7 @@ final class KubernetesJobs implements Compactor {
         env(env, "KEEL_SCRIPT", SCRIPT);
         env(env, "KEEL_CONF", sparkConf(table).toString());
         env(env, "KEEL_TABLE", JSON.valueToTree(levels(table)).toString());
+        env(env, "KEEL_TABLE_UUID", table.id().toString());
         ObjectNode options = JSON.createObjectNode();
         String target = table.policy().get("compaction.target-file-size-bytes");
         if (target != null) {
@@ -121,7 +132,7 @@ final class KubernetesJobs implements Compactor {
         env(env, "KEEL_OPTIONS", options.toString());
         env(env, "KEEL_DRIVER_MEMORY", settings.driverMemory());
         env.addObject().put("name", "KEEL_AUTH").putObject("valueFrom").putObject("secretKeyRef")
-                .put("name", name).put("key", "auth");
+                .put("name", secretName).put("key", "auth");
         ObjectNode resources = container.putObject("resources");
         resources.putObject("limits").put("memory", settings.memory());
         resources.putObject("requests").put("memory", settings.memory());
@@ -142,13 +153,13 @@ final class KubernetesJobs implements Compactor {
         return JSON.valueToTree(conf);
     }
 
-    private ObjectNode secret(String name, String jobUid) {
+    private ObjectNode secret(String name, String job, String jobUid) {
         ObjectNode secret = JSON.createObjectNode().put("apiVersion", "v1").put("kind", "Secret").put("type", "Opaque");
         ObjectNode metadata = secret.putObject("metadata").put("name", name);
         metadata.putObject("labels").put("app.kubernetes.io/name", "keel-compaction")
                 .put("app.kubernetes.io/managed-by", "keel-maintenance");
         metadata.putArray("ownerReferences").addObject().put("apiVersion", "batch/v1").put("kind", "Job")
-                .put("name", name).put("uid", jobUid);
+                .put("name", job).put("uid", jobUid);
         secret.putObject("stringData").put("auth", JSON.valueToTree(tokens.clientProperties()).toString());
         return secret;
     }

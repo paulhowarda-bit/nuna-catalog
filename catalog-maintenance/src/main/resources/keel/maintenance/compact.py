@@ -4,10 +4,16 @@ Runs Iceberg's rewrite_data_files on the table KEEL_TABLE (its namespace levels 
 catalog "keel", signed in as the worker (KEEL_AUTH, from the Job's Secret). KEEL_CONF holds the Spark settings and
 KEEL_OPTIONS the procedure's options. The files it replaces stay where they are: snapshot expiry takes the
 snapshots that use them, and the worker deletes them through the catalog's pending-deletion list.
+
+The pod may start long after the worker decided to compact: the table may have been dropped, renamed or unregistered
+meanwhile and another taken its name. So the table is loaded first and the Job stops, exit 3 and a TABLE CHANGED
+line, unless its id is KEEL_TABLE_UUID. The procedure then gets that same table from Spark's catalog cache, and
+Iceberg's REST client refuses to refresh or commit it as a table of another id.
 Prints one COMPACTED line with the procedure's counts.
 """
 import json
 import os
+import sys
 
 from pyspark.sql import SparkSession
 
@@ -25,6 +31,13 @@ def literal(value):
 
 
 table = ".".join("`" + part.replace("`", "``") + "`" for part in json.loads(os.environ["KEEL_TABLE"]))
+expected = os.environ["KEEL_TABLE_UUID"]
+found = spark._jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(spark._jsparkSession, "keel." + table) \
+    .uuid().toString()
+if found != expected:
+    print("TABLE CHANGED", table, "is", found, "not", expected, flush=True)
+    spark.stop()
+    sys.exit(3)
 options = json.loads(os.environ["KEEL_OPTIONS"])
 call = "CALL keel.system.rewrite_data_files(table => " + literal(table)
 if options:

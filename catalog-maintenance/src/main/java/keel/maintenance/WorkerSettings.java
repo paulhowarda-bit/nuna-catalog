@@ -45,6 +45,23 @@ public record WorkerSettings(
         if (scanInterval.isNegative() || scanInterval.isZero()) {
             throw new IllegalArgumentException("keel.maintenance.scan-interval must be positive");
         }
+        if (compaction.enabled()) {
+            if (token.file() != null) {
+                throw new IllegalArgumentException("keel.maintenance.compaction needs the client-credentials grant"
+                        + " (keel.maintenance.token.endpoint): a compaction Job runs up to its deadline and renews its"
+                        + " own token, where a token file's token would expire under it");
+            }
+            if (token.scope() == null) {
+                throw new IllegalArgumentException("keel.maintenance.token.scope must be set when compaction runs:"
+                        + " the Job's Iceberg client always asks for a scope (\"catalog\" when none is set), so the"
+                        + " worker's own token request names the same one");
+            }
+            if (compaction.namespace() == null || compaction.namespace().isBlank()) {
+                throw new IllegalArgumentException("keel.maintenance.compaction.namespace must name a namespace for"
+                        + " the Jobs alone, never the catalog's or the worker's: a pod may run as any service"
+                        + " account and mount any Secret of its namespace");
+            }
+        }
         storage = Map.copyOf(storage);
     }
 
@@ -56,7 +73,8 @@ public record WorkerSettings(
      * @param endpoint     the identity provider's token endpoint
      * @param clientId     the worker's client id there
      * @param clientSecret its secret
-     * @param scope        a scope to ask for, if the provider needs one
+     * @param scope        a scope to ask for; required when compaction runs, since the Job's client always asks for
+     *                     one
      * @param audience     an audience to ask for, if the provider needs one (the catalog checks {@code aud})
      */
     public record Token(Path file, URI endpoint, String clientId, String clientSecret, String scope, String audience) {
@@ -103,7 +121,9 @@ public record WorkerSettings(
      *
      * @param image           the Spark image; compaction is off without one
      * @param imagePullPolicy its pull policy
-     * @param namespace       where Jobs run; by default the worker's own namespace
+     * @param namespace       where Jobs run: a namespace of their own, required, never the catalog's or the worker's
+     * @param jobServiceAccount the service account the Jobs' pods run as, one with no rights; by default the
+     *                        namespace's {@code default}
      * @param apiServer       the Kubernetes API server
      * @param serviceAccount  the folder holding the worker's service account token, CA and namespace
      * @param catalogUri      the catalog as the Job's pods reach it; by default the worker's {@code catalog-uri}
@@ -114,7 +134,7 @@ public record WorkerSettings(
      * @param sparkConf       more Spark settings for every Job
      */
     public record Compaction(String image, @DefaultValue("IfNotPresent") String imagePullPolicy, String namespace,
-                             @DefaultValue("https://kubernetes.default.svc") URI apiServer,
+                             String jobServiceAccount, @DefaultValue("https://kubernetes.default.svc") URI apiServer,
                              @DefaultValue("/var/run/secrets/kubernetes.io/serviceaccount") Path serviceAccount,
                              URI catalogUri, @DefaultValue("2Gi") String memory, @DefaultValue("1g") String driverMemory,
                              @DefaultValue("PT2H") Duration deadline, @DefaultValue("185") long runAsUser,

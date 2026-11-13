@@ -3,7 +3,10 @@ package keel.maintenance;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -14,7 +17,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The worker never expires snapshots of, or removes orphans from, a table under a legal hold (D24), a table in a
  * DR-frozen namespace (D37), or an unregistered table (D30 phase 1): the catalog's work list says so, and the worker
- * does what it says. Lifting the hold and the freeze lets the same scan go ahead.
+ * does what it says. Lifting the hold and the freeze lets the same scan go ahead. Nor does it touch a table that is
+ * no longer the one the work list named.
  */
 class GuardrailsTest {
 
@@ -68,6 +72,42 @@ class GuardrailsTest {
                         .contains(table.location() + "/data/orphan.parquet");
             }
         }
+    }
+
+    /**
+     * A table dropped, renamed or unregistered after the work list was read, its name since taken by another: the
+     * worker loads the table by name, finds another id, and starts nothing on it, compaction included, whose Job would
+     * otherwise rewrite the newcomer under the old table's policy.
+     */
+    @Test
+    void aTableNoLongerTheOneTheWorkListNamedIsLeftAlone() throws Exception {
+        List<UUID> launched = new CopyOnWriteArrayList<>();
+        Compactor compactor = table -> {
+            launched.add(table.id());
+            return Compactor.Launch.STARTED;
+        };
+        FakeClock clock = new FakeClock();
+        try (RESTCatalog writer = catalog.writer(); Worker worker = catalog.worker(clock, compactor)) {
+            TableIdentifier id = TestCatalog.table(writer, "taken-over");
+            Table table = writer.loadTable(id);
+            UUID stale = UUID.randomUUID();
+            ScanReport report = new ScanReport();
+
+            worker.maintain(work(id, table, stale), clock.instant(), report);
+
+            assertThat(launched).isEmpty();
+            assertThat(report.compactionsStarted).isZero();
+            assertThat(report.failures).singleElement().asString().contains(stale.toString(), table.uuid().toString());
+            UUID current = UUID.fromString(table.uuid().toString());
+            worker.maintain(work(id, table, current), clock.instant(), new ScanReport());
+            assertThat(launched).as("the table the work list names").containsExactly(current);
+        }
+    }
+
+    /** The work list's item for a table whose policy runs compaction alone, under the given id. */
+    private static Management.TableWork work(TableIdentifier id, Table table, UUID tableId) {
+        return new Management.TableWork(TestCatalog.CATALOG, tableId, List.of(id.namespace().levels()), id.name(),
+                table.location(), Map.of("compaction.enabled", "true"));
     }
 
     /** A table with two snapshots and an orphan, whose policy runs expiry and orphan removal. */

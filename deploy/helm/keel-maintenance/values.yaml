@@ -32,11 +32,15 @@ config:
       # default chain, e.g. IRSA through serviceAccount.annotations.
       storage: {}
       # Compaction as one Kubernetes Job per table (D30 (3)). Off unless an image is named: the repo's Spark
-      # image, catalog-tests-engines/images/spark. The chart then grants the worker's service account Jobs and
-      # Secrets in the release's namespace (or `namespace`, which must then grant the same itself).
+      # image, catalog-tests-engines/images/spark. It needs the client-credentials grant and token.scope (the Job
+      # signs in itself), and a namespace for the Jobs alone, created beforehand: never the release's nor the
+      # catalog's. The chart grants the worker's service account get and create on Jobs and create on Secrets
+      # there, and makes job-service-account there, an account with no rights that the Jobs' pods run as.
       compaction:
         image: ""
         image-pull-policy: IfNotPresent
+        # namespace: keel-compaction
+        job-service-account: keel-compaction
         # The catalog as the Job's pods reach it; by default catalog-uri.
         # catalog-uri: http://keel-catalog:8181/
         memory: 2Gi

@@ -27,7 +27,8 @@ import org.slf4j.LoggerFactory;
  *   <li><b>Tables</b> whose resolved policy runs a job, with the catalog's guardrails applied (a hold stops expiry
  *       and orphan removal, a DR freeze every job, and only active tables are listed): snapshot expiry, manifest
  *       rewrite, an orphan scan at most once per orphan interval, and a compaction Job at most once per compaction
- *       interval. Nothing here deletes: every file a job leaves unreferenced goes to the catalog's pending-deletion
+ *       interval. Each table is loaded by name first and left alone unless it is still the table the work list
+ *       named, by id. Nothing here deletes: every file a job leaves unreferenced goes to the catalog's pending-deletion
  *       list, which holds it for the database's PITR window (D30 (5), (8)).</li>
  *   <li><b>Purges</b>: each dropped object past its window is claimed, everything under its location deleted, and
  *       the purge completed (D30 (6)). A worker that died part-way gets its own claim back and starts again.</li>
@@ -107,54 +108,57 @@ final class Worker implements AutoCloseable {
 
     // ---- tables ----
 
-    private void maintain(Management.TableWork work, Instant now, ScanReport report) {
+    /** One table's jobs that are due; package-private so a test can hand it a stale work item. */
+    void maintain(Management.TableWork work, Instant now, ScanReport report) {
         report.tables++;
         boolean expire = work.runs("snapshot-expiry.enabled");
         boolean rewrite = work.runs("manifest-rewrite.enabled");
         boolean orphans = work.runs("orphan-removal.enabled") && due(orphanScans, work.id(), orphanInterval, now);
         boolean compact = work.runs("compaction.enabled") && compactor != Compactor.NONE
                 && due(compactions, work.id(), compactionInterval, now);
-        if (expire || rewrite || orphans) {
-            Table table;
-            try {
-                table = catalogs.load(work.catalog(), work.namespace(), work.name());
-            } catch (RuntimeException e) {
-                LOG.warn("Cannot load table {} ({})", work.name(), work.id(), e);
-                report.failed("loading " + work.id(), e);
-                return;
-            }
-            if (!work.id().toString().equals(table.uuid().toString())) {
-                // Dropped and created again under the name since the work list was read: the next scan sees it.
-                report.failures.add("table " + work.id() + " is now another table, " + table.uuid());
-                return;
-            }
-            if (expire) {
-                job("expiring snapshots of", work, report, () -> {
-                    Set<String> unreferenced = ConcurrentHashMap.newKeySet();
-                    report.snapshotsExpired += TableJobs.expire(table, now, work.duration("snapshot-expiry"
-                            + ".max-snapshot-age"), (int) work.count("snapshot-expiry.min-snapshots-to-keep"),
-                            unreferenced::add);
-                    record(work, table, unreferenced, report);
-                });
-            }
-            if (rewrite) {
-                job("rewriting manifests of", work, report, () -> {
-                    Set<String> unreferenced = ConcurrentHashMap.newKeySet();
-                    report.manifestsRewritten += TableJobs.rewriteManifests(table,
-                            work.count("manifest-rewrite.min-manifests"), unreferenced::add);
-                    record(work, table, unreferenced, report);
-                });
-            }
-            if (orphans) {
-                job("scanning for orphans of", work, report, () -> {
-                    orphanScans.put(work.id(), now);
-                    List<String> found = OrphanScan.find(table, storage,
-                            now.minus(work.duration("orphan-removal.older-than")), () -> { });
-                    report.orphanScans++;
-                    report.orphansFound += found.size();
-                    record(work, table, found, report);
-                });
-            }
+        if (!(expire || rewrite || orphans || compact)) {
+            return;
+        }
+        Table table;
+        try {
+            table = catalogs.load(work.catalog(), work.namespace(), work.name());
+        } catch (RuntimeException e) {
+            LOG.warn("Cannot load table {} ({})", work.name(), work.id(), e);
+            report.failed("loading " + work.id(), e);
+            return;
+        }
+        if (!work.id().toString().equals(table.uuid().toString())) {
+            // Dropped, renamed or unregistered, and another table now has the name, since the work list was read:
+            // its own policy is not this one, so nothing here runs on it. The next scan sees it as it is.
+            report.failures.add("table " + work.id() + " is now another table, " + table.uuid());
+            return;
+        }
+        if (expire) {
+            job("expiring snapshots of", work, report, () -> {
+                Set<String> unreferenced = ConcurrentHashMap.newKeySet();
+                report.snapshotsExpired += TableJobs.expire(table, now, work.duration("snapshot-expiry"
+                        + ".max-snapshot-age"), (int) work.count("snapshot-expiry.min-snapshots-to-keep"),
+                        unreferenced::add);
+                record(work, table, unreferenced, report);
+            });
+        }
+        if (rewrite) {
+            job("rewriting manifests of", work, report, () -> {
+                Set<String> unreferenced = ConcurrentHashMap.newKeySet();
+                report.manifestsRewritten += TableJobs.rewriteManifests(table,
+                        work.count("manifest-rewrite.min-manifests"), unreferenced::add);
+                record(work, table, unreferenced, report);
+            });
+        }
+        if (orphans) {
+            job("scanning for orphans of", work, report, () -> {
+                orphanScans.put(work.id(), now);
+                List<String> found = OrphanScan.find(table, storage,
+                        now.minus(work.duration("orphan-removal.older-than")), () -> { });
+                report.orphanScans++;
+                report.orphansFound += found.size();
+                record(work, table, found, report);
+            });
         }
         if (compact) {
             job("launching compaction of", work, report, () -> {
@@ -182,8 +186,9 @@ final class Worker implements AutoCloseable {
     }
 
     /**
-     * Hands files a job left unreferenced to the catalog's pending-deletion list. Only those under the table's own
-     * location: the catalog refuses any other, and a file elsewhere is not the worker's to delete.
+     * Hands files a job left unreferenced to the catalog's pending-deletion list. Only those beneath the table's own
+     * location as written, no segment empty, {@code .} or {@code ..}: the catalog refuses any other, which would
+     * refuse the whole batch, and a file elsewhere is not the worker's to delete.
      */
     private void record(Management.TableWork work, Table table, Collection<String> files, ScanReport report) {
         if (files.isEmpty()) {
@@ -192,7 +197,7 @@ final class Worker implements AutoCloseable {
         String root = table.location().endsWith("/") ? table.location() : table.location() + "/";
         List<String> beneath = new ArrayList<>();
         for (String file : files) {
-            if (file.startsWith(root)) {
+            if (beneath(file, root)) {
                 beneath.add(file);
             } else {
                 report.filesOutside++;
@@ -200,6 +205,19 @@ final class Worker implements AutoCloseable {
         }
         management.recordDeletions(work.catalog(), work.id(), beneath);
         report.filesRecorded += beneath.size();
+    }
+
+    /** The catalog's own test for a recorded file ({@code MaintenanceRoutes.beneath}). */
+    static boolean beneath(String location, String root) {
+        if (!location.startsWith(root) || location.length() == root.length()) {
+            return false;
+        }
+        for (String segment : location.substring(root.length()).split("/", -1)) {
+            if (segment.isEmpty() || segment.equals(".") || segment.equals("..")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     // ---- purges ----

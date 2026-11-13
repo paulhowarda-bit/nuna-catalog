@@ -34,13 +34,15 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Compaction as a Kubernetes Job (D30 (3)), in Docker Desktop's cluster: the worker, signed in to the API server as
- * the chart's service account with only the chart's Role, launches the repo's Spark image as a Job that runs
- * rewrite_data_files on a table of six small Avro files, signed in to the catalog as the worker. The table ends with
- * one data file in a {@code replace} snapshot; the six old files are left for expiry. A second scan launches nothing
- * while the Job is kept.
+ * the chart's service account with only the chart's Role in the Jobs' namespace, launches the repo's Spark image as
+ * a Job there, running as the chart's Job service account, that runs rewrite_data_files on a table of six small Avro
+ * files, signed in to the catalog as the worker. The table ends with one data file in a {@code replace} snapshot; the
+ * six old files are left for expiry. A second scan launches nothing while the Job is kept. A Job naming the table
+ * with an id it no longer has (another table took the name after the scan) stops without compacting it.
  *
- * <p>Runs in its own namespace, created and deleted here; it never touches another (keel-demo least of all). The
- * catalog and the S3 store are reached from the pods as {@code host.docker.internal} ({@link TestCatalog#forPods}).
+ * <p>Runs in two namespaces of its own, the worker's and the Jobs', created and deleted here; it never touches
+ * another (keel-demo least of all). The catalog and the S3 store are reached from the pods as
+ * {@code host.docker.internal} ({@link TestCatalog#forPods}).
  * Needs Docker, kubectl and Helm on the PATH and the kubectl context {@value #CONTEXT}. Heavy: it builds an image and
  * waits for a Spark job.
  */
@@ -66,16 +68,15 @@ class KubernetesCompactionTest {
         Path repo = Path.of(System.getProperty("repo.root"));
         run(Duration.ofMinutes(20), null, "docker", "build", "-t", IMAGE,
                 repo.resolve("catalog-tests-engines/images/spark").toString());
-        String namespace = "keel-maintenance-test-" + UUID.randomUUID().toString().substring(0, 8);
+        String suffix = UUID.randomUUID().toString().substring(0, 8);
+        String namespace = "keel-maintenance-test-" + suffix;
+        String jobs = "keel-compaction-test-" + suffix;
         kubectl(Duration.ofMinutes(1), null, "create", "namespace", namespace);
+        kubectl(Duration.ofMinutes(1), null, "create", "namespace", jobs);
         try {
-            String rbac = run(Duration.ofMinutes(1), null, "helm", "template", RELEASE,
-                    repo.resolve("deploy/helm/keel-maintenance").toString(), "--namespace", namespace,
-                    "--show-only", "templates/serviceaccount.yaml", "--show-only", "templates/rbac.yaml",
-                    "--set", "config.keel.maintenance.catalog-uri=" + catalog.uri,
-                    "--set", "config.keel.maintenance.storage.test.prefixes[0]=s3://" + catalog.bucket + "/tables",
-                    "--set", "config.keel.maintenance.compaction.image=" + IMAGE);
-            kubectl(Duration.ofMinutes(1), rbac, "apply", "-n", namespace, "-f", "-");
+            kubectl(Duration.ofMinutes(1), chart(repo, namespace, jobs, "templates/serviceaccount.yaml"), "apply",
+                    "-n", namespace, "-f", "-");
+            kubectl(Duration.ofMinutes(1), chart(repo, namespace, jobs, "templates/rbac.yaml"), "apply", "-f", "-");
             Files.writeString(serviceAccount.resolve("token"), kubectl(Duration.ofMinutes(1), null, "create", "token",
                     RELEASE, "-n", namespace, "--duration=1h"));
             Files.writeString(serviceAccount.resolve("namespace"), namespace);
@@ -84,8 +85,9 @@ class KubernetesCompactionTest {
                     "jsonpath={.clusters[0].cluster.certificate-authority-data}").strip()));
             URI apiServer = URI.create(kubectl(Duration.ofMinutes(1), null, "config", "view", "--minify", "-o",
                     "jsonpath={.clusters[0].cluster.server}").strip());
-            WorkerSettings.Compaction settings = new WorkerSettings.Compaction(IMAGE, "Never", null, apiServer,
-                    serviceAccount, null, "2Gi", "1g", Duration.ofMinutes(20), 185, Map.of());
+            WorkerSettings.Compaction settings = new WorkerSettings.Compaction(IMAGE, "Never", jobs,
+                    "keel-compaction", apiServer, serviceAccount, null, "2Gi", "1g", Duration.ofMinutes(20), 185,
+                    Map.of());
             KubernetesJobs compactor = new KubernetesJobs(settings, Duration.ofHours(1), catalog.uri,
                     catalog.workerTokens());
 
@@ -103,13 +105,15 @@ class KubernetesCompactionTest {
 
                 assertThat(worker.runOnce().compactionsStarted).isEqualTo(1);
                 String job = "keel-compact-" + table.uuid();
-                String status = await(namespace, job);
-                String log = kubectl(Duration.ofMinutes(1), null, "logs", "-n", namespace, "job/" + job);
+                String status = await(jobs, job);
+                String log = kubectl(Duration.ofMinutes(1), null, "logs", "-n", jobs, "job/" + job);
                 assertThat(status).as("the Job's status; its log:%n%s", log).isEqualTo("1,");
                 assertThat(log).contains("COMPACTED");
-                assertThat(kubectl(Duration.ofMinutes(1), null, "get", "secret", job, "-n", namespace, "-o",
-                        "jsonpath={.metadata.ownerReferences[0].kind}/{.metadata.ownerReferences[0].name}"))
-                        .isEqualTo("Job/" + job);
+                assertThat(kubectl(Duration.ofMinutes(1), null, "get", "job", job, "-n", jobs, "-o",
+                        "jsonpath={.spec.template.spec.serviceAccountName}")).isEqualTo("keel-compaction");
+                assertThat(kubectl(Duration.ofMinutes(1), null, "get", "secret", "-n", jobs, "-l",
+                        "app.kubernetes.io/name=keel-compaction", "-o", "jsonpath={.items[*].metadata.ownerReferences[0]"
+                                + ".kind}/{.items[*].metadata.ownerReferences[0].name}")).isEqualTo("Job/" + job);
 
                 Table compacted = writer.loadTable(id);
                 assertThat(compacted.currentSnapshot().operation()).isEqualTo("replace");
@@ -117,14 +121,39 @@ class KubernetesCompactionTest {
                         .containsEntry("total-records", "60");
                 assertThat(small).as("left for expiry").allMatch(file -> catalog.exists(file.location()));
 
+                // The scan saw the table under another id: a table since dropped, the name now this one's.
+                UUID stale = UUID.randomUUID();
+                assertThat(compactor.launch(new Management.TableWork(TestCatalog.CATALOG, stale,
+                        List.of(id.namespace().levels()), id.name(), table.location(),
+                        Map.of("compaction.enabled", "true")))).isEqualTo(Compactor.Launch.STARTED);
+                String staleJob = "keel-compact-" + stale;
+                String staleStatus = await(jobs, staleJob);
+                String staleLog = kubectl(Duration.ofMinutes(1), null, "logs", "-n", jobs, "job/" + staleJob);
+                assertThat(staleStatus).as("the Job's status; its log:%n%s", staleLog).isEqualTo(",1");
+                assertThat(staleLog).contains("TABLE CHANGED").doesNotContain("COMPACTED");
+                assertThat(writer.loadTable(id).currentSnapshot().snapshotId()).as("not compacted again")
+                        .isEqualTo(compacted.currentSnapshot().snapshotId());
+
                 assertThat(worker.runOnce().compactionsStarted).as("a day has not passed").isZero();
                 clock.advance(Duration.ofDays(2));
                 assertThat(worker.runOnce().compactionsStarted).as("the finished Job is kept for an hour")
                         .isZero();
             }
         } finally {
-            kubectl(Duration.ofMinutes(5), null, "delete", "namespace", namespace, "--wait=true", "--timeout=4m");
+            kubectl(Duration.ofMinutes(5), null, "delete", "namespace", jobs, namespace, "--wait=true",
+                    "--timeout=4m");
         }
+    }
+
+    /** One template of the chart as this test installs it: the worker in {@code namespace}, its Jobs in {@code jobs}. */
+    private String chart(Path repo, String namespace, String jobs, String template) throws Exception {
+        return run(Duration.ofMinutes(1), null, "helm", "template", RELEASE,
+                repo.resolve("deploy/helm/keel-maintenance").toString(), "--namespace", namespace,
+                "--show-only", template,
+                "--set", "config.keel.maintenance.catalog-uri=" + catalog.uri,
+                "--set", "config.keel.maintenance.storage.test.prefixes[0]=s3://" + catalog.bucket + "/tables",
+                "--set", "config.keel.maintenance.compaction.image=" + IMAGE,
+                "--set", "config.keel.maintenance.compaction.namespace=" + jobs);
     }
 
     /** Ten rows in an Avro data file of the table, written with the table's vended credentials. */
