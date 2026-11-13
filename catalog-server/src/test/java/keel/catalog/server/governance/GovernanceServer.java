@@ -35,7 +35,7 @@ import org.testcontainers.utility.DockerImageName;
         "keel.audit.request-timeout=1s",
         "keel.audit.probe-interval=1s",
         "keel.audit.relay-interval=100ms",
-        "keel.security.maintenance-principals=maintenance",
+        "keel.security.maintenance-principals=maintenance,maintenance-2",
         "keel.governance.purges-per-minute=3",
         "keel.governance.retention-classes.trade-records.minimum-snapshot-age=30d",
         "keel.security.grant-admin-groups=" + GovernanceServer.GRANT_ADMINS,

@@ -1,0 +1,16 @@
+Breaks: the due-deletion scan lists every pending deletion, so the worker deletes a file before its not-before time.
+Module: catalog-maintenance
+Test: PendingDeletionTest#pendingDeletionsWaitForTheirTime
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+index ae3507e..a211fbd 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+@@ -76,7 +76,7 @@ final class SqlDeletions {
+             }
+             parameters.add(page.size() + 1);
+             List<PendingDeletion> due = query(connection, "SELECT " + COLUMNS + " FROM pending_deletion d"
+-                    + " JOIN catalog_object o ON o.id = d.object_id WHERE d.not_before <= ?" + keyset
++                    + " JOIN catalog_object o ON o.id = d.object_id WHERE (d.not_before <= ? OR TRUE)" + keyset
+                     + " AND o.state IN ('ACTIVE', 'DROPPED') AND " + SqlObjects.UNCOVERED
+                     + " ORDER BY d.not_before, d.id LIMIT ?", row -> new PendingDeletion(Jdbc.uuid(row, "id"),
+                     Jdbc.uuid(row, "object_id"), Jdbc.uuid(row, "catalog_id"), row.getString("location"),

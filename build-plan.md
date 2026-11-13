@@ -72,7 +72,8 @@ Narrow by design [D7, D8.8]. Every operation is one atomic unit on every backend
 - `commit(CommitBatch)` — CAS on one or more (object, branch) pointers in fixed ID order, plus projection, hash, journal, outbox and idempotency. The same call serves single-table commits (v1), multi-table commits (`/transactions/commit`, built 2026-11-12) and merges (v1.x) [D15, D33].
 - `findCommit(commitId)` — the ambiguity lookup; locks the pointer row before looking [D8.4].
 - Namespaces: create, drop, load, list children (paged), update properties (CAS on a namespace version).
-- Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan; unregister, and revive by registering an object's own file again (v1.x, built 2026-11-12) [D13].
+- Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan; unregister, and revive by registering an object's own file again (v1.x, built 2026-11-12) [D13]; purge as a claim and a completion, and a scan of active objects (v1.x, built 2026-11-13) [D25, D30].
+- Pending deletions: record, list due, complete (v1.x, built 2026-11-13) [D30].
 - Grants: put and revoke (with an outbox row), batch check, list by principal, list by object.
 - Idempotency: claim, complete, read, wait, expire.
 - Outbox: claim the next ordered batch, mark relayed.
@@ -88,7 +89,8 @@ Mapped to tables (SQL) or collections (MongoDB) per backend. Names are stored tw
 |---|---|
 | catalog | id, name, storage profile, KMS key set, legal entity [D28] |
 | namespace | catalog id, id, parent id, name (normalized, display), properties, version, dropped-at |
-| object | catalog id, id (UUID), namespace id, name (normalized, display), kind (table/view), state (active/dropped; also purged, and unregistered from 2026-11-12), dropped-at, purge-after, location root [D25, D28] |
+| object | catalog id, id (UUID), namespace id, name (normalized, display), kind (table/view), state (active/dropped; also purged, unregistered from 2026-11-12, and purging from 2026-11-13), dropped-at, purge-after, purge claimant, location root [D25, D28, D30] |
+| pending deletion | id, object id, catalog id, location, not-before, recorded-at; added 2026-11-13 [D30] |
 | pointer | object id, **branch** (`main` in v1), metadata location, version, SHA-256, projection (chunked above the size budget), last commit id [D6, D8.5, D33] |
 | journal | commit id, object id, branch, sequence, time, principal, end user, engine, requirements, updates, old and new location; partitioned by time [D8.5] |
 | outbox | sequence, time, type, payload (versioned schema) [D23] |
@@ -218,10 +220,12 @@ Three worktree sessions, each owning one module:
   | `PUT`/`DELETE .../dr-freeze` | a platform operator | A step of the DR runbook [D37]: running the deployment, not data access. Operators hold no grant, so freezing gives them nothing to read or write. |
   | `POST .../objects/{id}/undrop` | create on the object's namespace | It brings a name back into the namespace, as create, register and rename-into do. |
   | `GET .../objects/{id}/export` | select on the object | It returns the metadata JSON and the commit journal, which `loadTable` gives with select; it vends no credentials. |
-  | `POST .../objects/{id}/purge`, `GET /management/v1/maintenance/purge-eligible` | a maintenance principal | Only the maintenance tier purges [D25], and the queue lists objects in every catalog. |
+  | `POST .../objects/{id}/purge-claim`, `POST .../objects/{id}/purge`, `GET /management/v1/maintenance/purge-eligible` | a maintenance principal | Only the maintenance tier purges [D25], and the queue lists objects in every catalog. Since 2026-11-13 a purge is a claim, then a completion by the claimant [D30]. |
+  | `POST .../objects/{id}/pending-deletions`, `POST .../objects/{id}/pending-deletions/complete`, `GET /management/v1/maintenance/work` | a maintenance principal | The worker's own routes (D30, added 2026-11-13): the files it will delete once the PITR window has passed, and the work list across every catalog. |
+  | `GET /management/v1/maintenance/delete-policies` | a platform operator | It lists every storage profile and its worker, to apply the policies that leave delete to the worker alone (D30, added 2026-11-13): running the deployment, as the DR freeze is. |
 
   - D27 now allows manage-tags on an unclassified table in a regulated area, beside describe; otherwise nobody could classify the table that the rule keeps closed.
-  - One setting, `keel.security.maintenance-principals`, names the maintenance tier for both purge and deleting vended credentials. It replaces `keel.governance.maintenance-principals` and `keel.storage.maintenance-principals`. A maintenance principal counts only when acting as itself, not through a trusted engine for an end user.
+  - One setting, `keel.security.maintenance-principals`, names the maintenance tier for both purge and deleting vended credentials (until 2026-11-13: since then no vended credentials delete, and the tier's own storage identity, `maintenance-principal` on each storage profile, does [D30]). It replaces `keel.governance.maintenance-principals` and `keel.storage.maintenance-principals`. A maintenance principal counts only when acting as itself, not through a trusted engine for an end user.
 
 ### M8 — Hardening gates
 
@@ -357,7 +361,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 - `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15]. **Done 2026-11-12** (see Status).
 - Branches, tags and merge over the v1 storage: REST prefix selects the branch (`trading@dev`), Nessie merge semantics per table, cleanup protects every ref, defaults from P11 [D33].
-- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment), not built.
+- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment). **Catalog side done 2026-11-13** (see Status). **Worker done 2026-11-13** (`catalog-maintenance`, its image and Helm chart; see Status); its heavy and overnight tests have not run. **Review fixes done 2026-11-13** (see Status): compaction Jobs in a namespace of their own, the table-id check before every job and in the Job, compaction in the engine matrix (overnight), the delete policy denying lifecycle rules, and a Ceph leg in the heavy pass.
 - unregister, register-view, labels [D13, D27]. **Done 2026-11-12**, with review fixes the same night (see Status).
 - queryable audit tables [D23]; DR replication-watermark verifier.
 
@@ -635,9 +639,105 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Unregister is bound to the table the route checked. The route hands the engine that table's id, and the engine unregisters only it: a table that takes the name after the check (a rename swap, a drop and recreate) is left alone with a 404. The store checks the regulated flag (the table or any ancestor) and the row/column-policy flag (the table) again under the table's lock, beside the hold and freeze, on all four stores (`Refused(FLAGGED)`, answered 403), so a flag a steward sets after the route's check still refuses it.
   - Reviving by register restores in place, as the management undrop does. The object comes back only in the namespace it left (elsewhere is 409: a move would hand it that namespace's grants and governance) and only from the file its main pointer names (an older file is 409; that file changed since it was recorded raises the metadata-integrity alert and is refused). So it returns as it left, and no rule a commit is held to is skipped. With revive in place, the route's undrop check asks what its register check already asks, create on the same namespace. An unregistered object brought back needs that, as any register there does; the ledger marks this reading, and the refusal to revive elsewhere, as awaiting Paul's OK.
   - CREATE OR REPLACE (D11): a replace is now a commit after which main is a snapshot the table did not have, or is gone where it was there. Pointing main back at a snapshot the table already had is not one (it counted before, so a rollback could retype the rows it reads), and neither is a table with no main snapshot before or after. The exemption covers only the type-promotion check, which Paul approved: a primitive turned nested, or an optional field made required, is refused in a replace too.
-  - Docs: D14 no longer says view loads carry an ETag; D30 (7) says "tagged heavy", as Paul wrote; docs/storage-design.md 9 (f) 3 lists `Refused(FLAGGED)`.
+  - Docs: D14 no longer says view loads carry an ETag; D30 (7) says the Ceph tests are tagged heavy, as Paul's choice of 2026-11-12 (the recommended option) has it; docs/storage-design.md 9 (f) 3 lists `Refused(FLAGGED)`.
   - Tests: `RegisteringTest` 22, adding `Unregistering#onlyTheAuthorizedTable` and `#flaggedMeanwhile`, and `Reviving#onlyInItsOwnNamespace` and `#onlyTheFileItLeftAt`; the store suite's `unregisterRefusals` sets each flag in turn (all four stores); `SecurityGateTest#unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace` (widened from the unregister test) and the new `#registerViewNeedsCreateAndADroppedViewComesBackOnlyInItsOwnNamespace`; three more `BackstopTest` cases (a replace still may not make a field required nor turn a primitive into a struct; the replace of a table with no snapshot may retype; a rollback of main that also retypes is refused).
   - Fast build green after merging main (already up to date at 2b1af36): 1,155 tests in 120 classes, 0 failures, 10 min 10 s, with the keel-demo stack running in the same Docker. One earlier run of the changed server tests lost `HeldTablesTest` and `MutatingRoutesAuditTest` at startup, when the Kafka container exited with code 126; both passed on the next run.
   - Bites: 14 recorded, 12 in `bites/D13/` (the moved-pointer compare and the flag check on each store family, the engine's binding to the checked table, the revive's window, namespace, file and hash checks, and register-view's create check) and 2 in `bites/D11/`. Three were recorded again because the code they break moved: `replace-exemption-in-place`, `unregister-ignores-freeze-sql` and `-oracle`. `register-undrop-unguarded` is removed: the check it breaks now asks what the register check asks, so no test can fail. All 145 apply. Eleven were run by hand on PostgreSQL and each fails as it should: the five engine bites (four applied together, each one's named test failing), the three in `bites/D11/`, `unregister-ignores-flag-sql`, `unregister-ignores-moved-pointer-sql` and `register-view-unguarded`.
   - Not verified: the flag check and the moved-pointer and flag bites on CockroachDB, Oracle and MongoDB, the other bites, the `heavy` and `overnight` tests, and the engine matrix. All wait for the next heavy pass or the nightly. Not guarded: an object undropped, renamed into another namespace and dropped again by other callers between the engine's read and the store's revive would come back in the namespace it first left, since the store does not compare the namespace.
+- **Maintenance worker, catalog side, done 2026-11-13, on PostgreSQL and Silo** (D30; phase 2 of the v1.x plan, with Paul's decisions of 2026-11-12, recorded in the ledger's amendments to D11, D20, D21, D24, D25, D30 and D37). The worker itself, `catalog-maintenance`, is built apart and talks to these routes.
+  - Guards. Snapshot removal is refused for a snapshot younger than `keel.governance.minimum-snapshot-age` (1 h by default) or its retention class's longer minimum; the conformance server and the engine matrix set it to 0 s. The server refuses to start unless `keel.rest.drop-retention` is longer than `keel.governance.pitr-window` (7 days by default).
+  - Purge is a claim, a deletion and a completion, on all four stores (schema steps: PostgreSQL V6, CockroachDB V5, Oracle V7, MongoDB step 5). `POST …/objects/{id}/purge-claim` makes a due dropped object `PURGING` with its claimant; a hold or a DR freeze refuses it (403), the claimant asking again resumes (200, no rate-limit slot), anyone else gets 409. `POST …/objects/{id}/purge` completes the claim, by its claimant only, and marks it `PURGED`. A hold placed after the claim does not stop it. The purge queue leaves out frozen objects as well as held ones and lists every claimed one. The rate limit (`keel.governance.purges-per-minute`) is still per replica: three replicas accept three times the configured rate.
+  - Pending deletions: `POST …/objects/{id}/pending-deletions` records up to 1,000 files beneath the table's location, due once the PITR window has passed (201 with `not-before`); `…/pending-deletions/complete` reports them deleted by id. Due ones are listed only while no hold or freeze covers the object.
+  - Work list: `GET /management/v1/maintenance/work`, for a maintenance principal acting as itself, pages through three sections (`tables`, `purges`, `deletions`, or one of them with `section`): active tables whose resolved policy runs a job, with the policy in force, then the purge queue, then the due deletions, each with its catalog name and location. Tables only: views have no maintenance jobs.
+  - Maintenance exemption (D20): a maintenance principal acting as itself gets storage access to a table flagged for row/column policy. The authorizer answers `Exempted`; the load, credentials and commit routes publish a `maintenance-exemption` audit event first and answer 503 if they cannot. For the same caller, removing unused schemas and partition specs, as snapshot expiry does, needs write rather than modify. An end user, delegated or through an engine, never gets either.
+  - Delete rights (D21): no vended credentials delete, a maintenance principal's included (`Access.READ_WRITE_DELETE` is gone; the audit schema keeps the value for events issued before). Each storage profile may name `maintenance-principal`, the worker's own storage identity, checked at startup. `GET /management/v1/maintenance/delete-policies`, for platform operators, gives what to apply: one bucket policy per bucket on AWS S3 and Ceph that denies delete beneath the profiles' prefixes to every principal but the worker, the catalog's own included; on MinIO a user policy to attach to every user but the worker. deploy/README.md says how; the catalog never applies them.
+  - Silo checked on 2026-11-12: it enforces no bucket policy on signed requests, and its root user, which the tests use, ignores every policy. So the bucket-policy test, `DeletePolicyCephTest`, is `heavy` and runs only with `-Ps3=ceph`; on Silo it is skipped. TestS3 now creates the worker's Ceph user, `keel-maintenance`.
+  - Audit: three new event types, `purge-claim`, `file-deletion` (counts, not locations) and `maintenance-exemption`; golden lines 20 to 22. The change stream is unchanged.
+  - Tests: the shared store suite's `purgeIsClaimedThenCompleted`, `holdRacingThePurgeClaim` (it replaces `holdRacingThePurgeExactlyOneApplies`), `purgeScanFindsDueUncoveredAndClaimedObjects`, `purgeScanSkipsObjectsHeldAbove` (freezes too), `pendingDeletionsComeDueInOrder`, `pendingDeletionsWaitOutHoldsAndFreezes` and `activeObjectScanPagesByKind`; `MutationSuite` drives `claimPurge`, `completePurge`, `recordDeletions` and `completeDeletions`; `MaintenanceRoutesTest` (new, 5), `LifecycleTest`, `HeldTablesTest`, `ManagementAuthorizationTest`, `MutatingRoutesAuditTest`, `GovernanceWiringTest`, `RulesTest$SnapshotMinimumAge`, `AuthorizerTest`, `SecurityGateTest#theMaintenanceExemptionIsAuditedAndNeverAnEndUsers`, `DeletePolicyTest` (new), `VendingTest`, `SessionPolicyTest` and `VendingRouteTest`; `EventCodecTest` and the golden lines. `RollingUpgradeTest` now expects schema 6.
+  - Fast build green after merging main (f049ad5, which brought no change): 1,196 tests in 123 classes, 0 failures. The first run (10 min 40 s) failed one test, `SchemaAtStartupTest`, which still expected PostgreSQL schema 5; fixed. The second run, 5 min 16 s, reran what the first had not passed and took the rest as up to date.
+  - Bites: 15 recorded in `bites/D30/`, each checked with `git apply --check`, not run. Thirteen older bites in `bites/D15/`, `M5/`, `M6/` and `M7/` no longer applied, because the D30 changes moved their code, and were recorded again with the same breaks; `M7/purge-by-anyone` now removes the check from both the claim and the completion. `M6/delete-for-writers` is removed: `D30/delete-still-vended` makes the same break. All 159 apply.
+  - Not verified: CockroachDB, Oracle and MongoDB (their purge claim, completion, pending deletions and active-object scan, and their schema steps), the `heavy` tests (`DeletePolicyCephTest` on Ceph among them), the `overnight` `MutationSuite` sweeps and `RollingUpgradeTest`, the engine matrix and the RCK with the minimum age at 0 s, the bites, and the MinIO user policy and AWS bucket policy, which no test applies. All but the last wait for the next heavy pass or the nightly.
+- **Maintenance worker done 2026-11-13, on PostgreSQL and Silo** (D30; phase 2 of the v1.x plan, to Paul's decisions of 2026-11-12, recorded in the ledger's amendments to D2, D21, D25 and D30). `catalog-maintenance` is a separate service: an Iceberg Java client of the catalog over REST, with its own principal and its own storage identity. Its README says how to run and configure it.
+  - The scan. Every `scan-interval` (10 minutes) the worker pages through `GET /management/v1/maintenance/work`. For each table it runs what the policy turns on:
+    - snapshot expiry (Iceberg's ExpireSnapshots) and manifest rewrite (RewriteManifests), both committed through the catalog;
+    - the orphan scan and compaction, each at most once a day per table.
+
+    Then it purges and deletes the due pending deletions. A purge is a claim, the deletion of everything beneath the location with the worker's own identity, and the completion. Another worker's claim is skipped, and the worker's own is resumed. Due deletions are reported done. A failed job is reported and tried again at the next scan.
+  - Nothing is deleted when found. Expiry, manifest rewrite and the orphan scan record every unreferenced file in the pending-deletion list, which holds it for the PITR window. Iceberg's expiry leaves a file that a snapshot it keeps had deleted; the orphan scan queues it later.
+  - The orphan scan, in Java. It lists the table's location and builds the reachable set: the metadata log, and every manifest list, manifest, data, delete, statistics and partition statistics file of every snapshot, so every branch and tag counts. It reads the metadata again after the listing, so a file committed meanwhile is reachable. It queues only unreachable files older than the orphan age.
+  - Compaction. One Kubernetes Job per table, `keel-compact-<table uuid>`, runs the repo's Spark image with rewrite_data_files. It signs in as the worker through a Secret the Job owns. A finished Job is kept for the compaction interval, which spaces compactions apart across restarts too.
+  - Catalog change, so reruns are safe. A file is pending once per object: a unique index `pending_deletion_object` (PostgreSQL V7, CockroachDB V6, Oracle V8, MongoDB step 6). Recording a file again keeps its first not-before, writes nothing, and answers 200 instead of 201. `SchemaAtStartupTest` and `RollingUpgradeTest` expect schema 7. `IcebergImportBoundaryTest` lists `catalog-maintenance` as a client.
+  - Packaging.
+    - Image: `deploy/image/maintenance.Dockerfile`. It was built once and started without settings; it refused to start for want of `catalog-uri`, as it should.
+    - Chart: `deploy/helm/keel-maintenance`. It passes `helm lint` and renders; it is not installed anywhere. It runs one replica (Recreate) with its own service account, the settings in a ConfigMap and the secrets as a config tree. With a compaction image it adds a Role and RoleBinding for Jobs and Secrets.
+  - Tests, fast:
+    - `SnapshotExpiryTest`: expiry queues only unreachable files; branch and tag files survive.
+    - `OrphanScanTest`: young orphans are kept.
+    - `GuardrailsTest`: held, frozen and unregistered tables are untouched.
+    - `PurgeTest`: the prefix goes after a claim, and a claimed purge resumes.
+    - `PendingDeletionTest`: pending deletions wait for their time.
+    - `WorkerRunTest`: the worker's run against a fake clock.
+    - `KubernetesJobsTest` and `TokenSourceTest`.
+    - The store suite's `pendingDeletionsAreRecordedOncePerFile` and `MaintenanceRoutesTest`.
+
+    The module's test task takes about 85 s, beside the other modules. About 60 s of that is starting PostgreSQL, Kafka, Silo and the server, which shows up in the first class.
+  - Tests, `heavy`:
+    - `OrphanRaceTest`: a writer committing during orphan scans.
+    - `KafkaDownTest`.
+    - `KillMidPurgeTest`: a worker in its own JVM is killed mid-purge and resumed.
+    - `KubernetesCompactionTest`: Docker Desktop's cluster, in a throwaway namespace it deletes, with the chart's own RBAC.
+  - Tests, `overnight`:
+    - `LargeExpiryTest`: 10,000 snapshots.
+    - `LargeOrphanScanTest`: the scan's heap per reachable file, at 250,000, 500,000 and 1,000,000 files, each scan in its own 2 GiB JVM.
+
+    Compaction is not in the engine matrix: that would mean deploying the worker there. This awaits Paul's OK.
+  - Fast build green after merging main (already up to date at f049ad5): 1,208 tests in 131 classes, 0 failures.
+    - The first run (10 min 35 s) lost `ClientOperationsTest` at startup, when the Kafka container exited with code 126, as on 2026-11-12.
+    - The second run, 3 min 10 s, reran that module and `catalog-maintenance` and took the rest as up to date.
+  - Bites: 7 recorded in `bites/D30/`, each checked with `git apply --check`, not run.
+    - `deleteWith-ignores-pending-list`, `orphan-threshold-ignored`, `worker-maintains-held-table`, `branch-or-tag-files-deleted`, `purge-without-claim`, `pending-deleted-early` and `pending-recorded-twice`.
+    - `pending-deletion-before-window` was recorded again: the 200 answer moved its lines.
+    - All 166 apply.
+  - Found and not fixed: the Ceph delete policy the catalog hands out lets the worker delete but not list (`s3:ListBucket`), which its orphan scans and purges need. The tests add the listing, and deploy/README.md tells operators to; folding it into the policy is open (D21).
+  - Not verified, all waiting for the next heavy pass or the nightly:
+    - the four `heavy` and two `overnight` tests;
+    - the dedup on CockroachDB, Oracle and MongoDB, and their schema steps;
+    - the worker on Ceph (in the heavy pass's Ceph leg, added by the review fixes below) and on AWS (no pass runs it);
+    - the compaction Job in a cluster;
+    - the bites.
+
+    The chart has not been installed anywhere.
+- **Maintenance worker review fixes done 2026-11-13, on PostgreSQL and Silo** (D30; two reviewers' findings on phase 2, fixed to Paul's decisions of 2026-11-12, recorded in the ledger's amendments to D21, D25 and D30).
+  - Compaction Jobs run in a namespace of their own. `keel.maintenance.compaction.namespace` is required with an image, and the worker refuses its own namespace at startup. A pod may run as any service account and mount any Secret of its namespace, so a Job in the catalog's could have run as the catalog. The chart refuses to render without the namespace or with the release's own, and puts three things there: its Role (get and create on Jobs, create on Secrets, no longer update), the RoleBinding, and the Jobs' service account `keel-compaction`, which has no rights and mounts no token. Each Job's Secret gets a fresh name and is created after the Job, so nothing is ever replaced.
+  - The table's id. The worker loads the table before every job, compaction included, and leaves it alone when its id is not the one the work list named. The Job carries `KEEL_TABLE_UUID`, and `compact.py` stops (exit 3, `TABLE CHANGED`) unless the table it loads has that id. The procedure then works on that same cached table, and Iceberg's REST client checks the id on refresh and commit.
+  - Compaction's sign-in. Compaction needs the client-credentials grant, since a token file's token could expire under a running Job, and `token.scope`, since the Job's Iceberg client asks for scope `catalog` when none is set.
+  - Overnight compaction, as Paul's choice of 2026-11-12 asks: `EngineMatrixTest#compaction`, run right after Spark.
+    - The matrix's Spark makes `m8.compaction.t` from eight inserts across four partitions: 32 rows in 32 files.
+    - The worker's own `KubernetesJobs` launches its Job in `keel-engines-compaction`, with the chart's RBAC. The Job signs in as `keel-maintenance` (group `maintainers`, granted write, listed in the catalog's maintenance principals).
+    - Then it checks: 4 files with the same 32 rows (ids summing to 496) in a `replace` snapshot; the snapshot before still reads all 32, so no replaced file was deleted; and the catalog lists no pending deletion for the table.
+    - The setup, the procedure and the check ran once in the local Spark image against a Hadoop catalog (32 files to 4, the same numbers). The scenario itself has not run.
+  - The delete policy (D21) also denies every principal but the worker setting lifecycle rules, since a lifecycle expiration deletes without DeleteObject. On AWS S3 and MinIO it also denies changing or deleting the bucket policy. On Ceph it denies lifecycle rules only, and deploy/README.md requires an operator's user, never the catalog's, to own the bucket. On every store the catalog's identity must hold no bucket-configuration rights. `DeletePolicyCephTest` now checks that both the owner and the role session are refused a lifecycle rule.
+  - Recorded locations. The catalog refuses a location with an empty, `.` or `..` segment after the table's location (400), and the worker leaves such files out. It is a segment test rather than catalog-objectstore's `ObjectLocation`, which refuses `=` and `%`, and partition paths hold both.
+  - `heavy.sh` gets a Ceph leg between the heavy build and the bites: `./gradlew :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph`.
+  - Tests:
+    - the store suite's `anUnregisteredTablesPendingDeletionsNeverComeDue` (all four stores);
+    - `MaintenanceRoutesTest`'s new 400 cases;
+    - `GuardrailsTest#aTableNoLongerTheOneTheWorkListNamedIsLeftAlone` and `#onlyFilesBeneathTheTablesOwnLocationAreRecorded`;
+    - `KubernetesJobsTest`: the Job before its Secret, the Job's account and table id, and `#theWorkersOwnNamespaceIsRefusedForTheJobs`;
+    - `TokenSourceTest#compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn`, and `DeletePolicyTest`;
+    - `KubernetesCompactionTest` (heavy): the worker and its Jobs in two namespaces, plus a Job naming the table by an id it no longer has, which must stop without compacting.
+  - Fast build green after merging main (already up to date at f049ad5): 1,213 tests in 131 classes, 0 failures, 9 min 38 s, in one run.
+  - Bites: 33 recorded in `bites/D30/`, each checked with `git apply --check`, none run.
+    - Stores (17): the purge claim's freeze check on each store family and its hold check on Oracle and MongoDB; the due list's state, hold and freeze filters and the recording's state filter, on each store family.
+    - Catalog routes (3): `pending-deletions-open`, `pending-deletions-complete-open`, `pending-deletion-outside-table`. The orphan scan's second read (1): `orphan-scan-reads-metadata-once`. The delete policy (2): `delete-policy-allows-lifecycle`, `delete-policy-allows-policy-change`.
+    - The worker (10): `worker-maintains-another-table`, `compaction-with-token-file`, `compaction-without-scope`, `compaction-without-namespace`, `file-token-handed-to-job`, `jobs-in-workers-namespace`, `job-runs-as-default-account`, `job-without-table-id`, `secret-reuses-job-name` and `compact-ignores-table-id` (the last needs `KubernetesCompactionTest`, heavy).
+    - `worker-maintains-held-table` was recorded again, as `maintain` moved. All 199 apply.
+  - Open, Paul's call: the time of a table's last orphan scan and compaction is still kept in memory, so after a restart every table's orphan scan runs again, one table after another. A compaction does not run again while its finished Job is kept. Keeping these times in the catalog would need a schema step on all four stores.
+  - Not verified, waiting for the next heavy pass or the nightly:
+    - the `heavy` and `overnight` tests, `KubernetesCompactionTest`, `DeletePolicyCephTest` and `EngineMatrixTest#compaction` among them;
+    - the Ceph leg;
+    - the new store test and its bites on CockroachDB, Oracle and MongoDB;
+    - the bites.
+
+    Whether Ceph lets a bucket policy refuse its owner a policy change was not checked. The chart was rendered and linted, not installed.
 - **Next:** M9, carried to work.

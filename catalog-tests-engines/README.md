@@ -273,6 +273,25 @@ updated, 1 inserted) overwrites the changed row away, then appends it and the ne
 `a,c2,d2,e`; operations append, overwrite, overwrite, append, overwrite, append, append. SingleStore runs after
 PyIceberg and reads the same 4 rows.
 
+## Compaction by the maintenance worker (2026-11-13, not yet run)
+
+`EngineMatrixTest#compaction` runs the maintenance worker's own compaction Job (D30 (3)) right after Spark, before
+SingleStore takes its memory. The matrix's Spark first makes `m8.compaction.t` (`compaction_matrix.py setup`):
+v2, identity-partitioned by `part` (0 to 3), from eight inserts of one row per partition, so 32 rows in 32 data
+files, ids summing to 496. The harness then does what the maintenance chart and worker do:
+
+- It renders `deploy/helm/keel-maintenance`: the worker's service account in the stack's namespace, and the Role,
+  RoleBinding and Jobs' service account in namespace `keel-engines-compaction`. There, ExternalName Services
+  `keel-catalog` and `s3` lead to the stack's.
+- It launches the Job through the worker's `KubernetesJobs` (`keel.maintenance.MatrixCompaction`), signed in as
+  `keel-maintenance`, which `k8s/catalog.properties` lists as a maintenance principal. Its group, `maintainers`,
+  is granted write.
+
+The Job's `compact.py` checks the table's id and runs `rewrite_data_files`: 32 files rewritten into 4.
+`compaction_matrix.py check` then reads 4 files, the same 32 rows and 496 in a `replace` snapshot, and the
+snapshot before it still reads all 32. So no replaced file was deleted: they wait for expiry. The catalog's
+database lists no pending deletion for the table. Not run against a stack already up (`-Pengines.stack`).
+
 ## Kafka Connect upsert: not supported (2026-11-12)
 
 The Apache Iceberg 1.12.0 Kafka Connect sink has no upsert or equality-delete mode: its configuration

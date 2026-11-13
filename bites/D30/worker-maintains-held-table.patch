@@ -1,0 +1,20 @@
+Breaks: the worker runs expiry and the orphan scan whenever the policy names them, even when the catalog has switched them off for a legal hold.
+Module: catalog-maintenance
+Test: GuardrailsTest#heldFrozenAndUnregisteredTablesAreUntouched
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+index a6d54a3..4d1afdb 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+@@ -111,9 +111,10 @@ final class Worker implements AutoCloseable {
+     /** One table's jobs that are due; package-private so a test can hand it a stale work item. */
+     void maintain(Management.TableWork work, Instant now, ScanReport report) {
+         report.tables++;
+-        boolean expire = work.runs("snapshot-expiry.enabled");
++        boolean expire = work.policy().containsKey("snapshot-expiry.enabled");
+         boolean rewrite = work.runs("manifest-rewrite.enabled");
+-        boolean orphans = work.runs("orphan-removal.enabled") && due(orphanScans, work.id(), orphanInterval, now);
++        boolean orphans = work.policy().containsKey("orphan-removal.enabled")
++                && due(orphanScans, work.id(), orphanInterval, now);
+         boolean compact = work.runs("compaction.enabled") && compactor != Compactor.NONE
+                 && due(compactions, work.id(), compactionInterval, now);
+         if (!(expire || rewrite || orphans || compact)) {

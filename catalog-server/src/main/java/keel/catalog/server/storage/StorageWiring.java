@@ -3,7 +3,6 @@ package keel.catalog.server.storage;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.CredentialVending;
 import keel.catalog.server.rest.RestSettings;
-import keel.catalog.server.security.SecuritySettings;
 import keel.catalog.store.CatalogStore;
 import java.time.Clock;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -25,8 +24,8 @@ class StorageWiring {
 
     @Bean
     CredentialVending credentialVending(CatalogStorage storage, AuditPublisher audit, StorageSettings settings,
-                                        SecuritySettings security, RestSettings rest, Clock clock) {
-        return new StsCredentialVending(storage, audit, rest.auditSource(), settings, security,
-                rest.credentialRefreshMargin(), clock);
+                                        RestSettings rest, Clock clock) {
+        return new StsCredentialVending(storage, audit, rest.auditSource(), settings, rest.credentialRefreshMargin(),
+                clock);
     }
 }

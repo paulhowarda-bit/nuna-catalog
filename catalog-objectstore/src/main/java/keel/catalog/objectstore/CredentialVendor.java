@@ -47,7 +47,7 @@ public final class CredentialVendor implements AutoCloseable {
             throw new IllegalArgumentException(profile.kind() + " needs an STS role to vend credentials");
         }
         // Every table lives at <table root>/<uuid>, so this is the longest policy the profile ever sends.
-        SessionPolicy.forTable(profile.tableRoot().child(new UUID(0, 0).toString()), Access.READ_WRITE_DELETE,
+        SessionPolicy.forTable(profile.tableRoot().child(new UUID(0, 0).toString()), Access.READ_WRITE,
                 profile.region());
         StsClientBuilder builder = StsClient.builder()
                 .region(Region.of(profile.region()))

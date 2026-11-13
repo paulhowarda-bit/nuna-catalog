@@ -24,13 +24,14 @@ class SessionPolicyTest {
     }
 
     @Test
-    @DisplayName("read access cannot write and only the maintenance level can delete")
+    @DisplayName("read access cannot write, and no access level deletes (D30)")
     void accessLevels() {
         assertThat(SessionPolicy.forTable(ORDERS, Access.READ, "us-east-1"))
                 .contains("\"Action\":[\"s3:GetObject\"]")
                 .doesNotContain("s3:PutObject", "s3:DeleteObject");
-        assertThat(SessionPolicy.forTable(ORDERS, Access.READ_WRITE, "us-east-1")).doesNotContain("Delete");
-        assertThat(SessionPolicy.forTable(ORDERS, Access.READ_WRITE_DELETE, "us-east-1")).contains("\"s3:DeleteObject\"");
+        for (Access access : Access.values()) {
+            assertThat(SessionPolicy.forTable(ORDERS, access, "us-east-1")).as(access.name()).doesNotContain("Delete");
+        }
     }
 
     @Test
@@ -53,7 +54,7 @@ class SessionPolicyTest {
     @DisplayName("a catalog-assigned location fits far inside 2,048 characters; a policy over the limit is refused")
     void sizeLimit() {
         ObjectLocation assigned = ObjectLocation.parse("s3://lake/tables").child(UUID.randomUUID().toString());
-        assertThat(SessionPolicy.forTable(assigned, Access.READ_WRITE_DELETE, "us-east-1").length()).isLessThan(500);
+        assertThat(SessionPolicy.forTable(assigned, Access.READ_WRITE, "us-east-1").length()).isLessThan(500);
 
         String longSegment = "x".repeat(1000);
         ObjectLocation tooLong = ObjectLocation.parse("s3://lake/" + longSegment);

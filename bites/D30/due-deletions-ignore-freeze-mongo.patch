@@ -1,0 +1,16 @@
+Breaks: the due pending deletions (and the purge scan) ignore a DR freeze, so a frozen table's files are deleted.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#pendingDeletionsWaitOutHoldsAndFreezes
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+index 71e78ff..eee6ffd 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+@@ -281,7 +281,7 @@ final class MongoObjects {
+                 .forEach(hold -> covered.add(hold.get("targetId")));
+         transactions.database().getCollection(ATTRIBUTE, BsonDocument.class)
+                 .find(session, new BsonDocument("targetId", in(targets))
+-                        .append("kind", new BsonString(GovernanceAttribute.Kind.DR_FREEZE.name())))
++                        .append("kind", new BsonString("NONE")))
+                 .projection(new BsonDocument("targetId", new BsonInt32(1)))
+                 .forEach(freeze -> covered.add(freeze.get("targetId")));
+         return covered;

@@ -1,0 +1,17 @@
+Breaks: the due pending deletions ignore the object's state, so an unregistered table's files are deleted.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#anUnregisteredTablesPendingDeletionsNeverComeDue
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java
+index d2ea203..d4e7bd9 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java
+@@ -105,8 +105,7 @@ final class MongoDeletions {
+                                 .distinct().toList();
+                         Map<BsonValue, BsonDocument> live = new HashMap<>();
+                         transactions.database().getCollection(OBJECT, BsonDocument.class)
+-                                .find(session, new BsonDocument("_id", in(uuids(objectIds).getValues()))
+-                                        .append("state", new BsonDocument("$in", LIVE)))
++                                .find(session, new BsonDocument("_id", in(uuids(objectIds).getValues())))
+                                 .forEach(object -> live.put(object.get("_id"), object));
+                         Set<BsonValue> covered = live.isEmpty() ? Set.of()
+                                 : MongoObjects.covered(transactions, session, List.copyOf(live.values()));

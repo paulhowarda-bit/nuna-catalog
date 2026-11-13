@@ -1,15 +1,14 @@
 Breaks: Every commit needs only write, even one that changes the schema or properties.
 Module: catalog-server
 Test: SecurityGateTest#privilegesInheritDownTheTreeAndNeverSideways
-
 diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
-index acdb678..1c899a1 100644
+index 6589a69..86273ca 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
-@@ -80,7 +80,7 @@ class Guard {
-             JsonNode updates = JSON.readTree(body == null ? "" : body).path("updates");
+@@ -112,7 +112,7 @@ class Guard {
              for (JsonNode update : updates) {
-                 if (!DATA_UPDATES.contains(update.path("action").asString(""))) {
+                 String action = update.path("action").asString("");
+                 if (!DATA_UPDATES.contains(action) && !(maintenance && EXPIRY_UPDATES.contains(action))) {
 -                    needed = MODIFY;
 +                    needed = WRITE;
                  }

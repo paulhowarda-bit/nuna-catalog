@@ -1,0 +1,16 @@
+Breaks: the due pending deletions ignore the object's state, so an unregistered table's files are deleted.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#anUnregisteredTablesPendingDeletionsNeverComeDue
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+index ae3507e..50f6c42 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+@@ -77,7 +77,7 @@ final class SqlDeletions {
+             parameters.add(page.size() + 1);
+             List<PendingDeletion> due = query(connection, "SELECT " + COLUMNS + " FROM pending_deletion d"
+                     + " JOIN catalog_object o ON o.id = d.object_id WHERE d.not_before <= ?" + keyset
+-                    + " AND o.state IN ('ACTIVE', 'DROPPED') AND " + SqlObjects.UNCOVERED
++                    + " AND " + SqlObjects.UNCOVERED
+                     + " ORDER BY d.not_before, d.id LIMIT ?", row -> new PendingDeletion(Jdbc.uuid(row, "id"),
+                     Jdbc.uuid(row, "object_id"), Jdbc.uuid(row, "catalog_id"), row.getString("location"),
+                     instant(row, "not_before"), instant(row, "recorded_at")), parameters.toArray());

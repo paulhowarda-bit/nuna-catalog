@@ -6,5 +6,5 @@ package keel.catalog.store;
  * every suite of the shared test-jar (D8.9).
  */
 public interface CatalogStore extends CommitStore, NamespaceStore, CatalogObjectStore, GrantStore,
-        IdempotencyStore, OutboxStore, GovernanceStore, JournalStore, SchemaStore {
+        IdempotencyStore, OutboxStore, GovernanceStore, JournalStore, SchemaStore, MaintenanceStore {
 }

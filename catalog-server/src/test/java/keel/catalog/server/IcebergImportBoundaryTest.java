@@ -13,11 +13,12 @@ import org.junit.jupiter.api.Test;
 /**
  * iceberg-core is pinned behind one adapter (D2): of the catalog's code, only catalog-iceberg's main code imports it.
  * The SingleStore change feed is not the catalog but a client of it, shipped as its own connector jar, and writes
- * through Iceberg's own client like any engine (D35).
+ * through Iceberg's own client like any engine (D35). The maintenance worker is a client too: a separate service that
+ * commits through the catalog's REST API with Iceberg's client (D30).
  */
 class IcebergImportBoundaryTest {
 
-    private static final Set<String> CLIENTS = Set.of("singlestore-change-feed");
+    private static final Set<String> CLIENTS = Set.of("singlestore-change-feed", "catalog-maintenance");
 
     @Test
     void onlyTheAdapterModuleImportsIceberg() throws IOException {

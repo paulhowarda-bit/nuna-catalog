@@ -1,0 +1,16 @@
+Breaks: read-write credentials carry s3:DeleteObject, so a client deletes table files with vended credentials.
+Module: catalog-objectstore
+Test: VendingTest#vendedCredentialsNeverDelete
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java
+index db007ac..69e13af 100644
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/Access.java
+@@ -9,7 +9,7 @@ import java.util.List;
+  */
+ public enum Access {
+     READ(List.of("s3:GetObject")),
+-    READ_WRITE(List.of("s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts"));
++    READ_WRITE(List.of("s3:GetObject", "s3:PutObject", "s3:AbortMultipartUpload", "s3:ListMultipartUploadParts", "s3:DeleteObject"));
+ 
+     private final List<String> objectActions;
+ 

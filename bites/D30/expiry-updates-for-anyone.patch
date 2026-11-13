@@ -1,0 +1,16 @@
+Breaks: removing unused schemas and partition specs needs only write for every caller, not only a maintenance principal acting as itself.
+Module: catalog-server
+Test: SecurityGateTest#theMaintenanceExemptionIsAuditedAndNeverAnEndUsers
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
+index 6589a69..66ef19e 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
+@@ -111,7 +111,7 @@ class Guard {
+             JsonNode updates = JSON.readTree(body == null ? "" : body).path("updates");
+             for (JsonNode update : updates) {
+                 String action = update.path("action").asString("");
+-                if (!DATA_UPDATES.contains(action) && !(maintenance && EXPIRY_UPDATES.contains(action))) {
++                if (!DATA_UPDATES.contains(action) && !EXPIRY_UPDATES.contains(action)) {
+                     needed = MODIFY;
+                 }
+             }

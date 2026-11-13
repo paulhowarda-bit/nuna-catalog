@@ -1,0 +1,15 @@
+Breaks: anyone signed in reads the maintenance work list.
+Module: catalog-server
+Test: ManagementAuthorizationTest#theWorkListIsForTheMaintenancePrincipal
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
+index 76df5b3..e53c5e3 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
+@@ -87,7 +87,6 @@ class MaintenanceRoutes {
+     ResponseEntity<String> work(@RequestParam(required = false) String section,
+                                 @RequestParam(required = false) String pageToken,
+                                 @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+-        guard.requireMaintenance(management.request(http), null, "listMaintenanceWork");
+         Optional<Section> only;
+         try {
+             only = Optional.ofNullable(section).map(name -> Section.valueOf(name.toUpperCase(Locale.ROOT)));

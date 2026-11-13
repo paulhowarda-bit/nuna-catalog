@@ -3,6 +3,8 @@
 - `image/Dockerfile`: the server's container image.
 - `helm/keel-catalog/`: the Helm chart. It runs the catalog servers only. The database, Kafka, the object
   stores and the identity provider run elsewhere [D36], and the values name them.
+- `image/maintenance.Dockerfile` and `helm/keel-maintenance/`: the maintenance worker's image and chart
+  [D30], one release beside each catalog deployment. See catalog-maintenance/README.md.
 - `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
 
 ## The image
@@ -84,6 +86,41 @@ What the chart sets up:
   a conditional load answered by another server is a 200, not a 304. `ClientIP` affinity keeps a client on
   one server, behind the Service only. An Ingress or external balancer needs its own stickiness. The choice
   between sticky routing and a shared credential epoch is still open (build-plan, M8 findings).
+- **Delete rights [D30].** No credentials the catalog vends can delete, a maintenance principal's
+  included. The maintenance worker deletes with its own storage identity, which each profile names as
+  `maintenance-principal`: an IAM role or user ARN on AWS, `arn:aws:iam::<tenant>:user/<uid>` on Ceph (the
+  tenant empty for none), a user name on MinIO. Then a platform operator reads
+  `GET /management/v1/maintenance/delete-policies` and applies each entry once, as an identity that may:
+  - `bucket-policy` (AWS S3, Ceph): `aws s3api put-bucket-policy --bucket <bucket> --policy '<policy>'`,
+    with `--endpoint-url <endpoint>` for Ceph. It denies delete beneath the profiles' prefixes to every
+    principal but the worker, the catalog's own role or user included; on Ceph it also lets the worker delete
+    there, since nothing else grants a Ceph user rights in another user's bucket. It does not let the worker
+    list the bucket, which the worker's orphan scans and purges need: on Ceph, add a statement that allows the
+    worker's user `s3:ListBucket` on the bucket (catalog-maintenance/README.md). A bucket holds one policy,
+    so merge these statements into any it already has.
+  - `user-policy` (MinIO): `mc admin policy create <alias> keel-no-delete <file>`, then
+    `mc admin policy attach <alias> keel-no-delete --user <user>` for every user but the worker, the
+    catalog's own included. MinIO enforces no bucket policy on signed requests (Silo was checked on
+    2026-11-12), and its root user ignores every policy, so the catalog must not run as root.
+
+  A lifecycle rule deletes objects without anyone calling delete, and a policy can be changed, so each policy
+  also denies every principal but the worker setting lifecycle rules on the bucket, and on AWS S3 and MinIO
+  changing or deleting the bucket policy. Once it is applied, only the worker can change those (on AWS also
+  the account's root user, whom no bucket policy binds). On Ceph the policy denies lifecycle rules only, so:
+  - the catalog's role or user holds no bucket-configuration rights (the bucket policy, lifecycle rules) on
+    any store;
+  - on Ceph an operator's user, never the catalog's, owns the bucket: a bucket's owner can always replace its
+    policy.
+
+  The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
+  them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
+  `unprotected`. Only the Ceph form has a test (`DeletePolicyCephTest`, heavy, `-Ps3=ceph`, in the heavy
+  pass's Ceph leg), and it has not run yet.
+- **Compaction Jobs [D30].** With `config.keel.maintenance.compaction.image` set, the maintenance worker
+  launches its compaction Jobs in `config.keel.maintenance.compaction.namespace`. Create that namespace
+  first, for the Jobs alone: never the catalog's nor the worker's, since a pod there may run as any service
+  account and mount any Secret of it. The chart puts its Role, RoleBinding and the Jobs' service account
+  there, and refuses to render without the namespace or with the release's own.
 - **TLS.** TLS from clients to the catalog is the Ingress's job. TLS from the catalog to the database goes
   in the JDBC URL.
 - **Resources.** The defaults (1 CPU, 2 GiB, heap at 75 % of that) are a starting point, not a measurement.

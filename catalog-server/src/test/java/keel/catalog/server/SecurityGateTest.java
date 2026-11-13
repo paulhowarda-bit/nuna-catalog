@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.JWTClaimsSet;
 import keel.catalog.audit.AuthFailure;
+import keel.catalog.audit.CatalogEvent;
 import keel.catalog.audit.Denial;
+import keel.catalog.audit.MaintenanceExemption;
 import keel.catalog.core.Names;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogRecord;
@@ -42,7 +44,9 @@ import org.springframework.test.context.ContextConfiguration;
 /**
  * The M5 gate on the wire: authentication failures, privilege inheritance, separation of duties, flagged tables
  * (D20), unclassified tables in regulated namespaces (D27), the identity-less-commit switch (D17, on here), trusted
- * engines naming end users, the grant APIs and the engine registry; and what unregister and register ask (D13). Every 401 and 403 this suite provokes must
+ * engines naming end users, the grant APIs and the engine registry; what unregister and register ask (D13); and the
+ * maintenance exemption (D30), which svc-maintenance gets as itself and svc-trino, a maintenance principal too,
+ * never for an end user. Every 401 and 403 this suite provokes must
  * leave exactly one audit event in the test sink behind the {@code AuditPublisher} seam; {@link #everyRefusalIsAudited}
  * checks that after each test.
  */
@@ -50,6 +54,7 @@ import org.springframework.test.context.ContextConfiguration;
         "keel.security.grant-admin-groups=grant-admins",
         "keel.security.platform-operator-groups=platform-ops",
         "keel.security.refuse-identity-less-commits=true",
+        "keel.security.maintenance-principals=svc-maintenance,svc-trino",
         "keel.storage.catalogs.gate.profile=" + S3ForTests.PROFILE,
         "keel.storage.catalogs.gate.kms-key-set=test-keys",
         "keel.storage.catalogs.gate.legal-entity=Test Entity"})
@@ -77,6 +82,12 @@ class SecurityGateTest {
     private static final String GINA = IssuerForTests.bearer("gina", "grant-admins");
     private static final String OLGA = IssuerForTests.bearer("olga", "platform-ops");
     private static final String SAM = IssuerForTests.bearer("sam", "stewards");
+    /** The maintenance worker, a maintenance principal acting as itself; it holds write on sales and no more. */
+    private static final String WORKER = IssuerForTests.bearer("svc-maintenance", "maintainers");
+    /** What snapshot expiry sends besides removing snapshots: the partition specs and schemas no snapshot uses. */
+    private static final String EXPIRY = """
+            {"requirements":[],"updates":[{"action":"remove-partition-specs","spec-ids":[]},
+              {"action":"remove-schemas","schema-ids":[]}]}""";
     /** A registered trusted engine; its own service principal may write anywhere. */
     private static final String ENGINE = IssuerForTests.sign(IssuerForTests.claims("svc-trino", "trino-prod",
             "loaders").build());
@@ -121,6 +132,7 @@ class SecurityGateTest {
         noContent(grant(GINA, namespaceSpec("sales"), "analysts", "select"));
         noContent(grant(GINA, namespaceSpec("finance"), "analysts", "select"));
         noContent(grant(GINA, namespaceSpec("sales"), "stewards", "manage-grants"));
+        noContent(grant(GINA, namespaceSpec("sales"), "maintainers", "write"));
         noContent(send(OLGA, "PUT", ENGINES, """
                 {"issuer":"%s","client-id":"trino-prod","end-user-claim":"sub","flags":["delegation-none"]}"""
                 .formatted(IssuerForTests.ISSUER)));
@@ -334,6 +346,30 @@ class SecurityGateTest {
         assertThat(denial.actor().principal()).isEqualTo("svc-trino");
         assertThat(denial.actor().endUser()).as("the engine's end user is the one decided for").isEqualTo("ann");
         assertThat(denial.actor().engine()).isEqualTo("trino-prod");
+    }
+
+    @Test
+    void theMaintenanceExemptionIsAuditedAndNeverAnEndUsers() throws Exception {
+        String pii = "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+
+        ok(send(WORKER, "GET", pii, null));
+        ok(send(WORKER, "GET", pii + "/credentials", null));
+        ok(send(WORKER, "POST", pii, EXPIRY));
+
+        assertThat(audit.events()).extracting(CatalogEvent::data).filteredOn(MaintenanceExemption.class::isInstance)
+                .extracting(data -> ((MaintenanceExemption) data).operation())
+                .containsExactly("loadTable", "loadCredentials", "updateTable");
+        MaintenanceExemption exemption = (MaintenanceExemption) audit.events().stream().map(CatalogEvent::data)
+                .filter(MaintenanceExemption.class::isInstance).findFirst().orElseThrow();
+        assertThat(exemption.actor().principal()).isEqualTo("svc-maintenance");
+        assertThat(exemption.actor().endUser()).isNull();
+        assertThat(exemption.object().path()).containsExactly("sales", "eu", "pii");
+
+        assertDenied(send(ENGINE, "POST", pii, EXPIRY, "X-Keel-End-User", "wendy", "X-Keel-End-User-Groups",
+                "maintainers"), "updateTable", "no_privilege");
+        assertDenied(send(IssuerForTests.bearer("wendy", "maintainers"), "GET", pii, null), "loadTable", "flagged_table");
+        assertDenied(send(IssuerForTests.bearer("wendy", "maintainers"), "POST", "/v1/gate/namespaces/"
+                + ns(List.of("sales", "eu")) + "/tables/orders", EXPIRY), "updateTable", "no_privilege");
     }
 
     @Test

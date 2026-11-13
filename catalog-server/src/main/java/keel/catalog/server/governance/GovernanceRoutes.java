@@ -217,23 +217,14 @@ class GovernanceRoutes {
                                   HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
         guard.require(management.request(http), target, "loadMaintenancePolicy", Privilege.DESCRIBE);
-        List<Map.Entry<String, Map<String, String>>> levels = new ArrayList<>();
         Map<String, String> own = Map.of();
         for (GovernanceAttribute attribute : target.chain().attributes()) {
-            if (attribute.kind() == GovernanceAttribute.Kind.MAINTENANCE_POLICY) {
-                Map<String, String> keys = parsePolicy(attribute.value());
-                levels.add(new AbstractMap.SimpleEntry<>(label(attribute.target()), keys));
-                if (attribute.target().equals(target.securable())) {
-                    own = keys;
-                }
+            if (attribute.kind() == GovernanceAttribute.Kind.MAINTENANCE_POLICY
+                    && attribute.target().equals(target.securable())) {
+                own = parsePolicy(attribute.value());
             }
         }
-        Collections.reverse(levels);
-        Duration retentionMinimum = target.chain().nearest(GovernanceAttribute.Kind.RETENTION_CLASS)
-                .flatMap(a -> settings.minimumAgeOf(a.value())).orElse(null);
-        Map<String, MaintenancePolicy.Setting> resolved = MaintenancePolicy.resolve(settings, levels,
-                target.chain().held(), target.chain().nearest(GovernanceAttribute.Kind.DR_FREEZE).isPresent(),
-                retentionMinimum);
+        Map<String, MaintenancePolicy.Setting> resolved = resolvePolicy(settings, target.chain());
         ObjectNode body = Management.JSON.createObjectNode();
         body.set("target", securable(target.securable()));
         ObjectNode ownNode = body.putObject("policy");
@@ -411,6 +402,24 @@ class GovernanceRoutes {
 
     static String kind(Securable securable) {
         return securable.kind().name().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * The maintenance policy in force at the chain's target: every level's own keys, outermost first, over the
+     * deployment's defaults, then the guardrails of its holds, DR freeze and retention class (D30).
+     */
+    static Map<String, MaintenancePolicy.Setting> resolvePolicy(GovernanceSettings settings, GovernanceChain chain) {
+        List<Map.Entry<String, Map<String, String>>> levels = new ArrayList<>();
+        for (GovernanceAttribute attribute : chain.attributes()) {
+            if (attribute.kind() == GovernanceAttribute.Kind.MAINTENANCE_POLICY) {
+                levels.add(new AbstractMap.SimpleEntry<>(label(attribute.target()), parsePolicy(attribute.value())));
+            }
+        }
+        Collections.reverse(levels);
+        Duration retentionMinimum = chain.nearest(GovernanceAttribute.Kind.RETENTION_CLASS)
+                .flatMap(a -> settings.minimumAgeOf(a.value())).orElse(null);
+        return MaintenancePolicy.resolve(settings, levels, chain.held(),
+                chain.nearest(GovernanceAttribute.Kind.DR_FREEZE).isPresent(), retentionMinimum);
     }
 
     static String label(Securable securable) {

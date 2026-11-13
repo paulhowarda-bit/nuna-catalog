@@ -50,7 +50,7 @@ import software.amazon.awssdk.services.s3.model.S3Object;
  * run's S3 store ({@link TestS3}: Silo, Ceph or AWS) with a role, where there is one, that would allow
  * everything. Attacks: a sibling sharing the prefix's
  * leading characters ({@code orders} vs {@code orders2}), the bare prefix object, listing wider, copying
- * from a sibling, other buckets, bucket-level actions, deletes without the maintenance level, writes
+ * from a sibling, other buckets, bucket-level actions, deletes at any access level (D30), writes
  * with read access, and raw requests whose paths use dot segments, percent-encoded dots, slashes and
  * backslashes, double encoding, overlong UTF-8 and NUL, each signed exactly as sent.
  */
@@ -175,7 +175,7 @@ class VendingTest {
     @Test
     @DisplayName("the same prefix in another bucket, and bucket-level actions, are refused")
     void otherBucketsAndBucketActions() {
-        try (S3Client vended = vended(Access.READ_WRITE_DELETE)) {
+        try (S3Client vended = vended(Access.READ_WRITE)) {
             assertDenied(() -> vended.getObjectAsBytes(r -> r.bucket(otherBucket).key("t/orders/secret.json")));
             assertDenied(() -> vended.putObject(r -> r.bucket(otherBucket).key("t/orders/x"),
                     RequestBody.fromString("pwned")));
@@ -191,8 +191,8 @@ class VendingTest {
     }
 
     @Test
-    @DisplayName("without the maintenance level nothing can be deleted, singly or in a batch (D25)")
-    void noDeleteWithoutMaintenance() {
+    @DisplayName("vended credentials delete nothing, singly or in a batch: the worker deletes with its own identity (D30)")
+    void vendedCredentialsNeverDelete() {
         directPut(bucket, "t/orders/keep.json", "keep");
         try (S3Client vended = vended(Access.READ_WRITE)) {
             assertDenied(() -> vended.deleteObject(r -> r.bucket(bucket).key("t/orders/keep.json")));
@@ -205,20 +205,6 @@ class VendingTest {
             }
         }
         assertThat(directGet(bucket, "t/orders/keep.json")).isEqualTo("keep");
-    }
-
-    @Test
-    @DisplayName("the maintenance level deletes inside the prefix and still nowhere else")
-    void maintenanceDeletesOnlyInside() {
-        directPut(bucket, "t/orders/old.json", "old");
-        try (S3Client vended = vended(Access.READ_WRITE_DELETE)) {
-            vended.deleteObject(r -> r.bucket(bucket).key("t/orders/old.json"));
-            assertDenied(() -> vended.deleteObject(r -> r.bucket(bucket).key("t/orders2/secret.json")));
-            assertDenied(() -> vended.deleteObject(r -> r.bucket(bucket).key("t/orders")));
-        }
-        assertThatThrownBy(() -> directGet(bucket, "t/orders/old.json")).isInstanceOf(NoSuchKeyException.class);
-        assertThat(directGet(bucket, "t/orders2/secret.json")).isEqualTo(SECRET);
-        assertThat(directGet(bucket, "t/orders")).isEqualTo(SECRET);
     }
 
     @Test

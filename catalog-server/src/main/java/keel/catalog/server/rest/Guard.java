@@ -6,7 +6,10 @@ import static keel.catalog.security.Privilege.MODIFY;
 import static keel.catalog.security.Privilege.SELECT;
 import static keel.catalog.security.Privilege.WRITE;
 
+import keel.catalog.audit.CatalogEvent;
+import keel.catalog.audit.MaintenanceExemption;
 import keel.catalog.audit.Securable;
+import keel.catalog.core.CatalogError;
 import keel.catalog.security.Authorizer;
 import keel.catalog.security.Authorizer.Decision;
 import keel.catalog.security.Authorizer.Operation;
@@ -16,17 +19,21 @@ import keel.catalog.server.security.Denials;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.NamespaceRecord;
+import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Authorization for the Iceberg routes (plan 2.2 step 3; D18). Each route asks before its work, after the
- * idempotency replay; a refusal is audited and answers 403 through {@link Denials} (D18).
+ * idempotency replay; a refusal is audited and answers 403 through {@link Denials} (D18). Storage access given
+ * by the maintenance exemption (D20, D30) is audited before it is given; if the audit fails it is refused (503).
  * Operation names are the REST spec's operation ids.
  */
 @Component
@@ -69,26 +76,42 @@ class Guard {
     private static final Set<String> DATA_UPDATES = Set.of("add-snapshot", "remove-snapshots", "set-snapshot-ref",
             "remove-snapshot-ref", "set-statistics", "remove-statistics", "set-partition-statistics",
             "remove-partition-statistics");
+    /**
+     * What snapshot expiry also sends, for a maintenance principal acting as itself only (D30): the schemas and
+     * partition specs no snapshot uses any more. For anyone else they change the definition.
+     */
+    private static final Set<String> EXPIRY_UPDATES = Set.of("remove-schemas", "remove-partition-specs");
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    private static final Logger LOG = LoggerFactory.getLogger(Guard.class);
 
     private final Authorizer authorizer;
     private final Denials denials;
+    private final AuditPublisher audit;
+    private final RestSettings settings;
+    private final Clock clock;
 
-    Guard(Authorizer authorizer, Denials denials) {
+    Guard(Authorizer authorizer, Denials denials, AuditPublisher audit, RestSettings settings, Clock clock) {
         this.authorizer = authorizer;
         this.denials = denials;
+        this.audit = audit;
+        this.settings = settings;
+        this.clock = clock;
     }
 
     /**
      * A table commit needs {@code write} when every update only adds or removes snapshots, refs or statistics,
-     * and {@code modify} otherwise. A body that cannot be read is judged as the stricter; the commit refuses it anyway.
+     * or, for a maintenance principal acting as itself, removes unused schemas and partition specs as snapshot
+     * expiry does (D30); and {@code modify} otherwise. A body that cannot be read is judged as the stricter; the
+     * commit refuses it anyway.
      */
-    static Operation commit(String body) {
+    Operation commit(RequestContext request, String body) {
+        boolean maintenance = authorizer.maintenance(request.caller());
         Privilege needed = WRITE;
         try {
             JsonNode updates = JSON.readTree(body == null ? "" : body).path("updates");
             for (JsonNode update : updates) {
-                if (!DATA_UPDATES.contains(update.path("action").asString(""))) {
+                String action = update.path("action").asString("");
+                if (!DATA_UPDATES.contains(action) && !(maintenance && EXPIRY_UPDATES.contains(action))) {
                     needed = MODIFY;
                 }
             }
@@ -140,7 +163,7 @@ class Guard {
         Target target = new Target.TableOrView(object);
         List<Decision> decisions = authorizer.decide(request.caller(),
                 List.of(new Authorizer.Request(target, operation), new Authorizer.Request(target, WRITE_DATA)));
-        refuseIfDenied(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst());
+        decided(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst());
         return decisions.get(1).allowed();
     }
 
@@ -160,15 +183,27 @@ class Guard {
     }
 
     private void require(RequestContext request, Target target, Securable named, Operation operation) {
-        refuseIfDenied(request, named, operation, authorizer.decide(request.caller(), target, operation));
+        decided(request, named, operation, authorizer.decide(request.caller(), target, operation));
     }
 
-    private void refuseIfDenied(RequestContext request, Securable named, Operation operation, Decision decision) {
-        if (!(decision instanceof Decision.Denied denied)) {
-            return;
+    /** Refuses a denial, audits a maintenance exemption before the access is given, and lets the rest through. */
+    private void decided(RequestContext request, Securable named, Operation operation, Decision decision) {
+        switch (decision) {
+            case Decision.Denied denied -> throw denials.refuse(request.actor(), operation.name(), named,
+                    denied.privilege() == null ? null : denied.privilege().wireName(),
+                    denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+            case Decision.Exempted exempted -> {
+                try {
+                    audit.publish(CatalogEvent.create(settings.auditSource(), clock.instant(),
+                            new MaintenanceExemption(named, operation.name(), request.actor())));
+                } catch (RuntimeException e) {
+                    LOG.warn("no maintenance exemption for {} on {}: its audit failed", operation.name(), named.id(), e);
+                    throw CatalogError.of(503, "ServiceUnavailableException",
+                            "Storage access under the maintenance exemption cannot be audited now; retry later");
+                }
+            }
+            case Decision.Allowed allowed -> {
+            }
         }
-        throw denials.refuse(request.actor(), operation.name(), named,
-                denied.privilege() == null ? null : denied.privilege().wireName(),
-                denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
     }
 }

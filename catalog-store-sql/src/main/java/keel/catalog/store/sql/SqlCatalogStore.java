@@ -23,6 +23,7 @@ import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.OutboxBatch;
 import keel.catalog.store.Page;
 import keel.catalog.store.PageRequest;
+import keel.catalog.store.PendingDeletion;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.PointerKey;
 import keel.catalog.store.SafetyFinding;
@@ -67,6 +68,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlIdempotency idempotency;
     private final SqlOutbox outbox;
     private final SqlGovernance governance;
+    private final SqlDeletions deletions;
 
     public SqlCatalogStore(DataSource dataSource) {
         this(dataSource, CommitHook.NONE);
@@ -84,6 +86,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.idempotency = new SqlIdempotency(transactions);
         this.outbox = new SqlOutbox(transactions);
         this.governance = new SqlGovernance(transactions);
+        this.deletions = new SqlDeletions(transactions);
     }
 
     // ---- commit core (sections 4 and 5.1) ----
@@ -299,8 +302,35 @@ public final class SqlCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult purgeObject(UUID objectId, Change change) {
-        return objects.purge(objectId, change);
+    public WriteResult claimPurge(UUID objectId, String claimant, Change change) {
+        return objects.claimPurge(objectId, claimant, change);
+    }
+
+    @Override
+    public WriteResult completePurge(UUID objectId, String claimant, Change change) {
+        return objects.completePurge(objectId, claimant, change);
+    }
+
+    // ---- maintenance (D30) ----
+
+    @Override
+    public Page<CatalogObject> listActiveObjects(CatalogObject.Kind kind, PageRequest page) {
+        return objects.listActive(kind, page);
+    }
+
+    @Override
+    public WriteResult recordDeletions(UUID objectId, List<String> locations, Instant notBefore, Change change) {
+        return deletions.record(objectId, locations, notBefore, change);
+    }
+
+    @Override
+    public Page<PendingDeletion> listDueDeletions(Instant now, PageRequest page) {
+        return deletions.listDue(now, page);
+    }
+
+    @Override
+    public WriteResult completeDeletions(UUID objectId, List<UUID> ids, Change change) {
+        return deletions.complete(objectId, ids, change);
     }
 
     // ---- grants ----

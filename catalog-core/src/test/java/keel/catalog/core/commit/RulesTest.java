@@ -124,14 +124,29 @@ class RulesTest {
     @Nested
     class SnapshotMinimumAge {
 
+        private final long minuteAgo = NOW.minus(Duration.ofMinutes(1)).toEpochMilli();
         private final long hourAgo = NOW.minus(Duration.ofHours(1)).toEpochMilli();
         private final long weekAgo = NOW.minus(Duration.ofDays(7)).toEpochMilli();
-        private final CommitRule rule = Rules.snapshotMinimumAge(name -> name.equals("trade-records")
-                ? Optional.of(Duration.ofDays(3)) : Optional.empty());
+        private final CommitRule rule = Rules.snapshotMinimumAge(Duration.ofMinutes(30), name -> switch (name) {
+            case "trade-records" -> Optional.of(Duration.ofDays(3));
+            case "brief" -> Optional.of(Duration.ofMinutes(5));
+            default -> Optional.empty();
+        });
 
         private Optional<Rejection> remove(long removedAt) {
             return rule.judge(change(table(ROOT, Map.of(), Map.of(1L, removedAt, 2L, NOW.toEpochMilli())),
                     table(ROOT, Map.of(), Map.of(2L, NOW.toEpochMilli()))));
+        }
+
+        @Test
+        @DisplayName("a snapshot younger than the deployment's minimum stays, with or without a class, and governance is not read")
+        void aSnapshotYoungerThanTheDeploymentMinimumStays() {
+            assertThat(remove(minuteAgo)).get().extracting(Rejection::status).isEqualTo(403);
+            assertThat(remove(minuteAgo).orElseThrow().message()).contains("PT30M", "deployment's minimum");
+            assertThat(governanceReads).hasValue(0);
+            set(GovernanceAttribute.Kind.RETENTION_CLASS, "brief");
+            assertThat(remove(minuteAgo).orElseThrow().message()).contains("PT30M", "deployment's minimum");
+            assertThat(remove(hourAgo)).isEmpty();
         }
 
         @Test

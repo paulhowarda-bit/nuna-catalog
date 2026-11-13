@@ -191,6 +191,19 @@ final class Api implements AutoCloseable {
                 .formatted(id, id, timestampMs, root, id, id);
     }
 
+    /**
+     * A snapshot no branch points to. Iceberg checks only the main branch's snapshot log against the commit's
+     * wall-clock time, so a staged snapshot may be stamped by the test clock however far it was moved forward.
+     */
+    static String stagedSnapshot(String location, long id, long timestampMs) {
+        String root = location.substring(0, location.indexOf("/metadata/"));
+        return """
+                {"requirements":[],"updates":[
+                 {"action":"add-snapshot","snapshot":{"snapshot-id":%d,"sequence-number":%d,"timestamp-ms":%d,
+                  "manifest-list":"%s/metadata/snap-%d.avro","summary":{"operation":"append"},"schema-id":0}}]}"""
+                .formatted(id, id, timestampMs, root, id);
+    }
+
     static String removeSnapshot(long id) {
         return "{\"requirements\":[],\"updates\":[{\"action\":\"remove-snapshots\",\"snapshot-ids\":[" + id + "]}]}";
     }

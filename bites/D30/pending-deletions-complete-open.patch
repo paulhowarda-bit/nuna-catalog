@@ -1,0 +1,15 @@
+Breaks: anyone signed in reports pending deletions done, so files the worker never deleted drop off the list.
+Module: catalog-server
+Test: MutatingRoutesAuditTest#everyMutatingManagementRouteAuditsItsRefusals
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
+index 0a1bcda..6303331 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
+@@ -197,7 +197,6 @@ class MaintenanceRoutes {
+         CatalogObject object = existing(catalog, id);
+         Request request = management.request(http);
+         keel.catalog.audit.Securable audit = audit(catalog, object);
+-        guard.requireMaintenance(request, audit, "completePendingDeletions");
+         List<UUID> ids = new ArrayList<>();
+         for (JsonNode deletion : list(Management.body(body), "ids")) {
+             try {

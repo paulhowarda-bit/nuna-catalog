@@ -1,0 +1,16 @@
+Breaks: files are recorded for deletion whatever the object's state, an unregistered table's included.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#unregisterIsFinal
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+index ae3507e..ad2130c 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+@@ -38,7 +38,7 @@ final class SqlDeletions {
+     WriteResult record(UUID objectId, List<String> locations, Instant notBefore, Change change) {
+         return transactions.change(change, "deletions record", connection -> {
+             Optional<UUID> catalogId = first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?"
+-                    + " AND state IN ('ACTIVE', 'DROPPED') FOR SHARE", row -> Jdbc.uuid(row, "catalog_id"), objectId);
++                    + " FOR SHARE", row -> Jdbc.uuid(row, "catalog_id"), objectId);
+             if (catalogId.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }

@@ -17,7 +17,6 @@ import keel.catalog.objectstore.StoreKind;
 import keel.catalog.objectstore.VendedCredentials;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.CredentialVending;
-import keel.catalog.server.security.SecuritySettings;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -39,7 +38,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Vends STS credentials scoped to one table's prefix (D21): read-write to a caller who may write the table's data,
- * read-write-delete to a maintenance principal acting as itself, read-only to anyone else. Each caller's credentials are cached for most
+ * read-only to anyone else. None of them deletes, a maintenance principal's included: the maintenance worker deletes
+ * with its own storage identity (D30). Each caller's credentials are cached for most
  * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
  * thrown away (D23). A trusted engine that asks for no delegation gets none.
  */
@@ -52,14 +52,13 @@ public final class StsCredentialVending implements CredentialVending {
     private final URI source;
     private final Clock clock;
     private final CredentialCache cache;
-    private final SecuritySettings security;
 
     /**
      * @param refreshMargin no 304 when credentials expire within this (D14); cached credentials are renewed
      *                      a minute before that, so a load normally carries credentials a client may cache
      */
     public StsCredentialVending(CatalogStorage storage, AuditPublisher audit, URI source, StorageSettings settings,
-                                SecuritySettings security, Duration refreshMargin, Clock clock) {
+                                Duration refreshMargin, Clock clock) {
         this.storage = storage;
         this.audit = audit;
         this.source = source;
@@ -68,7 +67,6 @@ public final class StsCredentialVending implements CredentialVending {
         Duration margin = refreshMargin.plusMinutes(1);
         this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,
                 settings.credentialCacheEntries(), clock);
-        this.security = security;
     }
 
     @Override
@@ -78,8 +76,7 @@ public final class StsCredentialVending implements CredentialVending {
             return Vended.NONE;
         }
         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
-        Access access = security.isMaintenance(caller) ? Access.READ_WRITE_DELETE
-                : request.write() ? Access.READ_WRITE : Access.READ;
+        Access access = request.write() ? Access.READ_WRITE : Access.READ;
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
                 caller.principal().id(), subject, caller.engine());

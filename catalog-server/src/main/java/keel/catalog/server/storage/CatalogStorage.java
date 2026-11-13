@@ -8,6 +8,7 @@ import keel.catalog.core.Names;
 import keel.catalog.core.commit.CommitRule;
 import keel.catalog.core.commit.TableFiles;
 import keel.catalog.objectstore.CredentialVendor;
+import keel.catalog.objectstore.DeletePolicy;
 import keel.catalog.objectstore.MetadataFiles;
 import keel.catalog.objectstore.ProfileOverlap;
 import keel.catalog.objectstore.ProfileTableFiles;
@@ -79,6 +80,11 @@ public final class CatalogStorage implements AutoCloseable {
         settings.catalogs().forEach((name, catalog) -> declare(name, catalog, settings, rest, clock));
     }
 
+    /** Every profile this server configures, in the order configured. */
+    public List<Bound> profiles() {
+        return List.copyOf(profiles.values());
+    }
+
     /** The profile a catalog's tables live in. */
     public Bound forCatalog(UUID catalogId) {
         return catalogs.computeIfAbsent(catalogId, id -> {
@@ -114,6 +120,14 @@ public final class CatalogStorage implements AutoCloseable {
         if (requireTls && !config.endpoint().startsWith("https://")) {
             throw new IllegalStateException("keel.storage.profiles." + name + ".endpoint must use https, got "
                     + config.endpoint());
+        }
+        if (config.maintenancePrincipal() != null) {
+            try {
+                DeletePolicy.requirePrincipal(config.kind(), config.maintenancePrincipal());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException("keel.storage.profiles." + name + ".maintenance-principal: "
+                        + e.getMessage(), e);
+            }
         }
         return StorageProfile.of(config.kind(), config.endpoint(), config.region(), config.tableRoot(),
                 config.allowedPrefixes());

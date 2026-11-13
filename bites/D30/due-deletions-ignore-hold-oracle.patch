@@ -1,0 +1,18 @@
+Breaks: the due pending deletions (and the purge scan) ignore legal holds, so a held table's files are deleted.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$CatalogObjects#pendingDeletionsWaitOutHoldsAndFreezes
+diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+index d6fd8fa..ed28cfb 100644
+--- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+@@ -41,9 +41,7 @@ final class OracleObjects {
+      * No legal hold and no DR freeze on object {@code o}, a namespace that held it when it was last placed or
+      * its catalog: what the purge queue and the due pending deletions ask of an object (D24, D30, D37).
+      */
+-    static final String UNCOVERED = "NOT EXISTS (SELECT 1 FROM legal_hold h WHERE h.target_id IN (o.id, o.catalog_id))"
+-            + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN legal_hold h ON h.target_id = p.namespace_id"
+-            + " WHERE p.object_id = o.id)"
++    static final String UNCOVERED = "1 = 1"
+             + " AND NOT EXISTS (SELECT 1 FROM governance_attribute a WHERE a.kind = 'DR_FREEZE'"
+             + " AND a.target_id IN (o.id, o.catalog_id))"
+             + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN governance_attribute a ON a.target_id = p.namespace_id"

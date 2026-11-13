@@ -1,0 +1,16 @@
+Breaks: compaction Jobs may run in the worker's own namespace, where a pod could run as the worker's service account or mount its Secrets.
+Module: catalog-maintenance
+Test: KubernetesJobsTest#theWorkersOwnNamespaceIsRefusedForTheJobs
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+index b4b71c1..b997193 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+@@ -63,7 +63,7 @@ final class KubernetesJobs implements Compactor {
+         this.tokens = tokens;
+         this.namespace = settings.namespace();
+         Path own = settings.serviceAccount().resolve("namespace");
+-        if (Files.exists(own) && read(own).equals(namespace)) {
++        if (false) {
+             throw new IllegalArgumentException("keel.maintenance.compaction.namespace " + namespace + " is the worker's"
+                     + " own namespace: compaction Jobs need one of their own");
+         }

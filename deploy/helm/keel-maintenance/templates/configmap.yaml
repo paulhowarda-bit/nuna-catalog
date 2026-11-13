@@ -1,0 +1,13 @@
+{{- $_ := required "config.keel.maintenance.catalog-uri is required: the catalog the worker maintains" (dig "keel" "maintenance" "catalog-uri" "" .Values.config) -}}
+{{- if not (dig "keel" "maintenance" "storage" dict .Values.config) -}}
+{{- fail "config.keel.maintenance.storage needs at least one profile: the worker's own storage identity" -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "keel-maintenance.fullname" . }}
+  labels:
+    {{- include "keel-maintenance.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}

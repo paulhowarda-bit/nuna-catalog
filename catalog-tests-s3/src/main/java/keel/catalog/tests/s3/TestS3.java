@@ -37,7 +37,8 @@ import software.amazon.awssdk.services.sts.model.StsException;
  *       sessions derive from the calling user, so there is no role.</li>
  *   <li><b>ceph</b>: Ceph RGW in one container (research F7), with STS on and a role
  *       {@value #CEPH_ROLE_ARN} that allows every S3 action: whatever confines vended credentials is their
- *       session policy.</li>
+ *       session policy. A second user, {@value #MAINTENANCE_USER}, is the maintenance worker's own identity
+ *       (D30).</li>
  *   <li><b>aws</b>: real AWS S3 and STS in us-east-1, signed in through the CLI profile named by
  *       {@code keel.aws.profile} (short-lived credentials; nothing here reads, prints or stores them).
  *       Creates one role allowing every S3 action on this run's buckets, and on exit deletes every
@@ -62,6 +63,10 @@ public final class TestS3 implements AutoCloseable {
     private static final String CEPH_ROLE = "keel-vending";
     /** RGW's key for signing session tokens: 16 characters. */
     private static final String CEPH_STS_KEY = "keelstskey012345";
+    /** The maintenance worker's own storage identity (D30): a user on Ceph, whose keys these are. */
+    public static final String MAINTENANCE_USER = "keel-maintenance";
+    public static final String MAINTENANCE_ACCESS_KEY = "keelmaintenance";
+    public static final String MAINTENANCE_SECRET_KEY = "keelmaintenance-secret-key";
 
     private static TestS3 shared;
 
@@ -158,6 +163,19 @@ public final class TestS3 implements AutoCloseable {
         };
     }
 
+    /**
+     * The maintenance worker's storage identity as a storage profile names it (D30): user {@value #MAINTENANCE_USER}
+     * on Silo and Ceph, a role of that name on AWS. Only Ceph's exists: Silo runs as its root user, whom no policy
+     * binds, and the AWS run makes no second role.
+     */
+    public String maintenancePrincipal() {
+        return switch (kind) {
+            case SILO -> MAINTENANCE_USER;
+            case CEPH -> "arn:aws:iam:::user/" + MAINTENANCE_USER;
+            case AWS -> roleArn.orElseThrow().replaceFirst(":role/.*$", ":role/" + MAINTENANCE_USER);
+        };
+    }
+
     /** The static access key on Silo and Ceph, for clients that cannot take a credentials provider. */
     public Optional<AwsBasicCredentials> keys() {
         return keys;
@@ -166,7 +184,8 @@ public final class TestS3 implements AutoCloseable {
     /**
      * Settings that make a catalog server use this store as storage profile {@code profile}, with tables
      * under {@code s3://<bucket>/tables}: kind, endpoint, region, table root, allowed prefixes, and the
-     * catalog's keys (Silo, Ceph) or the AWS SDK's default chain (AWS), plus the STS role where there is one.
+     * catalog's keys (Silo, Ceph) or the AWS SDK's default chain (AWS), plus the STS role where there is one
+     * and the maintenance worker's {@link #maintenancePrincipal()}.
      * Plain http is allowed, since the containers serve no TLS.
      */
     public Map<String, String> serverProperties(String profile, String bucket) {
@@ -183,6 +202,7 @@ public final class TestS3 implements AutoCloseable {
             properties.put(p + "secret-access-key", k.secretAccessKey());
         });
         roleArn.ifPresent(role -> properties.put(p + "sts-role", role));
+        properties.put(p + "maintenance-principal", maintenancePrincipal());
         return properties;
     }
 
@@ -238,6 +258,8 @@ public final class TestS3 implements AutoCloseable {
         for (List<String> command : cephRoleCommands()) {
             admin(container, command.subList(1, command.size()).toArray(String[]::new));
         }
+        admin(container, "user", "create", "--uid=" + MAINTENANCE_USER, "--display-name=keel maintenance worker",
+                "--access-key=" + MAINTENANCE_ACCESS_KEY, "--secret-key=" + MAINTENANCE_SECRET_KEY);
         AwsBasicCredentials keys = AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY);
         return new TestS3(Kind.CEPH, endpoint(container, 8080), StaticCredentialsProvider.create(keys),
                 Optional.of(keys), Optional.of(CEPH_ROLE_ARN), "", Optional.empty(), container::stop);

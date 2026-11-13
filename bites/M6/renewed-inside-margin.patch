@@ -1,9 +1,8 @@
 Breaks: cached credentials are reused inside the refresh margin, so loads keep handing out credentials that expire too soon.
 Module: catalog-server
 Test: VendingNearExpiryTest
-
 diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
-index 686fd12..dd7c722 100644
+index e82ee84..13f7c54 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
 @@ -65,7 +65,7 @@ public final class StsCredentialVending implements CredentialVending {
@@ -13,5 +12,5 @@ index 686fd12..dd7c722 100644
 -        this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,
 +        this.cache = new CredentialCache(quarter,
                  settings.credentialCacheEntries(), clock);
-         this.security = security;
      }
+ 

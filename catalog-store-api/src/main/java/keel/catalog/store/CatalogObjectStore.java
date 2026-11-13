@@ -84,15 +84,34 @@ public interface CatalogObjectStore {
      */
     WriteResult reviveObject(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch);
 
-    /** Dropped objects whose purge-after time is at or before {@code now}, not held, by purge-after then id. */
+    /**
+     * The maintenance worker's purge queue, by purge-after then id (D25, D30): dropped objects whose
+     * purge-after time is at or before {@code now} that no legal hold or DR freeze covers, and objects
+     * already claimed for purge, whatever covers them now, so their claimant can finish. Unregistered
+     * objects are never purged and never listed.
+     */
     Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page);
 
     /**
-     * Marks a dropped object purged, after its files are gone, and deletes the grants on it.
-     * Judged at {@code change.at()}.
+     * Claims a dropped object for purge at {@code change.at()} (D25, D30): it becomes {@code PURGING},
+     * held by {@code claimant}, and can no longer be undropped or revived. The worker then deletes its
+     * files and completes the purge. A hold or DR freeze placed after the claim does not stop it; one
+     * placed before refuses the claim. Claiming again as the claimant that holds it writes nothing, so a
+     * worker that stopped part way resumes.
      *
-     * @return {@code Applied}, {@code Missing(OBJECT)} (not dropped), {@code Refused(NOT_DUE)} or
-     *         {@code Refused(HELD)}
+     * @return {@code Applied}, {@code Unchanged} (the claimant already holds the claim),
+     *         {@code Missing(OBJECT)} (neither dropped nor claimed), {@code Refused(NOT_DUE)},
+     *         {@code Refused(HELD)}, {@code Refused(FROZEN)}, or {@code Refused(NOT_HOLDER)} (another
+     *         claimant holds it)
      */
-    WriteResult purgeObject(UUID objectId, Change change);
+    WriteResult claimPurge(UUID objectId, String claimant, Change change);
+
+    /**
+     * Completes a claimed purge once the object's files are gone (D25, D30): the object is marked
+     * {@code PURGED}, and the grants on it and its pending deletions are deleted.
+     *
+     * @return {@code Applied}, {@code Missing(OBJECT)} (not claimed for purge), or
+     *         {@code Refused(NOT_HOLDER)} (another claimant holds the claim)
+     */
+    WriteResult completePurge(UUID objectId, String claimant, Change change);
 }

@@ -1,0 +1,18 @@
+Breaks: the orphan scan reaches only main's history, so a file only a branch or a tag still reaches is queued for deletion.
+Module: catalog-maintenance
+Test: SnapshotExpiryTest#branchAndTagFilesSurvive
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java b/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
+index 947db92..9e1e019 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
+@@ -95,7 +95,9 @@ final class OrphanScan {
+             metadata.statisticsFiles().stream().map(StatisticsFile::path).forEach(this::add);
+             metadata.partitionStatisticsFiles().stream().map(PartitionStatisticsFile::path).forEach(this::add);
+             List<ManifestFile> unread = new ArrayList<>();
+-            for (Snapshot snapshot : metadata.snapshots()) {
++            for (Snapshot snapshot : metadata.currentSnapshot() == null ? List.<Snapshot>of()
++                    : org.apache.iceberg.util.SnapshotUtil.ancestorsOf(metadata.currentSnapshot().snapshotId(),
++                            metadata::snapshot)) {
+                 if (!snapshots.add(snapshot.snapshotId())) {
+                     continue;
+                 }

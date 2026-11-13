@@ -75,7 +75,7 @@ class TransactionRoutes {
             if (paths.put(Named.of(object), path) != null) {
                 throw CatalogError.badRequest("Table " + qualified + " is named more than once in the transaction");
             }
-            guard.onObject(request, catalog, object, path, Guard.commit(commit.json()));
+            guard.onObject(request, catalog, object, path, guard.commit(request, commit.json()));
             changes.add(new CommitEngine.TableChange(ObjectRoutes.name(catalog, namespace, levels, table),
                     commit.json()));
         }

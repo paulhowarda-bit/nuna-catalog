@@ -15,7 +15,7 @@ import java.util.function.Function;
 /**
  * The enterprise policy of D11: approved locations, property policy, an immutable encryption key id,
  * the retention-hold guard and the clock-skew guard; and the governance guards of M7: the DR freeze
- * (D37) and the minimum snapshot age of a retention class (D24, D30). Correctness backstops that need Iceberg's own
+ * (D37) and the minimum snapshot age, the deployment's and a retention class's (D24, D30). Correctness backstops that need Iceberg's own
  * types live in catalog-iceberg and run inside the builder step.
  */
 public final class Rules {
@@ -93,34 +93,48 @@ public final class Rules {
     }
 
     /**
-     * A snapshot younger than its table's retention class allows may not be removed (D24, D30): the
-     * minimum-age guardrail holds whoever expires snapshots, the maintenance worker or an engine.
+     * A snapshot younger than the deployment's minimum snapshot age, or than its table's retention class allows,
+     * may not be removed (D24, D30): the guardrail holds whoever expires snapshots, the maintenance worker or an
+     * engine. The larger of the two minimums applies; governance is read only when a commit removes a snapshot
+     * the deployment's minimum alone lets go.
      *
-     * @param minimumAge the minimum snapshot age of a retention class, empty for a class with none
+     * @param deploymentMinimum the minimum age of every snapshot ({@code keel.governance.minimum-snapshot-age})
+     * @param classMinimum      the minimum snapshot age of a retention class, empty for a class with none
      */
-    public static CommitRule snapshotMinimumAge(Function<String, Optional<Duration>> minimumAge) {
+    public static CommitRule snapshotMinimumAge(Duration deploymentMinimum,
+                                                Function<String, Optional<Duration>> classMinimum) {
         return change -> {
             if (!(change.before() instanceof TableFacts before) || !(change.after() instanceof TableFacts after)
                     || after.snapshotTimestamps().keySet().containsAll(before.snapshotTimestamps().keySet())) {
                 return Optional.empty();
             }
+            Optional<Rejection> deployment = youngestRemoved(change, before, after, deploymentMinimum,
+                    "the deployment's minimum snapshot age");
+            if (deployment.isPresent()) {
+                return deployment;
+            }
             Optional<GovernanceAttribute> retentionClass = change.governance()
                     .nearest(GovernanceAttribute.Kind.RETENTION_CLASS);
-            Optional<Duration> minimum = retentionClass.flatMap(c -> minimumAge.apply(c.value()));
-            if (minimum.isEmpty()) {
+            Optional<Duration> minimum = retentionClass.flatMap(c -> classMinimum.apply(c.value()));
+            if (minimum.isEmpty() || minimum.get().compareTo(deploymentMinimum) <= 0) {
                 return Optional.empty();
             }
-            Instant youngestRemovable = change.now().minus(minimum.get());
-            for (Map.Entry<Long, Long> snapshot : before.snapshotTimestamps().entrySet()) {
-                if (!after.snapshotTimestamps().containsKey(snapshot.getKey())
-                        && Instant.ofEpochMilli(snapshot.getValue()).isAfter(youngestRemovable)) {
-                    return Optional.of(Rejection.forbidden("Snapshot " + snapshot.getKey() + " of " + change.object().id()
-                            + " is younger than " + minimum.get() + ", the minimum age of retention class "
-                            + retentionClass.get().value() + ": it cannot be removed yet"));
-                }
-            }
-            return Optional.empty();
+            return youngestRemoved(change, before, after, minimum.get(),
+                    "the minimum age of retention class " + retentionClass.get().value());
         };
+    }
+
+    private static Optional<Rejection> youngestRemoved(CommitRule.Change change, TableFacts before, TableFacts after,
+                                                       Duration minimum, String whose) {
+        Instant youngestRemovable = change.now().minus(minimum);
+        for (Map.Entry<Long, Long> snapshot : before.snapshotTimestamps().entrySet()) {
+            if (!after.snapshotTimestamps().containsKey(snapshot.getKey())
+                    && Instant.ofEpochMilli(snapshot.getValue()).isAfter(youngestRemovable)) {
+                return Optional.of(Rejection.forbidden("Snapshot " + snapshot.getKey() + " of " + change.object().id()
+                        + " is younger than " + minimum + ", " + whose + ": it cannot be removed yet"));
+            }
+        }
+        return Optional.empty();
     }
 
     /** A new snapshot may not be stamped further ahead of the catalog's clock than the skew allows (D9). */
