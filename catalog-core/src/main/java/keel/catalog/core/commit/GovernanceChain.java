@@ -10,8 +10,10 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /**
@@ -21,6 +23,12 @@ import java.util.UUID;
  * time it is asked for, in one read for every level. Not safe for concurrent use.
  */
 public final class GovernanceChain implements CommitRule.Governance {
+
+    /** The attributes sent as labels, by their wire names. */
+    public static final Map<GovernanceAttribute.Kind, String> LABELS = Map.of(
+            GovernanceAttribute.Kind.CLASSIFICATION, "classification",
+            GovernanceAttribute.Kind.OWNER, "owner",
+            GovernanceAttribute.Kind.RETENTION_CLASS, "retention-class");
 
     private final CatalogStore store;
     private final List<Securable> levels;
@@ -93,6 +101,22 @@ public final class GovernanceChain implements CommitRule.Governance {
             attributes = List.copyOf(ordered);
         }
         return attributes;
+    }
+
+    /**
+     * The object labels a load sends (D27, amended 2026-11-12): the effective classification, owner and
+     * retention class, each the nearest level's value, by its wire name. Provenance, the regulated and
+     * row/column flags and every other attribute stay in the catalog.
+     */
+    public Map<String, String> labels() {
+        Map<String, String> labels = new TreeMap<>();
+        for (GovernanceAttribute attribute : attributes()) {
+            String label = LABELS.get(attribute.kind());
+            if (label != null) {
+                labels.putIfAbsent(label, attribute.value());
+            }
+        }
+        return labels;
     }
 
     /** The namespace and those above it, innermost first, stopping at the catalog or a namespace that is gone. */
