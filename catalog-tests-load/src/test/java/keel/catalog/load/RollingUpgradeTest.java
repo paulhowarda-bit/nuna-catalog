@@ -84,7 +84,7 @@ class RollingUpgradeTest {
             beforeUpgrade = ledger.acknowledged.size();
 
             new1 = stack.server("upgrade-new-1");
-            assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("5");
+            assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("6");
             catalog.add(new1.uri());
             ServerProcess.pause(Duration.ofSeconds(5));
             catalog.drain(old1.uri());

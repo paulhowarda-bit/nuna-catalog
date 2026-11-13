@@ -72,7 +72,8 @@ Narrow by design [D7, D8.8]. Every operation is one atomic unit on every backend
 - `commit(CommitBatch)` — CAS on one or more (object, branch) pointers in fixed ID order, plus projection, hash, journal, outbox and idempotency. The same call serves single-table commits (v1), multi-table commits (`/transactions/commit`, built 2026-11-12) and merges (v1.x) [D15, D33].
 - `findCommit(commitId)` — the ambiguity lookup; locks the pointer row before looking [D8.4].
 - Namespaces: create, drop, load, list children (paged), update properties (CAS on a namespace version).
-- Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan; unregister, and revive by registering an object's own file again (v1.x, built 2026-11-12) [D13].
+- Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan; unregister, and revive by registering an object's own file again (v1.x, built 2026-11-12) [D13]; purge as a claim and a completion, and a scan of active objects (v1.x, built 2026-11-13) [D25, D30].
+- Pending deletions: record, list due, complete (v1.x, built 2026-11-13) [D30].
 - Grants: put and revoke (with an outbox row), batch check, list by principal, list by object.
 - Idempotency: claim, complete, read, wait, expire.
 - Outbox: claim the next ordered batch, mark relayed.
@@ -88,7 +89,8 @@ Mapped to tables (SQL) or collections (MongoDB) per backend. Names are stored tw
 |---|---|
 | catalog | id, name, storage profile, KMS key set, legal entity [D28] |
 | namespace | catalog id, id, parent id, name (normalized, display), properties, version, dropped-at |
-| object | catalog id, id (UUID), namespace id, name (normalized, display), kind (table/view), state (active/dropped; also purged, and unregistered from 2026-11-12), dropped-at, purge-after, location root [D25, D28] |
+| object | catalog id, id (UUID), namespace id, name (normalized, display), kind (table/view), state (active/dropped; also purged, unregistered from 2026-11-12, and purging from 2026-11-13), dropped-at, purge-after, purge claimant, location root [D25, D28, D30] |
+| pending deletion | id, object id, catalog id, location, not-before, recorded-at; added 2026-11-13 [D30] |
 | pointer | object id, **branch** (`main` in v1), metadata location, version, SHA-256, projection (chunked above the size budget), last commit id [D6, D8.5, D33] |
 | journal | commit id, object id, branch, sequence, time, principal, end user, engine, requirements, updates, old and new location; partitioned by time [D8.5] |
 | outbox | sequence, time, type, payload (versioned schema) [D23] |
@@ -218,10 +220,12 @@ Three worktree sessions, each owning one module:
   | `PUT`/`DELETE .../dr-freeze` | a platform operator | A step of the DR runbook [D37]: running the deployment, not data access. Operators hold no grant, so freezing gives them nothing to read or write. |
   | `POST .../objects/{id}/undrop` | create on the object's namespace | It brings a name back into the namespace, as create, register and rename-into do. |
   | `GET .../objects/{id}/export` | select on the object | It returns the metadata JSON and the commit journal, which `loadTable` gives with select; it vends no credentials. |
-  | `POST .../objects/{id}/purge`, `GET /management/v1/maintenance/purge-eligible` | a maintenance principal | Only the maintenance tier purges [D25], and the queue lists objects in every catalog. |
+  | `POST .../objects/{id}/purge-claim`, `POST .../objects/{id}/purge`, `GET /management/v1/maintenance/purge-eligible` | a maintenance principal | Only the maintenance tier purges [D25], and the queue lists objects in every catalog. Since 2026-11-13 a purge is a claim, then a completion by the claimant [D30]. |
+  | `POST .../objects/{id}/pending-deletions`, `POST .../objects/{id}/pending-deletions/complete`, `GET /management/v1/maintenance/work` | a maintenance principal | The worker's own routes (D30, added 2026-11-13): the files it will delete once the PITR window has passed, and the work list across every catalog. |
+  | `GET /management/v1/maintenance/delete-policies` | a platform operator | It lists every storage profile and its worker, to apply the policies that leave delete to the worker alone (D30, added 2026-11-13): running the deployment, as the DR freeze is. |
 
   - D27 now allows manage-tags on an unclassified table in a regulated area, beside describe; otherwise nobody could classify the table that the rule keeps closed.
-  - One setting, `keel.security.maintenance-principals`, names the maintenance tier for both purge and deleting vended credentials. It replaces `keel.governance.maintenance-principals` and `keel.storage.maintenance-principals`. A maintenance principal counts only when acting as itself, not through a trusted engine for an end user.
+  - One setting, `keel.security.maintenance-principals`, names the maintenance tier for both purge and deleting vended credentials (until 2026-11-13: since then no vended credentials delete, and the tier's own storage identity, `maintenance-principal` on each storage profile, does [D30]). It replaces `keel.governance.maintenance-principals` and `keel.storage.maintenance-principals`. A maintenance principal counts only when acting as itself, not through a trusted engine for an end user.
 
 ### M8 — Hardening gates
 
@@ -357,7 +361,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 - `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15]. **Done 2026-11-12** (see Status).
 - Branches, tags and merge over the v1 storage: REST prefix selects the branch (`trading@dev`), Nessie merge semantics per table, cleanup protects every ref, defaults from P11 [D33].
-- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment), not built.
+- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment). **Catalog side done 2026-11-13** (see Status); the worker itself, `catalog-maintenance`, is built apart.
 - unregister, register-view, labels [D13, D27]. **Done 2026-11-12**, with review fixes the same night (see Status).
 - queryable audit tables [D23]; DR replication-watermark verifier.
 
