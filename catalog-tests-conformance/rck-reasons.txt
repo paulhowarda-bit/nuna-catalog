@@ -31,9 +31,6 @@
 [class:RESTCompatibilityKitViewCatalogTests]/[method:updateViewLocation()]	D28: moving a view's location is refused, 400 "Location is assigned by the catalog".
 [class:RESTCompatibilityKitViewCatalogTests]/[method:createViewWithCustomMetadataLocation()]	D28: write.metadata.path outside the view's assigned location is refused (400).
 #
-# Other decisions.
-[class:RESTCompatibilityKitCatalogTests]/[method:testRegisterTable()]	Soft drop (D13, D34): the test drops a table and registers its file again; the UUID still belongs to the dropped table, so register answers 409 and undrop (v1.x) brings it back.
-[class:RESTCompatibilityKitViewCatalogTests]/[method:registerView()]	D13: register-view is a v1.x route; the endpoint is not advertised.
-[class:RESTCompatibilityKitViewCatalogTests]/[method:registerExistingView()]	D13: register-view is a v1.x route; the endpoint is not advertised.
-[class:RESTCompatibilityKitViewCatalogTests]/[method:registerViewThatAlreadyExistsAsTable()]	D13: register-view is a v1.x route; the endpoint is not advertised.
+# The test environment. (testRegisterTable and the three register-view tests pass since 2026-11-12, when
+# register-view and registering a dropped table's own file again were built: D13 and D25, amended.)
 [class:RESTCompatibilityKitCatalogTests]/[method:testLoadTableWithMissingMetadataFile(java.nio.file.Path)]	Test environment: the test deletes the metadata file through java.nio.file.Path, which cannot open an s3:// location. Our 404 for a missing metadata file is covered by RestRoutesTest (register case).
