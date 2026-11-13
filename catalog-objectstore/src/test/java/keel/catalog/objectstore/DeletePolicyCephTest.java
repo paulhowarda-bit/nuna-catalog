@@ -16,6 +16,11 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.BucketLifecycleConfiguration;
+import software.amazon.awssdk.services.s3.model.ExpirationStatus;
+import software.amazon.awssdk.services.s3.model.LifecycleExpiration;
+import software.amazon.awssdk.services.s3.model.LifecycleRule;
+import software.amazon.awssdk.services.s3.model.LifecycleRuleFilter;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.sts.StsClient;
@@ -24,7 +29,8 @@ import software.amazon.awssdk.services.sts.model.Credentials;
 /**
  * The delete policy applied to a real Ceph bucket (D30): beneath the profile's prefix the maintenance worker's own
  * user deletes, and nobody else does, the catalog's own user (the bucket's owner) and a session of the role it
- * vends from included, though that role allows every S3 action. Ceph only: Silo, the default store, enforces no
+ * vends from included, though that role allows every S3 action; neither can set a lifecycle rule, whose expiration
+ * would delete for them. Ceph only: Silo, the default store, enforces no
  * bucket policy on signed requests, so this runs in the heavy pass with {@code -Ps3=ceph} and is skipped otherwise.
  */
 @Tag("heavy")
@@ -44,6 +50,9 @@ class DeletePolicyCephTest {
             for (String key : List.of("tables/t/a", "tables/t/b", "tables/t/c", "other/x", "other/y")) {
                 owner.putObject(r -> r.bucket(bucket).key(key), RequestBody.fromString(key));
             }
+            // Without the policy the owner may set and remove a lifecycle rule: the refusals below are the policy's.
+            owner.putBucketLifecycleConfiguration(r -> r.bucket(bucket).lifecycleConfiguration(expireTables()));
+            owner.deleteBucketLifecycle(r -> r.bucket(bucket));
             owner.putBucketPolicy(r -> r.bucket(bucket).policy(DeletePolicy.bucketPolicy(StoreKind.CEPH,
                     TestS3.REGION, bucket, List.of(new DeletePolicy.Worker(store.maintenancePrincipal(),
                             List.of(prefix))))));
@@ -52,6 +61,10 @@ class DeletePolicyCephTest {
             assertDenied(() -> role.deleteObject(r -> r.bucket(bucket).key("tables/t/a")));
             worker.deleteObject(r -> r.bucket(bucket).key("tables/t/b"));
             assertDenied(() -> worker.deleteObject(r -> r.bucket(bucket).key("other/x")));
+            assertDenied(() -> owner.putBucketLifecycleConfiguration(r -> r.bucket(bucket)
+                    .lifecycleConfiguration(expireTables())));
+            assertDenied(() -> role.putBucketLifecycleConfiguration(r -> r.bucket(bucket)
+                    .lifecycleConfiguration(expireTables())));
             owner.deleteObject(r -> r.bucket(bucket).key("other/y"));
 
             assertThat(owner.getObjectAsBytes(r -> r.bucket(bucket).key("tables/t/a")).asUtf8String())
@@ -61,6 +74,13 @@ class DeletePolicyCephTest {
             assertThat(owner.getObjectAsBytes(r -> r.bucket(bucket).key("other/x")).asUtf8String()).isEqualTo("other/x");
             owner.putObject(r -> r.bucket(bucket).key("tables/t/d"), RequestBody.fromString("still writable"));
         }
+    }
+
+    /** A rule that would delete every table file a day after it was written, with no DeleteObject call. */
+    private static BucketLifecycleConfiguration expireTables() {
+        return BucketLifecycleConfiguration.builder().rules(LifecycleRule.builder().id("expire-tables")
+                .filter(LifecycleRuleFilter.builder().prefix("tables/").build()).status(ExpirationStatus.ENABLED)
+                .expiration(LifecycleExpiration.builder().days(1).build()).build()).build();
     }
 
     /** A session of the role the catalog vends from, with no session policy: the role alone allows every S3 action. */

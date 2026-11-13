@@ -10,7 +10,8 @@ import java.util.stream.Collectors;
  * Who may delete a table's files (D30): the maintenance worker alone, with its own storage identity. Vended
  * credentials never carry delete ({@link Access}); these policies take it from every other principal the store
  * knows as well, the catalog's own role or user included, so neither a vended session nor the catalog's own key
- * can delete. The catalog never applies them, since its own credentials would then need the right to change them
+ * can delete, and with it the bucket settings that would delete for them or drop the deny ({@link #LIFECYCLE},
+ * {@link #BUCKET_POLICY}). The catalog never applies them, since its own credentials would then need the right to change them
  * back: an operator applies them once, from {@code GET /management/v1/maintenance/delete-policies}.
  *
  * <p>Locations come in as canonical {@link ObjectLocation}s and principals pass {@link #requirePrincipal}, so
@@ -20,8 +21,19 @@ public final class DeletePolicy {
 
     /** What is denied: deleting an object, or one version of it in a versioned bucket. */
     static final List<String> DELETES = List.of("s3:DeleteObject", "s3:DeleteObjectVersion");
-    private static final String DELETES_JSON = DELETES.stream().map(action -> "\"" + action + "\"")
-            .collect(Collectors.joining(",", "[", "]"));
+    /**
+     * Also denied, on the bucket: a lifecycle rule, whose expiration deletes objects without anyone calling
+     * DeleteObject (removing one needs the same right), on every store.
+     */
+    static final List<String> LIFECYCLE = List.of("s3:PutLifecycleConfiguration");
+    /**
+     * And where the store does not stop the bucket's own account changing the policy itself: putting another bucket
+     * policy or deleting this one, which would take the deny away. On AWS S3 the account's root user can still do
+     * both; on Ceph the bucket's owner may, so the catalog's user must not own the bucket. On MinIO a bucket policy
+     * opens a bucket to anonymous requests, deletes included.
+     */
+    static final List<String> BUCKET_POLICY = List.of("s3:PutBucketPolicy", "s3:DeleteBucketPolicy");
+    private static final String DELETES_JSON = json(DELETES);
     /** IAM's characters for user and role names and ARNs; MinIO's user names fit in them too. */
     private static final Pattern PRINCIPAL = Pattern.compile("[A-Za-z0-9+=,.@_:/-]+");
 
@@ -63,8 +75,10 @@ public final class DeletePolicy {
      * The bucket policy for {@code bucket} on AWS S3 or Ceph RGW: beneath each worker's prefixes, every principal
      * but that worker is denied delete. AWS matches {@code aws:PrincipalArn}, which for a role session is the role,
      * so the worker may be a role. RGW names the worker in {@code NotPrincipal} instead, and also allows it to
-     * delete there, since a Ceph user has no rights in another user's bucket but what the bucket grants. Nothing
-     * else is allowed or denied: every other right still comes from where it came from before.
+     * delete there, since a Ceph user has no rights in another user's bucket but what the bucket grants. On the
+     * bucket itself every principal but the workers is denied a lifecycle rule, and on AWS also a new or deleted
+     * bucket policy (on Ceph the catalog's user must not own the bucket instead). Nothing else is allowed or denied:
+     * every other right still comes from where it came from before.
      *
      * @param region the region of the bucket, which sets the partition of its ARNs
      */
@@ -90,18 +104,41 @@ public final class DeletePolicy {
                         + principal + ",\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources + "}");
             }
         }
+        String principals = json(workers.stream().map(Worker::principal).distinct().toList());
+        String bucketArn = "[\"arn:" + SessionPolicy.partition(region) + ":s3:::" + bucket + "\"]";
+        if (kind == StoreKind.S3) {
+            List<String> settings = new ArrayList<>(LIFECYCLE);
+            settings.addAll(BUCKET_POLICY);
+            statements.add("{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\",\"Principal\":\"*\","
+                    + "\"Action\":" + json(settings) + ",\"Resource\":" + bucketArn + ","
+                    + "\"Condition\":{\"ArnNotEquals\":{\"aws:PrincipalArn\":" + principals + "}}}");
+        } else {
+            statements.add("{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\",\"NotPrincipal\":"
+                    + "{\"AWS\":" + principals + "},\"Action\":" + json(LIFECYCLE) + ",\"Resource\":" + bucketArn + "}");
+        }
         return "{\"Version\":\"2012-10-17\",\"Statement\":[" + String.join(",", statements) + "]}";
     }
 
     /**
      * On MinIO, which does not enforce a bucket policy on signed requests (Silo, its maintained fork, was checked
      * on 2026-11-12), the deny goes into a user policy instead: attached to every user but the worker, the
-     * catalog's own included. The sessions the catalog vends derive from its user and keep the deny. The root
-     * user ignores every policy, so the catalog must not run as root.
+     * catalog's own included, with a deny of lifecycle rules and bucket policies on each prefix's bucket. The
+     * sessions the catalog vends derive from its user and keep the deny. The root user ignores every policy, so the
+     * catalog must not run as root.
      */
     public static String userPolicy(List<ObjectLocation> prefixes) {
+        List<String> settings = new ArrayList<>(LIFECYCLE);
+        settings.addAll(BUCKET_POLICY);
+        String buckets = json(prefixes.stream().map(prefix -> "arn:aws:s3:::" + prefix.bucket()).distinct().toList());
         return "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"KeelOnlyTheWorkerDeletes\",\"Effect\":\"Deny\","
-                + "\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources("aws", null, prefixes) + "}]}";
+                + "\"Action\":" + DELETES_JSON + ",\"Resource\":" + resources("aws", null, prefixes) + "},"
+                + "{\"Sid\":\"KeelOnlyTheWorkerSetsTheBucket\",\"Effect\":\"Deny\",\"Action\":" + json(settings)
+                + ",\"Resource\":" + buckets + "}]}";
+    }
+
+    /** A JSON array of strings that need no escaping. */
+    private static String json(List<String> values) {
+        return values.stream().map(value -> "\"" + value + "\"").collect(Collectors.joining(",", "[", "]"));
     }
 
     /** Every object beneath each prefix; {@code bucket}, when given, is the only bucket allowed. */
