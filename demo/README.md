@@ -45,7 +45,8 @@ demo/demo.sh up
   70 MB idle, up to 1 GB), plus one job at a time: the
   lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so
   nothing else of that size fits beside it.
-- No volumes: the data lives as long as the pods.
+- No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
+  `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
 At the end it prints the console URL, <http://localhost:8181/ui/>, the passwords and the tokens.
 
