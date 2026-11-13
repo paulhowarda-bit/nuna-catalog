@@ -361,7 +361,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 - `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15]. **Done 2026-11-12** (see Status).
 - Branches, tags and merge over the v1 storage: REST prefix selects the branch (`trading@dev`), Nessie merge semantics per table, cleanup protects every ref, defaults from P11 [D33].
-- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment). **Catalog side done 2026-11-13** (see Status); the worker itself, `catalog-maintenance`, is built apart.
+- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment). **Catalog side done 2026-11-13** (see Status). **Worker done 2026-11-13** (`catalog-maintenance`, its image and Helm chart; see Status); its heavy and overnight tests have not run.
 - unregister, register-view, labels [D13, D27]. **Done 2026-11-12**, with review fixes the same night (see Status).
 - queryable audit tables [D23]; DR replication-watermark verifier.
 
@@ -657,4 +657,54 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Fast build green after merging main (f049ad5, which brought no change): 1,196 tests in 123 classes, 0 failures. The first run (10 min 40 s) failed one test, `SchemaAtStartupTest`, which still expected PostgreSQL schema 5; fixed. The second run, 5 min 16 s, reran what the first had not passed and took the rest as up to date.
   - Bites: 15 recorded in `bites/D30/`, each checked with `git apply --check`, not run. Thirteen older bites in `bites/D15/`, `M5/`, `M6/` and `M7/` no longer applied, because the D30 changes moved their code, and were recorded again with the same breaks; `M7/purge-by-anyone` now removes the check from both the claim and the completion. `M6/delete-for-writers` is removed: `D30/delete-still-vended` makes the same break. All 159 apply.
   - Not verified: CockroachDB, Oracle and MongoDB (their purge claim, completion, pending deletions and active-object scan, and their schema steps), the `heavy` tests (`DeletePolicyCephTest` on Ceph among them), the `overnight` `MutationSuite` sweeps and `RollingUpgradeTest`, the engine matrix and the RCK with the minimum age at 0 s, the bites, and the MinIO user policy and AWS bucket policy, which no test applies. All but the last wait for the next heavy pass or the nightly.
+- **Maintenance worker done 2026-11-13, on PostgreSQL and Silo** (D30; phase 2 of the v1.x plan, to Paul's decisions of 2026-11-12, recorded in the ledger's amendments to D2, D21, D25 and D30). `catalog-maintenance` is a separate service: an Iceberg Java client of the catalog over REST, with its own principal and its own storage identity. Its README says how to run and configure it.
+  - The scan. Every `scan-interval` (10 minutes) the worker pages through `GET /management/v1/maintenance/work`. For each table it runs what the policy turns on:
+    - snapshot expiry (Iceberg's ExpireSnapshots) and manifest rewrite (RewriteManifests), both committed through the catalog;
+    - the orphan scan and compaction, each at most once a day per table.
+
+    Then it purges and deletes the due pending deletions. A purge is a claim, the deletion of everything beneath the location with the worker's own identity, and the completion. Another worker's claim is skipped, and the worker's own is resumed. Due deletions are reported done. A failed job is reported and tried again at the next scan.
+  - Nothing is deleted when found. Expiry, manifest rewrite and the orphan scan record every unreferenced file in the pending-deletion list, which holds it for the PITR window. Iceberg's expiry leaves a file that a snapshot it keeps had deleted; the orphan scan queues it later.
+  - The orphan scan, in Java. It lists the table's location and builds the reachable set: the metadata log, and every manifest list, manifest, data, delete, statistics and partition statistics file of every snapshot, so every branch and tag counts. It reads the metadata again after the listing, so a file committed meanwhile is reachable. It queues only unreachable files older than the orphan age.
+  - Compaction. One Kubernetes Job per table, `keel-compact-<table uuid>`, runs the repo's Spark image with rewrite_data_files. It signs in as the worker through a Secret the Job owns. A finished Job is kept for the compaction interval, which spaces compactions apart across restarts too.
+  - Catalog change, so reruns are safe. A file is pending once per object: a unique index `pending_deletion_object` (PostgreSQL V7, CockroachDB V6, Oracle V8, MongoDB step 6). Recording a file again keeps its first not-before, writes nothing, and answers 200 instead of 201. `SchemaAtStartupTest` and `RollingUpgradeTest` expect schema 7. `IcebergImportBoundaryTest` lists `catalog-maintenance` as a client.
+  - Packaging.
+    - Image: `deploy/image/maintenance.Dockerfile`. It was built once and started without settings; it refused to start for want of `catalog-uri`, as it should.
+    - Chart: `deploy/helm/keel-maintenance`. It passes `helm lint` and renders; it is not installed anywhere. It runs one replica (Recreate) with its own service account, the settings in a ConfigMap and the secrets as a config tree. With a compaction image it adds a Role and RoleBinding for Jobs and Secrets.
+  - Tests, fast:
+    - `SnapshotExpiryTest`: expiry queues only unreachable files; branch and tag files survive.
+    - `OrphanScanTest`: young orphans are kept.
+    - `GuardrailsTest`: held, frozen and unregistered tables are untouched.
+    - `PurgeTest`: the prefix goes after a claim, and a claimed purge resumes.
+    - `PendingDeletionTest`: pending deletions wait for their time.
+    - `WorkerRunTest`: the worker's run against a fake clock.
+    - `KubernetesJobsTest` and `TokenSourceTest`.
+    - The store suite's `pendingDeletionsAreRecordedOncePerFile` and `MaintenanceRoutesTest`.
+
+    The module's test task takes about 85 s, beside the other modules. About 60 s of that is starting PostgreSQL, Kafka, Silo and the server, which shows up in the first class.
+  - Tests, `heavy`:
+    - `OrphanRaceTest`: a writer committing during orphan scans.
+    - `KafkaDownTest`.
+    - `KillMidPurgeTest`: a worker in its own JVM is killed mid-purge and resumed.
+    - `KubernetesCompactionTest`: Docker Desktop's cluster, in a throwaway namespace it deletes, with the chart's own RBAC.
+  - Tests, `overnight`:
+    - `LargeExpiryTest`: 10,000 snapshots.
+    - `LargeOrphanScanTest`: the scan's heap per reachable file, at 250,000, 500,000 and 1,000,000 files, each scan in its own 2 GiB JVM.
+
+    Compaction is not in the engine matrix: that would mean deploying the worker there. This awaits Paul's OK.
+  - Fast build green after merging main (already up to date at f049ad5): 1,208 tests in 131 classes, 0 failures.
+    - The first run (10 min 35 s) lost `ClientOperationsTest` at startup, when the Kafka container exited with code 126, as on 2026-11-12.
+    - The second run, 3 min 10 s, reran that module and `catalog-maintenance` and took the rest as up to date.
+  - Bites: 7 recorded in `bites/D30/`, each checked with `git apply --check`, not run.
+    - `deleteWith-ignores-pending-list`, `orphan-threshold-ignored`, `worker-maintains-held-table`, `branch-or-tag-files-deleted`, `purge-without-claim`, `pending-deleted-early` and `pending-recorded-twice`.
+    - `pending-deletion-before-window` was recorded again: the 200 answer moved its lines.
+    - All 166 apply.
+  - Found and not fixed: the Ceph delete policy the catalog hands out lets the worker delete but not list (`s3:ListBucket`), which its orphan scans and purges need. The tests add the listing, and deploy/README.md tells operators to; folding it into the policy is open (D21).
+  - Not verified, all waiting for the next heavy pass or the nightly:
+    - the four `heavy` and two `overnight` tests;
+    - the dedup on CockroachDB, Oracle and MongoDB, and their schema steps;
+    - the worker on Ceph and AWS;
+    - the compaction Job in a cluster;
+    - the bites.
+
+    The chart has not been installed anywhere.
 - **Next:** M9, carried to work.
