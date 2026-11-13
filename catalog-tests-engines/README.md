@@ -244,9 +244,19 @@ until 2026-11-12: `Cannot change field 1 (id) from long to string: not a valid t
 `LIMIT` line (`replace.retype`). A replace starts main afresh, and Iceberg's reference handler accepts the new
 schema (it keeps field IDs by name, whatever the type), but `Backstops.schemas` judged a replace's schema
 against the replaced one as if it were evolved in place. Paul asked for the fix (D11, amended 2026-11-12): a
-replace of a table with rows is now exempt from the type and required checks, and a change in place is not.
+replace of a table with rows is now exempt from the type check, and a change in place is not.
 Spark prints `RESULT spark replace.retype 4 1 string`, which `EngineMatrixTest` expects; a refusal would still
 print the `LIMIT` line, and fail the test.
+
+On 2026-11-13 Paul widened the exemption: a replace skips every schema-evolution check, so an optional column
+made required, or a primitive made nested, is accepted too, as Iceberg's reference handler accepts it. A third
+case covers it (`replace.required`): `t_replace_required` (v3, `id INT`, rows 1 and null) is replaced by
+`SELECT 1 AS id`. A literal is never null, but Iceberg's Spark catalog makes every CTAS and RTAS column optional
+unless `use-nullable-query-schema` is false, so the script registers `fidstrict`, a second handle on the same
+catalog with that option off, and replaces through it. Expected: `RESULT spark replace.required 2 1 required`
+(two snapshots, one row, id required); the catalog's old refusal, `Cannot make optional field 1 (id) required`,
+prints a `LIMIT` line instead. The table is dropped afterwards. Not run in the matrix yet: the Spark side was
+checked on 2026-11-13 against a local Hadoop catalog in the same image, which printed that line.
 
 ## Views (2026-11-12)
 
