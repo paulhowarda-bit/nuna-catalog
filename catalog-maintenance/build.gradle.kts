@@ -47,4 +47,10 @@ tasks.jar {
 
 tasks.test {
     listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
+    val root = rootDir
+    doFirst {
+        // KubernetesCompactionTest builds the Spark image and renders the chart from this checkout; set as the task
+        // starts so the path stays out of the build cache key.
+        systemProperty("repo.root", root.absolutePath)
+    }
 }
