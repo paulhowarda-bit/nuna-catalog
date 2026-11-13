@@ -36,12 +36,13 @@ today.
 
 Its rules hold at work. Some of its facts describe Paul's home machine:
 
-- The absolute paths (`C:/Users/paulh/OneDrive/Desktop/code/fidice-catalog`) mean your main checkout.
+- The absolute paths (`C:/Users/paulh/OneDrive/Desktop/code/keel-catalog`) mean your main checkout.
 - `org.gradle.workers.max=2` and "Docker has 8 GB" are sized for his laptop. Leave the setting unless Paul
   changes it.
 - `docker-desktop` is his laptop's Kubernetes context. At work, name your cluster's context wherever a test or
   script asks for one (`-Pengines.cluster=<context>`, `KEEL_K8S_CONTEXT`).
-- The repository and its folder are still called `fidice-catalog`; the code, images and charts are `keel`.
+- The repository and its folder are `keel-catalog` (renamed from `fidice-catalog` on 2026-11-13; GitHub
+  redirects the old URL).
 - Never push unless Paul asks, and the deferrals are his to make.
 
 ## 1. Build tools and repositories
