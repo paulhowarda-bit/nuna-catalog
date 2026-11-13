@@ -1,0 +1,16 @@
+Breaks: compaction runs with no token scope, so the Job's client asks for the scope "catalog" and is refused or signed in with other rights than the worker's.
+Module: catalog-maintenance
+Test: TokenSourceTest#compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
+index e36506b..011addf 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
+@@ -51,7 +51,7 @@ public record WorkerSettings(
+                         + " (keel.maintenance.token.endpoint): a compaction Job runs up to its deadline and renews its"
+                         + " own token, where a token file's token would expire under it");
+             }
+-            if (token.scope() == null) {
++            if (false) {
+                 throw new IllegalArgumentException("keel.maintenance.token.scope must be set when compaction runs:"
+                         + " the Job's Iceberg client always asks for a scope (\"catalog\" when none is set), so the"
+                         + " worker's own token request names the same one");

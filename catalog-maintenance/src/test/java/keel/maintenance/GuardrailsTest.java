@@ -105,6 +105,17 @@ class GuardrailsTest {
     }
 
     /** The work list's item for a table whose policy runs compaction alone, under the given id. */
+    @Test
+    void onlyFilesBeneathTheTablesOwnLocationAreRecorded() {
+        String root = "s3://lake/tables/orders-1/";
+
+        assertThat(Worker.beneath(root + "data/part=3/f.parquet", root)).isTrue();
+        assertThat(List.of(root, root + "data/../../orders-2/data/f.parquet", root + "data/./f.parquet",
+                root + "data//f.parquet", root + "data/f.parquet/", "s3://lake/tables/orders-10/data/f.parquet"))
+                .as("what the catalog refuses, which would refuse the whole batch").noneMatch(file ->
+                        Worker.beneath(file, root));
+    }
+
     private static Management.TableWork work(TableIdentifier id, Table table, UUID tableId) {
         return new Management.TableWork(TestCatalog.CATALOG, tableId, List.of(id.namespace().levels()), id.name(),
                 table.location(), Map.of("compaction.enabled", "true"));
