@@ -72,7 +72,7 @@ Narrow by design [D7, D8.8]. Every operation is one atomic unit on every backend
 - `commit(CommitBatch)` — CAS on one or more (object, branch) pointers in fixed ID order, plus projection, hash, journal, outbox and idempotency. The same call serves single-table commits (v1), multi-table commits (`/transactions/commit`, built 2026-11-12) and merges (v1.x) [D15, D33].
 - `findCommit(commitId)` — the ambiguity lookup; locks the pointer row before looking [D8.4].
 - Namespaces: create, drop, load, list children (paged), update properties (CAS on a namespace version).
-- Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan.
+- Objects (tables and views): create-if-absent, soft drop, undrop, rename, register, list (paged), purge-eligible scan; unregister, and revive by registering an object's own file again (v1.x, built 2026-11-12) [D13].
 - Grants: put and revoke (with an outbox row), batch check, list by principal, list by object.
 - Idempotency: claim, complete, read, wait, expire.
 - Outbox: claim the next ordered batch, mark relayed.
@@ -88,7 +88,7 @@ Mapped to tables (SQL) or collections (MongoDB) per backend. Names are stored tw
 |---|---|
 | catalog | id, name, storage profile, KMS key set, legal entity [D28] |
 | namespace | catalog id, id, parent id, name (normalized, display), properties, version, dropped-at |
-| object | catalog id, id (UUID), namespace id, name (normalized, display), kind (table/view), state (active/dropped), dropped-at, purge-after, location root [D25, D28] |
+| object | catalog id, id (UUID), namespace id, name (normalized, display), kind (table/view), state (active/dropped; also purged, and unregistered from 2026-11-12), dropped-at, purge-after, location root [D25, D28] |
 | pointer | object id, **branch** (`main` in v1), metadata location, version, SHA-256, projection (chunked above the size budget), last commit id [D6, D8.5, D33] |
 | journal | commit id, object id, branch, sequence, time, principal, end user, engine, requirements, updates, old and new location; partitioned by time [D8.5] |
 | outbox | sequence, time, type, payload (versioned schema) [D23] |
@@ -204,7 +204,7 @@ Three worktree sessions, each owning one module:
 - Transactional outbox and its ordered relay; synchronous Kafka (`acks=all`) for reads, denials, auth failures and credential issuance, failing closed on credentials [D23].
 - SIEM feed and the hash-chained archive (Object Lock on MinIO in tests), ≥5-year retention; grant changes archived too so they can be replayed after a DR event [D23, D37]; CloudEvents change stream.
 - Maintenance policy in the catalog (expiry, orphan removal, compaction, manifest rewrite) with inheritance and guardrails: minimum ages, holds, DR freeze, orphan age greater than the DB PITR window. The worker that runs the jobs is v1.x [D30].
-- Retention classes, legal hold, commit-time rejection of snapshot removal on held tables, refusal to drop/purge/unregister held tables, snapshot+journal export [D24].
+- Retention classes, legal hold, commit-time rejection of snapshot removal on held tables, refusal to drop/purge/unregister held tables, snapshot+journal export [D24]. Unregister itself is v1.x; it was built on 2026-11-12 and refuses held and frozen tables.
 - Soft drop with 30-day undrop; purge only by the maintenance principal, after the window, rate-limited [D25].
 - Classification push API with provenance [D27].
 - **Gate:** every mutating route emits its audit record (checked route by route); a Kafka outage blocks credential issuance and nothing else; held tables cannot lose snapshots.
@@ -357,8 +357,9 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 - `/transactions/commit`: one bounded transaction, fixed lock order, cap 100, advertised only when truly atomic [D15]. **Done 2026-11-12** (see Status).
 - Branches, tags and merge over the v1 storage: REST prefix selects the branch (`trading@dev`), Nessie merge semantics per table, cleanup protects every ref, defaults from P11 [D33].
-- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30].
-- unregister, register-view, labels [D13]; queryable audit tables [D23]; DR replication-watermark verifier.
+- Maintenance worker: its own identity, sole delete permission, commits through the catalog; expiry and orphan removal in Java, compaction on Spark [D30]. Design decided 2026-11-12 (D30's amendment), not built.
+- unregister, register-view, labels [D13, D27]. **Done 2026-11-12** (see Status).
+- queryable audit tables [D23]; DR replication-watermark verifier.
 
 ## 4. What runs in parallel
 
@@ -618,4 +619,16 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - Moved by read-only vending: `cache-shared-across-callers` and `real-near-expiry-304`.
     - Never compiled: `lost-receipts-not-read-back`, because javac rejects `while (false)` as unreachable.
   - `bites/run.sh` stopped twice on a false HASH MISMATCH. On OneDrive a tracked file was briefly busy (`sha256sum: … Device or resource busy`). The tree hash now retries a file it cannot read.
+- **Unregister, register-view and labels done 2026-11-12, on PostgreSQL** (D13, D27; phase 1 of the v1.x plan, with Paul's decisions of that day, quoted in the ledger's amendments to D11, D13, D14, D20, D23, D24, D25, D27 and D30). Two fixes went with it: a commit that lands after its table's drop, and CREATE OR REPLACE changing a column's type.
+  - Unregister: `POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister`, advertised. It leaves the table in a new final state, `UNREGISTERED`, on all four stores (schema steps: PostgreSQL V5, CockroachDB V4, Oracle V6, MongoDB step 4 with nothing to build): the name is free, the UUID, pointer, journal and grants stay, and it is never undropped or purged. The store locks the table's pointers, then the table, compares the main pointer with the one the engine read, and refuses a hold or a DR freeze (403). The route asks for modify and refuses a regulated table or one flagged for row/column policy with 403 and an audited denial (reasons `regulated` and `flagged_table`). The answer is the spec's `metadata-location` and `metadata`, built in catalog-iceberg (iceberg-core 1.12 has no class for it, and its client no call, so the RCK cannot test it); an Idempotency-Key replays it. An UNREGISTER event goes to the change stream.
+  - Register-view: `POST /v1/{prefix}/namespaces/{namespace}/register-view`, advertised. It needs create on the namespace, checks the name before reading the file, and takes a file only at the catalog-assigned location, as register-table does (D28).
+  - Registering a dropped or unregistered table's or view's own metadata file brings back the same row, UUID and grants as active, the file becoming the next pointer version in the same store transaction (`reviveObject`). For a dropped one it is an undrop: it needs the undrop right on the namespace the object was dropped from, only within the window, and is reported as an UNDROP. Any other holder of the UUID is a 409.
+  - Labels: table and view loads, and the answers to a create, commit or register, carry `labels.object-labels` with the effective classification, owner and retention class; no provenance, no flags, no field labels. The table ETag hashes them, so a label change ends a 304 (view loads carry no ETag). Setting or removing one of the three also writes a `keel.catalog.label` event (target, label, new value) for the change stream; the governance change on the audit topic keeps the provenance. The SingleStore change feed reads no catalog events, so neither new type reaches it; what it reads, table loads through its pinned client, parse with labels and with fields it does not know.
+  - Commit after drop (problem 1 of the plan). A commit that read a table before its drop swapped the dropped table's pointer and answered 200: the new store-suite test `aCommitAfterTheDropIsRefused` and two engine tests (`dropWinsTheRace` in `CommitEngineTest` and `TransactionTest`) failed that way before the fix. Every store now checks, after locking the pointers, that each swap's object is still active (`CommitResult.Inactive`, answered 404). Lock order: docs/storage-design.md 9 (f) 8.
+  - CREATE OR REPLACE (D11's amendment): a replace that starts main afresh is exempt from the type-promotion check; a change in place is not. `EngineMatrixTest` now expects `RESULT spark replace.retype 4 1 string`.
+  - RCK: four more tests pass, `testRegisterTable`, `registerView`, `registerExistingView` and `registerViewThatAlreadyExistsAsTable`. `-Prck.record=true` changed only their four lines, and their reasons are gone.
+  - Tests: `RegisteringTest` 18 (the engine: unregister, revive, register-view, labels); the shared store suite's `unregisterIsFinal`, `unregisterRefusals`, `reviveBringsTheObjectBack` and `aCommitAfterTheDropIsRefused`, and, tagged `heavy`, `commitRacingTheUnregisterExactlyOneApplies` and `lostReviveAnswerResolvesToCommitted`; `MutationSuite` drives `unregisterObject` (its sweeps are `overnight`); `RestRoutesTest`, `SecurityGateTest`, `HeldTablesTest`, `GovernanceRoutesTest` and `MutatingRoutesAuditTest` cases for both routes, the labels and the label events; a golden `view-register` case; two `BackstopTest` cases; `IcebergClientConfigTest#stockClientRegistersAViewAndReadsTableLabels`; `ChangeStreamTest` and the golden event lines; `CatalogResponsesTest` in the change feed.
+  - Fast build green after merging main (already up to date at 2b1af36): 1,147 tests in 120 classes, 0 failures, 6 min 42 s. Five test tasks were up to date from runs earlier the same evening on the same inputs. One earlier run of the changed server tests lost 2 `GovernanceRoutesTest` and 1 `HeldTablesTest` cases to state left by `MutatingRoutesAuditTest`, which Gradle ran first because it had failed before: a catalog-level classification it set and kept, and the shared clock it moves 31 days. It now removes the classification, and the retention test dates its snapshots by that clock.
+  - Bites: 21 recorded, 20 in `bites/D13/` and 1 in `bites/D11/`, each checked with `git apply --check`, not run. Six older bites no longer applied and were recorded again: `etag-ignores-location`, `register-dropped-uuid` (which now skips the UUID lookup), `credentials-not-storage-access`, `real-near-expiry-304`, `cas-lost-update-under-load` and `reconcile-apply-ignores-moved-pointer`. All 132 apply.
+  - Not verified: CockroachDB, Oracle and MongoDB (their unregister, revive and active-object checks, and their schema steps), the two `heavy` store tests, the `overnight` sweeps, `RollingUpgradeTest` (now expecting schema 5), the engine matrix's retype line, and the bites. All wait for the next heavy pass or the nightly.
 - **Next:** M9, carried to work.
