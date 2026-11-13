@@ -49,9 +49,10 @@ class DeletePolicyRoutes {
 
     /**
      * One bucket policy per bucket on AWS S3 and Ceph, holding every profile's prefixes there, to apply with
-     * PutBucketPolicy; one user policy per MinIO profile, to attach to every user but the worker, the catalog's own
-     * included, since MinIO enforces no bucket policy on signed requests. A profile with no
-     * {@code maintenance-principal} is listed as unprotected.
+     * PutBucketPolicy; it also lets each worker delete and list beneath its prefixes. Two user policies per MinIO
+     * profile, since MinIO enforces no bucket policy on signed requests: one to attach to every user but the worker
+     * ({@code except}), the catalog's own included, and one to attach to the worker ({@code to}), which lets it
+     * delete and list beneath the prefixes. A profile with no {@code maintenance-principal} is listed as unprotected.
      */
     @GetMapping(path = DELETE_POLICIES, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> deletePolicies(HttpServletRequest http) {
@@ -67,12 +68,10 @@ class DeletePolicyRoutes {
             if (principal == null) {
                 unprotected.add(bound.name());
             } else if (profile.kind() == StoreKind.MINIO) {
-                ObjectNode policy = policies.addObject();
-                policy.put("apply-as", "user-policy");
-                policy.put("endpoint", profile.endpoint().toString());
-                policy.putArray("profiles").add(bound.name());
-                policy.put("except", principal);
-                policy.put("policy", DeletePolicy.userPolicy(profile.allowedPrefixes()));
+                userPolicy(policies, bound.name(), profile, "except", principal,
+                        DeletePolicy.userPolicy(profile.allowedPrefixes()));
+                userPolicy(policies, bound.name(), profile, "to", principal,
+                        DeletePolicy.workerPolicy(profile.allowedPrefixes()));
             } else {
                 profile.allowedPrefixes().stream()
                         .collect(Collectors.groupingBy(ObjectLocation::bucket, LinkedHashMap::new, Collectors.toList()))
@@ -94,5 +93,16 @@ class DeletePolicyRoutes {
             policy.put("policy", DeletePolicy.bucketPolicy(bucket.kind(), bucket.region(), bucket.name(), each));
         });
         return GovernanceRoutes.json(200, body);
+    }
+
+    /** A MinIO user policy for one profile; {@code users} is {@code except} or {@code to}, naming the worker. */
+    private static void userPolicy(ArrayNode policies, String name, StorageProfile profile, String users,
+                                   String principal, String text) {
+        ObjectNode policy = policies.addObject();
+        policy.put("apply-as", "user-policy");
+        policy.put("endpoint", profile.endpoint().toString());
+        policy.putArray("profiles").add(name);
+        policy.put(users, principal);
+        policy.put("policy", text);
     }
 }

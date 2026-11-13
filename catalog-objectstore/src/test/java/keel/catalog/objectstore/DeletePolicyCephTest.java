@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.s3.model.LifecycleRule;
 import software.amazon.awssdk.services.s3.model.LifecycleRuleFilter;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.sts.StsClient;
 import software.amazon.awssdk.services.sts.model.Credentials;
 
@@ -30,14 +31,16 @@ import software.amazon.awssdk.services.sts.model.Credentials;
  * The delete policy applied to a real Ceph bucket (D30): beneath the profile's prefix the maintenance worker's own
  * user deletes, and nobody else does, the catalog's own user (the bucket's owner) and a session of the role it
  * vends from included, though that role allows every S3 action; neither can set a lifecycle rule, whose expiration
- * would delete for them. Ceph only: Silo, the default store, enforces no
+ * would delete for them. The policy alone lets the worker list the bucket beneath the prefix, and nowhere else.
+ * Ceph only: Silo, the default store, enforces no
  * bucket policy on signed requests, so this runs in the heavy pass with {@code -Ps3=ceph} and is skipped otherwise.
  */
 @Tag("heavy")
 class DeletePolicyCephTest {
 
     @Test
-    @DisplayName("only the worker deletes beneath the prefix; outside it the policy changes nothing")
+    @DisplayName("only the worker deletes beneath the prefix, and it lists only there; outside it the policy changes"
+            + " nothing")
     void onlyTheWorkerDeletes() {
         assumeTrue(TestS3.kindFromSystemProperty() == TestS3.Kind.CEPH, "bucket policies are checked on Ceph");
         TestS3 store = TestS3.get();
@@ -61,6 +64,10 @@ class DeletePolicyCephTest {
             assertDenied(() -> role.deleteObject(r -> r.bucket(bucket).key("tables/t/a")));
             worker.deleteObject(r -> r.bucket(bucket).key("tables/t/b"));
             assertDenied(() -> worker.deleteObject(r -> r.bucket(bucket).key("other/x")));
+            assertThat(worker.listObjectsV2(r -> r.bucket(bucket).prefix("tables/t/")).contents())
+                    .extracting(S3Object::key).containsExactly("tables/t/a", "tables/t/c");
+            assertDenied(() -> worker.listObjectsV2(r -> r.bucket(bucket).prefix("other/")));
+            assertDenied(() -> worker.listObjectsV2(r -> r.bucket(bucket)));
             assertDenied(() -> owner.putBucketLifecycleConfiguration(r -> r.bucket(bucket)
                     .lifecycleConfiguration(expireTables())));
             assertDenied(() -> role.putBucketLifecycleConfiguration(r -> r.bucket(bucket)

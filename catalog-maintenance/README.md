@@ -123,13 +123,14 @@ keel:
   audited (D20). The credentials the catalog vends it read and write table files but never delete (D21).
 - **In storage, per store.** The worker needs `s3:ListBucket` on each bucket, beneath its prefixes, and
   `s3:DeleteObject` beneath them. It reads table files through vended credentials, not this identity.
-  - The catalog's delete policy (`GET /management/v1/maintenance/delete-policies`, see `deploy/README.md`)
-    takes delete from every other principal.
-  - On Ceph that policy also lets the worker delete, but it does not let the worker list. Add a statement that
-    allows the worker's user `s3:ListBucket` on the bucket, as the tests do (`TestCatalog.protectDeletes`).
-  - On AWS, the role the delete policy names grants both rights in its own IAM policy. Give the chart's service
-    account the role through `serviceAccount.annotations` (IRSA).
-  - On MinIO, the worker's user needs a user policy that allows both.
+  - The catalog's delete policies (`GET /management/v1/maintenance/delete-policies`, see `deploy/README.md`)
+    take delete from every other principal and give the worker both rights: applied as they are, they are
+    all it needs, on every store. The listing is limited to the worker's prefixes (`s3:prefix`). The tests
+    apply the Ceph policy as it comes (`TestCatalog.protectDeletes`).
+  - On AWS S3 and Ceph the bucket policy allows them to the principal it names. On AWS that holds for a role
+    in the bucket's own account; a role in another account also needs them in its own IAM policy. Give the
+    chart's service account the role through `serviceAccount.annotations` (IRSA).
+  - On MinIO the second user policy, the one to attach to the worker, allows them.
 - **In Kubernetes, for compaction only.** The Jobs run in a namespace of their own, created beforehand: never
   the worker's or the catalog's, since a pod there could run as their service accounts or mount their Secrets.
   In it the worker needs `get` and `create` on Jobs and `create` on Secrets, nothing else. Its pods run as

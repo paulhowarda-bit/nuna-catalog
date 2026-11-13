@@ -93,15 +93,17 @@ What the chart sets up:
   `GET /management/v1/maintenance/delete-policies` and applies each entry once, as an identity that may:
   - `bucket-policy` (AWS S3, Ceph): `aws s3api put-bucket-policy --bucket <bucket> --policy '<policy>'`,
     with `--endpoint-url <endpoint>` for Ceph. It denies delete beneath the profiles' prefixes to every
-    principal but the worker, the catalog's own role or user included; on Ceph it also lets the worker delete
-    there, since nothing else grants a Ceph user rights in another user's bucket. It does not let the worker
-    list the bucket, which the worker's orphan scans and purges need: on Ceph, add a statement that allows the
-    worker's user `s3:ListBucket` on the bucket (catalog-maintenance/README.md). A bucket holds one policy,
-    so merge these statements into any it already has.
-  - `user-policy` (MinIO): `mc admin policy create <alias> keel-no-delete <file>`, then
-    `mc admin policy attach <alias> keel-no-delete --user <user>` for every user but the worker, the
-    catalog's own included. MinIO enforces no bucket policy on signed requests (Silo was checked on
-    2026-11-12), and its root user ignores every policy, so the catalog must not run as root.
+    principal but the worker, the catalog's own role or user included. It also allows the worker to delete
+    there and to list the bucket beneath its prefixes (`s3:ListBucket`, limited by `s3:prefix`), which its
+    orphan scans and purges need; nothing else grants a Ceph user rights in another user's bucket. On AWS
+    that allow is enough for a worker role in the bucket's own account. A bucket holds one policy, so merge
+    these statements into any it already has.
+  - `user-policy` (MinIO), two per profile. The one with `except`: `mc admin policy create <alias>
+    keel-no-delete <file>`, then `mc admin policy attach <alias> keel-no-delete --user <user>` for every
+    user but the worker, the catalog's own included. The one with `to`, which lets the worker delete and list
+    beneath the prefixes: create it the same way (say `keel-maintenance`) and attach it to the worker's user
+    alone. MinIO enforces no bucket policy on signed requests (Silo was checked on 2026-11-12), and its root
+    user ignores every policy, so the catalog must not run as root.
 
   A lifecycle rule deletes objects without anyone calling delete, and a policy can be changed, so each policy
   also denies every principal but the worker setting lifecycle rules on the bucket, and on AWS S3 and MinIO
