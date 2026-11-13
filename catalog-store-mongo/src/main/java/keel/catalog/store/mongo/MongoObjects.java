@@ -153,8 +153,8 @@ final class MongoObjects {
 
     /**
      * Commits mark the object, so a commit that read the object active and this write conflict: one of
-     * them retries, and a commit that retries finds the object unregistered. The holds and DR freezes
-     * are read in the same snapshot, as a drop reads holds.
+     * them retries, and a commit that retries finds the object unregistered. The holds, DR freezes and
+     * regulated or row/column-policy flags are read in the same snapshot, as a drop reads holds.
      */
     WriteResult unregister(UUID objectId, Pointer expected, Change change) {
         return transactions.change(change, "object unregister", tx -> {
@@ -173,6 +173,10 @@ final class MongoObjects {
             if (Guards.frozen(tx, objectId, uuid(object.get().get("catalogId")),
                     uuidList(object.get().get("namespacePath")))) {
                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            if (Guards.flagged(tx, objectId, uuid(object.get().get("catalogId")),
+                    uuidList(object.get().get("namespacePath")))) {
+                return new WriteResult.Refused(WriteResult.Reason.FLAGGED);
             }
             tx.see(object.get());
             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",

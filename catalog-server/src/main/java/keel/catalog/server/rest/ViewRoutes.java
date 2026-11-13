@@ -129,8 +129,8 @@ class ViewRoutes {
 
     /**
      * A view whose metadata file already exists, as a table is registered: only from the location the catalog
-     * assigns its UUID (D28), and a dropped or unregistered view's own file brings it back (D13, amended
-     * 2026-11-12).
+     * assigns its UUID (D28), and the file a dropped or unregistered view left at brings it back, only in the
+     * namespace it left (D13, amended 2026-11-12).
      */
     @PostMapping(REGISTER)
     ResponseEntity<String> register(@PathVariable String prefix, @PathVariable String namespace,

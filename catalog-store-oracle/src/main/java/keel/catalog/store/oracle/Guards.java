@@ -76,6 +76,24 @@ final class Guards {
                 parameters.toArray());
     }
 
+    /**
+     * Whether the record is regulated, by a flag on it, any namespace in {@code path} or its catalog (D27), or
+     * carries a row/column-policy flag itself (D20).
+     */
+    static boolean flagged(Connection connection, UUID id, UUID catalogId, List<UUID> path) throws SQLException {
+        List<UUID> targets = new ArrayList<>(path);
+        targets.add(id);
+        targets.add(catalogId);
+        List<Object> parameters = new ArrayList<>();
+        parameters.add("true");
+        parameters.add(GovernanceAttribute.Kind.REGULATED.name());
+        String in = Jdbc.in("target_id", targets, parameters);
+        parameters.add(GovernanceAttribute.Kind.ROW_COLUMN_POLICY.name());
+        parameters.add(id);
+        return Jdbc.exists(connection, "SELECT 1 FROM governance_attribute WHERE value = ?"
+                + " AND ((kind = ? AND " + in + ") OR (kind = ? AND target_id = ?))", parameters.toArray());
+    }
+
     /** The holder of a name a write just failed to take; it committed, since the write waited for it. */
     static WriteResult nameTaken(Connection connection, String sql, Object... parameters) throws SQLException {
         return new WriteResult.NameTaken(first(connection, sql, row -> Jdbc.uuid(row, 1), parameters)

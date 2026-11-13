@@ -7,6 +7,7 @@ import static keel.catalog.core.commit.Requests.update;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import keel.catalog.core.Names;
 import keel.catalog.core.commit.CommitReply.Failure;
 import keel.catalog.core.commit.CommitReply.How;
 import keel.catalog.core.commit.CommitReply.Success;
@@ -14,6 +15,8 @@ import keel.catalog.store.CatalogObject;
 import keel.catalog.store.Change;
 import keel.catalog.store.CommitOutcomeUnknownException;
 import keel.catalog.store.GovernanceAttribute;
+import keel.catalog.store.Name;
+import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.WriteResult;
 import java.time.Duration;
@@ -33,8 +36,13 @@ class RegisteringTest {
     private final List<CatalogObject> undropsAsked = new ArrayList<>();
     private final CommitEngine.Undrop asked = undropsAsked::add;
 
+    /** As the REST layer asks: for the table it finds by that name, which it has authorized. */
     private CommitReply unregister(String table) {
-        return h.engine().unregisterTable(h.name(table), ALICE, Optional.empty());
+        return h.engine().unregisterTable(h.name(table), found(table), ALICE, Optional.empty());
+    }
+
+    private Optional<UUID> found(String table) {
+        return h.faults.real.findObject(h.namespaceId, Names.normalize(table)).map(CatalogObject::id);
     }
 
     private CommitReply registerTable(String name, String location) {
@@ -159,13 +167,45 @@ class RegisteringTest {
             Success created = h.createTable("Orders");
             String key = "key-" + UUID.randomUUID();
 
-            CommitReply first = h.engine().unregisterTable(h.name("Orders"), ALICE, Optional.of(key));
-            CommitReply again = h.engine().unregisterTable(h.name("Orders"), ALICE, Optional.of(key));
+            CommitReply first = h.engine().unregisterTable(h.name("Orders"), found("Orders"), ALICE, Optional.of(key));
+            CommitReply again = h.engine().unregisterTable(h.name("Orders"), found("Orders"), ALICE, Optional.of(key));
 
             assertThat(first).isInstanceOf(Success.class);
             assertThat(again).isEqualTo(new Success(created.objectId(), created.metadataLocation(),
                     created.metadataSha256(), created.metadataJson(), How.REPLAYED));
             failure(unregister("Orders"), 404, "NoSuchTableException");
+        }
+
+        @Test
+        @DisplayName("a table that takes the name after the REST layer checked it, or none, is 404 and stays active")
+        void onlyTheAuthorizedTable() {
+            Success first = h.createTable("Orders");
+            assertThat(h.faults.real.dropObject(first.objectId(), h.clock.instant().plus(Duration.ofDays(7)),
+                    Harness.change())).isEqualTo(WriteResult.APPLIED);
+            Success second = h.createTable("Orders");
+
+            failure(h.engine().unregisterTable(h.name("Orders"), Optional.of(first.objectId()), ALICE,
+                    Optional.empty()), 404, "NoSuchTableException");
+            failure(h.engine().unregisterTable(h.name("Orders"), Optional.empty(), ALICE, Optional.empty()), 404,
+                    "NoSuchTableException");
+
+            assertThat(byId(second.objectId()).state()).isEqualTo(CatalogObject.State.ACTIVE);
+            assertThat(byId(first.objectId()).state()).isEqualTo(CatalogObject.State.DROPPED);
+            assertThat(h.faults.calls("unregisterObject")).isZero();
+        }
+
+        @Test
+        @DisplayName("a table regulated, or flagged for row/column policy, after the REST layer checked it is 403 and stays active")
+        void flaggedMeanwhile() {
+            h.createTable("Orders");
+            CatalogObject orders = h.object("Orders");
+            h.regulate(h.namespace());
+
+            failure(unregister("Orders"), 403, "ForbiddenException");
+            h.attribute(h.namespace(), GovernanceAttribute.Kind.REGULATED, "false");
+            h.attribute(orders.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true");
+            failure(unregister("Orders"), 403, "ForbiddenException");
+            assertThat(h.object("Orders").state()).isEqualTo(CatalogObject.State.ACTIVE);
         }
     }
 
@@ -235,6 +275,50 @@ class RegisteringTest {
             failure(registerTable("Orders", created.metadataLocation()), 409, "UndropWindowClosedException");
             assertThat(undropsAsked).isEmpty();
             assertThat(byId(created.objectId()).state()).isEqualTo(CatalogObject.State.DROPPED);
+        }
+
+        @Test
+        @DisplayName("a dropped or unregistered table is brought back only in its own namespace; elsewhere is 409")
+        void onlyInItsOwnNamespace() {
+            UUID hr = UUID.randomUUID();
+            assertThat(h.faults.real.createNamespace(new NamespaceRecord(h.catalogId, hr, h.catalogId,
+                    new Name("hr", "HR"), Map.of(), 1), Harness.change())).isEqualTo(WriteResult.APPLIED);
+            Success dropped = h.createTable("Orders");
+            assertThat(h.faults.real.dropObject(dropped.objectId(), h.clock.instant().plus(Duration.ofDays(7)),
+                    Harness.change())).isEqualTo(WriteResult.APPLIED);
+            Success unregistered = h.createTable("Ledger");
+            assertThat(unregister("Ledger")).isInstanceOf(Success.class);
+
+            for (Success table : List.of(dropped, unregistered)) {
+                failure(h.engine().registerTable(new ObjectName(h.catalogId, hr, new Name("moved", "Moved")),
+                        register("Moved", table.metadataLocation()), ALICE, Optional.empty(), asked), 409,
+                        "AlreadyExistsException");
+            }
+
+            assertThat(undropsAsked).isEmpty();
+            assertThat(byId(dropped.objectId()).state()).isEqualTo(CatalogObject.State.DROPPED);
+            assertThat(byId(unregistered.objectId()).state()).isEqualTo(CatalogObject.State.UNREGISTERED);
+            assertThat(h.faults.real.findObject(hr, "moved")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("only the file a table left at brings it back: an older one is 409, a changed one 500, and it stays gone")
+        void onlyTheFileItLeftAt() {
+            Success created = h.createTable("Orders");
+            CatalogObject orders = h.object("Orders");
+            assertThat(h.engine().commitTable(h.name("Orders"),
+                    update(assertUuid(orders.id().toString()), setProperties(Map.of("a", "1"))), ALICE,
+                    Optional.empty())).isInstanceOf(Success.class);
+            CommitReply left = unregister("Orders");
+            assertThat(left).isInstanceOf(Success.class);
+
+            failure(registerTable("Orders", created.metadataLocation()), 409, "AlreadyExistsException");
+            Success at = (Success) left;
+            h.files.tamper(at.metadataLocation(), at.metadataJson() + " ");
+            assertThat(registerTable("Orders", at.metadataLocation())).isInstanceOf(CommitReply.ServerError.class);
+
+            assertThat(h.alerts).containsExactly("integrity " + orders.id() + " " + at.metadataLocation());
+            assertThat(byId(orders.id()).state()).isEqualTo(CatalogObject.State.UNREGISTERED);
         }
 
         @Test

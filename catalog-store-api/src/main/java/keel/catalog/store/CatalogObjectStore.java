@@ -59,12 +59,14 @@ public interface CatalogObjectStore {
      * Unregisters an active object at {@code change.at()} (D13): a final state. The name is free at
      * once; the id, pointers, journal and grants stay; it is never undropped or purged, and every later
      * commit to it is {@code Inactive}. The object's pointers are locked first, as a commit locks them,
-     * then the object, so a commit either lands before the unregister or is refused after it.
+     * then the object, so a commit either lands before the unregister or is refused after it. The holds,
+     * freezes and flags are read under the object's lock, so one set before the unregister refuses it.
      *
      * @param expected the main pointer the caller read, whose metadata the answer names
      * @return {@code Applied}, {@code Missing(OBJECT)} (no active object), {@code VersionMismatch}
      *         carrying the main pointer's version when it is not {@code expected}, {@code Refused(HELD)},
-     *         or {@code Refused(FROZEN)} (a DR freeze on the object or above it)
+     *         {@code Refused(FROZEN)} (a DR freeze on the object or above it), or {@code Refused(FLAGGED)}
+     *         (a regulated flag on the object or above it, or a row/column-policy flag on the object)
      */
     WriteResult unregisterObject(UUID objectId, Pointer expected, Change change);
 

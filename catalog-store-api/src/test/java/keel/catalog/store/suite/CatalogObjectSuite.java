@@ -321,7 +321,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("Objects: unregister refuses a moved pointer, a hold above, a DR freeze above, or a dropped object, and writes nothing")
+    @DisplayName("Objects: unregister refuses a moved pointer, a hold above, a DR freeze above, a regulated flag above, a row/column flag, or a dropped object, and writes nothing")
     void unregisterRefusals() {
         UUID catalog = newCatalog();
         NamespaceRecord namespace = newNamespace(catalog, "ns");
@@ -343,6 +343,16 @@ public abstract class CatalogObjectSuite extends GroupSuite {
                 "suite", "admin", now()), change()));
         assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FROZEN));
         assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, change()));
+        Securable area = new Securable(Securable.Kind.NAMESPACE, namespace.id());
+        assertApplied(store.putAttribute(new GovernanceAttribute(area, GovernanceAttribute.Kind.REGULATED, "true",
+                "suite", "steward", now()), change()));
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FLAGGED));
+        assertApplied(store.putAttribute(new GovernanceAttribute(area, GovernanceAttribute.Kind.REGULATED, "false",
+                "suite", "steward", now()), change()));
+        assertApplied(store.putAttribute(new GovernanceAttribute(table.securable(),
+                GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true", "suite", "steward", now()), change()));
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FLAGGED));
+        assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, change()));
         assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
 
         assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));

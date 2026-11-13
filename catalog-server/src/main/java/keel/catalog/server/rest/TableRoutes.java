@@ -213,8 +213,8 @@ class TableRoutes {
 
     /**
      * A table whose metadata file already exists (D34). The engine refuses a UUID another table or view holds;
-     * the file of a dropped or unregistered table brings that table back, and a dropped one only for a caller
-     * who may undrop it (D13, amended 2026-11-12).
+     * the file a dropped or unregistered table left at brings that table back, only in the namespace it left,
+     * and a dropped one only for a caller who may undrop it (D13, amended 2026-11-12).
      */
     @PostMapping(REGISTER)
     ResponseEntity<String> register(@PathVariable String prefix, @PathVariable String namespace,
@@ -241,8 +241,9 @@ class TableRoutes {
      * Unregisters a table (D13, amended 2026-11-12): the catalog stops tracking it and deletes nothing. The
      * answer names its current metadata file and holds its content. It needs {@code modify}; a regulated
      * table, or one flagged for row/column policy, is refused until a steward removes the flag (D20, D27),
-     * and a hold or a DR freeze refuses it in the store. A table already gone still reaches the engine, so a
-     * retry with the key replays the first answer.
+     * and a hold, a DR freeze, or a flag set since this check refuses it in the store. The engine unregisters
+     * only the table checked here, so one that takes the name meanwhile is left alone. A table already gone
+     * still reaches the engine, so a retry with the key replays the first answer.
      */
     @PostMapping(UNREGISTER)
     ResponseEntity<String> unregister(@PathVariable String prefix, @PathVariable String namespace,
@@ -274,8 +275,8 @@ class TableRoutes {
             }
         }
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
-                .unregisterTable(ObjectRoutes.name(catalog, record, levels, table), request.caller(),
-                        Optional.ofNullable(key));
+                .unregisterTable(ObjectRoutes.name(catalog, record, levels, table),
+                        existing.map(CatalogObject::id), request.caller(), Optional.ofNullable(key));
         return ObjectRoutes.reply(reply, done -> Http.json(200,
                 RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
     }

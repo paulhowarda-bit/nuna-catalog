@@ -48,6 +48,11 @@ public sealed interface WriteResult {
         /** Another claimant holds the idempotency key or the outbox relay lease. */
         NOT_HOLDER,
         /** A DR freeze on the record or one of its ancestors forbids it. */
-        FROZEN
+        FROZEN,
+        /**
+         * A regulated flag on the record or one of its ancestors (D27), or a row/column-policy flag on the
+         * record itself (D20), forbids it until a steward removes the flag.
+         */
+        FLAGGED
     }
 }

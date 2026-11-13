@@ -61,6 +61,12 @@ class SecurityGateTest {
     private static final String TABLE = """
             {"name":"%s","schema":{"type":"struct","schema-id":0,"fields":[
               {"id":1,"name":"id","required":true,"type":"long"}]},"properties":{"format-version":"2"}}""";
+    private static final String VIEW = """
+            {"name":"%s","schema":{"type":"struct","schema-id":0,"fields":[
+              {"id":1,"name":"x","required":false,"type":"int"}]},
+             "view-version":{"version-id":1,"timestamp-ms":%d,"schema-id":0,"summary":{"engine-name":"spark"},
+              "representations":[{"type":"sql","sql":"select 1 as x","dialect":"spark"}],"default-namespace":[]},
+             "properties":{}}""";
     private static final String SET_PROPERTY = """
             {"requirements":[],"updates":[{"action":"set-properties","updates":{"touched":"%s"}}]}""";
     private static final String GRANTS = "/management/v1/catalogs/gate/grants";
@@ -218,11 +224,12 @@ class SecurityGateTest {
 
     /**
      * D13, amended 2026-11-12: unregister needs modify, and a regulated or row/column-flagged table is refused
-     * until a steward removes the flag. Registering a dropped table's own file is an undrop, so it also needs
-     * create on the namespace the table was dropped from, wherever it is registered.
+     * until a steward removes the flag. A dropped or unregistered table's own file brings it back only in the
+     * namespace it left, for a caller with create there: registered anywhere else it is 409, even for a caller
+     * with every right, since a move would hand it that namespace's grants.
      */
     @Test
-    void unregisterNeedsModifyAndRegisteringADroppedTableNeedsTheUndropRight() throws Exception {
+    void unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace() throws Exception {
         String sales = "/v1/gate/namespaces/sales/tables";
         HttpResponse<String> created = send(DANA, "POST", sales, TABLE.formatted("passing"));
         ok(created);
@@ -241,14 +248,52 @@ class SecurityGateTest {
         String rita = IssuerForTests.bearer("rita", "registrars");
         noContent(grant(GINA, namespaceSpec("hr"), "registrars", "create"));
         String again = "{\"name\":\"passing\",\"metadata-location\":\"" + file + "\"}";
-        assertDenied(send(rita, "POST", "/v1/gate/namespaces/hr/register", again), "undropObject", "no_privilege");
+        assertDenied(send(rita, "POST", "/v1/gate/namespaces/sales/register", again), "registerTable", "no_privilege");
         assertThat(audit.denials().getLast().securable().path()).containsExactly("sales");
+        assertError(send(rita, "POST", "/v1/gate/namespaces/hr/register", again), 409, "AlreadyExistsException");
+        assertError(send(DANA, "POST", "/v1/gate/namespaces/hr/register", again), 409, "AlreadyExistsException");
         assertThat(store.readObject(UUID.fromString(id)).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
 
-        HttpResponse<String> back = send(DANA, "POST", "/v1/gate/namespaces/hr/register", again);
+        HttpResponse<String> back = send(DANA, "POST", "/v1/gate/namespaces/sales/register", again);
         ok(back);
         assertThat(JsonPath.<String>read(back.body(), "$.metadata.table-uuid")).isEqualTo(id);
-        ok(send(DANA, "POST", "/v1/gate/namespaces/hr/tables/passing/unregister", null));
+        HttpResponse<String> unregistered = send(DANA, "POST", sales + "/passing/unregister", null);
+        ok(unregistered);
+        String left = "{\"name\":\"passing\",\"metadata-location\":\""
+                + JsonPath.read(unregistered.body(), "$.metadata-location") + "\"}";
+        assertError(send(rita, "POST", "/v1/gate/namespaces/hr/register", left), 409, "AlreadyExistsException");
+        assertDenied(send(rita, "POST", "/v1/gate/namespaces/sales/register", left), "registerTable", "no_privilege");
+        assertThat(store.readObject(UUID.fromString(id)).orElseThrow().state())
+                .isEqualTo(CatalogObject.State.UNREGISTERED);
+    }
+
+    /**
+     * D13, amended 2026-11-12: register-view needs create on the namespace, as register does, and a dropped
+     * view's own file brings it back only in the namespace it left.
+     */
+    @Test
+    void registerViewNeedsCreateAndADroppedViewComesBackOnlyInItsOwnNamespace() throws Exception {
+        String views = "/v1/gate/namespaces/sales/views";
+        HttpResponse<String> created = send(DANA, "POST", views, VIEW.formatted("passing_view",
+                System.currentTimeMillis()));
+        ok(created);
+        String id = JsonPath.read(created.body(), "$.metadata.view-uuid");
+        String again = "{\"name\":\"passing_view\",\"metadata-location\":\""
+                + JsonPath.read(created.body(), "$.metadata-location") + "\"}";
+        noContent(send(DANA, "DELETE", views + "/passing_view", null));
+        String vera = IssuerForTests.bearer("vera", "view-registrars");
+        noContent(grant(GINA, namespaceSpec("hr"), "view-registrars", "create"));
+
+        assertDenied(send(vera, "POST", "/v1/gate/namespaces/sales/register-view", again), "registerView",
+                "no_privilege");
+        assertThat(audit.denials().getLast().privilege()).isEqualTo("create");
+        assertThat(audit.denials().getLast().securable().path()).containsExactly("sales");
+        assertError(send(vera, "POST", "/v1/gate/namespaces/hr/register-view", again), 409, "AlreadyExistsException");
+        assertThat(store.readObject(UUID.fromString(id)).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
+
+        HttpResponse<String> back = send(DANA, "POST", "/v1/gate/namespaces/sales/register-view", again);
+        ok(back);
+        assertThat(JsonPath.<String>read(back.body(), "$.metadata.view-uuid")).isEqualTo(id);
     }
 
     @Test

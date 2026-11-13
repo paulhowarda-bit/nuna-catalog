@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonString;
 import org.bson.BsonValue;
@@ -70,6 +71,22 @@ final class Guards {
         targets.add(uuid(catalogId));
         return tx.exists(ATTRIBUTE, new BsonDocument("targetId", in(targets))
                 .append("kind", new BsonString(GovernanceAttribute.Kind.DR_FREEZE.name())));
+    }
+
+    /**
+     * Whether the record is regulated, by a flag on it, on any namespace above it or on its catalog (D27), or
+     * carries a row/column-policy flag itself (D20).
+     */
+    static boolean flagged(Tx tx, UUID id, UUID catalogId, List<UUID> path) {
+        List<BsonValue> targets = new ArrayList<>();
+        path.forEach(namespace -> targets.add(uuid(namespace)));
+        targets.add(uuid(id));
+        targets.add(uuid(catalogId));
+        return tx.exists(ATTRIBUTE, new BsonDocument("value", new BsonString("true")).append("$or", new BsonArray(List.of(
+                new BsonDocument("kind", new BsonString(GovernanceAttribute.Kind.REGULATED.name()))
+                        .append("targetId", in(targets)),
+                new BsonDocument("kind", new BsonString(GovernanceAttribute.Kind.ROW_COLUMN_POLICY.name()))
+                        .append("targetId", uuid(id))))));
     }
 
     /** Whether a legal hold sits on the record, on any namespace above it, or on its catalog. */

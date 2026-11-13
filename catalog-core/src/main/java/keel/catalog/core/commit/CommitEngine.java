@@ -119,8 +119,8 @@ public final class CommitEngine {
 
     /**
      * {@code POST .../register}: a table whose metadata file already exists (D34). The new table takes the
-     * file's table UUID and location; the pointer names the file as it is, hashed as read. A file whose UUID
-     * belongs to a dropped or unregistered table of this catalog brings that table back as itself (D13,
+     * file's table UUID and location; the pointer names the file as it is, hashed as read. The file a dropped or
+     * unregistered table of this catalog left at brings that table back as itself, in its own namespace (D13,
      * amended 2026-11-12): bringing back a dropped one is an undrop, which {@code undrop} is asked to allow.
      */
     public CommitReply registerTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey,
@@ -139,10 +139,17 @@ public final class CommitEngine {
      * good, keeping its id, pointer and history, and its name is free at once. Its files stay where they are;
      * the answer names its current metadata file, which a client may register again. A legal hold or a DR
      * freeze on it or above it refuses it, and a commit racing it either lands first, and the unregister
-     * retries against it, or is refused.
+     * retries against it, or is refused. So is a regulated table, or one flagged for row/column policy,
+     * should a steward set the flag after the REST layer checked it.
+     *
+     * @param authorized the table the REST layer found by that name and authorized, if it found one. Only that
+     *                   table is unregistered: when the name names another object, or none, the answer is 404,
+     *                   so a table that takes the name after the check is never unregistered on another's
+     *                   checks. A retry with a key still replays the first answer once the table is gone.
      */
-    public CommitReply unregisterTable(ObjectName name, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.UNREGISTER_TABLE, one(name, ""), "", caller, idempotencyKey, Undrop.NEVER);
+    public CommitReply unregisterTable(ObjectName name, Optional<UUID> authorized, Caller caller,
+                                       Optional<String> idempotencyKey) {
+        return run(Operation.UNREGISTER_TABLE, one(name, ""), "", caller, idempotencyKey, Undrop.NEVER, authorized);
     }
 
     /**
@@ -255,7 +262,7 @@ public final class CommitEngine {
      * @param json    the whole request body
      */
     private record Request(Operation operation, List<TableChange> targets, String json, Caller caller, UUID commitId,
-                           Optional<Key> key, Undrop undrop) {
+                           Optional<Key> key, Undrop undrop, Optional<UUID> authorized) {
 
         /** The object of a single-object request. */
         ObjectName name() {
@@ -267,13 +274,19 @@ public final class CommitEngine {
 
     private CommitReply run(Operation operation, List<TableChange> targets, String json, Caller caller,
                             Optional<String> key, Undrop undrop) {
+        return run(operation, targets, json, caller, key, undrop, Optional.empty());
+    }
+
+    private CommitReply run(Operation operation, List<TableChange> targets, String json, Caller caller,
+                            Optional<String> key, Undrop undrop, Optional<UUID> authorized) {
         UUID commitId = UUID.randomUUID();
         if (key.isEmpty()) {
-            return work(new Request(operation, targets, json, caller, commitId, Optional.empty(), undrop));
+            return work(new Request(operation, targets, json, caller, commitId, Optional.empty(), undrop, authorized));
         }
         Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, targets, json, caller),
                 clock.instant().plus(settings.keyLifetime()));
-        Request request = new Request(operation, targets, json, caller, commitId, Optional.of(fixed), undrop);
+        Request request = new Request(operation, targets, json, caller, commitId, Optional.of(fixed), undrop,
+                authorized);
         RuntimeException lastClaimFailure = null;
         for (int round = 0; round < CLAIM_ROUNDS; round++) {
             KeyState state;
@@ -458,7 +471,7 @@ public final class CommitEngine {
     /**
      * Registers an existing metadata file. Its UUID becomes the object id, so a UUID that another object holds
      * is refused. A dropped or unregistered object of this catalog keeps its UUID and location (D13, D25), and
-     * registering its own file again brings it back as itself.
+     * registering the file it left at, in its own namespace, brings it back as itself.
      */
     private CommitReply register(Request request) {
         Optional<CatalogObject> existing = store.findObject(request.name().namespaceId(),
@@ -501,11 +514,13 @@ public final class CommitEngine {
     }
 
     /**
-     * Brings a dropped or unregistered object back as the request names it, keeping its id, grants and history,
-     * with its main pointer swapped to the registered file in the same transaction (D13, D25, amended
-     * 2026-11-12). Bringing back a dropped object is an undrop: it needs what an undrop needs, within the
-     * undrop window, and is reported as one. The file is judged as a register's is, so it must be at the
-     * object's own location (D28). Any other holder of the UUID refuses the register.
+     * Brings a dropped or unregistered object back under the name the request gives, keeping its id, grants and
+     * history, with its main pointer swapped in the same transaction to the registered file (D13, D25, amended
+     * 2026-11-12). It comes back only in the namespace it left, as an undrop restores it: another namespace
+     * would hand it that namespace's grants and governance, which only a rename may do. Only the file its main
+     * pointer names brings it back, so it returns exactly as it left and no rule a commit is held to is
+     * skipped. Bringing back a dropped object is an undrop: it needs what an undrop needs, within the undrop
+     * window, and is reported as one. Any other holder of the UUID refuses the register.
      */
     private CommitReply revive(Request request, CatalogObject holder, Outcome.NewMetadata found,
                                TableFiles.Written file) {
@@ -518,6 +533,12 @@ public final class CommitEngine {
             return new Failure(409, "AlreadyExistsException", what + " UUID " + holder.id() + " already belongs to"
                     + " a table or view; only a dropped or unregistered " + what.toLowerCase(java.util.Locale.ROOT)
                     + " of this catalog is brought back by registering its own metadata file");
+        }
+        if (!holder.namespaceId().equals(name.namespaceId())) {
+            return new Failure(409, "AlreadyExistsException", what + " UUID " + holder.id() + " belongs to a "
+                    + holder.state().name().toLowerCase(java.util.Locale.ROOT) + " "
+                    + what.toLowerCase(java.util.Locale.ROOT) + " of another namespace; it is brought back only in"
+                    + " its own namespace, and a rename then moves it");
         }
         boolean dropped = holder.state() == CatalogObject.State.DROPPED;
         if (dropped) {
@@ -538,6 +559,16 @@ public final class CommitEngine {
         for (int attempt = 1; ; attempt++) {
             Pointer base = store.readPointer(holder.mainKey())
                     .orElseThrow(() -> new IllegalStateException("object " + holder.id() + " has no pointer"));
+            if (!base.metadataLocation().equals(file.location())) {
+                return new Failure(409, "AlreadyExistsException", what + " " + holder.id() + " is brought back only"
+                        + " by the metadata file it was " + holder.state().name().toLowerCase(java.util.Locale.ROOT)
+                        + " at, not " + file.location());
+            }
+            if (!base.sha256().equals(file.sha256())) {
+                alerts.metadataIntegrity(holder.id(), file.location(), base.sha256(), file.sha256());
+                return new ServerError(SERVICE_FAILURE, "Metadata file " + file.location()
+                        + " does not match the hash its pointer recorded");
+            }
             Pointer next = new Pointer(file.location(), base.version() + 1, file.sha256(), Projection.of(found.after()));
             CommitBatch batch = batch(request, revived, Optional.of(base), next,
                     new Metadata.Journal("[]", request.json()), false, reported);
@@ -578,14 +609,16 @@ public final class CommitEngine {
     }
 
     /**
-     * Unregisters an active table (D13): its main pointer as read must still be current when the store
-     * locks it, so a commit racing the unregister either lands first, and the unregister reads again, or
-     * is refused after it. The answer names the metadata the table was unregistered at; a key replays it.
+     * Unregisters an active table (D13), the one the REST layer authorized: its main pointer as read must
+     * still be current when the store locks it, so a commit racing the unregister either lands first, and
+     * the unregister reads again, or is refused after it. The answer names the metadata the table was
+     * unregistered at; a key replays it.
      */
     private CommitReply unregister(Request request) {
         Optional<CatalogObject> found = store.findObject(request.name().namespaceId(),
                 request.name().name().normalized());
-        if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE) {
+        if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE
+                || !request.authorized().equals(Optional.of(found.get().id()))) {
             return noSuch(request);
         }
         CatalogObject object = found.get();
@@ -648,6 +681,10 @@ public final class CommitEngine {
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN -> {
                     return new Failure(403, "ForbiddenException", "Table " + display(request)
                             + " is frozen for DR reconcile and cannot be unregistered");
+                }
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {
+                    return new Failure(403, "ForbiddenException", "Table " + display(request) + " is regulated or"
+                            + " has a row/column policy and cannot be unregistered; a steward removes the flag first");
                 }
                 default -> throw new IllegalStateException("unregisterObject answered " + result);
             }

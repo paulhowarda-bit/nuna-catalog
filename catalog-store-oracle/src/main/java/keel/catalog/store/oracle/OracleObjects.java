@@ -133,7 +133,8 @@ final class OracleObjects {
     /**
      * Locks the object's pointers, as a commit locks them, then the object: a commit either landed
      * before this, and the main pointer is not {@code expected}, or waits and then finds the object
-     * unregistered. The holds and DR freezes are checked under the object's lock, as a drop checks holds.
+     * unregistered. The holds, DR freezes and regulated or row/column-policy flags are checked under the
+     * object's lock, as a drop checks holds.
      */
     WriteResult unregister(UUID objectId, Pointer expected, Change change) {
         return transactions.change(change, "object unregister", connection -> {
@@ -150,6 +151,9 @@ final class OracleObjects {
             }
             if (Guards.frozen(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            if (Guards.flagged(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
+                return new WriteResult.Refused(WriteResult.Reason.FLAGGED);
             }
             update(connection, "UPDATE catalog_object SET state = 'UNREGISTERED', dropped_at = ? WHERE id = ?",
                     change.at(), objectId);

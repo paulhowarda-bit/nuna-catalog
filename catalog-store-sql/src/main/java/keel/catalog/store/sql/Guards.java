@@ -62,6 +62,20 @@ final class Guards {
                 GovernanceAttribute.Kind.DR_FREEZE.name(), targets.toArray(UUID[]::new));
     }
 
+    /**
+     * Whether the record is regulated, by a flag on it, any namespace in {@code path} or its catalog (D27), or
+     * carries a row/column-policy flag itself (D20).
+     */
+    static boolean flagged(Connection connection, UUID id, UUID catalogId, List<UUID> path) throws SQLException {
+        List<UUID> targets = new ArrayList<>(path);
+        targets.add(id);
+        targets.add(catalogId);
+        return Jdbc.exists(connection, "SELECT 1 FROM governance_attribute WHERE value = ?"
+                        + " AND ((kind = ? AND target_id = ANY(?)) OR (kind = ? AND target_id = ?))", "true",
+                GovernanceAttribute.Kind.REGULATED.name(), targets.toArray(UUID[]::new),
+                GovernanceAttribute.Kind.ROW_COLUMN_POLICY.name(), id);
+    }
+
     /** The holder of a name a write just failed to take; it committed, since the write waited for it. */
     static WriteResult nameTaken(Connection connection, String sql, Object... parameters) throws SQLException {
         return new WriteResult.NameTaken(first(connection, sql, row -> row.getObject(1, UUID.class), parameters)
