@@ -185,9 +185,11 @@ for name, check in (("t_variant", "cross.variant"), ("t_geo", "cross.geo")):
         else:
             raise
 
-# CREATE OR REPLACE kept the table's history: three snapshots, the current one without a parent, two rows.
+# CREATE OR REPLACE kept the table's history: four snapshots after Spark's second replace, which made id a string
+# (D11), one row, the current snapshot without a parent.
 table = spark_table("t_replace")
-result("cross.replace", len(table.snapshots()), *count_sum(table.scan()),
+result("cross.replace", len(table.snapshots()), table.scan().to_arrow().num_rows,
+       str(table.schema().find_field("id").field_type),
        "root" if table.current_snapshot().parent_snapshot_id is None else "child")
 
 # The view Spark left: two versions (created, then replaced), its columns, its comment and its Spark SQL.
