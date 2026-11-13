@@ -1,5 +1,7 @@
 # keel-catalog: rules for every agent
 
+At work, start with `docs/install-at-work.md`: it says which facts below describe Paul's home machine.
+
 ## Code changes go through a worktree
 
 - Any agent that changes code works in its own git worktree on its own branch: a session started with `use_worktree: true`, or a subagent with `isolation: "worktree"`. Never edit code in the main checkout (`C:/Users/paulh/OneDrive/Desktop/code/fidice-catalog`).
@@ -35,4 +37,5 @@
 
 - The pass was planned for after M9. On 2026-11-10 Paul moved it to after M8, before M9: M9 happens at work, and he wants a fully checked build to carry there.
 - One run in a worktree: `./heavy.sh` (`./gradlew build -Pheavy`, then a Ceph leg, `./gradlew :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph`, then every recorded bite; it stops if either build fails). The `overnight` tests are not part of it. Fix anything that fails or does not bite.
+- The next pass, to harden v1.x phases 1 and 2, comes after the install at work (Paul, 2026-11-13).
 - The pass leaves out the CAS test: at the old 10,000 rounds it alone ran past 10 hours across the five backends of that day (YugabyteDB, dropped on 2026-11-11, took 2.2 s a round). It belongs to a scheduled overnight job in work CI (M9 in `build-plan.md`).
