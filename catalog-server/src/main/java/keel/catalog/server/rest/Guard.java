@@ -41,6 +41,7 @@ class Guard {
     static final Operation LIST_TABLES = new Operation("listTables", DESCRIBE, false);
     static final Operation CREATE_TABLE = new Operation("createTable", CREATE, false);
     static final Operation REGISTER_TABLE = new Operation("registerTable", CREATE, false);
+    static final Operation UNREGISTER_TABLE = new Operation("unregisterTable", MODIFY, false);
     static final Operation LOAD_TABLE = new Operation("loadTable", SELECT, true);
     static final Operation TABLE_EXISTS = new Operation("tableExists", DESCRIBE, false);
     static final Operation DROP_TABLE = new Operation("dropTable", MODIFY, false);
@@ -49,12 +50,18 @@ class Guard {
     static final Operation LOAD_CREDENTIALS = new Operation("loadCredentials", SELECT, true);
     static final Operation LIST_VIEWS = new Operation("listViews", DESCRIBE, false);
     static final Operation CREATE_VIEW = new Operation("createView", CREATE, false);
+    static final Operation REGISTER_VIEW = new Operation("registerView", CREATE, false);
     static final Operation LOAD_VIEW = new Operation("loadView", SELECT, false);
     static final Operation VIEW_EXISTS = new Operation("viewExists", DESCRIBE, false);
     static final Operation REPLACE_VIEW = new Operation("replaceView", MODIFY, false);
     static final Operation DROP_VIEW = new Operation("dropView", MODIFY, false);
     static final Operation RENAME_VIEW = new Operation("renameView", MODIFY, false);
     static final Operation RENAME_VIEW_INTO = new Operation("renameView", CREATE, false);
+    /**
+     * Bringing a dropped table or view back by registering its file is an undrop (D13, D25): it needs what the
+     * management undrop needs, {@code create} on the namespace the object was dropped from.
+     */
+    static final Operation UNDROP = new Operation("undropObject", CREATE, false);
     /** The least a table commit needs: a caller allowed it gets read-write credentials, any other read-only (D21). */
     static final Operation WRITE_DATA = new Operation("updateTable", WRITE, true);
 
@@ -113,6 +120,12 @@ class Guard {
         }
     }
 
+    /** {@link #UNDROP} for a dropped object, on the namespace it was dropped from, named by {@code levels}. */
+    void onDropped(RequestContext request, CatalogRecord catalog, CatalogObject dropped, List<String> levels) {
+        require(request, new Target.Namespace(catalog.id(), dropped.namespaceId()),
+                AuditEvents.namespace(dropped.namespaceId(), catalog.name(), levels), UNDROP);
+    }
+
     void onObject(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
                   Operation operation) {
         require(request, new Target.TableOrView(object), AuditEvents.securable(object, catalog.name(), path), operation);
@@ -129,6 +142,16 @@ class Guard {
                 List.of(new Authorizer.Request(target, operation), new Authorizer.Request(target, WRITE_DATA)));
         refuseIfDenied(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst());
         return decisions.get(1).allowed();
+    }
+
+    /**
+     * Refuses an operation the caller's privileges allow but the object's governance forbids, such as
+     * unregistering a regulated table: audited as a denial with {@code reason} (D18), and answered 403.
+     */
+    RuntimeException refuse(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
+                            Operation operation, String reason, String message) {
+        return denials.refuse(request.actor(), operation.name(), AuditEvents.securable(object, catalog.name(), path),
+                operation.privilege().wireName(), reason, message);
     }
 
     /** Whether the caller may commit data to the table, decided as a commit would be; not audited. */

@@ -2,12 +2,14 @@ package keel.catalog.server.rest;
 
 import keel.catalog.core.commit.CommitEngine;
 import keel.catalog.core.commit.CommitReply;
+import keel.catalog.core.commit.GovernanceChain;
 import keel.catalog.iceberg.MetadataViews;
 import keel.catalog.iceberg.RestRequest;
 import keel.catalog.server.governance.ReadAudit;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogObject.Kind;
 import keel.catalog.store.CatalogRecord;
+import keel.catalog.store.CatalogStore;
 import keel.catalog.store.NamespaceRecord;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.List;
@@ -32,7 +34,9 @@ class ViewRoutes {
     static final String VIEWS = NamespaceRoutes.NAMESPACE + "/views";
     static final String VIEW = VIEWS + "/{view}";
     static final String RENAME = "/v1/{prefix}/views/rename";
+    static final String REGISTER = NamespaceRoutes.NAMESPACE + "/register-view";
 
+    private final CatalogStore store;
     private final Lookup lookup;
     private final ObjectRoutes objects;
     private final Engines engines;
@@ -41,8 +45,9 @@ class ViewRoutes {
     private final Guard guard;
     private final ReadAudit reads;
 
-    ViewRoutes(Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views, Callers callers,
-               Guard guard, ReadAudit reads) {
+    ViewRoutes(CatalogStore store, Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views,
+               Callers callers, Guard guard, ReadAudit reads) {
+        this.store = store;
         this.lookup = lookup;
         this.objects = objects;
         this.engines = engines;
@@ -88,7 +93,8 @@ class ViewRoutes {
                 Guard.LOAD_VIEW);
         CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
         reads.read(http, catalog, AuditEvents.path(levels, view), object, current.pointer());
-        return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of()));
+        return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of(),
+                GovernanceChain.of(store, object).labels()));
     }
 
     @RequestMapping(path = VIEW, method = RequestMethod.HEAD)
@@ -121,6 +127,29 @@ class ViewRoutes {
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
+    /**
+     * A view whose metadata file already exists, as a table is registered: only from the location the catalog
+     * assigns its UUID (D28), and the file a dropped or unregistered view left at brings it back, only in the
+     * namespace it left (D13, amended 2026-11-12).
+     */
+    @PostMapping(REGISTER)
+    ResponseEntity<String> register(@PathVariable String prefix, @PathVariable String namespace,
+                                    @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
+                                    @RequestBody(required = false) String body,
+                                    HttpServletRequest http) {
+        CatalogRecord catalog = lookup.catalog(prefix);
+        List<String> levels = Lookup.levels(namespace);
+        String json = body == null ? "" : body;
+        RestRequest.Registration registration = RestRequest.registerView(json);
+        NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+        RequestContext request = RequestContext.of(http, callers);
+        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_VIEW);
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
+                .registerView(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
+                        request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
+        return ObjectRoutes.reply(reply, this::loaded);
+    }
+
     @DeleteMapping(VIEW)
     ResponseEntity<String> drop(@PathVariable String prefix, @PathVariable String namespace,
                                 @PathVariable String view,
@@ -139,6 +168,8 @@ class ViewRoutes {
     }
 
     private ResponseEntity<String> loaded(CommitReply.Success done) {
-        return Http.json(200, views.loadView(done.metadataLocation(), done.metadataJson(), Map.of()));
+        Map<String, String> labels = store.readObject(done.objectId())
+                .map(object -> GovernanceChain.of(store, object).labels()).orElse(Map.of());
+        return Http.json(200, views.loadView(done.metadataLocation(), done.metadataJson(), Map.of(), labels));
     }
 }

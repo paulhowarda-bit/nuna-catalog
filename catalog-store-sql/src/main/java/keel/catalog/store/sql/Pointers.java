@@ -17,7 +17,9 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Pointer rows and the commit algorithm (docs/storage-design.md section 4). A projection longer
@@ -67,9 +69,34 @@ final class Pointers {
         if (conflict.isPresent()) {
             return conflict.get();
         }
+        Optional<CommitResult.Inactive> inactive = inactive(connection, batch);
+        if (inactive.isPresent()) {
+            return inactive.get();
+        }
+        record(connection, batch);
+        return new CommitResult.Committed(batch.commitId());
+    }
+
+    /** Locks every pointer of the batch in key order and compares it, as {@link #apply} does first. */
+    static Optional<CommitResult.Conflict> lock(Connection connection, CommitBatch batch) throws SQLException {
+        return lockAndCompare(connection, batch);
+    }
+
+    /** Writes the batch's swaps, journal and records, once {@link #lock} has matched every pointer. */
+    static void record(Connection connection, CommitBatch batch) throws SQLException {
         write(connection, batch);
         ChangeRecords.write(connection, batch.commitId(), batch.committedAt(), batch.outbox(), batch.idempotency());
-        return new CommitResult.Committed(batch.commitId());
+    }
+
+    /**
+     * Locks every pointer of the object, by branch, as a commit locks a pointer before its object, and
+     * gives the main pointer's version and location; empty when it has none.
+     */
+    static Optional<Locked> lockObject(Connection connection, UUID objectId) throws SQLException {
+        List<Locked> main = Jdbc.query(connection, "SELECT branch, version, metadata_location FROM pointer"
+                        + " WHERE object_id = ? ORDER BY branch FOR UPDATE",
+                row -> row.getString(1).equals(PointerKey.MAIN) ? new Locked(row.getLong(2), row.getString(3)) : null, objectId);
+        return main.stream().filter(java.util.Objects::nonNull).findFirst();
     }
 
     /**
@@ -93,6 +120,25 @@ final class Pointers {
         return Optional.empty();
     }
 
+    /**
+     * The first swap whose object is no longer active: dropped, unregistered or purged since the commit
+     * read it. The object row is locked after the pointers, shared, so commits of one object do not wait
+     * for each other. Unregister locks the pointers and then the object too; a drop locks the object
+     * alone, so either it waits for this commit, or this commit waits for it and reads its new state. An
+     * object the store has no row for is not checked.
+     */
+    private static Optional<CommitResult.Inactive> inactive(Connection connection, CommitBatch batch)
+            throws SQLException {
+        for (PointerSwap swap : batch.swaps()) {
+            Optional<String> state = Jdbc.first(connection, "SELECT state FROM catalog_object WHERE id = ? FOR SHARE",
+                    row -> row.getString(1), swap.key().objectId());
+            if (state.isPresent() && !state.get().equals("ACTIVE")) {
+                return Optional.of(new CommitResult.Inactive(swap.key()));
+            }
+        }
+        return Optional.empty();
+    }
+
     /** Locks the pointer row until the transaction ends, and says whether it is {@code expected}. */
     private static boolean lockedAt(Connection connection, PointerKey key, Pointer expected) throws SQLException {
         Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
@@ -102,7 +148,12 @@ final class Pointers {
                 && locked.get().location().equals(expected.metadataLocation());
     }
 
-    private record Locked(long version, String location) {
+    /** A locked pointer's version and location. */
+    record Locked(long version, String location) {
+
+        boolean is(Pointer pointer) {
+            return version == pointer.version() && location.equals(pointer.metadataLocation());
+        }
     }
 
     private static boolean insert(Connection connection, PointerSwap swap, CommitBatch batch) throws SQLException {

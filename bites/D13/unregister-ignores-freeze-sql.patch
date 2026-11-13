@@ -1,0 +1,17 @@
+Breaks: unregister checks no DR freeze, so a frozen table can be unregistered.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+index 93f8d6e..e4a2bfa 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+@@ -141,7 +141,7 @@ final class SqlObjects {
+             if (Guards.held(connection, objectId, locked.get().catalogId(), locked.get().path())) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }
+-            if (Guards.frozen(connection, objectId, locked.get().catalogId(), locked.get().path())) {
++            if (false && Guards.frozen(connection, objectId, locked.get().catalogId(), locked.get().path())) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }
+             if (Guards.flagged(connection, objectId, locked.get().catalogId(), locked.get().path())) {

@@ -1,0 +1,17 @@
+Breaks: a commit swaps the pointer of a dropped or unregistered object.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#aCommitAfterTheDropIsRefused
+
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java
+index 63c8bf9..ecce345 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java
+@@ -108,7 +108,7 @@ final class Pointers {
+             if (object.isEmpty()) {
+                 continue;
+             }
+-            if (!object.get().getString("state").getValue().equals(CatalogObject.State.ACTIVE.name())) {
++            if (false && !object.get().getString("state").getValue().equals(CatalogObject.State.ACTIVE.name())) {
+                 return Optional.of(new CommitResult.Inactive(swap.key()));
+             }
+             if (objects.stream().noneMatch(seen -> seen.get("_id").equals(object.get().get("_id")))) {

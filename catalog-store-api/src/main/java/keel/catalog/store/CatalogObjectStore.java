@@ -55,6 +55,35 @@ public interface CatalogObjectStore {
      */
     WriteResult undropObject(UUID objectId, UUID namespaceId, Name name, Change change);
 
+    /**
+     * Unregisters an active object at {@code change.at()} (D13): a final state. The name is free at
+     * once; the id, pointers, journal and grants stay; it is never undropped or purged, and every later
+     * commit to it is {@code Inactive}. The object's pointers are locked first, as a commit locks them,
+     * then the object, so a commit either lands before the unregister or is refused after it. The holds,
+     * freezes and flags are read under the object's lock, so one set before the unregister refuses it.
+     *
+     * @param expected the main pointer the caller read, whose metadata the answer names
+     * @return {@code Applied}, {@code Missing(OBJECT)} (no active object), {@code VersionMismatch}
+     *         carrying the main pointer's version when it is not {@code expected}, {@code Refused(HELD)},
+     *         {@code Refused(FROZEN)} (a DR freeze on the object or above it), or {@code Refused(FLAGGED)}
+     *         (a regulated flag on the object or above it, or a row/column-policy flag on the object)
+     */
+    WriteResult unregisterObject(UUID objectId, Pointer expected, Change change);
+
+    /**
+     * Makes an object in state {@code from}, dropped or unregistered, active again as {@code name} in
+     * {@code namespaceId}, keeping its id, and applies {@code batch}, which swaps its main pointer to
+     * the file registered for it, with the batch's journal, outbox and idempotency records, all in one
+     * transaction (D13, D25). An unknown outcome is resolved with {@link CommitStore#findCommit} on the
+     * batch's id and the object's main pointer.
+     *
+     * @return {@code Applied}, {@code NameTaken}, {@code Missing(OBJECT)} (not in state {@code from}),
+     *         {@code Missing(NAMESPACE)}, or {@code VersionMismatch} carrying the main pointer's version
+     *         when it is not the batch's expected one
+     * @throws CommitOutcomeUnknownException carrying the batch's commit id
+     */
+    WriteResult reviveObject(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch);
+
     /** Dropped objects whose purge-after time is at or before {@code now}, not held, by purge-after then id. */
     Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page);
 

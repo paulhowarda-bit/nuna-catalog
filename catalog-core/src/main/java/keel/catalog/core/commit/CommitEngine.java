@@ -16,6 +16,7 @@ import keel.catalog.iceberg.Outcome;
 import keel.catalog.iceberg.RestRequest;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogStore;
+import keel.catalog.store.Change;
 import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitLookup;
 import keel.catalog.store.CommitOutcomeUnknownException;
@@ -39,6 +40,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
@@ -117,10 +119,51 @@ public final class CommitEngine {
 
     /**
      * {@code POST .../register}: a table whose metadata file already exists (D34). The new table takes the
-     * file's table UUID and location; the pointer names the file as it is, hashed as read.
+     * file's table UUID and location; the pointer names the file as it is, hashed as read. The file a dropped or
+     * unregistered table of this catalog left at brings that table back as itself, in its own namespace (D13,
+     * amended 2026-11-12): bringing back a dropped one is an undrop, which {@code undrop} is asked to allow.
      */
-    public CommitReply registerTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
-        return run(Operation.REGISTER_TABLE, one(name, requestJson), requestJson, caller, idempotencyKey);
+    public CommitReply registerTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey,
+                                     Undrop undrop) {
+        return run(Operation.REGISTER_TABLE, one(name, requestJson), requestJson, caller, idempotencyKey, undrop);
+    }
+
+    /** {@code POST .../register-view}: a view whose metadata file already exists, as {@link #registerTable}. */
+    public CommitReply registerView(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey,
+                                    Undrop undrop) {
+        return run(Operation.REGISTER_VIEW, one(name, requestJson), requestJson, caller, idempotencyKey, undrop);
+    }
+
+    /**
+     * {@code POST .../tables/{table}/unregister} (D13, amended 2026-11-12): the table leaves the catalog for
+     * good, keeping its id, pointer and history, and its name is free at once. Its files stay where they are;
+     * the answer names its current metadata file, which a client may register again. A legal hold or a DR
+     * freeze on it or above it refuses it, and a commit racing it either lands first, and the unregister
+     * retries against it, or is refused. So is a regulated table, or one flagged for row/column policy,
+     * should a steward set the flag after the REST layer checked it.
+     *
+     * @param authorized the table the REST layer found by that name and authorized, if it found one. Only that
+     *                   table is unregistered: when the name names another object, or none, the answer is 404,
+     *                   so a table that takes the name after the check is never unregistered on another's
+     *                   checks. A retry with a key still replays the first answer once the table is gone.
+     */
+    public CommitReply unregisterTable(ObjectName name, Optional<UUID> authorized, Caller caller,
+                                       Optional<String> idempotencyKey) {
+        return run(Operation.UNREGISTER_TABLE, one(name, ""), "", caller, idempotencyKey, Undrop.NEVER, authorized);
+    }
+
+    /**
+     * Asked before a register brings a dropped table or view back, since that is an undrop (D25): it refuses
+     * by throwing, as the REST layer's authorization does.
+     */
+    @FunctionalInterface
+    public interface Undrop {
+        /** For a request that never brings anything back. */
+        Undrop NEVER = dropped -> {
+            throw new IllegalStateException("this request brings nothing back");
+        };
+
+        void allow(CatalogObject dropped);
     }
 
     /** An object as a request names it, with its own commit request. */
@@ -151,6 +194,11 @@ public final class CommitEngine {
             throw new IllegalArgumentException("a transaction changes at least one table");
         }
         return run(Operation.COMMIT_TRANSACTION, List.copyOf(changes), requestJson, caller, idempotencyKey);
+    }
+
+    private CommitReply run(Operation operation, List<TableChange> targets, String json, Caller caller,
+                            Optional<String> key) {
+        return run(operation, targets, json, caller, key, Undrop.NEVER);
     }
 
     private static List<TableChange> one(ObjectName name, String json) {
@@ -192,7 +240,8 @@ public final class CommitEngine {
     private enum Operation {
         CREATE_TABLE(CatalogObject.Kind.TABLE), COMMIT_TABLE(CatalogObject.Kind.TABLE),
         REGISTER_TABLE(CatalogObject.Kind.TABLE), CREATE_VIEW(CatalogObject.Kind.VIEW), COMMIT_VIEW(CatalogObject.Kind.VIEW),
-        COMMIT_TRANSACTION(CatalogObject.Kind.TABLE);
+        COMMIT_TRANSACTION(CatalogObject.Kind.TABLE), REGISTER_VIEW(CatalogObject.Kind.VIEW),
+        UNREGISTER_TABLE(CatalogObject.Kind.TABLE);
 
         final CatalogObject.Kind kind;
 
@@ -213,7 +262,7 @@ public final class CommitEngine {
      * @param json    the whole request body
      */
     private record Request(Operation operation, List<TableChange> targets, String json, Caller caller, UUID commitId,
-                           Optional<Key> key) {
+                           Optional<Key> key, Undrop undrop, Optional<UUID> authorized) {
 
         /** The object of a single-object request. */
         ObjectName name() {
@@ -224,14 +273,20 @@ public final class CommitEngine {
     // ---- idempotency (D10) ----
 
     private CommitReply run(Operation operation, List<TableChange> targets, String json, Caller caller,
-                            Optional<String> key) {
+                            Optional<String> key, Undrop undrop) {
+        return run(operation, targets, json, caller, key, undrop, Optional.empty());
+    }
+
+    private CommitReply run(Operation operation, List<TableChange> targets, String json, Caller caller,
+                            Optional<String> key, Undrop undrop, Optional<UUID> authorized) {
         UUID commitId = UUID.randomUUID();
         if (key.isEmpty()) {
-            return work(new Request(operation, targets, json, caller, commitId, Optional.empty()));
+            return work(new Request(operation, targets, json, caller, commitId, Optional.empty(), undrop, authorized));
         }
         Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, targets, json, caller),
                 clock.instant().plus(settings.keyLifetime()));
-        Request request = new Request(operation, targets, json, caller, commitId, Optional.of(fixed));
+        Request request = new Request(operation, targets, json, caller, commitId, Optional.of(fixed), undrop,
+                authorized);
         RuntimeException lastClaimFailure = null;
         for (int round = 0; round < CLAIM_ROUNDS; round++) {
             KeyState state;
@@ -376,8 +431,9 @@ public final class CommitEngine {
             return switch (request.operation()) {
                 case CREATE_TABLE, CREATE_VIEW -> create(request);
                 case COMMIT_TABLE, COMMIT_VIEW -> commit(request);
-                case REGISTER_TABLE -> register(request);
+                case REGISTER_TABLE, REGISTER_VIEW -> register(request);
                 case COMMIT_TRANSACTION -> transaction(request);
+                case UNREGISTER_TABLE -> unregister(request);
             };
         } catch (StoreUnavailableException e) {
             // Thrown only before a COMMIT was sent: an attempt whose COMMIT was lost is settled by findCommit,
@@ -413,9 +469,9 @@ public final class CommitEngine {
     }
 
     /**
-     * Registers an existing metadata file. Its table UUID becomes the object id, so a UUID that any object
-     * in the catalog holds, a dropped one included, is refused: a dropped table keeps its UUID and location
-     * until it is purged (D25), and is brought back by undrop, not by registering its file again.
+     * Registers an existing metadata file. Its UUID becomes the object id, so a UUID that another object holds
+     * is refused. A dropped or unregistered object of this catalog keeps its UUID and location (D13, D25), and
+     * registering the file it left at, in its own namespace, brings it back as itself.
      */
     private CommitReply register(Request request) {
         Optional<CatalogObject> existing = store.findObject(request.name().namespaceId(),
@@ -423,30 +479,216 @@ public final class CommitEngine {
         if (existing.isPresent()) {
             return alreadyExists(request, existing.get().kind());
         }
-        String metadataLocation = RestRequest.register(request.json()).metadataLocation();
+        boolean table = request.operation() == Operation.REGISTER_TABLE;
+        String metadataLocation = table
+                ? RestRequest.register(request.json()).metadataLocation()
+                : RestRequest.registerView(request.json()).metadataLocation();
         TableFiles.Read read = files.read(metadataLocation, "");
-        return switch (Metadata.registerTable(read.json(), metadataLocation)) {
+        String kind = table ? "Table" : "View";
+        Outcome outcome = table
+                ? Metadata.registerTable(read.json(), metadataLocation)
+                : Metadata.registerView(read.json(), metadataLocation);
+        return switch (outcome) {
             case Outcome.NewMetadata found -> {
                 UUID id;
                 try {
                     id = UUID.fromString(found.after().uuid());
                 } catch (RuntimeException e) {
-                    yield new Failure(400, "BadRequestException", "Table UUID must be a UUID, not "
+                    yield new Failure(400, "BadRequestException", kind + " UUID must be a UUID, not "
                             + found.after().uuid());
                 }
-                if (store.readObject(id).isPresent()) {
-                    yield new Failure(409, "AlreadyExistsException", "Table UUID " + id
-                            + " already belongs to a table in this catalog; a dropped table is brought back by undrop");
+                TableFiles.Written file = new TableFiles.Written(metadataLocation, read.sha256());
+                Optional<CatalogObject> holder = store.readObject(id);
+                if (holder.isPresent()) {
+                    yield revive(request, holder.get(), found, file);
                 }
                 yield createObject(request, id, found.after().location(), found,
-                        new Metadata.Journal("[]", request.json()), alreadyExists(request, CatalogObject.Kind.TABLE),
-                        Optional.of(new TableFiles.Written(metadataLocation, read.sha256())));
+                        new Metadata.Journal("[]", request.json()), alreadyExists(request, request.operation().kind),
+                        Optional.of(file));
             }
             case Outcome.BadRequest bad -> new Failure(400, bad.type(), bad.message());
             case Outcome.RequirementFailed failed -> new Failure(400, "BadRequestException", failed.message());
             case Outcome.NoChange noChange -> throw new IllegalStateException("a register always creates");
             case Outcome.NotFound notFound -> throw new IllegalStateException("a register never reads a pointer");
         };
+    }
+
+    /**
+     * Brings a dropped or unregistered object back under the name the request gives, keeping its id, grants and
+     * history, with its main pointer swapped in the same transaction to the registered file (D13, D25, amended
+     * 2026-11-12). It comes back only in the namespace it left, as an undrop restores it: another namespace
+     * would hand it that namespace's grants and governance, which only a rename may do. Only the file its main
+     * pointer names brings it back, so it returns exactly as it left and no rule a commit is held to is
+     * skipped. Bringing back a dropped object is an undrop: it needs what an undrop needs, within the undrop
+     * window, and is reported as one. Any other holder of the UUID refuses the register.
+     */
+    private CommitReply revive(Request request, CatalogObject holder, Outcome.NewMetadata found,
+                               TableFiles.Written file) {
+        ObjectName name = request.name();
+        CatalogObject.Kind kind = request.operation().kind;
+        String what = kind == CatalogObject.Kind.TABLE ? "Table" : "View";
+        boolean revivable = holder.catalogId().equals(name.catalogId()) && holder.kind() == kind
+                && (holder.state() == CatalogObject.State.DROPPED || holder.state() == CatalogObject.State.UNREGISTERED);
+        if (!revivable) {
+            return new Failure(409, "AlreadyExistsException", what + " UUID " + holder.id() + " already belongs to"
+                    + " a table or view; only a dropped or unregistered " + what.toLowerCase(java.util.Locale.ROOT)
+                    + " of this catalog is brought back by registering its own metadata file");
+        }
+        if (!holder.namespaceId().equals(name.namespaceId())) {
+            return new Failure(409, "AlreadyExistsException", what + " UUID " + holder.id() + " belongs to a "
+                    + holder.state().name().toLowerCase(java.util.Locale.ROOT) + " "
+                    + what.toLowerCase(java.util.Locale.ROOT) + " of another namespace; it is brought back only in"
+                    + " its own namespace, and a rename then moves it");
+        }
+        boolean dropped = holder.state() == CatalogObject.State.DROPPED;
+        if (dropped) {
+            if (!clock.instant().isBefore(holder.purgeAfter().orElseThrow())) {
+                return new Failure(409, "UndropWindowClosedException", "The undrop window of " + holder.id()
+                        + " closed at " + holder.purgeAfter().get() + "; it is waiting to be purged");
+            }
+            request.undrop().allow(holder);
+        }
+        CatalogObject revived = CatalogObject.active(name.catalogId(), holder.id(), name.namespaceId(), name.name(),
+                kind, holder.locationRoot());
+        Optional<Failure> refused = judge(revived, null, found.after(), GovernanceChain.of(store, revived));
+        if (refused.isPresent()) {
+            return refused.get();
+        }
+        CommitEvents.Kind reported = dropped ? CommitEvents.Kind.UNDROP : CommitEvents.Kind.COMMIT;
+        Instant started = clock.instant();
+        for (int attempt = 1; ; attempt++) {
+            Pointer base = store.readPointer(holder.mainKey())
+                    .orElseThrow(() -> new IllegalStateException("object " + holder.id() + " has no pointer"));
+            if (!base.metadataLocation().equals(file.location())) {
+                return new Failure(409, "AlreadyExistsException", what + " " + holder.id() + " is brought back only"
+                        + " by the metadata file it was " + holder.state().name().toLowerCase(java.util.Locale.ROOT)
+                        + " at, not " + file.location());
+            }
+            if (!base.sha256().equals(file.sha256())) {
+                alerts.metadataIntegrity(holder.id(), file.location(), base.sha256(), file.sha256());
+                return new ServerError(SERVICE_FAILURE, "Metadata file " + file.location()
+                        + " does not match the hash its pointer recorded");
+            }
+            Pointer next = new Pointer(file.location(), base.version() + 1, file.sha256(), Projection.of(found.after()));
+            CommitBatch batch = batch(request, revived, Optional.of(base), next,
+                    new Metadata.Journal("[]", request.json()), false, reported);
+            try {
+                WriteResult result = store.reviveObject(holder.id(), holder.state(), name.namespaceId(), name.name(),
+                        batch);
+                switch (result) {
+                    case WriteResult.Applied applied -> {
+                        return committed(revived, next, found.json(), false, request.commitId());
+                    }
+                    case WriteResult.NameTaken taken -> {
+                        return alreadyExists(request, kind);
+                    }
+                    case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.NAMESPACE -> {
+                        return new Failure(404, "NoSuchNamespaceException",
+                                "Namespace does not exist: " + name.namespaceId());
+                    }
+                    case WriteResult.Missing missing -> {
+                        return new Failure(409, COMMIT_FAILED, what + " " + holder.id()
+                                + " was brought back, purged or otherwise changed while being registered");
+                    }
+                    case WriteResult.VersionMismatch mismatch -> {
+                        if (!backOff(attempt, started)) {
+                            return new Failure(409, COMMIT_FAILED, "Register lost to concurrent changes " + attempt
+                                    + " times");
+                        }
+                    }
+                    default -> throw new IllegalStateException("reviveObject answered " + result);
+                }
+            } catch (CommitOutcomeUnknownException e) {
+                Optional<CommitReply> settled = settle(request, holder.mainKey(),
+                        () -> committed(revived, next, found.json(), false, request.commitId()), attempt, started);
+                if (settled.isPresent()) {
+                    return settled.get();
+                }
+            }
+        }
+    }
+
+    /**
+     * Unregisters an active table (D13), the one the REST layer authorized: its main pointer as read must
+     * still be current when the store locks it, so a commit racing the unregister either lands first, and
+     * the unregister reads again, or is refused after it. The answer names the metadata the table was
+     * unregistered at; a key replays it.
+     */
+    private CommitReply unregister(Request request) {
+        Optional<CatalogObject> found = store.findObject(request.name().namespaceId(),
+                request.name().name().normalized());
+        if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE
+                || !request.authorized().equals(Optional.of(found.get().id()))) {
+            return noSuch(request);
+        }
+        CatalogObject object = found.get();
+        GovernanceChain governance = GovernanceChain.of(store, object);
+        Instant started = clock.instant();
+        for (int attempt = 1; ; attempt++) {
+            Pointer current = store.readPointer(object.mainKey())
+                    .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
+            Optional<String> json = load(object, current, governance);
+            if (json.isEmpty()) {
+                return new ServerError(SERVICE_FAILURE, "Metadata file " + current.metadataLocation()
+                        + " does not match the hash its pointer recorded");
+            }
+            Instant at = clock.instant().truncatedTo(ChronoUnit.MILLIS);
+            Change change = new Change(request.commitId(), at, events.of(new CommitEvents.Commit(request.commitId(), at,
+                    request.caller(), object, Optional.of(current), current, "[]", "[]", false,
+                    CommitEvents.Kind.UNREGISTER)), request.key().map(key -> new IdempotencyResult(key.key(),
+                    key.principal(), key.requestHash(), 200,
+                    Replies.success(object.id(), current.metadataLocation(), current.sha256()), key.expiresAt())));
+            Success unregistered = new Success(object.id(), current.metadataLocation(), current.sha256(), json.get(),
+                    How.COMMITTED);
+            WriteResult result;
+            try {
+                result = store.unregisterObject(object.id(), current, change);
+            } catch (CommitOutcomeUnknownException e) {
+                Optional<CatalogObject> after;
+                try {
+                    after = store.readObject(object.id());
+                } catch (StoreException readFailed) {
+                    return new ServerError(STATE_UNKNOWN, "Unregister of " + display(request)
+                            + " may or may not have been applied: " + e.getMessage());
+                }
+                if (after.filter(o -> o.state() == CatalogObject.State.UNREGISTERED
+                        && o.droppedAt().equals(Optional.of(at))).isPresent()) {
+                    return unregistered;
+                }
+                if (backOff(attempt, started)) {
+                    continue;
+                }
+                return new ServerError(SERVICE_FAILURE, "Unregister of " + display(request)
+                        + " was not applied and the retry bound is spent");
+            }
+            switch (result) {
+                case WriteResult.Applied applied -> {
+                    return unregistered;
+                }
+                case WriteResult.VersionMismatch mismatch -> {
+                    if (!backOff(attempt, started)) {
+                        return new Failure(409, COMMIT_FAILED, "Unregister lost to concurrent commits " + attempt
+                                + " times; the table changed too often");
+                    }
+                }
+                case WriteResult.Missing missing -> {
+                    return noSuch(request);
+                }
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD -> {
+                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                            + " is under a legal hold and cannot be unregistered");
+                }
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN -> {
+                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                            + " is frozen for DR reconcile and cannot be unregistered");
+                }
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {
+                    return new Failure(403, "ForbiddenException", "Table " + display(request) + " is regulated or"
+                            + " has a row/column policy and cannot be unregistered; a steward removes the flag first");
+                }
+                default -> throw new IllegalStateException("unregisterObject answered " + result);
+            }
+        }
     }
 
     private CommitReply commit(Request request) {
@@ -506,7 +748,7 @@ public final class CommitEngine {
         TableFiles.Written written = existing.orElseGet(() -> files.write(location, 1, created.json()));
         Pointer first = new Pointer(written.location(), 1, written.sha256(), Projection.of(created.after()));
         ObjectCreation creation = new ObjectCreation(object,
-                batch(request, object, Optional.empty(), first, journal, false));
+                batch(request, object, Optional.empty(), first, journal, false, CommitEvents.Kind.COMMIT));
         Instant started = clock.instant();
         for (int attempt = 1; ; attempt++) {
             try {
@@ -573,7 +815,7 @@ public final class CommitEngine {
             Pointer next = new Pointer(written.location(), version, written.sha256(), Projection.of(changed.after()));
             boolean regulatedChange = schemaOrSpecChanged(changed.before(), changed.after()) && governance.regulated();
             CommitBatch batch = batch(request, object, Optional.of(base), next,
-                    Metadata.journal(request.json()), regulatedChange);
+                    Metadata.journal(request.json()), regulatedChange, CommitEvents.Kind.COMMIT);
             try {
                 CommitResult result = store.commit(batch);
                 switch (result) {
@@ -585,6 +827,9 @@ public final class CommitEngine {
                             return new Failure(409, COMMIT_FAILED, "Commit lost to concurrent commits " + attempt
                                     + " times; the table changed too often to apply it");
                         }
+                    }
+                    case CommitResult.Inactive inactive -> {
+                        return noSuch(request);
                     }
                 }
             } catch (CommitOutcomeUnknownException e) {
@@ -680,6 +925,11 @@ public final class CommitEngine {
                             return new Failure(409, COMMIT_FAILED, "Transaction lost to concurrent commits " + attempt
                                     + " times; its tables changed too often to apply it");
                         }
+                    }
+                    case CommitResult.Inactive inactive -> {
+                        int gone = objects.stream().map(CatalogObject::mainKey).toList().indexOf(inactive.key());
+                        return new Failure(404, "NoSuchTableException", "Table does not exist: "
+                                + request.targets().get(gone).name().qualified());
                     }
                 }
             } catch (CommitOutcomeUnknownException e) {
@@ -801,13 +1051,13 @@ public final class CommitEngine {
     }
 
     private CommitBatch batch(Request request, CatalogObject object, Optional<Pointer> before, Pointer next,
-                              Metadata.Journal journal, boolean regulatedChange) {
+                              Metadata.Journal journal, boolean regulatedChange, CommitEvents.Kind kind) {
         Instant at = clock.instant();
         Caller caller = request.caller();
         JournalEntry entry = new JournalEntry(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                 caller.engine(), journal.requirementsJson(), journal.updatesJson());
         List<OutboxEvent> outbox = events.of(new CommitEvents.Commit(request.commitId(), at, caller, object, before,
-                next, journal.requirementsJson(), journal.updatesJson(), regulatedChange));
+                next, journal.requirementsJson(), journal.updatesJson(), regulatedChange, kind));
         Optional<IdempotencyResult> result = request.key().map(key -> new IdempotencyResult(key.key(),
                 key.principal(), key.requestHash(), 200,
                 Replies.success(object.id(), next.metadataLocation(), next.sha256()), key.expiresAt()));

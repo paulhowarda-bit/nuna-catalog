@@ -10,13 +10,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.Change;
+import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitLookup;
 import keel.catalog.store.CommitOutcomeUnknownException;
+import keel.catalog.store.CommitResult;
+import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Grant;
 import keel.catalog.store.LegalHold;
 import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.PageRequest;
+import keel.catalog.store.Pointer;
 import keel.catalog.store.Securable;
 import keel.catalog.store.WriteResult;
 import java.time.Duration;
@@ -268,6 +272,187 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertThat(store.dropObject(table.id(), purgeAfter, change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         CatalogObject again = newTable(namespace, "ORDERS");
         assertThat(store.findObject(namespace.id(), "orders")).contains(again);
+    }
+
+    @Test
+    @DisplayName("Objects: a commit built before its object was dropped is refused and writes nothing")
+    void aCommitAfterTheDropIsRefused() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        CommitBatch late = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "late-" + table.id()));
+        assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
+
+        assertThat(store.commit(late)).isEqualTo(new CommitResult.Inactive(table.mainKey()));
+
+        assertThat(store.readPointer(table.mainKey())).contains(base);
+        assertThat(underTest().writtenRows(late)).isEqualTo(WrittenRows.NONE);
+    }
+
+    @Test
+    @DisplayName("Objects: unregister is final: it frees the name, keeps the id and pointer, and refuses every later commit")
+    void unregisterIsFinal() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "Orders");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        Change unregister = fullChange();
+
+        assertThat(store.unregisterObject(table.id(), base, unregister)).isEqualTo(WriteResult.APPLIED);
+
+        assertThat(store.readObject(table.id())).contains(new CatalogObject(table.catalogId(), table.id(),
+                namespace.id(), table.name(), table.kind(), CatalogObject.State.UNREGISTERED,
+                Optional.of(unregister.at()), Optional.empty(), table.locationRoot()));
+        assertThat(underTest().changeRows(unregister)).isEqualTo(WrittenRows.allOf(unregister));
+        assertThat(store.findObject(namespace.id(), "orders")).isEmpty();
+        assertThat(store.readPointer(table.mainKey())).contains(base);
+        assertThat(allPages(10, page -> store.listObjects(namespace.id(), CatalogObject.Kind.TABLE,
+                CatalogObject.State.UNREGISTERED, page))).extracting(CatalogObject::id).containsExactly(table.id());
+        CommitBatch late = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "late-" + table.id()));
+        assertThat(store.commit(late)).isEqualTo(new CommitResult.Inactive(table.mainKey()));
+        assertThat(underTest().writtenRows(late)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.unregisterObject(table.id(), base, change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.undropObject(table.id(), namespace.id(), name("Orders"), change()))
+                .as("an unregistered object is not undropped").isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.purgeObject(table.id(), change())).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(purgeEligible(now().plus(Duration.ofDays(36500)))).doesNotContain(table.id());
+        CatalogObject again = newTable(namespace, "ORDERS");
+        assertThat(store.findObject(namespace.id(), "orders")).contains(again);
+    }
+
+    @Test
+    @DisplayName("Objects: unregister refuses a moved pointer, a hold above, a DR freeze above, a regulated flag above, a row/column flag, or a dropped object, and writes nothing")
+    void unregisterRefusals() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        CommitBatch moved = Commits.batch(Commits.advance(table.mainKey(), Optional.of(base), "moved-" + table.id()));
+        assertThat(store.commit(moved)).isInstanceOf(CommitResult.Committed.class);
+        Change refused = fullChange();
+
+        assertThat(store.unregisterObject(table.id(), base, refused)).isEqualTo(new WriteResult.VersionMismatch(2));
+        assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+
+        Pointer current = Commits.next(moved);
+        LegalHold hold = holdOn(namespace);
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
+        assertApplied(store.releaseHold(hold.id(), change()));
+        Securable top = new Securable(Securable.Kind.CATALOG, catalog);
+        assertApplied(store.putAttribute(new GovernanceAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                "suite", "admin", now()), change()));
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FROZEN));
+        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, change()));
+        Securable area = new Securable(Securable.Kind.NAMESPACE, namespace.id());
+        assertApplied(store.putAttribute(new GovernanceAttribute(area, GovernanceAttribute.Kind.REGULATED, "true",
+                "suite", "steward", now()), change()));
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FLAGGED));
+        assertApplied(store.putAttribute(new GovernanceAttribute(area, GovernanceAttribute.Kind.REGULATED, "false",
+                "suite", "steward", now()), change()));
+        assertApplied(store.putAttribute(new GovernanceAttribute(table.securable(),
+                GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true", "suite", "steward", now()), change()));
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FLAGGED));
+        assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, change()));
+        assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+
+        assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
+        assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
+    }
+
+    @Tag("heavy")
+    @Test
+    @DisplayName("Objects: of a commit and an unregister of one table racing, exactly one applies, every round")
+    void commitRacingTheUnregisterExactlyOneApplies() throws Exception {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        for (int round = 0; round < 30; round++) {
+            CatalogObject table = newTable(namespace, "t-" + round);
+            Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+            CommitBatch batch = Commits.batch(Commits.advance(table.mainKey(), Optional.of(base), "raced-" + table.id()));
+            CyclicBarrier start = new CyclicBarrier(2);
+            Future<CommitResult> commit = background.submit(() -> {
+                start.await();
+                return store.commit(batch);
+            });
+            Future<WriteResult> unregister = background.submit(() -> {
+                start.await();
+                return store.unregisterObject(table.id(), base, change());
+            });
+            CommitResult committed = commit.get(60, TimeUnit.SECONDS);
+            WriteResult unregistered = unregister.get(60, TimeUnit.SECONDS);
+
+            if (committed instanceof CommitResult.Committed) {
+                assertThat(unregistered).as("round %d", round).isEqualTo(new WriteResult.VersionMismatch(2));
+                assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.ACTIVE);
+            } else {
+                assertThat(committed).as("round %d", round).isEqualTo(new CommitResult.Inactive(table.mainKey()));
+                assertThat(unregistered).isEqualTo(WriteResult.APPLIED);
+                assertThat(store.readPointer(table.mainKey())).contains(base);
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Objects: revive brings a dropped or unregistered object back with its id, swapping its pointer in the same transaction")
+    void reviveBringsTheObjectBack() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        NamespaceRecord elsewhere = newNamespace(catalog, "elsewhere");
+        CatalogObject usurper = newTable(elsewhere, "taken");
+        for (CatalogObject.State from : List.of(CatalogObject.State.DROPPED, CatalogObject.State.UNREGISTERED)) {
+            CatalogObject table = newTable(namespace, "t-" + from);
+            Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+            if (from == CatalogObject.State.DROPPED) {
+                assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
+            } else {
+                assertApplied(store.unregisterObject(table.id(), base, change()));
+            }
+            CommitBatch taken = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "taken-" + table.id()));
+            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("TAKEN"), taken))
+                    .isEqualTo(new WriteResult.NameTaken(usurper.id()));
+            assertThat(underTest().writtenRows(taken)).isEqualTo(WrittenRows.NONE);
+            CatalogObject.State other = from == CatalogObject.State.DROPPED
+                    ? CatalogObject.State.UNREGISTERED : CatalogObject.State.DROPPED;
+            assertThat(store.reviveObject(table.id(), other, elsewhere.id(), name("Back"), taken))
+                    .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+            CommitBatch stale = Commits.batch(Commits.swap(table.mainKey(), Optional.of(Commits.pointer("stale", 1)),
+                    Commits.pointer("stale-next-" + table.id(), 2)));
+            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("Back"), stale))
+                    .isEqualTo(new WriteResult.VersionMismatch(1));
+            CommitBatch revive = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "revived-" + table.id()));
+
+            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("Back-" + from), revive))
+                    .isEqualTo(WriteResult.APPLIED);
+
+            assertThat(store.findObject(elsewhere.id(), "back-" + from.name().toLowerCase(java.util.Locale.ROOT)))
+                    .contains(CatalogObject.active(catalog, table.id(), elsewhere.id(), name("Back-" + from), table.kind(),
+                            table.locationRoot()));
+            assertThat(store.readPointer(table.mainKey())).contains(Commits.next(revive));
+            assertThat(underTest().writtenRows(revive)).isEqualTo(WrittenRows.allOf(revive));
+            assertThat(store.findCommit(revive.commitId(), table.mainKey())).isEqualTo(CommitLookup.COMMITTED);
+        }
+    }
+
+    @Tag("heavy")
+    @Test
+    @DisplayName("Objects: a revive whose answer is lost is unknown, and findCommit resolves it to COMMITTED")
+    void lostReviveAnswerResolvesToCommitted() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        assertApplied(store.unregisterObject(table.id(), base, change()));
+        CommitBatch revive = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "lost-" + table.id()));
+        CatalogStore dropping = underTest().store(Commits.before(revive, faults::dropResponses));
+
+        Assertions.assertThatThrownBy(() -> dropping.reviveObject(table.id(), CatalogObject.State.UNREGISTERED,
+                        namespace.id(), name("t"), revive))
+                .isInstanceOfSatisfying(CommitOutcomeUnknownException.class,
+                        unknown -> assertThat(unknown.commitId()).isEqualTo(revive.commitId()));
+        faults.healLink();
+
+        assertThat(store.findCommit(revive.commitId(), table.mainKey())).isEqualTo(CommitLookup.COMMITTED);
+        assertThat(store.readObject(table.id()).orElseThrow().state()).isEqualTo(CatalogObject.State.ACTIVE);
+        assertThat(underTest().writtenRows(revive)).isEqualTo(WrittenRows.allOf(revive));
     }
 
     @Test

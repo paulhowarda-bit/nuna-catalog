@@ -1,0 +1,17 @@
+Breaks: a register brings back a dropped table after its undrop window closed.
+Module: catalog-core
+Test: RegisteringTest$Reviving#windowClosed
+
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+index de49253..721cabb 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+@@ -542,7 +542,7 @@ public final class CommitEngine {
+         }
+         boolean dropped = holder.state() == CatalogObject.State.DROPPED;
+         if (dropped) {
+-            if (!clock.instant().isBefore(holder.purgeAfter().orElseThrow())) {
++            if (false && !clock.instant().isBefore(holder.purgeAfter().orElseThrow())) {
+                 return new Failure(409, "UndropWindowClosedException", "The undrop window of " + holder.id()
+                         + " closed at " + holder.purgeAfter().get() + "; it is waiting to be purged");
+             }

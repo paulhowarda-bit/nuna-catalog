@@ -165,6 +165,10 @@ public final class MongoCatalogStore implements CatalogStore {
     public CommitResult commit(CommitBatch batch) {
         return transactions.write(batch.commitId(), "commit " + batch.commitId(), tx -> {
             Pointers.see(tx, batch);
+            Optional<CommitResult.Inactive> inactive = Pointers.markObjects(tx, batch);
+            if (inactive.isPresent()) {
+                return inactive.get();
+            }
             Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
             if (conflict.isPresent()) {
                 return conflict.get();
@@ -360,6 +364,17 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public WriteResult undropObject(UUID objectId, UUID namespaceId, Name name, Change change) {
         return objects.undrop(objectId, namespaceId, name, change);
+    }
+
+    @Override
+    public WriteResult unregisterObject(UUID objectId, Pointer expected, Change change) {
+        return objects.unregister(objectId, expected, change);
+    }
+
+    @Override
+    public WriteResult reviveObject(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name,
+                                    CommitBatch batch) {
+        return objects.revive(objectId, from, namespaceId, name, batch);
     }
 
     @Override

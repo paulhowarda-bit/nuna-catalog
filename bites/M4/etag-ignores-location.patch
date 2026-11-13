@@ -3,15 +3,15 @@ Module: catalog-server
 Test: RestRoutesTest#tableLoadsAnswer304WhileThePointerHolds
 
 diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java b/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
-index 7a289c4..308a1b3 100644
+index 015ba8b..8fdf1cc 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
-@@ -16,7 +16,7 @@ final class ETags {
-     }
- 
-     static String of(String metadataLocation, boolean refsOnly, String referencedBy, String credentialEpoch) {
+@@ -24,7 +24,7 @@ final class ETags {
+         StringBuilder labelled = new StringBuilder();
+         new TreeMap<>(labels).forEach((label, value) -> labelled.append(label.length()).append(':').append(label)
+                 .append(value.length()).append(':').append(value));
 -        String canonical = String.join("\n", metadataLocation, refsOnly ? "refs" : "all",
 +        String canonical = String.join("\n", refsOnly ? "refs" : "all",
-                 referencedBy == null ? "" : referencedBy, credentialEpoch);
+                 referencedBy == null ? "" : referencedBy, credentialEpoch, labelled);
          try {
              byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));

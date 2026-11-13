@@ -731,20 +731,11 @@ class EngineMatrixTest {
     }
 
     /**
-     * Suspected catalog bug, reported and not fixed (fixes go to the owner first). A CREATE OR REPLACE whose query
-     * changes a column's type (id from bigint to string) starts main afresh, and Iceberg's reference handler accepts
-     * it, keeping field IDs by name; the catalog refuses it, as {@code Backstops.schemas} judges a replace's schema
-     * against the replaced one as if it were evolved in place. Once fixed, Spark prints
-     * {@code RESULT spark replace.retype 4 1 string} (a fourth snapshot, one row, id a string) in place of this.
-     */
-    private static final String REPLACE_RETYPE_REFUSED ="suspected catalog bug: the catalog refuses a CREATE OR REPLACE"
-            + " that changes a column type (Cannot change field 1 (id) from long to string: not a valid type"
-            + " promotion), which Iceberg's reference handler accepts";
-
-    /**
      * CREATE OR REPLACE TABLE ... AS SELECT, a view and table statistics in Spark. {@code t_replace} (v3, two
      * snapshots, four rows) replaced by two rows: a third snapshot, an overwrite with no parent, and the old
-     * snapshot still reads four rows. View {@code v_rows} on {@code t_v2}: ids 1 and 2, then (by CREATE OR
+     * snapshot still reads four rows. A second replace whose query changes id from bigint to string is accepted
+     * (D11, amended 2026-11-12: a replace starts main afresh, as Iceberg's reference handler takes it): a fourth
+     * snapshot, one row, id a string. View {@code v_rows} on {@code t_v2}: ids 1 and 2, then (by CREATE OR
      * REPLACE VIEW, as ALTER VIEW ... AS is refused) the row with a note; a second view is created and dropped.
      * {@code compute_table_stats} writes a statistics file into {@code t_v2}'s metadata folder.
      */
@@ -752,7 +743,7 @@ class EngineMatrixTest {
         Map<String, String> expected = new LinkedHashMap<>();
         expected.put("spark replace", "3 3 2 30 overwrite");
         expected.put("spark replace.history", "4 10");
-        expected.put("spark replace.retype", REPLACE_RETYPE_REFUSED);
+        expected.put("spark replace.retype", "4 1 string");
         expected.put("spark view.create", "2 3");
         expected.put("spark view.alter-as", "ALTER VIEW ... AS is not supported. Use CREATE OR REPLACE VIEW instead");
         expected.put("spark view.replace", "1 4");

@@ -55,7 +55,9 @@ public final class SampleEvents {
                         NAMESPACE, "matter 2026-114", ACTOR),
                 new Undrop(TABLE, ACTOR),
                 new Purge(TABLE, ACTOR),
-                new AuditRead(TABLE, 50, ACTOR));
+                new AuditRead(TABLE, 50, ACTOR),
+                new Unregister(TABLE, V2, ACTOR),
+                new LabelChange(NAMESPACE, "classification", "confidential", ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

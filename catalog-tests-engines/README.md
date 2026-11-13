@@ -239,12 +239,14 @@ table keeps its history: three snapshots, the new one an `overwrite` (Spark writ
 with no parent, as main starts afresh; two rows (sum 30); the old snapshot still reads four rows. PyIceberg:
 three snapshots, two rows, the current one a root.
 
-A second replace whose query changes a column's type (`id` from bigint to string) is refused by the catalog:
-`Cannot change field 1 (id) from long to string: not a valid type promotion`. This looks like a catalog bug, so
-the run reports it as a `LIMIT` line (`replace.retype`) instead of failing: a replace starts main afresh, and
-Iceberg's reference handler accepts the new schema (it keeps field IDs by name, whatever the type), but
-`Backstops.schemas` judges a replace's schema against the replaced one as if it were evolved in place. Once
-fixed, Spark prints `RESULT spark replace.retype 4 1 string`; `EngineMatrixTest` names that expectation.
+A second replace whose query changes a column's type (`id` from bigint to string) was refused by the catalog
+until 2026-11-12: `Cannot change field 1 (id) from long to string: not a valid type promotion`, reported as a
+`LIMIT` line (`replace.retype`). A replace starts main afresh, and Iceberg's reference handler accepts the new
+schema (it keeps field IDs by name, whatever the type), but `Backstops.schemas` judged a replace's schema
+against the replaced one as if it were evolved in place. Paul asked for the fix (D11, amended 2026-11-12): a
+replace of a table with rows is now exempt from the type and required checks, and a change in place is not.
+Spark prints `RESULT spark replace.retype 4 1 string`, which `EngineMatrixTest` expects; a refusal would still
+print the `LIMIT` line, and fail the test.
 
 ## Views (2026-11-12)
 
@@ -336,11 +338,11 @@ extensions) adds a few minutes; later runs reuse them.
 - Until 2026-11-12 no catalog defect turned up. In a full run whose stack was kept and inspected, the catalog
   log had no errors (two Kafka "unknown topic" warnings while the audit topics were auto-created) and the
   audit topic held no denial and no authentication failure.
-- Suspected defect (2026-11-12, `LIMIT spark replace.retype`): the catalog refuses a `CREATE OR REPLACE TABLE`
-  whose new schema changes a column's type (HTTP 400, `Cannot change field 1 (id) from long to string: not a
-  valid type promotion`). `Backstops.schemas` judges every added schema against the current one, which is
-  right for in-place evolution, but a replace starts main afresh and Iceberg's reference handler accepts it.
-  See "CREATE OR REPLACE TABLE" above.
+- Defect found 2026-11-12 (`LIMIT spark replace.retype`) and fixed the same day: the catalog refused a
+  `CREATE OR REPLACE TABLE` whose new schema changes a column's type (HTTP 400, `Cannot change field 1 (id)
+  from long to string: not a valid type promotion`). `Backstops.schemas` judged every added schema against the
+  current one, which is right for in-place evolution, but a replace starts main afresh and Iceberg's reference
+  handler accepts it. See "CREATE OR REPLACE TABLE" above. The matrix has not been run since the fix.
 - Every commit an engine-side maintenance procedure makes is accepted: rewrites of data files, position
   deletes and manifests, `expire_snapshots`, `fast_forward`, `cherrypick_snapshot`, statistics. The file
   deletes those procedures attempt are refused by the vended credentials (D25), so expired files stay in

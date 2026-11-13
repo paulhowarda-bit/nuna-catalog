@@ -1,0 +1,17 @@
+Breaks: a register brings a dropped or unregistered table back in another namespace, where it inherits that namespace's grants without the rename right.
+Module: catalog-core
+Test: RegisteringTest$Reviving#onlyInItsOwnNamespace
+
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+index de49253..73e560e 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+@@ -534,7 +534,7 @@ public final class CommitEngine {
+                     + " a table or view; only a dropped or unregistered " + what.toLowerCase(java.util.Locale.ROOT)
+                     + " of this catalog is brought back by registering its own metadata file");
+         }
+-        if (!holder.namespaceId().equals(name.namespaceId())) {
++        if (false && !holder.namespaceId().equals(name.namespaceId())) {
+             return new Failure(409, "AlreadyExistsException", what + " UUID " + holder.id() + " belongs to a "
+                     + holder.state().name().toLowerCase(java.util.Locale.ROOT) + " "
+                     + what.toLowerCase(java.util.Locale.ROOT) + " of another namespace; it is brought back only in"

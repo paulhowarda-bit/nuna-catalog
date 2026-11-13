@@ -3,12 +3,16 @@ package keel.catalog.conformance;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.Map;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.iceberg.CatalogProperties;
 import org.apache.iceberg.HasTableOperations;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.SupportsLabels;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.catalog.Namespace;
@@ -17,10 +21,14 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.types.Types;
+import org.apache.iceberg.view.BaseView;
+import org.apache.iceberg.view.View;
 import org.junit.jupiter.api.Test;
 
 /** The stock Iceberg Java client works against our /v1/config response, prefix and routes. */
 class IcebergClientConfigTest {
+
+    private static final HttpClient HTTP = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
     @Test
     void stockClientCreatesAndLoadsATableUnderTheCatalogPrefix() throws Exception {
@@ -83,6 +91,48 @@ class IcebergClientConfigTest {
                     .isInstanceOf(CommitFailedException.class);
             assertThat(client.loadTable(orders).properties()).containsEntry("batch", "1");
             assertThat(client.loadTable(lines).schema().findField("note")).isNull();
+        }
+    }
+
+    /**
+     * D13 and D27, amended 2026-11-12: the stock client registers a view from its metadata file when /v1/config
+     * advertises register-view (a dropped view's own file brings it back as itself), and reads the labels a table
+     * load sends through {@link SupportsLabels}.
+     */
+    @Test
+    void stockClientRegistersAViewAndReadsTableLabels() throws Exception {
+        try (RESTCatalog client = client()) {
+            Namespace namespace = Namespace.of("labels_" + System.nanoTime());
+            client.createNamespace(namespace);
+            Schema schema = new Schema(Types.NestedField.required(1, "id", Types.LongType.get()));
+            TableIdentifier tableId = TableIdentifier.of(namespace, "t");
+            client.createTable(tableId, schema);
+            assertThat(((SupportsLabels) client.loadTable(tableId)).labels().objectLabels()).isEmpty();
+
+            HttpResponse<String> set = HTTP.send(HttpRequest.newBuilder(ConformanceServer.start()
+                            .resolve("management/v1/catalogs/" + ConformanceServer.WAREHOUSE + "/namespaces/"
+                                    + namespace.level(0) + "/attributes/classification"))
+                    .header("Authorization", "Bearer " + ConformanceServer.stewardToken())
+                    .header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString("{\"value\":\"internal\",\"provenance\":\"rck\"}"))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(set.statusCode()).as(set.body()).isEqualTo(200);
+            assertThat(((SupportsLabels) client.loadTable(tableId)).labels().objectLabels())
+                    .isEqualTo(Map.of("classification", "internal"));
+
+            TableIdentifier viewId = TableIdentifier.of(namespace, "v");
+            View view = client.buildView(viewId).withSchema(schema).withDefaultNamespace(namespace)
+                    .withQuery("spark", "select 1 as id").create();
+            String file = ((BaseView) view).operations().current().metadataFileLocation();
+            assertThat(client.dropView(viewId)).isTrue();
+
+            TableIdentifier registeredId = TableIdentifier.of(namespace, "registered");
+            View registered = client.registerView(registeredId, file);
+
+            assertThat(registered.uuid()).isEqualTo(view.uuid());
+            assertThat(client.loadView(registeredId).currentVersion().versionId())
+                    .isEqualTo(view.currentVersion().versionId());
+            assertThat(client.viewExists(viewId)).isFalse();
         }
     }
 

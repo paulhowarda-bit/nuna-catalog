@@ -418,7 +418,8 @@ result("replace", format_version(table), snapshots(table), *count_sum(table), op
 result("replace.history", *count_sum(f"{table} VERSION AS OF {before}"))
 # A replace whose query changes a column's type (id becomes a string). A replace starts main afresh, and Iceberg's
 # reference handler accepts the new schema (it keeps field IDs by name, whatever the type): four snapshots, one
-# row, id a string. The catalog refuses it, which is reported as a suspected catalog bug rather than a pass.
+# row, id a string. The catalog accepts it since 2026-11-12 (D11); a refusal is still reported as a suspected
+# catalog bug rather than a failure of the run.
 try:
     sql(f"CREATE OR REPLACE TABLE {table} USING iceberg TBLPROPERTIES ('format-version'='3') "
         "AS SELECT * FROM VALUES ('k', 'z') AS v(id, name)")

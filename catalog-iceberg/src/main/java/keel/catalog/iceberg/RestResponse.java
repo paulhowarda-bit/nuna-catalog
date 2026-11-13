@@ -1,6 +1,7 @@
 package keel.catalog.iceberg;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import keel.catalog.iceberg.RestRequest.Identifier;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -70,6 +71,21 @@ public final class RestResponse {
                         .toList())
                 .nextPageToken(nextPageToken)
                 .build());
+    }
+
+    /**
+     * {@code POST .../tables/{table}/unregister}: the metadata file the table was unregistered at and its
+     * content, which a client may register again. iceberg-core 1.12 has no class for this result.
+     */
+    public static String unregistered(String metadataLocation, String metadataJson) {
+        try {
+            ObjectNode result = Metadata.REQUESTS.createObjectNode();
+            result.put("metadata-location", metadataLocation);
+            result.set("metadata", Metadata.REQUESTS.readTree(metadataJson));
+            return Metadata.REQUESTS.writeValueAsString(result);
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /** {@code GET .../tables/{table}/credentials}. */

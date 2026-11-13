@@ -1,0 +1,17 @@
+Breaks: unregister checks no DR freeze, so a frozen table can be unregistered.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+index dfb30d3..e73e61c 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+@@ -170,7 +170,7 @@ final class MongoObjects {
+             if (held(tx, object.get())) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }
+-            if (Guards.frozen(tx, objectId, uuid(object.get().get("catalogId")),
++            if (false && Guards.frozen(tx, objectId, uuid(object.get().get("catalogId")),
+                     uuidList(object.get().get("namespacePath")))) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }

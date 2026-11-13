@@ -1,0 +1,17 @@
+Breaks: the store checks no regulated or row/column-policy flag, so one set after the route checked it does not stop the unregister.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+index 1a0b677..3c307fb 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+@@ -174,7 +174,7 @@ final class MongoObjects {
+                     uuidList(object.get().get("namespacePath")))) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }
+-            if (Guards.flagged(tx, objectId, uuid(object.get().get("catalogId")),
++            if (false && Guards.flagged(tx, objectId, uuid(object.get().get("catalogId")),
+                     uuidList(object.get().get("namespacePath")))) {
+                 return new WriteResult.Refused(WriteResult.Reason.FLAGGED);
+             }

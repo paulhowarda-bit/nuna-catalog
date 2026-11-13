@@ -1,0 +1,17 @@
+Breaks: unregister asks for select instead of modify.
+Module: catalog-server
+Test: SecurityGateTest#unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
+index 056e012..eec46f5 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Guard.java
+@@ -41,7 +41,7 @@ class Guard {
+     static final Operation LIST_TABLES = new Operation("listTables", DESCRIBE, false);
+     static final Operation CREATE_TABLE = new Operation("createTable", CREATE, false);
+     static final Operation REGISTER_TABLE = new Operation("registerTable", CREATE, false);
+-    static final Operation UNREGISTER_TABLE = new Operation("unregisterTable", MODIFY, false);
++    static final Operation UNREGISTER_TABLE = new Operation("unregisterTable", SELECT, false);
+     static final Operation LOAD_TABLE = new Operation("loadTable", SELECT, true);
+     static final Operation TABLE_EXISTS = new Operation("tableExists", DESCRIBE, false);
+     static final Operation DROP_TABLE = new Operation("dropTable", MODIFY, false);

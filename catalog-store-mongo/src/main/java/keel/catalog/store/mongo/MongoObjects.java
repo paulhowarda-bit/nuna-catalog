@@ -15,17 +15,21 @@ import static keel.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static keel.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
+import static keel.catalog.store.mongo.MongoCatalogStore.POINTER;
 
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.Change;
 import keel.catalog.store.CommitBatch;
+import keel.catalog.store.CommitResult;
 import keel.catalog.store.Name;
 import keel.catalog.store.ObjectCreation;
 import keel.catalog.store.Page;
 import keel.catalog.store.PageRequest;
 import keel.catalog.store.PageToken;
+import keel.catalog.store.Pointer;
+import keel.catalog.store.PointerKey;
 import keel.catalog.store.StoreException;
 import keel.catalog.store.WriteResult;
 import java.time.Instant;
@@ -145,6 +149,64 @@ final class MongoObjects {
                             .append("purgeAfter", time(purgeAfter)).append("clock", tx.clock())));
             return WriteResult.APPLIED;
         });
+    }
+
+    /**
+     * Commits mark the object, so a commit that read the object active and this write conflict: one of
+     * them retries, and a commit that retries finds the object unregistered. The holds, DR freezes and
+     * regulated or row/column-policy flags are read in the same snapshot, as a drop reads holds.
+     */
+    WriteResult unregister(UUID objectId, Pointer expected, Change change) {
+        return transactions.change(change, "object unregister", tx -> {
+            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(ACTIVE)));
+            if (object.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            Optional<BsonDocument> main = tx.find(POINTER, Docs.keyFilter(new PointerKey(objectId, PointerKey.MAIN)));
+            if (main.isEmpty() || main.get().getInt64("version").getValue() != expected.version()
+                    || !main.get().getString("metadataLocation").getValue().equals(expected.metadataLocation())) {
+                return new WriteResult.VersionMismatch(main.map(p -> p.getInt64("version").getValue()).orElse(0L));
+            }
+            if (held(tx, object.get())) {
+                return new WriteResult.Refused(WriteResult.Reason.HELD);
+            }
+            if (Guards.frozen(tx, objectId, uuid(object.get().get("catalogId")),
+                    uuidList(object.get().get("namespacePath")))) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            if (Guards.flagged(tx, objectId, uuid(object.get().get("catalogId")),
+                    uuidList(object.get().get("namespacePath")))) {
+                return new WriteResult.Refused(WriteResult.Reason.FLAGGED);
+            }
+            tx.see(object.get());
+            tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
+                    new BsonDocument("state", new BsonString(CatalogObject.State.UNREGISTERED.name()))
+                            .append("droppedAt", time(change.at())).append("clock", tx.clock())));
+            return WriteResult.APPLIED;
+        });
+    }
+
+    /** Puts the object at the name as undrop does, and writes the batch, in the batch's transaction. */
+    WriteResult revive(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch) {
+        return transactions.write(batch.commitId(), "object revive", tx -> {
+            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(from.name())));
+            if (object.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            Pointers.see(tx, batch);
+            WriteResult placed = place(tx, object.get(), namespaceId, name,
+                    new BsonDocument("state", new BsonString(ACTIVE)).append("droppedAt", BsonNull.VALUE)
+                            .append("purgeAfter", BsonNull.VALUE), new BsonDocument());
+            if (!placed.equals(WriteResult.APPLIED)) {
+                return placed;
+            }
+            Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
+            if (conflict.isPresent()) {
+                return new WriteResult.VersionMismatch(conflict.get().actual().map(Pointer::version).orElse(0L));
+            }
+            Pointers.records(tx, batch, transactions.entryIds());
+            return WriteResult.APPLIED;
+        }, WriteResult.APPLIED::equals);
     }
 
     WriteResult undrop(UUID objectId, UUID namespaceId, Name name, Change change) {

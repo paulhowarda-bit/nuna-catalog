@@ -26,7 +26,8 @@ class ChangeStreamTest {
 
         assertThat(audit).containsExactlyElementsOf(batch);
         assertThat(changes).extracting(CatalogEvent::type).containsExactly(EventType.COMMIT, EventType.DROP,
-                EventType.NAMESPACE_CHANGE, EventType.RENAME, EventType.UNDROP, EventType.PURGE);
+                EventType.NAMESPACE_CHANGE, EventType.RENAME, EventType.UNDROP, EventType.PURGE, EventType.UNREGISTER,
+                EventType.LABEL_CHANGE);
         assertThat(changes).isSubsetOf(batch);
     }
 

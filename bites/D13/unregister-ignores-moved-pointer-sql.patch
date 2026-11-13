@@ -1,0 +1,17 @@
+Breaks: unregister ignores a main pointer moved since it was read, so it applies at the old metadata, and re-registering the file it names loses the later commit from main.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+index 93f8d6e..3c8e242 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+@@ -135,7 +135,7 @@ final class SqlObjects {
+             if (locked.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+-            if (main.isEmpty() || !main.get().is(expected)) {
++            if (false && (main.isEmpty() || !main.get().is(expected))) {
+                 return new WriteResult.VersionMismatch(main.map(Pointers.Locked::version).orElse(0L));
+             }
+             if (Guards.held(connection, objectId, locked.get().catalogId(), locked.get().path())) {

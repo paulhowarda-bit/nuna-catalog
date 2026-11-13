@@ -83,6 +83,11 @@ final class MongoSchema {
                         new BsonDocument("$setOnInsert", new BsonDocument("relayId", BsonNull.VALUE)
                                 .append("leaseUntil", BsonNull.VALUE)),
                         new UpdateOptions().upsert(true));
+            }),
+            // v1.x (D13): objects gain the final state UNREGISTERED. A state is a plain string, and
+            // no index or partial filter names it, so nothing is built; the step is recorded so the
+            // schema version marks the first release that writes it.
+            new Step(4, "unregistered objects", database -> {
             }));
 
     private MongoSchema() {

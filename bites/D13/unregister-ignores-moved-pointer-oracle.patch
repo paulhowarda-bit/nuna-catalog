@@ -1,0 +1,17 @@
+Breaks: unregister ignores a main pointer moved since it was read, so it applies at the old metadata, and re-registering the file it names loses the later commit from main.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+index c5c88d0..4ff5746 100644
+--- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+@@ -143,7 +143,7 @@ final class OracleObjects {
+             if (locked.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+-            if (main.isEmpty() || !main.get().is(expected)) {
++            if (false && (main.isEmpty() || !main.get().is(expected))) {
+                 return new WriteResult.VersionMismatch(main.map(Pointers.Locked::version).orElse(0L));
+             }
+             if (Guards.held(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {

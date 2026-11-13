@@ -1,0 +1,4 @@
+{
+  "name": "registered",
+  "metadata-location": "s3://warehouse/golden/view-replace.metadata.json"
+}

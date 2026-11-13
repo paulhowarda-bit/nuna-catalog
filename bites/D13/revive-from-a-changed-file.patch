@@ -1,0 +1,17 @@
+Breaks: a register brings a table back from its own file after the file was changed, unalerted.
+Module: catalog-core
+Test: RegisteringTest$Reviving#onlyTheFileItLeftAt
+
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+index de49253..b7aff6d 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+@@ -564,7 +564,7 @@ public final class CommitEngine {
+                         + " by the metadata file it was " + holder.state().name().toLowerCase(java.util.Locale.ROOT)
+                         + " at, not " + file.location());
+             }
+-            if (!base.sha256().equals(file.sha256())) {
++            if (false && !base.sha256().equals(file.sha256())) {
+                 alerts.metadataIntegrity(holder.id(), file.location(), base.sha256(), file.sha256());
+                 return new ServerError(SERVICE_FAILURE, "Metadata file " + file.location()
+                         + " does not match the hash its pointer recorded");

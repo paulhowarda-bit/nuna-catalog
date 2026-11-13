@@ -7,6 +7,8 @@ import keel.catalog.audit.EventCodec;
 import keel.catalog.audit.EventData;
 import keel.catalog.audit.PointerState;
 import keel.catalog.audit.Securable;
+import keel.catalog.audit.Undrop;
+import keel.catalog.audit.Unregister;
 import keel.catalog.core.commit.CommitEvents;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.OutboxEvent;
@@ -43,12 +45,22 @@ public class AuditEvents {
         return commits(catalog, object -> path, actor);
     }
 
-    /** The commit events of a request that changes several objects, each named by {@code path}. */
+    /**
+     * The commit events of a request that changes several objects, each named by {@code path}. A dropped
+     * object brought back by a register is also an undrop; an unregister moves no pointer, so it is only that.
+     */
     CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
-        return commit -> List.of(event(commit.at(), new Commit(commit.commitId(),
-                securable(commit.object(), catalog, path.apply(commit.object())), PointerKey.MAIN,
-                commit.before().map(AuditEvents::state).orElse(null), state(commit.after()),
-                commit.updatesJson(), actor)));
+        return commit -> {
+            Securable object = securable(commit.object(), catalog, path.apply(commit.object()));
+            OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, PointerKey.MAIN,
+                    commit.before().map(AuditEvents::state).orElse(null), state(commit.after()),
+                    commit.updatesJson(), actor));
+            return switch (commit.kind()) {
+                case COMMIT -> List.of(committed);
+                case UNDROP -> List.of(event(commit.at(), new Undrop(object, actor)), committed);
+                case UNREGISTER -> List.of(event(commit.at(), new Unregister(object, state(commit.after()), actor)));
+            };
+        };
     }
 
     static Securable securable(CatalogObject object, String catalog, List<String> path) {

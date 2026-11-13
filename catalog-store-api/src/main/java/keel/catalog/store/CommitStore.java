@@ -21,7 +21,9 @@ public interface CommitStore {
      * Swaps every pointer in the batch and writes its journal, outbox and idempotency records,
      * all or nothing.
      *
-     * @return {@code Committed}, or {@code Conflict} when an expected pointer did not match
+     * @return {@code Committed}; {@code Conflict} when an expected pointer did not match; or
+     * {@code Inactive} when a swapped pointer's object exists and is not active (an object the store
+     * has no record of, as in the suite's bare pointers, is not checked)
      * @throws CommitOutcomeUnknownException when the transaction may or may not have committed
      * @throws StoreException                when it failed cleanly before COMMIT was sent
      */

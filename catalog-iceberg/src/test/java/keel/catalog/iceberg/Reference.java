@@ -30,6 +30,7 @@ import org.apache.iceberg.rest.CatalogHandlers;
 import org.apache.iceberg.rest.RESTSerializers;
 import org.apache.iceberg.rest.requests.CreateTableRequest;
 import org.apache.iceberg.rest.requests.CreateViewRequest;
+import org.apache.iceberg.rest.requests.RegisterViewRequestParser;
 import org.apache.iceberg.rest.requests.UpdateTableRequestParser;
 
 /**
@@ -89,6 +90,9 @@ final class Reference {
                     yield written(CatalogHandlers.updateView(catalog, IDENT, UpdateTableRequestParser.fromJson(request))
                             .metadataLocation(), base);
                 }
+                // A register writes nothing: the outcome is the file the view now points at, the base itself.
+                case REGISTER_VIEW -> written(CatalogHandlers.registerView(catalog, NS,
+                        RegisterViewRequestParser.fromJson(request)).metadataLocation(), null);
             };
         } catch (CommitFailedException e) {
             return new RequirementFailed(e.getMessage());

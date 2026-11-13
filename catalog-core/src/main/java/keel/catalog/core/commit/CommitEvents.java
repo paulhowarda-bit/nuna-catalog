@@ -18,6 +18,16 @@ public interface CommitEvents {
 
     List<OutboxEvent> of(Commit commit);
 
+    /** What the change did to the object besides moving its pointer. */
+    enum Kind {
+        /** A commit, a create or a register. */
+        COMMIT,
+        /** A dropped object brought back by registering its own metadata file again (D13, D25). */
+        UNDROP,
+        /** The object was unregistered (D13); its pointer did not move, so {@code before} and {@code after} match. */
+        UNREGISTER
+    }
+
     /**
      * One commit as the change stream reports it.
      *
@@ -26,6 +36,13 @@ public interface CommitEvents {
      *                              namespace, which is journaled and alerted, not blocked (D11a)
      */
     record Commit(UUID commitId, Instant at, Caller caller, CatalogObject object, Optional<Pointer> before,
-                  Pointer after, String requirementsJson, String updatesJson, boolean regulatedSchemaChange) {
+                  Pointer after, String requirementsJson, String updatesJson, boolean regulatedSchemaChange,
+                  Kind kind) {
+
+        public Commit(UUID commitId, Instant at, Caller caller, CatalogObject object, Optional<Pointer> before,
+                      Pointer after, String requirementsJson, String updatesJson, boolean regulatedSchemaChange) {
+            this(commitId, at, caller, object, before, after, requirementsJson, updatesJson, regulatedSchemaChange,
+                    Kind.COMMIT);
+        }
     }
 }

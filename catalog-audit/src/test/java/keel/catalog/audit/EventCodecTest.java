@@ -46,7 +46,9 @@ class EventCodecTest {
             Map.entry(EventType.HOLD_CHANGE, List.of("action", "holdId", "target", "reason", "actor")),
             Map.entry(EventType.UNDROP, List.of("object", "actor")),
             Map.entry(EventType.PURGE, List.of("object", "actor")),
-            Map.entry(EventType.AUDIT_READ, List.of("target", "returned", "actor")));
+            Map.entry(EventType.AUDIT_READ, List.of("target", "returned", "actor")),
+            Map.entry(EventType.UNREGISTER, List.of("object", "pointer", "actor")),
+            Map.entry(EventType.LABEL_CHANGE, List.of("target", "label", "actor")));
     private static final Map<EventType, List<String>> NULLABLE = Map.ofEntries(
             Map.entry(EventType.COMMIT, List.of("before")),
             Map.entry(EventType.GRANT_CHANGE, List.of()),
@@ -64,7 +66,9 @@ class EventCodecTest {
             Map.entry(EventType.HOLD_CHANGE, List.of()),
             Map.entry(EventType.UNDROP, List.of()),
             Map.entry(EventType.PURGE, List.of()),
-            Map.entry(EventType.AUDIT_READ, List.of()));
+            Map.entry(EventType.AUDIT_READ, List.of()),
+            Map.entry(EventType.UNREGISTER, List.of()),
+            Map.entry(EventType.LABEL_CHANGE, List.of("value")));
     /** The shared records, as they appear inside a commit: actor, securable and pointer state. */
     private static final List<String> NESTED_REQUIRED = List.of("actor.principal", "actor.requestId", "object.kind",
             "object.id", "object.catalog", "object.path", "after.metadataLocation", "after.version", "after.sha256");

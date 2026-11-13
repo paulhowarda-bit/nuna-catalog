@@ -99,6 +99,70 @@ class BackstopTest {
         }
 
         @Test
+        void aReplaceThatStartsMainAfreshMayChangeAFieldsType() {
+            String request = replace("{\"id\": 1, \"name\": \"id\", \"required\": true, \"type\": \"string\"}",
+                    "{\"id\": 2, \"name\": \"data\", \"required\": false, \"type\": \"int\"}");
+
+            assertReferenceAccepts(request);
+            assertThat(ours(request)).as("D11, amended 2026-11-12: main reads none of the old rows")
+                    .isInstanceOf(NewMetadata.class);
+        }
+
+        @Test
+        void aReplaceMayStillNotMakeAnOptionalFieldRequiredNorTurnAPrimitiveIntoAStruct() {
+            String required = replace(ID, "{\"id\": 2, \"name\": \"data\", \"required\": true, \"type\": \"string\"}");
+            String nested = replace(ID, """
+                    {"id": 2, "name": "data", "required": false,
+                     "type": {"type": "struct", "fields": [{"id": 4, "name": "a", "required": false, "type": "int"}]}}""");
+
+            assertReferenceAccepts(required);
+            assertReferenceAccepts(nested);
+            assertThat(ours(required)).as("only the type-promotion check is waived for a replace")
+                    .isEqualTo(new BadRequest("Cannot make optional field 2 (data) required"));
+            assertThat(((BadRequest) ours(nested)).message()).startsWith("Cannot change field 2 (data) from string to struct");
+        }
+
+        @Test
+        void aReplaceOfATableWithNoSnapshotYetMayChangeAFieldsType() {
+            String empty = base("v3-create");
+            String request = request("{\"action\": \"add-schema\", \"schema\": {\"type\": \"struct\", \"schema-id\": 1,"
+                    + " \"fields\": [{\"id\": 1, \"name\": \"id\", \"required\": false, \"type\": \"string\"}, "
+                    + DATA + ", " + TS + "]}}, {\"action\": \"set-current-schema\", \"schema-id\": -1},"
+                    + " {\"action\": \"add-snapshot\", \"snapshot\": {\"snapshot-id\": 4001, \"sequence-number\": 1,"
+                    + " \"timestamp-ms\": 1767225700000, \"manifest-list\": \"s3://warehouse/ns/orders/metadata/snap-4001.avro\","
+                    + " \"summary\": {\"operation\": \"overwrite\"}, \"schema-id\": 1, \"first-row-id\": 0, \"added-rows\": 1}},"
+                    + " {\"action\": \"set-snapshot-ref\", \"ref-name\": \"main\", \"snapshot-id\": 4001, \"type\": \"branch\"}");
+
+            assertThat(Reference.commitTable(empty, location("v3-create"), request)).as("the reference accepts it")
+                    .isInstanceOf(NewMetadata.class);
+            assertThat(Metadata.commitTable(request, empty, location("v3-create")))
+                    .as("CREATE TABLE t (id bigint), then CREATE OR REPLACE TABLE t AS SELECT 'k' AS id")
+                    .isInstanceOf(NewMetadata.class);
+        }
+
+        @Test
+        void aRollbackOfMainThatAlsoRetypesIsRefused() {
+            String request = request("{\"action\": \"set-snapshot-ref\", \"ref-name\": \"main\", \"snapshot-id\": 3001,"
+                    + " \"type\": \"branch\"}, {\"action\": \"add-schema\", \"schema\": {\"type\": \"struct\","
+                    + " \"schema-id\": 1, \"fields\": [{\"id\": 1, \"name\": \"id\", \"required\": true, \"type\": \"string\"}, "
+                    + DATA + ", " + TS + "]}}, {\"action\": \"set-current-schema\", \"schema-id\": -1}");
+
+            assertReferenceAccepts(request);
+            assertThat(ours(request)).as("snapshot 3001's long ids would be read as strings").isEqualTo(new BadRequest(
+                    "Cannot change field 1 (id) from long to string: not a valid type promotion"));
+        }
+
+        @Test
+        void theSameRetypeInPlaceIsRefused() {
+            String request = schema("{\"id\": 1, \"name\": \"id\", \"required\": true, \"type\": \"string\"}",
+                    DATA, TS);
+
+            assertReferenceAccepts(request);
+            assertThat(ours(request)).isEqualTo(new BadRequest(
+                    "Cannot change field 1 (id) from long to string: not a valid type promotion"));
+        }
+
+        @Test
         void aNewRequiredFieldWithAnInitialDefaultIsAccepted() {
             String request = schema(ID, DATA, TS, """
                     {"id": 4, "name": "r", "required": true, "type": "int", "initial-default": 1, "write-default": 1}""");
@@ -377,6 +441,14 @@ class BackstopTest {
     private static String schema(String... fields) {
         return request("{\"action\": \"add-schema\", \"schema\": {\"type\": \"struct\", \"schema-id\": 1,"
                 + " \"identifier-field-ids\": [1], \"fields\": [" + String.join(",", fields) + "]}},"
+                + " {\"action\": \"set-current-schema\", \"schema-id\": -1}");
+    }
+
+    /** A replace of v3-append-2 that starts main afresh, with fields id and data as given and ts as before. */
+    private static String replace(String id, String data) {
+        return request("{\"action\": \"remove-snapshot-ref\", \"ref-name\": \"main\"},"
+                + " {\"action\": \"add-schema\", \"schema\": {\"type\": \"struct\", \"schema-id\": 1,"
+                + " \"fields\": [" + id + ", " + data + ", " + TS + "]}},"
                 + " {\"action\": \"set-current-schema\", \"schema-id\": -1}");
     }
 

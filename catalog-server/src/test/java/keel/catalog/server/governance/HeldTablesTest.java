@@ -17,8 +17,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The M7 gate, held tables cannot lose snapshots, and the other commit-time guards: a hold on the
- * table or a level above it refuses snapshot removal, drop and purge (D24); a retention class keeps
- * snapshots for its minimum age; a DR freeze refuses writes (D37).
+ * table or a level above it refuses snapshot removal, drop, unregister (D13) and purge (D24); a
+ * retention class keeps snapshots for its minimum age; a DR freeze refuses writes (D37).
  */
 @GovernanceServer
 class HeldTablesTest {
@@ -58,18 +58,25 @@ class HeldTablesTest {
         String tableHold = hold(table);
         expectError(api.rest("POST", table, Api.removeSnapshot(1)), 403, "ForbiddenException");
         expectError(api.rest("DELETE", table, null), 403, "ForbiddenException");
+        expectError(api.rest("POST", table + "/unregister", null), 403, "ForbiddenException");
         expect(api.rest("POST", table, Api.SET_PROPERTY.formatted("held")), 200);
         expect(api.manage("DELETE", table + "/holds/" + tableHold, null, "Authorization", api.steward()), 204);
 
         String namespaceHold = hold("/namespaces/" + ns);
         expectError(api.rest("POST", table, Api.removeSnapshot(1)), 403, "ForbiddenException");
         expectError(api.rest("DELETE", table, null), 403, "ForbiddenException");
+        HttpResponse<String> unregister = api.rest("POST", table + "/unregister", null);
+        expectError(unregister, 403, "ForbiddenException");
+        assertThat(unregister.body()).contains("legal hold");
         expect(api.manage("DELETE", "/namespaces/" + ns + "/holds/" + namespaceHold, null,
                 "Authorization", api.steward()), 204);
 
         expect(api.rest("POST", table, Api.removeSnapshot(1)), 200);
         HttpResponse<String> loaded = expect(api.rest("GET", table, null), 200);
         assertThat(JsonPath.<List<Integer>>read(loaded.body(), "$.metadata.snapshots[*].snapshot-id")).containsExactly(2);
+        HttpResponse<String> unregistered = expect(api.rest("POST", table + "/unregister", null), 200);
+        assertThat(JsonPath.<String>read(unregistered.body(), "$.metadata-location"))
+                .isEqualTo(JsonPath.<String>read(loaded.body(), "$.metadata-location"));
     }
 
     @Test
@@ -94,8 +101,8 @@ class HeldTablesTest {
         String ns = api.namespace();
         String table = "/namespaces/" + ns + "/tables/t";
         String location = api.table(ns, "t");
-        expect(api.rest("POST", table, Api.snapshot(location, 1, System.currentTimeMillis())), 200);
-        expect(api.rest("POST", table, Api.snapshot(location, 2, System.currentTimeMillis())), 200);
+        expect(api.rest("POST", table, Api.snapshot(location, 1, clock.millis())), 200);
+        expect(api.rest("POST", table, Api.snapshot(location, 2, clock.millis())), 200);
 
         expectError(api.manage("PUT", "/namespaces/" + ns + "/attributes/retention-class",
                 "{\"value\":\"no-such-class\",\"provenance\":\"records-office\"}", "Authorization", api.steward()), 400,
@@ -125,6 +132,8 @@ class HeldTablesTest {
         expectError(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("new")), 403,
                 "ForbiddenException");
         expectError(api.rest("DELETE", "/namespaces/" + ns + "/tables/other", null), 403, "ForbiddenException");
+        expectError(api.rest("POST", "/namespaces/" + ns + "/tables/other/unregister", null), 403,
+                "ForbiddenException");
         expectError(api.rest("POST", "/tables/rename", "{\"source\":{\"namespace\":[\"" + ns + "\"],\"name\":\"t\"},"
                 + "\"destination\":{\"namespace\":[\"" + ns + "\"],\"name\":\"t2\"}}"), 403, "ForbiddenException");
         expect(api.rest("GET", table, null), 200);

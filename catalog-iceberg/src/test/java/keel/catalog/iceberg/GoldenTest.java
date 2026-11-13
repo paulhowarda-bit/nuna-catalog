@@ -139,6 +139,7 @@ class GoldenTest {
             case CREATE_VIEW -> Metadata.createView(request, c.uuid(),
                     Golden.WAREHOUSE + "/ns/" + Golden.requestedName(c), Golden.CLOCK);
             case COMMIT_VIEW -> Metadata.commitView(request, Golden.baseJson(c));
+            case REGISTER_VIEW -> Metadata.registerView(Golden.baseJson(c), Golden.baseLocation(c));
         };
     }
 

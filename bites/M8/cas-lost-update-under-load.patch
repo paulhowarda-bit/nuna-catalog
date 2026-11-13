@@ -3,10 +3,10 @@ Module: catalog-tests-load
 Test: ConcurrentWritersTest
 
 diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-index 32fa4a3..013fb36 100644
+index 3bff591..283e7fc 100644
 --- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
 +++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-@@ -98,8 +98,7 @@ final class Pointers {
+@@ -144,8 +144,7 @@ final class Pointers {
          Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
                          + " WHERE object_id = ? AND branch = ? FOR UPDATE",
                  row -> new Locked(row.getLong(1), row.getString(2)), key.objectId(), key.branch());
@@ -15,4 +15,4 @@ index 32fa4a3..013fb36 100644
 +        return locked.isPresent();
      }
  
-     private record Locked(long version, String location) {
+     /** A locked pointer's version and location. */

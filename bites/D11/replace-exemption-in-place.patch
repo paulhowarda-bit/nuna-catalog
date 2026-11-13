@@ -1,0 +1,17 @@
+Breaks: a change in place that keeps main's rows is exempt from the type-promotion check, as a replace is.
+Module: catalog-iceberg
+Test: BackstopTest$Schemas#theSameRetypeInPlaceIsRefused
+
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
+index 4c6c89a..7ed1808 100644
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
+@@ -121,7 +121,7 @@ final class Backstops {
+      */
+     private static boolean replaced(TableMetadata before, TableMetadata after, boolean keepsRows) {
+         Snapshot main = after.currentSnapshot();
+-        return !keepsRows && (main == null ? before.currentSnapshot() != null : before.snapshot(main.snapshotId()) == null);
++        return true;
+     }
+ 
+     /**

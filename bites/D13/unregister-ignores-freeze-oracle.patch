@@ -1,0 +1,17 @@
+Breaks: unregister checks no DR freeze, so a frozen table can be unregistered.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+index c5c88d0..c5f720f 100644
+--- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+@@ -149,7 +149,7 @@ final class OracleObjects {
+             if (Guards.held(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }
+-            if (Guards.frozen(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
++            if (false && Guards.frozen(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }
+             if (Guards.flagged(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {

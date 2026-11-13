@@ -1,0 +1,18 @@
+Breaks: register-view takes the file of an active view, whose UUID is held, and moves that view to the new name.
+Module: catalog-core
+Test: RegisteringTest$RegisteringViews#uuidTaken
+
+diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+index be30cbe..717eb6d 100644
+--- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+@@ -512,8 +512,7 @@ public final class CommitEngine {
+         ObjectName name = request.name();
+         CatalogObject.Kind kind = request.operation().kind;
+         String what = kind == CatalogObject.Kind.TABLE ? "Table" : "View";
+-        boolean revivable = holder.catalogId().equals(name.catalogId()) && holder.kind() == kind
+-                && (holder.state() == CatalogObject.State.DROPPED || holder.state() == CatalogObject.State.UNREGISTERED);
++        boolean revivable = holder.catalogId().equals(name.catalogId()) && holder.kind() == kind;
+         if (!revivable) {
+             return new Failure(409, "AlreadyExistsException", what + " UUID " + holder.id() + " already belongs to"
+                     + " a table or view; only a dropped or unregistered " + what.toLowerCase(java.util.Locale.ROOT)

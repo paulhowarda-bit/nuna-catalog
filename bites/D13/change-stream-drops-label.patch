@@ -1,0 +1,18 @@
+Breaks: the change stream leaves out label changes.
+Module: catalog-audit
+Test: ChangeStreamTest#fansOut
+
+diff --git a/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
+index 5d318d0..043d7dd 100644
+--- a/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
++++ b/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
+@@ -19,8 +19,7 @@ public final class ChangeStream {
+ 
+     /** The event types the change stream carries: what happened to namespaces, tables and views, and their labels. */
+     public static final Set<EventType> TYPES = EnumSet.of(EventType.COMMIT, EventType.DROP, EventType.UNDROP,
+-            EventType.PURGE, EventType.RENAME, EventType.NAMESPACE_CHANGE, EventType.UNREGISTER,
+-            EventType.LABEL_CHANGE);
++            EventType.PURGE, EventType.RENAME, EventType.NAMESPACE_CHANGE, EventType.UNREGISTER);
+ 
+     private ChangeStream() {
+     }

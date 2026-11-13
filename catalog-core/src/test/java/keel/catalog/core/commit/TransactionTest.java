@@ -17,6 +17,7 @@ import keel.catalog.core.commit.CommitReply.Failure;
 import keel.catalog.core.commit.CommitReply.How;
 import keel.catalog.core.commit.CommitReply.ServerError;
 import keel.catalog.core.commit.CommitReply.Success;
+import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitOutcomeUnknownException;
 import keel.catalog.store.CommitResult;
@@ -25,6 +26,9 @@ import keel.catalog.store.JournalRecord;
 import keel.catalog.store.Pointer;
 import keel.catalog.store.PointerHold;
 import keel.catalog.store.StoreException;
+import keel.catalog.store.WriteResult;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -232,6 +236,29 @@ class TransactionTest {
             assertThat(h.journal("Orders")).hasSize(2);
             assertThat(h.pointer("Lines").version()).isEqualTo(3);
             assertThat(properties("Lines")).containsEntry("a", "2").containsEntry("b", "2");
+        }
+
+        @Test
+        @DisplayName("a transaction that loses the race with one table's drop is 404 naming it, and no table changes")
+        void dropWinsTheRace() {
+            h.createTable("Orders");
+            h.createTable("Lines");
+            CatalogObject lines = h.object("Lines");
+            Pointer orders = h.pointer("Orders");
+            h.faults.once("commit", (args, proceed) -> {
+                assertThat(h.faults.real.dropObject(lines.id(), Instant.now().plus(Duration.ofDays(7)),
+                        Harness.change())).isEqualTo(WriteResult.APPLIED);
+                return proceed.call();
+            });
+
+            assertThat(transact(change("Orders", set("Orders", "a", "1")), change("Lines", set("Lines", "a", "2"))))
+                    .isInstanceOfSatisfying(Failure.class, f -> {
+                        assertThat(f.status()).isEqualTo(404);
+                        assertThat(f.message()).isEqualTo("Table does not exist: " + h.name("Lines").qualified());
+                    });
+
+            assertThat(h.pointer("Orders")).isEqualTo(orders);
+            assertThat(h.faults.real.readPointer(lines.mainKey()).orElseThrow().version()).isEqualTo(1);
         }
 
         @Test
