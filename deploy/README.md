@@ -71,7 +71,9 @@ What the chart sets up:
   `serviceAccount.annotations: {eks.amazonaws.com/role-arn: ...}` (IRSA). The AWS SDK's default chain then
   uses that role, which applies to every profile without static keys. EKS Pod Identity should work too,
   with no annotation (the SDK is 2.57, and its default chain reads Pod Identity). Neither has been tried on
-  EKS.
+  EKS. The role a profile's `sts-role` names must trust that identity for both `sts:AssumeRole` and
+  `sts:TagSession`: every vend tags its session with whom it is for (`SessionIdentity`), and AWS refuses a
+  tagged AssumeRole without the second.
 - **Ingress.** Off by default (`ingress.enabled`). Clients outside the cluster (Spark, Trino, the
   console) need it, or a LoadBalancer Service.
 - **OpenShift.** Its restricted policy assigns its own uid. There, set `podSecurityContext` to only

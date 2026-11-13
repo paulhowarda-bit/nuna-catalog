@@ -31,7 +31,9 @@ public record StorageSettings(
      *
      * @param endpoint        the store's S3 endpoint; for AWS S3 the regional endpoint
      * @param tableRoot       where new table locations are assigned, within an allowed prefix
-     * @param stsRole         the role STS assumes to vend credentials; MinIO needs none
+     * @param stsRole         the role STS assumes to vend credentials; MinIO needs none. Its trust policy must
+     *                        allow the catalog's identity both {@code sts:AssumeRole} and {@code sts:TagSession}:
+     *                        every vend tags its session ({@code SessionIdentity})
      * @param accessKeyId     with {@code secretAccessKey}, the catalog's own static credentials; without,
      *                        the AWS SDK's default provider chain
      * @param maintenancePrincipal the maintenance worker's own storage identity, the one principal the profile's
