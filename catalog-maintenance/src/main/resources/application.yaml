@@ -1,0 +1,18 @@
+# The maintenance worker (D30). Everything else is set per deployment: see catalog-maintenance/README.md and the
+# Helm chart deploy/helm/keel-maintenance.
+spring:
+  application:
+    name: keel-maintenance
+  main:
+    banner-mode: off
+
+keel:
+  maintenance:
+    scan-interval: PT10M
+    orphan-interval: P1D
+    compaction-interval: P1D
+
+logging:
+  level:
+    # Iceberg logs every commit, manifest read and file IO at INFO.
+    org.apache.iceberg: WARN
