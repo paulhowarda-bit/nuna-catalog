@@ -116,7 +116,9 @@ The charts run the catalog servers and the worker only. Everything else runs els
 - **Kafka** for audit and change events (`keel.audit.kafka-bootstrap-servers`). A load that vends credentials
   waits for Kafka's acknowledgement.
 - **Object stores** (AWS S3, Ceph or MinIO; PLT-3, PLT-5), with their buckets, named per region (PLT-4), and:
-  - the catalog's own identity: an STS role on AWS S3 and Ceph, keys on MinIO;
+  - the catalog's own identity: an STS role on AWS S3 and Ceph, keys on MinIO. The role's trust policy must
+    allow the catalog both `sts:AssumeRole` and `sts:TagSession`: every vend tags its session with whom it is
+    for (`keel-principal`, `keel-table` and others), and AWS refuses a tagged AssumeRole without the second;
   - the worker's own identity, which alone may delete (D21, D30). On MinIO the catalog must not run as the
     root user, which ignores every policy.
 - **Identity providers** (SEC-1): for each issuer its `iss`, its JWKS URL, the audience and the claims for the
