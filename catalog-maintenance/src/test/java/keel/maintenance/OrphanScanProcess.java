@@ -11,7 +11,8 @@ import org.apache.iceberg.Table;
 /**
  * One orphan scan in its own process, for {@link LargeOrphanScanTest} to measure: the heap the scan holds once it has
  * read the table's metadata and listed its location, which is when its reachable set is whole, printed as
- * {@code HEAP <bytes>} over what the process held before the scan; then {@code ORPHANS <n>} and {@code MILLIS <n>}.
+ * {@code HEAP <bytes>} over what the process held before the scan; then {@code ORPHAN <location>} for each orphan,
+ * {@code ORPHANS <n>} and {@code MILLIS <n>}.
  *
  * <p>Arguments: those of {@link ChildJvm#workerArguments}, then the catalog, the namespace and the table's name.
  */
@@ -31,6 +32,7 @@ public final class OrphanScanProcess {
             long[] held = new long[1];
             List<String> orphans = OrphanScan.find(table, storage, Instant.now(), () -> held[0] = heap() - before);
             System.out.println("HEAP " + held[0]);
+            orphans.forEach(orphan -> System.out.println("ORPHAN " + orphan));
             System.out.println("ORPHANS " + orphans.size());
             System.out.println("MILLIS " + (System.nanoTime() - start) / 1_000_000);
         }

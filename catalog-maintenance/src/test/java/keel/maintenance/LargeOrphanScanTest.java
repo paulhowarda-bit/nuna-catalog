@@ -55,7 +55,6 @@ class LargeOrphanScanTest {
             TableIdentifier id = TestCatalog.table(writer, "large");
             Table table = writer.loadTable(id);
             int files = 0;
-            List<String> lines = new ArrayList<>();
             for (int size : SIZES) {
                 while (files < size) {
                     AppendFiles append = table.newFastAppend();
@@ -67,20 +66,23 @@ class LargeOrphanScanTest {
                     }
                     append.commit();
                 }
-                Map<String, Long> scan = scan(id);
+                List<String> orphans = new ArrayList<>();
+                Map<String, Long> scan = scan(id, orphans);
                 long perFile = scan.get("HEAP") / files;
                 long fits = (long) (2L * 1024 * 1024 * 1024 * 0.75) / perFile;
                 String line = String.format("%,d files: %,d MB held, %,d bytes a file, %,d ms; a 2 GiB worker"
                         + " scans about %,d files", files, scan.get("HEAP") >> 20, perFile, scan.get("MILLIS"), fits);
-                lines.add(line);
                 System.out.println("LargeOrphanScanTest: " + line);
-                assertThat(scan.get("ORPHANS")).as("every file listed is reachable").isZero();
+                assertThat(orphans).as("every manifest list and manifest is reachable; only metadata files the"
+                        + " metadata log has let go are not").allMatch(orphan -> orphan.endsWith(".metadata.json"));
+                assertThat(scan.get("ORPHANS")).isEqualTo(orphans.size());
                 assertThat(perFile).as(line).isLessThan(1024);
             }
         }
     }
 
-    private Map<String, Long> scan(TableIdentifier id) throws Exception {
+    /** Runs a scan in its own JVM; returns its numbers and adds the orphans it found to {@code orphans}. */
+    private Map<String, Long> scan(TableIdentifier id, List<String> orphans) throws Exception {
         List<String> arguments = new ArrayList<>(ChildJvm.workerArguments(catalog, folder));
         arguments.addAll(List.of(TestCatalog.CATALOG, id.namespace().level(0), id.name()));
         Process process = ChildJvm.start(folder, List.of(HEAP), OrphanScanProcess.class, arguments);
@@ -90,6 +92,10 @@ class LargeOrphanScanTest {
                 StandardCharsets.UTF_8))) {
             String line;
             while ((line = out.readLine()) != null) {
+                if (line.startsWith("ORPHAN ")) {
+                    orphans.add(line.substring("ORPHAN ".length()));
+                    continue;
+                }
                 output.append(line).append('\n');
                 String[] words = line.split(" ");
                 if (words.length == 2 && List.of("HEAP", "ORPHANS", "MILLIS").contains(words[0])) {
