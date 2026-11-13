@@ -32,6 +32,8 @@ KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
 DUCKDB_VERSION=2.0.0
 DUCKDB_IMAGE=keel-demo-duckdb:$DUCKDB_VERSION
+TRINO_IMAGE=trinodb/trino:484
+CLOUDBEAVER_IMAGE=
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 
@@ -46,9 +48,11 @@ image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 apply() {
   sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
-    -e "s|\${DUCKDB_IMAGE}|$DUCKDB_IMAGE|g" \
+    -e "s|\${DUCKDB_IMAGE}|$DUCKDB_IMAGE|g" -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" \
+    -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
+    -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" \
     "$STACK/$1" | k apply -f - >/dev/null
 }
 
@@ -98,7 +102,7 @@ build() {
   unzip -q -j "$jar" 'lib/*' -d "$RUN/images/lake/lib"
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
 
-  say "building the images: the catalog, SingleStore with the connector, the lake writer, DuckDB"
+  say "building the images: the catalog, SingleStore with the connector, the lake writer, DuckDB, CloudBeaver"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
   SINGLESTORE_IMAGE="keel-demo-singlestore:$(cat "$jar" "$STACK/singlestore.Dockerfile" | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
@@ -106,10 +110,13 @@ build() {
   mkdir -p "$RUN/images/duckdb"
   docker build -q -f "$STACK/duckdb.Dockerfile" --build-arg "DUCKDB_VERSION=$DUCKDB_VERSION" -t "$DUCKDB_IMAGE" \
     "$RUN/images/duckdb" >/dev/null
+  mkdir -p "$RUN/images/cloudbeaver"
+  CLOUDBEAVER_IMAGE="keel-demo-cloudbeaver:$(sha256sum < "$STACK/cloudbeaver.Dockerfile" | cut -c1-12)"
+  docker build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
-      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)"; do
+      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE"; do
     docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
   done
 }
@@ -118,11 +125,11 @@ mint() {
   "$JAVA" "$REPO/demo/Mint.java" "$RUN"
 }
 
-# The issuer's public keys (served by Service idp), the lake writer's token, and ana's for DuckDB.
+# The issuer's public keys (served by Service idp), the lake writer's token, and ana's for DuckDB and Trino.
 publish_tokens() {
   k create configmap idp-keys --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-lake-token --from-literal=token="$(token_of lake)" --dry-run=client -o yaml | k apply -f - >/dev/null
-  k create secret generic demo-duckdb-token --from-literal=token="$(token_of ana)" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic demo-ana-token --from-literal=token="$(token_of ana)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
 tokens_expired() {
@@ -138,11 +145,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183 8184; do
+  for port in 8180 8181 8182 8183 8184 8185; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8184. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8185. Stop what holds them." >&2
     return 1
   fi
 }
@@ -293,6 +300,7 @@ Tag steward stella, platform operator oscar, SingleStore, the lake writer and th
   $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix}.jwt
 SingleStore:  demo/demo.sh sql   (or Studio on http://localhost:8183, user root, password $S2_ROOT_PASSWORD)
 DuckDB:       its UI on http://localhost:8184, signed in to the catalog as ana (catalogs lakehouse and engines)
+Trino:        CloudBeaver on http://localhost:8185, connection "keel (Trino, as ana)" (its admin: cbadmin / keel-test)
 Kafka:        kafbat on http://localhost:8182
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
@@ -345,19 +353,34 @@ up() {
   say "starting DuckDB and its UI ($DUCKDB_IMAGE), signed in as ana"
   apply duckdb.yaml
   k rollout status deployment/duckdb --timeout=3m >/dev/null
+
+  say "starting Trino ($TRINO_IMAGE), signed in as ana, and its UI CloudBeaver ($CLOUDBEAVER_IMAGE)"
+  apply trino.yaml
+  apply cloudbeaver.yaml
+  k rollout status deployment/trino --timeout=5m >/dev/null
+  k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
   print_access
 }
 
 # The engine matrix's tests against this stack: its engines run as Jobs here, into catalog engines, and the
-# stack stays as it is. Results are in catalog-tests-engines/build/engines-run.
+# stack stays as it is. Results are in catalog-tests-engines/build/engines-run. Trino and CloudBeaver stop
+# for the run: Spark's Job asks for 2 GiB, which an 8 GB Docker Desktop has only without them.
 engines() {
   if tokens_expired; then
     mint
     publish_tokens
   fi
+  say "stopping Trino and CloudBeaver for the run"
+  k scale deployment/trino deployment/cloudbeaver --replicas=0 >/dev/null
+  k wait --for=delete pod -l 'app in (trino, cloudbeaver)' --timeout=2m >/dev/null
   say "running the engine matrix against namespace $NS"
+  local status=0
   (cd "$REPO" && ./gradlew :catalog-tests-engines:test --rerun -Pnightly --tests EngineMatrixTest \
-    -Pengines.cluster="$CONTEXT" -Pengines.stack="$NS" -Pengines.token-file="$RUN/tokens/engine-matrix.jwt" -Ps3=silo)
+    -Pengines.cluster="$CONTEXT" -Pengines.stack="$NS" -Pengines.token-file="$RUN/tokens/engine-matrix.jwt" -Ps3=silo) \
+    || status=$?
+  say "starting Trino and CloudBeaver again"
+  k scale deployment/trino deployment/cloudbeaver --replicas=1 >/dev/null
+  return "$status"
 }
 
 case "${1:-}" in
@@ -371,9 +394,9 @@ case "${1:-}" in
     if tokens_expired; then
       mint
       publish_tokens
-      say "re-minted; replacing SingleStore's running pipelines and restarting DuckDB so they use the new tokens"
+      say "re-minted; replacing SingleStore's running pipelines and restarting DuckDB and Trino so they use the new tokens"
       feeds
-      k rollout restart deployment/duckdb >/dev/null
+      k rollout restart deployment/duckdb deployment/trino >/dev/null
     fi
     print_access
     ;;

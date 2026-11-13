@@ -1,10 +1,9 @@
-# Local demo: the catalog, its console, SingleStore both ways, DuckDB, and the engine matrix, on Kubernetes
+# Local demo: the catalog, its console, SingleStore both ways, DuckDB, Trino, and the engine matrix, on Kubernetes
 
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
-DuckDB with its UI. `up` writes sample Iceberg tables, syncs SingleStore and Iceberg in both directions and
-prints how to sign in;
-`engines` runs Spark, Kafka Connect, PyIceberg and
+DuckDB with its UI, and Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
+and Iceberg in both directions and prints how to sign in; `engines` runs Spark, Kafka Connect, PyIceberg and
 SingleStore's ingest against the same stack. Everything is local and uses test keys; nothing here is fit for
 production.
 
@@ -35,16 +34,21 @@ demo/demo.sh up
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
   - `duckdb.yaml`: DuckDB and its UI, image `keel-demo-duckdb:<DuckDB version>` (`duckdb.Dockerfile`).
+  - `trino.yaml`: Trino, image `trinodb/trino:484`.
+  - `cloudbeaver.yaml`: CloudBeaver Community with its connection to Trino, image
+    `keel-demo-cloudbeaver:<Dockerfile hash>`: `dbeaver/cloudbeaver:26.2.4` without its version check
+    (`cloudbeaver.Dockerfile`).
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
-  console), **8182** (kafbat), **8183** (SingleStore Studio) and **8184** (the DuckDB UI). `up` stops if
-  something else holds one of them, such as a `kubectl port-forward`.
-- Memory: about 5.3 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
-  kafbat 768 MB each; Kafka 640 MB; Keycloak and Silo 512 MB each; PostgreSQL 384 MB; DuckDB 256 MB, about
-  70 MB idle, up to 1 GB), plus one job at a time: the
-  lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so
-  nothing else of that size fits beside it.
+  console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (the DuckDB UI) and **8185**
+  (CloudBeaver). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
+- Memory: about 6.6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog,
+  kafbat and Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo
+  512 MB each; PostgreSQL and CloudBeaver 384 MB each, CloudBeaver using about 350 MB of up to 768 MB; DuckDB
+  256 MB, about 70 MB idle, up to 1 GB), plus one job at a time: the lake writer 768 MB, or an engine up to
+  2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so nothing else of that size fits beside it,
+  and `engines` stops Trino and CloudBeaver while it runs to make room for Spark.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
@@ -80,7 +84,7 @@ sign out at <http://localhost:8180/realms/keel/account>, or use a private window
 <http://localhost:8180/admin> (user `admin`, password `keel-test`); its users and sessions go with its pod.
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
-pipelines are then replaced and DuckDB is restarted, so they carry the new ones):
+pipelines are then replaced and DuckDB and Trino are restarted, so they carry the new ones):
 
 ```bash
 demo/demo.sh token
@@ -193,6 +197,41 @@ every table she may load, with the storage credentials the catalog vends, and no
   would attach the same way with your own token, but needs the vended storage address (`http://s3:9000`
   here) to resolve where it runs.
 
+## Trino and CloudBeaver
+
+CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, open without
+signing in. Its one connection, "keel (Trino, as ana)", is a Trino whose catalogs `lakehouse` and `engines`
+are keel's, signed in to the catalog as `ana` with a static token. So it reads what `ana` may load, with the
+storage credentials the catalog vends, and nothing else.
+
+- The navigator lists every namespace at every depth, as a schema named by its dotted path; quote it in SQL:
+
+  ```sql
+  SELECT * FROM lakehouse."markets.fx".rates;            -- format v3
+  SELECT * FROM lakehouse."markets.equities.eu.xetra".trades;
+  ```
+
+- `finance.ledger.accounts` is listed, but reading it fails with "Failed to load table 'accounts'". Trino
+  keeps the catalog's reason (D27) in the error's cause, which `trino --debug` prints:
+
+  ```bash
+  kubectl --context docker-desktop -n keel-demo exec deployment/trino -- trino --user ana --debug \
+    --execute 'SELECT * FROM lakehouse."finance.ledger".accounts'
+  ```
+
+- A write is refused: `CREATE TABLE` by the catalog (`ana holds no privilege that gives create`), and
+  `INSERT` by the store (`AccessDenied`, 403), as `ana`'s vended credentials are read-only.
+- Every Trino user is `ana` to the catalog: Trino sends its token, not its own user. The user name in the
+  CloudBeaver connection only labels the query in Trino.
+- The first query after Trino starts takes about 10 seconds; after that, about 2.
+- CloudBeaver's administrator is `cbadmin`, password `keel-test`: Settings, then Login; then Settings,
+  Administration. Scripts and settings last as long as its pod, and `engines` restarts it.
+- Its page loads only from localhost:8185. The image drops CloudBeaver's version check, which had the
+  Administration page fetch dbeaver.com; its Version Update tab now says "Version is up to date" without
+  checking. Two features would still reach outside, and the demo uses neither: the map view of a geometry
+  value fetches tiles from openstreetmap.org, and the AI assistant calls whichever AI service an
+  administrator configures; none is.
+
 ## The engines
 
 ```bash
@@ -201,7 +240,8 @@ demo/demo.sh engines
 
 runs the engine matrix (`catalog-tests-engines`, `EngineMatrixTest`) against this stack instead of one of its
 own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's ingest in the demo's SingleStore,
-all into catalog `engines` as `engine-matrix`. It takes about 4 minutes once the engine images exist; the first
+all into catalog `engines` as `engine-matrix`. Trino and CloudBeaver stop for the run and start again after
+it. It takes about 4 minutes once the engine images exist; the first
 run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
 shows, and SingleStore's copies in database `keel_m8`.
 Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.

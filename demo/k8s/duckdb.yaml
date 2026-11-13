@@ -35,7 +35,7 @@ spec:
           env:
             - name: KEEL_TOKEN
               valueFrom:
-                secretKeyRef: {name: demo-duckdb-token, key: token}
+                secretKeyRef: {name: demo-ana-token, key: token}
             - name: INIT_SQL
               value: |
                 .bail on
