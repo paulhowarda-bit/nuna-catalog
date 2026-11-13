@@ -1,0 +1,95 @@
+{{- $secret := include "keel-maintenance.secretName" . -}}
+{{- $compaction := include "keel-maintenance.compaction" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "keel-maintenance.fullname" . }}
+  labels:
+    {{- include "keel-maintenance.labels" . | nindent 4 }}
+spec:
+  # One worker: a second would only race the first for the same commits and claims, which the catalog settles.
+  # Recreate, so an upgrade never runs two.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "keel-maintenance.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "keel-maintenance.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "keel-maintenance.serviceAccountName" . }}
+      # The worker calls the Kubernetes API only to launch compaction Jobs. IRSA's token is a separate projected
+      # volume, unaffected.
+      automountServiceAccountToken: {{ ternary "true" "false" (eq $compaction "true") }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # A scan in progress is abandoned on stop; every job is idempotent and the next worker resumes it.
+      terminationGracePeriodSeconds: 70
+      containers:
+        - name: worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: file:/etc/keel/config/
+            - name: SPRING_CONFIG_IMPORT
+              value: optional:configtree:/etc/keel/secrets/
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ .Values.javaToolOptions | quote }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/keel/config
+              readOnly: true
+            {{- if $secret }}
+            - name: secrets
+              mountPath: /etc/keel/secrets
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "keel-maintenance.fullname" . }}
+        {{- if $secret }}
+        - name: secrets
+          secret:
+            secretName: {{ $secret }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,93 @@
+# keel-maintenance: the maintenance worker (D30). One release per catalog deployment, beside the keel-catalog
+# release; it reaches the catalog over HTTP like any client. See catalog-maintenance/README.md.
+
+image:
+  repository: keel-maintenance
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The worker's settings, as Spring Boot properties in YAML form: rendered into application.yaml in a ConfigMap.
+# Nothing secret goes here; secrets go in `secrets`. Every setting is documented on WorkerSettings in
+# catalog-maintenance and in its README.
+config:
+  keel:
+    maintenance:
+      # Required: the catalog as the worker reaches it.
+      # catalog-uri: http://keel-catalog:8181/
+      scan-interval: PT10M
+      orphan-interval: P1D
+      compaction-interval: P1D
+      # How the worker signs in: the client-credentials grant (endpoint, client-id, and client-secret in
+      # `secrets`), or a token file another process keeps fresh (file). Its principal id must be listed in the
+      # catalog's keel.security.maintenance-principals, and its group needs write on every catalog it maintains.
+      token:
+        # endpoint: https://idp.example.internal/oauth2/token
+        # client-id: keel-maintenance
+        audience: keel-catalog
+      # Its own storage identity, per store: the only identity the stores' delete policy lets delete (D21, D30).
+      # Each: prefixes (every table location the catalog lists must lie under one), endpoint (none for AWS S3),
+      # region, path-style-access, access-key-id (secret-access-key in `secrets`); no keys means the AWS SDK's
+      # default chain, e.g. IRSA through serviceAccount.annotations.
+      storage: {}
+      # Compaction as one Kubernetes Job per table (D30 (3)). Off unless an image is named: the repo's Spark
+      # image, catalog-tests-engines/images/spark. The chart then grants the worker's service account Jobs and
+      # Secrets in the release's namespace (or `namespace`, which must then grant the same itself).
+      compaction:
+        image: ""
+        image-pull-policy: IfNotPresent
+        # The catalog as the Job's pods reach it; by default catalog-uri.
+        # catalog-uri: http://keel-catalog:8181/
+        memory: 2Gi
+        driver-memory: 1g
+        deadline: PT2H
+
+# Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
+# the property's value, e.g. keel.maintenance.token.client-secret or
+# keel.maintenance.storage.<profile>.secret-access-key.
+secrets:
+  # A Secret you manage in the release's namespace. Takes precedence over `values`.
+  existingSecret: ""
+  # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
+  values: {}
+
+javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+
+env: []
+
+# The orphan scan holds every file a table reaches in memory (D30 (8)); size the limit for the largest table.
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    memory: 2Gi
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  # The worker's own storage identity on AWS, e.g. eks.amazonaws.com/role-arn: the role the delete policy names.
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

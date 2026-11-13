@@ -1,0 +1,33 @@
+{{- if include "keel-maintenance.compaction" . }}
+# Compaction (D30 (3)): the worker creates one Job per table and a Secret, owned by the Job, holding its sign-in
+# for the Job's Spark. It reads a Job to see whether one is running or ran within the compaction interval. Nothing
+# else: it never lists, deletes or reads pods.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "keel-maintenance.fullname" . }}-compaction
+  labels:
+    {{- include "keel-maintenance.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "keel-maintenance.fullname" . }}-compaction
+  labels:
+    {{- include "keel-maintenance.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "keel-maintenance.fullname" . }}-compaction
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "keel-maintenance.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
