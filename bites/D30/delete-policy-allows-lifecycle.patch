@@ -1,0 +1,16 @@
+Breaks: the delete policies leave lifecycle rules open, whose expiration deletes table files with no DeleteObject call.
+Module: catalog-objectstore
+Test: DeletePolicyTest#aws+ceph+minio
+diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+index ecfaabd..70a8f8f 100644
+--- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
++++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+@@ -25,7 +25,7 @@ public final class DeletePolicy {
+      * Also denied, on the bucket: a lifecycle rule, whose expiration deletes objects without anyone calling
+      * DeleteObject (removing one needs the same right), on every store.
+      */
+-    static final List<String> LIFECYCLE = List.of("s3:PutLifecycleConfiguration");
++    static final List<String> LIFECYCLE = List.of();
+     /**
+      * And where the store does not stop the bucket's own account changing the policy itself: putting another bucket
+      * policy or deleting this one, which would take the deny away. On AWS S3 the account's root user can still do
