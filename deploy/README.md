@@ -103,10 +103,24 @@ What the chart sets up:
     catalog's own included. MinIO enforces no bucket policy on signed requests (Silo was checked on
     2026-11-12), and its root user ignores every policy, so the catalog must not run as root.
 
+  A lifecycle rule deletes objects without anyone calling delete, and a policy can be changed, so each policy
+  also denies every principal but the worker setting lifecycle rules on the bucket, and on AWS S3 and MinIO
+  changing or deleting the bucket policy. Once it is applied, only the worker can change those (on AWS also
+  the account's root user, whom no bucket policy binds). On Ceph the policy denies lifecycle rules only, so:
+  - the catalog's role or user holds no bucket-configuration rights (the bucket policy, lifecycle rules) on
+    any store;
+  - on Ceph an operator's user, never the catalog's, owns the bucket: a bucket's owner can always replace its
+    policy.
+
   The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
   them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
-  `unprotected`. Only the Ceph form has a test (`DeletePolicyCephTest`, heavy, `-Ps3=ceph`), and it has not
-  run yet.
+  `unprotected`. Only the Ceph form has a test (`DeletePolicyCephTest`, heavy, `-Ps3=ceph`, in the heavy
+  pass's Ceph leg), and it has not run yet.
+- **Compaction Jobs [D30].** With `config.keel.maintenance.compaction.image` set, the maintenance worker
+  launches its compaction Jobs in `config.keel.maintenance.compaction.namespace`. Create that namespace
+  first, for the Jobs alone: never the catalog's nor the worker's, since a pod there may run as any service
+  account and mount any Secret of it. The chart puts its Role, RoleBinding and the Jobs' service account
+  there, and refuses to render without the namespace or with the release's own.
 - **TLS.** TLS from clients to the catalog is the Ingress's job. TLS from the catalog to the database goes
   in the JDBC URL.
 - **Resources.** The defaults (1 CPU, 2 GiB, heap at 75 % of that) are a starting point, not a measurement.

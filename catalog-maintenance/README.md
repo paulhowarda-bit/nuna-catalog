@@ -28,14 +28,21 @@ Every `scan-interval` (10 minutes by default) the worker reads the catalog's wor
     unreachable and older than `older-than`; the catalog requires that age to be longer than its PITR window.
   - **Compaction** (`compaction.enabled`, `target-file-size-bytes`), at most once per `compaction-interval` per
     table, and only when a compaction image is set. The worker creates the Kubernetes Job
-    `keel-compact-<table uuid>`, which runs the repo's Spark image (`catalog-tests-engines/images/spark`) with
-    `rewrite_data_files`, signed in as the worker. The files it replaces are left for expiry.
+    `keel-compact-<table uuid>` in the Jobs' own namespace, which runs the repo's Spark image
+    (`catalog-tests-engines/images/spark`) with `rewrite_data_files`, signed in as the worker. The Job is told the
+    table's id as well as its name, and stops (exit 3, a `TABLE CHANGED` line) unless the table it loads has that
+    id: the pod may start long after the scan, when another table may have taken the name. The files it replaces
+    are left for expiry.
 - **Purges**: dropped objects past the drop window. The worker claims each one (`PURGING`), deletes everything
   beneath its location in batches of 1,000, and reports it `PURGED`. An object another worker has claimed is
   skipped. A worker that dies part-way resumes from its own claim at the next scan: the claim belongs to the
   principal, not the process.
 - **Deletions**: pending deletions that are due, past the PITR window (7 days by default), of objects that no
   hold or freeze covers. The worker deletes them with its own storage identity and reports them done.
+
+Before any job on a table the worker loads it and checks that its id is still the one the work list named. A
+table dropped, renamed or unregistered since, whose name another table now has, is left alone and reported; the
+next scan sees the new table under its own policy.
 
 A job that fails is logged, counted in the scan's report, and tried again at the next scan; the other jobs go
 on. Every job can be run again safely. Recording a file that is already pending changes nothing: the catalog
@@ -67,8 +74,8 @@ per failed job.
 | `orphan-interval` | `P1D` | The least time between two orphan scans of one table (each lists the whole location). |
 | `compaction-interval` | `P1D` | The least time between two compaction Jobs for one table. A finished Job is kept this long. |
 | `page-size` | `100` | Work list items per page. |
-| `token.file` | | A file holding the worker's bearer token, read again whenever it changes. Set this or `token.endpoint`, not both. |
-| `token.endpoint`, `client-id`, `client-secret`, `scope`, `audience` | | The OAuth 2 client-credentials grant against the identity provider. The token is kept until a minute before it expires. |
+| `token.file` | | A file holding the worker's bearer token, read again whenever it changes. Set this or `token.endpoint`, not both. Not with compaction: a Job could outlive the token. |
+| `token.endpoint`, `client-id`, `client-secret`, `scope`, `audience` | | The OAuth 2 client-credentials grant against the identity provider. The token is kept until a minute before it expires. Compaction needs this grant and a `scope`: the Job signs in with the same grant itself, and Iceberg's client asks for scope `catalog` when none is given. |
 | `storage.<profile>.prefixes` | required | The locations this storage identity covers, e.g. `s3://lake/tables`. Every table location in the work list must lie under one profile's prefix. |
 | `storage.<profile>.endpoint` | none (AWS S3) | The S3 endpoint for MinIO or Ceph. |
 | `storage.<profile>.region` | `us-east-1` | The region. |
@@ -76,7 +83,8 @@ per failed job.
 | `storage.<profile>.access-key-id`, `secret-access-key` | none | The worker's keys. With neither, the AWS SDK's default chain is used (IRSA, Pod Identity). |
 | `compaction.image` | none | The Spark image. Compaction is off without one. |
 | `compaction.image-pull-policy` | `IfNotPresent` | Its pull policy. |
-| `compaction.namespace` | the worker's own | Where Jobs run. |
+| `compaction.namespace` | required with an image | Where Jobs run: a namespace for them alone, never the worker's (refused at startup) nor the catalog's. A pod may run as any service account and mount any Secret of its namespace. |
+| `compaction.job-service-account` | the namespace's `default` | The service account the Jobs' pods run as: one with no rights and no token mounted (the chart makes `keel-compaction`). |
 | `compaction.api-server` | `https://kubernetes.default.svc` | The Kubernetes API server. |
 | `compaction.service-account` | `/var/run/secrets/kubernetes.io/serviceaccount` | The folder holding the service account's token, CA and namespace. |
 | `compaction.catalog-uri` | `catalog-uri` | The catalog as the Job's pods reach it. |
@@ -95,6 +103,7 @@ keel:
       endpoint: https://idp.example.internal/oauth2/token
       client-id: keel-maintenance
       client-secret: ${KEEL_MAINTENANCE_CLIENT_SECRET}
+      scope: keel-catalog
       audience: keel-catalog
     storage:
       ceph:
@@ -121,11 +130,14 @@ keel:
   - On AWS, the role the delete policy names grants both rights in its own IAM policy. Give the chart's service
     account the role through `serviceAccount.annotations` (IRSA).
   - On MinIO, the worker's user needs a user policy that allows both.
-- **In Kubernetes, for compaction only.** In the Jobs' namespace the worker needs `get` and `create` on Jobs,
-  and `create` and `update` on Secrets. The chart's Role grants this when `compaction.image` is set. The
-  worker's catalog sign-in goes into a Secret that the Job owns, so Kubernetes deletes it with the Job. With
-  the client-credentials grant the Job gets the client id and secret, so its token never runs out. With
-  `token.file` it gets the token as it is at launch, so a Job must finish before that token expires.
+- **In Kubernetes, for compaction only.** The Jobs run in a namespace of their own, created beforehand: never
+  the worker's or the catalog's, since a pod there could run as their service accounts or mount their Secrets.
+  In it the worker needs `get` and `create` on Jobs and `create` on Secrets, nothing else. Its pods run as
+  `job-service-account`, which has no rights and no token mounted. The chart makes that account, the Role and
+  its RoleBinding there when `compaction.image` is set, and refuses to render without
+  `compaction.namespace` or with the release's own. The worker's catalog sign-in, the client id and secret
+  with the scope, goes into a Secret of a fresh name that the Job owns, created after the Job, so Kubernetes
+  deletes it with the Job; the Job renews its own token, so it never runs out.
 
 ## Image and chart
 
@@ -143,7 +155,8 @@ docker build -f deploy/image/maintenance.Dockerfile -t keel-maintenance:<version
 - the settings under `config`, rendered into a ConfigMap;
 - secrets under `secrets` (or `secrets.existingSecret`), read as a Spring Boot config tree, each key a
   property name such as `keel.maintenance.token.client-secret`;
-- with `config.keel.maintenance.compaction.image` set, the Role and RoleBinding for Jobs.
+- with `config.keel.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
+  Jobs' namespace (`config.keel.maintenance.compaction.namespace`, which must exist).
 
 See `values.yaml` for the rest.
 
@@ -161,23 +174,24 @@ the server's clock is moved with it.
 | `PurgeTest` | | A purge removes the prefix after its claim; another worker's claim is left alone; a claimed purge resumes. |
 | `PendingDeletionTest` | | Pending deletions wait for their time, then are deleted and reported done. |
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock: orphan scans and compactions at most once a day, deletions 7 days after they were recorded. |
-| `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest; the token sources. |
+| `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest, the Job before its Secret, the Jobs' own namespace; the token sources, and the settings compaction refuses. |
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan changes nothing; the next one catches up. |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |
-| `KubernetesCompactionTest` | `heavy` | Compaction as a Job in Docker Desktop's cluster, in a namespace of its own that it deletes. Needs `kubectl`, `helm` and the `docker-desktop` context. |
+| `KubernetesCompactionTest` | `heavy` | Compaction as a Job in Docker Desktop's cluster, the worker and its Jobs each in a namespace of their own that it deletes; a Job naming the table by an id it no longer has stops without compacting. Needs `kubectl`, `helm` and the `docker-desktop` context. |
 | `LargeExpiryTest` | `overnight` | One scan expires 9,999 of 10,000 snapshots. |
 | `LargeOrphanScanTest` | `overnight` | The orphan scan's heap per reachable file, at 250,000 to 1,000,000 files. |
+| `EngineMatrixTest#compaction` (in `catalog-tests-engines`) | `overnight` | The worker's own Job in the engine matrix's cluster: 32 small files compacted into 4, the same rows, the replaced files left in place, no pending deletion. |
 
 ## Limits
 
 - The intervals between orphan scans and between compactions are kept in memory. After a restart, every
-  table's orphan scan runs again at the first scan. A compaction does not run again while its finished Job is
-  still kept.
+  table's orphan scan runs again at the first scan, one table after another. A compaction does not run again
+  while its finished Job is still kept. Keeping these times in the catalog is open (D30).
 - The orphan scan holds every file a table reaches in memory. Size the worker for the largest table;
   `LargeOrphanScanTest` prints the cost per file and how many files a 2 GiB worker can scan.
 - A worker that crashes after an expiry commit and before recording its files leaves them unrecorded. The
   orphan scan finds them once they are older than `older-than`.
-- A file outside its table's location (for instance under a `write.data.path` elsewhere) is never queued.
-  The catalog refuses such a location, and the file is not the worker's to delete. The scan report counts it.
-- Compaction is not in the engine matrix: `KubernetesCompactionTest` covers it.
+- A file outside its table's location (for instance under a `write.data.path` elsewhere), or with an empty,
+  `.` or `..` segment after it, is never queued. The catalog refuses such a location, and the file is not the
+  worker's to delete. The scan report counts it.
