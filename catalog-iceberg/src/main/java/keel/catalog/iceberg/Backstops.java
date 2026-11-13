@@ -47,14 +47,15 @@ final class Backstops {
     /**
      * Every schema this commit adds evolves the table's current schema by the spec's rules. A new required
      * field needs an initial default only when main keeps its rows: a replace that starts main afresh
-     * has no rows to fill, and the reference allows it. Such a replace (CREATE OR REPLACE) of a table that
-     * had rows may also change a field's type or make it required (D11, amended 2026-11-12): main reads
-     * none of the old rows through the new schema, and the reference handler accepts it, keeping field IDs
-     * by name whatever the type. A change in place, which keeps main's rows, is still held to the rules.
+     * has no rows to fill, and the reference allows it. Such a replace (CREATE OR REPLACE) may also change a
+     * primitive field's type to one that is not a promotion of it (D11, amended 2026-11-12): main reads none
+     * of the old rows through the new schema, and the reference handler accepts it, keeping field IDs by name
+     * whatever the type. A replace is still refused a primitive turned nested, or the reverse, and an optional
+     * field made required, as before; a change in place, which keeps main's rows, is held to every rule.
      */
     private static Optional<String> schemas(TableMetadata before, TableMetadata after) {
         boolean keepsRows = keepsRows(before, after);
-        boolean replaced = before.currentSnapshot() != null && !keepsRows;
+        boolean replaced = replaced(before, after, keepsRows);
         Map<Integer, Types.NestedField> current = TypeUtil.indexById(before.schema().asStruct());
         for (Schema added : after.schemas()) {
             if (before.schemasById().containsKey(added.schemaId())) {
@@ -64,7 +65,7 @@ final class Backstops {
             for (Types.NestedField field : TypeUtil.indexById(added.asStruct()).values()) {
                 Types.NestedField old = current.get(field.fieldId());
                 Optional<String> problem = old != null
-                        ? (replaced ? Optional.empty() : evolved(old, field, after))
+                        ? evolved(old, field, after, replaced)
                         : added(field, parents.get(field.fieldId()), current, before.lastColumnId(), keepsRows);
                 if (problem.isPresent()) {
                     return problem;
@@ -74,14 +75,16 @@ final class Backstops {
         return Optional.empty();
     }
 
-    private static Optional<String> evolved(Types.NestedField old, Types.NestedField field, TableMetadata after) {
+    /** {@code replaced}: the commit is a replace, which may change a primitive type that is not a promotion. */
+    private static Optional<String> evolved(Types.NestedField old, Types.NestedField field, TableMetadata after,
+                                            boolean replaced) {
         Type from = old.type();
         Type to = field.type();
         if (from.isPrimitiveType() != to.isPrimitiveType() || (!from.isPrimitiveType() && from.typeId() != to.typeId())) {
             return Optional.of("Cannot change field " + field.fieldId() + " (" + field.name() + ") from " + from
                     + " to " + to);
         }
-        if (from.isPrimitiveType() && !promotable(from, to.asPrimitiveType(), field.fieldId(), after)) {
+        if (from.isPrimitiveType() && !replaced && !promotable(from, to.asPrimitiveType(), field.fieldId(), after)) {
             return Optional.of("Cannot change field " + field.fieldId() + " (" + field.name() + ") from " + from
                     + " to " + to + ": not a valid type promotion");
         }
@@ -107,6 +110,18 @@ final class Backstops {
                     + ") needs an initial-default");
         }
         return Optional.empty();
+    }
+
+    /**
+     * Whether the commit is a replace that starts main afresh: main afterwards reads none of the rows it read
+     * before, and is either a snapshot the table did not have or, where main had one, gone. Pointing main back
+     * at a snapshot the table already had is no replace, since that snapshot's rows would be read through the
+     * new schema. A table with no main snapshot before or after is not judged a replace, since a change in
+     * place looks the same; refs other than main are not looked at, as {@link #keepsRows} does not.
+     */
+    private static boolean replaced(TableMetadata before, TableMetadata after, boolean keepsRows) {
+        Snapshot main = after.currentSnapshot();
+        return !keepsRows && (main == null ? before.currentSnapshot() != null : before.snapshot(main.snapshotId()) == null);
     }
 
     /**
