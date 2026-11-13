@@ -218,8 +218,21 @@ class MutatingRoutesAuditTest {
         });
         cases.put("POST /v1/{prefix}/namespaces/{namespace}/register", id -> {
             String ns = api.namespace();
-            String file = copiedMetadataWithNewUuid(api.table(ns, "source"));
+            String file = copiedMetadataWithNewUuid(api.table(ns, "source"), "table-uuid");
             expect(api.rest("POST", "/namespaces/" + ns + "/register",
+                    "{\"name\":\"registered\",\"metadata-location\":\"" + file + "\"}", rid(id)), 200);
+            return EventType.COMMIT;
+        });
+        cases.put("POST /v1/{prefix}/namespaces/{namespace}/tables/{table}/unregister", id -> {
+            expect(api.rest("POST", "/namespaces/" + withTable() + "/tables/t/unregister", null, rid(id)), 200);
+            return EventType.UNREGISTER;
+        });
+        cases.put("POST /v1/{prefix}/namespaces/{namespace}/register-view", id -> {
+            String ns = api.namespace();
+            String source = JsonPath.read(expect(api.rest("POST", "/namespaces/" + ns + "/views",
+                    Api.VIEW.formatted("source", System.currentTimeMillis())), 200).body(), "$.metadata-location");
+            String file = copiedMetadataWithNewUuid(source, "view-uuid");
+            expect(api.rest("POST", "/namespaces/" + ns + "/register-view",
                     "{\"name\":\"registered\",\"metadata-location\":\"" + file + "\"}", rid(id)), 200);
             return EventType.COMMIT;
         });
@@ -251,8 +264,11 @@ class MutatingRoutesAuditTest {
 
         LEVELS.forEach((level, kind) -> {
             cases.put("PUT " + M + level + "/attributes/{attribute}", id -> {
-                expect(api.manage("PUT", target(kind) + "/attributes/classification",
+                String target = target(kind);
+                expect(api.manage("PUT", target + "/attributes/classification",
                         "{\"value\":\"confidential\",\"provenance\":\"collibra:asset/1\"}", rid(id, api.steward())), 200);
+                expect(api.manage("DELETE", target + "/attributes/classification", null, "Authorization",
+                        api.steward()), 204);
                 return EventType.GOVERNANCE_CHANGE;
             });
             cases.put("DELETE " + M + level + "/attributes/{attribute}", id -> {
@@ -421,8 +437,11 @@ class MutatingRoutesAuditTest {
                 + "\"destination\":{\"namespace\":[\"" + namespace + "\"],\"name\":\"" + to + "\"}}";
     }
 
-    /** A metadata file like the one at {@code location}, written as the first file of a table the catalog does not hold. */
-    private String copiedMetadataWithNewUuid(String location) {
+    /**
+     * A metadata file like the one at {@code location}, written as the first file of a table or view the catalog
+     * does not hold: a new UUID in {@code uuidField}, at the location the catalog assigns it.
+     */
+    private String copiedMetadataWithNewUuid(String location, String uuidField) {
         String key = location.substring(("s3://" + S3ForTests.bucket() + "/").length());
         UUID uuid = UUID.randomUUID();
         String root = "tables/" + uuid;
@@ -431,7 +450,7 @@ class MutatingRoutesAuditTest {
             JsonMapper json = JsonMapper.builder().build();
             ObjectNode metadata = (ObjectNode) json.readTree(s3.getObjectAsBytes(b -> b.bucket(S3ForTests.bucket())
                     .key(key)).asUtf8String());
-            metadata.put("table-uuid", uuid.toString());
+            metadata.put(uuidField, uuid.toString());
             metadata.put("location", "s3://" + S3ForTests.bucket() + "/" + root);
             s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(newKey), RequestBody.fromString(
                     json.writeValueAsString(metadata)));

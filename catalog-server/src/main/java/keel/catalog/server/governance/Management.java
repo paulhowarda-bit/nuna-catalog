@@ -152,9 +152,14 @@ class Management {
 
     /** The change that writes {@code data} to the outbox with the mutation, at {@code at}. */
     Change change(Instant at, EventData data) {
-        CatalogEvent event = CatalogEvent.create(settings.auditSource(), at, data);
-        return new Change(UUID.randomUUID(), at, List.of(new keel.catalog.store.OutboxEvent(data.type().typeName(),
-                new String(EventCodec.encode(event), StandardCharsets.UTF_8))), Optional.empty());
+        return change(at, List.of(data));
+    }
+
+    /** The change that writes each of {@code data}, in order, to the outbox with the mutation, at {@code at}. */
+    Change change(Instant at, List<EventData> data) {
+        return new Change(UUID.randomUUID(), at, data.stream().map(each -> new keel.catalog.store.OutboxEvent(
+                each.type().typeName(), new String(EventCodec.encode(CatalogEvent.create(settings.auditSource(), at,
+                        each)), StandardCharsets.UTF_8))).toList(), Optional.empty());
     }
 
     /**

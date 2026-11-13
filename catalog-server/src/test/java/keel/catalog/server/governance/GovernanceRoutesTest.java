@@ -5,8 +5,10 @@ import static keel.catalog.server.governance.Api.expectError;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import keel.catalog.audit.LabelChange;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,6 +72,54 @@ class GovernanceRoutesTest {
                 "NoSuchAttributeException");
         expectError(api.manage("GET", "/namespaces/" + ns + "/tables/nope/governance", null), 404,
                 "NoSuchTableException");
+    }
+
+    /**
+     * D27, amended 2026-11-12: a load sends the effective classification, owner and retention class as object
+     * labels, never provenance or flags; a label changed on any level above changes the table's ETag; and each
+     * change also goes out as a label change naming the level, the label and its new value.
+     */
+    @Test
+    void loadsCarryTheEffectiveLabelsAndALabelChangeChangesTheETag() {
+        String ns = api.namespace();
+        api.table(ns, "t");
+        api.view(ns, "v");
+        String table = "/namespaces/" + ns + "/tables/t";
+        String tableId = api.id(ns, "tables", "t");
+        HttpResponse<String> unlabelled = expect(api.rest("GET", table, null), 200);
+        assertThat(JsonPath.<Map<String, Object>>read(unlabelled.body(), "$")).doesNotContainKey("labels");
+        String etag = unlabelled.headers().firstValue("ETag").orElseThrow();
+        expect(api.rest("GET", table, null, "If-None-Match", etag), 304);
+
+        expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/classification",
+                "{\"value\":\"internal\",\"provenance\":\"collibra:domain/9\"}", "Authorization", api.steward()), 200);
+        expect(api.manage("PUT", table + "/attributes/owner", "{\"value\":\"desk-7\",\"provenance\":\"hr-feed\"}",
+                "Authorization", api.steward()), 200);
+
+        HttpResponse<String> labelled = expect(api.rest("GET", table, null, "If-None-Match", etag), 200);
+        assertThat(JsonPath.<Map<String, Object>>read(labelled.body(), "$.labels.object-labels"))
+                .isEqualTo(Map.of("classification", "internal", "owner", "desk-7"));
+        assertThat(labelled.body()).doesNotContain("collibra", "hr-feed");
+        String labelledTag = labelled.headers().firstValue("ETag").orElseThrow();
+        assertThat(labelledTag).isNotEqualTo(etag);
+        expect(api.rest("GET", table, null, "If-None-Match", labelledTag), 304);
+        assertThat(JsonPath.<Map<String, Object>>read(expect(api.rest("GET", "/namespaces/" + ns + "/views/v", null),
+                200).body(), "$.labels.object-labels")).isEqualTo(Map.of("classification", "internal"));
+
+        LabelChange owner = (LabelChange) api.awaitRecord(json -> json.contains("\"keel.catalog.label\"")
+                && json.contains("desk-7")).data();
+        assertThat(owner.target().id().toString()).isEqualTo(tableId);
+        assertThat(owner.label()).isEqualTo("owner");
+        assertThat(owner.value()).isEqualTo("desk-7");
+
+        expect(api.manage("DELETE", table + "/attributes/owner", null, "Authorization", api.steward()), 204);
+        HttpResponse<String> removed = expect(api.rest("GET", table, null, "If-None-Match", labelledTag), 200);
+        assertThat(JsonPath.<Map<String, Object>>read(removed.body(), "$.labels.object-labels"))
+                .isEqualTo(Map.of("classification", "internal"));
+        LabelChange gone = (LabelChange) api.awaitRecord(json -> json.contains("\"keel.catalog.label\"")
+                && json.contains(tableId) && !json.contains("desk-7")).data();
+        assertThat(gone.label()).isEqualTo("owner");
+        assertThat(gone.value()).isNull();
     }
 
     @Test

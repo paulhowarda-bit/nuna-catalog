@@ -191,6 +191,14 @@ class ObjectRoutes {
         });
     }
 
+    /**
+     * What a register asks before it brings a dropped table or view back: the caller must be allowed to undrop
+     * it, on the namespace it was dropped from (D13, D25).
+     */
+    CommitEngine.Undrop undrop(CatalogRecord catalog, RequestContext request) {
+        return dropped -> guard.onDropped(request, catalog, dropped, lookup.levelsOf(catalog, dropped.namespaceId()));
+    }
+
     /** A commit-engine reply as a response; {@code success} renders the metadata it carries. */
     static ResponseEntity<String> reply(CommitReply reply,
                                         java.util.function.Function<CommitReply.Success, ResponseEntity<String>> success) {

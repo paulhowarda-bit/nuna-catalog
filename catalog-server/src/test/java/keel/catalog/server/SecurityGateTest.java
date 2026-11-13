@@ -42,7 +42,7 @@ import org.springframework.test.context.ContextConfiguration;
 /**
  * The M5 gate on the wire: authentication failures, privilege inheritance, separation of duties, flagged tables
  * (D20), unclassified tables in regulated namespaces (D27), the identity-less-commit switch (D17, on here), trusted
- * engines naming end users, the grant APIs and the engine registry. Every 401 and 403 this suite provokes must
+ * engines naming end users, the grant APIs and the engine registry; and what unregister and register ask (D13). Every 401 and 403 this suite provokes must
  * leave exactly one audit event in the test sink behind the {@code AuditPublisher} seam; {@link #everyRefusalIsAudited}
  * checks that after each test.
  */
@@ -214,6 +214,41 @@ class SecurityGateTest {
                     .append("\"},").append(SET_PROPERTY.formatted("tia").substring(1));
         }
         return body.append("]}").toString();
+    }
+
+    /**
+     * D13, amended 2026-11-12: unregister needs modify, and a regulated or row/column-flagged table is refused
+     * until a steward removes the flag. Registering a dropped table's own file is an undrop, so it also needs
+     * create on the namespace the table was dropped from, wherever it is registered.
+     */
+    @Test
+    void unregisterNeedsModifyAndRegisteringADroppedTableNeedsTheUndropRight() throws Exception {
+        String sales = "/v1/gate/namespaces/sales/tables";
+        HttpResponse<String> created = send(DANA, "POST", sales, TABLE.formatted("passing"));
+        ok(created);
+        String file = JsonPath.read(created.body(), "$.metadata-location");
+        String id = JsonPath.read(created.body(), "$.metadata.table-uuid");
+
+        assertDenied(send(ANN, "POST", sales + "/passing/unregister", null), "unregisterTable", "no_privilege");
+        assertThat(audit.denials().getLast().privilege()).isEqualTo("modify");
+        assertDenied(send(DANA, "POST", "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii/unregister",
+                null), "unregisterTable", "flagged_table");
+        assertDenied(send(DANA, "POST", "/v1/gate/namespaces/finance/tables/budget/unregister", null),
+                "unregisterTable", "regulated");
+        assertThat(table("finance/budget").state()).isEqualTo(CatalogObject.State.ACTIVE);
+
+        noContent(send(DANA, "DELETE", sales + "/passing", null));
+        String rita = IssuerForTests.bearer("rita", "registrars");
+        noContent(grant(GINA, namespaceSpec("hr"), "registrars", "create"));
+        String again = "{\"name\":\"passing\",\"metadata-location\":\"" + file + "\"}";
+        assertDenied(send(rita, "POST", "/v1/gate/namespaces/hr/register", again), "undropObject", "no_privilege");
+        assertThat(audit.denials().getLast().securable().path()).containsExactly("sales");
+        assertThat(store.readObject(UUID.fromString(id)).orElseThrow().state()).isEqualTo(CatalogObject.State.DROPPED);
+
+        HttpResponse<String> back = send(DANA, "POST", "/v1/gate/namespaces/hr/register", again);
+        ok(back);
+        assertThat(JsonPath.<String>read(back.body(), "$.metadata.table-uuid")).isEqualTo(id);
+        ok(send(DANA, "POST", "/v1/gate/namespaces/hr/tables/passing/unregister", null));
     }
 
     @Test

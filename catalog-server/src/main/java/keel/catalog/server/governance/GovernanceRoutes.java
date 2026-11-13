@@ -5,9 +5,12 @@ import static keel.catalog.server.governance.Management.NAMESPACE;
 import static keel.catalog.server.governance.Management.TABLE;
 import static keel.catalog.server.governance.Management.VIEW;
 
+import keel.catalog.audit.EventData;
 import keel.catalog.audit.GovernanceChange;
 import keel.catalog.audit.HoldChange;
+import keel.catalog.audit.LabelChange;
 import keel.catalog.core.CatalogError;
+import keel.catalog.core.commit.GovernanceChain;
 import keel.catalog.security.Privilege;
 import keel.catalog.server.governance.Management.Request;
 import keel.catalog.server.governance.Management.Target;
@@ -328,8 +331,8 @@ class GovernanceRoutes {
         GovernanceAttribute record = new GovernanceAttribute(target.securable(), kind, value, provenance,
                 request.actor().principal(), now);
         WriteResult result = Management.write("Setting " + attribute, () -> store.putAttribute(record,
-                        management.change(now, new GovernanceChange(GovernanceChange.Action.SET, target.audit(),
-                                attribute, value, provenance, request.actor()))),
+                        management.change(now, events(new GovernanceChange(GovernanceChange.Action.SET, target.audit(),
+                                attribute, value, provenance, request.actor()), kind, value))),
                 () -> own(target, kind).filter(a -> a.value().equals(value) && a.setAt().equals(now)).isPresent());
         return switch (result) {
             case WriteResult.Applied applied -> json(200, attribute(record));
@@ -346,8 +349,8 @@ class GovernanceRoutes {
         }
         Instant now = now();
         WriteResult result = Management.write("Removing " + attribute, () -> store.removeAttribute(target.securable(),
-                        kind, management.change(now, new GovernanceChange(GovernanceChange.Action.REMOVED,
-                                target.audit(), attribute, null, null, request.actor()))),
+                        kind, management.change(now, events(new GovernanceChange(GovernanceChange.Action.REMOVED,
+                                target.audit(), attribute, null, null, request.actor()), kind, null))),
                 () -> own(target, kind).isEmpty());
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
@@ -355,6 +358,17 @@ class GovernanceRoutes {
             case WriteResult.Missing missing -> throw notSet(target, attribute);
             default -> throw new IllegalStateException("removeAttribute answered " + result);
         };
+    }
+
+    /**
+     * The audit record of an attribute change, and for an attribute load responses carry as a label (D27,
+     * amended 2026-11-12) a label change for the change stream too: the level, the label and its new value
+     * there (null when removed), without the provenance the audit record keeps.
+     */
+    private static List<EventData> events(GovernanceChange change, GovernanceAttribute.Kind kind, String value) {
+        String label = GovernanceChain.LABELS.get(kind);
+        return label == null ? List.of(change) : List.of(change, new LabelChange(change.target(), label, value,
+                change.actor()));
     }
 
     /** The target's own value of {@code kind}, read fresh. */

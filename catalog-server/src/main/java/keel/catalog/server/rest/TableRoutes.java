@@ -3,6 +3,7 @@ package keel.catalog.server.rest;
 import keel.catalog.core.CatalogError;
 import keel.catalog.core.commit.CommitEngine;
 import keel.catalog.core.commit.CommitReply;
+import keel.catalog.core.commit.GovernanceChain;
 import keel.catalog.core.commit.ObjectName;
 import keel.catalog.iceberg.Metadata;
 import keel.catalog.iceberg.MetadataViews;
@@ -15,12 +16,14 @@ import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogObject.Kind;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogStore;
+import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.Pointer;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.http.HttpHeaders;
@@ -50,6 +53,7 @@ class TableRoutes {
     static final String TABLE = TABLES + "/{table}";
     static final String RENAME = "/v1/{prefix}/tables/rename";
     static final String REGISTER = NamespaceRoutes.NAMESPACE + "/register";
+    static final String UNREGISTER = TABLE + "/unregister";
     static final String METRICS = TABLE + "/metrics";
     static final String CREDENTIALS = TABLE + "/credentials";
 
@@ -135,9 +139,10 @@ class TableRoutes {
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
+        Map<String, String> labels = GovernanceChain.of(store, object).labels();
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         if (cacheable && pointer.isPresent()) {
-            String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch());
+            String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch(), labels);
             if (ETags.matches(ifNoneMatch, etag)) {
                 reads.read(http, catalog, AuditEvents.path(levels, table), object, pointer.get());
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build();
@@ -147,10 +152,11 @@ class TableRoutes {
         String location = current.pointer().metadataLocation();
         reads.read(http, catalog, AuditEvents.path(levels, table), object, current.pointer());
         alerts.loaded(object.id(), location, views.tableStats(location, current.json()));
-        String response = views.loadTable(location, current.json(), refsOnly, vended.config(), vended.credentials());
+        String response = views.loadTable(location, current.json(), refsOnly, vended.config(), vended.credentials(),
+                labels);
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();
         if (cacheable) {
-            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch()));
+            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels));
         }
         return builder.contentType(MediaType.APPLICATION_JSON).body(response);
     }
@@ -205,7 +211,11 @@ class TableRoutes {
         return objects.rename(prefix, body, Kind.TABLE, Optional.ofNullable(key), RequestContext.of(http, callers));
     }
 
-    /** A table whose metadata file already exists (D34); the engine refuses a UUID the catalog already holds. */
+    /**
+     * A table whose metadata file already exists (D34). The engine refuses a UUID another table or view holds;
+     * the file of a dropped or unregistered table brings that table back, and a dropped one only for a caller
+     * who may undrop it (D13, amended 2026-11-12).
+     */
     @PostMapping(REGISTER)
     ResponseEntity<String> register(@PathVariable String prefix, @PathVariable String namespace,
                                     @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
@@ -223,8 +233,51 @@ class TableRoutes {
                 Optional.ofNullable(delegation));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
-                        request.caller(), Optional.ofNullable(key));
+                        request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
+    }
+
+    /**
+     * Unregisters a table (D13, amended 2026-11-12): the catalog stops tracking it and deletes nothing. The
+     * answer names its current metadata file and holds its content. It needs {@code modify}; a regulated
+     * table, or one flagged for row/column policy, is refused until a steward removes the flag (D20, D27),
+     * and a hold or a DR freeze refuses it in the store. A table already gone still reaches the engine, so a
+     * retry with the key replays the first answer.
+     */
+    @PostMapping(UNREGISTER)
+    ResponseEntity<String> unregister(@PathVariable String prefix, @PathVariable String namespace,
+                                      @PathVariable String table,
+                                      @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
+                                      HttpServletRequest http) {
+        CatalogRecord catalog = lookup.catalog(prefix);
+        List<String> levels = Lookup.levels(namespace);
+        NamespaceRecord record = lookup.namespace(catalog, levels)
+                .orElseThrow(() -> Http.noSuchTable(Http.qualified(levels, table)));
+        RequestContext request = RequestContext.of(http, callers);
+        Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        if (existing.isPresent()) {
+            CatalogObject object = existing.get();
+            List<String> path = AuditEvents.path(levels, table);
+            guard.onObject(request, catalog, object, path, Guard.UNREGISTER_TABLE);
+            GovernanceChain governance = GovernanceChain.of(store, object);
+            String qualified = Http.qualified(levels, table);
+            if (governance.regulated()) {
+                throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "regulated", "table "
+                        + qualified + " is in a regulated area and cannot be unregistered; a steward removes the"
+                        + " regulated flag first");
+            }
+            if (governance.attributes().stream().anyMatch(a -> a.target().equals(object.securable())
+                    && a.kind() == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && "true".equalsIgnoreCase(a.value()))) {
+                throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "flagged_table", "table "
+                        + qualified + " has a row/column policy and cannot be unregistered; a steward removes the"
+                        + " flag first");
+            }
+        }
+        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
+                .unregisterTable(ObjectRoutes.name(catalog, record, levels, table), request.caller(),
+                        Optional.ofNullable(key));
+        return ObjectRoutes.reply(reply, done -> Http.json(200,
+                RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
     }
 
     /** Forwarded to telemetry, never stored (D13). */
@@ -270,7 +323,8 @@ class TableRoutes {
             case Outcome.NewMetadata created -> {
                 // Its caller may create the table, and its create commit may carry data files written first.
                 Vended vended = vend(target, id, location, true);
-                yield Http.json(200, MetadataViews.stagedTable(created.json(), vended.config(), vended.credentials()));
+                yield Http.json(200, MetadataViews.stagedTable(created.json(), vended.config(), vended.credentials(),
+                        GovernanceChain.of(store, namespace).labels()));
             }
             case Outcome.BadRequest bad -> Http.error(400, bad.type(), bad.message());
             case Outcome.RequirementFailed failed -> Http.error(409, "CommitFailedException", failed.message());
@@ -286,7 +340,9 @@ class TableRoutes {
      */
     private ResponseEntity<String> loaded(Target target, CommitReply.Success done) {
         String location = done.metadataLocation();
-        Vended vended = store.readObject(done.objectId()).map(object -> {
+        Optional<CatalogObject> table = store.readObject(done.objectId());
+        Map<String, String> labels = table.map(object -> GovernanceChain.of(store, object).labels()).orElse(Map.of());
+        Vended vended = table.map(object -> {
             try {
                 return vend(target, object.id(), object.locationRoot(), guard.mayWrite(target.request(), object));
             } catch (CatalogError e) {
@@ -296,9 +352,10 @@ class TableRoutes {
                 return Vended.NONE;
             }
         }).orElse(Vended.NONE);
-        String response = views.loadTable(location, done.metadataJson(), false, vended.config(), vended.credentials());
+        String response = views.loadTable(location, done.metadataJson(), false, vended.config(), vended.credentials(),
+                labels);
         return ResponseEntity.ok()
-                .eTag(ETags.of(location, false, null, vended.epoch()))
+                .eTag(ETags.of(location, false, null, vended.epoch(), labels))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
     }

@@ -192,15 +192,24 @@ class RestRoutesTest {
                 .isEqualTo(200);
     }
 
+    /** D13, amended 2026-11-12: a dropped table's own file brings it back as itself; an active table's is taken. */
     @Test
-    void registerRefusesADroppedTablesFileAndLocationsOutsideTheProfile() throws Exception {
+    void registerBringsADroppedTableBackAndRefusesTakenUuidsAndLocationsOutsideTheProfile() throws Exception {
         String namespace = namespace();
         HttpResponse<String> created = send("POST", "/namespaces/" + ns(namespace) + "/tables", TABLE.formatted("t"));
         String file = JsonPath.read(created.body(), "$.metadata-location");
+        String id = JsonPath.read(created.body(), "$.metadata.table-uuid");
         send("DELETE", "/namespaces/" + ns(namespace) + "/tables/t", null);
         String register = "/namespaces/" + ns(namespace) + "/register";
 
-        assertError(send("POST", register, "{\"name\":\"again\",\"metadata-location\":\"" + file + "\"}"),
+        HttpResponse<String> back = send("POST", register,
+                "{\"name\":\"again\",\"metadata-location\":\"" + file + "\"}");
+        assertThat(back.statusCode()).as(back.body()).isEqualTo(200);
+        assertThat(JsonPath.<String>read(back.body(), "$.metadata.table-uuid")).isEqualTo(id);
+        assertThat(jdbc.queryForObject("SELECT state FROM catalog_object WHERE id = ?", String.class,
+                UUID.fromString(id))).isEqualTo("ACTIVE");
+        assertThat(send("HEAD", "/namespaces/" + ns(namespace) + "/tables/again", null).statusCode()).isEqualTo(204);
+        assertError(send("POST", register, "{\"name\":\"copy\",\"metadata-location\":\"" + file + "\"}"),
                 409, "AlreadyExistsException");
         assertError(send("POST", register, "{\"name\":\"x\",\"metadata-location\":\"s3://elsewhere/m.json\"}"),
                 400, "BadRequestException");
@@ -210,6 +219,80 @@ class RestRoutesTest {
         assertError(notFound, 404, "NotFoundException");
         assertThat(JsonPath.<String>read(notFound.body(), "$.error.message"))
                 .isEqualTo("Failed to open input stream for file: " + missing);
+    }
+
+    /**
+     * D13, amended 2026-11-12: an unregister answers the table's current metadata file and content and frees the
+     * name; the table is gone for commits; its key replays the answer; registering the file brings it back.
+     */
+    @Test
+    void unregisterAnswersTheMetadataAndRegisteringItBringsTheTableBack() throws Exception {
+        String namespace = namespace();
+        String table = "/namespaces/" + ns(namespace) + "/tables/t";
+        HttpResponse<String> created = send("POST", "/namespaces/" + ns(namespace) + "/tables", TABLE.formatted("t"));
+        String location = JsonPath.read(created.body(), "$.metadata.location");
+        HttpResponse<String> committed = send("POST", table, snapshot(location, 1, null, true));
+        String current = JsonPath.read(committed.body(), "$.metadata-location");
+        String id = JsonPath.read(created.body(), "$.metadata.table-uuid");
+        String key = UUID.randomUUID().toString();
+
+        HttpResponse<String> unregistered = send("POST", table + "/unregister", null, "Idempotency-Key", key);
+
+        assertThat(unregistered.statusCode()).as(unregistered.body()).isEqualTo(200);
+        assertThat(JsonPath.<String>read(unregistered.body(), "$.metadata-location")).isEqualTo(current);
+        assertThat(JsonPath.<String>read(unregistered.body(), "$.metadata.table-uuid")).isEqualTo(id);
+        assertThat(JsonPath.<List<Integer>>read(unregistered.body(), "$.metadata.snapshots[*].snapshot-id"))
+                .containsExactly(1);
+        assertThat(jdbc.queryForObject("SELECT state FROM catalog_object WHERE id = ?", String.class,
+                UUID.fromString(id))).isEqualTo("UNREGISTERED");
+        assertError(send("GET", table, null), 404, "NoSuchTableException");
+        assertError(send("POST", table, snapshot(location, 2, 1L, true)), 404, "NoSuchTableException");
+        HttpResponse<String> replayed = send("POST", table + "/unregister", null, "Idempotency-Key", key);
+        assertThat(replayed.statusCode()).isEqualTo(200);
+        assertThat(replayed.body()).isEqualTo(unregistered.body());
+        assertError(send("POST", table + "/unregister", null), 404, "NoSuchTableException");
+        assertError(send("POST", "/namespaces/" + ns(namespace) + "/tables/nope/unregister", null), 404,
+                "NoSuchTableException");
+
+        HttpResponse<String> back = send("POST", "/namespaces/" + ns(namespace) + "/register",
+                "{\"name\":\"t\",\"metadata-location\":\"" + current + "\"}");
+        assertThat(back.statusCode()).as(back.body()).isEqualTo(200);
+        assertThat(JsonPath.<String>read(back.body(), "$.metadata.table-uuid")).isEqualTo(id);
+        assertThat(send("POST", table, snapshot(location, 2, 1L, true)).statusCode()).isEqualTo(200);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE type = 'keel.catalog.unregister'",
+                Integer.class)).isGreaterThanOrEqualTo(1);
+    }
+
+    /**
+     * D13, amended 2026-11-12: register-view takes a view's existing metadata file; a dropped view's own file
+     * brings it back, an active view's UUID is taken, and a table's file is no view.
+     */
+    @Test
+    void registerViewTakesAViewsOwnFile() throws Exception {
+        String namespace = namespace();
+        String views = "/namespaces/" + ns(namespace) + "/views";
+        String register = "/namespaces/" + ns(namespace) + "/register-view";
+        HttpResponse<String> created = send("POST", views, VIEW.formatted("v", System.currentTimeMillis()));
+        String file = JsonPath.read(created.body(), "$.metadata-location");
+        String id = JsonPath.read(created.body(), "$.metadata.view-uuid");
+
+        assertError(send("POST", register, "{\"name\":\"w\",\"metadata-location\":\"" + file + "\"}"),
+                409, "AlreadyExistsException");
+        assertThat(send("DELETE", views + "/v", null).statusCode()).isEqualTo(204);
+        HttpResponse<String> back = send("POST", register, "{\"name\":\"w\",\"metadata-location\":\"" + file + "\"}");
+        assertThat(back.statusCode()).as(back.body()).isEqualTo(200);
+        assertThat(JsonPath.<String>read(back.body(), "$.metadata.view-uuid")).isEqualTo(id);
+        assertThat(send("GET", views + "/w", null).statusCode()).isEqualTo(200);
+        assertError(send("POST", register, "{\"name\":\"w\",\"metadata-location\":\"" + file + "\"}"),
+                409, "AlreadyExistsException");
+
+        HttpResponse<String> table = send("POST", "/namespaces/" + ns(namespace) + "/tables", TABLE.formatted("t"));
+        String tableFile = JsonPath.read(table.body(), "$.metadata-location");
+        assertError(send("POST", register, "{\"name\":\"x\",\"metadata-location\":\"" + tableFile + "\"}"),
+                400, "IllegalArgumentException");
+        assertError(send("POST", register, "{\"metadata-location\":\"" + file + "\"}"), 400, "BadRequestException");
+        assertError(send("POST", register, "{\"name\":\"x\",\"metadata-location\":\"s3://elsewhere/v.json\"}"),
+                400, "BadRequestException");
     }
 
     @Test
