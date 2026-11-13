@@ -3,7 +3,9 @@
 # ports.yaml publishes the UI on localhost:8184.
 #
 # The UI listens on [::1]:8184 only, which no Service can reach, so container relay forwards the pod's port
-# 8185 to it. The UI keeps its own port 8184, the one the browser uses. If the catalog is not answering yet,
+# 8185 to it. The UI keeps its own port 8184, the one the browser uses. The extensions are in the image, and
+# INIT_SQL turns off DuckDB's automatic and community installs, which download from extensions.duckdb.org; an
+# explicit INSTALL still downloads. The UI's page comes from ui.duckdb.org. If the catalog is not answering yet,
 # an ATTACH fails, DuckDB stops (.bail on) and Kubernetes starts it again. A new token (demo.sh token)
 # restarts the pod.
 apiVersion: apps/v1
@@ -37,6 +39,8 @@ spec:
             - name: INIT_SQL
               value: |
                 .bail on
+                SET autoinstall_known_extensions = false;
+                SET allow_community_extensions = false;
                 SET memory_limit = '512MB';
                 ATTACH 'lakehouse' AS lakehouse (TYPE iceberg, SECRET keel, URI 'http://keel-catalog:8181',
                   SUPPORT_NESTED_NAMESPACES true);
