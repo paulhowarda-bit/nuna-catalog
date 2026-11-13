@@ -1,0 +1,113 @@
+# Trino, one node, with catalogs lakehouse and engines from keel, signed in to the catalog as ana (static
+# token): every nested namespace listed, storage reached with the credentials the catalog vends. Only
+# demo.sh applies this; CloudBeaver (cloudbeaver.yaml) is its UI, and nothing publishes Trino itself.
+#
+# Every Trino user is ana to keel: Trino passes on no user of its own. A new token (demo.sh token) restarts
+# the pod. jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit beside
+# the rest of the demo on an 8 GB Docker Desktop; demo.sh engines stops Trino for the run, as Spark needs
+# the room.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+data:
+  jvm.config: |
+    -server
+    -agentpath:/usr/lib/trino/bin/libjvmkill.so
+    -Xmx768m
+    -XX:G1HeapRegionSize=32M
+    -XX:+ExplicitGCInvokesConcurrent
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:+ExitOnOutOfMemoryError
+    -XX:-OmitStackTraceInFastThrow
+    -XX:ReservedCodeCacheSize=256M
+    -XX:PerMethodRecompilationCutoff=10000
+    -XX:PerBytecodeRecompilationCutoff=10000
+    -Djdk.attach.allowAttachSelf=true
+    -Djdk.nio.maxCachedBufferSize=2000000
+  lakehouse.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://keel-catalog:8181
+    iceberg.rest-catalog.warehouse=lakehouse
+    iceberg.rest-catalog.security=OAUTH2
+    iceberg.rest-catalog.oauth2.token=${ENV:KEEL_TOKEN}
+    iceberg.rest-catalog.vended-credentials-enabled=true
+    iceberg.rest-catalog.nested-namespace-enabled=true
+    iceberg.rest-catalog.server-assigned-table-location-enabled=true
+    fs.native-s3.enabled=true
+    s3.endpoint=${S3_ENDPOINT}
+    s3.region=us-east-1
+    s3.path-style-access=true
+  engines.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://keel-catalog:8181
+    iceberg.rest-catalog.warehouse=engines
+    iceberg.rest-catalog.security=OAUTH2
+    iceberg.rest-catalog.oauth2.token=${ENV:KEEL_TOKEN}
+    iceberg.rest-catalog.vended-credentials-enabled=true
+    iceberg.rest-catalog.nested-namespace-enabled=true
+    iceberg.rest-catalog.server-assigned-table-location-enabled=true
+    fs.native-s3.enabled=true
+    s3.endpoint=${S3_ENDPOINT}
+    s3.region=us-east-1
+    s3.path-style-access=true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: trino}
+  template:
+    metadata:
+      labels: {app: trino}
+      # Trino reads its configuration only as it starts, so a changed file replaces the pod.
+      annotations: {keel-demo/manifest: "${MANIFEST_HASH}"}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: trino
+          image: ${TRINO_IMAGE}
+          imagePullPolicy: Never
+          env:
+            - name: KEEL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: demo-ana-token, key: token}
+          volumeMounts:
+            - {name: config, mountPath: /etc/trino/jvm.config, subPath: jvm.config}
+            - {name: catalogs, mountPath: /etc/trino/catalog}
+          startupProbe:
+            exec:
+              command: ["/usr/lib/trino/bin/health-check"]
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["/usr/lib/trino/bin/health-check"]
+            periodSeconds: 10
+          resources:
+            requests: {memory: 768Mi}
+            limits: {memory: 1280Mi}
+      volumes:
+        - name: config
+          configMap: {name: trino-config}
+        - name: catalogs
+          configMap:
+            name: trino-config
+            items:
+              - {key: lakehouse.properties, path: lakehouse.properties}
+              - {key: engines.properties, path: engines.properties}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trino
+spec:
+  selector: {app: trino}
+  ports:
+    - port: 8080
+      targetPort: 8080
