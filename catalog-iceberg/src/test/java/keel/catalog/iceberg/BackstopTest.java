@@ -99,6 +99,29 @@ class BackstopTest {
         }
 
         @Test
+        void aReplaceThatStartsMainAfreshMayChangeAFieldsTypeOrMakeItRequired() {
+            String request = request("{\"action\": \"remove-snapshot-ref\", \"ref-name\": \"main\"},"
+                    + " {\"action\": \"add-schema\", \"schema\": {\"type\": \"struct\", \"schema-id\": 1,"
+                    + " \"fields\": [{\"id\": 1, \"name\": \"id\", \"required\": true, \"type\": \"string\"},"
+                    + " {\"id\": 2, \"name\": \"data\", \"required\": true, \"type\": \"int\"}, " + TS + "]}},"
+                    + " {\"action\": \"set-current-schema\", \"schema-id\": -1}");
+
+            assertReferenceAccepts(request);
+            assertThat(ours(request)).as("D11, amended 2026-11-12: main reads none of the old rows")
+                    .isInstanceOf(NewMetadata.class);
+        }
+
+        @Test
+        void theSameRetypeInPlaceIsRefused() {
+            String request = schema("{\"id\": 1, \"name\": \"id\", \"required\": true, \"type\": \"string\"}",
+                    DATA, TS);
+
+            assertReferenceAccepts(request);
+            assertThat(ours(request)).isEqualTo(new BadRequest(
+                    "Cannot change field 1 (id) from long to string: not a valid type promotion"));
+        }
+
+        @Test
         void aNewRequiredFieldWithAnInitialDefaultIsAccepted() {
             String request = schema(ID, DATA, TS, """
                     {"id": 4, "name": "r", "required": true, "type": "int", "initial-default": 1, "write-default": 1}""");
