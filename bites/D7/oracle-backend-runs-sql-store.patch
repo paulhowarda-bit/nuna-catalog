@@ -1,0 +1,16 @@
+Breaks: keel.database.backend=oracle builds the PostgreSQL-wire store.
+Module: catalog-server
+Test: OracleBackendTest
+diff --git a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+index f5078c4..b3627ba 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
++++ b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+@@ -26,7 +26,7 @@ class StoreWiring {
+                               ObjectProvider<MongoClient> mongoClient) {
+         CatalogStore store = switch (settings.backend()) {
+             case POSTGRESQL -> new SqlCatalogStore(dataSource.getObject());
+-            case ORACLE -> new OracleCatalogStore(dataSource.getObject());
++            case ORACLE -> new SqlCatalogStore(dataSource.getObject());
+             case MONGODB -> new MongoCatalogStore(mongoClient.getObject(),
+                     settings.mongodb().connectionString().getDatabase());
+         };

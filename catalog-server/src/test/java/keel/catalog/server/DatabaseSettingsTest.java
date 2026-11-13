@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.env.SystemEnvironmentPropertySource;
 
 /** The backend switch: what {@code keel.database.*} accepts, and a MongoDB deployment without a DataSource. */
 class DatabaseSettingsTest {
@@ -43,6 +44,13 @@ class DatabaseSettingsTest {
         assertThat(excludedAfterPostProcessing(Map.of("keel.database.backend", "MongoDB",
                 MongodbHasNoDataSource.EXCLUDE, "a.First,b.Second")))
                 .isEqualTo("a.First,b.Second," + MongodbHasNoDataSource.DATA_SOURCE);
+
+        // As a container sets it: an environment variable.
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new SystemEnvironmentPropertySource(
+                StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME, Map.of("KEEL_DATABASE_BACKEND", "mongodb")));
+        new MongodbHasNoDataSource().postProcessEnvironment(environment, null);
+        assertThat(environment.getProperty(MongodbHasNoDataSource.EXCLUDE)).isEqualTo(MongodbHasNoDataSource.DATA_SOURCE);
     }
 
     private static DatabaseSettings bind(Map<String, String> properties) {

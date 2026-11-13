@@ -1,0 +1,16 @@
+Breaks: the refusal quotes the MongoDB URI, password and all.
+Module: catalog-server
+Test: DatabaseSettingsTest#mongodbNeedsAUriThatNamesTheDatabaseAndBoundsEveryWait
+diff --git a/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java b/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
+index 0412b26..6d36387 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
++++ b/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
+@@ -51,7 +51,7 @@ public record DatabaseSettings(@DefaultValue("postgresql") Backend backend, Mong
+             }
+             if (parsed.getSocketTimeout() == null || parsed.getSocketTimeout() <= 0) {
+                 throw new IllegalArgumentException("keel.database.mongodb.uri must set socketTimeoutMS, which"
+-                        + " bounds every wait on the database");
++                        + " bounds every wait on the database: " + uri);
+             }
+         }
+ 

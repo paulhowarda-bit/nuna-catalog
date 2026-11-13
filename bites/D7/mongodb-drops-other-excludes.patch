@@ -1,0 +1,16 @@
+Breaks: leaving out the DataSource also drops whatever spring.autoconfigure.exclude already listed.
+Module: catalog-server
+Test: DatabaseSettingsTest#onlyAMongodbDeploymentLeavesOutTheDataSource
+diff --git a/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java b/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java
+index fa3dbcd..03b121c 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java
++++ b/catalog-server/src/main/java/keel/catalog/server/MongodbHasNoDataSource.java
+@@ -28,7 +28,7 @@ public final class MongodbHasNoDataSource implements EnvironmentPostProcessor {
+         if (!mongodb) {
+             return;
+         }
+-        List<String> excluded = new ArrayList<>(binder.bind(EXCLUDE, Bindable.listOf(String.class)).orElse(List.of()));
++        List<String> excluded = new ArrayList<String>();
+         excluded.add(DATA_SOURCE);
+         environment.getPropertySources().addFirst(new MapPropertySource("keel-mongodb-has-no-datasource",
+                 Map.of(EXCLUDE, String.join(",", excluded))));

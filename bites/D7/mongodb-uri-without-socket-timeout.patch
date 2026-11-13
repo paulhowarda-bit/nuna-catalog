@@ -1,0 +1,16 @@
+Breaks: a MongoDB URI without socketTimeoutMS is accepted, so a wait can last forever.
+Module: catalog-server
+Test: DatabaseSettingsTest#mongodbNeedsAUriThatNamesTheDatabaseAndBoundsEveryWait
+diff --git a/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java b/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
+index 0412b26..5173584 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
++++ b/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
+@@ -49,7 +49,7 @@ public record DatabaseSettings(@DefaultValue("postgresql") Backend backend, Mong
+                 throw new IllegalArgumentException("keel.database.mongodb.uri must name the catalog's database,"
+                         + " as in mongodb://h1,h2,h3/catalog?replicaSet=rs0&socketTimeoutMS=30000");
+             }
+-            if (parsed.getSocketTimeout() == null || parsed.getSocketTimeout() <= 0) {
++            if (false) {
+                 throw new IllegalArgumentException("keel.database.mongodb.uri must set socketTimeoutMS, which"
+                         + " bounds every wait on the database");
+             }

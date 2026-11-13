@@ -32,9 +32,10 @@ Settings come in two parts.
 
 **`config`** holds Spring Boot properties in YAML form. The chart renders them into `application.yaml` in a
 ConfigMap. Every `keel.*` setting is documented on its settings class in `catalog-server`:
-`StorageSettings`, `SecuritySettings`, `AuditSettings`, `GovernanceSettings`, `RestSettings` and
-`UiSettings`. `deploy/local/values.yaml` is a complete example. The chart refuses to render without
-`config.spring.datasource.url` and at least one entry in `config.keel.security.issuers`.
+`DatabaseSettings`, `StorageSettings`, `SecuritySettings`, `AuditSettings`, `GovernanceSettings`,
+`RestSettings` and `UiSettings`. `deploy/local/values.yaml` is a complete example. The chart refuses to
+render without at least one entry in `config.keel.security.issuers`, and without
+`config.spring.datasource.url` unless the database is MongoDB.
 
 **`secrets`** names a Secret that Spring Boot reads as a config tree. Each key of the Secret is a property
 name and its value is that property's value:
@@ -76,11 +77,50 @@ What the chart sets up:
 - **OpenShift.** Its restricted policy assigns its own uid. There, set `podSecurityContext` to only
   `runAsNonRoot` and `seccompProfile`. Not tried.
 
+### The database
+
+One database per deployment [D7]. `config.keel.database.backend` names it, and the first server of a release
+migrates its schema. What each one asks of the catalog's database role is on the store's class
+(`SqlCatalogStore`, `OracleCatalogStore`, `MongoCatalogStore`).
+
+- `postgresql`, the default: PostgreSQL or CockroachDB. `config.spring.datasource.url` is
+  `jdbc:postgresql://<host>:<port>/<database>`; the password goes in the Secret as `spring.datasource.password`.
+- `oracle`: single instance, RAC or Exadata. The URL names the catalog's own service,
+  `jdbc:oracle:thin:@//<host>:<port>/<service>`, which needs `COMMIT_OUTCOME = TRUE` (Transaction Guard) and
+  no `FAILOVER_TYPE`, so the driver never replays a transaction. Set the driver's read timeout, which bounds
+  every wait on the database, in `config` (YAML keeps the key's case; an environment variable would not):
+
+  ```yaml
+  config:
+    spring:
+      datasource:
+        url: jdbc:oracle:thin:@//<host>:1521/<service>
+        username: <user>
+        hikari:
+          data-source-properties:
+            oracle.jdbc.ReadTimeout: 60000      # milliseconds
+    keel:
+      database:
+        backend: oracle
+  ```
+
+  The role needs EXECUTE on `DBMS_APP_CONT`, SELECT on `V_$DATABASE`, `V_$SERVICES` and `V_$PARAMETER`, and
+  CREATE JOB. Sessions must sort with `NLS_SORT = BINARY`, which follows the JVM's locale; the image's
+  English locale gives it.
+- `mongodb`: a replica set. Leave `spring.datasource` empty: the server then has no JDBC database. The
+  connection string carries the password, so it goes in the Secret, as `keel.database.mongodb.uri`. It must
+  name the database and set `socketTimeoutMS`, which bounds every wait; the server refuses to start without
+  them: `mongodb://<user>:<password>@<h1>,<h2>,<h3>/<database>?replicaSet=<set>&socketTimeoutMS=60000`.
+  The role needs `clusterMonitor` besides `readWrite` on the database.
+
+`OracleBackendTest` and `MongodbBackendTest` (catalog-server, `heavy`) run the server this way on Oracle Free
+and a one-member replica set.
+
 ### Before production
 
-- **Database.** The server wires only the PostgreSQL-wire store today (`StoreWiring`), so it runs on
-  PostgreSQL or CockroachDB. The Oracle and MongoDB stores pass the shared suite, but no server
-  configuration selects them yet.
+- **Database safety settings.** Each store can check its database's safety settings (`selfCheck`: a
+  synchronous standby, Transaction Guard, a majority write concern, and so on), but the server does not run
+  that check yet. Until it does, check them against the store's class comment by hand.
 - **ETags and routing.** M8 found that ETags do not survive a change of server: each server mints its own
   vended credentials, and the ETag includes a hash of them. With the default `service.sessionAffinity: None`,
   a conditional load answered by another server is a 200, not a 304. `ClientIP` affinity keeps a client on
