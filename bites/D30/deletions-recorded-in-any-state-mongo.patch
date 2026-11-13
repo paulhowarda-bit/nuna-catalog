@@ -1,0 +1,17 @@
+Breaks: files are recorded for deletion whatever the object's state, an unregistered table's included.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#unregisterIsFinal
+diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java
+index d2ea203..6965443 100644
+--- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java
++++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoDeletions.java
+@@ -53,8 +53,7 @@ final class MongoDeletions {
+ 
+     WriteResult record(UUID objectId, List<String> locations, Instant notBefore, Change change) {
+         return transactions.change(change, "deletions record", tx -> {
+-            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId))
+-                    .append("state", new BsonDocument("$in", LIVE)));
++            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)));
+             if (object.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }

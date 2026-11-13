@@ -1,0 +1,20 @@
+Breaks: the due pending deletions (and the purge scan) ignore a DR freeze, so a frozen table's files are deleted.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$CatalogObjects#pendingDeletionsWaitOutHoldsAndFreezes
+diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+index d6fd8fa..cf37c97 100644
+--- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+@@ -44,10 +44,10 @@ final class OracleObjects {
+     static final String UNCOVERED = "NOT EXISTS (SELECT 1 FROM legal_hold h WHERE h.target_id IN (o.id, o.catalog_id))"
+             + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN legal_hold h ON h.target_id = p.namespace_id"
+             + " WHERE p.object_id = o.id)"
+-            + " AND NOT EXISTS (SELECT 1 FROM governance_attribute a WHERE a.kind = 'DR_FREEZE'"
++            + " AND NOT EXISTS (SELECT 1 FROM governance_attribute a WHERE a.kind = 'NONE'"
+             + " AND a.target_id IN (o.id, o.catalog_id))"
+             + " AND NOT EXISTS (SELECT 1 FROM object_path p JOIN governance_attribute a ON a.target_id = p.namespace_id"
+-            + " WHERE p.object_id = o.id AND a.kind = 'DR_FREEZE')";
++            + " WHERE p.object_id = o.id AND a.kind = 'NONE')";
+     private static final String ACTIVE_NAME_INDEX = "CATALOG_OBJECT_ACTIVE_NAME";
+     /** The active-name lookup, written with the unique index's own expressions so it can use the index. */
+     private static final String ACTIVE_NAME = "CASE WHEN state = 'ACTIVE' THEN namespace_id END = ?"

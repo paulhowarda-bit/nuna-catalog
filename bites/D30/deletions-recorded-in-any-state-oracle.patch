@@ -1,0 +1,16 @@
+Breaks: files are recorded for deletion whatever the object's state, an unregistered table's included.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$CatalogObjects#unregisterIsFinal
+diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java
+index 7260aae..327c6dc 100644
+--- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java
++++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java
+@@ -38,7 +38,7 @@ final class OracleDeletions {
+     WriteResult record(UUID objectId, List<String> locations, Instant notBefore, Change change) {
+         return transactions.change(change, "deletions record", connection -> {
+             Optional<UUID> catalogId = first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?"
+-                    + " AND state IN ('ACTIVE', 'DROPPED') FOR UPDATE", row -> Jdbc.uuid(row, "catalog_id"), objectId);
++                    + " FOR UPDATE", row -> Jdbc.uuid(row, "catalog_id"), objectId);
+             if (catalogId.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }

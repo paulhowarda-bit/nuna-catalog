@@ -842,6 +842,21 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
+    @DisplayName("Maintenance: deletions recorded while a table was active never come due once it is unregistered, since its files are no longer the catalog's to delete")
+    void anUnregisteredTablesPendingDeletionsNeverComeDue() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Instant due = Instant.parse("2001-01-01T00:00:00Z").plus(Duration.ofMinutes(UUID.randomUUID().hashCode() & 0xffff));
+        assertApplied(store.recordDeletions(table.id(), List.of(table.locationRoot() + "/data/a.parquet"), due, change()));
+        assertThat(ours(dueDeletions(due), namespace)).as("due while the table is active").hasSize(1);
+
+        assertApplied(store.unregisterObject(table.id(), store.readPointer(table.mainKey()).orElseThrow(), change()));
+
+        assertThat(ours(dueDeletions(due), namespace)).isEmpty();
+        assertThat(ours(dueDeletions(due.plus(Duration.ofDays(3650))), namespace)).isEmpty();
+    }
+
+    @Test
     @DisplayName("Maintenance: the active-object scan pages through every active object of a kind once, and nothing dropped")
     void activeObjectScanPagesByKind() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
