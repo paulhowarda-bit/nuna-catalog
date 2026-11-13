@@ -36,7 +36,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *       it or its catalog is flagged regulated), is refused everything but {@code describe} and
  *       {@code manage-tags}, so a tag steward can still classify it;</li>
  *   <li>D20: a table flagged with a row/column policy gives storage access (load, credentials, commit)
- *       only to trusted engines, which enforce the policy;</li>
+ *       only to trusted engines, which enforce the policy, and to a maintenance principal acting as itself,
+ *       never for an end user: the maintenance exemption (D30, amended 2026-11-12), which the caller of
+ *       {@link #decide} must audit before it gives the access ({@link Decision.Exempted});</li>
  *   <li>D17: with the switch on, a trusted engine acting as itself, with no end user, may not write to
  *       anything in a regulated area.</li>
  * </ol>
@@ -107,6 +109,17 @@ public final class Authorizer {
             }
         }
 
+        /**
+         * Allowed only by the maintenance exemption (D20, D30): a maintenance principal acting as itself gets
+         * storage access to a table with a row/column policy. The access must be audited before it is given.
+         */
+        record Exempted(String message) implements Decision {
+            @Override
+            public boolean allowed() {
+                return true;
+            }
+        }
+
         /** @param privilege the privilege that was missing; null when the refusal is not about one */
         record Denied(Reason reason, Privilege privilege, String message) implements Decision {
             @Override
@@ -124,19 +137,30 @@ public final class Authorizer {
     private final NamespaceStore namespaces;
     private final Separation separation;
     private final boolean refuseIdentityLessWrites;
+    private final Set<String> maintenancePrincipals;
     private final Map<UUID, UUID> parents = new ConcurrentHashMap<>();
 
     /**
      * @param refuseIdentityLessWrites D17's switch (CMP-7): refuse writes to regulated areas by a trusted
      *                                 engine that names no end user; off by default in configuration
+     * @param maintenancePrincipals    the maintenance tier (D25, D30), by principal id
      */
     public Authorizer(GrantStore grants, GovernanceStore governance, NamespaceStore namespaces, Separation separation,
-                      boolean refuseIdentityLessWrites) {
+                      boolean refuseIdentityLessWrites, Set<String> maintenancePrincipals) {
         this.grants = grants;
         this.governance = governance;
         this.namespaces = namespaces;
         this.separation = separation;
         this.refuseIdentityLessWrites = refuseIdentityLessWrites;
+        this.maintenancePrincipals = Set.copyOf(maintenancePrincipals);
+    }
+
+    /**
+     * Whether the caller is a maintenance principal acting as itself (D25, D30). One acting for an end user is
+     * not: the maintenance exemption is never an end user's.
+     */
+    public boolean maintenance(Caller caller) {
+        return caller.endUser().isEmpty() && maintenancePrincipals.contains(caller.principal().id());
     }
 
     public Decision decide(Caller caller, Target target, Operation operation) {
@@ -209,6 +233,11 @@ public final class Authorizer {
         if (operation.storageAccess() && !caller.trustedEngine() && attributes.stream().anyMatch(a ->
                 a.target().equals(self) && a.kind() == GovernanceAttribute.Kind.ROW_COLUMN_POLICY
                         && "true".equalsIgnoreCase(a.value()))) {
+            if (maintenance(caller)) {
+                return new Decision.Exempted("table " + object.name().display() + " has a row/column policy;"
+                        + " maintenance principal " + caller.principal().id() + " gets storage access for "
+                        + operation.name() + " by the maintenance exemption");
+            }
             return new Decision.Denied(Reason.FLAGGED_TABLE, null, "table " + object.name().display()
                     + " has a row/column policy; only a trusted engine that enforces it gets storage access");
         }

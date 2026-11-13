@@ -36,7 +36,8 @@ class AuthorizerTest {
     private final Authorizer authorizer = authorizer(false);
 
     private Authorizer authorizer(boolean refuseIdentityLessWrites) {
-        return new Authorizer(estate.store, estate.store, estate.store, separation, refuseIdentityLessWrites);
+        return new Authorizer(estate.store, estate.store, estate.store, separation, refuseIdentityLessWrites,
+                Set.of("svc-maintenance"));
     }
 
     @Test
@@ -205,6 +206,34 @@ class AuthorizerTest {
         Caller trino = new Caller(new Principal("svc-trino", Set.of("trino-service")), "trino", true, Optional.of(bob));
         assertAllowed(trino, table, LOAD, APPEND);
         // An unregistered client asserting bob never gets this far: the authenticator refuses it with 403.
+    }
+
+    @Test
+    void aMaintenancePrincipalActingAsItselfIsExemptedOnAFlaggedTableAndNeverForAnEndUser() {
+        CatalogObject table = estate.table(estate.namespace("Maintained"), "customers");
+        estate.flagRowColumnPolicy(table);
+        estate.grantOnCatalog("maintainers", Privilege.WRITE);
+        Principal worker = new Principal("svc-maintenance", Set.of("maintainers"));
+        Principal bob = new Principal("bob", Set.of("maintainers"));
+        Caller asItself = new Caller(worker, "keel-maintenance", false, Optional.empty());
+        Caller forBob = new Caller(worker, "keel-maintenance", false, Optional.of(bob));
+        Caller engineForBob = new Caller(worker, "keel-maintenance", true, Optional.of(bob));
+
+        assertThat(authorizer.maintenance(asItself)).isTrue();
+        for (Operation operation : List.of(LOAD, APPEND)) {
+            assertThat(authorizer.decide(asItself, Target.of(table), operation)).as(operation.name())
+                    .isInstanceOf(Decision.Exempted.class);
+        }
+        assertThat(authorizer.decide(asItself, Target.of(table), LIST)).as("not storage access")
+                .isInstanceOf(Decision.Allowed.class);
+        assertThat(authorizer.decide(asItself, Target.of(table), ALTER)).as("the exemption gives no privilege")
+                .isInstanceOfSatisfying(Decision.Denied.class, d -> assertThat(d.reason()).isEqualTo(Reason.NO_PRIVILEGE));
+        assertThat(authorizer.maintenance(forBob)).as("acting for an end user").isFalse();
+        assertThat(authorizer.maintenance(engineForBob)).as("acting for an end user through an engine").isFalse();
+        assertReason(forBob, table, LOAD, Reason.FLAGGED_TABLE);
+        assertThat(authorizer.decide(engineForBob, Target.of(table), LOAD)).as("a trusted engine needs no exemption")
+                .isInstanceOf(Decision.Allowed.class);
+        assertReason(person("bob", "maintainers"), table, LOAD, Reason.FLAGGED_TABLE);
     }
 
     @Test

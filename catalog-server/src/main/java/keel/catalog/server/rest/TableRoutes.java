@@ -182,7 +182,7 @@ class TableRoutes {
         RequestContext request = RequestContext.of(http, callers);
         Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), Guard.commit(body));
+            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body));
         } else {
             guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
         }

@@ -31,7 +31,8 @@ class SecurityWiring {
 
     @Bean
     Authorizer authorizer(CatalogStore store, Separation separation, SecuritySettings settings) {
-        return new Authorizer(store, store, store, separation, settings.refuseIdentityLessCommits());
+        return new Authorizer(store, store, store, separation, settings.refuseIdentityLessCommits(),
+                settings.maintenancePrincipals());
     }
 
     /** The caller the authentication filter established; routes are never reached without one. */
