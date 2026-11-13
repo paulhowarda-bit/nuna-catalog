@@ -1,19 +1,18 @@
 Breaks: Each table of a transaction is committed in its own store transaction, so a lost swap leaves the others published.
 Module: catalog-core
 Test: TransactionTest$Retrying#lostSwapIsRetried
-
 diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-index 1785b01..014d16e 100644
+index 49ae41b..aa325fd 100644
 --- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-@@ -667,7 +667,14 @@ public final class CommitEngine {
+@@ -671,7 +671,14 @@ public final class CommitEngine {
                          Projection.of(p.changed().after())));
              }).toList();
              try {
--                switch (store.commit(transactionBatch(request, written))) {
+-                switch (store.commit(transactionBatch(request, written, held))) {
 +                CommitResult result = null;
 +                for (Staged s : written) {
-+                    result = store.commit(transactionBatch(request, List.of(s)));
++                    result = store.commit(transactionBatch(request, List.of(s), held));
 +                    if (result instanceof CommitResult.Conflict) {
 +                        break;
 +                    }

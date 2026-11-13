@@ -610,4 +610,12 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Credentials vended before a privilege is revoked keep working until they expire (30 minutes by default), as before.
   - Checked in the demo after `demo/demo.sh up` rolled the catalog: the same INSERT as `ana` from DuckDB now fails at its first upload (`HTTP PUT error uploading to '…/data/as_of_month=682/01a1d1a0-….parquet' (HTTP 403 Forbidden) AccessDenied`). The table's folder still holds the same 17 objects, and her reads work.
   - Not verified: Ceph and AWS, the heavy build, and the bite.
+- **Heavy pass done 2026-11-12, before M9** (Paul: "We will run heavy tests today"). `./heavy.sh` ran in a worktree, with the keel-demo stack scaled to zero. It covers `main` at c3a7062, everything landed on 2026-11-12. The engine matrix's new cases are `overnight`, so they wait for the nightly.
+  - `./gradlew build -Pheavy` passed in 21 min 46 s on all four backends. Every test task ran; none came from the build cache.
+  - Bites: all 111 bite.
+  - Eight bites had gone stale and were re-recorded against today's code:
+    - Moved by the D15 read-guard holds: `transaction-commit-per-table`, `transaction-partial`, `sql-cas-ignores-version`, `cas-lost-update-under-load` and `unknown-commit-answers-503`.
+    - Moved by read-only vending: `cache-shared-across-callers` and `real-near-expiry-304`.
+    - Never compiled: `lost-receipts-not-read-back`, because javac rejects `while (false)` as unreachable.
+  - `bites/run.sh` stopped twice on a false HASH MISMATCH. On OneDrive a tracked file was briefly busy (`sha256sum: … Device or resource busy`). The tree hash now retries a file it cannot read.
 - **Next:** M9, carried to work.

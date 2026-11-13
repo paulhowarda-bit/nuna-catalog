@@ -97,9 +97,19 @@ tests_of() {
     done
 }
 
-# One hash over the content of every tracked file.
+# One hash over the content of every tracked file. On Windows a file can be briefly unreadable
+# ("Device or resource busy" while OneDrive or a scanner holds it); a read that fails is retried,
+# so only a real content change counts as a mismatch.
 tree_hash() {
-    git ls-files -z | xargs -0 sha256sum | sha256sum | cut -d ' ' -f 1
+    local sums try
+    for try in 1 2 3 4 5; do
+        if sums=$(git ls-files -z | xargs -0 sha256sum 2>/dev/null); then
+            printf '%s\n' "$sums" | sha256sum | cut -d ' ' -f 1
+            return
+        fi
+        sleep 2
+    done
+    echo "unreadable tree"
 }
 
 revert_current() {

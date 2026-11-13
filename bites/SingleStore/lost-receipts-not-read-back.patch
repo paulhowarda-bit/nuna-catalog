@@ -3,7 +3,7 @@ Module: singlestore-change-feed
 Test: IcebergCopyTest#theReceiptsOfCommitsAfterAGivenOneAreReadBackAsTheyWereSent
 
 diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
-index 7806ba1..42661aa 100644
+index 8aee483..369e273 100644
 --- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
 +++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
 @@ -287,7 +287,7 @@ final class IcebergCopy {
@@ -11,7 +11,7 @@ index 7806ba1..42661aa 100644
          List<Receipt> receipts = new ArrayList<>();
          Snapshot snapshot = table.currentSnapshot();
 -        while (snapshot != null && (after == null || snapshot.snapshotId() != after)) {
-+        while (false) {
++        while (snapshot != null && false) {
              if (snapshot.summary().containsKey(KIND)) {
                  receipts.add(Receipt.of(snapshot));
              }

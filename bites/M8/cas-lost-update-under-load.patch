@@ -3,16 +3,16 @@ Module: catalog-tests-load
 Test: ConcurrentWritersTest
 
 diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-index 2dcfe12..18a83ee 100644
+index 32fa4a3..013fb36 100644
 --- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
 +++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-@@ -87,8 +87,7 @@ final class Pointers {
-                 Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
-                                 + " WHERE object_id = ? AND branch = ? FOR UPDATE",
-                         row -> new Locked(row.getLong(1), row.getString(2)), swap.key().objectId(), swap.key().branch());
--                if (locked.isPresent() && locked.get().version() == expected.version()
--                        && locked.get().location().equals(expected.metadataLocation())) {
-+                if (locked.isPresent()) {
-                     continue;
-                 }
-             }
+@@ -98,8 +98,7 @@ final class Pointers {
+         Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
+                         + " WHERE object_id = ? AND branch = ? FOR UPDATE",
+                 row -> new Locked(row.getLong(1), row.getString(2)), key.objectId(), key.branch());
+-        return locked.isPresent() && locked.get().version() == expected.version()
+-                && locked.get().location().equals(expected.metadataLocation());
++        return locked.isPresent();
+     }
+ 
+     private record Locked(long version, String location) {

@@ -1,14 +1,13 @@
 Breaks: A table whose requirement fails is left out, and the rest of the transaction commits.
 Module: catalog-core
 Test: TransactionTest$Applying#requirementFailed
-
 diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-index 1785b01..c1cfa99 100644
+index 49ae41b..50ae217 100644
 --- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-@@ -648,7 +648,6 @@ public final class CommitEngine {
-                     case Outcome.NoChange noChange -> {
+@@ -652,7 +652,6 @@ public final class CommitEngine {
                      }
+                     case Outcome.NoChange noChange -> held.add(new PointerHold(object.mainKey(), base));
                      case Outcome.RequirementFailed failed -> {
 -                        return new Failure(409, COMMIT_FAILED, table + ": " + failed.message());
                      }
