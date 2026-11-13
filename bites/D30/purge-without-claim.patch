@@ -1,0 +1,20 @@
+Breaks: the worker deletes a dropped object's files whatever its purge claim answers, so it deletes beneath an object another worker has claimed.
+Module: catalog-maintenance
+Test: PurgeTest#purgeRemovesThePrefixAfterAClaim
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+index b1d8612..d633ae7 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+@@ -206,11 +206,7 @@ final class Worker implements AutoCloseable {
+ 
+     private void purge(Management.PurgeWork purge, ScanReport report) {
+         try {
+-            Management.Claim claim = management.claimPurge(purge.catalog(), purge.id());
+-            if (claim != Management.Claim.CLAIMED) {
+-                report.purgesSkipped++;
+-                return;
+-            }
++            management.claimPurge(purge.catalog(), purge.id());
+             String root = purge.location().endsWith("/") ? purge.location() : purge.location() + "/";
+             List<String> batch = new ArrayList<>(Management.BATCH);
+             for (FileInfo file : storage.list(root)) {

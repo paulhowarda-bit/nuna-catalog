@@ -1,0 +1,17 @@
+Breaks: recording a file already pending records it again and reports a change, so a rerun job writes a change row each time.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#pendingDeletionsAreRecordedOncePerFile
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+index ae3507e..2b905cf 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+@@ -43,9 +43,6 @@ final class SqlDeletions {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+             Set<String> fresh = new LinkedHashSet<>(locations);
+-            fresh.removeAll(query(connection, "SELECT location FROM pending_deletion WHERE object_id = ?"
+-                    + " AND location = ANY(?)", row -> row.getString("location"), objectId,
+-                    fresh.toArray(String[]::new)));
+             if (fresh.isEmpty()) {
+                 return WriteResult.UNCHANGED;
+             }

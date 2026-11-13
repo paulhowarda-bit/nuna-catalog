@@ -2,15 +2,15 @@ Breaks: a recorded file is due at once, before the PITR window has passed, so a 
 Module: catalog-server
 Test: MaintenanceRoutesTest#pendingDeletionsWaitOutThePitrWindow
 diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
-index 76df5b3..ebc8e47 100644
+index 2d49910..9dc9896 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
-@@ -167,7 +167,7 @@ class MaintenanceRoutes {
+@@ -170,7 +170,7 @@ class MaintenanceRoutes {
              locations.add(location.asString());
          }
          Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
 -        Instant notBefore = now.plus(settings.pitrWindow());
 +        Instant notBefore = now;
          WriteResult result = Management.write("Recording deletions of " + id, () -> store.recordDeletions(object.id(),
-                         locations, notBefore, management.change(now, new FileDeletion(FileDeletion.Action.RECORDED, audit,
-                                 locations.size(), notBefore, request.actor()))),
+                         List.copyOf(locations), notBefore, management.change(now, new FileDeletion(
+                                 FileDeletion.Action.RECORDED, audit, locations.size(), notBefore, request.actor()))),
