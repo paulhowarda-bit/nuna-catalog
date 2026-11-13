@@ -17,8 +17,9 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * The demo's stand-in identity provider, JDK only: an RS256 signing key, its JWKS (which the catalog fetches
- * from Silo, as in the engine matrix), and a bearer token per demo user, valid for seven days.
+ * The demo's stand-in identity provider, JDK only: an RS256 signing key, its JWKS, and a bearer token per demo
+ * user, valid for seven days. The catalog fetches the JWKS by URL: demo.sh serves it from Service idp (as the
+ * engine matrix does), deploy/local/run.sh from Silo.
  *
  * <pre>java Mint.java &lt;run-dir&gt;</pre>
  *
