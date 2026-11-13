@@ -221,11 +221,19 @@ wait_for_commit() {
 
 # Each part once: the Iceberg tables and governance (ConfigMap demo-seeded marks them done) and SingleStore's
 # databases (done when ops exists; a new SingleStore pod starts empty). A new SingleStore's change feed finds
-# offsets in Iceberg that it cannot continue from, so its first commit is a resnapshot.
+# offsets in Iceberg that it cannot continue from, so its first commit is a resnapshot. PostgreSQL and Silo
+# keep their data only as long as their pods (a Docker Desktop restart empties both) but the ConfigMap
+# outlives them, so the lake counts as seeded only while the catalog can also load the trades table; a new
+# lake empties SingleStore too, since its databases are loaded from the lake.
 seed() {
-  local seeded=
-  k get configmap demo-seeded >/dev/null 2>&1 && seeded=yes
+  local seeded= ns='markets%1Fequities%1Feu%1Fxetra'
+  if k get configmap demo-seeded >/dev/null 2>&1 \
+      && api ana GET "/v1/$CATALOG/namespaces/$ns/tables/trades" '' 200 2>/dev/null; then
+    seeded=yes
+  fi
   if [[ -z "$seeded" ]]; then
+    k delete configmap demo-seeded --ignore-not-found >/dev/null
+    echo "DROP DATABASE IF EXISTS ops; DROP DATABASE IF EXISTS lake;" | s2 >/dev/null
     say "writing the sample Iceberg tables through the catalog (demo/LakeWriter.java)"
     lake seed
   fi
@@ -251,7 +259,7 @@ SQL
 
   [[ -n "$seeded" ]] && return 0
   say "governance: classification, owner, regulated area, a legal hold, a DR freeze"
-  local m=/management/v1/catalogs/$CATALOG ns='markets%1Fequities%1Feu%1Fxetra'
+  local m=/management/v1/catalogs/$CATALOG
   api stella PUT "$m/namespaces/finance/attributes/regulated" '{"value":"true","provenance":"demo-seed: compliance register"}'
   api stella PUT "$m/namespaces/finance%1Fledger/tables/journal/attributes/classification" '{"value":"confidential","provenance":"demo-seed: data catalogue"}'
   api stella PUT "$m/namespaces/markets/attributes/owner" '{"value":"markets-data-office","provenance":"demo-seed: HR feed"}'
@@ -308,7 +316,8 @@ up() {
   apply keycloak.yaml
   k wait --for=condition=available --timeout=8m deployment/postgres deployment/kafka deployment/idp \
     deployment/kafka-ui deployment/keycloak deployment/s3 >/dev/null
-  # The seed job makes the warehouse bucket; a completed job is left as it is.
+  # The seed job makes the warehouse bucket. It runs on every up: a new Silo pod starts without it.
+  k delete job seed --ignore-not-found >/dev/null
   apply seed.yaml
   k wait --for=condition=complete --timeout=3m job/seed >/dev/null
 
@@ -318,6 +327,12 @@ up() {
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/keel-catalog" \
     -f "$STACK/catalog-values.yaml" -f "$STACK/demo-values.yaml" \
     --set-string "podAnnotations.keel-demo/image=$(image_id keel-catalog:demo)" --wait --timeout 10m >/dev/null
+  # The server makes its tables only as it starts, so one that outlived its PostgreSQL pod is restarted.
+  if [[ -z "$(k exec deployment/postgres -- psql -U catalog -d catalog -tAc "SELECT to_regclass('flyway_schema_history')")" ]]; then
+    say "PostgreSQL is new and empty: restarting the catalog so it makes its tables"
+    k rollout restart "deployment/$RELEASE" >/dev/null
+    k rollout status "deployment/$RELEASE" --timeout=10m >/dev/null
+  fi
   apply ports.yaml
   wait_for_console
   grants
