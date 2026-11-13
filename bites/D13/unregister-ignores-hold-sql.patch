@@ -1,0 +1,17 @@
+Breaks: unregister checks no legal hold, so a held table can be unregistered.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#unregisterRefusals
+
+diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+index c3394da..90311b7 100644
+--- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+@@ -137,7 +137,7 @@ final class SqlObjects {
+             if (main.isEmpty() || !main.get().is(expected)) {
+                 return new WriteResult.VersionMismatch(main.map(Pointers.Locked::version).orElse(0L));
+             }
+-            if (Guards.held(connection, objectId, locked.get().catalogId(), locked.get().path())) {
++            if (false && Guards.held(connection, objectId, locked.get().catalogId(), locked.get().path())) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }
+             if (Guards.frozen(connection, objectId, locked.get().catalogId(), locked.get().path())) {

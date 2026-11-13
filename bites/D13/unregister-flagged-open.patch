@@ -1,0 +1,17 @@
+Breaks: a table flagged for row/column policy can be unregistered.
+Module: catalog-server
+Test: SecurityGateTest#unregisterNeedsModifyAndRegisteringADroppedTableNeedsTheUndropRight
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+index 12ff24f..9b9880d 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+@@ -266,7 +266,7 @@ class TableRoutes {
+                         + qualified + " is in a regulated area and cannot be unregistered; a steward removes the"
+                         + " regulated flag first");
+             }
+-            if (governance.attributes().stream().anyMatch(a -> a.target().equals(object.securable())
++            if (false && governance.attributes().stream().anyMatch(a -> a.target().equals(object.securable())
+                     && a.kind() == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && "true".equalsIgnoreCase(a.value()))) {
+                 throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "flagged_table", "table "
+                         + qualified + " has a row/column policy and cannot be unregistered; a steward removes the"

@@ -1,0 +1,17 @@
+Breaks: the register route lets anyone with create on the target bring back a dropped table, whatever they hold where it was dropped.
+Module: catalog-server
+Test: SecurityGateTest#unregisterNeedsModifyAndRegisteringADroppedTableNeedsTheUndropRight
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+index 12ff24f..0f29e1f 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+@@ -233,7 +233,7 @@ class TableRoutes {
+                 Optional.ofNullable(delegation));
+         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
+                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
+-                        request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
++                        request.caller(), Optional.ofNullable(key), dropped -> { });
+         return ObjectRoutes.reply(reply, done -> loaded(target, done));
+     }
+ 
