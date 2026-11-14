@@ -163,7 +163,10 @@ spec:
               port: 8080
             periodSeconds: 5
             failureThreshold: 60
+          # It uses about 350 MB. Reserving its whole limit, as a limit alone does, left no room in the demo
+          # for CloudBeaver beside the CDC leg.
           resources:
+            requests: {memory: 384Mi}
             limits: {memory: 768Mi}
 ---
 apiVersion: v1

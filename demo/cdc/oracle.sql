@@ -83,4 +83,9 @@ INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
     VALUES (7004, 'FR1420041010050500013M02606', 9800.00, 'EUR', 'SCHEDULED');
 COMMIT;
 
+-- CloudBeaver's account (demo/k8s/cloudbeaver.yaml): it reads the table and changes nothing.
+CREATE USER reader IDENTIFIED BY "reader-demo";
+GRANT CREATE SESSION TO reader;
+GRANT SELECT ON treasury.payments TO reader;
+
 HOST touch /tmp/cdc-ready

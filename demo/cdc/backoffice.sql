@@ -25,3 +25,8 @@ INSERT INTO settlement.instructions (instruction_id, trade_ref, isin, quantity, 
     (5002, 'XETR-2026-11-09-000124', 'DE0005140008', 2500, 41125.00, 'EUR', 'PENDING'),
     (5003, 'XETR-2026-11-09-000125', 'DE0007236101',  300, 64860.00, 'EUR', 'MATCHED'),
     (5004, 'XETR-2026-11-09-000126', 'DE0008404005',   80, 28640.00, 'EUR', 'PENDING');
+
+-- CloudBeaver's account (demo/k8s/cloudbeaver.yaml): it reads the table and changes nothing.
+CREATE ROLE reader LOGIN PASSWORD 'reader-demo';
+GRANT USAGE ON SCHEMA settlement TO reader;
+GRANT SELECT ON settlement.instructions TO reader;

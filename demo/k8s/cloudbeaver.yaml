@@ -1,13 +1,20 @@
-# CloudBeaver Community (image cloudbeaver.Dockerfile, without its version check), a SQL UI in the browser,
-# with one connection: Trino (trino.yaml) as ana, catalogs lakehouse and engines. Only demo.sh applies this;
-# ports.yaml publishes it on localhost:8185.
+# CloudBeaver Community (image cloudbeaver.Dockerfile, without its version check), a SQL UI in the browser.
+# Only demo.sh applies this; ports.yaml publishes it on localhost:8185. Three connections:
+#
+#   keel-trino  Trino (trino.yaml) as ana, catalogs lakehouse and engines. Every query reaches keel as ana,
+#               since Trino holds one token.
+#   backoffice  the CDC leg's PostgreSQL (cdc.yaml), database backoffice
+#   treasury    the CDC leg's Oracle (cdc.yaml), PDB FREEPDB1
+#
+# The two CDC sources answer only while the leg runs (demo.sh cdc), and Trino is stopped meanwhile. CloudBeaver
+# reads them as reader / reader-demo, which may select their table and change nothing (demo/cdc/*.sql); changes
+# go through demo.sh psql and demo.sh sqlplus. The drivers for all three are in the image.
 #
 # The demo's people sign in with their Keycloak passwords: oscar is CloudBeaver's administrator, and ana,
-# gary and stella are users with the Trino connection. Every query still reaches keel as ana, since Trino holds
-# one token. CB_ADMIN_* configure the server at its first start, so no setup wizard shows; the postStart hook
-# adds DEMO_USERS and grants them the connection (demo/CloudBeaverUsers.java), and the pod is not ready until
-# it has. Everything lives in the pod, so a new pod starts from this file again. The Trino JDBC driver is in
-# the image.
+# gary and stella are users with the connections. CB_ADMIN_* configure the server at its first start, so no
+# setup wizard shows; the postStart hook adds DEMO_USERS and grants them every connection
+# (demo/CloudBeaverUsers.java), and the pod is not ready until it has. Everything lives in the pod, so a new pod
+# starts from this file again.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -30,6 +37,40 @@ data:
             "type": "dev",
             "auth-model": "native",
             "user": "ana"
+          }
+        },
+        "backoffice": {
+          "provider": "postgresql",
+          "driver": "postgres-jdbc",
+          "name": "backoffice (PostgreSQL, CDC source)",
+          "save-password": true,
+          "configuration": {
+            "host": "backoffice",
+            "port": "5432",
+            "database": "backoffice",
+            "url": "jdbc:postgresql://backoffice:5432/backoffice",
+            "configurationType": "MANUAL",
+            "type": "dev",
+            "auth-model": "native",
+            "user": "reader",
+            "password": "reader-demo"
+          }
+        },
+        "treasury": {
+          "provider": "oracle",
+          "driver": "oracle_thin",
+          "name": "treasury (Oracle, CDC source)",
+          "save-password": true,
+          "configuration": {
+            "host": "oracle",
+            "port": "1521",
+            "database": "FREEPDB1",
+            "url": "jdbc:oracle:thin:@//oracle:1521/FREEPDB1",
+            "configurationType": "URL",
+            "type": "dev",
+            "auth-model": "oracle_native",
+            "user": "reader",
+            "password": "reader-demo"
           }
         }
       }
