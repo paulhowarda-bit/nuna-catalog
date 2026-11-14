@@ -165,9 +165,9 @@ final class TestCatalog {
     /**
      * The catalog's address for pods of Docker Desktop's Kubernetes: a second server on the same database, which it
      * and its storage profile's S3 endpoint name by {@code host.docker.internal}, as those pods resolve this machine.
-     * This machine reaches the same catalog and store through {@link #get()} and never resolves that name itself:
-     * the Windows hosts-file entry for it is written when Docker Desktop starts and goes stale when the machine's
-     * address changes.
+     * The test and the worker reach the same catalog and store through {@link #get()}; this server's own calls to
+     * the store resolve the name to this machine through {@link HostDockerInternal}, not the Windows hosts-file
+     * entry, which goes stale when the machine's address changes.
      */
     static synchronized URI forPods() {
         get();
