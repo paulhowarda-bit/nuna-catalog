@@ -47,14 +47,13 @@ demo/demo.sh up
   console), **8182** (kafbat), **8183** (SingleStore Studio), **8185** (CloudBeaver) and **8186** (Kafka
   Connect's REST API, while the CDC leg runs). `up` stops if something else holds one of them, such as a
   `kubectl port-forward`.
-- Memory: about 6.4 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog,
-  kafbat and Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo
-  512 MB each; PostgreSQL and CloudBeaver 384 MB each, CloudBeaver using about 350 MB of up to 768 MB), plus
-  one job at a time: the lake writer 768 MB, or an engine up to
-  2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so nothing else of that size fits beside it,
-  and `engines` stops Trino and CloudBeaver while it runs to make room for Spark. The CDC leg asks for 1.9 GB
-  (Oracle 1.25 GB, Kafka Connect 512 MB, its PostgreSQL 128 MB), so `cdc` stops Trino and CloudBeaver too, and
-  `engines` and `rate` refuse to run beside it.
+- Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
+  Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each;
+  PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
+  768 MB), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
+  Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
+  CloudBeaver while it runs to make room for Spark. The CDC leg asks for 1.9 GB (Oracle 1.25 GB, Kafka Connect
+  512 MB, its PostgreSQL 128 MB), so `cdc` stops Trino, and `engines` and `rate` refuse to run beside it.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
@@ -100,7 +99,7 @@ change every Iceberg table.
 |---|---|---|---|
 | kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database | all privileges, with grant option |
-| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the Trino connection: `ana` to the catalog | CloudBeaver's administrator, and the Trino connection |
+| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the connections: Trino (`ana` to the catalog) and, read-only, the CDC leg's databases | CloudBeaver's administrator, and the same connections |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers, and `demo-analysts`, `demo-grant-admins`
 and `demo-stewards` read. Like the console, kafbat's sign-out leaves Keycloak's session.
@@ -113,6 +112,11 @@ Accounts that run the demo rather than people in it:
 | SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio accepts it too |
 | Silo `keeltest` | `keeltest-secret-key` | the S3 store's root; not published outside the cluster |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
+| `reader` | `reader-demo` | CloudBeaver's read-only account in both CDC databases, while the leg runs |
+| PostgreSQL `backoffice` | `keel-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
+| Oracle `treasury` | `keel-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
+| Oracle `SYS`, `SYSTEM` | `keel-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
+| Oracle `c##dbzuser` | `dbz` | Debezium's LogMiner user |
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
 pipelines are then replaced and Trino and the CDC leg's Kafka Connect are restarted, so they carry the new
@@ -244,7 +248,7 @@ with the storage credentials the catalog vends, and nothing else.
 demo/demo.sh cdc
 ```
 
-starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino and CloudBeaver to make room for it:
+starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino to make room for it:
 
 - `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
 - `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
@@ -288,8 +292,20 @@ The people have accounts in both databases, with their Keycloak passwords:
 (Debezium's LogMiner user) run the leg. In PostgreSQL a table `ana` creates is hers: besides her, only `gary`
 can alter or drop it.
 
+CloudBeaver (<http://localhost:8185>) queries both databases while the leg runs, through connections
+"backoffice (PostgreSQL, CDC source)" and "treasury (Oracle, CDC source)". They sign in as `reader`
+(password `reader-demo`, made by `backoffice.sql` and `oracle.sql`), which may select the source table and
+change nothing, so changes still go through `psql` and `sqlplus` above:
+
+```sql
+SELECT * FROM settlement.instructions ORDER BY instruction_id;   -- backoffice
+SELECT * FROM treasury.payments ORDER BY payment_id;             -- treasury
+```
+
+Outside the leg the two connections fail to connect: their hosts are gone.
+
 No query engine runs beside the leg: Trino is stopped for its memory. After `demo/demo.sh cdc stop`, read the
-history in CloudBeaver, oldest change first (`offset` is a keyword in Trino, so it is quoted):
+history in CloudBeaver's Trino connection, oldest change first (`offset` is a keyword in Trino, so it is quoted):
 
 ```sql
 SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
@@ -318,8 +334,8 @@ ORDER BY "_cdc"."offset";
 demo/demo.sh cdc stop
 ```
 
-deletes the leg, its Kafka topics and consumer groups, and starts Trino and CloudBeaver again. The history
-tables stay, for Trino to read.
+deletes the leg, its Kafka topics and consumer groups, and starts Trino again. The history tables stay, for
+Trino to read.
 
 ## The engines
 

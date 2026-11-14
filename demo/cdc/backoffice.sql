@@ -42,3 +42,8 @@ CREATE ROLE gary LOGIN SUPERUSER PASSWORD 'gary-demo';
 CREATE ROLE stella LOGIN PASSWORD 'stella-demo';
 CREATE ROLE oscar LOGIN PASSWORD 'oscar-demo';
 GRANT pg_read_all_data TO stella, oscar;
+
+-- CloudBeaver's account (demo/k8s/cloudbeaver.yaml): it reads the table and changes nothing.
+CREATE ROLE reader LOGIN PASSWORD 'reader-demo';
+GRANT USAGE ON SCHEMA settlement TO reader;
+GRANT SELECT ON settlement.instructions TO reader;

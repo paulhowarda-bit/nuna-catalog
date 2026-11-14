@@ -8,8 +8,8 @@
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops and lake)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL and Oracle, through Debezium and Kafka Connect, into Iceberg
-#                         history tables (stops Trino and CloudBeaver while it runs)
-#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino and CloudBeaver again
+#                         history tables (stops Trino while it runs)
+#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino again
 #   demo/demo.sh psql [user]     a psql prompt on the CDC leg's PostgreSQL, database backoffice (default backoffice)
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh status   show the pods and services
@@ -331,8 +331,8 @@ EOF
 
 # The CDC leg (cdc.yaml), on demand: PostgreSQL backoffice and Oracle, captured by Debezium into Kafka, and
 # written by the Apache Iceberg sink into history tables, one row per change. Its pods do not fit beside Trino
-# and CloudBeaver on an 8 GB Docker Desktop, so those stop while it runs. Kafka Connect's REST API is on
-# $CONNECT_URL meanwhile.
+# on an 8 GB Docker Desktop, so Trino stops while it runs; CloudBeaver stays, to query both databases. Kafka
+# Connect's REST API is on $CONNECT_URL meanwhile.
 cdc_running() { k get deployment connect >/dev/null 2>&1; }
 
 # Built on every cdc (and on every up while the leg runs), tagged with the hash of its Dockerfile and plugin
@@ -432,9 +432,9 @@ cdc_start() {
     say "pulling $image (about 5 GB, once)"
     docker pull -q "$image" >/dev/null
   fi
-  say "stopping Trino and CloudBeaver: the CDC leg needs their memory"
-  k scale deployment/trino deployment/cloudbeaver --replicas=0 >/dev/null
-  k wait --for=delete pod -l 'app in (trino, cloudbeaver)' --timeout=2m >/dev/null
+  say "stopping Trino: the CDC leg needs its memory"
+  k scale deployment/trino --replicas=0 >/dev/null
+  k wait --for=delete pod -l app=trino --timeout=2m >/dev/null
   # History tables left by an earlier run recorded databases that are gone; each run starts its own.
   local entry ns table
   for entry in "${HISTORY_TABLES[@]}"; do
@@ -478,8 +478,9 @@ The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
   Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
 Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'. kafbat (http://localhost:8182) shows Debezium's
 change events as they arrive, and the console shows each sink commit as a snapshot of its history table.
-Trino and CloudBeaver are stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts them again. Then
-read the history in CloudBeaver, oldest change first:
+Query both source databases in CloudBeaver (http://localhost:8185), connections backoffice and treasury,
+read-only. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts it again. Then read the
+history in CloudBeaver's Trino connection, oldest change first:
   SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
   ORDER BY "_cdc"."offset";
 EOF
@@ -501,8 +502,8 @@ cdc_stop() {
       for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|keel-demo-cdc"); do
         $bin/kafka-consumer-groups.sh $kafka --delete --group "$group" >/dev/null
       done' >/dev/null
-  say "starting Trino and CloudBeaver again"
-  k scale deployment/trino deployment/cloudbeaver --replicas=1 >/dev/null
+  say "starting Trino again"
+  k scale deployment/trino --replicas=1 >/dev/null
 }
 
 up() {
@@ -550,17 +551,18 @@ up() {
   seed
 
   if cdc_running; then
-    # trino.yaml and cloudbeaver.yaml ask for one replica each, which would start them beside the leg.
-    say "the CDC leg is running: Trino and CloudBeaver stay stopped; bringing the leg up to date"
+    # trino.yaml asks for one replica, which would start Trino beside the leg.
+    say "the CDC leg is running: Trino stays stopped; bringing the leg and CloudBeaver ($CLOUDBEAVER_IMAGE) up to date"
     build_connect
     cdc_apply
   else
-    say "starting Trino ($TRINO_IMAGE), signed in as ana, and its UI CloudBeaver ($CLOUDBEAVER_IMAGE)"
+    say "starting Trino ($TRINO_IMAGE), signed in as ana"
     apply trino.yaml
-    apply cloudbeaver.yaml
     k rollout status deployment/trino --timeout=5m >/dev/null
-    k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
   fi
+  say "starting CloudBeaver ($CLOUDBEAVER_IMAGE), with connections to Trino and to the CDC leg's databases"
+  apply cloudbeaver.yaml
+  k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
   print_access
 }
 

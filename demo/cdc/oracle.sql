@@ -95,4 +95,9 @@ GRANT CREATE SESSION, SELECT ANY TABLE TO stella;
 CREATE USER oscar IDENTIFIED BY "oscar-demo";
 GRANT CREATE SESSION, SELECT ANY TABLE TO oscar;
 
+-- CloudBeaver's account (demo/k8s/cloudbeaver.yaml): it reads the table and changes nothing.
+CREATE USER reader IDENTIFIED BY "reader-demo";
+GRANT CREATE SESSION TO reader;
+GRANT SELECT ON treasury.payments TO reader;
+
 HOST touch /tmp/cdc-ready
