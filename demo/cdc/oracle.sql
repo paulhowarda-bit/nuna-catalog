@@ -83,4 +83,16 @@ INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
     VALUES (7004, 'FR1420041010050500013M02606', 9800.00, 'EUR', 'SCHEDULED');
 COMMIT;
 
+-- The demo's people, with their Keycloak passwords: everyone reads every table, ana also writes, creates,
+-- alters and drops tables in any schema, and gary is a DBA.
+CREATE USER ana IDENTIFIED BY "ana-demo" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
+GRANT CREATE SESSION, CREATE TABLE, SELECT ANY TABLE, INSERT ANY TABLE, UPDATE ANY TABLE, DELETE ANY TABLE,
+    CREATE ANY TABLE, ALTER ANY TABLE, DROP ANY TABLE TO ana;
+CREATE USER gary IDENTIFIED BY "gary-demo" DEFAULT TABLESPACE users QUOTA UNLIMITED ON users;
+GRANT DBA TO gary;
+CREATE USER stella IDENTIFIED BY "stella-demo";
+GRANT CREATE SESSION, SELECT ANY TABLE TO stella;
+CREATE USER oscar IDENTIFIED BY "oscar-demo";
+GRANT CREATE SESSION, SELECT ANY TABLE TO oscar;
+
 HOST touch /tmp/cdc-ready
