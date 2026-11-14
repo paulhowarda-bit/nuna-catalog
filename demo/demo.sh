@@ -7,6 +7,11 @@
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops and lake)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
+#   demo/demo.sh cdc      start the CDC leg: PostgreSQL and Oracle, through Debezium and Kafka Connect, into Iceberg
+#                         history tables (stops Trino and CloudBeaver while it runs)
+#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino and CloudBeaver again
+#   demo/demo.sh psql     open a psql prompt on the CDC leg's PostgreSQL (database backoffice)
+#   demo/demo.sh sqlplus  open a SQL*Plus prompt on the CDC leg's Oracle (user treasury, PDB FREEPDB1)
 #   demo/demo.sh status   show the pods and services
 #   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key and tokens)
 #
@@ -34,6 +39,11 @@ DUCKDB_VERSION=2.0.0
 DUCKDB_IMAGE=keel-demo-duckdb:$DUCKDB_VERSION
 TRINO_IMAGE=trinodb/trino:484
 CLOUDBEAVER_IMAGE=
+CONNECT_IMAGE=
+# Kafka Connect's REST API while the CDC leg runs (ports.yaml).
+CONNECT_URL=http://localhost:8186
+# SQL*Plus's login to the CDC leg's Oracle as user treasury (demo/cdc/oracle.sql). Local only.
+ORACLE_TREASURY=treasury/\"keel-test\"@//localhost:1521/FREEPDB1
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 
@@ -49,7 +59,10 @@ apply() {
   sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
     -e "s|\${DUCKDB_IMAGE}|$DUCKDB_IMAGE|g" -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" \
-    -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" \
+    -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
+    -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
+    -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
+    -e "s|\${ORACLE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/oracle.sql" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" \
@@ -127,15 +140,18 @@ mint() {
   "$JAVA" "$REPO/demo/Mint.java" "$RUN"
 }
 
-# The issuer's public keys (served by Service idp), the lake writer's token, and ana's for DuckDB and Trino.
+# The issuer's public keys (served by Service idp), the lake writer's token, ana's for DuckDB and Trino, and
+# cdc's for Kafka Connect's Iceberg sinks.
 publish_tokens() {
   k create configmap idp-keys --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-lake-token --from-literal=token="$(token_of lake)" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-ana-token --from-literal=token="$(token_of ana)" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
+# Expired, about to expire, or minted before Mint.java had every user it has now.
 tokens_expired() {
-  [[ ! -f "$RUN/tokens/expires.txt" ]] && return 0
+  [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/cdc.jwt" ]] && return 0
   local expires now
   expires=$(date -d "$(tr -d '\r\n' < "$RUN/tokens/expires.txt")" +%s)
   now=$(date +%s)
@@ -147,11 +163,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183 8184 8185; do
+  for port in 8180 8181 8182 8183 8184 8185 8186; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8185. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8186. Stop what holds them." >&2
     return 1
   fi
 }
@@ -301,8 +317,8 @@ $(token_of ana)
 Grant admin  gary  (group demo-grant-admins: manage grants and read the audit trail; no data access)
 $(token_of gary)
 
-Tag steward stella, platform operator oscar, SingleStore, the lake writer and the engine matrix have tokens too:
-  $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix}.jwt
+Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix and Kafka Connect
+have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc}.jwt
 In kafbat, Studio and CloudBeaver, oscar administers and ana, gary and stella only read.
 Kafka:        kafbat on http://localhost:8182
 SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD)
@@ -310,8 +326,184 @@ Trino:        CloudBeaver on http://localhost:8185, connection "keel (Trino, as 
 DuckDB:       its UI on http://localhost:8184, no sign-in, in the catalog as ana (catalogs lakehouse and engines)
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
+CDC:          demo/demo.sh cdc   (PostgreSQL and Oracle into Iceberg history tables; stops Trino while it runs)
 Kubernetes:   namespace $NS, context $CONTEXT
 EOF
+}
+
+# The CDC leg (cdc.yaml), on demand: PostgreSQL backoffice and Oracle, captured by Debezium into Kafka, and
+# written by the Apache Iceberg sink into history tables, one row per change. Its pods do not fit beside Trino
+# and CloudBeaver on an 8 GB Docker Desktop, so those stop while it runs. Kafka Connect's REST API is on
+# $CONNECT_URL meanwhile.
+cdc_running() { k get deployment connect >/dev/null 2>&1; }
+
+# Built on every cdc (and on every up while the leg runs), tagged with the hash of its Dockerfile and plugin
+# poms, so a change to either replaces the pod.
+build_connect() {
+  CONNECT_IMAGE="keel-demo-connect:$(cat "$STACK/connect.Dockerfile" "$REPO"/demo/cdc/plugins/*/pom.xml | sha256sum | cut -c1-12)"
+  docker build -q -f "$STACK/connect.Dockerfile" -t "$CONNECT_IMAGE" "$REPO/demo/cdc/plugins" >/dev/null
+}
+
+# A call to Kafka Connect's REST API, with the body of a PUT on stdin; prints the answer, fails the script on
+# anything but 2xx.
+connect_api() {
+  local method=$1 path=$2 out status
+  out=$(mktemp)
+  local args=(-s -o "$out" -w '%{http_code}' -X "$method" "$CONNECT_URL$path")
+  if [[ "$method" == PUT ]]; then
+    args+=(-H 'Content-Type: application/json' --data-binary @-)
+  fi
+  status=$(curl "${args[@]}")
+  if [[ "$status" != 2* ]]; then
+    echo "Kafka Connect $method $path answered $status: $(cat "$out")" >&2
+    rm -f "$out"
+    return 1
+  fi
+  cat "$out"
+  rm -f "$out"
+}
+
+# The two history tables, as namespace path and table name for the catalog's API.
+HISTORY_TABLES=("history%1Fpostgres%1Fsettlement instructions" "history%1Foracle%1Ftreasury payments")
+
+# Rows in a table of catalog lakehouse (its newest snapshot's total-records; 0 before the first commit).
+table_rows() {
+  curl -s -H "Authorization: Bearer $(token_of ana)" "$URL/v1/$CATALOG/namespaces/$1/tables/$2" \
+    | grep -o '"total-records" *: *"[0-9]*"' | tail -1 | grep -o '[0-9]*' || echo 0
+}
+
+# Waits until a history table holds exactly the given number of rows; fails on more, or after three minutes.
+wait_for_rows() {
+  local ns=$1 table=$2 want=$3 have=0
+  for _ in $(seq 1 90); do
+    have=$(table_rows "$ns" "$table")
+    (( have == want )) && return 0
+    (( have > want )) && break
+    sleep 2
+  done
+  echo "${ns//%1F/.}.$table holds $have rows, not $want. The connectors: curl -s '$CONNECT_URL/connectors?expand=status'" >&2
+  return 1
+}
+
+# Runs SQL from stdin in the leg's PostgreSQL and Oracle.
+backoffice_sql() { k exec -i deployment/backoffice -- psql -q -v ON_ERROR_STOP=1 -U backoffice -d backoffice; }
+oracle_sql() {
+  { echo 'WHENEVER SQLERROR EXIT SQL.SQLCODE'; cat; echo 'EXIT'; } \
+    | MSYS_NO_PATHCONV=1 k exec -i deployment/oracle -- sqlplus -s -l "$ORACLE_TREASURY" >/dev/null
+}
+
+# The leg's databases, worker and connectors, as cdc.yaml and demo/cdc have them; the connectors' configs are
+# put in place (the same config twice changes nothing).
+cdc_apply() {
+  k create configmap backoffice-initdb --from-file=backoffice.sql="$REPO/demo/cdc/backoffice.sql" \
+    --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create configmap oracle-startdb --from-file=cdc.sql="$REPO/demo/cdc/oracle.sql" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+  apply cdc.yaml
+  apply ports.yaml
+  k rollout status deployment/backoffice --timeout=3m >/dev/null
+  k rollout status deployment/connect --timeout=5m >/dev/null
+  # Oracle restarts once into archive log mode (demo/cdc/oracle.sql): about two minutes.
+  k rollout status deployment/oracle --timeout=10m >/dev/null
+  for _ in $(seq 1 30); do
+    curl -fs "$CONNECT_URL/connectors" >/dev/null 2>&1 && break
+    sleep 2
+  done
+  local connector
+  for connector in backoffice-source oracle-source backoffice-history oracle-history; do
+    connect_api PUT "/connectors/$connector/config" < "$REPO/demo/cdc/connectors/$connector.json" >/dev/null
+  done
+}
+
+cdc_start() {
+  if tokens_expired; then
+    mint
+  fi
+  publish_tokens
+  say "building the Kafka Connect image (Debezium 3.7.1, the Apache Iceberg 1.12.0 sink)"
+  build_connect
+  if cdc_running; then
+    say "the CDC leg is running: bringing it up to date"
+    cdc_apply
+    cdc_access
+    return
+  fi
+  local image
+  image=$(image_of oracle.image)
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    say "pulling $image (about 5 GB, once)"
+    docker pull -q "$image" >/dev/null
+  fi
+  say "stopping Trino and CloudBeaver: the CDC leg needs their memory"
+  k scale deployment/trino deployment/cloudbeaver --replicas=0 >/dev/null
+  k wait --for=delete pod -l 'app in (trino, cloudbeaver)' --timeout=2m >/dev/null
+  # History tables left by an earlier run recorded databases that are gone; each run starts its own.
+  local entry ns table
+  for entry in "${HISTORY_TABLES[@]}"; do
+    read -r ns table <<<"$entry"
+    if api ana GET "/v1/$CATALOG/namespaces/$ns/tables/$table" '' 200 2>/dev/null; then
+      api cdc DELETE "/v1/$CATALOG/namespaces/$ns/tables/$table?purgeRequested=true" '' 204
+    fi
+  done
+
+  say "starting the CDC leg: PostgreSQL backoffice, Oracle Free and Kafka Connect (a few minutes)"
+  cdc_apply
+  say "waiting for Debezium's snapshots of both tables to reach Iceberg"
+  wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 4
+  wait_for_rows "history%1Foracle%1Ftreasury" payments 4
+
+  say "changing rows in both databases: each change is a row in its history table"
+  backoffice_sql >/dev/null <<'SQL'
+UPDATE settlement.instructions SET status = 'MATCHED', updated_at = now() WHERE instruction_id = 5001;
+UPDATE settlement.instructions SET status = 'SETTLED', updated_at = now() WHERE instruction_id = 5003;
+DELETE FROM settlement.instructions WHERE instruction_id = 5004;
+INSERT INTO settlement.instructions (instruction_id, trade_ref, isin, quantity, amount, currency, status)
+VALUES (5005, 'XETR-2026-11-10-000201', 'DE0007164600', 60, 10950.00, 'EUR', 'PENDING');
+SQL
+  oracle_sql <<'SQL'
+UPDATE treasury.payments SET status = 'RELEASED', updated_at = SYSTIMESTAMP WHERE payment_id = 7001;
+DELETE FROM treasury.payments WHERE payment_id = 7002;
+INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
+VALUES (7005, 'DE89370400440532013000', 10950.00, 'EUR', 'SCHEDULED');
+COMMIT;
+SQL
+  wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 8
+  wait_for_rows "history%1Foracle%1Ftreasury" payments 7
+  cdc_access
+}
+
+cdc_access() {
+  cat <<EOF
+
+The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
+  PostgreSQL backoffice, settlement.instructions  ->  history.postgres.settlement.instructions   (demo/demo.sh psql)
+  Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
+Read the history in DuckDB (http://localhost:8184), oldest change first:
+  SELECT _cdc.op, _cdc.ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
+  ORDER BY _cdc.offset;
+Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'; its topics are in kafbat (http://localhost:8182).
+Trino and CloudBeaver are stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts them again.
+EOF
+}
+
+# Deletes the leg's pods, then its Kafka topics and consumer groups, so the next cdc starts from nothing; the
+# history tables stay, for Trino to read. The topics go after the worker, which would otherwise make its own
+# again, and from a pod of their own: a Kafka tool in the broker's pod could push it past its memory limit.
+cdc_stop() {
+  say "deleting the CDC leg: its databases, Kafka Connect, and its Kafka topics (the history tables stay)"
+  k delete deployment,service,configmap -l keel-demo/cdc=true --ignore-not-found >/dev/null
+  k delete configmap backoffice-initdb oracle-startdb --ignore-not-found >/dev/null
+  k wait --for=delete pod -l 'app in (backoffice, oracle, connect)' --timeout=3m >/dev/null 2>&1 || true
+  k delete pod cdc-cleanup --ignore-not-found >/dev/null
+  MSYS_NO_PATHCONV=1 k run cdc-cleanup -i --rm --quiet --restart=Never --image="$(image_of kafka.image)" \
+    --image-pull-policy=Never --env=KAFKA_HEAP_OPTS=-Xmx128m --command -- sh -c '
+      bin=/opt/kafka/bin; kafka=--bootstrap-server=kafka:9092
+      $bin/kafka-topics.sh $kafka --delete --if-exists --topic "cdc-connect-.*|backoffice.*|oracle.*"
+      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|keel-demo-cdc"); do
+        $bin/kafka-consumer-groups.sh $kafka --delete --group "$group" >/dev/null
+      done' >/dev/null
+  say "starting Trino and CloudBeaver again"
+  k scale deployment/trino deployment/cloudbeaver --replicas=1 >/dev/null
 }
 
 up() {
@@ -362,12 +554,27 @@ up() {
   apply duckdb.yaml
   k rollout status deployment/duckdb --timeout=3m >/dev/null
 
-  say "starting Trino ($TRINO_IMAGE), signed in as ana, and its UI CloudBeaver ($CLOUDBEAVER_IMAGE)"
-  apply trino.yaml
-  apply cloudbeaver.yaml
-  k rollout status deployment/trino --timeout=5m >/dev/null
-  k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
+  if cdc_running; then
+    # trino.yaml and cloudbeaver.yaml ask for one replica each, which would start them beside the leg.
+    say "the CDC leg is running: Trino and CloudBeaver stay stopped; bringing the leg up to date"
+    build_connect
+    cdc_apply
+  else
+    say "starting Trino ($TRINO_IMAGE), signed in as ana, and its UI CloudBeaver ($CLOUDBEAVER_IMAGE)"
+    apply trino.yaml
+    apply cloudbeaver.yaml
+    k rollout status deployment/trino --timeout=5m >/dev/null
+    k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
+  fi
   print_access
+}
+
+# The memory the CDC leg holds is what Spark's Job and the lake writer's need.
+refuse_while_cdc() {
+  if cdc_running; then
+    echo "the CDC leg is running, and $1 does not fit beside it: demo/demo.sh cdc stop first" >&2
+    exit 1
+  fi
 }
 
 # The engine matrix's tests against this stack: its engines run as Jobs here, into catalog engines, and the
@@ -396,15 +603,19 @@ case "${1:-}" in
     up
     ;;
   engines)
+    refuse_while_cdc "the engine matrix"
     engines
     ;;
   token)
     if tokens_expired; then
       mint
       publish_tokens
-      say "re-minted; replacing SingleStore's running pipelines and restarting DuckDB and Trino so they use the new tokens"
+      say "re-minted; replacing SingleStore's running pipelines and restarting DuckDB, Trino and Kafka Connect so they use the new tokens"
       feeds
       k rollout restart deployment/duckdb deployment/trino >/dev/null
+      if cdc_running; then
+        k rollout restart deployment/connect >/dev/null
+      fi
     fi
     print_access
     ;;
@@ -412,7 +623,21 @@ case "${1:-}" in
     MSYS_NO_PATHCONV=1 k exec -it deployment/singlestore -- singlestore -uroot -p"$S2_ROOT_PASSWORD" ops
     ;;
   rate)
+    refuse_while_cdc "the lake writer"
     lake rate
+    ;;
+  cdc)
+    case "${2:-}" in
+      "") cdc_start ;;
+      stop) cdc_stop ;;
+      *) sed -n '2,22p' "$0"; exit 2 ;;
+    esac
+    ;;
+  psql)
+    k exec -it deployment/backoffice -- psql -U backoffice -d backoffice
+    ;;
+  sqlplus)
+    MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sqlplus -l "$ORACLE_TREASURY"
     ;;
   status)
     k get pods,services
@@ -422,7 +647,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,17p' "$0"
+    sed -n '2,22p' "$0"
     exit 2
     ;;
 esac
