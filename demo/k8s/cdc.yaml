@@ -13,12 +13,16 @@
 # Memory: 1.9 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
 # demo.sh cdc stops Trino while the leg runs. CloudBeaver stays, to query both databases. No volumes: the
 # databases and Connect's topics last as long as the pods.
+#
+# Each Deployment stops its old pod before starting the new one (Recreate): a changed SQL file or image
+# replaces the pod, and there is no room for two Oracles or two Connect workers at once.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backoffice
   labels: {keel-demo/cdc: "true"}
 spec:
+  strategy: {type: Recreate}
   selector:
     matchLabels: {app: backoffice}
   template:
@@ -69,6 +73,7 @@ metadata:
   name: oracle
   labels: {keel-demo/cdc: "true"}
 spec:
+  strategy: {type: Recreate}
   selector:
     matchLabels: {app: oracle}
   template:
@@ -164,6 +169,7 @@ metadata:
   name: connect
   labels: {keel-demo/cdc: "true"}
 spec:
+  strategy: {type: Recreate}
   selector:
     matchLabels: {app: connect}
   template:
