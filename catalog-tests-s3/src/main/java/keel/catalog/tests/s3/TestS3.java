@@ -241,14 +241,16 @@ public final class TestS3 implements AutoCloseable {
     /**
      * Ceph RGW in one container (mon, mgr, osd, rgw), with an S3 user created at startup. The image sets
      * {@code rgw dns name = demo}; RGW then reads any other host name as a bucket (CNAME hosting), so the
-     * DNS name is set to the host the tests connect through.
+     * DNS names are set to the host the tests connect through and {@code host.docker.internal}, the name a
+     * catalog serving Docker Desktop's pods gives the store (the maintenance worker's TestCatalog.forPods).
      */
     private static TestS3 ceph() {
         GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse(image("ceph.image")))
                 .withEnv("CEPH_DEMO_ACCESS_KEY", ACCESS_KEY)
                 .withEnv("CEPH_DEMO_SECRET_KEY", SECRET_KEY)
                 .withEnv("CEPH_EXTRA_CONF", String.join("\n",
-                        "rgw dns name = " + DockerClientFactory.instance().dockerHostIpAddress(),
+                        "rgw dns name = " + DockerClientFactory.instance().dockerHostIpAddress()
+                                + ",host.docker.internal",
                         "rgw sts key = " + CEPH_STS_KEY,
                         "rgw s3 auth use sts = true"))
                 .withExposedPorts(8080)
