@@ -241,7 +241,8 @@ From `build-plan.md`; the open questions are in its section 6.
   on-prem MinIO and Ceph versions and their STS support (PLT-3).
 - A scheduled overnight job in work CI running `./gradlew build -Pnightly`: the `overnight` tests and the CAS
   test at 1,000 rounds, nothing else. The engine matrix in it needs a Kubernetes cluster whose nodes see
-  locally built images (`-Pengines.cluster=<context>`; see `catalog-tests-engines/README.md`). On Paul's
+  locally built images (`-Pengines.cluster=<context>`, default `docker-desktop`; see
+  `catalog-tests-engines/README.md`). On Paul's
   machine the whole nightly takes about two hours.
 
 ## 9. After the install

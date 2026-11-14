@@ -41,8 +41,9 @@ import org.junit.jupiter.api.io.TempDir;
  * with an id it no longer has (another table took the name after the scan) stops without compacting it.
  *
  * <p>Runs in two namespaces of its own, the worker's and the Jobs', created and deleted here; it never touches
- * another (keel-demo least of all). The catalog and the S3 store are reached from the pods as
- * {@code host.docker.internal} ({@link TestCatalog#forPods}).
+ * another (keel-demo least of all). The Jobs reach the catalog and the S3 store as {@code host.docker.internal}
+ * ({@link TestCatalog#forPods}, the settings' {@code catalogUri}); the worker and the test, on this machine, as
+ * {@code localhost}.
  * Needs Docker, kubectl and Helm on the PATH and the kubectl context {@value #CONTEXT}. Heavy: it builds an image and
  * waits for a Spark job.
  */
@@ -53,7 +54,8 @@ class KubernetesCompactionTest {
     private static final String IMAGE = "keel-engines/spark:4.1.4-iceberg-1.12.0";
     private static final String RELEASE = "keel-maintenance";
 
-    private final TestCatalog catalog = TestCatalog.forPods();
+    private final TestCatalog catalog = TestCatalog.get();
+    private final URI forPods = TestCatalog.forPods();
 
     @TempDir
     Path serviceAccount;
@@ -86,7 +88,7 @@ class KubernetesCompactionTest {
             URI apiServer = URI.create(kubectl(Duration.ofMinutes(1), null, "config", "view", "--minify", "-o",
                     "jsonpath={.clusters[0].cluster.server}").strip());
             WorkerSettings.Compaction settings = new WorkerSettings.Compaction(IMAGE, "Never", jobs,
-                    "keel-compaction", apiServer, serviceAccount, null, "2Gi", "1g", Duration.ofMinutes(20), 185,
+                    "keel-compaction", apiServer, serviceAccount, forPods, "2Gi", "1g", Duration.ofMinutes(20), 185,
                     Map.of());
             KubernetesJobs compactor = new KubernetesJobs(settings, Duration.ofHours(1), catalog.uri,
                     catalog.workerTokens());
@@ -150,7 +152,7 @@ class KubernetesCompactionTest {
         return run(Duration.ofMinutes(1), null, "helm", "template", RELEASE,
                 repo.resolve("deploy/helm/keel-maintenance").toString(), "--namespace", namespace,
                 "--show-only", template,
-                "--set", "config.keel.maintenance.catalog-uri=" + catalog.uri,
+                "--set", "config.keel.maintenance.catalog-uri=" + forPods,
                 "--set", "config.keel.maintenance.storage.test.prefixes[0]=s3://" + catalog.bucket + "/tables",
                 "--set", "config.keel.maintenance.compaction.image=" + IMAGE,
                 "--set", "config.keel.maintenance.compaction.namespace=" + jobs);
