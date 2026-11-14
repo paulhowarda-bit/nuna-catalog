@@ -1,8 +1,8 @@
-# Local demo: the catalog, its console, SingleStore both ways, DuckDB, Trino, CDC, and the engine matrix, on Kubernetes
+# Local demo: the catalog, its console, SingleStore both ways, Trino, CDC, and the engine matrix, on Kubernetes
 
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
-DuckDB with its UI, and Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
+Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
 and Iceberg in both directions and prints how to sign in; `cdc` captures changes in PostgreSQL and Oracle into
 Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
 ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
@@ -35,7 +35,6 @@ demo/demo.sh up
   - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
-  - `duckdb.yaml`: DuckDB and its UI, image `keel-demo-duckdb:<DuckDB version>` (`duckdb.Dockerfile`).
   - `trino.yaml`: Trino, image `trinodb/trino:484`.
   - `cloudbeaver.yaml`: CloudBeaver Community with its connection to Trino, image
     `keel-demo-cloudbeaver:<hash>`: `dbeaver/cloudbeaver:26.2.4` without its version check, and with
@@ -45,17 +44,16 @@ demo/demo.sh up
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, and Kafka Connect,
     image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
-  console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (the DuckDB UI), **8185**
-  (CloudBeaver) and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else
-  holds one of them, such as a `kubectl port-forward`.
-- Memory: about 6.2 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
+  console), **8182** (kafbat), **8183** (SingleStore Studio), **8185** (CloudBeaver) and **8186** (Kafka
+  Connect's REST API, while the CDC leg runs). `up` stops if something else holds one of them, such as a
+  `kubectl port-forward`.
+- Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
-  768 MB; DuckDB 256 MB, about 70 MB idle, up to 1 GB), plus one job at a time: the lake writer 768 MB, or an
-  engine up to 2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so nothing else of that size fits
-  beside it, and `engines` stops Trino and CloudBeaver while it runs to make room for Spark. The CDC leg asks
-  for 1.9 GB (Oracle 1.25 GB, Kafka Connect 512 MB, its PostgreSQL 128 MB), so `cdc` stops Trino, leaving
-  about 130 MB, and `engines` and `rate` refuse to run beside it.
+  768 MB), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
+  Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
+  CloudBeaver while it runs to make room for Spark. The CDC leg asks for 1.9 GB (Oracle 1.25 GB, Kafka Connect
+  512 MB, its PostgreSQL 128 MB), so `cdc` stops Trino, and `engines` and `rate` refuse to run beside it.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
@@ -101,7 +99,6 @@ catalog sees them only through Trino, and there everyone is `ana`.
 | kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups and settings | administers Kafka: topics, messages, consumer offsets, ACLs |
 | SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `SELECT` on every database | all privileges, with grant option |
 | CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the connections: Trino (`ana` to the catalog) and, read-only, the CDC leg's databases | CloudBeaver's administrator, and the same connections |
-| DuckDB UI, <http://localhost:8184> | no sign-in: one DuckDB for everyone, `ana` to the catalog | | |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers, and `demo-analysts`, `demo-grant-admins`
 and `demo-stewards` read. Like the console, kafbat's sign-out leaves Keycloak's session.
@@ -121,8 +118,8 @@ Accounts that run the demo rather than people in it:
 | Oracle `c##dbzuser` | `dbz` | Debezium's LogMiner user |
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
-pipelines are then replaced and DuckDB, Trino and the CDC leg's Kafka Connect are restarted, so they carry
-the new ones):
+pipelines are then replaced and Trino and the CDC leg's Kafka Connect are restarted, so they carry the new
+ones):
 
 ```bash
 demo/demo.sh token
@@ -209,32 +206,6 @@ pooled. An Iceberg pipeline's data workers default to 500 MB each, so two loads 
 all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 (`pipelines_iceberg_data_workers_heap_size`).
 
-## DuckDB
-
-The DuckDB UI is on <http://localhost:8184>: a SQL notebook in the browser. Its DuckDB is signed in to the
-catalog as `ana`, with both catalogs attached as `lakehouse` and `engines`, so it can do what `ana` can: read
-every table she may load, with the storage credentials the catalog vends, and nothing else.
-
-- Every namespace is listed at every depth (`SUPPORT_NESTED_NAMESPACES true`), as a schema named by its dotted
-  path; quote it in SQL:
-
-  ```sql
-  SELECT * FROM lakehouse."markets.equities.eu.xetra".trades;
-  SELECT * FROM engines."m8.shared.spark".t_v3_dv;   -- Spark's v3 table with a deletion vector
-  ```
-
-- `finance.ledger.accounts` is listed, but reading it gets the catalog's refusal (D27); the other tables still
-  work.
-- A write is refused: `ana` holds select only, so the catalog vends her read-only storage credentials, and
-  DuckDB's first upload of a data file gets `HTTP 403 Forbidden ... AccessDenied` from the store. Nothing
-  reaches the table's folder.
-- The UI downloads its web page from `ui.duckdb.org` each time it opens, so it needs internet access; DuckDB
-  and its extensions are in the image, and automatic extension installs are off, so a query that needs an
-  extension not in the image fails instead of downloading it. Notebooks last as long as the pod.
-- It is a single DuckDB for whoever opens the page, with no sign-in of its own. A DuckDB on your own machine
-  would attach the same way with your own token, but needs the vended storage address (`http://s3:9000`
-  here) to resolve where it runs.
-
 ## Trino and CloudBeaver
 
 CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, where the
@@ -294,18 +265,12 @@ starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino to make roo
 Each table is a history: one row per change, appended, never updated. The sink's `DebeziumTransform` adds a
 struct column `_cdc`: `op` (`I`, `U` or `D`), `ts` (when Debezium read the change), `offset` (its Kafka
 offset), `source` and `target` (the source table and the Iceberg table) and `key`. A deleted row is written
-as it was before the delete. `cdc` waits for each
-snapshot (4 rows in each table), then updates, deletes and inserts in both databases and waits for those
-changes: 8 rows in the PostgreSQL history, 7 in Oracle's. In DuckDB, oldest change first:
+as it was before the delete. `cdc` waits for each snapshot (4 rows in each table), then updates, deletes and
+inserts in both databases and waits for those changes: 8 rows in the PostgreSQL history, 7 in Oracle's.
 
-```sql
-SELECT _cdc.op, _cdc.ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
-ORDER BY _cdc.offset;
-SELECT _cdc.op, _cdc.ts, payment_id, status FROM lakehouse."history.oracle.treasury".payments
-ORDER BY _cdc.offset;
-```
-
-Make more changes and watch them arrive within about 10 seconds (the sinks commit every 5 seconds):
+Make more changes and watch them arrive within about 10 seconds (the sinks commit every 5 seconds): kafbat
+shows Debezium's change events in the topics above, and the console shows each sink commit as a snapshot of
+its history table.
 
 ```bash
 demo/demo.sh psql      # database backoffice, user backoffice
@@ -323,6 +288,16 @@ SELECT * FROM treasury.payments ORDER BY payment_id;             -- treasury
 ```
 
 Outside the leg the two connections fail to connect: their hosts are gone.
+
+No query engine runs beside the leg: Trino is stopped for its memory. After `demo/demo.sh cdc stop`, read the
+history in CloudBeaver's Trino connection, oldest change first (`offset` is a keyword in Trino, so it is quoted):
+
+```sql
+SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
+ORDER BY "_cdc"."offset";
+SELECT "_cdc".op, "_cdc".ts, payment_id, status FROM lakehouse."history.oracle.treasury".payments
+ORDER BY "_cdc"."offset";
+```
 
 - History only: the Apache Iceberg sink appends, so there is no table of the rows as they are now. A view
   over the history (the newest row per key that is not a `D`) gives that.

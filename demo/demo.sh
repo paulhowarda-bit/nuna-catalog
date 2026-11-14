@@ -35,8 +35,6 @@ JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 S2_ROOT_PASSWORD=keel-test
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
-DUCKDB_VERSION=2.0.0
-DUCKDB_IMAGE=keel-demo-duckdb:$DUCKDB_VERSION
 TRINO_IMAGE=trinodb/trino:484
 CLOUDBEAVER_IMAGE=
 CONNECT_IMAGE=
@@ -58,7 +56,7 @@ image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 apply() {
   sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
-    -e "s|\${DUCKDB_IMAGE}|$DUCKDB_IMAGE|g" -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" \
+    -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" \
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
@@ -115,14 +113,11 @@ build() {
   unzip -q -j "$jar" 'lib/*' -d "$RUN/images/lake/lib"
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
 
-  say "building the images: the catalog, SingleStore with the connector, the lake writer, DuckDB, CloudBeaver"
+  say "building the images: the catalog, SingleStore with the connector, the lake writer, CloudBeaver"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
   SINGLESTORE_IMAGE="keel-demo-singlestore:$(cat "$jar" "$STACK/singlestore.Dockerfile" | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
   docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
-  mkdir -p "$RUN/images/duckdb"
-  docker build -q -f "$STACK/duckdb.Dockerfile" --build-arg "DUCKDB_VERSION=$DUCKDB_VERSION" -t "$DUCKDB_IMAGE" \
-    "$RUN/images/duckdb" >/dev/null
   mkdir -p "$RUN/images/cloudbeaver"
   cp "$REPO/demo/CloudBeaverUsers.java" "$RUN/images/cloudbeaver/"
   CLOUDBEAVER_IMAGE="keel-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
@@ -140,7 +135,7 @@ mint() {
   "$JAVA" "$REPO/demo/Mint.java" "$RUN"
 }
 
-# The issuer's public keys (served by Service idp), the lake writer's token, ana's for DuckDB and Trino, and
+# The issuer's public keys (served by Service idp), the lake writer's token, ana's for Trino, and
 # cdc's for Kafka Connect's Iceberg sinks.
 publish_tokens() {
   k create configmap idp-keys --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f - >/dev/null
@@ -163,11 +158,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183 8184 8185 8186; do
+  for port in 8180 8181 8182 8183 8185 8186; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8186. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8183, 8185 and 8186. Stop what holds them." >&2
     return 1
   fi
 }
@@ -323,7 +318,6 @@ In kafbat, Studio and CloudBeaver, oscar administers and ana, gary and stella on
 Kafka:        kafbat on http://localhost:8182
 SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD)
 Trino:        CloudBeaver on http://localhost:8185, connection "keel (Trino, as ana)": everyone queries keel as ana
-DuckDB:       its UI on http://localhost:8184, no sign-in, in the catalog as ana (catalogs lakehouse and engines)
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL and Oracle into Iceberg history tables; stops Trino while it runs)
@@ -478,12 +472,13 @@ cdc_access() {
 The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
   PostgreSQL backoffice, settlement.instructions  ->  history.postgres.settlement.instructions   (demo/demo.sh psql)
   Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
-Read the history in DuckDB (http://localhost:8184), oldest change first:
-  SELECT _cdc.op, _cdc.ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
-  ORDER BY _cdc.offset;
-Or query both databases in CloudBeaver (http://localhost:8185), connections backoffice and treasury, read-only.
-Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'; its topics are in kafbat (http://localhost:8182).
-Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts it again.
+Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'. kafbat (http://localhost:8182) shows Debezium's
+change events as they arrive, and the console shows each sink commit as a snapshot of its history table.
+Query both source databases in CloudBeaver (http://localhost:8185), connections backoffice and treasury,
+read-only. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts it again. Then read the
+history in CloudBeaver's Trino connection, oldest change first:
+  SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
+  ORDER BY "_cdc"."offset";
 EOF
 }
 
@@ -551,10 +546,6 @@ up() {
   s2_file users.sql >/dev/null
   seed
 
-  say "starting DuckDB and its UI ($DUCKDB_IMAGE), signed in as ana"
-  apply duckdb.yaml
-  k rollout status deployment/duckdb --timeout=3m >/dev/null
-
   if cdc_running; then
     # trino.yaml asks for one replica, which would start Trino beside the leg.
     say "the CDC leg is running: Trino stays stopped; bringing the leg and CloudBeaver ($CLOUDBEAVER_IMAGE) up to date"
@@ -612,9 +603,9 @@ case "${1:-}" in
     if tokens_expired; then
       mint
       publish_tokens
-      say "re-minted; replacing SingleStore's running pipelines and restarting DuckDB, Trino and Kafka Connect so they use the new tokens"
+      say "re-minted; replacing SingleStore's running pipelines and restarting Trino and Kafka Connect so they use the new tokens"
       feeds
-      k rollout restart deployment/duckdb deployment/trino >/dev/null
+      k rollout restart deployment/trino >/dev/null
       if cdc_running; then
         k rollout restart deployment/connect >/dev/null
       fi

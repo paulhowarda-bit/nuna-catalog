@@ -269,7 +269,6 @@ the tagged images.
 | `eclipse-temurin:25.0.5_8-jre-noble` | the catalog image (`deploy/image/Dockerfile`) |
 | `eclipse-temurin:25.0.5_8-jdk-noble` | the lake writer (`demo/k8s/lake.Dockerfile`) |
 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | SingleStore with the change-feed connector |
-| `debian:bookworm-slim` | DuckDB (`demo/k8s/duckdb.Dockerfile`) |
 | `trinodb/trino:484` | Trino |
 | `dbeaver/cloudbeaver:26.2.4` | CloudBeaver, Trino's UI (`demo/k8s/cloudbeaver.Dockerfile`) |
 | `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
@@ -282,16 +281,11 @@ What reaches beyond the machine (checked 2026-11-13):
   `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
   client. Point Maven at the internal repository: a `settings.xml` mirror copied into the build stage of
   `connect.Dockerfile`. Its running pods talk only to the cluster.
-- **DuckDB cannot be built at work.** Its Dockerfile downloads socat from Debian's mirrors, the DuckDB program
-  from github.com and its extensions from extensions.duckdb.org, and `demo.sh up` stops when that build
-  fails. Its UI also loads its page from ui.duckdb.org through the DuckDB process, so the UI needs the internet
-  even when the image is built. Ask Paul how DuckDB gets to work, or whether it stays home.
 - **Turned off:** SingleStore's critical diagnostics, which its dev license turns on and which send DDL and
   table metadata to phone-home.singlestore.com (`singlestore.yaml`); Studio's browser telemetry (Segment,
   Google Analytics, Mixpanel, Intercom) and upgrade check (`singlestore.Dockerfile`); kafbat's hourly release
-  check against api.github.com (`stack.yaml`); DuckDB's automatic and community extension installs
-  (`duckdb.yaml`); and CloudBeaver's version check, which had its Administration page fetch
-  dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`). An explicit `INSTALL` in DuckDB still tries extensions.duckdb.org.
+  check against api.github.com (`stack.yaml`); and CloudBeaver's version check, which had its Administration
+  page fetch dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`).
 - **CloudBeaver** loads its page only from localhost and holds no outside connection; its Trino driver is in
   the image. Two features would reach outside, and the demo uses neither: the map view of a geometry value
   (tiles from openstreetmap.org) and the AI assistant (whichever AI service an administrator configures).
@@ -300,7 +294,7 @@ What reaches beyond the machine (checked 2026-11-13):
   engine images, which need the mirrors in section 2.
 
 The demo runs without TLS, and every page works that way at `localhost`: the console and kafbat with their
-Keycloak sign-in, Keycloak's admin console, Studio, the DuckDB UI and CloudBeaver (checked 2026-11-13). Opened by
-the machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
+Keycloak sign-in, Keycloak's admin console, Studio and CloudBeaver (checked 2026-11-13). Opened by the
+machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
 Crypto only on localhost, and Keycloak's issuer and the console's redirect address are both localhost.
 kafbat's sign-in fails the same way, as Keycloak knows its redirect address only as localhost:8182.
