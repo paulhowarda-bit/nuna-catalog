@@ -11,8 +11,8 @@
 #               demo/cdc/connectors through its REST API, which ports.yaml publishes on localhost:8186
 #
 # Memory: 1.9 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
-# demo.sh cdc stops Trino and CloudBeaver while the leg runs. No volumes: the databases and Connect's topics
-# last as long as the pods.
+# demo.sh cdc stops Trino while the leg runs. CloudBeaver stays, to query both databases. No volumes: the
+# databases and Connect's topics last as long as the pods.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
