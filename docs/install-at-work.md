@@ -299,7 +299,8 @@ What reaches beyond the machine (checked 2026-11-13):
   PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
   engine images, which need the mirrors in section 2.
 
-The demo runs without TLS, and every page works that way at `localhost`: the console with its Keycloak
-sign-in, Keycloak's admin console, kafbat, Studio, the DuckDB UI and CloudBeaver (checked 2026-11-13). Opened by the
-machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
+The demo runs without TLS, and every page works that way at `localhost`: the console and kafbat with their
+Keycloak sign-in, Keycloak's admin console, Studio, the DuckDB UI and CloudBeaver (checked 2026-11-13). Opened by
+the machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
 Crypto only on localhost, and Keycloak's issuer and the console's redirect address are both localhost.
+kafbat's sign-in fails the same way, as Keycloak knows its redirect address only as localhost:8182.

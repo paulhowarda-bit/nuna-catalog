@@ -22,22 +22,24 @@ demo/demo.sh up
   (`KEEL_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
   - `stack.yaml`: PostgreSQL, Kafka, kafbat, and `idp`, which serves the demo issuer's keys
-    (`demo/Mint.java`).
+    (`demo/Mint.java`). The demo patches kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak;
+    the engine matrix on its own leaves kafbat open.
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, and the job that makes the warehouse bucket.
   - The catalog: the Helm chart `deploy/helm/keel-catalog`, release `keel-catalog`, one server, image
     `keel-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
     issuers, the console's sign-in, and Silo).
   - `keycloak.yaml`: Keycloak in development mode, with realm `keel` (`keycloak-realm.json`): the people
-    below, their groups, and the console's client. Only the demo runs it; the engine matrix on its own does not.
+    below, their groups, and the clients of the console and kafbat. Only the demo runs it; the engine matrix
+    on its own does not.
   - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
   - `duckdb.yaml`: DuckDB and its UI, image `keel-demo-duckdb:<DuckDB version>` (`duckdb.Dockerfile`).
   - `trino.yaml`: Trino, image `trinodb/trino:484`.
   - `cloudbeaver.yaml`: CloudBeaver Community with its connection to Trino, image
-    `keel-demo-cloudbeaver:<Dockerfile hash>`: `dbeaver/cloudbeaver:26.2.4` without its version check
-    (`cloudbeaver.Dockerfile`).
+    `keel-demo-cloudbeaver:<hash>`: `dbeaver/cloudbeaver:26.2.4` without its version check, and with
+    `demo/CloudBeaverUsers.java`, which adds the people below as the pod starts (`cloudbeaver.Dockerfile`).
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, and Kafka Connect,
@@ -86,8 +88,32 @@ The console offers two ways in:
 Separation of duties means no one group holds data rights and grant rights, so try the console as `ana` and as
 `gary`. Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but
 not Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
-sign out at <http://localhost:8180/realms/keel/account>, or use a private window. Keycloak's admin console is
-<http://localhost:8180/admin> (user `admin`, password `keel-test`); its users and sessions go with its pod.
+sign out at <http://localhost:8180/realms/keel/account>, or use a private window. Keycloak's users and
+sessions go with its pod.
+
+### The same people in the other UIs
+
+The four people sign in to every UI that has users, with the same passwords. Outside the console, the
+catalog sees them only through Trino, and there everyone is `ana`.
+
+| UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
+|---|---|---|---|
+| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups and settings | administers Kafka: topics, messages, consumer offsets, ACLs |
+| SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `SELECT` on every database | all privileges, with grant option |
+| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the Trino connection: `ana` to the catalog | CloudBeaver's administrator, and the Trino connection |
+| DuckDB UI, <http://localhost:8184> | no sign-in: one DuckDB for everyone, `ana` to the catalog | | |
+
+kafbat's roles go by Keycloak group: `demo-operators` administers, and `demo-analysts`, `demo-grant-admins`
+and `demo-stewards` read. Like the console, kafbat's sign-out leaves Keycloak's session.
+
+Accounts that run the demo rather than people in it:
+
+| Account | Password | For |
+|---|---|---|
+| Keycloak `admin` | `keel-test` | Keycloak's admin console, <http://localhost:8180/admin> |
+| SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio accepts it too |
+| Silo `keeltest` | `keeltest-secret-key` | the S3 store's root; not published outside the cluster |
+| PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
 pipelines are then replaced and DuckDB, Trino and the CDC leg's Kafka Connect are restarted, so they carry
@@ -126,8 +152,8 @@ Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the co
 demo/demo.sh sql
 ```
 
-Or Studio on <http://localhost:8183> (user `root`, password `keel-test`). Two databases, and a third once
-the engines have run:
+Or Studio on <http://localhost:8183>, as one of the people above or as `root` (password `keel-test`). Two
+databases, and a third once the engines have run:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
@@ -206,10 +232,10 @@ every table she may load, with the storage credentials the catalog vends, and no
 
 ## Trino and CloudBeaver
 
-CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, open without
-signing in. Its one connection, "keel (Trino, as ana)", is a Trino whose catalogs `lakehouse` and `engines`
-are keel's, signed in to the catalog as `ana` with a static token. So it reads what `ana` may load, with the
-storage credentials the catalog vends, and nothing else.
+CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, where the
+people above sign in. Its one connection, "keel (Trino, as ana)", is a Trino whose catalogs `lakehouse` and
+`engines` are keel's, signed in to the catalog as `ana` with a static token. So it reads what `ana` may load,
+with the storage credentials the catalog vends, and nothing else.
 
 - The navigator lists every namespace at every depth, as a schema named by its dotted path; quote it in SQL:
 
@@ -231,8 +257,8 @@ storage credentials the catalog vends, and nothing else.
 - Every Trino user is `ana` to the catalog: Trino sends its token, not its own user. The user name in the
   CloudBeaver connection only labels the query in Trino.
 - The first query after Trino starts takes about 10 seconds; after that, about 2.
-- CloudBeaver's administrator is `cbadmin`, password `keel-test`: Settings, then Login; then Settings,
-  Administration. Scripts and settings last as long as its pod, and `engines` restarts it.
+- CloudBeaver's administrator is `oscar`: Settings, then Administration. Scripts and settings last as long
+  as its pod, and `engines` and `cdc` restart it; each new pod adds the users again.
 - Its page loads only from localhost:8185. The image drops CloudBeaver's version check, which had the
   Administration page fetch dbeaver.com; its Version Update tab now says "Version is up to date" without
   checking. Two features would still reach outside, and the demo uses neither: the map view of a geometry
@@ -318,11 +344,10 @@ Results: `catalog-tests-engines/build/engines-run/results.txt`, and every comman
 
 ## Kafka
 
-kafbat on <http://localhost:8182> shows the stack's Kafka: the catalog's audit and change topics, and once the
-engines have run, Kafka Connect's source topic `m8-kafka-events` and the sink's control topic. While the CDC
-leg runs: Debezium's change topics, the sinks' control topics, Oracle's schema history and the worker's own
-`cdc-connect-*` topics.
-
+kafbat on <http://localhost:8182>, where the people above sign in through Keycloak, shows the stack's Kafka:
+the catalog's audit and change topics, and once the engines have run, Kafka Connect's source topic
+`m8-kafka-events` and the sink's control topic. While the CDC leg runs: Debezium's change topics, the sinks'
+control topics, Oracle's schema history and the worker's own `cdc-connect-*` topics.
 ## Stop
 
 ```bash

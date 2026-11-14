@@ -1,0 +1,65 @@
+# kafbat's sign-in, for the demo only: demo.sh patches Deployment kafka-ui (stack.yaml) with this after applying
+# the stack, so the engine matrix, which has no Keycloak, keeps kafbat open. A patch, not a manifest: applying
+# stack.yaml again leaves these settings alone.
+#
+# The demo's people sign in through Keycloak (realm keel, client kafbat), as in the console. The browser goes to
+# Keycloak on localhost:8180; kafbat fetches tokens and keys inside the cluster from keycloak:8080. There is no
+# issuer-uri: Spring would look the issuer up at localhost:8180, which inside the pod is not Keycloak. Roles by
+# Keycloak group: the operators (oscar) administer Kafka in kafbat; the analysts, grant admins and stewards
+# (ana, gary, stella) read topics, messages, consumer groups and settings.
+spec:
+  template:
+    spec:
+      containers:
+        - name: kafka-ui
+          env:
+            - name: SPRING_APPLICATION_JSON
+              value: |
+                {
+                  "auth": {"type": "OAUTH2", "oauth2": {"client": {"keycloak": {
+                    "provider": "keycloak",
+                    "clientId": "kafbat",
+                    "clientName": "Keycloak",
+                    "scope": ["openid"],
+                    "authorizationGrantType": "authorization_code",
+                    "redirectUri": "{baseUrl}/login/oauth2/code/{registrationId}",
+                    "authorizationUri": "http://localhost:8180/realms/keel/protocol/openid-connect/auth",
+                    "tokenUri": "http://keycloak:8080/realms/keel/protocol/openid-connect/token",
+                    "jwkSetUri": "http://keycloak:8080/realms/keel/protocol/openid-connect/certs",
+                    "userInfoUri": "http://keycloak:8080/realms/keel/protocol/openid-connect/userinfo",
+                    "userNameAttribute": "preferred_username",
+                    "customParams": {"type": "oauth", "roles-field": "groups"}
+                  }}}},
+                  "rbac": {"roles": [
+                    {
+                      "name": "operators",
+                      "clusters": ["keel"],
+                      "subjects": [{"provider": "oauth", "type": "role", "value": "demo-operators"}],
+                      "permissions": [
+                        {"resource": "applicationconfig", "actions": ["all"]},
+                        {"resource": "clusterconfig", "actions": ["all"]},
+                        {"resource": "topic", "value": ".*", "actions": ["all"]},
+                        {"resource": "consumer", "value": ".*", "actions": ["all"]},
+                        {"resource": "schema", "value": ".*", "actions": ["all"]},
+                        {"resource": "connect", "value": ".*", "actions": ["all"]},
+                        {"resource": "acl", "actions": ["all"]}
+                      ]
+                    },
+                    {
+                      "name": "readers",
+                      "clusters": ["keel"],
+                      "subjects": [
+                        {"provider": "oauth", "type": "role", "value": "demo-analysts"},
+                        {"provider": "oauth", "type": "role", "value": "demo-grant-admins"},
+                        {"provider": "oauth", "type": "role", "value": "demo-stewards"}
+                      ],
+                      "permissions": [
+                        {"resource": "clusterconfig", "actions": ["VIEW"]},
+                        {"resource": "topic", "value": ".*", "actions": ["VIEW", "MESSAGES_READ", "ANALYSIS_VIEW"]},
+                        {"resource": "consumer", "value": ".*", "actions": ["VIEW"]},
+                        {"resource": "schema", "value": ".*", "actions": ["VIEW"]},
+                        {"resource": "connect", "value": ".*", "actions": ["VIEW"]}
+                      ]
+                    }
+                  ]}
+                }

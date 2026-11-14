@@ -124,7 +124,9 @@ build() {
   docker build -q -f "$STACK/duckdb.Dockerfile" --build-arg "DUCKDB_VERSION=$DUCKDB_VERSION" -t "$DUCKDB_IMAGE" \
     "$RUN/images/duckdb" >/dev/null
   mkdir -p "$RUN/images/cloudbeaver"
-  CLOUDBEAVER_IMAGE="keel-demo-cloudbeaver:$(sha256sum < "$STACK/cloudbeaver.Dockerfile" | cut -c1-12)"
+  cp "$REPO/demo/CloudBeaverUsers.java" "$RUN/images/cloudbeaver/"
+  CLOUDBEAVER_IMAGE="keel-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
+    | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
 
   local image
@@ -301,10 +303,13 @@ print_access() {
   expires=$(tr -d '\r\n' < "$RUN/tokens/expires.txt")
   cat <<EOF
 
+The demo's people sign in to the console, kafbat, Studio and CloudBeaver with the same passwords:
+ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo. The console and kafbat sign in
+through Keycloak (localhost:8180); to change user there, sign out of Keycloak too
+(http://localhost:8180/realms/keel/account).
+
 The console:  $URL/ui/   (catalogs lakehouse and engines)
-Sign in with localhost:8180 (Keycloak) by username and password: ana / ana-demo, gary / gary-demo,
-stella / stella-demo, oscar / oscar-demo. To change user, sign out there too (http://localhost:8180/realms/keel/account).
-Or paste one of these tokens (valid until $expires).
+Sign in, or paste one of these tokens (valid until $expires).
 
 Data user  ana   (group demo-analysts: select on both catalogs)
 $(token_of ana)
@@ -314,10 +319,11 @@ $(token_of gary)
 
 Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix and Kafka Connect
 have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc}.jwt
-SingleStore:  demo/demo.sh sql   (or Studio on http://localhost:8183, user root, password $S2_ROOT_PASSWORD)
-DuckDB:       its UI on http://localhost:8184, signed in to the catalog as ana (catalogs lakehouse and engines)
-Trino:        CloudBeaver on http://localhost:8185, connection "keel (Trino, as ana)" (its admin: cbadmin / keel-test)
+In kafbat, Studio and CloudBeaver, oscar administers and ana, gary and stella only read.
 Kafka:        kafbat on http://localhost:8182
+SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD)
+Trino:        CloudBeaver on http://localhost:8185, connection "keel (Trino, as ana)": everyone queries keel as ana
+DuckDB:       its UI on http://localhost:8184, no sign-in, in the catalog as ana (catalogs lakehouse and engines)
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL and Oracle into Iceberg history tables; stops Trino while it runs)
@@ -510,6 +516,7 @@ up() {
 
   say "starting PostgreSQL, Kafka, kafbat, the issuer's key server, Keycloak and Silo (namespace $NS, context $CONTEXT)"
   apply stack.yaml
+  k patch deployment kafka-ui --type strategic --patch-file "$STACK/kafka-ui-signin.yaml" >/dev/null
   apply store-silo.yaml
   k create configmap keycloak-realm --from-file=keel.json="$STACK/keycloak-realm.json" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
@@ -540,6 +547,7 @@ up() {
   say "starting SingleStore ($SINGLESTORE_IMAGE)"
   apply singlestore.yaml
   k rollout status deployment/singlestore --timeout=15m >/dev/null
+  s2_file users.sql >/dev/null
   seed
 
   say "starting DuckDB and its UI ($DUCKDB_IMAGE), signed in as ana"
