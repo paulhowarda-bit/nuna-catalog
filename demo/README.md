@@ -76,6 +76,7 @@ The console offers two ways in:
 | `gary` | `gary-demo` | `demo-grant-admins` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused |
 | `stella` | `stella-demo` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
 | `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
+| `presenter` | `presenter-demo` | all four of the above | everything the four people may do, in one sign-in, for showing the demo |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
@@ -88,6 +89,12 @@ Every refusal is the server's, shown as it answered. The console's "Sign out" fo
 Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
 sign out at <http://localhost:8180/realms/keel/account>, or use a private window. Keycloak's users and
 sessions go with its pod.
+
+`presenter` is for showing the demo without changing user: Keycloak puts them in all four groups, so the
+console shows data, grants, the audit trail, governance and the DR freeze together. Separation of duties is
+checked on grants to groups, so nothing in the catalog refuses one person in every group; at work that is
+the directory's to prevent. In kafbat `presenter` administers, as `demo-operators`. Studio and CloudBeaver
+have no `presenter`: use `oscar` there.
 
 ### The same people in the other UIs
 

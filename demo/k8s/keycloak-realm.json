@@ -55,6 +55,16 @@
       "emailVerified": true,
       "credentials": [{"type": "password", "value": "oscar-demo", "temporary": false}],
       "groups": ["/demo-operators"]
+    },
+    {
+      "username": "presenter",
+      "enabled": true,
+      "firstName": "Demo",
+      "lastName": "Presenter",
+      "email": "presenter@keel.demo",
+      "emailVerified": true,
+      "credentials": [{"type": "password", "value": "presenter-demo", "temporary": false}],
+      "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators"]
     }
   ],
   "clients": [

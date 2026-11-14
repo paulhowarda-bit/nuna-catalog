@@ -9,6 +9,9 @@ kind: Deployment
 metadata:
   name: keycloak
 spec:
+  # The old pod stops before the new one starts: its in-memory sessions would not carry over anyway, and
+  # beside the CDC leg there is no room for two Keycloaks.
+  strategy: {type: Recreate}
   selector:
     matchLabels: {app: keycloak}
   template:
