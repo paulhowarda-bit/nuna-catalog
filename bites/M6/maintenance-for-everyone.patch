@@ -1,6 +1,6 @@
-Breaks: every caller without an end user is a maintenance principal, so all get delete.
+Breaks: every caller acting as itself is a maintenance principal, so anyone may read the maintenance work list.
 Module: catalog-server
-Test: VendingRouteTest#loadVendsCredentialsConfinedToTheTable
+Test: ManagementAuthorizationTest#theWorkListIsForTheMaintenancePrincipal
 
 diff --git a/catalog-server/src/main/java/keel/catalog/server/security/SecuritySettings.java b/catalog-server/src/main/java/keel/catalog/server/security/SecuritySettings.java
 index 1d19911..30a0228 100644
