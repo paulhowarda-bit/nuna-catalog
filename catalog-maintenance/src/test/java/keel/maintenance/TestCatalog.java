@@ -163,15 +163,18 @@ final class TestCatalog {
     }
 
     /**
-     * A second server on the same database, which it and the S3 store name by {@code host.docker.internal}, so
-     * that pods of Docker Desktop's Kubernetes reach both; this machine must resolve that name too.
+     * The catalog's address for pods of Docker Desktop's Kubernetes: a second server on the same database, which it
+     * and its storage profile's S3 endpoint name by {@code host.docker.internal}, as those pods resolve this machine.
+     * This machine reaches the same catalog and store through {@link #get()} and never resolves that name itself:
+     * the Windows hosts-file entry for it is written when Docker Desktop starts and goes stale when the machine's
+     * address changes.
      */
-    static synchronized TestCatalog forPods() {
+    static synchronized URI forPods() {
         get();
         if (forPods == null) {
             forPods = new TestCatalog("host.docker.internal");
         }
-        return forPods;
+        return forPods.uri;
     }
 
     private static synchronized Backing backing() {

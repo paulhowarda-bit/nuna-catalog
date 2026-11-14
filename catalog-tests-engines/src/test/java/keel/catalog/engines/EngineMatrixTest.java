@@ -58,14 +58,16 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * table of its own (delete, overwrite, upsert); SingleStore (through its Iceberg pipelines) reads Spark's tables
  * and PyIceberg's. Results, timings and every command go to {@code build/engines-run/}.
  *
- * <p>Needs Docker, kubectl and Helm on the PATH, and kind unless {@code -Pengines.cluster} names a cluster.
+ * <p>Needs Docker, kubectl and Helm on the PATH, and kind only with {@code -Pengines.cluster=kind}.
  * On its own, everything runs in namespace {@value #NAMESPACE}.
  * <ul>
- *   <li>By default the harness creates kind cluster {@value #CLUSTER} with its own kubeconfig in the run
- *       directory, so the current kubectl context is never changed, and deletes the cluster at the end.</li>
- *   <li>{@code -Pengines.cluster=<kubectl context>} (for example {@code docker-desktop}) deploys into that
- *       existing cluster instead: namespace {@value #NAMESPACE} is recreated at the start and deleted at the
- *       end. Its nodes must see the locally built images, as Docker Desktop's do; nothing is pushed.</li>
+ *   <li>By default the harness deploys into the existing cluster of kubectl context {@value #DEFAULT_CLUSTER},
+ *       Docker Desktop's Kubernetes; {@code -Pengines.cluster=<kubectl context>} names another. Namespace
+ *       {@value #NAMESPACE} is recreated at the start and deleted at the end. The cluster's nodes must see the
+ *       locally built images, as Docker Desktop's do; nothing is pushed.</li>
+ *   <li>{@code -Pengines.cluster=kind} creates kind cluster {@value #CLUSTER} instead, with its own kubeconfig
+ *       in the run directory, so the current kubectl context is never changed, and deletes the cluster at the
+ *       end.</li>
  * </ul>
  * {@code -Pengines.keep-stack=true} leaves everything up afterwards, with the token in
  * {@code build/engines-run/token}, to rerun one engine by hand, and the kafbat UI on Service {@code kafka-ui}.
@@ -80,6 +82,9 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class EngineMatrixTest {
 
+    /** The kubectl context deployed into without {@code -Pengines.cluster}: Docker Desktop's Kubernetes. */
+    private static final String DEFAULT_CLUSTER = "docker-desktop";
+    /** The kind cluster made with {@code -Pengines.cluster=kind}. */
     private static final String CLUSTER = "keel-engines";
     private static final String NAMESPACE = "keel-engines";
     private static final String ISSUER = "https://idp.test/engines";
@@ -147,9 +152,13 @@ class EngineMatrixTest {
         Files.deleteIfExists(log);
         Path kubeconfig = runDir.resolve("kubeconfig");
         String cluster = System.getProperty("engines.cluster", "").strip();
-        kind = cluster.isEmpty() || cluster.equals("kind");
+        if (cluster.isEmpty()) {
+            cluster = DEFAULT_CLUSTER;
+        }
+        kind = cluster.equals("kind");
         if (existing && kind) {
-            throw new IllegalStateException("-Pengines.stack needs -Pengines.cluster: the cluster the stack runs in");
+            throw new IllegalStateException("-Pengines.stack runs in the cluster the stack is up in, not a new kind"
+                    + " cluster");
         }
         context = kind ? "kind-" + CLUSTER : cluster;
         cli = new Cli(kind ? Map.of("KUBECONFIG", kubeconfig.toAbsolutePath().toString()) : Map.of(), log);

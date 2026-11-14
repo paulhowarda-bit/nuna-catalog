@@ -21,19 +21,20 @@ upserts in a v2 table of its own, which SingleStore reads. (Trino, Flink and Duc
 
 The test is tagged `overnight`: the fast and heavy builds compile it and start nothing; the overnight run
 (`-Pnightly`) runs it. It needs Docker, `kubectl` and
-`helm` on the PATH (and `kind` for the default cluster), and the internet the first time (images, Maven
+`helm` on the PATH (and `kind` only with `-Pengines.cluster=kind`), and the internet the first time (images, Maven
 Central jars and PyPI packages are baked into local images). On its own, everything runs in namespace
 `keel-engines`.
 
 | Switch | Effect |
 |---|---|
 | `-Ps3=silo\|ceph\|aws` | The S3 store, as for every other test (default `silo`). |
-| `-Pengines.cluster=<context>` | Deploy into an existing cluster, for example `docker-desktop`, instead of a kind cluster. The namespace is recreated at the start and deleted at the end; the cluster's nodes must see locally built images, as Docker Desktop's do. |
+| `-Pengines.cluster=<context>` | The kubectl context of the existing cluster to deploy into (default `docker-desktop`, Docker Desktop's Kubernetes). The namespace is recreated at the start and deleted at the end; the cluster's nodes must see locally built images, as Docker Desktop's do. `kind` creates kind cluster `keel-engines` instead. |
 | `-Pengines.keep-stack=true` | Leave everything up afterwards. |
 | `-Pengines.skip-build=true` | Use the images already built instead of building them. |
 | `-Pengines.stack=<namespace>` | Run the engines against the stack already up in that namespace of `-Pengines.cluster` instead of deploying one; nothing but the engines' Jobs is created or deleted. Needs `-Pengines.token-file=<file>`, a token the stack's issuer signed for group `engine-clients`. `demo/demo.sh engines` runs it against the demo. |
 
-By default the harness creates kind cluster `keel-engines` with its own kubeconfig,
+By default the harness deploys into Docker Desktop's Kubernetes (context `docker-desktop`). With
+`-Pengines.cluster=kind` it creates kind cluster `keel-engines` with its own kubeconfig,
 `build/engines-run/kubeconfig`, so the current kubectl context is never changed, and deletes it at the end.
 `build/engines-run/` holds the token, `commands.log` (every command and its output), the rendered manifests
 and `results.txt`.
@@ -42,15 +43,16 @@ With the stack kept, the kafbat UI shows the Kafka topics (the Kafka Connect sou
 sink's control topic, the catalog's audit and change topics), their messages and consumer groups:
 
 ```
-KUBECONFIG=build/engines-run/kubeconfig kubectl -n keel-engines port-forward svc/kafka-ui 8080:8080
+kubectl --context docker-desktop -n keel-engines port-forward svc/kafka-ui 8080:8080
 ```
 
-then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--context docker-desktop` instead of
-`KUBECONFIG`).
+then http://localhost:8080 (with `-Pengines.cluster=kind`, use `KUBECONFIG=build/engines-run/kubeconfig`
+instead of `--context`).
 
 ## How it works
 
-- On its own, the harness creates kind cluster `keel-engines`, builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
+- On its own, the harness recreates namespace `keel-engines` in Docker Desktop's Kubernetes (or creates kind
+  cluster `keel-engines`, with `-Pengines.cluster=kind`), builds the catalog image (`deploy/image/Dockerfile`, from the runnable jar this build makes)
   and the three engine images (`images/`), pulls the infrastructure images, and loads them all into the
   cluster: nothing is pulled from inside it.
 - The stack is the demo's manifests. `demo/k8s/stack.yaml`: PostgreSQL 18, Kafka 4.2.2 (256 MB heap), `idp`,
@@ -87,7 +89,7 @@ then http://localhost:8080 (with `-Pengines.cluster=docker-desktop`, use `--cont
 | PyIceberg 0.12.0 | `python:3.12-slim-bookworm` + `pyiceberg[pyarrow]==0.12.0` | — |
 | SingleStore 10.9.0 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
 
-Cluster: kind (or `-Pengines.cluster`), `postgres:18`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
+Cluster: Docker Desktop's Kubernetes (or `-Pengines.cluster`), `postgres:18`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
 `ghcr.io/clyso/ceph-test:v20.2.5`, `busybox:1.37.0`; the catalog image is `eclipse-temurin:25.0.5_8-jre-noble`
 with the exec jar unpacked into Spring Boot's layers.
 
