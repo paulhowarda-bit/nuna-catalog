@@ -10,8 +10,8 @@
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL and Oracle, through Debezium and Kafka Connect, into Iceberg
 #                         history tables (stops Trino while it runs)
 #   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino again
-#   demo/demo.sh psql     open a psql prompt on the CDC leg's PostgreSQL (database backoffice)
-#   demo/demo.sh sqlplus  open a SQL*Plus prompt on the CDC leg's Oracle (user treasury, PDB FREEPDB1)
+#   demo/demo.sh psql [user]     a psql prompt on the CDC leg's PostgreSQL, database backoffice (default backoffice)
+#   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh status   show the pods and services
 #   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key and tokens)
 #
@@ -176,6 +176,9 @@ wait_for_console() {
   return 1
 }
 
+# By SQL, so the server's separation-of-duties check (D18) never sees these: each group keeps to one duty plus
+# reading. ana's demo-analysts change data and definitions; stella's demo-stewards tag and read. gary's
+# demo-grant-admins and oscar's demo-operators may hold no grant at all, so they hold none.
 grants() {
   say "granting the demo groups and the engine matrix their privileges (by SQL)"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
@@ -183,10 +186,11 @@ INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, 
 SELECT c.id, 'CATALOG', c.id, g.group_name, g.privilege, 'demo-setup', now()
 FROM catalog c,
      (VALUES ('lakehouse', 'demo-loaders', 'create'), ('lakehouse', 'demo-loaders', 'modify'),
-             ('lakehouse', 'demo-analysts', 'select'),
-             ('lakehouse', 'demo-stewards', 'manage-tags'),
+             ('lakehouse', 'demo-analysts', 'create'), ('lakehouse', 'demo-analysts', 'modify'),
+             ('lakehouse', 'demo-stewards', 'manage-tags'), ('lakehouse', 'demo-stewards', 'select'),
              ('engines', 'engine-clients', 'create'), ('engines', 'engine-clients', 'modify'),
-             ('engines', 'demo-analysts', 'select')) AS g(catalog_name, group_name, privilege)
+             ('engines', 'demo-analysts', 'create'), ('engines', 'demo-analysts', 'modify'),
+             ('engines', 'demo-stewards', 'select')) AS g(catalog_name, group_name, privilege)
 WHERE c.name_norm = g.catalog_name
 ON CONFLICT DO NOTHING;
 SQL
@@ -627,10 +631,14 @@ case "${1:-}" in
     esac
     ;;
   psql)
-    k exec -it deployment/backoffice -- psql -U backoffice -d backoffice
+    # Inside the pod psql connects by socket, which the image trusts: no password asked.
+    k exec -it deployment/backoffice -- psql -U "${2:-backoffice}" -d backoffice
     ;;
   sqlplus)
-    MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sqlplus -l "$ORACLE_TREASURY"
+    # A person's Oracle password is their Keycloak one, <user>-demo (demo/cdc/oracle.sql).
+    login=$ORACLE_TREASURY
+    if [[ -n "${2:-}" ]]; then login="$2/\"$2-demo\"@//localhost:1521/FREEPDB1"; fi
+    MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sqlplus -l "$login"
     ;;
   status)
     k get pods,services

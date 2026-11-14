@@ -72,32 +72,33 @@ The console offers two ways in:
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
-| `ana` | `ana-demo` | `demo-analysts` | select on the whole catalog: browse, load tables and views, read governance |
+| `ana` | `ana-demo` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them |
 | `gary` | `gary-demo` | `demo-grant-admins` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused |
-| `stella` | `stella-demo` | `demo-stewards` | manage-tags: classifications, owners, legal holds |
+| `stella` | `stella-demo` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
 | `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 
-`ana` can also browse catalog `engines`, where the engine matrix's tables land.
-
-Separation of duties means no one group holds data rights and grant rights, so try the console as `ana` and as
-`gary`. Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but
-not Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
+Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
+plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
+data in the catalog, and of the four people only `ana` changes it. Try the console as `ana` and as `gary`.
+Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but not
+Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
 sign out at <http://localhost:8180/realms/keel/account>, or use a private window. Keycloak's users and
 sessions go with its pod.
 
 ### The same people in the other UIs
 
 The four people sign in to every UI that has users, with the same passwords. Outside the console, the
-catalog sees them only through Trino, and there everyone is `ana`.
+catalog sees them only through Trino, and there everyone is `ana`: in CloudBeaver all four can read and also
+change every Iceberg table.
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
-| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups and settings | administers Kafka: topics, messages, consumer offsets, ACLs |
-| SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `SELECT` on every database | all privileges, with grant option |
+| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
+| SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
 | CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the connections: Trino (`ana` to the catalog) and, read-only, the CDC leg's databases | CloudBeaver's administrator, and the same connections |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers, and `demo-analysts`, `demo-grant-admins`
@@ -228,8 +229,8 @@ with the storage credentials the catalog vends, and nothing else.
     --execute 'SELECT * FROM lakehouse."finance.ledger".accounts'
   ```
 
-- A write is refused: `CREATE TABLE` by the catalog (`ana holds no privilege that gives create`), and
-  `INSERT` by the store (`AccessDenied`, 403), as `ana`'s vended credentials are read-only.
+- `ana` changes data and definitions: `CREATE SCHEMA` and `TABLE`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` and
+  `DROP` all work, with the write credentials the catalog vends her.
 - Every Trino user is `ana` to the catalog: Trino sends its token, not its own user. The user name in the
   CloudBeaver connection only labels the query in Trino.
 - The first query after Trino starts takes about 10 seconds; after that, about 2.
@@ -273,9 +274,24 @@ shows Debezium's change events in the topics above, and the console shows each s
 its history table.
 
 ```bash
-demo/demo.sh psql      # database backoffice, user backoffice
-demo/demo.sh sqlplus   # user treasury in FREEPDB1; COMMIT, or Debezium sees nothing
+demo/demo.sh psql             # database backoffice, user backoffice
+demo/demo.sh sqlplus          # user treasury in FREEPDB1; COMMIT, or Debezium sees nothing
+demo/demo.sh psql ana         # or as one of the people below
+demo/demo.sh sqlplus stella
 ```
+
+The people have accounts in both databases, with their Keycloak passwords:
+
+| | PostgreSQL `backoffice` | Oracle `FREEPDB1` |
+|---|---|---|
+| `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` |
+| `gary` | superuser | DBA |
+| `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` |
+| everyone | metadata: statistics, settings and activity (`pg_monitor`) | metadata: the data dictionary and `V$` views (`SELECT_CATALOG_ROLE`) |
+
+`backoffice` (owner of the database, Debezium's login), `treasury` (owner of `PAYMENTS`) and `c##dbzuser`
+(Debezium's LogMiner user) run the leg. In PostgreSQL a table `ana` creates is hers: besides her, only `gary`
+can alter or drop it.
 
 CloudBeaver (<http://localhost:8185>) queries both databases while the leg runs, through connections
 "backoffice (PostgreSQL, CDC source)" and "treasury (Oracle, CDC source)". They sign in as `reader`
@@ -311,6 +327,8 @@ ORDER BY "_cdc"."offset";
 - Each `cdc` drops the history tables of the run before and starts both databases empty. `demo.sh cdc` while
   the leg runs only brings it up to date (a changed connector config, image or manifest).
 - The first `cdc` pulls Oracle's image (about 5 GB) and builds Kafka Connect's image from Maven Central.
+- kafbat shows the connectors under Kafka Connect, cluster `cdc`: each one's status, tasks and config, with
+  restart, pause and resume for `oscar`. While the leg is stopped the cluster is unreachable there.
 - Kafka Connect's REST API is on <http://localhost:8186>: `curl -s 'http://localhost:8186/connectors?expand=status'`.
 
 ```bash
