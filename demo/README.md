@@ -287,6 +287,7 @@ The people have accounts in both databases, with their Keycloak passwords:
 | `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` |
 | `gary` | superuser | DBA |
 | `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` |
+| everyone | metadata: statistics, settings and activity (`pg_monitor`) | metadata: the data dictionary and `V$` views (`SELECT_CATALOG_ROLE`) |
 
 `backoffice` (owner of the database, Debezium's login), `treasury` (owner of `PAYMENTS`) and `c##dbzuser`
 (Debezium's LogMiner user) run the leg. In PostgreSQL a table `ana` creates is hers: besides her, only `gary`
