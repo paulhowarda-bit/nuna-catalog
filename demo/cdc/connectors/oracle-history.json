@@ -1,0 +1,22 @@
+{
+  "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+  "tasks.max": "1",
+  "topics": "oracle.TREASURY.PAYMENTS",
+  "transforms": "lowercasekey,debezium,lowercase",
+  "transforms.lowercasekey.type": "org.apache.kafka.connect.transforms.ReplaceField$Key",
+  "transforms.lowercasekey.renames": "PAYMENT_ID:payment_id",
+  "transforms.debezium.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
+  "transforms.lowercase.type": "org.apache.kafka.connect.transforms.ReplaceField$Value",
+  "transforms.lowercase.renames": "PAYMENT_ID:payment_id,ACCOUNT:account,AMOUNT:amount,CURRENCY:currency,STATUS:status,UPDATED_AT:updated_at",
+  "iceberg.tables": "history.oracle.treasury.payments",
+  "iceberg.tables.auto-create-enabled": "true",
+  "iceberg.tables.evolve-schema-enabled": "true",
+  "iceberg.control.topic": "oracle-history-control",
+  "iceberg.control.commit.interval-ms": "5000",
+  "iceberg.catalog.type": "rest",
+  "iceberg.catalog.uri": "http://keel-catalog:8181",
+  "iceberg.catalog.warehouse": "lakehouse",
+  "iceberg.catalog.token": "${env:KEEL_TOKEN}",
+  "iceberg.catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
+  "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
+}

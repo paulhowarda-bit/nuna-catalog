@@ -272,9 +272,16 @@ the tagged images.
 | `debian:bookworm-slim` | DuckDB (`demo/k8s/duckdb.Dockerfile`) |
 | `trinodb/trino:484` | Trino |
 | `dbeaver/cloudbeaver:26.2.4` | CloudBeaver, Trino's UI (`demo/k8s/cloudbeaver.Dockerfile`) |
+| `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
+| `maven:3.9.11-eclipse-temurin-21` | building the CDC leg's Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
 
 What reaches beyond the machine (checked 2026-11-13):
 
+- **The CDC leg's Kafka Connect image** (`demo.sh cdc`) is built by Maven from Maven Central: the poms in
+  `demo/cdc/plugins` name the Debezium 3.7.1 PostgreSQL and Oracle connectors (with Oracle's JDBC driver
+  `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
+  client. Point Maven at the internal repository: a `settings.xml` mirror copied into the build stage of
+  `connect.Dockerfile`. Its running pods talk only to the cluster.
 - **DuckDB cannot be built at work.** Its Dockerfile downloads socat from Debian's mirrors, the DuckDB program
   from github.com and its extensions from extensions.duckdb.org, and `demo.sh up` stops when that build
   fails. Its UI also loads its page from ui.duckdb.org through the DuckDB process, so the UI needs the internet
@@ -289,8 +296,8 @@ What reaches beyond the machine (checked 2026-11-13):
   the image. Two features would reach outside, and the demo uses neither: the map view of a geometry value
   (tiles from openstreetmap.org) and the AI assistant (whichever AI service an administrator configures).
 - Everything else in the stack talks only to the cluster: the catalog and its console, Keycloak, Silo,
-  PostgreSQL, Kafka, the key server, the lake writer and Trino. `demo.sh engines` builds the engine images, which
-  need the mirrors in section 2.
+  PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
+  engine images, which need the mirrors in section 2.
 
 The demo runs without TLS, and every page works that way at `localhost`: the console with its Keycloak
 sign-in, Keycloak's admin console, kafbat, Studio, the DuckDB UI and CloudBeaver (checked 2026-11-13). Opened by the

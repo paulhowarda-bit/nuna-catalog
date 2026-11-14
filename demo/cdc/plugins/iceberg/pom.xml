@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Not a module of the build: connect.Dockerfile resolves this into the Connect worker's plugin directory
+     iceberg: the Apache Iceberg sink, its transforms (DebeziumTransform among them), and what they need at run
+     time. Kafka itself provides the Connect API. As catalog-tests-engines/images/kafka-connect/pom.xml, plus the
+     transforms. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>keel.demo</groupId>
+  <artifactId>connect-plugin-iceberg</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+
+  <properties>
+    <iceberg.version>1.12.0</iceberg.version>
+    <hadoop.version>3.4.3</hadoop.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-kafka-connect</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-kafka-connect-transforms</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- Parquet data files, the sink's default format. Iceberg's generic writers register Parquet, Avro and
+         ORC together, so ORC must be present for Parquet to register at all. -->
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-parquet</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-orc</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- S3FileIO and the AWS SDK it uses, for the catalog's vended credentials. -->
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-aws</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.iceberg</groupId>
+      <artifactId>iceberg-aws-bundle</artifactId>
+      <version>${iceberg.version}</version>
+    </dependency>
+    <!-- Parquet writers build a Hadoop Configuration. -->
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-api</artifactId>
+      <version>${hadoop.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-runtime</artifactId>
+      <version>${hadoop.version}</version>
+    </dependency>
+  </dependencies>
+</project>

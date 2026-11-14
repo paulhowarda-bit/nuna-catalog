@@ -1,0 +1,209 @@
+# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): two source databases, and Kafka
+# Connect running Debezium and the Apache Iceberg sink, which write every change into Iceberg history tables
+# through the catalog. Only demo.sh applies this. Every object carries label keel-demo/cdc, by which
+# demo.sh cdc stop deletes them.
+#
+#   backoffice  PostgreSQL 18 (logical WAL), database backoffice, table settlement.instructions
+#               (demo/cdc/backoffice.sql, ConfigMap backoffice-initdb)
+#   oracle      Oracle Database Free, PDB FREEPDB1, table TREASURY.PAYMENTS, archive log mode
+#               (demo/cdc/oracle.sql, ConfigMap oracle-startdb)
+#   connect     Kafka Connect, distributed mode, image connect.Dockerfile; demo.sh adds the connectors in
+#               demo/cdc/connectors through its REST API, which ports.yaml publishes on localhost:8186
+#
+# Memory: 1.9 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
+# demo.sh cdc stops Trino and CloudBeaver while the leg runs. No volumes: the databases and Connect's topics
+# last as long as the pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backoffice
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector:
+    matchLabels: {app: backoffice}
+  template:
+    metadata:
+      labels: {app: backoffice}
+      annotations: {keel-demo/initdb: "${BACKOFFICE_SQL_HASH}"}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: ${POSTGRES_IMAGE}
+          imagePullPolicy: Never
+          args: ["-c", "wal_level=logical", "-c", "shared_buffers=16MB", "-c", "max_connections=20"]
+          env:
+            - {name: POSTGRES_DB, value: backoffice}
+            - {name: POSTGRES_USER, value: backoffice}
+            - {name: POSTGRES_PASSWORD, value: keel-test}
+          ports:
+            - containerPort: 5432
+          volumeMounts:
+            - {name: initdb, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+          readinessProbe:
+            # Over TCP: the image's first-start server, which runs the initdb scripts, listens on a socket only.
+            exec:
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "backoffice", "-d", "backoffice"]
+            periodSeconds: 2
+            timeoutSeconds: 10
+          resources:
+            requests: {memory: 128Mi}
+            limits: {memory: 256Mi}
+      volumes:
+        - name: initdb
+          configMap: {name: backoffice-initdb}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backoffice
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector: {app: backoffice}
+  ports:
+    - port: 5432
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oracle
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector:
+    matchLabels: {app: oracle}
+  template:
+    metadata:
+      labels: {app: oracle}
+      annotations: {keel-demo/startdb: "${ORACLE_SQL_HASH}"}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: oracle
+          image: ${ORACLE_IMAGE}
+          imagePullPolicy: Never
+          # The image's database opens with a 1.5 GB SGA, which thrashes against this pod's memory limit
+          # before oracle.sql runs. So the spfile is cut first, from an idle instance (nothing started yet): an
+          # SGA of 768 MB, a PGA target of 192 MB, and without the sizes the image's last run remembered.
+          command:
+            - sh
+            - -ec
+            - |
+              sqlplus -s / as sysdba <<'SQL'
+              WHENEVER SQLERROR EXIT 1
+              CREATE PFILE = '/tmp/init.ora' FROM SPFILE;
+              SQL
+              sed -i -e '/^FREE\.__/d' -e 's/^\*\.sga_target=.*/*.sga_target=768m/' \
+                -e 's/^\*\.pga_aggregate_target=.*/*.pga_aggregate_target=192m/' /tmp/init.ora
+              sqlplus -s / as sysdba <<'SQL'
+              WHENEVER SQLERROR EXIT 1
+              CREATE SPFILE FROM PFILE = '/tmp/init.ora';
+              SQL
+              exec container-entrypoint.sh
+          env:
+            - {name: ORACLE_PASSWORD, value: keel-test}
+          ports:
+            - containerPort: 1521
+          volumeMounts:
+            - {name: startdb, mountPath: /container-entrypoint-startdb.d, readOnly: true}
+          readinessProbe:
+            # oracle.sql restarts the database into archive log mode and writes /tmp/cdc-ready when done. The
+            # check takes a fraction of a second, but under load it can pass the default 1-second timeout, and
+            # a pod that is not ready leaves Service oracle: Debezium then finds no listener and fails for good.
+            exec:
+              command: ["sh", "-c", "test -f /tmp/cdc-ready && /opt/oracle/healthcheck.sh"]
+            periodSeconds: 5
+            timeoutSeconds: 15
+          resources:
+            requests: {memory: 1280Mi}
+            limits: {memory: 1792Mi}
+      volumes:
+        - name: startdb
+          configMap: {name: oracle-startdb}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oracle
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector: {app: oracle}
+  ports:
+    - port: 1521
+---
+# The worker. Its own topics are cdc-connect-*; the connectors' token for the catalog (user cdc, group
+# demo-loaders) is in environment variable KEEL_TOKEN, which connector configurations name as
+# ${env:KEEL_TOKEN}. offset.flush.interval.ms is short because the Iceberg sink polls its control topic only
+# about once per offset flush when idle (catalog-tests-engines/images/kafka-connect/run.sh).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connect-worker
+  labels: {keel-demo/cdc: "true"}
+data:
+  worker.properties: |
+    bootstrap.servers=kafka:9092
+    group.id=keel-demo-cdc
+    config.storage.topic=cdc-connect-configs
+    offset.storage.topic=cdc-connect-offsets
+    status.storage.topic=cdc-connect-status
+    config.storage.replication.factor=1
+    offset.storage.replication.factor=1
+    status.storage.replication.factor=1
+    key.converter=org.apache.kafka.connect.json.JsonConverter
+    value.converter=org.apache.kafka.connect.json.JsonConverter
+    offset.flush.interval.ms=1000
+    plugin.path=/opt/connect-plugins
+    listeners=http://0.0.0.0:8083
+    rest.advertised.host.name=connect
+    config.providers=env
+    config.providers.env.class=org.apache.kafka.common.config.provider.EnvVarConfigProvider
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connect
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector:
+    matchLabels: {app: connect}
+  template:
+    metadata:
+      labels: {app: connect}
+      # The worker reads its configuration only as it starts, so a changed file replaces the pod.
+      annotations: {keel-demo/manifest: "${MANIFEST_HASH}"}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: connect
+          image: ${CONNECT_IMAGE}
+          imagePullPolicy: Never
+          command: ["/opt/kafka/bin/connect-distributed.sh", "/etc/connect/worker.properties"]
+          env:
+            - {name: KAFKA_HEAP_OPTS, value: "-Xms256m -Xmx384m"}
+            - name: KEEL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: demo-cdc-token, key: token}
+          ports:
+            - containerPort: 8083
+          volumeMounts:
+            - {name: worker, mountPath: /etc/connect, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /connectors, port: 8083}
+            periodSeconds: 3
+            timeoutSeconds: 10
+          resources:
+            requests: {memory: 512Mi}
+            limits: {memory: 1Gi}
+      volumes:
+        - name: worker
+          configMap: {name: connect-worker}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connect
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector: {app: connect}
+  ports:
+    - port: 8083

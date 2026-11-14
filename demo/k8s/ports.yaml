@@ -1,6 +1,7 @@
 # The demo's ports on localhost, where Docker Desktop serves LoadBalancer Services: 8180 Keycloak, 8181 the
-# catalog and its console, 8182 kafbat, 8183 SingleStore Studio, 8184 the DuckDB UI, 8185 CloudBeaver (Trino).
-# Only demo.sh applies this; a matrix run publishes nothing.
+# catalog and its console, 8182 kafbat, 8183 SingleStore Studio, 8184 the DuckDB UI, 8185 CloudBeaver (Trino),
+# 8186 Kafka Connect's REST API (only while demo.sh cdc runs, cdc.yaml). Only demo.sh applies this; a matrix run
+# publishes nothing.
 apiVersion: v1
 kind: Service
 metadata:
@@ -69,3 +70,14 @@ spec:
   ports:
     - port: 8185
       targetPort: 8978
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connect-public
+spec:
+  type: LoadBalancer
+  selector: {app: connect}
+  ports:
+    - port: 8186
+      targetPort: 8083

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Not a module of the build: connect.Dockerfile resolves this into the Connect worker's plugin directory
+     debezium-oracle: Debezium's Oracle source connector (LogMiner) and its run-time dependencies, the Oracle
+     JDBC driver (ojdbc11, from Maven Central) among them. -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>keel.demo</groupId>
+  <artifactId>connect-plugin-debezium-oracle</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+
+  <!-- ehcache (one of the connector's optional buffers) asks for jaxb-api [2.2,3), which resolves to a
+       2.3.0-b161121 build that is not on Maven Central; pin the release. -->
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>javax.xml.bind</groupId>
+        <artifactId>jaxb-api</artifactId>
+        <version>2.3.1</version>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.debezium</groupId>
+      <artifactId>debezium-connector-oracle</artifactId>
+      <version>3.7.1.Final</version>
+    </dependency>
+  </dependencies>
+</project>

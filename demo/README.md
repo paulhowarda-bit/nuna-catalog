@@ -1,11 +1,11 @@
-# Local demo: the catalog, its console, SingleStore both ways, DuckDB, Trino, and the engine matrix, on Kubernetes
+# Local demo: the catalog, its console, SingleStore both ways, DuckDB, Trino, CDC, and the engine matrix, on Kubernetes
 
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
 DuckDB with its UI, and Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
-and Iceberg in both directions and prints how to sign in; `engines` runs Spark, Kafka Connect, PyIceberg and
-SingleStore's ingest against the same stack. Everything is local and uses test keys; nothing here is fit for
-production.
+and Iceberg in both directions and prints how to sign in; `cdc` captures changes in PostgreSQL and Oracle into
+Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
+ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
 
 ## Start
 
@@ -40,15 +40,20 @@ demo/demo.sh up
     (`cloudbeaver.Dockerfile`).
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
+  - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, and Kafka Connect,
+    image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
-  console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (the DuckDB UI) and **8185**
-  (CloudBeaver). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
+  console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (the DuckDB UI), **8185**
+  (CloudBeaver) and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else
+  holds one of them, such as a `kubectl port-forward`.
 - Memory: about 6.6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog,
   kafbat and Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo
   512 MB each; PostgreSQL and CloudBeaver 384 MB each, CloudBeaver using about 350 MB of up to 768 MB; DuckDB
   256 MB, about 70 MB idle, up to 1 GB), plus one job at a time: the lake writer 768 MB, or an engine up to
   2 GB (Spark). Docker Desktop's Kubernetes has about 7.5 GB, so nothing else of that size fits beside it,
-  and `engines` stops Trino and CloudBeaver while it runs to make room for Spark.
+  and `engines` stops Trino and CloudBeaver while it runs to make room for Spark. The CDC leg asks for 1.9 GB
+  (Oracle 1.25 GB, Kafka Connect 512 MB, its PostgreSQL 128 MB), so `cdc` stops Trino and CloudBeaver too, and
+  `engines` and `rate` refuse to run beside it.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
@@ -63,7 +68,7 @@ The console offers two ways in:
   authorization code with PKCE, `keel.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
   It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.
 - **The token box** (`keel.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
-  Machine users (`singlestore`, `lake`, `engine-matrix`) have tokens only.
+  Machine users (`singlestore`, `lake`, `cdc`, `engine-matrix`) have tokens only.
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
@@ -73,6 +78,7 @@ The console offers two ways in:
 | `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
+| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 
 `ana` can also browse catalog `engines`, where the engine matrix's tables land.
@@ -84,7 +90,8 @@ sign out at <http://localhost:8180/realms/keel/account>, or use a private window
 <http://localhost:8180/admin> (user `admin`, password `keel-test`); its users and sessions go with its pod.
 
 Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
-pipelines are then replaced and DuckDB and Trino are restarted, so they carry the new ones):
+pipelines are then replaced and DuckDB, Trino and the CDC leg's Kafka Connect are restarted, so they carry
+the new ones):
 
 ```bash
 demo/demo.sh token
@@ -232,6 +239,69 @@ storage credentials the catalog vends, and nothing else.
   value fetches tiles from openstreetmap.org, and the AI assistant calls whichever AI service an
   administrator configures; none is.
 
+## CDC: PostgreSQL and Oracle into Iceberg history tables
+
+```bash
+demo/demo.sh cdc
+```
+
+starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino and CloudBeaver to make room for it:
+
+- `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
+- `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
+  in PDB `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database starts; it restarts the database once).
+- `connect`: Kafka Connect 4.2.2 in distributed mode, on the stack's Kafka, with four connectors
+  (`demo/cdc/connectors`): Debezium 3.7.1's PostgreSQL connector (`pgoutput`) and Oracle connector
+  (LogMiner), and an Apache Iceberg 1.12.0 sink for each, writing through the catalog as `cdc` with vended
+  credentials.
+
+| Source | Kafka topic | Iceberg table in `lakehouse` |
+|---|---|---|
+| `settlement.instructions` | `backoffice.settlement.instructions` | `history.postgres.settlement.instructions` |
+| `TREASURY.PAYMENTS` | `oracle.TREASURY.PAYMENTS` | `history.oracle.treasury.payments` |
+
+Each table is a history: one row per change, appended, never updated. The sink's `DebeziumTransform` adds a
+struct column `_cdc`: `op` (`I`, `U` or `D`), `ts` (when Debezium read the change), `offset` (its Kafka
+offset), `source` and `target` (the source table and the Iceberg table) and `key`. A deleted row is written
+as it was before the delete. `cdc` waits for each
+snapshot (4 rows in each table), then updates, deletes and inserts in both databases and waits for those
+changes: 8 rows in the PostgreSQL history, 7 in Oracle's. In DuckDB, oldest change first:
+
+```sql
+SELECT _cdc.op, _cdc.ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
+ORDER BY _cdc.offset;
+SELECT _cdc.op, _cdc.ts, payment_id, status FROM lakehouse."history.oracle.treasury".payments
+ORDER BY _cdc.offset;
+```
+
+Make more changes and watch them arrive within about 10 seconds (the sinks commit every 5 seconds):
+
+```bash
+demo/demo.sh psql      # database backoffice, user backoffice
+demo/demo.sh sqlplus   # user treasury in FREEPDB1; COMMIT, or Debezium sees nothing
+```
+
+- History only: the Apache Iceberg sink appends, so there is no table of the rows as they are now. A view
+  over the history (the newest row per key that is not a `D`) gives that.
+- Types: the sink maps only Kafka Connect's own logical types, so both connectors send times as those
+  (`time.precision.mode=connect`, milliseconds), and every timestamp lands as `timestamptz`. A PostgreSQL
+  `timestamptz` column would arrive as a string instead, so the source table uses `timestamp(3)`. Numbers
+  with a scale land as `decimal(38, s)`, and Oracle's `NUMBER(10)` as `long`.
+- Oracle's upper-case column names are renamed to lower case in the sink (`oracle-history.json`), column by
+  column, the key's too: a column added later arrives in upper case.
+- The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table.
+- Each `cdc` drops the history tables of the run before and starts both databases empty. `demo.sh cdc` while
+  the leg runs only brings it up to date (a changed connector config, image or manifest).
+- The first `cdc` pulls Oracle's image (about 5 GB) and builds Kafka Connect's image from Maven Central.
+- Kafka Connect's REST API is on <http://localhost:8186>: `curl -s 'http://localhost:8186/connectors?expand=status'`.
+
+```bash
+demo/demo.sh cdc stop
+```
+
+deletes the leg, its Kafka topics and consumer groups, and starts Trino and CloudBeaver again. The history
+tables stay, for Trino to read.
+
 ## The engines
 
 ```bash
@@ -249,7 +319,9 @@ Results: `catalog-tests-engines/build/engines-run/results.txt`, and every comman
 ## Kafka
 
 kafbat on <http://localhost:8182> shows the stack's Kafka: the catalog's audit and change topics, and once the
-engines have run, Kafka Connect's source topic `m8-kafka-events` and the sink's control topic.
+engines have run, Kafka Connect's source topic `m8-kafka-events` and the sink's control topic. While the CDC
+leg runs: Debezium's change topics, the sinks' control topics, Oracle's schema history and the worker's own
+`cdc-connect-*` topics.
 
 ## Stop
 
