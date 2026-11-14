@@ -2,10 +2,12 @@
 # with one connection: Trino (trino.yaml) as ana, catalogs lakehouse and engines. Only demo.sh applies this;
 # ports.yaml publishes it on localhost:8185.
 #
-# Open to anyone without signing in (anonymous access, and the connection granted to the anonymous team);
-# the administrator, for CloudBeaver's own settings, is cbadmin / keel-test. CB_ADMIN_* configure the
-# server at its first start, so no setup wizard shows. Everything lives in the pod, so a new pod starts
-# from this file again. The Trino JDBC driver is in the image.
+# The demo's people sign in with their Keycloak passwords: oscar is CloudBeaver's administrator, and ana,
+# gary and stella are users with the Trino connection. Every query still reaches keel as ana, since Trino holds
+# one token. CB_ADMIN_* configure the server at its first start, so no setup wizard shows; the postStart hook
+# adds DEMO_USERS and grants them the connection (demo/CloudBeaverUsers.java), and the pod is not ready until
+# it has. Everything lives in the pod, so a new pod starts from this file again. The Trino JDBC driver is in
+# the image.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -54,13 +56,18 @@ spec:
           imagePullPolicy: Never
           env:
             - {name: CB_SERVER_NAME, value: keel demo}
-            - {name: CB_ADMIN_NAME, value: cbadmin}
-            - {name: CB_ADMIN_PASSWORD, value: keel-test}
+            - {name: CB_ADMIN_NAME, value: oscar}
+            - {name: CB_ADMIN_PASSWORD, value: oscar-demo}
+            - {name: DEMO_USERS, value: "ana:ana-demo gary:gary-demo stella:stella-demo"}
+            # The demo's passwords have neither capitals nor digits.
             - {name: CLOUDBEAVER_POLICY_REQUIRE_MIXED_CASE, value: "false"}
             - {name: CLOUDBEAVER_POLICY_MIN_NUMBER_COUNT, value: "0"}
-            - {name: CLOUDBEAVER_APP_ANONYMOUS_ACCESS_ENABLED, value: "true"}
-            - {name: CLOUDBEAVER_APP_GRANT_CONNECTIONS_ACCESS_TO_ANONYMOUS_TEAM, value: "true"}
+            - {name: CLOUDBEAVER_APP_ANONYMOUS_ACCESS_ENABLED, value: "false"}
             - {name: JAVA_OPTS, value: "-Xmx384m"}
+          lifecycle:
+            postStart:
+              exec:
+                command: ["java", "-Xmx64m", "-cp", "/opt/keel-demo", "CloudBeaverUsers"]
           volumeMounts:
             - name: config
               mountPath: /opt/cloudbeaver/conf/initial-data-sources.conf
