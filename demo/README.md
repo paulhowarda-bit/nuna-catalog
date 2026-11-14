@@ -98,7 +98,7 @@ change every Iceberg table.
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
-| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups and settings | administers Kafka: topics, messages, consumer offsets, ACLs |
+| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database | all privileges, with grant option |
 | CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the Trino connection: `ana` to the catalog | CloudBeaver's administrator, and the Trino connection |
 
@@ -310,6 +310,8 @@ ORDER BY "_cdc"."offset";
 - Each `cdc` drops the history tables of the run before and starts both databases empty. `demo.sh cdc` while
   the leg runs only brings it up to date (a changed connector config, image or manifest).
 - The first `cdc` pulls Oracle's image (about 5 GB) and builds Kafka Connect's image from Maven Central.
+- kafbat shows the connectors under Kafka Connect, cluster `cdc`: each one's status, tasks and config, with
+  restart, pause and resume for `oscar`. While the leg is stopped the cluster is unreachable there.
 - Kafka Connect's REST API is on <http://localhost:8186>: `curl -s 'http://localhost:8186/connectors?expand=status'`.
 
 ```bash
