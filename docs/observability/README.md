@@ -13,8 +13,8 @@ and 41 add the catalog's own meters and spans.
   (the worker).
 - **Traces.** A server span for every HTTP request the catalog answers, named for its method and route template. A
   caller's W3C `traceparent` is honoured, so a client's trace continues into the catalog. The worker makes no spans of
-  its own yet, and its calls to the catalog carry no trace context; the database, object-store, STS and Kafka calls
-  get spans with backlog 41.
+  its own yet, and its calls to the catalog carry no trace context (backlog 49); the database, object-store, STS and
+  Kafka calls get spans with backlog 41.
 - **Logs.** Every log line, to stdout as JSON and, when a logs endpoint is named, as an OTLP log record.
 
 Each signal carries the resource attributes `service.name` (`keel-catalog` or `keel-maintenance`, or

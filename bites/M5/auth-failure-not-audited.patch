@@ -3,11 +3,10 @@ Module: catalog-server
 Test: SecurityGateTest#missingWrongAudienceExpiredAndUnknownIssuerTokensAreRefused
 
 diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
-index f6aa38e..9aa6458 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
-@@ -128,7 +128,7 @@ final class Authentication extends OncePerRequestFilter {
-         }
+@@ -149,7 +149,7 @@
+         String requestId = RequestIds.of(request);
          Claimed claimed = claimed(token);
          try {
 -            audit.publish(CatalogEvent.create(rest.auditSource(), clock.instant(), new AuthFailure(claimed.issuer(),
