@@ -1,0 +1,17 @@
+Breaks: a register with overwrite onto a held name is answered as if overwrite were false.
+Module: catalog-server
+Test: RestRoutesTest#registerBringsADroppedTableBackAndRefusesTakenUuidsAndLocationsOutsideTheProfile
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+index e400b6a..f43e84d 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+@@ -230,7 +230,7 @@ class TableRoutes {
+         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+         RequestContext request = RequestContext.of(http, callers);
+         guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE);
+-        if (registration.overwrite() && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
++        if (false && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
+             throw CatalogError.badRequest("Registering over an existing table (overwrite) is not supported: "
+                     + Http.qualified(levels, registration.name()) + ". Commit to the table, or drop or unregister it"
+                     + " first; a register would skip the commit rules and the table's journal");

@@ -7,11 +7,13 @@ import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.NamespaceRecord;
+import keel.catalog.store.Page;
 import keel.catalog.store.PageRequest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import org.springframework.stereotype.Component;
 
 /** Resolves what a route names: the catalog its prefix names, namespaces, tables and views (D8.6, D28). */
@@ -67,29 +69,46 @@ class Lookup {
         return levels;
     }
 
-    /** A page request from the client's {@code pageToken} and {@code pageSize}; an empty token is the first page. */
-    PageRequest page(String pageToken, String pageSize) {
-        int size = settings.defaultPageSize();
-        if (pageSize != null && !pageSize.isEmpty()) {
-            try {
-                size = Integer.parseInt(pageSize);
-            } catch (NumberFormatException e) {
-                throw CatalogError.badRequest("Invalid page size: " + pageSize);
+    /**
+     * A listing's answer. A client that sends a {@code pageToken} (an empty one asks for the first page) gets one
+     * page of {@code pageSize}, or the default size. A client that sends none gets every item and no next token,
+     * as the spec's PageToken requires of a server that pages; its {@code pageSize} is then ignored. A page token
+     * that is not one of ours is the client's error.
+     */
+    <T> Page<T> listing(String pageToken, String pageSize, Function<PageRequest, Page<T>> list) {
+        if (pageToken == null) {
+            PageRequest request = PageRequest.first(settings.maxPageSize());
+            Page<T> page = list.apply(request);
+            List<T> items = new ArrayList<>(page.items());
+            while (page.nextToken().isPresent()) {
+                request = request.after(page);
+                page = list.apply(request);
+                items.addAll(page.items());
             }
-            if (size < 1) {
-                throw CatalogError.badRequest("Invalid page size: " + pageSize);
-            }
+            return new Page<>(items, Optional.empty());
         }
-        Optional<String> token = pageToken == null || pageToken.isEmpty() ? Optional.empty() : Optional.of(pageToken);
-        return new PageRequest(token, Math.min(size, settings.maxPageSize()));
-    }
-
-    /** Runs a listing; a page token that is not one of ours is the client's error. */
-    static <T> T listing(java.util.function.Supplier<T> list) {
+        PageRequest request = new PageRequest(pageToken.isEmpty() ? Optional.empty() : Optional.of(pageToken),
+                Math.min(size(pageSize), settings.maxPageSize()));
         try {
-            return list.get();
+            return list.apply(request);
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("Invalid page token: " + e.getMessage());
         }
+    }
+
+    private int size(String pageSize) {
+        if (pageSize == null || pageSize.isEmpty()) {
+            return settings.defaultPageSize();
+        }
+        int size;
+        try {
+            size = Integer.parseInt(pageSize);
+        } catch (NumberFormatException e) {
+            throw CatalogError.badRequest("Invalid page size: " + pageSize);
+        }
+        if (size < 1) {
+            throw CatalogError.badRequest("Invalid page size: " + pageSize);
+        }
+        return size;
     }
 }

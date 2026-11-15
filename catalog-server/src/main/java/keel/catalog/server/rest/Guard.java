@@ -55,6 +55,8 @@ class Guard {
     static final Operation RENAME_TABLE = new Operation("renameTable", MODIFY, false);
     static final Operation RENAME_TABLE_INTO = new Operation("renameTable", CREATE, false);
     static final Operation LOAD_CREDENTIALS = new Operation("loadCredentials", SELECT, true);
+    /** What a client reports on a table it read or wrote: {@code select}, which every reader and writer holds. */
+    static final Operation REPORT_METRICS = new Operation("reportMetrics", SELECT, false);
     static final Operation LIST_VIEWS = new Operation("listViews", DESCRIBE, false);
     static final Operation CREATE_VIEW = new Operation("createView", CREATE, false);
     static final Operation REGISTER_VIEW = new Operation("registerView", CREATE, false);

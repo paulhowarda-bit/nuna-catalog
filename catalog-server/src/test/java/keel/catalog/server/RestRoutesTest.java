@@ -22,6 +22,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -31,6 +32,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
+// Pages of two, so a listing without a pageToken reads several pages from the store.
+@TestPropertySource(properties = {"keel.rest.default-page-size=2", "keel.rest.max-page-size=2"})
 class RestRoutesTest {
 
     private static final String TABLE = """
@@ -111,6 +114,44 @@ class RestRoutesTest {
         assertThat(seen).containsExactly("n0", "n1", "n2", "n3", "n4");
         assertThat(pages).isEqualTo(3);
         assertError(send("GET", "/namespaces?pageToken=not-ours", null), 400, "BadRequestException");
+
+        // No pageToken: every item and a null next-page-token, whatever pageSize says (spec, PageToken).
+        HttpResponse<String> all = send("GET", "/namespaces?parent=" + ns(parent) + "&pageSize=2", null);
+        assertThat(JsonPath.<List<List<String>>>read(all.body(), "$.namespaces")).extracting(List::getLast)
+                .containsExactly("n0", "n1", "n2", "n3", "n4");
+        assertThat(JsonPath.<Object>read(all.body(), "$.next-page-token")).isNull();
+        for (int i = 0; i < 5; i++) {
+            send("POST", "/namespaces/" + ns(parent) + "/tables", TABLE.formatted("t" + i));
+        }
+        HttpResponse<String> tables = send("GET", "/namespaces/" + ns(parent) + "/tables", null);
+        assertThat(JsonPath.<List<String>>read(tables.body(), "$.identifiers[*].name"))
+                .containsExactly("t0", "t1", "t2", "t3", "t4");
+        assertThat(JsonPath.<Object>read(tables.body(), "$.next-page-token")).isNull();
+    }
+
+    /** Iceberg names may hold any character; a client sends / as %2F and % as %25 inside a path segment. */
+    @Test
+    void namesMayHoldSlashesAndPercentSigns() throws Exception {
+        String slashed = "a/b-" + suffix();
+        assertThat(createNamespace(Map.of(), slashed).statusCode()).isEqualTo(200);
+        assertThat(send("GET", "/namespaces/" + ns(slashed), null).statusCode()).isEqualTo(200);
+        assertThat(send("HEAD", "/namespaces/" + ns(slashed), null).statusCode()).isEqualTo(204);
+
+        String tables = "/namespaces/" + ns(slashed) + "/tables";
+        for (String name : List.of("t/1", "p%q")) {
+            String table = tables + "/" + ns(name);
+            assertThat(send("POST", tables, TABLE.formatted(name)).statusCode()).isEqualTo(200);
+            HttpResponse<String> loaded = send("GET", table, null);
+            assertThat(loaded.statusCode()).as(loaded.body()).isEqualTo(200);
+            assertThat(send("HEAD", table, null).statusCode()).isEqualTo(204);
+            assertThat(send("POST", table, "{\"requirements\":[],\"updates\":[" + setK(name) + "]}").statusCode())
+                    .isEqualTo(200);
+            assertThat(JsonPath.<String>read(send("GET", table, null).body(), "$.metadata.properties.k"))
+                    .isEqualTo(name);
+        }
+        assertThat(JsonPath.<List<String>>read(send("GET", tables, null).body(), "$.identifiers[*].name"))
+                .containsExactlyInAnyOrder("t/1", "p%q");
+        assertThat(send("DELETE", tables + "/" + ns("t/1"), null).statusCode()).isEqualTo(204);
     }
 
     @Test
@@ -211,6 +252,12 @@ class RestRoutesTest {
         assertThat(send("HEAD", "/namespaces/" + ns(namespace) + "/tables/again", null).statusCode()).isEqualTo(204);
         assertError(send("POST", register, "{\"name\":\"copy\",\"metadata-location\":\"" + file + "\"}"),
                 409, "AlreadyExistsException");
+        assertError(send("POST", register, "{\"name\":\"again\",\"metadata-location\":\"" + file + "\"}"),
+                409, "AlreadyExistsException");
+        HttpResponse<String> overwrite = send("POST", register,
+                "{\"name\":\"again\",\"metadata-location\":\"" + file + "\",\"overwrite\":true}");
+        assertError(overwrite, 400, "BadRequestException");
+        assertThat(JsonPath.<String>read(overwrite.body(), "$.error.message")).contains("overwrite");
         assertError(send("POST", register, "{\"name\":\"x\",\"metadata-location\":\"s3://elsewhere/m.json\"}"),
                 400, "BadRequestException");
         String missing = "s3://" + S3ForTests.bucket() + "/tables/" + UUID.randomUUID() + "/metadata/1.metadata.json";
@@ -365,6 +412,12 @@ class RestRoutesTest {
         assertThat(send("POST", table + "/metrics", """
                 {"report-type":"commit-report","table-name":"%s.t","snapshot-id":1,"sequence-number":1,
                  "operation":"append","metrics":{}}""".formatted(namespace)).statusCode()).isEqualTo(204);
+        String report = "{\"report-type\":\"commit-report\",\"table-name\":\"x\",\"snapshot-id\":1,"
+                + "\"sequence-number\":1,\"operation\":\"append\",\"metrics\":{}}";
+        assertError(send("POST", "/namespaces/" + ns(namespace) + "/tables/ghost/metrics", report),
+                404, "NoSuchTableException");
+        assertError(send("POST", "/namespaces/" + ns("nowhere-" + suffix()) + "/tables/t/metrics", report),
+                404, "NoSuchTableException");
         HttpResponse<String> credentials = send("GET", table + "/credentials", null);
         assertThat(credentials.statusCode()).isEqualTo(200);
         assertThat(JsonPath.<List<String>>read(credentials.body(), "$.storage-credentials[*].prefix"))

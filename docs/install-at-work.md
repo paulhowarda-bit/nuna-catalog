@@ -174,6 +174,7 @@ config:
       pitr-window: <the database's PITR window, e.g. 7d>
     rest:
       drop-retention: 30d                     # must exceed pitr-window, or the server refuses to start
+      # default-warehouse: <catalog>          # optional: the catalog for clients that name no warehouse
     audit:
       kafka-bootstrap-servers: <brokers>
 ```
