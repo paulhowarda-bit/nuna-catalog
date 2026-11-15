@@ -2,15 +2,16 @@
 # Only demo.sh applies this; ports.yaml publishes it on localhost:8185.
 #
 # The demo's people sign in with their Keycloak passwords: oscar is CloudBeaver's administrator, and ana,
-# gary and stella are users. Each person has three connections of their own, which sign in as them:
+# gary and stella are users. Each person has four connections of their own, which sign in as them:
 #
 #   keel (Trino, as <person>)             Trino (trino.yaml), catalogs lakehouse and engines. The connection
 #                                         sends the person's catalog token, and Trino hands it to keel, so keel
 #                                         sees the person.
 #   backoffice (PostgreSQL, as <person>)  the CDC leg's PostgreSQL (cdc.yaml), database backoffice
 #   treasury (Oracle, as <person>)        the CDC leg's Oracle (cdc.yaml), PDB FREEPDB1
+#   custody (CockroachDB, as <person>)    the CDC leg's CockroachDB (cdc.yaml), database custody
 #
-# The two CDC sources answer only while the leg runs (demo.sh cdc), and Trino is stopped meanwhile. A person's
+# The three CDC sources answer only while the leg runs (demo.sh cdc), and Trino is stopped meanwhile. A person's
 # accounts there have their Keycloak password (demo/cdc/*.sql). Each connection is granted to its person alone;
 # oscar, as administrator, sees and may use everyone's. The drivers are in the image.
 #
@@ -23,6 +24,9 @@ metadata:
   name: cloudbeaver
 spec:
   replicas: 1
+  # The old pod goes before the new one starts: beside the CDC leg, with Oracle and CockroachDB, Kubernetes has
+  # no room for a second CloudBeaver, and a new pod starts from this file anyway.
+  strategy: {type: Recreate}
   selector:
     matchLabels: {app: cloudbeaver}
   template:
