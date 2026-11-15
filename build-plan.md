@@ -760,4 +760,21 @@ From the report's question list, reduced to those the ledger did not settle, wit
     - the AWS bucket policy and the MinIO worker policy, which no test applies;
     - the engine matrix's `replace.required` and `replace.retype` lines (the nightly);
     - the other bites.
+- **Nightly run 2026-11-13** (recorded here on 2026-11-14; until then only in the landing commit 5c76c2d and `docs/install-at-work.md`). `./gradlew build -Pnightly` on `main` after phases 1 and 2. It found five defects, fixed on `claude/nightly-2026-11-13`:
+  - Oracle's schema step V6 failed with ORA-30556: Oracle refuses to widen `state` while a function-based index covers it. V6 now drops and remakes both such indexes, the active-name index and the purge index (Oracle indexes a `TIMESTAMP WITH TIME ZONE` column through `SYS_EXTRACT_UTC`, so the purge index is one too). Checked by applying V1 to V8 on Oracle Free 23.26.3.
+  - PyIceberg's `cross.replace` expected the old type: since D11's exemption, Spark's second replace makes `id` a string.
+  - The load tests' stacks shared one bucket, so the DR drill counted another test's tables (6 unknown locations, not 1). Each stack now has its own.
+  - The rolling upgrade starts from 2b1af36 (Paul's choice), after the rename, and crosses V5 to V7; its writers stop if a server fails to start.
+  - Load-test servers take ports below the ephemeral range: a writer's connection had taken the port a server was about to bind.
+  - After the fixes, by the landing commit: Oracle (the CAS test at 1,000 rounds and the 42 mutation sweeps), the engine matrix (all five engines), the DR drill, the SLO run and the rolling upgrade pass. What else ran again after the fixes is not recorded.
+- **Test tiers tightened 2026-11-14** (a review of the fast, heavy and nightly tiers; Paul: "you can do all of these things").
+  - PostgreSQL is pinned to `postgres:18.7`, the one test image without an exact release. It has the same image id as the `postgres:18` the tests ran on, so nothing that runs changed; a new 18.x can no longer change a run while the build cache replays the old results.
+  - The fast build checks that every bite applies (`:bitesApply`, `git apply --check` on each of the 206 patches, about 20 s). Seen to fail when a reordered condition in `Metadata.java` stopped `bites/M4/untyped-400.patch` applying.
+  - `-Pheavy` runs every test task afresh, as `-Pnightly` already did: never a result from the build cache.
+  - `./nightly.sh`: `-Pnightly` in two Gradle runs, the engine matrix on its own, then each module's test count, zeros included. Checked with `--test-dry-run` only: 28 tests, as the tags say (3 on each store module, 6 load, 5 engine-matrix cases, 2 maintenance). The nightly itself was not run.
+  - Kafka's exit 126 at startup (2026-11-11, 11-12, 11-13): Testcontainers runs the starter script as soon as it exists, and Docker creates it before it has written it, so the run fails with "Text file busy". A 100 MB starter script reproduces it every time. `TestKafka` (in `catalog-tests-s3`) runs the script again while it fails with 126, for up to 10 s; the five tests that start Kafka use it. `catalog-audit`'s 246 tests pass with it.
+  - Fast build green after merging main (already up to date at 5cee51a): 1,216 tests in 132 classes, 0 failures, on the third run, 5 min 30 s, which reran `catalog-server` and took the rest as up to date.
+    - The first run stopped when Gradle could not delete `catalog-server/build/test-results/test/binary`: OneDrive marked it read-only again as Gradle emptied it, after the build had cleared the flag. A `--test-dry-run` of `nightly.sh` had made that folder minutes before.
+    - The second lost `DrReconcileRouteTest#aTableBehindItsStorageCatchesUpThroughItsProvenFiles`: its audit consumer read nothing in 30 s while the keel-demo stack ran in the same Docker (SingleStore at 124% CPU), as on 2026-11-12. The other 113 server tests passed. Not fixed.
+  - Not run: the nightly and the heavy build.
 - **Next:** M9, carried to work.
