@@ -214,7 +214,8 @@ class TableRoutes {
     /**
      * A table whose metadata file already exists (D34). The engine refuses a UUID another table or view holds;
      * the file a dropped or unregistered table left at brings that table back, only in the namespace it left,
-     * and a dropped one only for a caller who may undrop it (D13, amended 2026-11-12).
+     * and a dropped one only for a caller who may undrop it (D13, amended 2026-11-12). {@code overwrite} onto a
+     * table that holds the name is refused with 400 rather than ignored (D13, amended 2026-11-14).
      */
     @PostMapping(REGISTER)
     ResponseEntity<String> register(@PathVariable String prefix, @PathVariable String namespace,
@@ -229,6 +230,11 @@ class TableRoutes {
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
         guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE);
+        if (registration.overwrite() && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
+            throw CatalogError.badRequest("Registering over an existing table (overwrite) is not supported: "
+                    + Http.qualified(levels, registration.name()) + ". Commit to the table, or drop or unregister it"
+                    + " first; a register would skip the commit rules and the table's journal");
+        }
         Target target = new Target(catalog, prefix, namespace, registration.name(), request,
                 Optional.ofNullable(delegation));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
@@ -281,13 +287,21 @@ class TableRoutes {
                 RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
     }
 
-    /** Forwarded to telemetry, never stored (D13). */
+    /**
+     * Forwarded to telemetry, never stored (D13). Only for a table that exists (404 NoSuchTableException otherwise)
+     * and that the caller may read.
+     */
     @PostMapping(METRICS)
     ResponseEntity<Void> metrics(@PathVariable String prefix, @PathVariable String namespace,
-                                 @PathVariable String table, @RequestBody(required = false) String body) {
+                                 @PathVariable String table, @RequestBody(required = false) String body,
+                                 HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
+        List<String> levels = Lookup.levels(namespace);
+        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
+                Guard.REPORT_METRICS);
         RestRequest.MetricsSummary summary = RestRequest.reportMetrics(body == null ? "" : body);
-        metrics.report(catalog.name(), Lookup.levels(namespace), table, summary);
+        metrics.report(catalog.name(), levels, table, summary);
         return ResponseEntity.noContent().build();
     }
 

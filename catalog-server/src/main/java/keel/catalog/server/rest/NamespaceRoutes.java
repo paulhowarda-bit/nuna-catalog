@@ -76,8 +76,8 @@ class NamespaceRoutes {
         List<String> parentLevels = parent == null || parent.isEmpty() ? List.of() : Lookup.levels(parent);
         UUID parentId = parentLevels.isEmpty() ? catalog.id() : lookup.existingNamespace(catalog, parentLevels).id();
         guard.onParent(RequestContext.of(http, callers), catalog, parentId, parentLevels, Guard.LIST_NAMESPACES);
-        Page<NamespaceRecord> page = Lookup.listing(() -> store.listNamespaces(parentId,
-                lookup.page(pageToken, pageSize)));
+        Page<NamespaceRecord> page = lookup.listing(pageToken, pageSize,
+                request -> store.listNamespaces(parentId, request));
         List<List<String>> namespaces = page.items().stream()
                 .map(ns -> AuditEvents.path(parentLevels, ns.name().display()))
                 .toList();

@@ -204,6 +204,19 @@ class SecurityGateTest {
         assertThat(audit.denials().getLast().privilege()).as("select gives no modify").isEqualTo("modify");
     }
 
+    /** A metrics report needs select on its table, as a load does; a refusal is audited like any other. */
+    @Test
+    void metricsAreReportedOnlyOnATableTheCallerMayRead() throws Exception {
+        String report = """
+                {"report-type":"commit-report","table-name":"t","snapshot-id":1,"sequence-number":1,
+                 "operation":"append","metrics":{}}""";
+        noContent(send(ANN, "POST", "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/orders/metrics",
+                report));
+        assertDenied(send(ANN, "POST", "/v1/gate/namespaces/hr/tables/staff/metrics", report), "reportMetrics",
+                "no_privilege");
+        assertThat(audit.denials().getLast().privilege()).isEqualTo("select");
+    }
+
     /** D15: a transaction asks for each table what that table's own commit route asks; one refusal refuses all. */
     @Test
     void aTransactionNeedsTheRightOnEveryTable() throws Exception {
