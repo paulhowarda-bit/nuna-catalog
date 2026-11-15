@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The overnight run: the heavy build, the Ceph leg, the nightly, then as many bites as fit before the deadline, on
 # main's tip, in a clone of its own. Windows Task Scheduler starts it at midnight (overnight-task.ps1 registers
-# the task); a Claude task reads runs/<date>/summary.md at 7:00, records the run in build-plan.md's Status and
+# the task); a Claude task reads runs/<date>/summary.md at 7:00, records the run in status/ and
 # adds a backlog item for each failure (Paul, 2026-11-14).
 #
 #   ./overnight.sh           run if a file other than Markdown changed on main since the last run
