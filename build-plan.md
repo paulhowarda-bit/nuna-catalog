@@ -823,15 +823,15 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Run times, all with the keel-demo stack up or starting:
     - `ConsoleBrowserTest`: 87 s and 250 s for the class, context included; 4–18 s a test, and up to 46 s for the first, which opens Chrome's first session.
     - `ConsoleSignInTest`: 226 s, of which Keycloak's start took 2 min 10 s; the tests took 27 s and 4 s.
+    - In the fast build, with Docker free: `ConsoleBrowserTest` 60 s and `ConsoleSignInTest` 82 s for the class, context included.
     - Neither waits on purpose or needs a cluster, so neither is tagged.
-  - Bites: six in `bites/UI/`, run with `bites/run.sh`, tree restored. Four fail on their assertion:
+  - Bites: six in `bites/UI/`, run with `bites/run.sh`, tree restored after each. All six fail on their assertion:
     - `console-refusal-reworded`: the message is not the catalog's;
     - `console-audit-hides-denials`: no denial in the trail;
+    - `console-tree-drops-views`: the tree opens down to `eu` and `ledger` but shows no view `daily`. Its first run failed while the browser container started (`SocketTimeoutException`, Docker loaded by the demo); the rerun with Docker free bites;
     - `console-schema-added-against-first`: price and venue both marked added;
-    - `console-sign-in-ignores-state`: the forged code was traded, "400 invalid_grant".
-  - Not yet shown to bite on their checks (rerun pending):
-    - `console-tree-drops-views`: its run failed while the browser container started (`SocketTimeoutException`, Docker loaded by the demo);
-    - `console-sign-in-without-pkce`: the browser never reached Keycloak's page in 30 s. That is either Keycloak refusing the request or a slow Keycloak, and the log does not say which.
-  - Not run yet: the fast build with these tests in it.
+    - `console-sign-in-ignores-state`: the forged code was traded, "400 invalid_grant";
+    - `console-sign-in-without-pkce`: Keycloak refuses the request and sends it back, and the console shows "The IdP refused the sign-in: invalid_request Missing parameter: code_challenge_method"; the test fails at once, in 9 s. Its first run only ran out the 30 s wait on "Going to keycloak:8080…", which could not tell a refusal from a slow IdP. Since then the test waits for Keycloak's page or anything shown instead, and fails on what was shown.
+  - The fast build passed with these tests in it, the demo down: 1,229 tests, no failures, 5 min 43 s.
   - Not covered: the light and dark themes, Entra ID and Ping (work), and sign-out at the IdP (Paul's call).
 - **Next:** M9, carried to work. Open work: `./backlog.sh list`.
