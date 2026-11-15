@@ -1,10 +1,11 @@
 # SingleStore, part 4 of the shared stack. Iceberg pipelines load tables from the catalog; in the demo, the
 # change feed of its ops tables also commits to Iceberg through a connector pipeline. ${SINGLESTORE_IMAGE} is
-# the dev image: demo.sh's has the change-feed connector built in and Studio's browser telemetry off
-# (singlestore.Dockerfile), tagged with the hash of the jar and the Dockerfile so a change replaces the pod; a matrix run on its own uses the plain image. No volume:
-# the data goes with the pod (demo.sh seeds a new one). The demo publishes Studio on localhost:8183. It
-# reserves 1.5 GB though it uses over 2 GB: with Keycloak, a fuller reservation leaves no room on Docker
-# Desktop's node for Spark's 2 GB job.
+# the dev image: demo.sh's has the change-feed connector built in, Studio's browser telemetry off and Studio
+# signing people in through Keycloak with SAML (singlestore.Dockerfile), tagged with the hash of the jar and the
+# Dockerfile so a change replaces the pod; a matrix run on its own uses the plain image, and has no Secret
+# keycloak-keys, so the certificate's volume is optional. No volume for the data: it goes with the pod (demo.sh
+# seeds a new one). The demo publishes Studio on localhost:8183. It reserves 1.5 GB though it uses over 2 GB:
+# with Keycloak, a fuller reservation leaves no room on Docker Desktop's node for Spark's 2 GB job.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,6 +19,8 @@ spec:
   template:
     metadata:
       labels: {app: singlestore}
+      # SingleStore reads Keycloak's certificate only as it starts, so a new one replaces the pod.
+      annotations: {keel-demo/keys: "${KEYCLOAK_KEYS_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -43,9 +46,19 @@ spec:
             timeoutSeconds: 5
             periodSeconds: 5
             failureThreshold: 120
+          # The certificate SingleStore checks Studio's SAML sign-ins against: Keycloak's realm signing key's.
+          volumeMounts:
+            - {name: keycloak-certificate, mountPath: /etc/keel-demo, readOnly: true}
           resources:
             requests: {memory: 1536Mi}
             limits: {memory: 3Gi}
+      volumes:
+        - name: keycloak-certificate
+          secret:
+            secretName: keycloak-keys
+            optional: true
+            items:
+              - {key: realm-certificate-pem, path: keycloak-saml.crt}
 ---
 apiVersion: v1
 kind: Service

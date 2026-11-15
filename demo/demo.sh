@@ -14,13 +14,14 @@
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the pods and services
-#   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key and tokens)
+#   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key, tokens and Keycloak keys)
 #
-# Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, and JDK 25
-# (JAVA_HOME or java on PATH). kubectl and helm always use KEEL_DEMO_CONTEXT (default docker-desktop), never
-# the current context, and the stack is namespace KEEL_DEMO_NAMESPACE (default keel-demo). Docker
-# Desktop's cluster runs images from the local Docker engine and serves LoadBalancer Services on localhost.
-# The signing key and tokens are kept in KEEL_DEMO_HOME (default ~/.keel-demo).
+# Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
+# Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use KEEL_DEMO_CONTEXT (default
+# docker-desktop), never the current context, and the stack is namespace KEEL_DEMO_NAMESPACE (default
+# keel-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
+# Services on localhost. The signing key, tokens and Keycloak's keys are kept in KEEL_DEMO_HOME (default
+# ~/.keel-demo).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,6 +38,8 @@ S2_ROOT_PASSWORD=keel-test
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
 TRINO_IMAGE=trinodb/trino:484
+# Signs people in to CloudBeaver through Keycloak (cloudbeaver.yaml).
+OAUTH2_PROXY_IMAGE=quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
 CLOUDBEAVER_IMAGE=
 CONNECT_IMAGE=
 # Kafka Connect's REST API while the CDC leg runs (ports.yaml).
@@ -70,7 +73,7 @@ image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 apply() {
   sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
-    -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" \
+    -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" -e "s|\${OAUTH2_PROXY_IMAGE}|$OAUTH2_PROXY_IMAGE|g" \
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
@@ -79,6 +82,7 @@ apply() {
     -e "s|\${COCKROACH_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/cockroach.sql" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
+    -e "s|\${KEYCLOAK_KEYS_HASH}|$(cat "$RUN"/keycloak/* 2>/dev/null | sha256sum | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
     "$STACK/$1" | k apply -f - >/dev/null
 }
@@ -135,14 +139,14 @@ build() {
   docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
   docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
   mkdir -p "$RUN/images/cloudbeaver"
-  cp "$REPO/demo/CloudBeaverUsers.java" "$RUN/images/cloudbeaver/"
+  cp "$REPO/demo/CloudBeaverUsers.java" "$STACK/cloudbeaver-signin.conf" "$RUN/images/cloudbeaver/"
   CLOUDBEAVER_IMAGE="keel-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
-    | sha256sum | cut -c1-12)"
+    "$STACK/cloudbeaver-signin.conf" | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
-      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE"; do
+      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE" "$OAUTH2_PROXY_IMAGE"; do
     docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
   done
 }
@@ -161,6 +165,33 @@ publish_tokens() {
     --from-literal=stella="$(token_of stella)" --from-literal=oscar="$(token_of oscar)" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
+}
+
+# Keycloak's realm signing key and certificate, and CloudBeaver's client and cookie secrets, made once per
+# machine in $RUN/keycloak and kept, and published as Secret keycloak-keys (keycloak.yaml, cloudbeaver.yaml,
+# singlestore.yaml). The key is fixed rather than Keycloak's own, made at each start, because SingleStore checks
+# Studio's SAML sign-ins against its certificate, which it reads only as it starts.
+publish_keycloak_keys() {
+  local dir="$RUN/keycloak"
+  if [[ ! -f "$dir/realm-certificate.pem" ]]; then
+    mkdir -p "$dir"
+    # In the folder, with bare file names: Git Bash must not turn the subject into a path, and its openssl, a
+    # Windows program, cannot open /c/... paths that Git Bash has not turned into Windows ones.
+    (cd "$dir" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -subj "/CN=keel-demo-keycloak" -keyout realm-private-key.pem -out realm-certificate.pem.new)
+    openssl rand -hex 24 > "$dir/cloudbeaver-client-secret"
+    openssl rand -hex 16 > "$dir/cloudbeaver-cookie-secret"
+    mv "$dir/realm-certificate.pem.new" "$dir/realm-certificate.pem"
+  fi
+  # The realm file takes the key and certificate without their PEM lines.
+  pem_body() { sed '/^-----/d' "$1" | tr -d '\r\n'; }
+  k create secret generic keycloak-keys \
+    --from-literal=realm-private-key="$(pem_body "$dir/realm-private-key.pem")" \
+    --from-literal=realm-certificate="$(pem_body "$dir/realm-certificate.pem")" \
+    --from-file=realm-certificate-pem="$dir/realm-certificate.pem" \
+    --from-literal=cloudbeaver-client-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-client-secret")" \
+    --from-literal=cloudbeaver-cookie-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-cookie-secret")" \
+    --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
 # Expired, about to expire, or minted before Mint.java had every user it has now.
@@ -321,11 +352,13 @@ print_access() {
   expires=$(tr -d '\r\n' < "$RUN/tokens/expires.txt")
   cat <<EOF
 
-The demo's people sign in to the console, kafbat, Studio and CloudBeaver with the same passwords:
-ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo. The console and kafbat sign in
-through Keycloak (localhost:8180); to change user there, sign out of Keycloak too
+The demo's people sign in once, through Keycloak (localhost:8180), and the console, kafbat, CloudBeaver and
+Studio ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
+Studio asks only the username, then "Sign in with SAML". To change user, use CloudBeaver's Logout (it ends
+Keycloak's session too), or sign out of each UI and of Keycloak
 (http://localhost:8180/realms/keel/protocol/openid-connect/logout, then Logout), or use a private window.
-To show everything in one sign-in, use presenter / presenter-demo there: all four people's groups at once.
+To show everything in one sign-in, use presenter / presenter-demo in the console and kafbat: all four people's
+groups at once. CloudBeaver and Studio have no presenter.
 
 The console:  $URL/ui/   (catalogs lakehouse and engines)
 Sign in, or paste one of these tokens (valid until $expires).
@@ -340,7 +373,8 @@ Tag steward stella, platform operator oscar, SingleStore, the lake writer, the e
 and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc,trino}.jwt
 oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics.
 Kafka:        kafbat on http://localhost:8182
-SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD)
+SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
+              Studio takes no passwords, so not root)
 Trino:        CloudBeaver on http://localhost:8185: each person's connections sign in as them, to keel through
               Trino with their own token, and to the CDC leg's databases
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
@@ -583,6 +617,7 @@ up() {
   kubectl --context "$CONTEXT" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   check_ports
   publish_tokens
+  publish_keycloak_keys
 
   say "starting PostgreSQL, Kafka, kafbat, the issuer's key server, Keycloak and Silo (namespace $NS, context $CONTEXT)"
   apply stack.yaml
