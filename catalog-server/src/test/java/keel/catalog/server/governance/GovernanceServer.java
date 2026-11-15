@@ -104,7 +104,13 @@ public @interface GovernanceServer {
         }
     }
 
-    /** The wall clock, moved forward by what a test adds. */
+    /**
+     * The wall clock, moved forward by what a test adds, and never back. Every class with this annotation shares it,
+     * so a test starts wherever the tests before it left it. Moving it back would strand time-keyed server state in
+     * the future: the purge limiter would count an earlier test's purges as this minute's until real time caught
+     * up. Each test's own advance is what keeps its purges out of an earlier test's minute. A test that compares the
+     * server's clock with a real one, such as vended credentials' expiry, must not depend on where it stands.
+     */
     final class TestClock extends Clock {
 
         private volatile Duration offset = Duration.ZERO;
