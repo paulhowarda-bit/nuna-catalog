@@ -338,7 +338,7 @@ $(token_of gary)
 
 Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix, Kafka Connect
 and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc,trino}.jwt
-oscar administers kafbat, Studio and CloudBeaver.
+oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics.
 Kafka:        kafbat on http://localhost:8182
 SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD)
 Trino:        CloudBeaver on http://localhost:8185: each person's connections sign in as them, to keel through
