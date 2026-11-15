@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="keel.catalog.iceberg.probe.ProbeFieldAndEachTest" tests="1" skipped="0" failures="1" errors="0" timestamp="2026-11-15T04:31:14.483Z" hostname="localhost" time="0.012">
+  <properties/>
+  <testcase name="one()" classname="keel.catalog.iceberg.probe.ProbeFieldAndEachTest" time="0.004">
+    <failure message="java.lang.IllegalStateException: probe: per-instance fixture did not start" type="java.lang.IllegalStateException">java.lang.IllegalStateException: probe: per-instance fixture did not start
+	at keel.catalog.iceberg.probe.ProbeFieldAndEachTest.make(ProbeFieldAndEachTest.java:12)
+	at keel.catalog.iceberg.probe.ProbeFieldAndEachTest.&lt;init&gt;(ProbeFieldAndEachTest.java:9)
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>
