@@ -1,0 +1,18 @@
+Breaks: a metrics report on a table that does not exist answers 204.
+Module: catalog-server
+Test: RestRoutesTest#metricsCredentialsAndTokens
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+index e400b6a..48b9617 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+@@ -297,6 +297,9 @@ class TableRoutes {
+                                  HttpServletRequest http) {
+         CatalogRecord catalog = lookup.catalog(prefix);
+         List<String> levels = Lookup.levels(namespace);
++        if (lookup.namespace(catalog, levels).flatMap(ns -> lookup.object(ns, table, Kind.TABLE)).isEmpty()) {
++            return ResponseEntity.noContent().build();
++        }
+         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
+                 Guard.REPORT_METRICS);

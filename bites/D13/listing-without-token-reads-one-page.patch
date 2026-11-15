@@ -1,0 +1,17 @@
+Breaks: a listing without a pageToken answers only the first page, with no next token.
+Module: catalog-server
+Test: RestRoutesTest#listingsArePagedWithOpaqueTokens
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
+index b8c9361..f2557a7 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
+@@ -80,7 +80,7 @@ class Lookup {
+             PageRequest request = PageRequest.first(settings.maxPageSize());
+             Page<T> page = list.apply(request);
+             List<T> items = new ArrayList<>(page.items());
+-            while (page.nextToken().isPresent()) {
++            if (false) {
+                 request = request.after(page);
+                 page = list.apply(request);
+                 items.addAll(page.items());

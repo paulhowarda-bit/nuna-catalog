@@ -1,0 +1,16 @@
+Breaks: Tomcat refuses %2F again, so a name holding / can be created but never loaded.
+Module: catalog-server
+Test: RestRoutesTest#namesMayHoldSlashesAndPercentSigns
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/RestWiring.java b/catalog-server/src/main/java/keel/catalog/server/rest/RestWiring.java
+index 10a7c8f..1f0b815 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/RestWiring.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/RestWiring.java
+@@ -50,6 +50,6 @@ class RestWiring {
+      */
+     @Bean
+     TomcatConnectorCustomizer encodedSlashesInNames() {
+-        return connector -> connector.setEncodedSolidusHandling(EncodedSolidusHandling.PASS_THROUGH.getValue());
++        return connector -> connector.setEncodedSolidusHandling(EncodedSolidusHandling.REJECT.getValue());
+     }
+ }
