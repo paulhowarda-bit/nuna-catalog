@@ -11,7 +11,8 @@
 #
 # Everything lives in $KEEL_OVERNIGHT_HOME (default: keel-overnight next to the main checkout):
 #   clone/           a clone of this repo, reset to main's tip at each run; the bites patch its files
-#   runs/<date>/     summary.md, one log per leg, and the logs of bites that did not bite
+#   runs/<date>/     summary.md, one log per leg, the logs of bites that did not bite, and for each leg that did
+#                    not pass, <leg>-results/: its test result files and what docker info said just after
 #   last-tested      the commit the last run tested (a dry run records nothing)
 #   bites-next       the bite the next run starts from: the bites rotate, so nights that cannot fit all 212
 #                    still cover every one in turn
@@ -51,7 +52,7 @@ main() {
         case $arg in
             --force) force=true ;;
             --dry) dry=true; force=true ;;
-            *) sed -n '2,30s/^# \{0,1\}//p' "$0"; exit 2 ;;
+            *) sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; exit 2 ;;
         esac
     done
 
@@ -171,6 +172,16 @@ main() {
                                       print cls "#" name ": " substr(msg, 1, 200) }'
     }
 
+    # Keeps the result files written since marker $1 in folder $2, at their paths in the clone, with docker info.
+    # The bites run the same tests later and overwrite them in the clone, and each holds its test's output: the
+    # Ceph leg of 2026-11-15 found no Docker, and the files that said why were gone by morning (backlog 32).
+    keep_results() {
+        mkdir -p "$2"
+        (cd "$clone" && find . -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 |
+            xargs -0 -r cp --parents -t "$2")
+        timeout 60 docker info >"$2/docker-info.txt" 2>&1
+    }
+
     wanted() { [[ " $legs " == *" $1 "* ]]; }
 
     # leg <key> <title> <log> <command...>: runs the command in the clone until the deadline and records a row.
@@ -198,7 +209,12 @@ main() {
             *) result=FAILED ;;
         esac
         say "$title: $result"
-        rows+=("| $title | $result | $(minutes $(( $(date +%s) - t0 ))) | $log |")
+        local logs=$log
+        if [ "$status" -ne 0 ]; then
+            keep_results "$marker" "$runs/$key-results"
+            logs+=", $key-results/"
+        fi
+        rows+=("| $title | $result | $(minutes $(( $(date +%s) - t0 ))) | $logs |")
         local fails
         fails=$(failures_since "$marker")
         if [ -n "$fails" ]; then
