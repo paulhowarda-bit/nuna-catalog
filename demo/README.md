@@ -3,8 +3,8 @@
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
 Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
-and Iceberg in both directions and prints how to sign in; `cdc` captures changes in PostgreSQL and Oracle into
-Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
+and Iceberg in both directions and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
+CockroachDB into Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
 ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
 
 ## Start
@@ -41,8 +41,8 @@ demo/demo.sh up
     the people below as the pod starts, each with connections that sign in as them (`cloudbeaver.Dockerfile`).
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
-  - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, and Kafka Connect,
-    image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
+  - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, CockroachDB, and
+    Kafka Connect, image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
   console), **8182** (kafbat), **8183** (SingleStore Studio), **8185** (CloudBeaver) and **8186** (Kafka
   Connect's REST API, while the CDC leg runs). `up` stops if something else holds one of them, such as a
@@ -52,8 +52,10 @@ demo/demo.sh up
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
   Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
-  CloudBeaver while it runs to make room for Spark. The CDC leg asks for 1.9 GB (Oracle 1.25 GB, Kafka Connect
-  512 MB, its PostgreSQL 128 MB), so `cdc` stops Trino, and `engines` and `rate` refuse to run beside it.
+  CloudBeaver while it runs to make room for Spark. The CDC leg asks for 2.25 GB (Oracle 1.25 GB, Kafka
+  Connect 512 MB, CockroachDB 384 MB, using about 450 MB of up to 768 MB, its PostgreSQL 128 MB), so `cdc`
+  stops Trino, and `engines` and `rate` refuse to run beside it. With the leg up, the stack's requests fill
+  Kubernetes to within about 20 MB, so CloudBeaver is replaced by stopping the old pod first.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
@@ -108,7 +110,7 @@ catalog lets them do there what it lets them do in the console.
 |---|---|---|---|
 | kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
-| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | three connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with three connections of their own and everyone else's |
+| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers, and `demo-analysts`, `demo-grant-admins`
 and `demo-stewards` read. Like the console, kafbat's sign-out leaves Keycloak's session.
@@ -125,6 +127,8 @@ Accounts that run the demo rather than people in it:
 | Oracle `treasury` | `keel-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
 | Oracle `SYS`, `SYSTEM` | `keel-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
 | Oracle `c##dbzuser` | `dbz` | Debezium's LogMiner user |
+| CockroachDB `root` | none: the node's client certificate | the CDC leg's CockroachDB; `demo/demo.sh cockroach` |
+| CockroachDB `debezium` | `dbz` | Debezium's login: `SELECT` and `CHANGEFEED` on `positions.holdings` |
 
 Tokens are valid for 7 days, and `up` mints new ones only when they are about to expire. Print them again
 (re-minted if they are about to expire; SingleStore's running pipelines are then replaced and Trino,
@@ -218,8 +222,8 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 ## Trino and CloudBeaver
 
 CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, where the
-people above sign in. Each person has three connections of their own, which sign in as them, and sees only
-those: "keel (Trino, as ana)" for `ana`, and the two CDC sources below. The Trino connection reaches a Trino
+people above sign in. Each person has four connections of their own, which sign in as them, and sees only
+those: "keel (Trino, as ana)" for `ana`, and the three CDC sources below. The Trino connection reaches a Trino
 whose catalogs `lakehouse` and `engines` are keel's. It sends Trino the person's own token as the extra
 credential `token`, and Trino hands it to the catalog with each request (`iceberg.rest-catalog.session=USER`).
 So the catalog sees the person, and each one reads and changes what they may in the console, with the
@@ -263,7 +267,7 @@ storage credentials the catalog vends them:
   value fetches tiles from openstreetmap.org, and the AI assistant calls whichever AI service an
   administrator configures; none is.
 
-## CDC: PostgreSQL and Oracle into Iceberg history tables
+## CDC: PostgreSQL, Oracle and CockroachDB into Iceberg history tables
 
 ```bash
 demo/demo.sh cdc
@@ -274,21 +278,27 @@ starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino to make roo
 - `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
 - `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
   in PDB `FREEPDB1` (`demo/cdc/oracle.sql`, run as the database starts; it restarts the database once).
-- `connect`: Kafka Connect 4.2.2 in distributed mode, on the stack's Kafka, with four connectors
-  (`demo/cdc/connectors`): Debezium 3.7.1's PostgreSQL connector (`pgoutput`) and Oracle connector
-  (LogMiner), and an Apache Iceberg 1.12.0 sink for each, writing through the catalog as `cdc` with vended
-  credentials.
+- `cockroach`: CockroachDB 25.4.20 (the version the tests use), one node, table `positions.holdings` in
+  database `custody` (`demo/cdc/cockroach.sql`, run as the node first starts). The node runs secure, so
+  passwords are checked, but accepts SQL without TLS. A single development node needs no licence key and is
+  not throttled, and its diagnostics reporting is off.
+- `connect`: Kafka Connect 4.2.2 in distributed mode, on the stack's Kafka, with six connectors
+  (`demo/cdc/connectors`): Debezium 3.7.1's PostgreSQL connector (`pgoutput`), Oracle connector (LogMiner)
+  and CockroachDB connector (a changefeed), and an Apache Iceberg 1.12.0 sink for each, writing through the
+  catalog as `cdc` with vended credentials.
 
 | Source | Kafka topic | Iceberg table in `lakehouse` |
 |---|---|---|
 | `settlement.instructions` | `backoffice.settlement.instructions` | `history.postgres.settlement.instructions` |
 | `TREASURY.PAYMENTS` | `oracle.TREASURY.PAYMENTS` | `history.oracle.treasury.payments` |
+| `positions.holdings` | `cockroach.positions.holdings` | `history.cockroach.positions.holdings` |
 
 Each table is a history: one row per change, appended, never updated. The sink's `DebeziumTransform` adds a
 struct column `_cdc`: `op` (`I`, `U` or `D`), `ts` (when Debezium read the change), `offset` (its Kafka
 offset), `source` and `target` (the source table and the Iceberg table) and `key`. A deleted row is written
 as it was before the delete. `cdc` waits for each snapshot (4 rows in each table), then updates, deletes and
-inserts in both databases and waits for those changes: 8 rows in the PostgreSQL history, 7 in Oracle's.
+inserts in each database and waits for those changes: 8 rows in the PostgreSQL history, 7 in Oracle's and 7
+in CockroachDB's.
 
 Make more changes and watch them arrive within about 10 seconds (the sinks commit every 5 seconds): kafbat
 shows Debezium's change events in the topics above, and the console shows each sink commit as a snapshot of
@@ -297,31 +307,36 @@ its history table.
 ```bash
 demo/demo.sh psql             # database backoffice, user backoffice
 demo/demo.sh sqlplus          # user treasury in FREEPDB1; COMMIT, or Debezium sees nothing
+demo/demo.sh cockroach        # database custody, as root
 demo/demo.sh psql ana         # or as one of the people below
 demo/demo.sh sqlplus stella
+demo/demo.sh cockroach oscar
 ```
 
-The people have accounts in both databases, with their Keycloak passwords:
+The people have accounts in all three databases, with their Keycloak passwords:
 
-| | PostgreSQL `backoffice` | Oracle `FREEPDB1` |
-|---|---|---|
-| `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` |
-| `gary` | superuser | DBA |
-| `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` |
-| everyone | metadata: statistics, settings and activity (`pg_monitor`) | metadata: the data dictionary and `V$` views (`SELECT_CATALOG_ROLE`) |
+| | PostgreSQL `backoffice` | Oracle `FREEPDB1` | CockroachDB `custody` |
+|---|---|---|---|
+| `ana` | reads and writes every table; creates in the database and its schemas; alters and drops `settlement` and its table (a member of their owner, `settlement_owner`) | `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `CREATE`, `ALTER` and `DROP ANY TABLE` | every privilege on schema `positions` and its table; creates schemas in the database |
+| `gary` | superuser | DBA | `admin` |
+| `stella`, `oscar` | read every table (`pg_read_all_data`) | `SELECT ANY TABLE` | `SELECT` on `positions.holdings` and on every table `ana` creates |
+| everyone | metadata: statistics, settings and activity (`pg_monitor`) | metadata: the data dictionary and `V$` views (`SELECT_CATALOG_ROLE`) | |
 
-`backoffice` (owner of the database, Debezium's login), `treasury` (owner of `PAYMENTS`) and `c##dbzuser`
-(Debezium's LogMiner user) run the leg. In PostgreSQL a table `ana` creates is hers: besides her, only `gary`
-can alter or drop it.
+`backoffice` (owner of the database, Debezium's login), `treasury` (owner of `PAYMENTS`), `c##dbzuser`
+(Debezium's LogMiner user), and CockroachDB's `debezium` and `root` run the leg. In PostgreSQL and
+CockroachDB a table `ana` creates is hers: besides her, only `gary` can alter or drop it.
 
-CloudBeaver (<http://localhost:8185>) queries both databases while the leg runs, through each person's own
-connections, "backoffice (PostgreSQL, as ana)" and "treasury (Oracle, as ana)" for `ana`. They sign in as
-the person, with the privileges above: `ana` and `gary` change rows there, and their changes reach the
-history tables as any other does; `stella` and `oscar` read. CloudBeaver commits each statement as it runs.
+CloudBeaver (<http://localhost:8185>) queries the three databases while the leg runs, through each person's
+own connections: "backoffice (PostgreSQL, as ana)", "treasury (Oracle, as ana)" and "custody (CockroachDB, as
+ana)" for `ana`. They sign in as the person, with the privileges above: `ana` and `gary` change rows there, and
+their changes reach the history tables as any other does; `stella` and `oscar` read. CloudBeaver commits each
+statement as it runs. CloudBeaver Community has no CockroachDB driver, so the custody connections use its
+PostgreSQL driver, whose protocol CockroachDB speaks.
 
 ```sql
 SELECT * FROM settlement.instructions ORDER BY instruction_id;   -- backoffice
 SELECT * FROM treasury.payments ORDER BY payment_id;             -- treasury
+SELECT * FROM positions.holdings ORDER BY holding_id;            -- custody
 ```
 
 Outside the leg these connections fail to connect: their hosts are gone.
@@ -334,6 +349,8 @@ SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.post
 ORDER BY "_cdc"."offset";
 SELECT "_cdc".op, "_cdc".ts, payment_id, status FROM lakehouse."history.oracle.treasury".payments
 ORDER BY "_cdc"."offset";
+SELECT "_cdc".op, "_cdc".ts, holding_id, status FROM lakehouse."history.cockroach.positions".holdings
+ORDER BY "_cdc"."offset";
 ```
 
 - History only: the Apache Iceberg sink appends, so there is no table of the rows as they are now. A view
@@ -342,10 +359,15 @@ ORDER BY "_cdc"."offset";
   (`time.precision.mode=connect`, milliseconds), and every timestamp lands as `timestamptz`. A PostgreSQL
   `timestamptz` column would arrive as a string instead, so the source table uses `timestamp(3)`. Numbers
   with a scale land as `decimal(38, s)`, and Oracle's `NUMBER(10)` as `long`.
+- CockroachDB's connector has no such settings: it sends `DECIMAL` as a string and `TIMESTAMP` as
+  microseconds since the epoch. So `cdc` makes its history table before the sink starts, with the columns the
+  sink makes for PostgreSQL's (`decimal(38, s)`, which the sink parses the strings into), and the sink converts
+  the microseconds to a timestamp (`cockroach-history.json`). Its history therefore has the same types as
+  PostgreSQL's.
 - Oracle's upper-case column names are renamed to lower case in the sink (`oracle-history.json`), column by
   column, the key's too: a column added later arrives in upper case.
 - The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table.
-- Each `cdc` drops the history tables of the run before and starts both databases empty. `demo.sh cdc` while
+- Each `cdc` drops the history tables of the run before and starts the databases empty. `demo.sh cdc` while
   the leg runs only brings it up to date (a changed connector config, image or manifest).
 - The first `cdc` pulls Oracle's image (about 5 GB) and builds Kafka Connect's image from Maven Central.
 - kafbat shows the connectors under Kafka Connect, cluster `cdc`: each one's status, tasks and config, with

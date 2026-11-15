@@ -7,11 +7,12 @@
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops and lake)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
-#   demo/demo.sh cdc      start the CDC leg: PostgreSQL and Oracle, through Debezium and Kafka Connect, into Iceberg
-#                         history tables (stops Trino while it runs)
+#   demo/demo.sh cdc      start the CDC leg: PostgreSQL, Oracle and CockroachDB, through Debezium and Kafka
+#                         Connect, into Iceberg history tables (stops Trino while it runs)
 #   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino again
 #   demo/demo.sh psql [user]     a psql prompt on the CDC leg's PostgreSQL, database backoffice (default backoffice)
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
+#   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the pods and services
 #   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key and tokens)
 #
@@ -74,6 +75,8 @@ apply() {
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
     -e "s|\${ORACLE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/oracle.sql" | cut -c1-12)|g" \
+    -e "s|\${COCKROACH_IMAGE}|$(image_of cockroachdb.image)|g" \
+    -e "s|\${COCKROACH_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/cockroach.sql" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
@@ -342,15 +345,16 @@ Trino:        CloudBeaver on http://localhost:8185: each person's connections si
               Trino with their own token, and to the CDC leg's databases
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
-CDC:          demo/demo.sh cdc   (PostgreSQL and Oracle into Iceberg history tables; stops Trino while it runs)
+CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
+              while it runs)
 Kubernetes:   namespace $NS, context $CONTEXT
 EOF
 }
 
-# The CDC leg (cdc.yaml), on demand: PostgreSQL backoffice and Oracle, captured by Debezium into Kafka, and
-# written by the Apache Iceberg sink into history tables, one row per change. Its pods do not fit beside Trino
-# on an 8 GB Docker Desktop, so Trino stops while it runs; CloudBeaver stays, to query both databases. Kafka
-# Connect's REST API is on $CONNECT_URL meanwhile.
+# The CDC leg (cdc.yaml), on demand: PostgreSQL backoffice, Oracle and CockroachDB, captured by Debezium into
+# Kafka, and written by the Apache Iceberg sink into history tables, one row per change. Its pods do not fit
+# beside Trino on an 8 GB Docker Desktop, so Trino stops while it runs; CloudBeaver stays, to query the
+# databases. Kafka Connect's REST API is on $CONNECT_URL meanwhile.
 cdc_running() { k get deployment connect >/dev/null 2>&1; }
 
 # Built on every cdc (and on every up while the leg runs), tagged with the hash of its Dockerfile and plugin
@@ -379,8 +383,9 @@ connect_api() {
   rm -f "$out"
 }
 
-# The two history tables, as namespace path and table name for the catalog's API.
-HISTORY_TABLES=("history%1Fpostgres%1Fsettlement instructions" "history%1Foracle%1Ftreasury payments")
+# The history tables, as namespace path and table name for the catalog's API.
+HISTORY_TABLES=("history%1Fpostgres%1Fsettlement instructions" "history%1Foracle%1Ftreasury payments"
+  "history%1Fcockroach%1Fpositions holdings")
 
 # Rows in a table of catalog lakehouse (its newest snapshot's total-records; 0 before the first commit).
 table_rows() {
@@ -401,11 +406,39 @@ wait_for_rows() {
   return 1
 }
 
-# Runs SQL from stdin in the leg's PostgreSQL and Oracle.
+# Runs SQL from stdin in the leg's PostgreSQL, Oracle and CockroachDB.
 backoffice_sql() { k exec -i deployment/backoffice -- psql -q -v ON_ERROR_STOP=1 -U backoffice -d backoffice; }
 oracle_sql() {
   { echo 'WHENEVER SQLERROR EXIT SQL.SQLCODE'; cat; echo 'EXIT'; } \
     | MSYS_NO_PATHCONV=1 k exec -i deployment/oracle -- sqlplus -s -l "$ORACLE_TREASURY" >/dev/null
+}
+# As root, with the client certificate the image's entrypoint made; it names the node 127.0.0.1, not localhost.
+cockroach_sql() {
+  MSYS_NO_PATHCONV=1 k exec -i deployment/cockroach -- ./cockroach sql --certs-dir=certs --host=127.0.0.1 \
+    -d custody >/dev/null
+}
+
+# CockroachDB's connector sends DECIMAL as a string, whatever its settings, and the Iceberg sink would make that a
+# string column. The sink does parse a string into a decimal column that exists, so the history table is made here,
+# with the columns the sink makes for PostgreSQL's (precision 38, NOT NULL as required); the sink adds _cdc.
+# updated_at arrives as microseconds since the epoch, which cockroach-history.json converts to a timestamp.
+cockroach_history_table() {
+  local path="" names="" level
+  for level in history cockroach positions; do
+    path+="${path:+%1F}$level"
+    names+="${names:+, }\"$level\""
+    api cdc GET "/v1/$CATALOG/namespaces/$path" '' 200 2>/dev/null \
+      || api cdc POST "/v1/$CATALOG/namespaces" "{\"namespace\": [$names]}" 200
+  done
+  api cdc POST "/v1/$CATALOG/namespaces/$path/tables" '{"name": "holdings", "schema": {"type": "struct", "fields": [
+    {"id": 1, "name": "holding_id", "required": true, "type": "long"},
+    {"id": 2, "name": "account", "required": true, "type": "string"},
+    {"id": 3, "name": "isin", "required": true, "type": "string"},
+    {"id": 4, "name": "quantity", "required": true, "type": "decimal(38, 4)"},
+    {"id": 5, "name": "market_value", "required": true, "type": "decimal(38, 2)"},
+    {"id": 6, "name": "currency", "required": true, "type": "string"},
+    {"id": 7, "name": "status", "required": true, "type": "string"},
+    {"id": 8, "name": "updated_at", "required": true, "type": "timestamptz"}]}}' 200
 }
 
 # The leg's databases, worker and connectors, as cdc.yaml and demo/cdc have them; the connectors' configs are
@@ -415,9 +448,12 @@ cdc_apply() {
     --dry-run=client -o yaml | k apply -f - >/dev/null
   k create configmap oracle-startdb --from-file=cdc.sql="$REPO/demo/cdc/oracle.sql" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
+  k create configmap cockroach-initdb --from-file=cockroach.sql="$REPO/demo/cdc/cockroach.sql" \
+    --dry-run=client -o yaml | k apply -f - >/dev/null
   apply cdc.yaml
   apply ports.yaml
   k rollout status deployment/backoffice --timeout=3m >/dev/null
+  k rollout status deployment/cockroach --timeout=3m >/dev/null
   k rollout status deployment/connect --timeout=5m >/dev/null
   # Oracle restarts once into archive log mode (demo/cdc/oracle.sql): about two minutes.
   k rollout status deployment/oracle --timeout=10m >/dev/null
@@ -426,7 +462,8 @@ cdc_apply() {
     sleep 2
   done
   local connector
-  for connector in backoffice-source oracle-source backoffice-history oracle-history; do
+  for connector in backoffice-source oracle-source cockroach-source backoffice-history oracle-history \
+    cockroach-history; do
     connect_api PUT "/connectors/$connector/config" < "$REPO/demo/cdc/connectors/$connector.json" >/dev/null
   done
 }
@@ -451,6 +488,8 @@ cdc_start() {
     say "pulling $image (about 5 GB, once)"
     docker pull -q "$image" >/dev/null
   fi
+  image=$(image_of cockroachdb.image)
+  docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
   say "stopping Trino: the CDC leg needs its memory"
   k scale deployment/trino --replicas=0 >/dev/null
   k wait --for=delete pod -l app=trino --timeout=2m >/dev/null
@@ -462,14 +501,16 @@ cdc_start() {
       api cdc DELETE "/v1/$CATALOG/namespaces/$ns/tables/$table?purgeRequested=true" '' 204
     fi
   done
+  cockroach_history_table
 
-  say "starting the CDC leg: PostgreSQL backoffice, Oracle Free and Kafka Connect (a few minutes)"
+  say "starting the CDC leg: PostgreSQL backoffice, Oracle Free, CockroachDB and Kafka Connect (a few minutes)"
   cdc_apply
-  say "waiting for Debezium's snapshots of both tables to reach Iceberg"
+  say "waiting for Debezium's snapshots of the three tables to reach Iceberg"
   wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 4
   wait_for_rows "history%1Foracle%1Ftreasury" payments 4
+  wait_for_rows "history%1Fcockroach%1Fpositions" holdings 4
 
-  say "changing rows in both databases: each change is a row in its history table"
+  say "changing rows in each database: each change is a row in its history table"
   backoffice_sql >/dev/null <<'SQL'
 UPDATE settlement.instructions SET status = 'MATCHED', updated_at = now() WHERE instruction_id = 5001;
 UPDATE settlement.instructions SET status = 'SETTLED', updated_at = now() WHERE instruction_id = 5003;
@@ -484,8 +525,15 @@ INSERT INTO treasury.payments (payment_id, account, amount, currency, status)
 VALUES (7005, 'DE89370400440532013000', 10950.00, 'EUR', 'SCHEDULED');
 COMMIT;
 SQL
+  cockroach_sql <<'SQL'
+UPDATE positions.holdings SET status = 'PLEDGED', updated_at = now() WHERE holding_id = 9001;
+DELETE FROM positions.holdings WHERE holding_id = 9002;
+INSERT INTO positions.holdings (holding_id, account, isin, quantity, market_value, currency, status)
+VALUES (9005, 'CUST-0002', 'DE0007164600', 60, 10950.00, 'EUR', 'PENDING');
+SQL
   wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 8
   wait_for_rows "history%1Foracle%1Ftreasury" payments 7
+  wait_for_rows "history%1Fcockroach%1Fpositions" holdings 7
   cdc_access
 }
 
@@ -495,11 +543,12 @@ cdc_access() {
 The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
   PostgreSQL backoffice, settlement.instructions  ->  history.postgres.settlement.instructions   (demo/demo.sh psql)
   Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
+  CockroachDB custody, positions.holdings          ->  history.cockroach.positions.holdings      (demo/demo.sh cockroach)
 Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'. kafbat (http://localhost:8182) shows Debezium's
 change events as they arrive, and the console shows each sink commit as a snapshot of its history table.
-Query both source databases in CloudBeaver (http://localhost:8185): each person's backoffice and treasury
-connections sign in as them. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts it
-again. Then read the history in CloudBeaver's Trino connection, oldest change first:
+Query the source databases in CloudBeaver (http://localhost:8185): each person's backoffice, treasury and
+custody connections sign in as them. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and
+starts it again. Then read the history in CloudBeaver's Trino connection, oldest change first:
   SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
   ORDER BY "_cdc"."offset";
 EOF
@@ -511,14 +560,14 @@ EOF
 cdc_stop() {
   say "deleting the CDC leg: its databases, Kafka Connect, and its Kafka topics (the history tables stay)"
   k delete deployment,service,configmap -l keel-demo/cdc=true --ignore-not-found >/dev/null
-  k delete configmap backoffice-initdb oracle-startdb --ignore-not-found >/dev/null
-  k wait --for=delete pod -l 'app in (backoffice, oracle, connect)' --timeout=3m >/dev/null 2>&1 || true
+  k delete configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
+  k wait --for=delete pod -l 'app in (backoffice, oracle, cockroach, connect)' --timeout=3m >/dev/null 2>&1 || true
   k delete pod cdc-cleanup --ignore-not-found >/dev/null
   MSYS_NO_PATHCONV=1 k run cdc-cleanup -i --rm --quiet --restart=Never --image="$(image_of kafka.image)" \
     --image-pull-policy=Never --env=KAFKA_HEAP_OPTS=-Xmx128m --command -- sh -c '
       bin=/opt/kafka/bin; kafka=--bootstrap-server=kafka:9092
-      $bin/kafka-topics.sh $kafka --delete --if-exists --topic "cdc-connect-.*|backoffice.*|oracle.*"
-      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|keel-demo-cdc"); do
+      $bin/kafka-topics.sh $kafka --delete --if-exists --topic "cdc-connect-.*|backoffice.*|oracle.*|cockroach.*"
+      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|cockroach|keel-demo-cdc"); do
         $bin/kafka-consumer-groups.sh $kafka --delete --group "$group" >/dev/null
       done' >/dev/null
   say "starting Trino again"
@@ -649,7 +698,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,22p' "$0"; exit 2 ;;
+      *) sed -n '2,23p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -662,6 +711,16 @@ case "${1:-}" in
     if [[ -n "${2:-}" ]]; then login="$2/\"$2-demo\"@//localhost:1521/FREEPDB1"; fi
     MSYS_NO_PATHCONV=1 k exec -it deployment/oracle -- sqlplus -l "$login"
     ;;
+  cockroach)
+    # Root signs in with the client certificate the image made; a person with their Keycloak password,
+    # <user>-demo (demo/cdc/cockroach.sql).
+    if [[ -n "${2:-}" ]]; then
+      MSYS_NO_PATHCONV=1 k exec -it deployment/cockroach -- ./cockroach sql \
+        --url "postgresql://$2:$2-demo@localhost:26257/custody?sslmode=disable"
+    else
+      MSYS_NO_PATHCONV=1 k exec -it deployment/cockroach -- ./cockroach sql --certs-dir=certs --host=127.0.0.1 -d custody
+    fi
+    ;;
   status)
     k get pods,services
     ;;
@@ -670,7 +729,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,22p' "$0"
+    sed -n '2,23p' "$0"
     exit 2
     ;;
 esac

@@ -1,4 +1,4 @@
-# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): two source databases, and Kafka
+# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): three source databases, and Kafka
 # Connect running Debezium and the Apache Iceberg sink, which write every change into Iceberg history tables
 # through the catalog. Only demo.sh applies this. Every object carries label keel-demo/cdc, by which
 # demo.sh cdc stop deletes them.
@@ -7,11 +7,13 @@
 #               (demo/cdc/backoffice.sql, ConfigMap backoffice-initdb)
 #   oracle      Oracle Database Free, PDB FREEPDB1, table TREASURY.PAYMENTS, archive log mode
 #               (demo/cdc/oracle.sql, ConfigMap oracle-startdb)
+#   cockroach   CockroachDB, one node, database custody, table positions.holdings, captured through a
+#               changefeed (demo/cdc/cockroach.sql, ConfigMap cockroach-initdb)
 #   connect     Kafka Connect, distributed mode, image connect.Dockerfile; demo.sh adds the connectors in
 #               demo/cdc/connectors through its REST API, which ports.yaml publishes on localhost:8186
 #
-# Memory: 1.9 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
-# demo.sh cdc stops Trino while the leg runs. CloudBeaver stays, to query both databases. No volumes: the
+# Memory: 2.25 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
+# demo.sh cdc stops Trino while the leg runs. CloudBeaver stays, to query the databases. No volumes: the
 # databases and Connect's topics last as long as the pods.
 #
 # Each Deployment stops its old pod before starting the new one (Recreate): a changed SQL file or image
@@ -136,6 +138,61 @@ spec:
   selector: {app: oracle}
   ports:
     - port: 1521
+---
+# CockroachDB, one node, secure (the image's entrypoint makes the certificates as it starts), so the people's
+# passwords are checked. --accept-sql-without-tls lets clients sign in with a password and no TLS, as they do on
+# backoffice. The caches are cut from their defaults (128 MiB, and a quarter of the memory limit for SQL); about
+# 450 MiB in use with Debezium's changefeed running. COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING keeps the node
+# from sending usage reports to Cockroach Labs. A single node for development needs no licence key and is not
+# throttled (Cockroach Labs' licensing FAQ).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cockroach
+  labels: {keel-demo/cdc: "true"}
+spec:
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: cockroach}
+  template:
+    metadata:
+      labels: {app: cockroach}
+      annotations: {keel-demo/initdb: "${COCKROACH_SQL_HASH}"}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: cockroach
+          image: ${COCKROACH_IMAGE}
+          imagePullPolicy: Never
+          args: ["start-single-node", "--accept-sql-without-tls", "--cache=64MiB", "--max-sql-memory=128MiB"]
+          env:
+            - {name: COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING, value: "true"}
+          ports:
+            - containerPort: 26257
+          volumeMounts:
+            - {name: initdb, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+          readinessProbe:
+            # The entrypoint writes init_success once cockroach.sql has run.
+            exec:
+              command: ["test", "-f", "/cockroach/init_success"]
+            periodSeconds: 2
+            timeoutSeconds: 10
+          resources:
+            requests: {memory: 384Mi}
+            limits: {memory: 768Mi}
+      volumes:
+        - name: initdb
+          configMap: {name: cockroach-initdb}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cockroach
+  labels: {keel-demo/cdc: "true"}
+spec:
+  selector: {app: cockroach}
+  ports:
+    - port: 26257
 ---
 # The worker. Its own topics are cdc-connect-*; the connectors' token for the catalog (user cdc, group
 # demo-loaders) is in environment variable KEEL_TOKEN, which connector configurations name as
