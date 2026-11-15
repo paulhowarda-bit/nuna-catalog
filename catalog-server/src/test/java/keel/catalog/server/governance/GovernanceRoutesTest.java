@@ -86,23 +86,23 @@ class GovernanceRoutesTest {
         api.view(ns, "v");
         String table = "/namespaces/" + ns + "/tables/t";
         String tableId = api.id(ns, "tables", "t");
-        HttpResponse<String> unlabelled = expect(api.rest("GET", table, null), 200);
+        HttpResponse<String> unlabelled = expect(load(table), 200);
         assertThat(JsonPath.<Map<String, Object>>read(unlabelled.body(), "$")).doesNotContainKey("labels");
         String etag = unlabelled.headers().firstValue("ETag").orElseThrow();
-        expect(api.rest("GET", table, null, "If-None-Match", etag), 304);
+        expect(load(table, "If-None-Match", etag), 304);
 
         expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/classification",
                 "{\"value\":\"internal\",\"provenance\":\"collibra:domain/9\"}", "Authorization", api.steward()), 200);
         expect(api.manage("PUT", table + "/attributes/owner", "{\"value\":\"desk-7\",\"provenance\":\"hr-feed\"}",
                 "Authorization", api.steward()), 200);
 
-        HttpResponse<String> labelled = expect(api.rest("GET", table, null, "If-None-Match", etag), 200);
+        HttpResponse<String> labelled = expect(load(table, "If-None-Match", etag), 200);
         assertThat(JsonPath.<Map<String, Object>>read(labelled.body(), "$.labels.object-labels"))
                 .isEqualTo(Map.of("classification", "internal", "owner", "desk-7"));
         assertThat(labelled.body()).doesNotContain("collibra", "hr-feed");
         String labelledTag = labelled.headers().firstValue("ETag").orElseThrow();
         assertThat(labelledTag).isNotEqualTo(etag);
-        expect(api.rest("GET", table, null, "If-None-Match", labelledTag), 304);
+        expect(load(table, "If-None-Match", labelledTag), 304);
         assertThat(JsonPath.<Map<String, Object>>read(expect(api.rest("GET", "/namespaces/" + ns + "/views/v", null),
                 200).body(), "$.labels.object-labels")).isEqualTo(Map.of("classification", "internal"));
 
@@ -113,13 +113,29 @@ class GovernanceRoutesTest {
         assertThat(owner.value()).isEqualTo("desk-7");
 
         expect(api.manage("DELETE", table + "/attributes/owner", null, "Authorization", api.steward()), 204);
-        HttpResponse<String> removed = expect(api.rest("GET", table, null, "If-None-Match", labelledTag), 200);
+        HttpResponse<String> removed = expect(load(table, "If-None-Match", labelledTag), 200);
         assertThat(JsonPath.<Map<String, Object>>read(removed.body(), "$.labels.object-labels"))
                 .isEqualTo(Map.of("classification", "internal"));
         LabelChange gone = (LabelChange) api.awaitRecord(json -> json.contains("\"keel.catalog.label\"")
                 && json.contains(tableId) && !json.contains("desk-7")).data();
         assertThat(gone.label()).isEqualTo("owner");
         assertThat(gone.value()).isNull();
+    }
+
+    /**
+     * Loads a table through the trusted engine, declining credentials (D20). Vended credentials expire by the S3
+     * store's clock, but the server judges them by the shared test clock, which earlier tests move days ahead and
+     * never back: a load after such a move would see them as expiring and send no ETag. With none vended, the ETag
+     * depends only on the table and its labels.
+     */
+    private HttpResponse<String> load(String table, String... headers) {
+        String[] all = new String[headers.length + 4];
+        all[0] = GovernanceServer.ENGINE;
+        all[1] = "true";
+        all[2] = "X-Iceberg-Access-Delegation";
+        all[3] = "none";
+        System.arraycopy(headers, 0, all, 4, headers.length);
+        return api.rest("GET", table, null, all);
     }
 
     @Test
