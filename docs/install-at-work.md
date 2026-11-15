@@ -239,9 +239,10 @@ From `build-plan.md`; the open questions are in its section 6.
 - Bucket naming per region and the replication SLA for the DR runbook (PLT-4, D29).
 - Trusted engines and who attests to them (SEC-2, SEC-5); token exchange and workload identity (SEC-1);
   on-prem MinIO and Ceph versions and their STS support (PLT-3).
-- A scheduled overnight job in work CI running `./gradlew build -Pnightly`: the `overnight` tests and the CAS
-  test at 1,000 rounds, nothing else. The engine matrix in it needs a Kubernetes cluster whose nodes see
-  locally built images (`-Pengines.cluster=<context>`, default `docker-desktop`; see
+- A scheduled overnight job in work CI running `./nightly.sh`: the `overnight` tests and the CAS test at 1,000
+  rounds, nothing else, in two steps (the engine matrix on its own), then how many tests each module ran. Any
+  Gradle option given to it goes to both steps. The engine matrix needs a Kubernetes cluster whose nodes see
+  locally built images (`./nightly.sh -Pengines.cluster=<context>`, default `docker-desktop`; see
   `catalog-tests-engines/README.md`). On Paul's
   machine the whole nightly takes about two hours.
 
