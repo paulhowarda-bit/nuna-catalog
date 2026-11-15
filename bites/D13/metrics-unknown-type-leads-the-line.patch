@@ -1,0 +1,17 @@
+Breaks: an unknown report's type, the client's own string, starts its log line unescaped.
+Module: catalog-server
+Test: MetricsReportTest#anUnknownTypeCannotStartALineOfItsOwn
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/MetricsSink.java b/catalog-server/src/main/java/keel/catalog/server/rest/MetricsSink.java
+index 61d8bfd..5c4b46c 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/MetricsSink.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/MetricsSink.java
+@@ -27,7 +27,7 @@ public interface MetricsSink {
+             } else {
+                 // The type and table name are the client's own strings: they go only inside the JSON, escaped, so
+                 // neither can break the line or pose as a known report.
+-                log.info("unknown-report catalog={} namespace={} table={} bytes={} report={}", catalog,
++                log.info("{} catalog={} namespace={} table={} bytes={} report={}", summary.reportType(), catalog,
+                         String.join(".", namespace), table, summary.bytes(), summary.json());
+             }
+         }
