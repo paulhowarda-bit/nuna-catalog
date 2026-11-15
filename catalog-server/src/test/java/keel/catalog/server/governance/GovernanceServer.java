@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import keel.catalog.tests.kafka.TestKafka;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -21,7 +22,6 @@ import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistrar;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * The server every M7 server test shares (one Spring context): PostgreSQL, the run's S3 store and a Kafka broker,
@@ -80,8 +80,7 @@ public @interface GovernanceServer {
     /** One Kafka broker whose container the outage test pauses. */
     final class Broker implements AutoCloseable {
 
-        private final KafkaContainer kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
-                .withEnv("KAFKA_HEAP_OPTS", "-Xms256m -Xmx256m");
+        private final KafkaContainer kafka = TestKafka.container("256m");
 
         Broker() {
             kafka.start();

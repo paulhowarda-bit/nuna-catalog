@@ -10,6 +10,7 @@ import keel.catalog.objectstore.ObjectLocation;
 import keel.catalog.objectstore.StoreKind;
 import keel.catalog.security.TestIdp;
 import keel.catalog.server.CatalogServer;
+import keel.catalog.tests.kafka.TestKafka;
 import keel.catalog.tests.s3.TestS3;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -182,8 +183,7 @@ final class TestCatalog {
             PostgreSQLContainer postgres =
                     new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image")));
             postgres.start();
-            KafkaContainer kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
-                    .withEnv("KAFKA_HEAP_OPTS", "-Xms256m -Xmx256m");
+            KafkaContainer kafka = TestKafka.container("256m");
             kafka.start();
             try {
                 TestIdp idp = new TestIdp(ISSUER, AUDIENCE);

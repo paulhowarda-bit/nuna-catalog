@@ -81,7 +81,7 @@ final class Harness {
 
     static synchronized CatalogStore shared() {
         if (shared == null) {
-            postgres = new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image", "postgres:18")));
+            postgres = new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image", "postgres:18.7")));
             postgres.start();
             PGSimpleDataSource dataSource = new PGSimpleDataSource();
             dataSource.setUrl(postgres.getJdbcUrl());

@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
+import keel.catalog.tests.kafka.TestKafka;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -47,10 +48,9 @@ public final class KafkaBroker implements AutoCloseable {
         toxiproxy.start();
         toxiproxyClient = new ToxiproxyClient(toxiproxy.getHost(), toxiproxy.getControlPort());
         link = toxi(() -> toxiproxyClient.createProxy("kafka", "0.0.0.0:" + LINK_PORT, LINK_LISTENER));
-        kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
+        kafka = TestKafka.container("384m")
                 .withNetwork(network)
-                .withListener(LINK_LISTENER, this::linkAddress)
-                .withEnv("KAFKA_HEAP_OPTS", "-Xms384m -Xmx384m");
+                .withListener(LINK_LISTENER, this::linkAddress);
         kafka.start();
         admin = Admin.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, direct()));
     }
