@@ -26,7 +26,8 @@
 #      nothing)
 # KEEL_OVERNIGHT_LEGS picks legs by name (default "heavy ceph nightly bites"); with heavy left out, the bites run.
 # Nothing starts after $KEEL_OVERNIGHT_DEADLINE (default 06:30), and a leg still running then is stopped, so
-# the day starts with Docker free.
+# the day starts with Docker free. Each leg, and the bites, start once the containers of the leg before are gone,
+# and Testcontainers is given 60 s, not 10, to reach Docker (backlog 32).
 #
 # If the keel-demo stack is running, the run takes it down first (demo/demo.sh down) and rebuilds it at the end
 # (demo/demo.sh up): fresh sample data, no CDC leg. Its deployments keep no volumes, so pausing them could not
@@ -45,6 +46,9 @@ main() {
     demo_ns=${KEEL_DEMO_NAMESPACE:-keel-demo}
     legs=${KEEL_OVERNIGHT_LEGS:-heavy ceph nightly bites}
     demo_sh=${KEEL_DEMO_SCRIPT:-$main_checkout/demo/demo.sh}
+    # How long a test JVM's Testcontainers keeps asking Docker before it gives up, for good: every later test in
+    # that JVM fails at once. Its default, 10 s, ran out in the Ceph leg of 2026-11-15 (backlog 32).
+    export TESTCONTAINERS_CLIENT_PING_TIMEOUT=${TESTCONTAINERS_CLIENT_PING_TIMEOUT:-60}
 
     force=false
     dry=false
@@ -182,6 +186,22 @@ main() {
         timeout 60 docker info >"$2/docker-info.txt" 2>&1
     }
 
+    # Waits, up to 3 minutes, until no container a test started is left (Ryuk removes them about 10 s after their
+    # JVM exits) and Docker answers. The Ceph leg of 2026-11-15 started 9 s after the heavy build ended, while Docker
+    # was still removing that build's containers, and its maintenance tests found no Docker; run on its own, the
+    # same leg found it (backlog 32).
+    settle() {
+        local until=$(( $(date +%s) + 180 ))
+        while [ "$(date +%s)" -lt "$until" ]; do
+            if [ -z "$(timeout 30 docker ps -q --filter label=org.testcontainers=true 2>/dev/null)" ] &&
+                timeout 30 docker info >/dev/null 2>&1; then
+                return 0
+            fi
+            sleep 5
+        done
+        say "Docker still held test containers, or did not answer, after 3 min; starting anyway"
+    }
+
     wanted() { [[ " $legs " == *" $1 "* ]]; }
 
     # leg <key> <title> <log> <command...>: runs the command in the clone until the deadline and records a row.
@@ -197,6 +217,7 @@ main() {
             rows+=("| $title | not run: past the deadline, $deadline_at | | |")
             return 1
         fi
+        settle
         marker=$runs/.$log.started
         touch "$marker"
         t0=$(date +%s)
@@ -249,6 +270,7 @@ main() {
         rows+=("| Bites | dry run: would start at ${all[$start]} of ${#all[@]} | | |")
     else
         mkdir -p "$runs/bites"
+        settle
         say "bites: from ${all[$start]}, ${#all[@]} in all"
         for (( k = 0; k < ${#all[@]}; k++ )); do
             patch=${all[$(( (start + k) % ${#all[@]} ))]}
