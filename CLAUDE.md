@@ -4,8 +4,12 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 
 ## Code changes go through a worktree
 
-- Any agent that changes code works in its own git worktree on its own branch: a session started with `use_worktree: true`, or a subagent with `isolation: "worktree"`. Never edit code in the main checkout (`C:/Users/paulh/code/keel-catalog`).
-- Bite runs (break a check, see its test fail, restore and hash-check) count as code changes, so they run inside the agent's own worktree, never in the main checkout.
+- Any agent that changes code works in its own git worktree on its own branch: a session started with `use_worktree: true`, or a subagent with `isolation: "worktree"`. Never edit code in the main checkout (`C:/Users/paulh/code/keel-catalog`), except in place (below).
+- **In place:** when Paul says "in place", make the change in the main checkout itself, with no worktree or branch (Paul, 2026-11-14).
+  - Start only if `git status --porcelain` there prints nothing; otherwise another session is working there, so ask.
+  - Run the fast build as a landing would (none for Markdown only).
+  - Commit straight to `main`, ending the message with the attribution line.
+- Bite runs (break a check, see its test fail, restore and hash-check) count as code changes, so they run inside the agent's own worktree, never in the main checkout, even in place.
 - Never push unless Paul asks.
 
 ## Builds
