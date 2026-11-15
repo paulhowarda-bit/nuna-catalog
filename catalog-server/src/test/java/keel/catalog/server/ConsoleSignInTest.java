@@ -116,10 +116,10 @@ class ConsoleSignInTest {
     void signsInThroughThePkceFlowAndTheCatalogAcceptsTheToken() {
         RemoteWebDriver driver = browser.session();
         browser.open("/ui/");
-        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080").click();
+        toTheIdp();
 
         // Keycloak's own page: the console never sees the password.
-        browser.await(By.id("username")).sendKeys("ana");
+        driver.findElement(By.id("username")).sendKeys("ana");
         driver.findElement(By.id("password")).sendKeys("pw-ana");
         driver.findElement(By.id("kc-login")).click();
 
@@ -153,8 +153,7 @@ class ConsoleSignInTest {
 
         // A sign-in started here, then an answer carrying another state: refused before any code is traded.
         browser.open("/ui/");
-        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080").click();
-        browser.await(By.id("username"));
+        toTheIdp();
         assertThat(driver.getCurrentUrl()).contains("code_challenge_method=S256").contains("code_challenge=");
         browser.open("/ui/?code=forged&state=forged");
         browser.awaitText(By.cssSelector("main .notice"),
@@ -162,6 +161,20 @@ class ConsoleSignInTest {
         assertThat(driver.getCurrentUrl()).doesNotContain("code=", "state=");
         assertThat(storageKeys("sessionStorage")).doesNotContain("keel.token", "keel.oidc.pending");
         assertThat(driver.findElement(By.id("who")).getText()).isEmpty();
+    }
+
+    /**
+     * Starts a sign-in from the console's sign-in screen and expects Keycloak's sign-in page. Whatever comes first
+     * decides: the page, or anything the console or Keycloak shows instead (a refusal sent back to the console, a
+     * failure on the way, Keycloak's own error page). So a refused request fails here with what was shown, and only
+     * a slow IdP runs out the wait.
+     */
+    private void toTheIdp() {
+        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080").click();
+        browser.await("neither Keycloak's sign-in page nor a refusal", d -> !d.findElements(By.cssSelector(
+                "#username, main .notice, main .alert, #kc-error-message")).isEmpty());
+        assertThat(browser.driver().findElements(By.id("username"))).as("Keycloak's sign-in page; the page shows:%n%s",
+                browser.visibleText()).isNotEmpty();
     }
 
     @SuppressWarnings("unchecked")
