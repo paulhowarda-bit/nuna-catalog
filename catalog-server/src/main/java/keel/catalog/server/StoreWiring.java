@@ -24,14 +24,20 @@ class StoreWiring {
     @Bean
     CatalogStore catalogStore(DatabaseSettings settings, ObjectProvider<DataSource> dataSource,
                               ObjectProvider<MongoClient> mongoClient) {
-        CatalogStore store = switch (settings.backend()) {
+        CatalogStore store = store(settings, dataSource, mongoClient);
+        store.migrate();
+        return store;
+    }
+
+    /** The store for the backend {@code settings} names, not yet migrated: making one reaches no database. */
+    static CatalogStore store(DatabaseSettings settings, ObjectProvider<DataSource> dataSource,
+                              ObjectProvider<MongoClient> mongoClient) {
+        return switch (settings.backend()) {
             case POSTGRESQL -> new SqlCatalogStore(dataSource.getObject());
             case ORACLE -> new OracleCatalogStore(dataSource.getObject());
             case MONGODB -> new MongoCatalogStore(mongoClient.getObject(),
                     settings.mongodb().connectionString().getDatabase());
         };
-        store.migrate();
-        return store;
     }
 
     /** The MongoDB backend's client, closed when the server stops. */
