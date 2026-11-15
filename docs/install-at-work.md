@@ -67,11 +67,11 @@ Then the fast build must be green before anything else:
 ## 2. Container images the tests use
 
 Mirror these into the internal registry. Most are set in `gradle.properties` and can be overridden on the
-command line (`-Ppostgres.image=<registry>/postgres:18`); the rest are fixed in the files named.
+command line (`-Ppostgres.image=<registry>/postgres:18.7`); the rest are fixed in the files named.
 
 | Image | Set in |
 |---|---|
-| `postgres:18` | `gradle.properties` (`postgres.image`) |
+| `postgres:18.7` | `gradle.properties` (`postgres.image`) |
 | `apache/kafka:4.2.2` | `gradle.properties` (`kafka.image`) |
 | `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` | `gradle.properties` (`silo.image`) |
 | `ghcr.io/shopify/toxiproxy:2.12.0` | `gradle.properties` (`toxiproxy.image`) |
@@ -260,12 +260,12 @@ running there, but start it only when he asks. Two things to check:
 `demo/demo.sh up` (`demo/README.md`) runs the demo on a local Kubernetes cluster (`KEEL_DEMO_CONTEXT`,
 default `docker-desktop`). That cluster never pulls: every image comes from the local Docker engine. So pull
 each image below from the internal registry and tag it with the name shown
-(`docker tag <registry>/postgres:18 postgres:18`). `demo.sh` then pulls nothing, and its Dockerfiles build on
+(`docker tag <registry>/postgres:18.7 postgres:18.7`). `demo.sh` then pulls nothing, and its Dockerfiles build on
 the tagged images.
 
 | Image | Used for |
 |---|---|
-| `postgres:18`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`, `quay.io/keycloak/keycloak:26.8.2`, `kafbat/kafka-ui:v1.5.0` | the stack (also in section 2) |
+| `postgres:18.7`, `apache/kafka:4.2.2`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z`, `quay.io/keycloak/keycloak:26.8.2`, `kafbat/kafka-ui:v1.5.0` | the stack (also in section 2) |
 | `busybox:1.37.0` | the key server (Service `idp`) |
 | `eclipse-temurin:25.0.5_8-jre-noble` | the catalog image (`deploy/image/Dockerfile`) |
 | `eclipse-temurin:25.0.5_8-jdk-noble` | the lake writer (`demo/k8s/lake.Dockerfile`) |

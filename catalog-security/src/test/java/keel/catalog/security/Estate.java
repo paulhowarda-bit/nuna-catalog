@@ -52,7 +52,7 @@ final class Estate {
     static synchronized CatalogStore shared() {
         if (shared == null) {
             PostgreSQLContainer postgres =
-                    new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image", "postgres:18")));
+                    new PostgreSQLContainer(DockerImageName.parse(System.getProperty("postgres.image", "postgres:18.7")));
             postgres.start();
             PGSimpleDataSource dataSource = new PGSimpleDataSource();
             dataSource.setUrl(postgres.getJdbcUrl());

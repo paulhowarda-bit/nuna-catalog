@@ -89,7 +89,7 @@ instead of `--context`).
 | PyIceberg 0.12.0 | `python:3.12-slim-bookworm` + `pyiceberg[pyarrow]==0.12.0` | — |
 | SingleStore 10.9.0 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | (its own) |
 
-Cluster: Docker Desktop's Kubernetes (or `-Pengines.cluster`), `postgres:18`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
+Cluster: Docker Desktop's Kubernetes (or `-Pengines.cluster`), `postgres:18.7`, `apache/kafka:4.2.2`, `kafbat/kafka-ui:v1.5.0`, `pgsty/silo:RELEASE.2026-10-26T00-00-00Z` or
 `ghcr.io/clyso/ceph-test:v20.2.5`, `busybox:1.37.0`; the catalog image is `eclipse-temurin:25.0.5_8-jre-noble`
 with the exec jar unpacked into Spring Boot's layers.
 
