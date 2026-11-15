@@ -1,7 +1,8 @@
 # Installing keel at work (M9)
 
 For the agents that install the catalog at work and carry out M9. Read this first, then `CLAUDE.md`,
-`build-plan.md` (M9 and section 6, the open questions work owns), `deploy/README.md` and
+`backlog/README.md` and the open items (`./backlog.sh list`), `build-plan.md` (M9 and section 6, the open
+questions work owns), `decision-ledger.md` (every decision and Paul's amendments), `deploy/README.md` and
 `catalog-maintenance/README.md`. Those documents hold the detail; this one gives the order and what is true
 today.
 
@@ -31,6 +32,12 @@ today.
   set, not yet on RAC, Exadata or a real replica set.
 - **The server does not run the stores' self-checks** (`selfCheck`), which the storage design says it does at
   startup. Check the database's safety settings by hand, and ask Paul before wiring it.
+- **Open work is in the backlog** (`backlog/`, started 2026-11-14), one file per item, seeded from
+  `build-plan.md`. A title ending "(at work)" is work's to do; one saying "Paul decides" waits on him; "only when
+  Paul asks" means wait for him. Claim an item before starting it (`backlog/README.md`). Claims stay on the
+  machine that made them, so the clone at work starts with none.
+- **Paul's decisions are in `decision-ledger.md`**, quoted with their dates, including those made on backlog items
+  (an item's `Decided:` line names the row). Read the row before acting on an item it decided.
 
 ## CLAUDE.md at work
 
