@@ -12,6 +12,16 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - Bite runs (break a check, see its test fail, restore and hash-check) count as code changes, so they run inside the agent's own worktree, never in the main checkout, even in place.
 - Never push unless Paul asks.
 
+## Backlog and claims
+
+- The backlog is `backlog/`, one file per item, `backlog/<n>.md`. `backlog/README.md` gives the format and the whole process; `./backlog.sh list` shows the open items and who holds each.
+- Add an item with `./backlog.sh add "<title>"` in your worktree (it takes the next number atomically), write what is wrong, the evidence and what done looks like, then land it.
+- Claim an item before working on it: `./backlog.sh claim <n>` in the worktree that will carry the work. If the claim fails, another agent holds it: take another item. Claim only what you are about to start.
+- When the work is done: `./backlog.sh done <n>`, write what was done, commit, land, then `./backlog.sh release <n>`. If you stop without finishing, release it; it stays open.
+- A worktree subagent cannot land, so the session that starts it claims the item first and releases it after landing.
+- Only Paul drops or defers an item.
+- `./backlog.sh sweep` releases claims whose item is finished or whose worktree is gone with nothing left to land, and lists the rest; `backlog/README.md` says how to judge those.
+
 ## Builds
 
 - `./gradlew build` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB and CockroachDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover), except the short Kafka ones it keeps on purpose, each under 20 s: `catalog-audit`'s `BrokerOutageTest` and `KafkaPublishingTest`'s lost-answer and slow-answer tests, and `catalog-server`'s `KafkaOutageTest`. It also leaves out the `overnight` and `cas` tests below.
@@ -32,6 +42,7 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
   2. Run `git -C C:/Users/paulh/code/keel-catalog status --porcelain`. If it prints anything, the main checkout is busy: report the branch as ready instead of merging.
   3. Otherwise run `git -C C:/Users/paulh/code/keel-catalog merge --no-ff <branch>`. Use a "Land …" message ending with the attribution line.
   4. Check that `git cherry -v main <branch>` shows only `-` lines.
+  5. Release the backlog items the branch finished: `./backlog.sh release <n>`.
 - After a branch lands, the session that started the agent archives it, which removes its worktree, then deletes the branch. Neither step needs asking.
 
 ## Bites
