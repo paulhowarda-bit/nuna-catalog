@@ -1,9 +1,10 @@
-Breaks: the server's store migrates only the shared steps, so PostgreSQL never reaches V4 (journal partitions).
+Breaks: the server's store migrates PostgreSQL with the shared steps only, as a backend without journal partitions:
+PostgreSQL never reaches V4 (journal partitions), and nothing extends them, so the server still starts.
 Module: catalog-server
 Test: SchemaAtStartupTest
 
 diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
-index a00c7c0..69faec8 100644
+index fbac17c..0c455f8 100644
 --- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
 +++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
 @@ -15,7 +15,7 @@ import java.sql.Statement;
@@ -11,7 +12,7 @@ index a00c7c0..69faec8 100644
  
      /** The shared steps, then the journal's partitioning. */
 -    POSTGRESQL(new String[] {Locations.SHARED, "classpath:keel/store/sql/postgresql"}, true, true, true),
-+    POSTGRESQL(new String[] {Locations.SHARED}, true, true, true),
++    POSTGRESQL(new String[] {Locations.SHARED}, true, false, true),
      /** Its own steps, in CockroachDB's dialect; its journal splits into ranges by itself. */
      COCKROACHDB(new String[] {"classpath:keel/store/sql/cockroachdb"}, false, false, false);
  
