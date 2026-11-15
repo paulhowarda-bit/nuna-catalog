@@ -90,7 +90,10 @@ plus reading, and lets a grant admin or a platform operator hold no grant at all
 data in the catalog, and of the four people only `ana` changes it. Try the console as `ana` and as `gary`.
 Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but not
 Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
-sign out at <http://localhost:8180/realms/keel/account>, or use a private window. Keycloak's users and
+sign out of Keycloak at <http://localhost:8180/realms/keel/protocol/openid-connect/logout> (click Logout),
+or use a private window. Keycloak's own page, <http://localhost:8180/realms/keel/account>, shows who is
+signed in there; its users hold the realm's default roles (`default-roles-keel` in
+`k8s/keycloak-realm.json`), without which that page fails with "Something went wrong". Keycloak's users and
 sessions go with its pod.
 
 `presenter` is for showing the demo without changing user: Keycloak puts them in all four groups, so the

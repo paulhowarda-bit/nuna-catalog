@@ -23,6 +23,7 @@
       "lastName": "Analyst",
       "email": "ana@keel.demo",
       "emailVerified": true,
+      "realmRoles": ["default-roles-keel"],
       "credentials": [{"type": "password", "value": "ana-demo", "temporary": false}],
       "groups": ["/demo-analysts"]
     },
@@ -33,6 +34,7 @@
       "lastName": "Grants",
       "email": "gary@keel.demo",
       "emailVerified": true,
+      "realmRoles": ["default-roles-keel"],
       "credentials": [{"type": "password", "value": "gary-demo", "temporary": false}],
       "groups": ["/demo-grant-admins"]
     },
@@ -43,6 +45,7 @@
       "lastName": "Steward",
       "email": "stella@keel.demo",
       "emailVerified": true,
+      "realmRoles": ["default-roles-keel"],
       "credentials": [{"type": "password", "value": "stella-demo", "temporary": false}],
       "groups": ["/demo-stewards"]
     },
@@ -53,6 +56,7 @@
       "lastName": "Operator",
       "email": "oscar@keel.demo",
       "emailVerified": true,
+      "realmRoles": ["default-roles-keel"],
       "credentials": [{"type": "password", "value": "oscar-demo", "temporary": false}],
       "groups": ["/demo-operators"]
     },
@@ -63,6 +67,7 @@
       "lastName": "Presenter",
       "email": "presenter@keel.demo",
       "emailVerified": true,
+      "realmRoles": ["default-roles-keel"],
       "credentials": [{"type": "password", "value": "presenter-demo", "temporary": false}],
       "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators"]
     }
