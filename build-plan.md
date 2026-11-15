@@ -347,15 +347,15 @@ A browser console for people: browse catalogs, read governance, manage grants, a
   - `config.json` holds no secret, and dev mode is off by default;
   - the files hold no inline code and never write markup;
   - the audit route needs `manage-grants`, a refusal is a `Denial`, each read is an `AuditRead`, and the answer is limited and newest first.
-- Five bites in `bites/UI/`, checked with `git apply --check`, not run.
+- Five bites in `bites/UI/`, checked with `git apply --check`, not run. Six more for the browser tests since 2026-11-15 (see Status).
 
 **Open**
 
 - **D21 for people:** should a non-engine caller (the console) be allowed to decline vending, or get no credentials at all? Today it is vended to and discards the credentials client-side. Paul's decision.
-- **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12. It is not yet tested against Entra ID or Ping, and no automated test covers it. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
+- **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12, and by `ConsoleSignInTest` since 2026-11-15. It is not yet tested against Entra ID or Ping. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
 - **Catalog names** are listed unfiltered to any signed-in caller (see above). Filter them if a deployment treats names as secret.
 - **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
-- **Browser end-to-end tests:** none yet. The screens were checked by hand against the demo (see Status).
+- **Browser end-to-end tests:** `ConsoleBrowserTest` since 2026-11-15 (see Status). The light and dark themes are still checked by hand only.
 
 ### v1.x milestones
 
@@ -795,4 +795,30 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Fast build green (2026-11-14, after merging `main`), with the keel-demo stack scaled to zero on Paul's word. With the demo up (about 5.5 GB of Docker's 7.6 GB, Trino included), three runs failed on their test containers, never on this branch's code. In `catalog-maintenance`, `GuardrailsTest` failed because the test Kafka dropped the audit of a credential mint, so vending answered 503. In `catalog-server`, the audit tests failed because the audit topic could not be read, and `TwoIssuersTest` failed because the IdP sent no bytes for 97 s.
   - Found, not fixed: `GovernanceRoutesTest#loadsCarryTheEffectiveLabelsAndALabelChangeChangesTheETag` fails whenever a governance test that moves the shared `TestClock` forward by days runs before it in the same JVM. Those tests are `HeldTablesTest`, `LifecycleTest`, `MaintenanceRoutesTest` and `MutatingRoutesAuditTest`. Nothing resets the clock, so the load route judges the real STS credentials as expiring and sends no ETag. Gradle runs a failed class first on the next build, which hides the failure. **Fixed 2026-11-14** (Paul: "ok you can make the fix now"). The test's table loads now go through the trusted engine declining credentials, so none are vended and the ETag no longer depends on the clock. The obvious fix, putting the clock back to the wall clock before each test, was tried and refused: `HeldTablesTest` then got a 429 from the purge limiter. That limiter keeps purge times in memory and only drops those over a minute old, so purges stamped 31 days ahead stayed "this minute's". The suite relies on its clock only ever moving forward, and `TestClock`'s javadoc now says so. Proof: with `HeldTablesTest` forced to run first (a temporary `ClassOrderer`), the old test failed at the same line and the fixed one passed, 10 of 10.
   - **P3 decided 2026-11-14 by Paul**, one decision at a time. Scan planning with read-restrictions, signing, functions and `referenced-by` authorization all stay unbuilt, each with his trigger to revisit (D13 amended; D18, D20 and D22 confirmed). Polaris was compared for each: it implements none of them, and has an open proposal for `referenced-by` (apache/polaris#5979).
+- **Console browser tests 2026-11-15** (backlog 18, and 17's home part; Paul asked for both to be closed).
+  - Tooling: Chrome in a container, run by Testcontainers' Selenium module (`selenium/standalone-chrome:4.43.0-20260404`, `chrome.image`) and driven by Selenium 4.43.0, the client Boot manages. That fits P8: nothing is downloaded onto the machine. Playwright's Java client fetches browsers and a Node driver at test time. `ConsoleBrowser` starts the browser. It reaches the server on the host through Testcontainers' host port forwarding (`host.testcontainers.internal`). That origin is plain HTTP and is not localhost, and the PKCE code needs a secure context (`crypto.subtle`), so Chrome is told to treat that one origin as secure, as HTTPS does for a deployment. The console is unchanged and still has no third-party code.
+  - `ConsoleBrowserTest` (7 tests, untagged, in `keel.catalog.server.governance`) shares the M7 tests' Spring context. It covers the screens UI v1 checked by hand:
+    - the tree down to tables and views, with the filter and deep links;
+    - a v2 table's overview, three schemas with added fields marked, two partition specs and sort orders, three snapshots with a tag and a branch, and the metadata log; a v3 table's overview;
+    - a view's two versions with their SQL;
+    - governance: a DR freeze, an inherited hold, an inherited owner and the table's own classification;
+    - grant and revoke, grants by group, and a separation-of-duties refusal;
+    - refusals: D27's unclassified table in a regulated namespace, the audit trail without manage-grants, and a grant admin loading data. Each is compared word for word with the catalog's answer to the same request;
+    - the audit trail with commits, a read, its credential issue and a denial, and the raw record.
+  - The browser signs in by putting a token in the tab's storage.
+  - `ConsoleSignInTest` (2 tests, untagged) signs in through Keycloak's own page with the code flow and PKCE (S256 required by the realm's client), and checks that the catalog accepts the token. It also checks that an answer whose state this tab did not send is refused. One issuer URL for all: Keycloak's hostname is fixed at `http://keycloak:8080`. The browser reaches it by that name on a Docker network the two share, and the server fetches the realm's keys through the mapped port, as the demo's does.
+  - Run times, all with the keel-demo stack up or starting:
+    - `ConsoleBrowserTest`: 87 s and 250 s for the class, context included; 4–18 s a test, and up to 46 s for the first, which opens Chrome's first session.
+    - `ConsoleSignInTest`: 226 s, of which Keycloak's start took 2 min 10 s; the tests took 27 s and 4 s.
+    - Neither waits on purpose or needs a cluster, so neither is tagged.
+  - Bites: six in `bites/UI/`, run with `bites/run.sh`, tree restored. Four fail on their assertion:
+    - `console-refusal-reworded`: the message is not the catalog's;
+    - `console-audit-hides-denials`: no denial in the trail;
+    - `console-schema-added-against-first`: price and venue both marked added;
+    - `console-sign-in-ignores-state`: the forged code was traded, "400 invalid_grant".
+  - Not yet shown to bite on their checks (rerun pending):
+    - `console-tree-drops-views`: its run failed while the browser container started (`SocketTimeoutException`, Docker loaded by the demo);
+    - `console-sign-in-without-pkce`: the browser never reached Keycloak's page in 30 s. That is either Keycloak refusing the request or a slow Keycloak, and the log does not say which.
+  - Not run yet: the fast build with these tests in it.
+  - Not covered: the light and dark themes, Entra ID and Ping (work), and sign-out at the IdP (Paul's call).
 - **Next:** M9, carried to work.
