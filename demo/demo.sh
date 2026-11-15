@@ -324,8 +324,8 @@ print_access() {
 The demo's people sign in to the console, kafbat, Studio and CloudBeaver with the same passwords:
 ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo. The console and kafbat sign in
 through Keycloak (localhost:8180); to change user there, sign out of Keycloak too
-(http://localhost:8180/realms/keel/account), or use a private window. To show everything in one sign-in,
-use presenter / presenter-demo there: all four people's groups at once.
+(http://localhost:8180/realms/keel/protocol/openid-connect/logout, then Logout), or use a private window.
+To show everything in one sign-in, use presenter / presenter-demo there: all four people's groups at once.
 
 The console:  $URL/ui/   (catalogs lakehouse and engines)
 Sign in, or paste one of these tokens (valid until $expires).
