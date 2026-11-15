@@ -1,6 +1,6 @@
 Breaks: the worker pushes metrics to Boot's default localhost:4318 with no endpoint set.
 Module: catalog-maintenance
-Test: TelemetryTest#withNoEndpointNothingExports
+Test: TelemetryTest#withNoEndpointMetricsStayOff
 
 diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Telemetry.java b/catalog-maintenance/src/main/java/keel/maintenance/Telemetry.java
 index 5c37f87..77df893 100644

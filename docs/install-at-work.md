@@ -77,9 +77,9 @@ Its rules hold at work. Some of its facts describe Paul's home machine:
     and SDK, 1.62.0, were already there);
   - `io.opentelemetry.instrumentation`: `opentelemetry-logback-appender-1.0` 2.28.0-alpha (marked),
     `opentelemetry-instrumentation-api` 2.28.0, `opentelemetry-instrumentation-api-incubator` 2.28.0-alpha;
-  - `io.opentelemetry.semconv:opentelemetry-semconv` 1.41.1, `com.google.protobuf:protobuf-java` 4.36.2,
-    `org.hdrhistogram:HdrHistogram` 2.2.2;
-  - for the tests only, `io.opentelemetry.proto:opentelemetry-proto` 1.10.0-alpha (marked).
+  - `io.opentelemetry.proto:opentelemetry-proto` 1.10.0-alpha (marked; the OTLP meter registry's), with
+    `com.google.protobuf:protobuf-java` 4.36.2;
+  - `io.opentelemetry.semconv:opentelemetry-semconv` 1.41.1, `org.hdrhistogram:HdrHistogram` 2.2.2.
 
   OkHttp and the Kotlin standard library are not needed: the exporter sends over the JDK's HTTP client.
 

@@ -8,23 +8,31 @@ import io.micrometer.observation.ObservationRegistry;
 import io.opentelemetry.sdk.logs.export.LogRecordExporter;
 import io.opentelemetry.sdk.trace.export.SpanExporter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Stream;
 import keel.catalog.server.telemetry.OtlpReceiver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.MapPropertySource;
+import org.springframework.core.env.StandardEnvironment;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -90,7 +98,7 @@ class TelemetryTest {
             command.addAll(arguments());
             ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true)
                     .redirectOutput(folder.resolve("worker.log").toFile());
-            builder.environment().putAll(java.util.Map.of(
+            builder.environment().putAll(Map.of(
                     "OTEL_EXPORTER_OTLP_ENDPOINT", receiver.base(),
                     "OTEL_SERVICE_NAME", "keel-maintenance-test",
                     "OTEL_RESOURCE_ATTRIBUTES", "k8s.pod.name=worker-pod-1",
@@ -132,6 +140,37 @@ class TelemetryTest {
             }
             assertThat(exporters).isEmpty();
         }
+    }
+
+    /**
+     * The worker keeps Boot's metrics push off until an endpoint is set, by a rule it registers itself. The contexts
+     * above cannot show it: this module's tests have the server on their class path too, and the server's rule.
+     */
+    @Test
+    void withNoEndpointMetricsStayOff() throws IOException {
+        List<String> factories = new ArrayList<>();
+        for (URL url : Collections.list(getClass().getClassLoader().getResources("META-INF/spring.factories"))) {
+            try (InputStream in = url.openStream()) {
+                factories.add(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+            }
+        }
+        assertThat(factories).anyMatch(text -> text.contains(Telemetry.MetricsExportNeedsEndpoint.class.getName()));
+
+        StandardEnvironment none = environment(Map.of());
+        new Telemetry.MetricsExportNeedsEndpoint().postProcessEnvironment(none, new SpringApplication());
+        assertThat(none.getProperty(Telemetry.MetricsExportNeedsEndpoint.ENABLED)).isEqualTo("false");
+        StandardEnvironment set = environment(Map.of("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318"));
+        new Telemetry.MetricsExportNeedsEndpoint().postProcessEnvironment(set, new SpringApplication());
+        assertThat(set.getProperty(Telemetry.MetricsExportNeedsEndpoint.ENABLED)).isNull();
+    }
+
+    /** An environment holding only {@code properties}: none of this machine's variables or system properties. */
+    private static StandardEnvironment environment(Map<String, Object> properties) {
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().remove(StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME);
+        environment.getPropertySources().remove(StandardEnvironment.SYSTEM_PROPERTIES_PROPERTY_SOURCE_NAME);
+        environment.getPropertySources().addFirst(new MapPropertySource("test", properties));
+        return environment;
     }
 
     /** The worker service, its catalog a port nothing listens on, its scans an hour apart. */
