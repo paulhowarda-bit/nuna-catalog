@@ -347,15 +347,15 @@ A browser console for people: browse catalogs, read governance, manage grants, a
   - `config.json` holds no secret, and dev mode is off by default;
   - the files hold no inline code and never write markup;
   - the audit route needs `manage-grants`, a refusal is a `Denial`, each read is an `AuditRead`, and the answer is limited and newest first.
-- Five bites in `bites/UI/`, checked with `git apply --check`, not run.
+- Five bites in `bites/UI/`, checked with `git apply --check`, not run. Six more for the browser tests since 2026-11-15 (see Status).
 
 **Open**
 
 - **D21 for people:** should a non-engine caller (the console) be allowed to decline vending, or get no credentials at all? Today it is vended to and discards the credentials client-side. Paul's decision.
-- **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12. It is not yet tested against Entra ID or Ping, and no automated test covers it. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
+- **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12, and by `ConsoleSignInTest` since 2026-11-15. It is not yet tested against Entra ID or Ping. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
 - **Catalog names** are listed unfiltered to any signed-in caller (see above). Filter them if a deployment treats names as secret.
 - **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
-- **Browser end-to-end tests:** none yet. The screens were checked by hand against the demo (see Status).
+- **Browser end-to-end tests:** `ConsoleBrowserTest` since 2026-11-15 (see Status). The light and dark themes are still checked by hand only.
 
 ### v1.x milestones
 
@@ -808,4 +808,30 @@ From the report's question list, reduced to those the ledger did not settle, wit
   - Paul's choices: everything, bites last; the demo taken down (`demo/demo.sh down`) when it is up, and rebuilt after (`demo/demo.sh up`, fresh sample data, no CDC leg). The demo's deployments keep no volumes, so a pause could not keep its data: a test that scaled it to zero and back on 2026-11-14 emptied the demo Demo Expert was using, mid CDC run.
   - Each night writes `keel-overnight/runs/<date>/summary.md`: the commit, each leg's result and time, the failed tests (class, method, message) from the result files each leg wrote, the bites that did not bite (their logs beside it) and the nightly's per-module counts. At 07:00 a Claude scheduled task records it here and adds a backlog item for each failure.
   - Checked on 2026-11-14 with `KEEL_OVERNIGHT_HOME` in a scratch folder: a dry run (`--dry`: builds with `-m`, the nightly's `--test-dry-run`, no bite, the demo untouched); a run of the bites leg alone (`KEEL_OVERNIGHT_LEGS=bites`) that ran 4 bites, all biting, and stopped at its deadline where the next run starts; a skip when `main` was already tested and when only Markdown had changed (0cc2d68 to 32d8558), and a run when `backlog.sh` had (1d153a4); the demo's take-down and rebuild with a stand-in `demo.sh` against a throwaway namespace; the failed-test extraction against JUnit result files. On 2026-11-15 a copy of `overnight-task.ps1`, registered as a test task beside a stand-in `overnight.sh` that exited 3, started from Task Scheduler, logged its start and end in `task.log` and its transcript, and the task's result read 0x3. Not yet run: a whole night.
+- **Console browser tests 2026-11-15** (backlog 18, and 17's home part; Paul asked for both to be closed).
+  - Tooling: Chrome in a container, run by Testcontainers' Selenium module (`selenium/standalone-chrome:4.43.0-20260404`, `chrome.image`) and driven by Selenium 4.43.0, the client Boot manages. That fits P8: nothing is downloaded onto the machine. Playwright's Java client fetches browsers and a Node driver at test time. `ConsoleBrowser` starts the browser. It reaches the server on the host through Testcontainers' host port forwarding (`host.testcontainers.internal`). That origin is plain HTTP and is not localhost, and the PKCE code needs a secure context (`crypto.subtle`), so Chrome is told to treat that one origin as secure, as HTTPS does for a deployment. The console is unchanged and still has no third-party code.
+  - `ConsoleBrowserTest` (7 tests, untagged, in `keel.catalog.server.governance`) shares the M7 tests' Spring context. It covers the screens UI v1 checked by hand:
+    - the tree down to tables and views, with the filter and deep links;
+    - a v2 table's overview, three schemas with added fields marked, two partition specs and sort orders, three snapshots with a tag and a branch, and the metadata log; a v3 table's overview;
+    - a view's two versions with their SQL;
+    - governance: a DR freeze, an inherited hold, an inherited owner and the table's own classification;
+    - grant and revoke, grants by group, and a separation-of-duties refusal;
+    - refusals: D27's unclassified table in a regulated namespace, the audit trail without manage-grants, and a grant admin loading data. Each is compared word for word with the catalog's answer to the same request;
+    - the audit trail with commits, a read, its credential issue and a denial, and the raw record.
+  - The browser signs in by putting a token in the tab's storage.
+  - `ConsoleSignInTest` (2 tests, untagged) signs in through Keycloak's own page with the code flow and PKCE (S256 required by the realm's client), and checks that the catalog accepts the token. It also checks that an answer whose state this tab did not send is refused. One issuer URL for all: Keycloak's hostname is fixed at `http://keycloak:8080`. The browser reaches it by that name on a Docker network the two share, and the server fetches the realm's keys through the mapped port, as the demo's does.
+  - Run times, all with the keel-demo stack up or starting:
+    - `ConsoleBrowserTest`: 87 s and 250 s for the class, context included; 4–18 s a test, and up to 46 s for the first, which opens Chrome's first session.
+    - `ConsoleSignInTest`: 226 s, of which Keycloak's start took 2 min 10 s; the tests took 27 s and 4 s.
+    - In the fast build, with Docker free: `ConsoleBrowserTest` 60 s and `ConsoleSignInTest` 82 s for the class, context included.
+    - Neither waits on purpose or needs a cluster, so neither is tagged.
+  - Bites: six in `bites/UI/`, run with `bites/run.sh`, tree restored after each. All six fail on their assertion:
+    - `console-refusal-reworded`: the message is not the catalog's;
+    - `console-audit-hides-denials`: no denial in the trail;
+    - `console-tree-drops-views`: the tree opens down to `eu` and `ledger` but shows no view `daily`. Its first run failed while the browser container started (`SocketTimeoutException`, Docker loaded by the demo); the rerun with Docker free bites;
+    - `console-schema-added-against-first`: price and venue both marked added;
+    - `console-sign-in-ignores-state`: the forged code was traded, "400 invalid_grant";
+    - `console-sign-in-without-pkce`: Keycloak refuses the request and sends it back, and the console shows "The IdP refused the sign-in: invalid_request Missing parameter: code_challenge_method"; the test fails at once, in 9 s. Its first run only ran out the 30 s wait on "Going to keycloak:8080…", which could not tell a refusal from a slow IdP. Since then the test waits for Keycloak's page or anything shown instead, and fails on what was shown.
+  - The fast build passed with these tests in it, the demo down: 1,229 tests, no failures, 5 min 43 s.
+  - Not covered: the light and dark themes, Entra ID and Ping (work), and sign-out at the IdP (Paul's call).
 - **Next:** M9, carried to work. Open work: `./backlog.sh list`.

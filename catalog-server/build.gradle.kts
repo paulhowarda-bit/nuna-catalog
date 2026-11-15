@@ -28,6 +28,11 @@ dependencies {
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:testcontainers-kafka")
+    // The console's end-to-end tests drive Chrome in a container (P8); the console itself has no third-party code.
+    testImplementation("org.testcontainers:testcontainers-selenium")
+    testImplementation("org.seleniumhq.selenium:selenium-remote-driver")
+    testImplementation("org.seleniumhq.selenium:selenium-chrome-driver")
+    testImplementation("org.seleniumhq.selenium:selenium-support")
 }
 
 // The runnable jar gets a classifier so other modules can still depend on the plain jar.
@@ -44,7 +49,8 @@ configurations.consumable("execJar") {
 }
 
 tasks.test {
-    listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image").forEach { systemProperty(it, project.property(it)!!) }
+    listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image", "chrome.image")
+        .forEach { systemProperty(it, project.property(it)!!) }
     // IcebergImportBoundaryTest and NoKmsBoundaryTest read every module's main sources.
     inputs.files(rootProject.fileTree(rootDir) { include("*/src/main/java/**/*.java") })
         .withPropertyName("mainSources").withPathSensitivity(PathSensitivity.RELATIVE).ignoreEmptyDirectories()

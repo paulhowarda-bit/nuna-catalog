@@ -1,0 +1,17 @@
+Breaks: The console words a refusal its own way instead of showing the catalog's message.
+Module: catalog-server
+Test: ConsoleBrowserTest#refusalsAreShownExactlyAsTheCatalogAnswered+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim
+
+diff --git a/catalog-server/src/main/resources/keel/ui/dom.js b/catalog-server/src/main/resources/keel/ui/dom.js
+index f37b16d..e36ff6e 100644
+--- a/catalog-server/src/main/resources/keel/ui/dom.js
++++ b/catalog-server/src/main/resources/keel/ui/dom.js
+@@ -78,7 +78,7 @@ export function failure(error) {
+     return h('div', {class: 'alert' + (refused ? ' alert-refused' : ''), role: 'alert'},
+       h('strong', null, refused ? 'Refused by the catalog' : 'The catalog answered with an error'),
+       h('div', {class: 'alert-line'}, mono(`${error.status} ${error.type || ''}`.trim())),
+-      h('div', {class: 'alert-line'}, error.message || ''));
++      h('div', {class: 'alert-line'}, refused ? 'You are not allowed to do that.' : error.message || ''));
+   }
+   return h('div', {class: 'alert', role: 'alert'}, h('strong', null, 'Request failed'),
+     h('div', {class: 'alert-line'}, String(error && error.message || error)));
