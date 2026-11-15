@@ -11,8 +11,9 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 ## Builds
 
 - `./gradlew build` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB and CockroachDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover). It also leaves out the `overnight` and `cas` tests below.
-- `./gradlew build -Pheavy` runs every test, all four databases included, except the `overnight` tests and the CAS test.
-- Tests tagged `overnight` never run in a build, fast or heavy: all of `catalog-tests-load` (the M8 load, resilience and SLO runs), `EngineMatrixTest`, and the two `MutationSuite` sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type. Paul moved them out of the heavy build on 2026-11-11 to shorten it. The heavy build keeps the single lost-answer, lost-COMMIT, in-flight and failover tests on every database.
+- The fast build also checks that every recorded bite still applies (`:bitesApply`, about 20 s); see Bites.
+- `./gradlew build -Pheavy` runs every test, all four databases included, except the `overnight` tests and the CAS test. With `-Pheavy` or `-Pnightly` every test task runs afresh, never from the build cache.
+- Tests tagged `overnight` never run in a build, fast or heavy: all of `catalog-tests-load` (the M8 load, resilience and SLO runs), `EngineMatrixTest`, `catalog-maintenance`'s `LargeExpiryTest` and `LargeOrphanScanTest`, and the two `MutationSuite` sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type. Paul moved them out of the heavy build on 2026-11-11 to shorten it. The heavy build keeps the single lost-answer, lost-COMMIT, in-flight and failover tests on every database.
 - The CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`, tagged `cas`) never runs in a build, fast or heavy, and never in a build-and-test cycle: it takes too long. Paul's rule, 2026-11-10. It runs only overnight: `./gradlew build -Pnightly` runs the `overnight` tests and that test, on all four backends at 1,000 rounds (Paul cut it from 10,000 on 2026-11-11). Don't run `-Pnightly` or the CAS test unless Paul asks.
 - Every test that needs S3 uses one store, chosen with `-Ps3=silo|ceph|aws` (default `silo`). `aws` also needs `-Pkeel.aws.profile=<CLI profile>`; the run makes its own buckets and role there and deletes them at the end.
 - A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`. One that runs for minutes (load, soak, SLO, a sweep over every case) gets `@Tag("overnight")`.
@@ -31,6 +32,7 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 ## Bites
 
 - A branch that adds a guarded check records its bite instead of running it: `bites/<milestone>/<id>.patch`, made with `git diff` of the broken check, headed by a `Module:` line and a `Test:` line (the test that must fail: `Class`, `Class#method` or `Class#method+method`). The two patches in `bites/M2/` show the form. Check it with `git apply --check`, then restore the file.
+- The fast build fails when any recorded bite no longer applies (`:bitesApply`). A branch whose change moves the code a bite breaks records that bite again, with the same break, against its own code.
 - `bites/run.sh` with no arguments runs every bite, in every folder under `bites/`: it applies each patch, runs its test with `-Pbites` (every test but CAS, so `overnight` tests can be selected too), expects a failure, reverts, and checks every tracked file's hash is restored.
 
 ## The heavy pass, once, after M8
