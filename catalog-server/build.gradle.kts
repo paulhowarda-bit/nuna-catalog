@@ -17,11 +17,18 @@ dependencies {
     api(project(":catalog-security"))
     api("org.springframework.boot:spring-boot-starter-webmvc")
     api("org.springframework.boot:spring-boot-starter-jdbc")
+    // Metrics, traces and logs over OTLP when an endpoint is set (docs/observability/README.md); the root build
+    // swaps the exporter's OkHttp sender for the JDK's.
+    implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    implementation("io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:" +
+        property("opentelemetry-logback-appender.version"))
+    runtimeOnly("io.opentelemetry:opentelemetry-exporter-sender-jdk")
     runtimeOnly("org.postgresql:postgresql")
 
     // The run's S3 store: -Ps3=silo (default), ceph or aws.
     testImplementation(project(":catalog-tests-s3"))
     testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("io.opentelemetry.proto:opentelemetry-proto:${property("opentelemetry-proto.version")}")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-oracle-free")
@@ -41,6 +48,15 @@ tasks.bootJar {
 }
 tasks.jar {
     archiveClassifier = ""
+}
+
+// The OTLP receiver (telemetry.OtlpReceiver) is shared with the worker's tests.
+val testJar = tasks.register<Jar>("testJar") {
+    archiveClassifier = "tests"
+    from(sourceSets.test.get().output)
+}
+configurations.consumable("testJar") {
+    outgoing.artifact(testJar)
 }
 
 // The load tests, the engine matrix and demo/demo.sh run the server from its runnable jar.

@@ -12,7 +12,13 @@ keel:
     orphan-interval: P1D
     compaction-interval: P1D
 
+# Telemetry (docs/observability/README.md). Metrics, traces and logs go over OTLP only when an endpoint is set: the
+# standard OTEL_* variables, or Boot's management.* properties. Log lines go to stdout as JSON, in Elastic Common
+# Schema.
 logging:
+  structured:
+    format:
+      console: ecs
   level:
     # Iceberg logs every commit, manifest read and file IO at INFO.
     org.apache.iceberg: WARN

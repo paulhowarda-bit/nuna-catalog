@@ -60,6 +60,31 @@ javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 
 env: []
 
+# Metrics, traces and logs over OTLP/HTTP (docs/observability/README.md). Nothing is exported until an endpoint is
+# named; stdout gets JSON log lines either way. The chart sets the standard OTEL_* variables, which Spring Boot reads.
+telemetry:
+  # The collector's OTLP/HTTP base URL, e.g. http://otel-collector.observability:4318 (OTEL_EXPORTER_OTLP_ENDPOINT);
+  # /v1/metrics, /v1/traces and /v1/logs are added to it. OTLP over gRPC is not supported.
+  endpoint: ""
+  # Headers sent with every export, as name=value pairs separated by commas (OTEL_EXPORTER_OTLP_HEADERS), e.g. a
+  # tenant id. Credentials go in headersSecret, which takes precedence.
+  headers: ""
+  # A Secret in the release's namespace that holds the headers, in the same form, under `key`.
+  headersSecret:
+    name: ""
+    key: headers
+  # A ConfigMap in the release's namespace that holds, under `key`, the PEM certificate of the CA that signed the
+  # collector's, for an https endpoint (OTEL_EXPORTER_OTLP_CERTIFICATE).
+  caConfigMap:
+    name: ""
+    key: ca.crt
+  # The share of new traces recorded and exported, 0 to 1; a request whose caller's trace is sampled is always
+  # recorded (parentbased_traceidratio).
+  sampling: "0.1"
+  # Resource attributes beside the ones the chart sets (service.name, service.namespace, service.version,
+  # service.instance.id, k8s.namespace.name, k8s.pod.name, k8s.node.name), e.g. {deployment.environment.name: prod}.
+  resourceAttributes: {}
+
 # The orphan scan holds every file a table reaches in memory (D30 (8)); size the limit for the largest table.
 resources:
   requests:

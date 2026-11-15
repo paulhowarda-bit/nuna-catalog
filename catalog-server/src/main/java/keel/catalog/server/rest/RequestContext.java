@@ -3,18 +3,14 @@ package keel.catalog.server.rest;
 import keel.catalog.audit.Actor;
 import keel.catalog.core.principal.Caller;
 import keel.catalog.core.principal.Principal;
+import keel.catalog.server.telemetry.RequestIds;
 import jakarta.servlet.http.HttpServletRequest;
-import java.util.UUID;
 
-/** Who a request comes from, and its id: the client's {@code X-Request-ID}, or one made up here. */
+/** Who a request comes from, and its id, as {@link RequestIds} decided it. */
 public record RequestContext(Caller caller, String requestId) {
 
     public static RequestContext of(HttpServletRequest request, Callers callers) {
-        String id = request.getHeader(Http.REQUEST_ID);
-        if (id == null || id.isBlank() || id.length() > 128) {
-            id = UUID.randomUUID().toString();
-        }
-        return new RequestContext(callers.caller(request), id);
+        return new RequestContext(callers.caller(request), RequestIds.of(request));
     }
 
     public Actor actor() {

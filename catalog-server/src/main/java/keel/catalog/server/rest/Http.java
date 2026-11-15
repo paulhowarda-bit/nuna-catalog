@@ -15,7 +15,6 @@ final class Http {
 
     static final String IDEMPOTENCY_KEY = "Idempotency-Key";
     static final String ACCESS_DELEGATION = "X-Iceberg-Access-Delegation";
-    static final String REQUEST_ID = "X-Request-ID";
     static final String SERVICE_FAILURE = "ServiceFailureException";
 
     private Http() {

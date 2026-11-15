@@ -9,3 +9,11 @@ spring:
     banner-mode: off
 server:
   port: 8181
+
+# Telemetry (docs/observability/README.md). Metrics, traces and logs go over OTLP only when an endpoint is set: the
+# standard OTEL_* variables, or Boot's management.* properties. Log lines go to stdout as JSON, in Elastic Common
+# Schema; each written while a request runs carries its traceId, spanId and requestId.
+logging:
+  structured:
+    format:
+      console: ecs

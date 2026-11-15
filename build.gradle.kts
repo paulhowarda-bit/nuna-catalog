@@ -96,6 +96,12 @@ subprojects {
         dependsOn(dependencyConvergence)
     }
 
+    // OTLP export goes over the JDK's HttpClient (opentelemetry-exporter-sender-jdk, which the server and the worker
+    // add), never OkHttp: work's mirror then needs neither OkHttp nor the Kotlin standard library it brings (PLT-6).
+    configurations.configureEach {
+        exclude(group = "io.opentelemetry", module = "opentelemetry-exporter-sender-okhttp")
+    }
+
     dependencies {
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     }

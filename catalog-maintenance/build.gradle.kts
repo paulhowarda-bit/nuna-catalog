@@ -19,6 +19,12 @@ dependencies {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
     implementation("software.amazon.awssdk:apache-client")
+    // Metrics, traces and logs over OTLP when an endpoint is set (docs/observability/README.md); the root build
+    // swaps the exporter's OkHttp sender for the JDK's.
+    implementation("org.springframework.boot:spring-boot-starter-opentelemetry")
+    implementation("io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:" +
+        property("opentelemetry-logback-appender.version"))
+    runtimeOnly("io.opentelemetry:opentelemetry-exporter-sender-jdk")
     // iceberg-aws declares no SDK dependencies; its client factory loads these classes.
     listOf("sts", "kms", "glue", "dynamodb").forEach {
         runtimeOnly("software.amazon.awssdk:$it") {
@@ -30,7 +36,11 @@ dependencies {
     testImplementation(project(":catalog-server"))
     testImplementation(project(":catalog-tests-s3"))
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
+    testImplementation(project(path = ":catalog-server", configuration = "testJar"))
+    testImplementation("io.opentelemetry.proto:opentelemetry-proto:${property("opentelemetry-proto.version")}")
     testImplementation("org.junit.jupiter:junit-jupiter")
+    // OutputCaptureExtension, for the JSON log lines on stdout (TelemetryTest).
+    testImplementation("org.springframework.boot:spring-boot-test")
     testImplementation("org.assertj:assertj-core")
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")

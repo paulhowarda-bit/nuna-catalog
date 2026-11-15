@@ -118,6 +118,34 @@ migrates its schema. What each one asks of the catalog's database role is on the
 `OracleBackendTest` and `MongodbBackendTest` (catalog-server, `heavy`) run the server this way on Oracle Free
 and a one-member replica set.
 
+### Telemetry
+
+Both charts send metrics, traces and logs to an OpenTelemetry collector over OTLP/HTTP when `telemetry.endpoint` is
+set, and export nothing when it is empty, the default. Log lines go to stdout as JSON either way.
+docs/observability/README.md says what is exported.
+
+```yaml
+telemetry:
+  endpoint: http://otel-collector.observability:4318   # OTLP/HTTP; gRPC (4317) is not supported
+  headersSecret: {name: otlp-headers, key: headers}    # or headers: "x-tenant=lake", when nothing in them is secret
+  caConfigMap: {name: otlp-ca, key: ca.crt}            # for an https endpoint signed by an internal CA
+  sampling: "0.1"                                      # the share of new traces kept
+  resourceAttributes: {deployment.environment.name: prod}
+```
+
+- The chart turns these into the standard `OTEL_*` variables, which Spring Boot reads: `OTEL_EXPORTER_OTLP_ENDPOINT`,
+  `OTEL_EXPORTER_OTLP_HEADERS` (from the Secret's key when `headersSecret.name` is set), `OTEL_EXPORTER_OTLP_CERTIFICATE`
+  (the ConfigMap mounted at `/etc/keel/otlp-ca`), and `OTEL_TRACES_SAMPLER=parentbased_traceidratio` with the
+  sampling. A request whose caller's trace was sampled is always kept.
+- It always sets `OTEL_SERVICE_NAME` to the chart's name (`keel-catalog`, `keel-maintenance`) and
+  `OTEL_RESOURCE_ATTRIBUTES` to `service.namespace`, `service.version` (the image tag), `service.instance.id` (the
+  pod), `k8s.namespace.name`, `k8s.pod.name` and `k8s.node.name`, plus `resourceAttributes`.
+- Headers hold `name=value` pairs separated by commas, e.g. a collector's API key:
+  `kubectl -n <namespace> create secret generic otlp-headers --from-literal=headers='authorization=Bearer <key>'`.
+- If work's platform injects the `OTEL_*` variables itself (an operator or a sidecar), leave `telemetry.endpoint`
+  empty: the endpoint and headers it injects take effect, beside the service name, resource attributes and sampler
+  the chart sets.
+
 ### Before production
 
 - **Database safety settings.** Each store can check its database's safety settings (`selfCheck`: a
