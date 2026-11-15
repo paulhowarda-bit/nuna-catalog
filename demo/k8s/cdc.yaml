@@ -111,11 +111,13 @@ spec:
           volumeMounts:
             - {name: startdb, mountPath: /container-entrypoint-startdb.d, readOnly: true}
           readinessProbe:
-            # oracle.sql restarts the database into archive log mode and writes /tmp/cdc-ready when done. The
-            # check takes a fraction of a second, but under load it can pass the default 1-second timeout, and
-            # a pod that is not ready leaves Service oracle: Debezium then finds no listener and fails for good.
+            # oracle.sql restarts the database into archive log mode, adds the people, and writes /tmp/cdc-ready
+            # last, so the file alone says the database is open and set up. Not the image's healthcheck.sh: under
+            # load its sqlplus outlives the probe's timeout, kubelet starts another every period, and the
+            # leftovers fill the memory limit until Oracle stops answering. A pod that is not ready leaves
+            # Service oracle: Debezium then finds no listener and fails for good.
             exec:
-              command: ["sh", "-c", "test -f /tmp/cdc-ready && /opt/oracle/healthcheck.sh"]
+              command: ["test", "-f", "/tmp/cdc-ready"]
             periodSeconds: 5
             timeoutSeconds: 15
           resources:
