@@ -1,81 +1,22 @@
 # CloudBeaver Community (image cloudbeaver.Dockerfile, without its version check), a SQL UI in the browser.
-# Only demo.sh applies this; ports.yaml publishes it on localhost:8185. Three connections:
-#
-#   keel-trino  Trino (trino.yaml) as ana, catalogs lakehouse and engines. Every query reaches keel as ana,
-#               since Trino holds one token.
-#   backoffice  the CDC leg's PostgreSQL (cdc.yaml), database backoffice
-#   treasury    the CDC leg's Oracle (cdc.yaml), PDB FREEPDB1
-#
-# The two CDC sources answer only while the leg runs (demo.sh cdc), and Trino is stopped meanwhile. CloudBeaver
-# reads them as reader / reader-demo, which may select their table and change nothing (demo/cdc/*.sql); changes
-# go through demo.sh psql and demo.sh sqlplus. The drivers for all three are in the image.
+# Only demo.sh applies this; ports.yaml publishes it on localhost:8185.
 #
 # The demo's people sign in with their Keycloak passwords: oscar is CloudBeaver's administrator, and ana,
-# gary and stella are users with the connections. CB_ADMIN_* configure the server at its first start, so no
-# setup wizard shows; the postStart hook adds DEMO_USERS and grants them every connection
-# (demo/CloudBeaverUsers.java), and the pod is not ready until it has. Everything lives in the pod, so a new pod
-# starts from this file again.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: cloudbeaver-config
-data:
-  initial-data-sources.conf: |
-    {
-      "folders": {},
-      "connections": {
-        "keel-trino": {
-          "provider": "generic",
-          "driver": "trino_jdbc",
-          "name": "keel (Trino, as ana)",
-          "save-password": true,
-          "configuration": {
-            "host": "trino",
-            "port": "8080",
-            "url": "jdbc:trino://trino:8080",
-            "configurationType": "MANUAL",
-            "type": "dev",
-            "auth-model": "native",
-            "user": "ana"
-          }
-        },
-        "backoffice": {
-          "provider": "postgresql",
-          "driver": "postgres-jdbc",
-          "name": "backoffice (PostgreSQL, CDC source)",
-          "save-password": true,
-          "configuration": {
-            "host": "backoffice",
-            "port": "5432",
-            "database": "backoffice",
-            "url": "jdbc:postgresql://backoffice:5432/backoffice",
-            "configurationType": "MANUAL",
-            "type": "dev",
-            "auth-model": "native",
-            "user": "reader",
-            "password": "reader-demo"
-          }
-        },
-        "treasury": {
-          "provider": "oracle",
-          "driver": "oracle_thin",
-          "name": "treasury (Oracle, CDC source)",
-          "save-password": true,
-          "configuration": {
-            "host": "oracle",
-            "port": "1521",
-            "database": "FREEPDB1",
-            "url": "jdbc:oracle:thin:@//oracle:1521/FREEPDB1",
-            "configurationType": "URL",
-            "type": "dev",
-            "auth-model": "oracle_native",
-            "user": "reader",
-            "password": "reader-demo"
-          }
-        }
-      }
-    }
----
+# gary and stella are users. Each person has three connections of their own, which sign in as them:
+#
+#   keel (Trino, as <person>)             Trino (trino.yaml), catalogs lakehouse and engines. The connection
+#                                         sends the person's catalog token, and Trino hands it to keel, so keel
+#                                         sees the person.
+#   backoffice (PostgreSQL, as <person>)  the CDC leg's PostgreSQL (cdc.yaml), database backoffice
+#   treasury (Oracle, as <person>)        the CDC leg's Oracle (cdc.yaml), PDB FREEPDB1
+#
+# The two CDC sources answer only while the leg runs (demo.sh cdc), and Trino is stopped meanwhile. A person's
+# accounts there have their Keycloak password (demo/cdc/*.sql). Each connection is granted to its person alone;
+# oscar, as administrator, sees and may use everyone's. The drivers are in the image.
+#
+# CB_ADMIN_* configure the server at its first start, so no setup wizard shows; the postStart hook adds
+# DEMO_USERS and everyone's connections (demo/CloudBeaverUsers.java), and the pod is not ready until it has.
+# Everything lives in the pod, so a new pod starts from this file again.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,8 +28,11 @@ spec:
   template:
     metadata:
       labels: {app: cloudbeaver}
-      # The connection is read only at the first start, so a changed file replaces the pod.
-      annotations: {keel-demo/manifest: "${MANIFEST_HASH}"}
+      # The hook reads this file and the tokens (Secret demo-people-tokens) only as the pod starts, so a changed
+      # file or new tokens replace the pod.
+      annotations:
+        keel-demo/manifest: "${MANIFEST_HASH}"
+        keel-demo/tokens: "${TOKENS_HASH}"
     spec:
       enableServiceLinks: false
       containers:
@@ -110,9 +54,7 @@ spec:
               exec:
                 command: ["java", "-Xmx64m", "-cp", "/opt/keel-demo", "CloudBeaverUsers"]
           volumeMounts:
-            - name: config
-              mountPath: /opt/cloudbeaver/conf/initial-data-sources.conf
-              subPath: initial-data-sources.conf
+            - {name: tokens, mountPath: /opt/keel-demo/tokens, readOnly: true}
           readinessProbe:
             httpGet: {path: /, port: 8978}
             periodSeconds: 5
@@ -120,5 +62,5 @@ spec:
             requests: {memory: 384Mi}
             limits: {memory: 768Mi}
       volumes:
-        - name: config
-          configMap: {name: cloudbeaver-config}
+        - name: tokens
+          secret: {secretName: demo-people-tokens}

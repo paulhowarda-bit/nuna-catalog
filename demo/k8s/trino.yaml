@@ -1,10 +1,13 @@
-# Trino, one node, with catalogs lakehouse and engines from keel, signed in to the catalog as ana (static
-# token): every nested namespace listed, storage reached with the credentials the catalog vends. Only
-# demo.sh applies this; CloudBeaver (cloudbeaver.yaml) is its UI, and nothing publishes Trino itself.
+# Trino, one node, with catalogs lakehouse and engines from keel: every nested namespace listed, storage reached
+# with the credentials the catalog vends. Only demo.sh applies this; CloudBeaver (cloudbeaver.yaml) is its UI,
+# and nothing publishes Trino itself.
 #
-# Every Trino user is ana to keel: Trino passes on no user of its own. A new token (demo.sh token) restarts
-# the pod. jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit beside
-# the rest of the demo on an 8 GB Docker Desktop; demo.sh engines stops Trino for the run, as Spark needs
+# Each query reaches keel as whoever runs it: the client sends its own catalog token as Trino's extra credential
+# "token" (session USER), and Trino hands it to keel, which checks it as it checks any engine's. CloudBeaver's
+# connections send the signed-in person's. A query without one fails: Trino then asks keel to exchange a token,
+# and keel issues none (D13). Trino's own token, as user trino (Mint.java), which holds no grant, serves only
+# the catalog's config. jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit
+# beside the rest of the demo on an 8 GB Docker Desktop; demo.sh engines stops Trino for the run, as Spark needs
 # the room.
 apiVersion: v1
 kind: ConfigMap
@@ -32,6 +35,7 @@ data:
     iceberg.rest-catalog.warehouse=lakehouse
     iceberg.rest-catalog.security=OAUTH2
     iceberg.rest-catalog.oauth2.token=${ENV:KEEL_TOKEN}
+    iceberg.rest-catalog.session=USER
     iceberg.rest-catalog.vended-credentials-enabled=true
     iceberg.rest-catalog.nested-namespace-enabled=true
     iceberg.rest-catalog.server-assigned-table-location-enabled=true
@@ -46,6 +50,7 @@ data:
     iceberg.rest-catalog.warehouse=engines
     iceberg.rest-catalog.security=OAUTH2
     iceberg.rest-catalog.oauth2.token=${ENV:KEEL_TOKEN}
+    iceberg.rest-catalog.session=USER
     iceberg.rest-catalog.vended-credentials-enabled=true
     iceberg.rest-catalog.nested-namespace-enabled=true
     iceberg.rest-catalog.server-assigned-table-location-enabled=true
@@ -65,8 +70,11 @@ spec:
   template:
     metadata:
       labels: {app: trino}
-      # Trino reads its configuration only as it starts, so a changed file replaces the pod.
-      annotations: {keel-demo/manifest: "${MANIFEST_HASH}"}
+      # Trino reads its configuration and its token only as it starts, so a changed file or new tokens replace
+      # the pod.
+      annotations:
+        keel-demo/manifest: "${MANIFEST_HASH}"
+        keel-demo/tokens: "${TOKENS_HASH}"
     spec:
       enableServiceLinks: false
       containers:
@@ -76,7 +84,7 @@ spec:
           env:
             - name: KEEL_TOKEN
               valueFrom:
-                secretKeyRef: {name: demo-ana-token, key: token}
+                secretKeyRef: {name: demo-trino-token, key: token}
           volumeMounts:
             - {name: config, mountPath: /etc/trino/jvm.config, subPath: jvm.config}
             - {name: catalogs, mountPath: /etc/trino/catalog}
