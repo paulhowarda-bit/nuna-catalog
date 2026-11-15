@@ -22,9 +22,9 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 
 ## Landing
 
-- Every landing uses the fast build, whatever the branch changes. Don't run `-Pheavy` outside the heavy pass below.
-- When the work is finished and its build is green, land it without asking Paul:
-  1. Merge the current `main` into the branch and run the fast build, `./gradlew build`.
+- Every landing uses the fast build, whatever the branch changes, except a branch whose every changed file is Markdown: it lands without a build (Paul, 2026-11-14). Nothing the build compiles, tests or applies is a `.md` file. Check with `git diff --name-only main...<branch>`. Don't run `-Pheavy` outside the heavy pass below.
+- When the work is finished and its build is green (or it changes only Markdown), land it without asking Paul:
+  1. Merge the current `main` into the branch and run the fast build, `./gradlew build` (skipped for a Markdown-only branch).
   2. Run `git -C C:/Users/paulh/code/keel-catalog status --porcelain`. If it prints anything, the main checkout is busy: report the branch as ready instead of merging.
   3. Otherwise run `git -C C:/Users/paulh/code/keel-catalog merge --no-ff <branch>`. Use a "Land …" message ending with the attribution line.
   4. Check that `git cherry -v main <branch>` shows only `-` lines.
