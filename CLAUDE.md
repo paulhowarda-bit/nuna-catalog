@@ -19,7 +19,7 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - Claim an item before working on it: `./backlog.sh claim <n>` in the worktree that will carry the work. If the claim fails, another agent holds it: take another item. Claim only what you are about to start.
 - When the work is done: `./backlog.sh done <n>`, write what was done, commit, land, then `./backlog.sh release <n>`. If you stop without finishing, release it; it stays open.
 - A worktree subagent cannot land, so the session that starts it claims the item first and releases it after landing.
-- Only Paul drops or defers an item.
+- Only Paul drops, defers or rescopes an item, or answers a question it puts to him. Record each decision in `decision-ledger.md` (an amendment to the D row it touches, quoting him with the date, or a new row) and add `Decided: <date>, <row>` to the item, in one branch: work reads the ledger, never the chats.
 - `./backlog.sh sweep` releases claims whose item is finished or whose worktree is gone with nothing left to land, and lists the rest; `backlog/README.md` says how to judge those.
 
 ## Builds

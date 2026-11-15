@@ -18,9 +18,21 @@ What done looks like: the test, build or check that will show it.
 
 - `Status:` is `open`, `done` or `dropped`. A done item keeps its file: `./backlog.sh done` adds a `Done:` line with
   the date and branch, and the agent writes beneath it what was done and what, if anything, is left.
-- Only Paul drops or defers an item. Record his words and the date beneath `Status: dropped`. An agent that thinks an
-  item should go asks him; it never drops, defers or rescopes one itself.
+- Only Paul drops or defers an item, and only he answers a question an item puts to him (titles say "Paul
+  decides"). An agent that thinks an item should go, or reaches a choice that is his, asks him, one question at a
+  time; it never drops, defers or rescopes an item itself.
 - Numbers are never reused once an item is on main, and items are never deleted or renumbered.
+
+## Recording Paul's decisions
+
+The backlog says what is open; `decision-ledger.md` says why things are as they are, and it is where work looks for
+his decisions. A decision kept only in an item file or in a chat never reaches work. So when Paul decides anything
+about an item (an answer, a drop, a deferral, a change of scope):
+
+1. Record it in `decision-ledger.md`, quoting him with the date: an amendment to the D row it touches
+   (`**Amended 2026-11-15 (item 15):** …`), or a new D row when none fits.
+2. In the item, beneath `Status:`, add `Decided: <date>, <D row>`, and set `Status: dropped` if he dropped it.
+3. Land both in one branch.
 
 ## Adding an item
 
