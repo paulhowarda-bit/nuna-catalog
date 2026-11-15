@@ -1,0 +1,17 @@
+Breaks: the server pushes metrics to Boot's default localhost:4318 with no endpoint set.
+Module: catalog-server
+Test: ExportNeedsEndpointTest#withNoEndpointNothingExports
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/MetricsExportNeedsEndpoint.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/MetricsExportNeedsEndpoint.java
+index 8540514..c41d5b6 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/telemetry/MetricsExportNeedsEndpoint.java
++++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/MetricsExportNeedsEndpoint.java
+@@ -24,7 +24,7 @@ public final class MetricsExportNeedsEndpoint implements EnvironmentPostProcesso
+ 
+     @Override
+     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+-        if (ENDPOINTS.stream().noneMatch(environment::containsProperty)) {
++        if (ENDPOINTS.isEmpty()) {
+             // Last: below every property source, so any explicit setting wins.
+             environment.getPropertySources().addLast(new MapPropertySource("keelMetricsExportNeedsEndpoint",
+                     Map.of(ENABLED, "false")));
