@@ -1,0 +1,17 @@
+Breaks: The console finishes a sign-in whose state is not the one this tab sent the IdP.
+Module: catalog-server
+Test: ConsoleSignInTest#aSignInAnswerThisTabDidNotStartIsRefused
+
+diff --git a/catalog-server/src/main/resources/keel/ui/auth.js b/catalog-server/src/main/resources/keel/ui/auth.js
+index 1d1508a..46d11f4 100644
+--- a/catalog-server/src/main/resources/keel/ui/auth.js
++++ b/catalog-server/src/main/resources/keel/ui/auth.js
+@@ -101,7 +101,7 @@ export async function finishSignIn(oidc) {
+   if (params.has('error')) {
+     throw new Error(`The IdP refused the sign-in: ${params.get('error')} ${params.get('error_description') || ''}`);
+   }
+-  if (!pending || pending.state !== params.get('state')) {
++  if (!pending) {
+     throw new Error('The sign-in answer does not match a sign-in this tab started; start again.');
+   }
+   const response = await fetch(pending.tokenEndpoint, {

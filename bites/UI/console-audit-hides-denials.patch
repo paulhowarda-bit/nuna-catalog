@@ -1,0 +1,17 @@
+Breaks: The console's audit trail leaves out the refusals (Denial records).
+Module: catalog-server
+Test: ConsoleBrowserTest#theAuditTrailShowsCommitsReadsCredentialsAndDenials
+
+diff --git a/catalog-server/src/main/resources/keel/ui/detail.js b/catalog-server/src/main/resources/keel/ui/detail.js
+index fe4a6a1..a705718 100644
+--- a/catalog-server/src/main/resources/keel/ui/detail.js
++++ b/catalog-server/src/main/resources/keel/ui/detail.js
+@@ -554,7 +554,7 @@ async function auditPanel(target) {
+   const run = () => load(out, async () => {
+     const body = await api.recentAudit(target, limit.value);
+     const w = body.window;
+-    const records = body.records || [];
++    const records = (body.records || []).filter(r => r.type !== 'keel.catalog.denial');
+     return h('div', null,
+       records.length ? table(['Time', 'Type', 'Who', 'What', ''], records.map(r => {
+         const type = String(r.type || '').replace(/^keel\.catalog\./, '');
