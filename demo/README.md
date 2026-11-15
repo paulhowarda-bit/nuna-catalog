@@ -115,13 +115,17 @@ Trino connection sends their own token, so the catalog lets them do there what i
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
-| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; read consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
+| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <http://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
 | CloudBeaver, <http://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers Kafka, and `demo-analysts`,
-`demo-grant-admins` and `demo-stewards` administer topics, every topic, the catalog's and the CDC leg's included.
-Like the console, kafbat's sign-out leaves Keycloak's session.
+`demo-grant-admins` and `demo-stewards` administer topics, except the ones the demo runs on, which they only
+read: the catalog's audit and change topics (`keel.*`), the Connect worker's `cdc-connect-*`, and any name
+starting with `_`. The CDC leg's change, control and schema-history topics stay theirs to administer. kafbat
+records every change made through it, refused ones included, with who made it, in topic `__kui-audit-log`, which
+only `demo-operators` read in kafbat, and in its log (`kubectl -n keel-demo logs deployment/kafka-ui | grep -w
+audit`). Like the console, kafbat's sign-out leaves Keycloak's session.
 
 How CloudBeaver and Studio sign in through Keycloak, neither of which CloudBeaver Community or Studio does on
 its own terms:
