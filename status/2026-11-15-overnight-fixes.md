@@ -21,3 +21,7 @@ each leg and the bites until no test container is left and `docker info` answers
 leg started 3 s after the container went; an unparseable value made `VendingTest` fail to find Docker and 60 let it
 pass (10 of 10), so the setting reaches the test JVMs through Gradle. Not yet seen in an overnight run: the item
 stays open until the Ceph leg passes in one.
+
+**The landing build.** The first fast build ran 1 h 6 min with the keel-demo stack up and failed 13 of
+`catalog-server`'s 129 tests, every one on a wait that ran out: audit records never read from Kafka, an S3 write that
+timed out, the console's browser not answering. The rerun, with the demo still up, passed in 9 min 27 s.
