@@ -97,9 +97,4 @@ GRANT CREATE SESSION, SELECT ANY TABLE TO oscar;
 -- Everyone also reads the data dictionary and the V$ views (SELECT_CATALOG_ROLE); gary has them through DBA.
 GRANT SELECT_CATALOG_ROLE TO ana, stella, oscar;
 
--- CloudBeaver's account (demo/k8s/cloudbeaver.yaml): it reads the table and changes nothing.
-CREATE USER reader IDENTIFIED BY "reader-demo";
-GRANT CREATE SESSION TO reader;
-GRANT SELECT ON treasury.payments TO reader;
-
 HOST touch /tmp/cdc-ready

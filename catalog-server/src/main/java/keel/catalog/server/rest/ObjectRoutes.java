@@ -86,8 +86,8 @@ class ObjectRoutes {
         List<String> levels = Lookup.levels(namespace);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         guard.onNamespace(request, catalog, record, levels, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS);
-        Page<CatalogObject> page = Lookup.listing(() -> store.listObjects(record.id(), kind,
-                CatalogObject.State.ACTIVE, lookup.page(pageToken, pageSize)));
+        Page<CatalogObject> page = lookup.listing(pageToken, pageSize,
+                pageRequest -> store.listObjects(record.id(), kind, CatalogObject.State.ACTIVE, pageRequest));
         List<Identifier> identifiers = page.items().stream()
                 .map(o -> new Identifier(levels, o.name().display()))
                 .toList();

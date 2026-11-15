@@ -44,8 +44,3 @@ CREATE ROLE oscar LOGIN PASSWORD 'oscar-demo';
 GRANT pg_read_all_data TO stella, oscar;
 -- Everyone also reads the server's statistics, settings and activity (pg_monitor); gary has them as superuser.
 GRANT pg_monitor TO ana, stella, oscar;
-
--- CloudBeaver's account (demo/k8s/cloudbeaver.yaml): it reads the table and changes nothing.
-CREATE ROLE reader LOGIN PASSWORD 'reader-demo';
-GRANT USAGE ON SCHEMA settlement TO reader;
-GRANT SELECT ON settlement.instructions TO reader;

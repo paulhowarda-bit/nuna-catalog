@@ -36,9 +36,9 @@ demo/demo.sh up
     connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
     new one again.
   - `trino.yaml`: Trino, image `trinodb/trino:484`.
-  - `cloudbeaver.yaml`: CloudBeaver Community with its connection to Trino, image
-    `keel-demo-cloudbeaver:<hash>`: `dbeaver/cloudbeaver:26.2.4` without its version check, and with
-    `demo/CloudBeaverUsers.java`, which adds the people below as the pod starts (`cloudbeaver.Dockerfile`).
+  - `cloudbeaver.yaml`: CloudBeaver Community, image `keel-demo-cloudbeaver:<hash>`:
+    `dbeaver/cloudbeaver:26.2.4` without its version check, and with `demo/CloudBeaverUsers.java`, which adds
+    the people below as the pod starts, each with connections that sign in as them (`cloudbeaver.Dockerfile`).
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, and Kafka Connect,
@@ -68,7 +68,7 @@ The console offers two ways in:
   authorization code with PKCE, `keel.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
   It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.
 - **The token box** (`keel.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
-  Machine users (`singlestore`, `lake`, `cdc`, `engine-matrix`) have tokens only.
+  Machine users (`singlestore`, `lake`, `cdc`, `engine-matrix`, `trino`) have tokens only.
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
@@ -81,6 +81,7 @@ The console offers two ways in:
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
+| `trino` | token only | `demo-engines` | nothing: Trino's own sign-in, which reads the catalog's config; queries reach the catalog with the token of whoever runs them |
 
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
@@ -94,19 +95,20 @@ sessions go with its pod.
 console shows data, grants, the audit trail, governance and the DR freeze together. Separation of duties is
 checked on grants to groups, so nothing in the catalog refuses one person in every group; at work that is
 the directory's to prevent. In kafbat `presenter` administers, as `demo-operators`. Studio and CloudBeaver
-have no `presenter`: use `oscar` there.
+have no `presenter`: use `oscar` there. CloudBeaver shows its administrator every person's connections, so
+`oscar` can show each person's view there without changing user.
 
 ### The same people in the other UIs
 
 The four people sign in to every UI that has users, with the same passwords. Outside the console, the
-catalog sees them only through Trino, and there everyone is `ana`: in CloudBeaver all four can read and also
-change every Iceberg table.
+catalog sees them through Trino, in CloudBeaver: each person's Trino connection sends their own token, so the
+catalog lets them do there what it lets them do in the console.
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
 | kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | read topics, messages, consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
-| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | the connections: Trino (`ana` to the catalog) and, read-only, the CDC leg's databases | CloudBeaver's administrator, and the same connections |
+| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | three connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with three connections of their own and everyone else's |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers, and `demo-analysts`, `demo-grant-admins`
 and `demo-stewards` read. Like the console, kafbat's sign-out leaves Keycloak's session.
@@ -119,15 +121,14 @@ Accounts that run the demo rather than people in it:
 | SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio accepts it too |
 | Silo `keeltest` | `keeltest-secret-key` | the S3 store's root; not published outside the cluster |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
-| `reader` | `reader-demo` | CloudBeaver's read-only account in both CDC databases, while the leg runs |
 | PostgreSQL `backoffice` | `keel-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
 | Oracle `treasury` | `keel-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
 | Oracle `SYS`, `SYSTEM` | `keel-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
 | Oracle `c##dbzuser` | `dbz` | Debezium's LogMiner user |
 
-Tokens are valid for 7 days. Print them again (re-minted if they are about to expire; SingleStore's running
-pipelines are then replaced and Trino and the CDC leg's Kafka Connect are restarted, so they carry the new
-ones):
+Tokens are valid for 7 days, and `up` mints new ones only when they are about to expire. Print them again
+(re-minted if they are about to expire; SingleStore's running pipelines are then replaced and Trino,
+CloudBeaver and the CDC leg's Kafka Connect are restarted, so they carry the new ones):
 
 ```bash
 demo/demo.sh token
@@ -217,9 +218,19 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 ## Trino and CloudBeaver
 
 CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, where the
-people above sign in. Its one connection, "keel (Trino, as ana)", is a Trino whose catalogs `lakehouse` and
-`engines` are keel's, signed in to the catalog as `ana` with a static token. So it reads what `ana` may load,
-with the storage credentials the catalog vends, and nothing else.
+people above sign in. Each person has three connections of their own, which sign in as them, and sees only
+those: "keel (Trino, as ana)" for `ana`, and the two CDC sources below. The Trino connection reaches a Trino
+whose catalogs `lakehouse` and `engines` are keel's. It sends Trino the person's own token as the extra
+credential `token`, and Trino hands it to the catalog with each request (`iceberg.rest-catalog.session=USER`).
+So the catalog sees the person, and each one reads and changes what they may in the console, with the
+storage credentials the catalog vends them:
+
+- `ana` reads and changes data and definitions: `CREATE SCHEMA` and `TABLE`, `INSERT`, `UPDATE`, `DELETE`,
+  `ALTER` and `DROP` all work, with the write credentials the catalog vends her.
+- `stella` reads. `gary` and `oscar` see the namespaces and tables listed, but every read fails with
+  "Failed to load table", since the catalog refuses them: they hold no grant (D18).
+- Each query is in the catalog's audit trail as the person: a read, a refusal, the credentials vended. Its
+  engine reads `keel-console`, the client that `demo/Mint.java` names in the people's tokens.
 
 - The navigator lists every namespace at every depth, as a schema named by its dotted path; quote it in SQL:
 
@@ -228,21 +239,24 @@ with the storage credentials the catalog vends, and nothing else.
   SELECT * FROM lakehouse."markets.equities.eu.xetra".trades;
   ```
 
-- `finance.ledger.accounts` is listed, but reading it fails with "Failed to load table 'accounts'". Trino
-  keeps the catalog's reason (D27) in the error's cause, which `trino --debug` prints:
+- `finance.ledger.accounts` is listed, but reading it fails with "Failed to load table 'accounts'", for
+  everyone. Trino keeps the catalog's reason (D27) in the error's cause, which `trino --debug` prints; the
+  extra credential is the token of whoever asks:
 
   ```bash
   kubectl --context docker-desktop -n keel-demo exec deployment/trino -- trino --user ana --debug \
+    --extra-credential "token=$(cat ~/.keel-demo/tokens/ana.jwt)" \
     --execute 'SELECT * FROM lakehouse."finance.ledger".accounts'
   ```
 
-- `ana` changes data and definitions: `CREATE SCHEMA` and `TABLE`, `INSERT`, `UPDATE`, `DELETE`, `ALTER` and
-  `DROP` all work, with the write credentials the catalog vends her.
-- Every Trino user is `ana` to the catalog: Trino sends its token, not its own user. The user name in the
-  CloudBeaver connection only labels the query in Trino.
+- A query without a token fails: Trino then asks the catalog to exchange one, and the catalog answers that
+  it issues none (D13). Trino's own token, as user `trino`, which holds no grant, only reads the catalog's
+  config.
+- The user name in a connection names the query in Trino; Trino checks no password.
 - The first query after Trino starts takes about 10 seconds; after that, about 2.
-- CloudBeaver's administrator is `oscar`: Settings, then Administration. Scripts and settings last as long
-  as its pod, and `engines` and `cdc` restart it; each new pod adds the users again.
+- CloudBeaver's administrator is `oscar`: Settings, then Administration. `oscar` sees every person's
+  connections and may use them. Scripts and settings last as long as its pod, and `engines` and `cdc` restart it; each new
+  pod adds the users and their connections again.
 - Its page loads only from localhost:8185. The image drops CloudBeaver's version check, which had the
   Administration page fetch dbeaver.com; its Version Update tab now says "Version is up to date" without
   checking. Two features would still reach outside, and the demo uses neither: the map view of a geometry
@@ -300,17 +314,17 @@ The people have accounts in both databases, with their Keycloak passwords:
 (Debezium's LogMiner user) run the leg. In PostgreSQL a table `ana` creates is hers: besides her, only `gary`
 can alter or drop it.
 
-CloudBeaver (<http://localhost:8185>) queries both databases while the leg runs, through connections
-"backoffice (PostgreSQL, CDC source)" and "treasury (Oracle, CDC source)". They sign in as `reader`
-(password `reader-demo`, made by `backoffice.sql` and `oracle.sql`), which may select the source table and
-change nothing, so changes still go through `psql` and `sqlplus` above:
+CloudBeaver (<http://localhost:8185>) queries both databases while the leg runs, through each person's own
+connections, "backoffice (PostgreSQL, as ana)" and "treasury (Oracle, as ana)" for `ana`. They sign in as
+the person, with the privileges above: `ana` and `gary` change rows there, and their changes reach the
+history tables as any other does; `stella` and `oscar` read. CloudBeaver commits each statement as it runs.
 
 ```sql
 SELECT * FROM settlement.instructions ORDER BY instruction_id;   -- backoffice
 SELECT * FROM treasury.payments ORDER BY payment_id;             -- treasury
 ```
 
-Outside the leg the two connections fail to connect: their hosts are gone.
+Outside the leg these connections fail to connect: their hosts are gone.
 
 No query engine runs beside the leg: Trino is stopped for its memory. After `demo/demo.sh cdc stop`, read the
 history in CloudBeaver's Trino connection, oldest change first (`offset` is a keyword in Trino, so it is quoted):

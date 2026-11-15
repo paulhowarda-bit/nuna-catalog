@@ -1,0 +1,17 @@
+Breaks: /v1/config ignores keel.rest.default-warehouse, so a client that names no warehouse gets 400.
+Module: catalog-server
+Test: ConfigRouteDefaultWarehouseTest
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java
+index 983cbd9..7b85eed 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java
++++ b/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java
+@@ -33,7 +33,7 @@ public class ConfigRoute {
+ 
+     @GetMapping(path = "/v1/config", produces = MediaType.APPLICATION_JSON_VALUE)
+     public String config(@RequestParam(name = "warehouse", required = false) String requested) {
+-        String warehouse = requested == null || requested.isBlank() ? settings.defaultWarehouse() : requested;
++        String warehouse = requested == null || requested.isBlank() ? null : requested;
+         if (warehouse == null || warehouse.isBlank()) {
+             throw CatalogError.badRequest("Missing query parameter warehouse, and this server has no default"
+                     + " warehouse");

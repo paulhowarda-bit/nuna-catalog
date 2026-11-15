@@ -47,6 +47,9 @@ public final class Mint {
         USERS.put("cdc", new String[] {"kafka-connect-demo", "demo-loaders"});
         // The engine matrix's engines, run against the demo's stack by demo.sh engines.
         USERS.put("engine-matrix", new String[] {"engine-matrix", "engine-clients"});
+        // Trino's own sign-in (demo/k8s/trino.yaml), for the catalog's config. Its group holds no grant: queries
+        // reach the catalog with the token of whoever runs them.
+        USERS.put("trino", new String[] {"trino-demo", "demo-engines"});
     }
 
     public static void main(String[] args) throws Exception {

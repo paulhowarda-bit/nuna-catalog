@@ -20,6 +20,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param auditSource             the CloudEvents {@code source} of this deployment's audit events
  * @param maxTransactionTables    the most tables one {@code /transactions/commit} may change; its store
  *                                transaction locks that many pointers (D15, P10)
+ * @param defaultWarehouse        the catalog {@code /v1/config} answers for when the client names no
+ *                                warehouse; unset, such a request is a 400 (D13, amended 2026-11-14)
  */
 @ConfigurationProperties("keel.rest")
 public record RestSettings(
@@ -32,7 +34,8 @@ public record RestSettings(
         @DefaultValue("5m") Duration credentialRefreshMargin,
         @DefaultValue("the organisation's identity provider") String identityProvider,
         @DefaultValue("urn:keel:deployment:keel-catalog") URI auditSource,
-        @DefaultValue("100") int maxTransactionTables) {
+        @DefaultValue("100") int maxTransactionTables,
+        String defaultWarehouse) {
 
     public RestSettings {
         if (defaultPageSize < 1 || maxPageSize < defaultPageSize) {

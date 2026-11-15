@@ -49,6 +49,19 @@ say() { printf '\n== %s\n' "$*"; }
 
 token_of() { tr -d '\r\n' < "$RUN/tokens/$1.jwt"; }
 
+# Changes whenever Mint.java mints. Trino and CloudBeaver read tokens only as they start and carry this as a pod
+# annotation (trino.yaml, cloudbeaver.yaml), so new tokens replace their pods.
+tokens_hash() { sha256sum "$RUN/tokens/expires.txt" | cut -c1-12; }
+
+# Sets that annotation as up would, outside up: new tokens replace both pods, and the same tokens change nothing.
+annotate_tokens() {
+  local deployment
+  for deployment in trino cloudbeaver; do
+    k patch deployment "$deployment" --type merge \
+      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"keel-demo/tokens\":\"$(tokens_hash)\"}}}}}" >/dev/null
+  done
+}
+
 # An image named in gradle.properties, the versions the builds use.
 image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 
@@ -63,7 +76,7 @@ apply() {
     -e "s|\${ORACLE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/oracle.sql" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_IMAGE}|$(image_of keycloak.image)|g" \
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
-    -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" \
+    -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
     "$STACK/$1" | k apply -f - >/dev/null
 }
 
@@ -135,18 +148,21 @@ mint() {
   "$JAVA" "$REPO/demo/Mint.java" "$RUN"
 }
 
-# The issuer's public keys (served by Service idp), the lake writer's token, ana's for Trino, and
-# cdc's for Kafka Connect's Iceberg sinks.
+# The issuer's public keys (served by Service idp), the lake writer's token, Trino's own, the people's for
+# their CloudBeaver connections, and cdc's for Kafka Connect's Iceberg sinks.
 publish_tokens() {
   k create configmap idp-keys --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-lake-token --from-literal=token="$(token_of lake)" --dry-run=client -o yaml | k apply -f - >/dev/null
-  k create secret generic demo-ana-token --from-literal=token="$(token_of ana)" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic demo-trino-token --from-literal=token="$(token_of trino)" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic demo-people-tokens --from-literal=ana="$(token_of ana)" --from-literal=gary="$(token_of gary)" \
+    --from-literal=stella="$(token_of stella)" --from-literal=oscar="$(token_of oscar)" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
   k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
 # Expired, about to expire, or minted before Mint.java had every user it has now.
 tokens_expired() {
-  [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/cdc.jwt" ]] && return 0
+  [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/trino.jwt" ]] && return 0
   local expires now
   expires=$(date -d "$(tr -d '\r\n' < "$RUN/tokens/expires.txt")" +%s)
   now=$(date +%s)
@@ -317,12 +333,13 @@ $(token_of ana)
 Grant admin  gary  (group demo-grant-admins: manage grants and read the audit trail; no data access)
 $(token_of gary)
 
-Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix and Kafka Connect
-have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc}.jwt
-In kafbat, Studio and CloudBeaver, oscar administers and ana, gary and stella only read.
+Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix, Kafka Connect
+and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc,trino}.jwt
+oscar administers kafbat, Studio and CloudBeaver.
 Kafka:        kafbat on http://localhost:8182
 SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD)
-Trino:        CloudBeaver on http://localhost:8185, connection "keel (Trino, as ana)": everyone queries keel as ana
+Trino:        CloudBeaver on http://localhost:8185: each person's connections sign in as them, to keel through
+              Trino with their own token, and to the CDC leg's databases
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL and Oracle into Iceberg history tables; stops Trino while it runs)
@@ -419,6 +436,7 @@ cdc_start() {
     mint
   fi
   publish_tokens
+  annotate_tokens
   say "building the Kafka Connect image (Debezium 3.7.1, the Apache Iceberg 1.12.0 sink)"
   build_connect
   if cdc_running; then
@@ -479,9 +497,9 @@ The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
   Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
 Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'. kafbat (http://localhost:8182) shows Debezium's
 change events as they arrive, and the console shows each sink commit as a snapshot of its history table.
-Query both source databases in CloudBeaver (http://localhost:8185), connections backoffice and treasury,
-read-only. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts it again. Then read the
-history in CloudBeaver's Trino connection, oldest change first:
+Query both source databases in CloudBeaver (http://localhost:8185): each person's backoffice and treasury
+connections sign in as them. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and starts it
+again. Then read the history in CloudBeaver's Trino connection, oldest change first:
   SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
   ORDER BY "_cdc"."offset";
 EOF
@@ -510,7 +528,9 @@ cdc_stop() {
 up() {
   mkdir -p "$RUN"
   build
-  mint
+  if tokens_expired; then
+    mint
+  fi
   kubectl --context "$CONTEXT" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   check_ports
   publish_tokens
@@ -557,11 +577,11 @@ up() {
     build_connect
     cdc_apply
   else
-    say "starting Trino ($TRINO_IMAGE), signed in as ana"
+    say "starting Trino ($TRINO_IMAGE)"
     apply trino.yaml
     k rollout status deployment/trino --timeout=5m >/dev/null
   fi
-  say "starting CloudBeaver ($CLOUDBEAVER_IMAGE), with connections to Trino and to the CDC leg's databases"
+  say "starting CloudBeaver ($CLOUDBEAVER_IMAGE), with each person's connections to Trino and the CDC leg's databases"
   apply cloudbeaver.yaml
   k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
   print_access
@@ -582,6 +602,7 @@ engines() {
   if tokens_expired; then
     mint
     publish_tokens
+    annotate_tokens
   fi
   say "stopping Trino and CloudBeaver for the run"
   k scale deployment/trino deployment/cloudbeaver --replicas=0 >/dev/null
@@ -608,9 +629,9 @@ case "${1:-}" in
     if tokens_expired; then
       mint
       publish_tokens
-      say "re-minted; replacing SingleStore's running pipelines and restarting Trino and Kafka Connect so they use the new tokens"
+      say "re-minted; replacing SingleStore's running pipelines and restarting Trino, CloudBeaver and Kafka Connect so they use the new tokens"
       feeds
-      k rollout restart deployment/trino >/dev/null
+      annotate_tokens
       if cdc_running; then
         k rollout restart deployment/connect >/dev/null
       fi
