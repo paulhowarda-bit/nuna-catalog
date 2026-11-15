@@ -152,13 +152,16 @@ its own terms:
   password sign-in, so `root` uses `demo/demo.sh sql`. The response travels in clear, over http on localhost
   from the browser to Studio, and SingleStore accepts it again for an hour (the assertion's lifetime, as
   long as a console token), so anyone who can read that traffic on the machine can sign in as that person
-  meanwhile. At work, TLS and a shorter assertion lifetime (`saml.assertion.lifespan` on the client) would
-  close that.
+  meanwhile. That is accepted: the demo holds only test data and runs without TLS by choice
+  (`docs/install-at-work.md`, section 10).
 - **Keys**: the realm signs with a fixed key, not one Keycloak makes at each start, because SingleStore reads
   its certificate only as it starts. `up` makes the key, its certificate and CloudBeaver's client and cookie
   secrets once, with `openssl`, in `~/.keel-demo/keycloak`, and loads them as Secret `keycloak-keys`. To
   change them, delete that folder and run `up`: Keycloak, CloudBeaver and SingleStore restart with the new
   ones.
+- **At work**: this Keycloak and its keys are stand-ins. CloudBeaver's sign-in proxy, Studio's SAML setting
+  and SingleStore's certificate get pointed at work's identity provider, with TLS from work's certificate
+  authority, and that can only be done on site.
 
 Accounts that run the demo rather than people in it:
 
