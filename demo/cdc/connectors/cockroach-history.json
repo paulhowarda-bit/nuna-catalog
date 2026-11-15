@@ -1,0 +1,22 @@
+{
+  "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+  "tasks.max": "1",
+  "topics": "cockroach.positions.holdings",
+  "transforms": "debezium,updatedAt",
+  "transforms.debezium.type": "org.apache.iceberg.connect.transforms.DebeziumTransform",
+  "transforms.updatedAt.type": "org.apache.kafka.connect.transforms.TimestampConverter$Value",
+  "transforms.updatedAt.field": "updated_at",
+  "transforms.updatedAt.target.type": "Timestamp",
+  "transforms.updatedAt.unix.precision": "microseconds",
+  "iceberg.tables": "history.cockroach.positions.holdings",
+  "iceberg.tables.auto-create-enabled": "true",
+  "iceberg.tables.evolve-schema-enabled": "true",
+  "iceberg.control.topic": "cockroach-history-control",
+  "iceberg.control.commit.interval-ms": "5000",
+  "iceberg.catalog.type": "rest",
+  "iceberg.catalog.uri": "http://keel-catalog:8181",
+  "iceberg.catalog.warehouse": "lakehouse",
+  "iceberg.catalog.token": "${env:KEEL_TOKEN}",
+  "iceberg.catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
+  "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
+}

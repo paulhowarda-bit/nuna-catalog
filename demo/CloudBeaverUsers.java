@@ -3,13 +3,14 @@
  * (demo/k8s/cloudbeaver.yaml) runs this as the server starts, because CloudBeaver keeps its users and connections
  * inside the pod and every new pod starts without them. It signs in as the administrator (CB_ADMIN_NAME,
  * CB_ADMIN_PASSWORD) and adds each user in DEMO_USERS ("name:password ..."). Then, for every person, the
- * administrator too, it adds three connections and grants them to that person alone:
+ * administrator too, it adds four connections and grants them to that person alone:
  *
  *   keel (Trino, as <person>)             Trino as user <person>, sending their catalog token as Trino's extra
  *                                         credential "token". Trino hands it to keel (demo/k8s/trino.yaml), so
  *                                         the catalog sees the person.
  *   backoffice (PostgreSQL, as <person>)  the CDC leg's PostgreSQL, signed in as the person (demo/cdc/backoffice.sql)
  *   treasury (Oracle, as <person>)        the CDC leg's Oracle, signed in as the person (demo/cdc/oracle.sql)
+ *   custody (CockroachDB, as <person>)    the CDC leg's CockroachDB, signed in as the person (demo/cdc/cockroach.sql)
  *
  * A person's database password is their CloudBeaver one, and their token is the file of their name in TOKENS
  * (Secret demo-people-tokens). Each step can run again.
@@ -72,6 +73,12 @@ void main() throws Exception {
         connection(connections, user, "treasury (Oracle, as " + user + ")",
             "\"driverId\": \"oracle:oracle_thin\", \"configurationType\": \"URL\", "
                 + "\"url\": \"jdbc:oracle:thin:@//oracle:1521/FREEPDB1\", " + login("oracle_native", user, password));
+        // CloudBeaver Community serves no CockroachDB driver and hides connections that name one; CockroachDB
+        // speaks PostgreSQL's protocol, so the PostgreSQL driver signs in.
+        connection(connections, user, "custody (CockroachDB, as " + user + ")",
+            "\"driverId\": \"postgresql:postgres-jdbc\", \"configurationType\": \"MANUAL\", "
+                + "\"host\": \"cockroach\", \"port\": \"26257\", \"databaseName\": \"custody\", "
+                + login("native", user, password));
     }
 }
 

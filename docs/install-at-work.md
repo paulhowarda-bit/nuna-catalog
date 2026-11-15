@@ -282,20 +282,22 @@ the tagged images.
 | `trinodb/trino:484` | Trino |
 | `dbeaver/cloudbeaver:26.2.4` | CloudBeaver, Trino's UI (`demo/k8s/cloudbeaver.Dockerfile`) |
 | `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
+| `cockroachdb/cockroach:v25.4.20` | the CDC leg's CockroachDB (`demo.sh cdc`; also in section 2) |
 | `maven:3.9.11-eclipse-temurin-21` | building the CDC leg's Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
 
 What reaches beyond the machine (checked 2026-11-13):
 
 - **The CDC leg's Kafka Connect image** (`demo.sh cdc`) is built by Maven from Maven Central: the poms in
-  `demo/cdc/plugins` name the Debezium 3.7.1 PostgreSQL and Oracle connectors (with Oracle's JDBC driver
-  `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
+  `demo/cdc/plugins` name the Debezium 3.7.1 PostgreSQL, Oracle and CockroachDB connectors (with Oracle's JDBC
+  driver `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
   client. Point Maven at the internal repository: a `settings.xml` mirror copied into the build stage of
   `connect.Dockerfile`. Its running pods talk only to the cluster.
 - **Turned off:** SingleStore's critical diagnostics, which its dev license turns on and which send DDL and
   table metadata to phone-home.singlestore.com (`singlestore.yaml`); Studio's browser telemetry (Segment,
   Google Analytics, Mixpanel, Intercom) and upgrade check (`singlestore.Dockerfile`); kafbat's hourly release
   check against api.github.com (`stack.yaml`); and CloudBeaver's version check, which had its Administration
-  page fetch dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`).
+  page fetch dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`); and the CDC leg's
+  CockroachDB diagnostics reporting (`COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING`, `cdc.yaml`).
 - **CloudBeaver** loads its page only from localhost and holds no outside connection; its Trino driver is in
   the image. Two features would reach outside, and the demo uses neither: the map view of a geometry value
   (tiles from openstreetmap.org) and the AI assistant (whichever AI service an administrator configures).
