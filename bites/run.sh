@@ -14,8 +14,20 @@
 #   Test: PostgresStoreSuiteTest#staleVersionAtTheSameLocationConflicts
 #
 # Runs the module's test task with -Pbites, so any test but CAS can be selected, heavy and overnight
-# ones included. Gradle logs go to build/bites/. Exits 0 only if every bite bites and the tree is
-# restored. Run it in a worktree.
+# ones included. Gradle logs go to build/bites/. Run it in a worktree.
+#
+# Each bite gets a verdict (judge, below):
+#
+#   BITES    a selected test failed on its own: on an assertion, or with the code under test throwing.
+#   NO BITE  the selected tests ran and passed.
+#   SETUP    the run proves nothing either way: the patch did not apply or compile, no test ran, or
+#            every failure came from starting the tests' fixtures (a Spring context, a container,
+#            @BeforeAll), never from a test. Read the log, fix what stopped the fixtures, run it again.
+#
+# The last line counts them: "<n> bites, <f> not biting or not restored (<s> of them SETUP); logs in
+# build/bites/". heavy.sh prints it. Exit status: 0 when every bite bites and the tree is restored;
+# 1 when any bite is NO BITE or SETUP, or the tree is not restored; 2 if it cannot reach the repo
+# root; 3 if a patch cannot be reverted (the tree is broken); 130 when interrupted.
 #
 # Gradle builds what the module's tests use from the patched tree, and only that: a bite against
 # catalog-tests-load runs the server jar built with the patch in it.
@@ -41,6 +53,7 @@ main() {
 
     trap 'revert_current; exit 130' INT TERM
     failures=0
+    setups=0
     table=""
     for patch in "${patches[@]}"; do
         id=$(basename "$patch" .patch)
@@ -65,15 +78,16 @@ main() {
             restored="HASH MISMATCH"
         fi
         case "$verdict" in BITES*) [ "$restored" = "restored" ] ;; *) false ;; esac || failures=$((failures + 1))
-        table+="$(printf '%-40s %-60s %-28s %s' "$id" "$selector" "$verdict" "$restored")"$'\n'
+        case "$verdict" in SETUP*) setups=$((setups + 1)) ;; esac
+        table+="$(printf '%-40s %-60s %-36s %s' "$id" "$selector" "$verdict" "$restored")"$'\n'
         if [ "$restored" != "restored" ]; then
             break
         fi
     done
 
-    printf '%-40s %-60s %-28s %s\n' "bite" "test" "verdict" "tree"
+    printf '%-40s %-60s %-36s %s\n' "bite" "test" "verdict" "tree"
     printf '%s' "$table"
-    echo "${#patches[@]} bites, $failures not biting or not restored; logs in build/bites/"
+    echo "${#patches[@]} bites, $failures not biting or not restored ($setups of them SETUP); logs in build/bites/"
     [ "$failures" -eq 0 ]
 }
 
@@ -119,9 +133,10 @@ revert_current() {
     fi
 }
 
-# BITES when the selected tests ran and one failed; NO BITE when they ran and passed. The counts
-# come from the result files of module $2's test task, which Gradle replaces whenever the task
-# runs or its result is reused; they are read only if this build reached the task.
+# The verdict on one bite, from its Gradle log $1 and the result files of module $2's test task:
+# BITES when a selected test failed on its own, NO BITE when they all ran and passed, SETUP when
+# the run proves neither (see tally). Gradle replaces the result files whenever the task runs or
+# its result is reused; they are read only if this build reached the task.
 judge() {
     if grep -q "Compilation failed" "$1"; then
         echo "SETUP: does not compile"
@@ -135,19 +150,70 @@ judge() {
         echo "SETUP: the test task did not run"
         return
     fi
-    totals=$(cat "$root/$2"/build/test-results/test/TEST-*.xml 2>/dev/null | grep "<testsuite " |
-        sed -E 's/.* tests="([0-9]+)" skipped="[0-9]+" failures="([0-9]+)" errors="([0-9]+)".*/\1 \2 \3/' |
-        awk '{ run += $1; bad += $2 + $3 } END { print run + 0, bad + 0 }')
-    run=${totals% *}
-    bad=${totals#* }
+    local run setup bad
+    read -r run setup bad <<<"$(tally "$root/$2/build/test-results/test")"
     if [ "$run" -eq 0 ]; then
         echo "SETUP: no test ran"
     elif [ "$bad" -gt 0 ]; then
         echo "BITES ($bad of $run failed)"
+    elif [ "$setup" -gt 0 ]; then
+        echo "SETUP: $setup of $run failed in setup"
     else
         echo "NO BITE ($run passed)"
     fi
 }
 
-main "$@"
-exit
+# Prints "<tests> <failed in setup> <failed in a test>" for the result files (TEST-*.xml) in $1,
+# one <testcase> each. A failure is setup's, not the test's, when the result file shows that
+# starting the fixtures failed, in one of the three ways Gradle and JUnit 5 record it:
+#   - the testcase is Gradle's stand-in for the class, initializationError (@BeforeAll, a class
+#     extension) or executionError (@AfterAll): no test ran, or the failure came after them;
+#   - Spring's test context did not load: "Failed to load ApplicationContext", and for each later
+#     test of that context "ApplicationContext failure threshold (1) exceeded";
+#   - Testcontainers is on the failure's stack ("at org.testcontainers."): a container, or Ryuk,
+#     did not start, or Docker could not be reached, for a fixture each test makes (a field or
+#     @BeforeEach). A bite breaks the catalog's code, never Testcontainers.
+# Every other failure is the test's own: an assertion, or the code under test throwing, in the
+# test or in a fixture made per test that calls it. A break that stops the fixtures from starting
+# (a Spring context that no longer loads) is SETUP too: it shows only that the fixtures failed.
+tally() {
+    cat "$1"/TEST-*.xml 2>/dev/null | awk '
+        /^[ \t]*<testcase / {
+            run++
+            failed = 0
+            text = ""
+            match($0, / name="[^"]*"/)
+            name = substr($0, RSTART + 7, RLENGTH - 8)
+            incase = $0 !~ /\/>[ \t\r]*$/
+            next
+        }
+        incase && /^[ \t]*<(failure|error)[ \/>]/ {
+            failed = 1
+            collecting = 1
+        }
+        collecting {
+            text = text $0 "\n"
+        }
+        collecting && /<\/failure>|<\/error>|^[ \t]*<(failure|error) [^>]*\/>/ {
+            collecting = 0
+        }
+        incase && /^[ \t]*<\/testcase>/ {
+            incase = 0
+            if (!failed) {
+                next
+            }
+            if (name == "initializationError" || name == "executionError" ||
+                text ~ /Failed to load ApplicationContext|ApplicationContext failure threshold|at org\.testcontainers\./) {
+                setup++
+            } else {
+                bad++
+            }
+        }
+        END { print run + 0, setup + 0, bad + 0 }'
+}
+
+# Sourced (bites/test-run.sh does, to test judge), it only defines the functions.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+    exit
+fi
