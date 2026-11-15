@@ -4,7 +4,8 @@
 #
 #   ./backlog.sh list                   open items on main, and who holds each
 #   ./backlog.sh add "<title>" [<by>]   take the next number and write backlog/<n>.md in this worktree
-#   ./backlog.sh claim <n>              claim an open item for this session; fails if anyone holds it
+#   ./backlog.sh claim <n> [<area>...]  claim an open item for this session; fails if anyone holds it, or holds an
+#                                       item whose area overlaps its area (its Touches: line, or the areas given)
 #   ./backlog.sh done <n>               mark the item done in this worktree (you must hold it)
 #   ./backlog.sh release <n> [--force]  give up the claim (--force: someone else's)
 #   ./backlog.sh claims                 every claim and number in flight, and whether its worktree and branch remain
@@ -14,10 +15,14 @@
 # sees the same refs, and nothing pushes them. Git creates a ref that must not exist yet atomically, so two agents
 # can never hold the same item or take the same number. The holder is the Claude session
 # (CLAUDE_CODE_HOST_SESSION_ID), so the session that claimed in its worktree can release from the main checkout.
+#
+# An area is a folder or file, or "none" for an item that changes only its own item file and a status/ entry. Two
+# items whose areas overlap are never held at once, so two agents do not change the same code in parallel. Claims
+# take turns through refs/backlog/claiming while they compare areas, so two overlapping claims cannot both pass.
 
 set -u
 die() { echo "backlog.sh: $*" >&2; exit 1; }
-usage=$(sed -n '2,11s/^# \{0,1\}//p' "$0")
+usage=$(sed -n '2,12s/^# \{0,1\}//p' "$0")
 
 top=$(git rev-parse --show-toplevel) || exit 2
 cd "$top" || exit 2
@@ -104,15 +109,58 @@ cmd_add() {
         n=$((n + 1))
     done
     printf '# %s. %s\n\nStatus: open\nAdded: %s by %s\n\n' "$n" "$t" "$today" "$by" > "backlog/$n.md"
-    echo "backlog/$n.md: write what is wrong or missing, the evidence, and what done looks like; then commit and land it"
+    echo "backlog/$n.md: add a Touches: line beneath Added: naming the folders and files it will change, write what is wrong or missing, the evidence, and what done looks like; then commit and land it"
+}
+
+# The item's Touches: line, main's copy first, as space-separated areas.
+touches_of() {
+    { git show "main:backlog/$1.md" 2>/dev/null || cat "backlog/$1.md" 2>/dev/null; } | sed -n 's/^Touches: *//p' | head -1 | tr ',' ' '
+}
+
+# Whether any area in list $1 is, holds or lies inside any area in list $2. "none" overlaps nothing; "." everything.
+overlap() {
+    local x y
+    for x in $1; do
+        x=${x#./}; x=${x%/}; x=${x,,}
+        [ "$x" = none ] && continue
+        for y in $2; do
+            y=${y#./}; y=${y%/}; y=${y,,}
+            [ "$y" = none ] && continue
+            if [ "$x" = . ] || [ "$y" = . ] || [ "$x" = "$y" ] || [[ $y == "$x"/* ]] || [[ $x == "$y"/* ]]; then return 0; fi
+        done
+    done
+    return 1
+}
+
+# Take the claiming turn, waiting up to 30 s. A turn older than 2 minutes belongs to a claim that died.
+claiming_turn() {
+    local turn old tries=0
+    turn=$(printf 'since: %s\n' "$(date -u +%s)" | git hash-object -w --stdin)
+    until git update-ref refs/backlog/claiming "$turn" "" 2>/dev/null; do
+        old=$(git rev-parse -q --verify refs/backlog/claiming) &&
+            [ $(( $(date -u +%s) - $(field "$old" since) )) -gt 120 ] && git update-ref -d refs/backlog/claiming "$old" 2>/dev/null
+        tries=$((tries + 1)); [ $tries -lt 150 ] || die "another claim has been running for 30 s; try again"
+        sleep 0.2
+    done
+    trap "git update-ref -d refs/backlog/claiming $turn" EXIT
 }
 
 cmd_claim() {
-    local n=$1 st blob ref=refs/backlog/claims/$1
+    local n=$1 st blob ref=refs/backlog/claims/$1 areas c other
+    shift
     st=$(status_of "$n")
     [ -n "$st" ] || die "there is no item $n on main or in this worktree"
     [ "$st" = open ] || die "item $n is $st"
-    blob=$(printf 'item: %s\nsession: %s\nbranch: %s\nworktree: %s\nclaimed: %s\n' "$n" "$session" "$branch" "$top" "$now" \
+    areas=${*:-$(touches_of "$n")}
+    [ -n "$areas" ] || die "item $n has no Touches: line: name the folders and files it will change, ./backlog.sh claim $n <area>... (none: only its item file and a status/ entry)"
+    claiming_turn
+    for c in $(refs claims); do
+        [ "$c" = "$n" ] && continue
+        case $(diagnose "$c") in finished*|abandoned*) continue ;; esac
+        other=$(field "refs/backlog/claims/$c" touches)
+        overlap "$areas" "$other" && die "item $n would change $areas, and item $c ($(title "$c")) changes $other: $(field "refs/backlog/claims/$c" session) holds it on $(field "refs/backlog/claims/$c" branch). Take another item, or wait until it lands."
+    done
+    blob=$(printf 'item: %s\nsession: %s\nbranch: %s\nworktree: %s\nclaimed: %s\ntouches: %s\n' "$n" "$session" "$branch" "$top" "$now" "$areas" \
         | git hash-object -w --stdin)
     if git update-ref "$ref" "$blob" "" 2>/dev/null; then
         echo "claimed item $n: $session on $branch"
@@ -162,8 +210,8 @@ cmd_claims() {
     for n in $(refs claims); do
         ref=refs/backlog/claims/$n
         d=$(diagnose "$n")
-        printf '%4s  %-9s %s\n      %s ago by %s on %s\n' "$n" "${d%%|*}" "${d#*|}" \
-            "$(age "$(field "$ref" claimed)")" "$(field "$ref" session)" "$(field "$ref" branch)"
+        printf '%4s  %-9s %s\n      %s ago by %s on %s, touching %s\n' "$n" "${d%%|*}" "${d#*|}" \
+            "$(age "$(field "$ref" claimed)")" "$(field "$ref" session)" "$(field "$ref" branch)" "$(field "$ref" touches)"
         case $mode/${d%%|*} in
             sweep/finished|sweep/abandoned) git update-ref -d "$ref" "$(git rev-parse "$ref")" && echo "      released" ;;
         esac
@@ -176,7 +224,7 @@ shift 2>/dev/null
 case $cmd in
     list) cmd_list; exit 0 ;;
     add) cmd_add "$@" ;;
-    claim) number "${1:-}"; cmd_claim "$1" ;;
+    claim) number "${1:-}"; cmd_claim "$@" ;;
     done) number "${1:-}"; cmd_done "$1" ;;
     release) number "${1:-}"; cmd_release "$@" ;;
     claims) cmd_claims; exit 0 ;;

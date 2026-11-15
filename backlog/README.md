@@ -11,6 +11,7 @@ worktree, update the backlog, land, then release the claim).
 
 Status: open
 Added: 2026-11-14 by Testing Agent
+Touches: catalog-objectstore/, catalog-maintenance/src/test/
 
 What is wrong or missing, with the evidence: a command and its output, or a file and line.
 What done looks like: the test, build or check that will show it.
@@ -18,6 +19,8 @@ What done looks like: the test, build or check that will show it.
 
 - `Status:` is `open`, `done` or `dropped`. A done item keeps its file: `./backlog.sh done` adds a `Done:` line with
   the date and branch, and the agent writes beneath it what was done and what, if anything, is left.
+- `Touches:` names the folders and files the work will change, separated by spaces or commas; `none` when it changes
+  only its own item file and a `status/` entry. Claims use it to keep two agents out of the same area.
 - Only Paul drops or defers an item, and only he answers a question an item puts to him (titles say "Paul
   decides"). An agent that thinks an item should go, or reaches a choice that is his, asks him, one question at a
   time; it never drops, defers or rescopes an item itself.
@@ -38,7 +41,7 @@ about an item (an answer, a drop, a deferral, a change of scope):
 
 1. In your worktree, `./backlog.sh add "<title>" ["<who asked>"]`. It takes the next free number atomically, so two
    agents adding at once never get the same one, and writes the header of `backlog/<n>.md`.
-2. Write the body: what is wrong or missing, the evidence, and what done looks like.
+2. Write the `Touches:` line and the body: what is wrong or missing, the evidence, and what done looks like.
 3. Commit and land it like any branch. A branch that changes only Markdown lands without a build.
 
 Others can claim the item once it is on main. An agent that finds something while working on another item adds it on
@@ -47,9 +50,12 @@ its own branch, and it lands with that branch.
 ## Working on an item
 
 1. Start your worktree from the current `main`.
-2. `./backlog.sh claim <n>` in that worktree. If the item is already claimed, the claim fails and prints the holder:
-   take another item. Never work on an item you have not claimed, and claim only what you are about to start.
-3. Do the work and commit it.
+2. `./backlog.sh claim <n>` in that worktree. The claim fails if the item is already claimed, or if another agent
+   holds an item whose area overlaps this one's; it prints the holder: take another item. An item with no `Touches:`
+   line needs its areas named, `./backlog.sh claim <n> demo/ CLAUDE.md`. Never work on an item you have not claimed,
+   and claim only what you are about to start.
+3. Do the work, changing only the area you claimed, and commit it. Record what you did in `status/`
+   (`status/README.md`).
 4. `./backlog.sh done <n>`: it sets `Status: done` and adds the `Done:` line. Write what was done beneath it, add a new
    item for anything left over, and commit.
 5. Land the branch (`CLAUDE.md`, Landing).
@@ -67,6 +73,10 @@ worktree, and releases it after landing the subagent's branch.
 - Every worktree of the clone shares these refs, and git creates a ref that must not exist yet atomically. Of twenty
   agents claiming one item at once, exactly one wins; twelve adds at once from three worktrees got twelve numbers
   (both tested 2026-11-14).
+- A claim also records the item's area. Two areas overlap when one is, holds or lies inside the other (`demo/` and
+  `demo/k8s/ports.yaml`), compared without case; `.` overlaps everything and `none` nothing. While claims compare
+  areas they take turns through `refs/backlog/claiming`, so of six agents claiming six items that all touch `docs/`
+  at once, exactly one wins (tested 2026-11-15). Claims made before areas existed record none and block nothing.
 - The holder is the Claude session (`CLAUDE_CODE_HOST_SESSION_ID`, the `local_…` id the app shows); outside Claude
   Code, the branch. Only the holder can mark the item done or release it, unless `release` is given `--force`.
 - Nothing pushes the refs, and a clone on another machine has its own. Claims coordinate the agents on one machine. A

@@ -446,6 +446,9 @@ From the report's question list, reduced to those the ledger did not settle, wit
 
 ## 8. Status
 
+Entries from 2026-11-15 on are in `status/`, one file each (`status/README.md`): every landing used to add one
+here, and two branches adding at once collided. The entries below are the history to that date; add none.
+
 - **M0 done 2026-11-06.** `mvnw clean verify` passes on JDK 25 / Maven 3.10.0: 16 tests, including the config route on PostgreSQL 18, the advertised-endpoints check, the iceberg-core import boundary, a stock Iceberg client probe and the RCK ratchet (149 RCK tests discovered, all NOT_RUN until M4 adds namespace routes). Each guard test was bite-tested: broken on purpose, seen to fail, restored.
 - **M1 done 2026-11-07.** The storage interface, the shared suite and the commit core pass on all three families, each rerun independently:
   - PostgreSQL 18 (primary plus synchronous standby): 27 suite tests, 25 bite runs.

@@ -15,7 +15,7 @@
 # if both pass.
 #
 # The counts come only from result files this run wrote: a module that ran nothing shows 0, never an earlier
-# run's numbers. Record each run in build-plan.md's Status, as each heavy pass is.
+# run's numbers. Record each run in status/ (status/README.md).
 
 cd "$(dirname "$0")" || exit 2
 start=$SECONDS
