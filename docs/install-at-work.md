@@ -1,7 +1,8 @@
 # Installing keel at work (M9)
 
 For the agents that install the catalog at work and carry out M9. Read this first, then `CLAUDE.md`,
-`build-plan.md` (M9 and section 6, the open questions work owns), `deploy/README.md` and
+`backlog/README.md` and the open items (`./backlog.sh list`), `build-plan.md` (M9 and section 6, the open
+questions work owns), `decision-ledger.md` (every decision and Paul's amendments), `deploy/README.md` and
 `catalog-maintenance/README.md`. Those documents hold the detail; this one gives the order and what is true
 today.
 
@@ -31,6 +32,12 @@ today.
   set, not yet on RAC, Exadata or a real replica set.
 - **The server does not run the stores' self-checks** (`selfCheck`), which the storage design says it does at
   startup. Check the database's safety settings by hand, and ask Paul before wiring it.
+- **Open work is in the backlog** (`backlog/`, started 2026-11-14), one file per item, seeded from
+  `build-plan.md`. A title ending "(at work)" is work's to do; one saying "Paul decides" waits on him; "only when
+  Paul asks" means wait for him. Claim an item before starting it (`backlog/README.md`). Claims stay on the
+  machine that made them, so the clone at work starts with none.
+- **Paul's decisions are in `decision-ledger.md`**, quoted with their dates, including those made on backlog items
+  (an item's `Decided:` line names the row). Read the row before acting on an item it decided.
 
 ## CLAUDE.md at work
 
@@ -275,20 +282,22 @@ the tagged images.
 | `trinodb/trino:484` | Trino |
 | `dbeaver/cloudbeaver:26.2.4` | CloudBeaver, Trino's UI (`demo/k8s/cloudbeaver.Dockerfile`) |
 | `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
+| `cockroachdb/cockroach:v25.4.20` | the CDC leg's CockroachDB (`demo.sh cdc`; also in section 2) |
 | `maven:3.9.11-eclipse-temurin-21` | building the CDC leg's Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
 
 What reaches beyond the machine (checked 2026-11-13):
 
 - **The CDC leg's Kafka Connect image** (`demo.sh cdc`) is built by Maven from Maven Central: the poms in
-  `demo/cdc/plugins` name the Debezium 3.7.1 PostgreSQL and Oracle connectors (with Oracle's JDBC driver
-  `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
+  `demo/cdc/plugins` name the Debezium 3.7.1 PostgreSQL, Oracle and CockroachDB connectors (with Oracle's JDBC
+  driver `com.oracle.database.jdbc:ojdbc11`), the Apache Iceberg 1.12.0 sink and its transforms, and Hadoop's
   client. Point Maven at the internal repository: a `settings.xml` mirror copied into the build stage of
   `connect.Dockerfile`. Its running pods talk only to the cluster.
 - **Turned off:** SingleStore's critical diagnostics, which its dev license turns on and which send DDL and
   table metadata to phone-home.singlestore.com (`singlestore.yaml`); Studio's browser telemetry (Segment,
   Google Analytics, Mixpanel, Intercom) and upgrade check (`singlestore.Dockerfile`); kafbat's hourly release
   check against api.github.com (`stack.yaml`); and CloudBeaver's version check, which had its Administration
-  page fetch dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`).
+  page fetch dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`); and the CDC leg's
+  CockroachDB diagnostics reporting (`COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING`, `cdc.yaml`).
 - **CloudBeaver** loads its page only from localhost and holds no outside connection; its Trino driver is in
   the image. Two features would reach outside, and the demo uses neither: the map view of a geometry value
   (tiles from openstreetmap.org) and the AI assistant (whichever AI service an administrator configures).

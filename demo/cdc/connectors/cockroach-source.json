@@ -1,0 +1,16 @@
+{
+  "connector.class": "io.debezium.connector.cockroachdb.CockroachDBConnector",
+  "tasks.max": "1",
+  "database.hostname": "cockroach",
+  "database.port": "26257",
+  "database.user": "debezium",
+  "database.password": "dbz",
+  "database.dbname": "custody",
+  "database.sslmode": "disable",
+  "topic.prefix": "cockroach",
+  "schema.include.list": "positions",
+  "table.include.list": "positions.holdings",
+  "cockroachdb.changefeed.sink.type": "sinkless",
+  "cockroachdb.changefeed.include.diff": "true",
+  "tombstones.on.delete": "false"
+}

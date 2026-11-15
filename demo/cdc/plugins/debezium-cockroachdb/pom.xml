@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Not a module of the build: connect.Dockerfile resolves this into the Connect worker's plugin directory
+     debezium-cockroachdb: Debezium's CockroachDB source connector, which reads a CockroachDB changefeed, and its
+     run-time dependencies (the JDBC driver among them). -->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>keel.demo</groupId>
+  <artifactId>connect-plugin-debezium-cockroachdb</artifactId>
+  <version>1</version>
+  <packaging>pom</packaging>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.debezium</groupId>
+      <artifactId>debezium-connector-cockroachdb</artifactId>
+      <version>3.7.1.Final</version>
+    </dependency>
+  </dependencies>
+</project>
