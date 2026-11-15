@@ -5,9 +5,9 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 // keel catalog: Iceberg REST catalog server. Author: Paul Howard.
 //
 //   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas
-//                              (PostgreSQL only)
-//   ./gradlew build -Pheavy    every test but those tagged overnight or cas: the build half of the
-//                              heavy pass, which ./heavy.sh runs before every bite
+//                              (PostgreSQL only), and a check that every recorded bite still applies
+//   ./gradlew build -Pheavy    every test but those tagged overnight or cas, each run afresh: the build
+//                              half of the heavy pass, which ./heavy.sh runs before every bite
 //   ./gradlew build -Pnightly  the overnight run, never part of a build: the tests tagged overnight
 //                              (load, engine matrix, per-mutation fault sweeps) and the CAS test on
 //                              all four backends at 1,000 rounds
@@ -15,6 +15,7 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 //                              test, heavy and overnight ones included
 
 plugins {
+    base
     id("org.springframework.boot") version "4.1.2" apply false
     id("io.spring.dependency-management") version "1.1.7" apply false
 }
@@ -22,6 +23,33 @@ plugins {
 val heavy = providers.gradleProperty("heavy").isPresent
 val nightly = providers.gradleProperty("nightly").isPresent
 val bites = providers.gradleProperty("bites").isPresent
+
+// Every recorded bite (bites/*/*.patch) must still apply to the tree. A change that moves the code a bite
+// breaks fails here, in the branch that moved it, which records the bite again (CLAUDE.md, Bites); before, it
+// surfaced only in the next heavy pass. Each patch is checked on its own, as bites/run.sh applies it.
+// Applying is not biting: only bites/run.sh shows a bite still makes its test fail.
+val bitesApply = tasks.register("bitesApply") {
+    description = "Checks that every recorded bite still applies (git apply --check)."
+    val root = rootDir
+    val patches = fileTree("bites") { include("*/*.patch") }
+    doLast {
+        val all = patches.files.sorted()
+        val failed = all.mapNotNull { patch ->
+            val git = ProcessBuilder("git", "apply", "--check", patch.path).directory(root)
+                .redirectErrorStream(true).start()
+            val output = git.inputStream.bufferedReader().readText().trim()
+            if (git.waitFor() == 0) null else "${patch.relativeTo(root).invariantSeparatorsPath}: $output"
+        }
+        if (failed.isNotEmpty()) {
+            throw GradleException("${failed.size} of ${all.size} bites no longer apply; record each again " +
+                "against today's code (CLAUDE.md, Bites):\n" + failed.joinToString("\n"))
+        }
+        logger.lifecycle("All ${all.size} bites apply.")
+    }
+}
+tasks.named("check") {
+    dependsOn(bitesApply)
+}
 
 // OneDrive marks every new folder read-only within seconds, and Java cannot delete a read-only
 // folder. In a checkout under OneDrive, Gradle then fails as soon as a task replaces its own old
@@ -116,8 +144,11 @@ subprojects {
         }
         if (nightly) {
             systemProperty("keel.suite.cas-rounds", "1000")
-            // The CAS test looks for a race and the load runs measure, so each overnight run is a new
-            // sample: never reused.
+        }
+        if (nightly || heavy) {
+            // The CAS test and the heavy tier's race and fault tests look for a race, and the load runs
+            // measure, so each run is a new sample: never a result reused from an earlier run with the same
+            // inputs, from this checkout or from the build cache every worktree shares.
             outputs.upToDateWhen { false }
             outputs.cacheIf { false }
         }

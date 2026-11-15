@@ -4,6 +4,7 @@ import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import keel.catalog.security.TestIdp;
+import keel.catalog.tests.kafka.TestKafka;
 import keel.catalog.tests.s3.TestS3;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -12,7 +13,6 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.testcontainers.kafka.KafkaContainer;
-import org.testcontainers.utility.DockerImageName;
 
 /**
  * Everything a catalog server needs besides its database: Kafka for audit (a load that vends credentials
@@ -40,8 +40,7 @@ final class Stack implements AutoCloseable {
 
     Stack(boolean withDr) {
         postgres = new PostgresCluster(withDr);
-        kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
-                .withEnv("KAFKA_HEAP_OPTS", "-Xms384m -Xmx384m");
+        kafka = TestKafka.container("384m");
         kafka.start();
         s3 = TestS3.get();
         bucket = s3.bucket("warehouse-" + STACKS.incrementAndGet());

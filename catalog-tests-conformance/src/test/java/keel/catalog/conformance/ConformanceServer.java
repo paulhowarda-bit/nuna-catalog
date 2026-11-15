@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import keel.catalog.security.TestIdp;
 import keel.catalog.server.CatalogServer;
+import keel.catalog.tests.kafka.TestKafka;
 import keel.catalog.tests.s3.TestS3;
 
 import java.net.URI;
@@ -55,8 +56,7 @@ final class ConformanceServer {
         postgres.start();
         TestS3 s3 = TestS3.get();
         // Audit is on (M7): every load hands out credentials, and a credential issue needs Kafka's ack.
-        KafkaContainer kafka = new KafkaContainer(DockerImageName.parse(System.getProperty("kafka.image")))
-                .withEnv("KAFKA_HEAP_OPTS", "-Xms256m -Xmx256m");
+        KafkaContainer kafka = TestKafka.container("256m");
         kafka.start();
         TestIdp idp;
         RSAKey key;

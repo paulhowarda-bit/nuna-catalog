@@ -2,7 +2,8 @@ plugins {
     `java-library`
 }
 
-description = "Test support: the one S3 store every test uses, chosen by -Ps3=silo|ceph|aws."
+description = "Test support: the one S3 store every test uses, chosen by -Ps3=silo|ceph|aws, and the Kafka broker " +
+    "a test starts (TestKafka)."
 
 dependencies {
     // The synchronous clients only, as in catalog-objectstore; their HTTP client is apache5-client.
@@ -23,4 +24,5 @@ dependencies {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
     implementation("org.testcontainers:testcontainers")
+    api("org.testcontainers:testcontainers-kafka")
 }
