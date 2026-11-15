@@ -36,7 +36,7 @@ today.
 
 Its rules hold at work. Some of its facts describe Paul's home machine:
 
-- The absolute paths (`C:/Users/paulh/OneDrive/Desktop/code/keel-catalog`) mean your main checkout.
+- The absolute paths (`C:/Users/paulh/code/keel-catalog`) mean your main checkout.
 - `org.gradle.workers.max=2` and "Docker has 8 GB" are sized for his laptop. Leave the setting unless Paul
   changes it.
 - `docker-desktop` is his laptop's Kubernetes context. At work, name your cluster's context wherever a test or
