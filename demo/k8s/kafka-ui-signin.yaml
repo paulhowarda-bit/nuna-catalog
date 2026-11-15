@@ -7,13 +7,25 @@
 # issuer-uri: Spring would look the issuer up at localhost:8180, which inside the pod is not Keycloak. Roles by
 # Keycloak group: the operators (oscar) administer Kafka in kafbat. The analysts, grant admins and stewards
 # (ana, gary, stella) administer topics: create, change settings, produce and clear messages, and delete. They
-# read consumer groups, schemas, connectors and the cluster's settings.
+# only read the topics the demo runs on: the catalog's keel.*, the Connect worker's cdc-connect-*, and those
+# whose names start with "_". A person's rights on a topic are those of every pattern that matches its whole
+# name. They read consumer groups, schemas, connectors and the cluster's settings.
+#
+# kafbat's audit log records every change made through it (topics, messages, consumer groups, connectors, ACLs),
+# with who made it and whether it was refused, in topic __kui-audit-log and in its own log (kubectl logs
+# deployment/kafka-ui, lines from logger "audit"). Reading that topic in kafbat takes the audit permission as
+# well as the topic's, which only the operators hold. kafbat makes the topic when it starts; if Kafka is not up
+# yet, it stops, and Kubernetes starts it again, rather than running without the topic.
 spec:
   template:
     spec:
       containers:
         - name: kafka-ui
           env:
+            - {name: KAFKA_CLUSTERS_0_AUDIT_TOPICAUDITENABLED, value: "true"}
+            - {name: KAFKA_CLUSTERS_0_AUDIT_CONSOLEAUDITENABLED, value: "true"}
+            - {name: KAFKA_CLUSTERS_0_AUDIT_REQUIREAUDITTOPIC, value: "true"}
+            - {name: KAFKA_CLUSTERS_0_AUDIT_LEVEL, value: ALTER_ONLY}
             - name: SPRING_APPLICATION_JSON
               value: |
                 {
@@ -43,7 +55,8 @@ spec:
                         {"resource": "consumer", "value": ".*", "actions": ["all"]},
                         {"resource": "schema", "value": ".*", "actions": ["all"]},
                         {"resource": "connect", "value": ".*", "actions": ["all"]},
-                        {"resource": "acl", "actions": ["all"]}
+                        {"resource": "acl", "actions": ["all"]},
+                        {"resource": "audit", "actions": ["VIEW"]}
                       ]
                     },
                     {
@@ -56,7 +69,9 @@ spec:
                       ],
                       "permissions": [
                         {"resource": "clusterconfig", "actions": ["VIEW"]},
-                        {"resource": "topic", "value": ".*", "actions": ["all"]},
+                        {"resource": "topic", "value": "(?!keel\\.|cdc-connect-|_).*", "actions": ["all"]},
+                        {"resource": "topic", "value": "(keel\\.|cdc-connect-|_).*",
+                         "actions": ["VIEW", "MESSAGES_READ", "ANALYSIS_VIEW"]},
                         {"resource": "consumer", "value": ".*", "actions": ["VIEW"]},
                         {"resource": "schema", "value": ".*", "actions": ["VIEW"]},
                         {"resource": "connect", "value": ".*", "actions": ["VIEW"]}
