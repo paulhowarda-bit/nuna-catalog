@@ -307,7 +307,13 @@ What reaches beyond the machine (checked 2026-11-13):
   sign-in proxy, Silo, PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
   engine images, which need the mirrors in section 2.
 
-The demo runs without TLS, and every page works that way at `localhost`: the console and kafbat with their
+The demo runs without TLS by choice: it holds only test data, and self-signed certificates do not work well at
+work (Paul, 2026-11-15). Hooking it up to work's certificate authority, identity provider and AWS roles can only
+be done there, on site. For sign-in, that means pointing the console, kafbat, CloudBeaver's sign-in proxy and
+Studio's SAML setting at work's identity provider instead of the demo's Keycloak, and giving SingleStore that
+provider's signing certificate (`demo/README.md`, "How CloudBeaver and Studio sign in through Keycloak").
+
+Every page works without TLS at `localhost`: the console and kafbat with their
 Keycloak sign-in, Keycloak's admin console, Studio and CloudBeaver (checked 2026-11-13). Opened by the
 machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
 Crypto only on localhost, and Keycloak's issuer and the console's redirect address are both localhost.
