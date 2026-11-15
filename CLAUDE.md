@@ -4,13 +4,13 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 
 ## Code changes go through a worktree
 
-- Any agent that changes code works in its own git worktree on its own branch: a session started with `use_worktree: true`, or a subagent with `isolation: "worktree"`. Never edit code in the main checkout (`C:/Users/paulh/OneDrive/Desktop/code/keel-catalog`).
+- Any agent that changes code works in its own git worktree on its own branch: a session started with `use_worktree: true`, or a subagent with `isolation: "worktree"`. Never edit code in the main checkout (`C:/Users/paulh/code/keel-catalog`).
 - Bite runs (break a check, see its test fail, restore and hash-check) count as code changes, so they run inside the agent's own worktree, never in the main checkout.
 - Never push unless Paul asks.
 
 ## Builds
 
-- `./gradlew build` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB and CockroachDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover). It also leaves out the `overnight` and `cas` tests below.
+- `./gradlew build` is the fast build, and it tests PostgreSQL only. It leaves out tests tagged `heavy`: the whole Oracle, MongoDB and CockroachDB suites, and every fault-injection test (link cuts, lost requests or answers, stalled replication, paused or killed nodes, failover), except the short Kafka ones it keeps on purpose, each under 20 s: `catalog-audit`'s `BrokerOutageTest` and `KafkaPublishingTest`'s lost-answer and slow-answer tests, and `catalog-server`'s `KafkaOutageTest`. It also leaves out the `overnight` and `cas` tests below.
 - The fast build also checks that every recorded bite still applies (`:bitesApply`, about 20 s); see Bites.
 - `./gradlew build -Pheavy` runs every test, all four databases included, except the `overnight` tests and the CAS test. With `-Pheavy` or `-Pnightly` every test task runs afresh, never from the build cache.
 - Tests tagged `overnight` never run in a build, fast or heavy: all of `catalog-tests-load` (the M8 load, resilience and SLO runs), `EngineMatrixTest`, `catalog-maintenance`'s `LargeExpiryTest` and `LargeOrphanScanTest`, and the two `MutationSuite` sweeps that repeat a lost answer and a link cut before COMMIT for every mutation type. Paul moved them out of the heavy build on 2026-11-11 to shorten it. The heavy build keeps the single lost-answer, lost-COMMIT, in-flight and failover tests on every database.
@@ -18,14 +18,15 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - Every test that needs S3 uses one store, chosen with `-Ps3=silo|ceph|aws` (default `silo`). `aws` also needs `-Pkeel.aws.profile=<CLI profile>`; the run makes its own buckets and role there and deletes them at the end.
 - A new test that waits on purpose or needs a multi-node cluster gets `@Tag("heavy")`. One that runs for minutes (load, soak, SLO, a sweep over every case) gets `@Tag("overnight")`.
 - `gradle.properties` sets `org.gradle.workers.max=2`: two tasks run at once, so at most two modules are under test at a time. Not more: Docker has 8 GB, and a three-node cluster plus one other stack is what fits. The CockroachDB suite lives in `catalog-store-sql-raft`, which nothing depends on; no module's tests wait for another module's tests, so it runs beside the others instead of ahead of them.
+- The keel-demo stack (`demo/README.md`) runs in the same Docker Desktop and takes about 6 GB of it, 7.5 GB with its CDC leg, which leaves a build's containers too little. Every test failure seen beside it has been a wait that ran out: the audit consumer's 30 s, Flyway's 30 s for a PostgreSQL connection, Kafka never reaching RUNNING, Ryuk unreachable. When a build fails that way, look for `keel-demo` pods in `docker ps` before suspecting the change. Rerun once; if it fails again with the demo up, report the branch as ready and say the demo held Docker. Never stop the demo yourself: ask Paul.
 
 ## Landing
 
 - Every landing uses the fast build, whatever the branch changes. Don't run `-Pheavy` outside the heavy pass below.
 - When the work is finished and its build is green, land it without asking Paul:
   1. Merge the current `main` into the branch and run the fast build, `./gradlew build`.
-  2. Run `git -C C:/Users/paulh/OneDrive/Desktop/code/keel-catalog status --porcelain`. If it prints anything, the main checkout is busy: report the branch as ready instead of merging.
-  3. Otherwise run `git -C C:/Users/paulh/OneDrive/Desktop/code/keel-catalog merge --no-ff <branch>`. Use a "Land …" message ending with the attribution line.
+  2. Run `git -C C:/Users/paulh/code/keel-catalog status --porcelain`. If it prints anything, the main checkout is busy: report the branch as ready instead of merging.
+  3. Otherwise run `git -C C:/Users/paulh/code/keel-catalog merge --no-ff <branch>`. Use a "Land …" message ending with the attribution line.
   4. Check that `git cherry -v main <branch>` shows only `-` lines.
 - After a branch lands, the session that started the agent archives it, which removes its worktree, then deletes the branch. Neither step needs asking.
 
