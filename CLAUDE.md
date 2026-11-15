@@ -19,7 +19,7 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - Claim an item before working on it: `./backlog.sh claim <n>` in the worktree that will carry the work. If the claim fails, another agent holds it: take another item. Claim only what you are about to start.
 - When the work is done: `./backlog.sh done <n>`, write what was done, commit, land, then `./backlog.sh release <n>`. If you stop without finishing, release it; it stays open.
 - A worktree subagent cannot land, so the session that starts it claims the item first and releases it after landing.
-- Only Paul drops or defers an item.
+- Only Paul drops, defers or rescopes an item, or answers a question it puts to him. Record each decision in `decision-ledger.md` (an amendment to the D row it touches, quoting him with the date, or a new row) and add `Decided: <date>, <row>` to the item, in one branch: work reads the ledger, never the chats.
 - `./backlog.sh sweep` releases claims whose item is finished or whose worktree is gone with nothing left to land, and lists the rest; `backlog/README.md` says how to judge those.
 
 ## Builds
@@ -50,6 +50,7 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - A branch that adds a guarded check records its bite instead of running it: `bites/<milestone>/<id>.patch`, made with `git diff` of the broken check, headed by a `Module:` line and a `Test:` line (the test that must fail: `Class`, `Class#method` or `Class#method+method`). The two patches in `bites/M2/` show the form. Check it with `git apply --check`, then restore the file.
 - The fast build fails when any recorded bite no longer applies (`:bitesApply`). A branch whose change moves the code a bite breaks records that bite again, with the same break, against its own code.
 - `bites/run.sh` with no arguments runs every bite, in every folder under `bites/`: it applies each patch, runs its test with `-Pbites` (every test but CAS, so `overnight` tests can be selected too), expects a failure, reverts, and checks every tracked file's hash is restored.
+- Its verdicts: BITES when a selected test fails on its own (an assertion, or the code under test throwing); NO BITE when they pass; SETUP when the run proves neither: the patch did not apply or compile, no test ran, or every failure came from starting the tests' fixtures (Gradle's `initializationError` or `executionError`, a Spring context that did not load, Testcontainers on the stack). SETUP fails the run as NO BITE does, and the last line counts it among the failures: "`<n> bites, <f> not biting or not restored (<s> of them SETUP)`". Read a SETUP bite's log in `build/bites/`, fix what stopped the fixtures (often the keel-demo stack holding Docker) and run that bite again. A break that stops a Spring context loading is SETUP too: record such a bite against a test that fails on an assertion. `bites/test-run.sh` checks the verdicts against recorded result files, without Gradle or Docker; run it after changing `judge` or `tally`.
 
 ## The heavy pass, once, after M8
 
