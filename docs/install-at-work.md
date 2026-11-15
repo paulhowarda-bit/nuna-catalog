@@ -270,7 +270,8 @@ running there, but start it only when he asks. Two things to check:
 default `docker-desktop`). That cluster never pulls: every image comes from the local Docker engine. So pull
 each image below from the internal registry and tag it with the name shown
 (`docker tag <registry>/postgres:18.7 postgres:18.7`). `demo.sh` then pulls nothing, and its Dockerfiles build on
-the tagged images.
+the tagged images. `demo.sh` also needs `openssl`, which Git Bash has: it makes Keycloak's signing key and
+CloudBeaver's sign-in secrets once, in `~/.keel-demo/keycloak`.
 
 | Image | Used for |
 |---|---|
@@ -281,6 +282,7 @@ the tagged images.
 | `ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88` | SingleStore with the change-feed connector |
 | `trinodb/trino:484` | Trino |
 | `dbeaver/cloudbeaver:26.2.4` | CloudBeaver, Trino's UI (`demo/k8s/cloudbeaver.Dockerfile`) |
+| `quay.io/oauth2-proxy/oauth2-proxy:v7.15.6` | CloudBeaver's sign-in through Keycloak (`demo/k8s/cloudbeaver.yaml`) |
 | `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
 | `cockroachdb/cockroach:v25.4.20` | the CDC leg's CockroachDB (`demo.sh cdc`; also in section 2) |
 | `maven:3.9.11-eclipse-temurin-21` | building the CDC leg's Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
@@ -301,8 +303,8 @@ What reaches beyond the machine (checked 2026-11-13):
 - **CloudBeaver** loads its page only from localhost and holds no outside connection; its Trino driver is in
   the image. Two features would reach outside, and the demo uses neither: the map view of a geometry value
   (tiles from openstreetmap.org) and the AI assistant (whichever AI service an administrator configures).
-- Everything else in the stack talks only to the cluster: the catalog and its console, Keycloak, Silo,
-  PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
+- Everything else in the stack talks only to the cluster: the catalog and its console, Keycloak, CloudBeaver's
+  sign-in proxy, Silo, PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
   engine images, which need the mirrors in section 2.
 
 The demo runs without TLS, and every page works that way at `localhost`: the console and kafbat with their

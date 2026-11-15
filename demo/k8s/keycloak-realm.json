@@ -9,11 +9,18 @@
   "registrationAllowed": false,
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
+  "privateKey": "${KEEL_REALM_PRIVATE_KEY}",
+  "certificate": "${KEEL_REALM_CERTIFICATE}",
+  "roles": {
+    "client": {
+      "cloudbeaver": [{"name": "admin", "description": "CloudBeaver's team admin: its administrator"}]
+    }
+  },
   "groups": [
     {"name": "demo-analysts"},
     {"name": "demo-grant-admins"},
     {"name": "demo-stewards"},
-    {"name": "demo-operators"}
+    {"name": "demo-operators", "clientRoles": {"cloudbeaver": ["admin"]}}
   ],
   "users": [
     {
@@ -162,6 +169,73 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "cloudbeaver",
+      "name": "CloudBeaver",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEEL_CLOUDBEAVER_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["http://localhost:8185/oauth2/callback"],
+      "webOrigins": ["http://localhost:8185"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:8185/*"
+      },
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "cloudbeaver-teams",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "cloudbeaver",
+            "multivalued": "true",
+            "access.token.claim": "false",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "cloudbeaver_teams",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "false",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "singlestore-studio",
+      "name": "SingleStore Studio",
+      "protocol": "saml",
+      "enabled": true,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": false,
+      "redirectUris": ["http://localhost:8183/api/saml-assert"],
+      "attributes": {
+        "saml.client.signature": "false",
+        "saml.server.signature": "true",
+        "saml.assertion.signature": "true",
+        "saml.signature.algorithm": "RSA_SHA256",
+        "saml.encrypt": "false",
+        "saml.authnstatement": "true",
+        "saml_force_name_id_format": "true",
+        "saml_name_id_format": "username",
+        "saml_assertion_consumer_url_post": "http://localhost:8183/api/saml-assert"
+      }
     }
   ]
 }

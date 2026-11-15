@@ -1,9 +1,15 @@
 # Keycloak: the demo's sign-in with a username and password, until a directory (AD, Entra ID) is configured.
 # Realm keel (keycloak-realm.json, which demo.sh loads as ConfigMap keycloak-realm) holds the demo's people,
-# their groups and the console's client. The browser reaches Keycloak on localhost:8180 (ports.yaml), so its
-# tokens carry issuer http://localhost:8180/realms/keel; the catalog fetches the realm's keys inside the
-# cluster, from http://keycloak:8080. Development mode, with an in-memory database: users and sessions go with
-# the pod, and the realm is imported again when it starts. Only demo.sh applies this; a matrix run has none.
+# their groups and the clients of the console, kafbat, CloudBeaver and SingleStore Studio. The browser reaches
+# Keycloak on localhost:8180 (ports.yaml), so its tokens carry issuer http://localhost:8180/realms/keel; the
+# catalog fetches the realm's keys inside the cluster, from http://keycloak:8080. Development mode, with an
+# in-memory database: users and sessions go with the pod, and the realm is imported again when it starts.
+# Only demo.sh applies this; a matrix run has none.
+#
+# The realm file names its secrets as ${KEEL_...} placeholders, which Keycloak fills from the environment as it
+# imports: Secret keycloak-keys, which demo.sh makes once per machine (~/.keel-demo/keycloak). Among them is the
+# realm's signing key. A key generated at each start would change with every pod, and SingleStore checks Studio's
+# SAML sign-ins against the key's certificate, which it reads only as it starts (singlestore.Dockerfile).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -17,8 +23,8 @@ spec:
   template:
     metadata:
       labels: {app: keycloak}
-      # The realm is imported when the pod starts, so a changed realm file replaces the pod.
-      annotations: {keel-demo/realm: "${KEYCLOAK_REALM_HASH}"}
+      # The realm is imported when the pod starts, so a changed realm file or key replaces the pod.
+      annotations: {keel-demo/realm: "${KEYCLOAK_REALM_HASH}", keel-demo/keys: "${KEYCLOAK_KEYS_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -31,6 +37,12 @@ spec:
             - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
             - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: keel-test}
             - {name: JAVA_OPTS_KC_HEAP, value: "-XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=25"}
+            - name: KEEL_REALM_PRIVATE_KEY
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: realm-private-key}}
+            - name: KEEL_REALM_CERTIFICATE
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: realm-certificate}}
+            - name: KEEL_CLOUDBEAVER_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: cloudbeaver-client-secret}}
           ports:
             - containerPort: 8080
             - containerPort: 9000

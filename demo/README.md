@@ -30,15 +30,19 @@ demo/demo.sh up
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
     issuers, the console's sign-in, and Silo).
   - `keycloak.yaml`: Keycloak in development mode, with realm `keel` (`keycloak-realm.json`): the people
-    below, their groups, and the clients of the console and kafbat. Only the demo runs it; the engine matrix
-    on its own does not.
+    below, their groups, and the clients of the console, kafbat, CloudBeaver and Studio. Its signing key and
+    CloudBeaver's secrets come from Secret `keycloak-keys`, which `up` makes once per machine in
+    `~/.keel-demo/keycloak` (with `openssl`) and keeps. Only the demo runs it; the engine matrix on its own
+    does not.
   - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
-    connector built in (`singlestore.Dockerfile`). A changed connector replaces the pod, and `up` loads the
-    new one again.
+    connector built in and Studio signing people in through Keycloak (`singlestore.Dockerfile`). A changed
+    connector replaces the pod, and `up` loads the new one again.
   - `trino.yaml`: Trino, image `trinodb/trino:484`.
   - `cloudbeaver.yaml`: CloudBeaver Community, image `keel-demo-cloudbeaver:<hash>`:
-    `dbeaver/cloudbeaver:26.2.4` without its version check, and with `demo/CloudBeaverUsers.java`, which adds
-    the people below as the pod starts, each with connections that sign in as them (`cloudbeaver.Dockerfile`).
+    `dbeaver/cloudbeaver:26.2.4` without its version check, signing people in from a proxy's headers, and with
+    `demo/CloudBeaverUsers.java`, which adds the people below as the pod starts, each with connections that
+    sign in as them (`cloudbeaver.Dockerfile`). The proxy, `quay.io/oauth2-proxy/oauth2-proxy:v7.15.6`, runs
+    beside it in the pod and signs people in through Keycloak.
   - `ports.yaml`: the ports below.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, CockroachDB, and
@@ -50,7 +54,7 @@ demo/demo.sh up
 - Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
-  768 MB), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
+  768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
   Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
   CloudBeaver while it runs to make room for Spark. The CDC leg asks for 2.25 GB (Oracle 1.25 GB, Kafka
   Connect 512 MB, CockroachDB 384 MB, using about 450 MB of up to 768 MB, its PostgreSQL 128 MB), so `cdc`
@@ -100,31 +104,64 @@ sessions go with its pod.
 console shows data, grants, the audit trail, governance and the DR freeze together. Separation of duties is
 checked on grants to groups, so nothing in the catalog refuses one person in every group; at work that is
 the directory's to prevent. In kafbat `presenter` administers, as `demo-operators`. Studio and CloudBeaver
-have no `presenter`: use `oscar` there. CloudBeaver shows its administrator every person's connections, so
-`oscar` can show each person's view there without changing user.
+have no `presenter`: Keycloak signs them in, and both refuse them; use `oscar` there. CloudBeaver shows its
+administrator every person's connections, so `oscar` can show each person's view there without changing user.
 
 ### The same people in the other UIs
 
-The four people sign in to every UI that has users, with the same passwords. Outside the console, the
-catalog sees them through Trino, in CloudBeaver: each person's Trino connection sends their own token, so the
-catalog lets them do there what it lets them do in the console.
+The four people sign in once, through Keycloak, and every UI that has users lets them in after that without
+asking for a password. Outside the console, the catalog sees them through Trino, in CloudBeaver: each person's
+Trino connection sends their own token, so the catalog lets them do there what it lets them do in the console.
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
 | kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; read consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
-| SingleStore Studio, <http://localhost:8183> | as SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
-| CloudBeaver, <http://localhost:8185> | as CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
+| SingleStore Studio, <http://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
+| CloudBeaver, <http://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers Kafka, and `demo-analysts`,
 `demo-grant-admins` and `demo-stewards` administer topics, every topic, the catalog's and the CDC leg's included.
 Like the console, kafbat's sign-out leaves Keycloak's session.
+
+How CloudBeaver and Studio sign in through Keycloak, neither of which CloudBeaver Community or Studio does on
+its own terms:
+
+- **CloudBeaver**: oauth2-proxy (`quay.io/oauth2-proxy/oauth2-proxy:v7.15.6`) runs beside it in its pod and
+  takes every request on 8185. It signs the person in with Keycloak (OIDC with PKCE, a confidential client)
+  and passes the request on with the person's username and CloudBeaver teams in headers: team `admin` comes
+  from Keycloak role `admin` of client `cloudbeaver`, which group `demo-operators` holds. CloudBeaver signs a
+  session in from those headers (its reverse-proxy sign-in, `k8s/cloudbeaver-signin.conf`), so it listens only
+  on the pod's 127.0.0.1, has no password sign-in, and adds no users of its own: someone Keycloak signs in
+  who is not one of the four is refused. The proxy sets those headers, and drops `X-Role` and `X-Role-TE`, on
+  every request: CloudBeaver also takes teams from `X-Role` and a role from `X-Role-TE`, and before the proxy
+  dropped them, any person who sent `X-Role: admin` became CloudBeaver's administrator, with everyone's
+  connections (checked 2026-11-15, before and after). CloudBeaver reads the headers only as a session opens,
+  so its Logout ends CloudBeaver's session first, then the proxy's and Keycloak's; signing out of Keycloak
+  anywhere else leaves CloudBeaver signed in as before, for up to 10 hours, like kafbat.
+- **Studio**: Studio signs in with SAML when its cluster has a SAML setting (`k8s/singlestore.Dockerfile`).
+  It sends the browser to Keycloak, which posts back a signed SAML response, and Studio signs in to
+  SingleStore as the username typed, with the response as the password. SingleStore checks it (settings in
+  the master's `memsql.cnf`): Keycloak's signature, against the realm's certificate; the audience
+  `singlestore-studio`; the recipient; and that its NameID, the Keycloak username, is the user signing in.
+  So signed in to Keycloak as `ana`, typing `oscar` is refused ("the SAML NameID is not valid"), and an
+  edited response fails the signature. The people have no SingleStore password, and Studio offers no
+  password sign-in, so `root` uses `demo/demo.sh sql`. The response travels in clear, over http on localhost
+  from the browser to Studio, and SingleStore accepts it again for an hour (the assertion's lifetime, as
+  long as a console token), so anyone who can read that traffic on the machine can sign in as that person
+  meanwhile. At work, TLS and a shorter assertion lifetime (`saml.assertion.lifespan` on the client) would
+  close that.
+- **Keys**: the realm signs with a fixed key, not one Keycloak makes at each start, because SingleStore reads
+  its certificate only as it starts. `up` makes the key, its certificate and CloudBeaver's client and cookie
+  secrets once, with `openssl`, in `~/.keel-demo/keycloak`, and loads them as Secret `keycloak-keys`. To
+  change them, delete that folder and run `up`: Keycloak, CloudBeaver and SingleStore restart with the new
+  ones.
 
 Accounts that run the demo rather than people in it:
 
 | Account | Password | For |
 |---|---|---|
 | Keycloak `admin` | `keel-test` | Keycloak's admin console, <http://localhost:8180/admin> |
-| SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio accepts it too |
+| SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
 | Silo `keeltest` | `keeltest-secret-key` | the S3 store's root; not published outside the cluster |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
 | PostgreSQL `backoffice` | `keel-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
@@ -171,8 +208,8 @@ Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the co
 demo/demo.sh sql
 ```
 
-Or Studio on <http://localhost:8183>, as one of the people above or as `root` (password `keel-test`). Two
-databases, and a third once the engines have run:
+Or Studio on <http://localhost:8183>, as one of the people above, through Keycloak. Two databases, and a
+third once the engines have run:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
@@ -226,7 +263,7 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 ## Trino and CloudBeaver
 
 CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, where the
-people above sign in. Each person has four connections of their own, which sign in as them, and sees only
+people above sign in through Keycloak. Each person has four connections of their own, which sign in as them, and sees only
 those: "keel (Trino, as ana)" for `ana`, and the three CDC sources below. The Trino connection reaches a Trino
 whose catalogs `lakehouse` and `engines` are keel's. It sends Trino the person's own token as the extra
 credential `token`, and Trino hands it to the catalog with each request (`iceberg.rest-catalog.session=USER`).
@@ -411,8 +448,8 @@ control topics, Oracle's schema history and the worker's own `cdc-connect-*` top
 demo/demo.sh down
 ```
 
-This deletes the namespace and everything in it. The signing key and tokens stay in `~/.keel-demo`; the
-next `up` loads the sample data again.
+This deletes the namespace and everything in it. The signing key, tokens and Keycloak's keys stay in
+`~/.keel-demo`; the next `up` loads the sample data again.
 
 ```bash
 demo/demo.sh status

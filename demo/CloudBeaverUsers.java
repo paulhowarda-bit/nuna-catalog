@@ -1,9 +1,12 @@
 /*
  * The demo's people in CloudBeaver, each with connections that sign in as them. The pod's postStart hook
  * (demo/k8s/cloudbeaver.yaml) runs this as the server starts, because CloudBeaver keeps its users and connections
- * inside the pod and every new pod starts without them. It signs in as the administrator (CB_ADMIN_NAME,
- * CB_ADMIN_PASSWORD) and adds each user in DEMO_USERS ("name:password ..."). Then, for every person, the
- * administrator too, it adds four connections and grants them to that person alone:
+ * inside the pod and every new pod starts without them. CloudBeaver takes its users only from Keycloak, through
+ * the sign-in proxy beside it, which names the user and their CloudBeaver teams in two headers
+ * (cloudbeaver.Dockerfile). This runs inside the pod, the one place besides the proxy that reaches CloudBeaver, and
+ * names the administrator (CB_ADMIN_NAME) in those headers itself. It adds each user in DEMO_USERS
+ * ("name:password ..."), whose password is their database password, the same as their Keycloak one. Then, for
+ * every person, the administrator too, it adds four connections and grants them to that person alone:
  *
  *   keel (Trino, as <person>)             Trino as user <person>, sending their catalog token as Trino's extra
  *                                         credential "token". Trino hands it to keel (demo/k8s/trino.yaml), so
@@ -12,11 +15,8 @@
  *   treasury (Oracle, as <person>)        the CDC leg's Oracle, signed in as the person (demo/cdc/oracle.sql)
  *   custody (CockroachDB, as <person>)    the CDC leg's CockroachDB, signed in as the person (demo/cdc/cockroach.sql)
  *
- * A person's database password is their CloudBeaver one, and their token is the file of their name in TOKENS
- * (Secret demo-people-tokens). Each step can run again.
- *
- * CloudBeaver's local sign-in takes a password the way its page sends one: MD5, in uppercase hex. The image
- * compiles this when it is built (demo/k8s/cloudbeaver.Dockerfile).
+ * A person's token is the file of their name in TOKENS (Secret demo-people-tokens). Each step can run again. The
+ * image compiles this when it is built (demo/k8s/cloudbeaver.Dockerfile).
  */
 import java.io.IOException;
 import java.net.CookieManager;
@@ -24,12 +24,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +38,9 @@ static final HttpClient HTTP = HttpClient.newBuilder().cookieHandler(new CookieM
 static final Path TOKENS = Path.of("/opt/keel-demo/tokens");
 /** The project of the connections the administrator shares. */
 static final String SHARED = "g_GlobalConfiguration";
+/** The headers the sign-in proxy sets, as cloudbeaver.Dockerfile names them to CloudBeaver. */
+static final String USER_HEADER = "X-Forwarded-Preferred-Username";
+static final String TEAMS_HEADER = "X-Forwarded-Groups";
 
 void main() throws Exception {
     signInAsAdministrator();
@@ -53,8 +53,6 @@ void main() throws Exception {
         if (!values(existing, "userId").contains(user)) {
             call("query($u: ID!) { createUser(userId: $u, enabled: true) { userId } }", "{\"u\": " + json(user) + "}");
         }
-        call("query($u: ID!, $c: Object!) { setUserCredentials(userId: $u, providerId: \"local\", credentials: $c) }",
-            "{\"u\": " + json(user) + ", \"c\": {\"password\": " + json(md5(password)) + "}}");
     }
     people.put(System.getenv("CB_ADMIN_NAME"), System.getenv("CB_ADMIN_PASSWORD"));
 
@@ -110,14 +108,20 @@ void connection(String connections, String user, String name, String settings) t
     }
 }
 
-/** Waits up to five minutes for the server to answer and to know its administrator, then signs in. */
+/**
+ * Waits up to five minutes for the server to answer and to know its administrator, then opens a session as them.
+ * CloudBeaver signs a new session in from the proxy's headers, which every call here sends: the administrator,
+ * in team admin.
+ */
 void signInAsAdministrator() throws Exception {
-    String query = "query($c: Object) { authLogin(provider: \"local\", credentials: $c) { authStatus } }";
-    String variables = "{\"c\": {\"user\": " + json(System.getenv("CB_ADMIN_NAME")) + ", \"password\": "
-        + json(md5(System.getenv("CB_ADMIN_PASSWORD"))) + "}}";
+    String admin = System.getenv("CB_ADMIN_NAME");
     for (int attempt = 1; ; attempt++) {
         try {
-            call(query, variables);
+            call("mutation { openSession(defaultLocale: \"en\") { valid } }", "{}");
+            String active = call("query { activeUser { userId teams { teamId } } }", "{}");
+            if (!values(active, "userId").contains(admin) || !values(active, "teamId").contains("admin")) {
+                throw new IllegalStateException("the session is not the administrator's: " + active);
+            }
             return;
         } catch (IOException | IllegalStateException e) {
             if (attempt == 150) {
@@ -133,6 +137,8 @@ String call(String query, String variables) throws IOException, InterruptedExcep
     String body = "{\"query\": " + json(query) + ", \"variables\": " + variables + "}";
     HttpResponse<String> answer = HTTP.send(HttpRequest.newBuilder(API)
             .header("Content-Type", "application/json")
+            .header(USER_HEADER, System.getenv("CB_ADMIN_NAME"))
+            .header(TEAMS_HEADER, "admin")
             .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
         HttpResponse.BodyHandlers.ofString());
     if (answer.statusCode() != 200 || answer.body().contains("\"errors\"")) {
@@ -153,9 +159,4 @@ static List<String> values(String json, String field) {
         values.add(value.group(1));
     }
     return values;
-}
-
-static String md5(String password) throws Exception {
-    return HexFormat.of().withUpperCase()
-        .formatHex(MessageDigest.getInstance("MD5").digest(password.getBytes(StandardCharsets.UTF_8)));
 }

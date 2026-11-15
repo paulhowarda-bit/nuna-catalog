@@ -1,8 +1,17 @@
 # CloudBeaver Community (image cloudbeaver.Dockerfile, without its version check), a SQL UI in the browser.
 # Only demo.sh applies this; ports.yaml publishes it on localhost:8185.
 #
-# The demo's people sign in with their Keycloak passwords: oscar is CloudBeaver's administrator, and ana,
-# gary and stella are users. Each person has four connections of their own, which sign in as them:
+# The demo's people sign in through Keycloak, as in the console and kafbat, so someone signed in there is not
+# asked again. CloudBeaver Community cannot sign in through Keycloak itself, so oauth2-proxy runs beside it in
+# the pod (container signin): it signs the person in with Keycloak (client cloudbeaver) and passes requests on to
+# CloudBeaver, naming the person (preferred_username) and their CloudBeaver teams (claim cloudbeaver_teams, from
+# the client's roles: Keycloak group demo-operators holds role admin) in two headers. It sets those, and drops
+# the other headers CloudBeaver would sign a person in from, on every request, so a browser can set none of them.
+# CloudBeaver trusts the headers, so it listens on 127.0.0.1 only and has no password sign-in
+# (cloudbeaver.Dockerfile). oscar is CloudBeaver's administrator, and ana, gary and stella are users; anyone else
+# Keycloak signs in, presenter included, is refused. CloudBeaver's Logout ends CloudBeaver's session, the
+# proxy's and Keycloak's (signout.html, below). Each person has four connections of their own, which sign in as
+# them:
 #
 #   keel (Trino, as <person>)             Trino (trino.yaml), catalogs lakehouse and engines. The connection
 #                                         sends the person's catalog token, and Trino hands it to keel, so keel
@@ -16,7 +25,8 @@
 # oscar, as administrator, sees and may use everyone's. The drivers are in the image.
 #
 # CB_ADMIN_* configure the server at its first start, so no setup wizard shows; the postStart hook adds
-# DEMO_USERS and everyone's connections (demo/CloudBeaverUsers.java), and the pod is not ready until it has.
+# DEMO_USERS and everyone's connections (demo/CloudBeaverUsers.java), and the pod is not ready until it has. The
+# passwords there are the people's database passwords, for their CDC connections; CloudBeaver itself checks none.
 # Everything lives in the pod, so a new pod starts from this file again.
 apiVersion: apps/v1
 kind: Deployment
@@ -32,11 +42,12 @@ spec:
   template:
     metadata:
       labels: {app: cloudbeaver}
-      # The hook reads this file and the tokens (Secret demo-people-tokens) only as the pod starts, so a changed
-      # file or new tokens replace the pod.
+      # The hook reads this file and the tokens (Secret demo-people-tokens), and the proxy its secrets (Secret
+      # keycloak-keys), only as the pod starts, so a changed file, new tokens or new secrets replace the pod.
       annotations:
         keel-demo/manifest: "${MANIFEST_HASH}"
         keel-demo/tokens: "${TOKENS_HASH}"
+        keel-demo/keys: "${KEYCLOAK_KEYS_HASH}"
     spec:
       enableServiceLinks: false
       containers:
@@ -59,12 +70,120 @@ spec:
                 command: ["java", "-Xmx64m", "-cp", "/opt/keel-demo", "CloudBeaverUsers"]
           volumeMounts:
             - {name: tokens, mountPath: /opt/keel-demo/tokens, readOnly: true}
+          # No readiness probe: CloudBeaver answers on 127.0.0.1 only, which the kubelet cannot reach, and the
+          # postStart hook holds the container back until CloudBeaver answers and has its users.
+          resources:
+            requests: {memory: 368Mi}
+            limits: {memory: 768Mi}
+        - name: signin
+          image: ${OAUTH2_PROXY_IMAGE}
+          imagePullPolicy: Never
+          # Its provider, upstreams and headers are in ConfigMap cloudbeaver-signin, below.
+          args: ["--alpha-config=/etc/oauth2-proxy/alpha.yaml"]
+          env:
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: cloudbeaver-cookie-secret}}
+            # Every page of the demo is on localhost, and a browser sends a cookie to every port of a host.
+            - {name: OAUTH2_PROXY_COOKIE_NAME, value: keel_cloudbeaver_signin}
+            - {name: OAUTH2_PROXY_COOKIE_SECURE, value: "false"}
+            # As long as Keycloak's own session can last (ssoSessionMaxLifespan).
+            - {name: OAUTH2_PROXY_COOKIE_EXPIRE, value: 10h}
+            - {name: OAUTH2_PROXY_REDIRECT_URL, value: "http://localhost:8185/oauth2/callback"}
+            - {name: OAUTH2_PROXY_EMAIL_DOMAINS, value: "*"}
+            - {name: OAUTH2_PROXY_SKIP_PROVIDER_BUTTON, value: "true"}
+            # The sign-out page ends at Keycloak's logout page.
+            - {name: OAUTH2_PROXY_WHITELIST_DOMAINS, value: "localhost:8180"}
+          volumeMounts:
+            - {name: signin, mountPath: /etc/oauth2-proxy, readOnly: true}
+            - {name: signin-secret, mountPath: /etc/oauth2-proxy-secret, readOnly: true}
+          ports:
+            - containerPort: 4180
           readinessProbe:
-            httpGet: {path: /, port: 8978}
+            httpGet: {path: /ping, port: 4180}
             periodSeconds: 5
           resources:
-            requests: {memory: 384Mi}
-            limits: {memory: 768Mi}
+            requests: {memory: 16Mi}
+            limits: {memory: 64Mi}
       volumes:
         - name: tokens
           secret: {secretName: demo-people-tokens}
+        - name: signin
+          configMap:
+            name: cloudbeaver-signin
+            items:
+              - {key: alpha.yaml, path: alpha.yaml}
+              - {key: signout.html, path: signout/index.html}
+        - name: signin-secret
+          secret:
+            secretName: keycloak-keys
+            items:
+              - {key: cloudbeaver-client-secret, path: client-secret}
+---
+# The sign-in proxy's configuration (oauth2-proxy's alpha configuration: only it can strip request headers).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudbeaver-signin
+data:
+  alpha.yaml: |
+    server:
+      bindAddress: 0.0.0.0:4180
+    upstreamConfig:
+      upstreams:
+        - id: cloudbeaver
+          path: /
+          uri: http://127.0.0.1:8978/
+        - id: signout
+          path: /keel-signout/
+          uri: file:///etc/oauth2-proxy/signout/
+    # The browser goes to Keycloak on localhost:8180; the proxy fetches tokens and keys inside the cluster, from
+    # keycloak:8080. Keycloak names itself localhost:8180 either way, so discovery, which would fetch
+    # localhost:8180 from inside the pod, is off, and each address is given.
+    providers:
+      - id: keycloak
+        name: Keycloak
+        provider: oidc
+        clientID: cloudbeaver
+        clientSecretFile: /etc/oauth2-proxy-secret/client-secret
+        loginURL: http://localhost:8180/realms/keel/protocol/openid-connect/auth
+        redeemURL: http://keycloak:8080/realms/keel/protocol/openid-connect/token
+        scope: openid email profile
+        code_challenge_method: S256
+        oidcConfig:
+          issuerURL: http://localhost:8180/realms/keel
+          skipDiscovery: true
+          jwksURL: http://keycloak:8080/realms/keel/protocol/openid-connect/certs
+          emailClaim: email
+          groupsClaim: cloudbeaver_teams
+          audienceClaims: [aud]
+    # Every header CloudBeaver signs a person in from, set here and only here: the proxy drops whatever the browser
+    # sent under these names. The person and their teams (cloudbeaver-signin.conf); the teams header always
+    # ends with team user, so CloudBeaver never falls back to X-Role, and a person Keycloak no longer gives role
+    # admin loses team admin at their next sign-in. X-Role is CloudBeaver's fallback for teams and X-Role-TE its
+    # header for a user's role: a browser that set X-Role: admin was CloudBeaver's administrator.
+    injectRequestHeaders:
+      - name: X-Forwarded-Preferred-Username
+        values:
+          - claimSource: {claim: preferred_username}
+      - name: X-Forwarded-Groups
+        values:
+          - claimSource: {claim: groups}
+          - secretSource: {value: user}
+      - name: X-Role
+        values: []
+      - name: X-Role-TE
+        values: []
+  # CloudBeaver's Logout comes here (cloudbeaver-signin.conf). CloudBeaver reads the person from the headers only
+  # as a session opens, so its session must end before the proxy's: otherwise the next person to sign in on this
+  # browser would find the last one's CloudBeaver session. Then the proxy's sign-out, and Keycloak's.
+  signout.html: |
+    <!doctype html>
+    <meta charset="utf-8">
+    <title>Signing out of CloudBeaver</title>
+    <p>Signing out of CloudBeaver…</p>
+    <script>
+      fetch("/api/gql", {method: "POST", headers: {"Content-Type": "application/json"},
+                         body: JSON.stringify({query: "mutation { closeSession }"})})
+        .finally(() => location.replace("/oauth2/sign_out?rd="
+          + encodeURIComponent("http://localhost:8180/realms/keel/protocol/openid-connect/logout")));
+    </script>

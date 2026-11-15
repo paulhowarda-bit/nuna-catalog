@@ -55,8 +55,9 @@ spec:
   type: LoadBalancer
   selector: {app: cloudbeaver}
   ports:
+    # The sign-in proxy beside CloudBeaver (cloudbeaver.yaml); CloudBeaver itself answers on the pod's 127.0.0.1.
     - port: 8185
-      targetPort: 8978
+      targetPort: 4180
 ---
 apiVersion: v1
 kind: Service
