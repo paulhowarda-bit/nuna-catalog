@@ -8,7 +8,8 @@ and 41 add the catalog's own meters and spans, and 49 the worker's spans.
 The worker's meters are in worker-metrics.md and its spans in worker-spans.md, the catalog's in catalog-metrics.md and
 its spans in spans.md. What the
 catalog keeps of the worker's own work, each table's assessment and the recent scans, for the console's health pages,
-is in table-health.md (backlog 47).
+is in table-health.md (backlog 47). The console's health page, and how a server gathers catalog health from every
+server, is in health-page.md (backlog 48).
 
 ## What is exported
 
