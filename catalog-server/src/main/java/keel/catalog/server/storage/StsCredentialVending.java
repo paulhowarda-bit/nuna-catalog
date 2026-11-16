@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,7 +46,7 @@ import org.slf4j.LoggerFactory;
  * with its own storage identity (D30). Each caller's credentials are cached for most
  * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
  * thrown away (D23). A trusted engine that asks for no delegation gets none. Each AssumeRole is observed as
- * {@value #ASSUME_ROLE} (docs/observability/spans.md); a cached set calls nothing.
+ * {@value #ASSUME_ROLE} (docs/observability/spans.md); a cached set calls nothing, and its vend says it was cached.
  */
 public final class StsCredentialVending implements CredentialVending {
 
@@ -88,9 +89,13 @@ public final class StsCredentialVending implements CredentialVending {
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
                 caller.principal().id(), subject, caller.engine());
+        AtomicBoolean minted = new AtomicBoolean();
         VendedCredentials credentials;
         try {
-            credentials = cache.get(key, () -> mint(bound, request, access));
+            credentials = cache.get(key, () -> {
+                minted.set(true);
+                return mint(bound, request, access);
+            });
         } catch (LocationRejectedException e) {
             throw CatalogError.of(403, "ForbiddenException", "Table location " + e.location()
                     + " is outside storage profile " + bound.name());
@@ -99,7 +104,7 @@ public final class StsCredentialVending implements CredentialVending {
             throw CatalogError.of(503, "ServiceUnavailableException",
                     "Storage credentials cannot be issued now; retry later");
         }
-        return vended(bound, credentials, request.refreshPath());
+        return vended(bound, credentials, request.refreshPath(), !minted.get());
     }
 
     private VendedCredentials mint(CatalogStorage.Bound bound, Request request, Access access) {
@@ -123,7 +128,8 @@ public final class StsCredentialVending implements CredentialVending {
         return credentials;
     }
 
-    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String refreshPath) {
+    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String refreshPath,
+                                 boolean cached) {
         Map<String, String> secrets = new LinkedHashMap<>();
         secrets.put("s3.access-key-id", credentials.accessKeyId());
         secrets.put("s3.secret-access-key", credentials.secretAccessKey());
@@ -138,7 +144,7 @@ public final class StsCredentialVending implements CredentialVending {
         config.put("client.refresh-credentials-endpoint", refreshPath);
         config.put("client.refresh-credentials-enabled", "true");
         return new Vended(config, List.of(new StorageCredential(credentials.location(), secrets)),
-                epoch(credentials.accessKeyId()), Optional.of(credentials.expiresAt()));
+                epoch(credentials.accessKeyId()), Optional.of(credentials.expiresAt()), cached);
     }
 
     /** Only a header that lists nothing but {@code none} declines delegation. */
