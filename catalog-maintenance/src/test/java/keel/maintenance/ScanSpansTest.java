@@ -61,8 +61,10 @@ class ScanSpansTest {
         List<Observation.Context> parts = named(ScanSpans.PART);
         assertThat(parts).extracting(Observation.Context::getContextualName)
                 .containsExactly("maintenance work-list", "maintenance purge");
-        assertThat(parts).allSatisfy(part ->
-                assertThat(part.getParentObservation().getContextView()).isSameAs(scan));
+        for (Observation.Context part : parts) {
+            assertThat(part.getParentObservation()).as("the scan").isNotNull();
+            assertThat(part.getParentObservation().getContextView()).isSameAs(scan);
+        }
         assertThat(keys(parts.get(0))).isEqualTo(Map.of(ScanSpans.PART_KEY, "work-list", ScanSpans.OUTCOME, "ok",
                 ScanSpans.EXCEPTION, ScanSpans.NONE));
         assertThat(parts.get(0).getHighCardinalityKeyValues()).extracting(KeyValue::getKey)
