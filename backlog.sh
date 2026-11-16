@@ -172,11 +172,16 @@ cmd_claim() {
 }
 
 cmd_done() {
-    local n=$1 f=backlog/$1.md
+    local n=$1 f=backlog/$1.md line
     holds "$n" || die "you do not hold item $n: claim it first"
     [ -f "$f" ] || die "$f is not in this worktree: merge main first"
     grep -q '^Status: open$' "$f" || die "$f is not open"
-    sed -i "s/^Status: open\$/Status: done\nDone: $today on $branch/" "$f"
+    # The Done: line reaches awk as data, never inside an expression: branches are named claude/<name>, and a / or &
+    # in a sed replacement ends it or stands for the match. The item changes only once the new copy holds both lines.
+    line="Done: $today on $branch"
+    DONE=$line awk '$0 == "Status: open" { print "Status: done"; print ENVIRON["DONE"]; next } { print }' "$f" > "$f.new" &&
+        grep -qx 'Status: done' "$f.new" && grep -qxF "$line" "$f.new" && mv "$f.new" "$f" ||
+        { rm -f "$f.new"; die "could not mark $f done; it is unchanged"; }
     echo "$f marked done: say what was done beneath it, commit and land, then ./backlog.sh release $n"
 }
 
