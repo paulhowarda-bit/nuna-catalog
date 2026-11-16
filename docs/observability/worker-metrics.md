@@ -47,7 +47,7 @@ The kinds of `keel.maintenance.failures`:
 | `work-list` | Reading a page of the work list. The scan fails. |
 | `table-load` | Loading a table the work list named. |
 | `table-changed` | The table under that name is now another table, by id, so nothing ran on it. Normal after a drop and recreate between the work list read and the load; the next scan sees the new table. |
-| `snapshot-expiry` | Expiring a table's snapshots, or recording the files that left unreferenced. |
+| `snapshot-expiry` | Expiring a table's snapshots, or recording the files it left unreferenced. |
 | `manifest-rewrite` | Rewriting a table's manifests, or recording files. |
 | `orphan-scan` | Scanning a table's location for orphans, or recording them. |
 | `compaction` | Launching a compaction Job. |
