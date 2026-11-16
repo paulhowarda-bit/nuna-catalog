@@ -6,6 +6,7 @@ import keel.catalog.core.commit.GovernanceChain;
 import keel.catalog.iceberg.MetadataViews;
 import keel.catalog.iceberg.RestRequest;
 import keel.catalog.server.governance.ReadAudit;
+import keel.catalog.server.metrics.CatalogMetrics;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogObject.Kind;
 import keel.catalog.store.CatalogRecord;
@@ -44,9 +45,10 @@ class ViewRoutes {
     private final Callers callers;
     private final Guard guard;
     private final ReadAudit reads;
+    private final CatalogMetrics meters;
 
     ViewRoutes(CatalogStore store, Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views,
-               Callers callers, Guard guard, ReadAudit reads) {
+               Callers callers, Guard guard, ReadAudit reads, CatalogMetrics meters) {
         this.store = store;
         this.lookup = lookup;
         this.objects = objects;
@@ -55,6 +57,7 @@ class ViewRoutes {
         this.callers = callers;
         this.guard = guard;
         this.reads = reads;
+        this.meters = meters;
     }
 
     @GetMapping(VIEWS)
@@ -80,6 +83,7 @@ class ViewRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, name), request)
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
                         Optional.ofNullable(key));
+        meters.commit(catalog.name(), Operations.CREATE_VIEW, reply);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
@@ -124,6 +128,7 @@ class ViewRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, view), request)
                 .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), Operations.REPLACE_VIEW, reply);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
@@ -147,6 +152,7 @@ class ViewRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerView(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
+        meters.commit(catalog.name(), Operations.REGISTER_VIEW, reply);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 

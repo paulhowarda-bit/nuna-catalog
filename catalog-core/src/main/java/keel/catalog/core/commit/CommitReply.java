@@ -1,5 +1,6 @@
 package keel.catalog.core.commit;
 
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -26,8 +27,17 @@ public sealed interface CommitReply {
     record Applied(How how) implements CommitReply {
     }
 
-    /** A definite 4xx: 400 BadRequest, 403 Forbidden, 404 NoSuch*, 409 CommitFailed or AlreadyExists. */
-    record Failure(int status, String type, String message) implements CommitReply {
+    /**
+     * A definite 4xx: 400 BadRequest, 403 Forbidden, 404 NoSuch*, 409 CommitFailed or AlreadyExists.
+     *
+     * @param requirement for a 409 a requirement refused, its type as the spec names it ({@code assert-ref-snapshot-id}
+     *                    and so on); empty for any other failure, and for a failure replayed by its idempotency key
+     */
+    record Failure(int status, String type, String message, Optional<String> requirement) implements CommitReply {
+
+        public Failure(int status, String type, String message) {
+            this(status, type, message, Optional.empty());
+        }
     }
 
     /**

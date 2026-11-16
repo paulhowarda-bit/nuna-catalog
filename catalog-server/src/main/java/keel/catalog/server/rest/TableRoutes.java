@@ -11,6 +11,7 @@ import keel.catalog.iceberg.Outcome;
 import keel.catalog.iceberg.RestRequest;
 import keel.catalog.iceberg.RestResponse;
 import keel.catalog.server.governance.ReadAudit;
+import keel.catalog.server.metrics.CatalogMetrics;
 import keel.catalog.server.rest.CredentialVending.Vended;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogObject.Kind;
@@ -70,10 +71,12 @@ class TableRoutes {
     private final Guard guard;
     private final ReadAudit reads;
     private final Clock clock;
+    private final CatalogMetrics meters;
 
     TableRoutes(CatalogStore store, Lookup lookup, ObjectRoutes objects, Engines engines, MetadataViews views,
                 CredentialVending vending, MetricsSink metrics, ServerAlerts alerts,
-                RestSettings settings, Callers callers, Guard guard, Clock clock, ReadAudit reads) {
+                RestSettings settings, Callers callers, Guard guard, Clock clock, ReadAudit reads,
+                CatalogMetrics meters) {
         this.store = store;
         this.lookup = lookup;
         this.objects = objects;
@@ -87,6 +90,7 @@ class TableRoutes {
         this.guard = guard;
         this.clock = clock;
         this.reads = reads;
+        this.meters = meters;
     }
 
     @GetMapping(TABLES)
@@ -118,6 +122,7 @@ class TableRoutes {
         }
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table.name()), request)
                 .createTable(name, json, request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), Operations.CREATE_TABLE, reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -190,6 +195,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
                 .commitTable(ObjectRoutes.name(catalog, record, levels, table), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), Operations.UPDATE_TABLE, reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -240,6 +246,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
+        meters.commit(catalog.name(), Operations.REGISTER_TABLE, reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -283,6 +290,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
                 .unregisterTable(ObjectRoutes.name(catalog, record, levels, table),
                         existing.map(CatalogObject::id), request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), Operations.UNREGISTER_TABLE, reply);
         return ObjectRoutes.reply(reply, done -> Http.json(200,
                 RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
     }
@@ -383,9 +391,10 @@ class TableRoutes {
     private Vended vend(Target target, UUID tableId, String location, boolean write) {
         String refresh = "v1/" + segment(target.prefix()) + "/namespaces/" + segment(target.namespace()) + "/tables/"
                 + segment(target.table()) + "/credentials";
-        return vending.vend(new CredentialVending.Request(target.catalog(), tableId,
-                AuditEvents.path(Lookup.levels(target.namespace()), target.table()), location,
-                target.request().caller(), target.request().requestId(), target.delegation(), refresh, write));
+        return meters.vend(target.catalog().name(), () -> vending.vend(new CredentialVending.Request(
+                target.catalog(), tableId, AuditEvents.path(Lookup.levels(target.namespace()), target.table()),
+                location, target.request().caller(), target.request().requestId(), target.delegation(), refresh,
+                write)));
     }
 
     private static String segment(String value) {

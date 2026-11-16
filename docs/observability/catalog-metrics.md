@@ -1,0 +1,183 @@
+# Catalog metrics
+
+The catalog server's own meters (backlog 39), beside Spring Boot's standard ones. They go out with every other
+metric (README.md, "What is exported"). The code is in `catalog-server`, package `keel.catalog.server.metrics`, with
+the alert counters in `rest/ServerAlerts.java`. The dashboards and alert rules at work (item 44) and the console's
+health page (item 48) read these names; item 43 records how they land in work's Prometheus.
+
+Names are Micrometer's, with dots. Over OTLP Micrometer sends timers in milliseconds by default. A Prometheus backend
+turns the dots into underscores and adds unit and type suffixes, so `keel.catalog.requests` arrives as a family such
+as `keel_catalog_requests_milliseconds_bucket`.
+
+Each server holds only its own meters. A deployment's figure is the sum over its servers.
+
+## Labels
+
+A catalog meter carries only these labels. Each has a bounded set of values. No meter is ever labelled with a table,
+namespace, principal or filter value, nor a warehouse prefix that names no catalog. That keeps the Prometheus series
+bounded, and those names may be sensitive. The table-level detail is in the log lines instead: the metrics report
+line (item 37) and the alert lines on the `keel.alerts` logger.
+
+| Label | Values |
+|---|---|
+| `catalog` | The name of a catalog that exists. It is `none` for a call that named no catalog, named one that does not exist, or was refused before its catalog was looked up (a 401, for example). |
+| `operation.id` | The operationId the Iceberg REST spec gives the route, such as `loadTable`, `updateTable`, `commitTransaction`, `loadCredentials`, `reportMetrics` or `getConfig`. |
+| `outcome` | Set per meter; see the meters below. |
+| `error.type` | The Iceberg error type the client was answered with, such as `CommitFailedException`, `NoSuchTableException` or `NotAuthorizedException`. For the token route it is the OAuth error, such as `invalid_client`. It is `none` when there was no error, and also when an error body names no type. |
+| `requirement.type` | For a commit refused because a requirement failed, that requirement's type in the spec, such as `assert-ref-snapshot-id` or `assert-table-uuid`. It is `none` otherwise. |
+| `report.type` | `scan-report` or `commit-report`. |
+| `operation` | A commit report's snapshot operation: `append`, `replace`, `overwrite` or `delete`. Any other value the client sent is `other`, and a scan report has `none`. |
+| `engine.name` | The `engine-name` in the report's `metadata`, as the client sent it, such as `spark` or `trino`. The first 20 distinct names a server sees are kept; later names count as `other`. So does a name that is not 1 to 32 letters, digits, spaces, dots, hyphens or underscores starting with a letter or digit. It is `none` when the report gives no engine name. |
+
+## Meters
+
+| Meter | Type | Labels | The question it answers |
+|---|---|---|---|
+| `keel.catalog.requests` | Timer; histogram buckets at 10, 50 and 300 ms | `catalog`, `operation.id`, `outcome` (`2xx`, `3xx`, `4xx`, `5xx`), `error.type` | How long does each kind of Iceberg call take, and how often does it fail, and with what? |
+| `keel.catalog.commits` | Counter | `catalog`, `operation.id`, `outcome`, `requirement.type`, `error.type` | How do commits end, and how many lose to a concurrent change, by requirement? |
+| `keel.catalog.credential.vends` | Timer | `catalog`, `outcome` (`issued`, `none`, `failed`), `error.type` | How long does vending storage credentials take, and how often does it fail? |
+| `keel.catalog.metadata.cache.lookups` | Counter | `outcome` (`hit`, `miss`) | How often is a table's current metadata file served from memory rather than read from the object store? |
+| `keel.catalog.alerts.metadata.integrity` | Counter | none | Has a metadata file stopped hashing to what its pointer recorded? |
+| `keel.catalog.alerts.regulated.schema.change` | Counter | none | Has a commit changed a regulated table's schema or partition spec? |
+| `keel.catalog.alerts.large.metadata` | Counter | none | Is a loaded table's metadata over the size or snapshot limit (D14)? |
+| `keel.catalog.report.*` | One timer or distribution summary per report result | `catalog`, `report.type`, `operation`, `engine.name` | What do engines report about their own scans and commits? |
+
+### `keel.catalog.requests`
+
+This meter times every call to a route of the Iceberg REST spec: the `/v1/` routes and `POST /v1/oauth/tokens`. Any
+other request is left to Boot's `http.server.requests`: the management API, the console and the actuator.
+
+The timing starts right after the request's trace and request ID are set, before authentication, so a refused call
+is timed too. It ends when the response has been written.
+
+The histogram's bucket bounds are the build plan's SLOs (R7, M8). They are set in code (`RequestMetrics.SLO`), not in
+`application.yaml`:
+
+- Load p99 under 50 ms: `operation.id="loadTable"`, `outcome="2xx"`.
+- A 304 under 10 ms: `operation.id="loadTable"`, `outcome="3xx"`. The share of loads answered 304 (D14) is the 3xx
+  count over the 2xx and 3xx counts together.
+- Commit p99 under 300 ms: `operation.id` `updateTable` or `commitTransaction`, `outcome="2xx"`.
+- At least 500 commits a second: the rate of that count, summed over the servers.
+
+### `keel.catalog.commits`
+
+There is one count for each reply of the commit engine to a route that commits. The routes are `createTable`,
+`updateTable`, `registerTable`, `unregisterTable`, `commitTransaction`, `createView`, `replaceView` and
+`registerView`. A staged create commits nothing, so it is not counted.
+
+| `outcome` | Meaning |
+|---|---|
+| `committed` | The change was committed. |
+| `unchanged` | The request changed nothing, so nothing was written. |
+| `replayed` | An `Idempotency-Key` repeated a commit already made, and its first answer was given again. |
+| `requirement-failed` | A requirement did not hold: 409 `CommitFailedException`. `requirement.type` names the requirement. This is contention with another writer, or a stale client. |
+| `refused` | Any other refusal (4xx): a missing table, a bad update, a commit that lost to concurrent commits too many times, a governance rule. `error.type` says which. A refusal given again for a repeated `Idempotency-Key` counts here too, even one first refused by a requirement, because no requirement was checked the second time. |
+| `unknown` | The commit may or may not have happened: 5xx `CommitStateUnknownException`. The client must not retry blindly. |
+| `failed` | Any other server failure (5xx), including the catalog store being unavailable (`ServiceUnavailableException`, nothing applied). |
+
+### `keel.catalog.credential.vends`
+
+This meter times each vend of storage credentials (D21). A vend comes from a table load, a create, a commit or a
+registration response, or from the `loadCredentials` route.
+
+| `outcome` | Meaning |
+|---|---|
+| `issued` | Credentials were handed out. A vend served from the credential cache counts here too. |
+| `none` | No credentials, because a trusted engine declined them (`X-Iceberg-Access-Delegation`). |
+| `failed` | None could be issued. `error.type` is the error, such as `ServiceUnavailableException` when STS or the audit is down, or `ForbiddenException` when the location is outside the storage profile. |
+
+A failed vend in a create, commit or registration response does not fail the response. The change is already
+committed, so the response carries no credentials and the client asks the credentials route.
+
+Cache hits are not yet counted apart from new issues. That needs a change in `storage/StsCredentialVending.java`,
+which waits for item 41 to land (backlog 53).
+
+### `keel.catalog.metadata.cache.lookups`
+
+This meter counts lookups in the in-memory cache of metadata files (D14). The lookups come from loads, and from
+commits that read their base. A `hit` is a file found in memory. A `miss` is one read from the object store and then
+cached. The count is per server and covers every catalog, so it has no `catalog` label.
+
+### The alerts
+
+Each alert kind is counted once each time it fires, alongside its line on the `keel.alerts` logger. The line names
+the table and file; the counter does not.
+
+- `keel.catalog.alerts.metadata.integrity` should page.
+- `keel.catalog.alerts.regulated.schema.change` and `keel.catalog.alerts.large.metadata` should warn.
+- Large metadata is alerted once per file a server loads, not on every load.
+
+### `keel.catalog.report.*`: client reports
+
+A client's scan or commit report (`reportMetrics`, D13) is aggregated by its results. Each result the spec names
+becomes a meter named `keel.catalog.report.` followed by the result's name with its hyphens made dots. For example,
+`total-duration` becomes `keel.catalog.report.total.duration`.
+
+- A timer result becomes a timer. The report's `total-duration` is converted by the `time-unit` the result states,
+  never an assumed one, and recorded as one timing. A timer result with a count of 0 records nothing.
+- A counter result becomes a distribution summary, with one sample of its value per report. Its stated `unit` must be
+  the spec's for that result (`bytes` or `count`), otherwise it is skipped. The `bytes` ones have base unit bytes.
+- A result the spec does not name is skipped, not invented. So is every result of a report type the server does not
+  know.
+
+The per-table detail stays in the report's log line (item 37).
+
+Scan report results (`report.type="scan-report"`):
+
+| Meter | Type |
+|---|---|
+| `keel.catalog.report.total.planning.duration` | timer |
+| `keel.catalog.report.result.data.files` | count |
+| `keel.catalog.report.result.delete.files` | count |
+| `keel.catalog.report.total.data.manifests` | count |
+| `keel.catalog.report.total.delete.manifests` | count |
+| `keel.catalog.report.scanned.data.manifests` | count |
+| `keel.catalog.report.skipped.data.manifests` | count |
+| `keel.catalog.report.scanned.delete.manifests` | count |
+| `keel.catalog.report.skipped.delete.manifests` | count |
+| `keel.catalog.report.total.file.size.in.bytes` | bytes |
+| `keel.catalog.report.total.delete.file.size.in.bytes` | bytes |
+| `keel.catalog.report.skipped.data.files` | count |
+| `keel.catalog.report.skipped.delete.files` | count |
+| `keel.catalog.report.indexed.delete.files` | count |
+| `keel.catalog.report.equality.delete.files` | count |
+| `keel.catalog.report.positional.delete.files` | count |
+| `keel.catalog.report.dvs` | count |
+
+Commit report results (`report.type="commit-report"`):
+
+| Meter | Type |
+|---|---|
+| `keel.catalog.report.total.duration` | timer |
+| `keel.catalog.report.attempts` | count |
+| `keel.catalog.report.added.data.files` | count |
+| `keel.catalog.report.removed.data.files` | count |
+| `keel.catalog.report.total.data.files` | count |
+| `keel.catalog.report.added.delete.files` | count |
+| `keel.catalog.report.added.equality.delete.files` | count |
+| `keel.catalog.report.added.positional.delete.files` | count |
+| `keel.catalog.report.added.dvs` | count |
+| `keel.catalog.report.removed.delete.files` | count |
+| `keel.catalog.report.removed.equality.delete.files` | count |
+| `keel.catalog.report.removed.positional.delete.files` | count |
+| `keel.catalog.report.removed.dvs` | count |
+| `keel.catalog.report.total.delete.files` | count |
+| `keel.catalog.report.added.records` | count |
+| `keel.catalog.report.removed.records` | count |
+| `keel.catalog.report.total.records` | count |
+| `keel.catalog.report.added.files.size.bytes` | bytes |
+| `keel.catalog.report.removed.files.size.bytes` | bytes |
+| `keel.catalog.report.total.files.size.bytes` | bytes |
+| `keel.catalog.report.added.positional.deletes` | count |
+| `keel.catalog.report.removed.positional.deletes` | count |
+| `keel.catalog.report.total.positional.deletes` | count |
+| `keel.catalog.report.added.equality.deletes` | count |
+| `keel.catalog.report.removed.equality.deletes` | count |
+| `keel.catalog.report.total.equality.deletes` | count |
+| `keel.catalog.report.manifests.created` | count |
+| `keel.catalog.report.manifests.replaced` | count |
+| `keel.catalog.report.manifests.kept` | count |
+| `keel.catalog.report.manifest.entries.processed` | count |
+
+The lists are iceberg-core's own (`RestRequest.reportResults`); `CatalogMetricsTest` fails if this page misses one or
+names one that does not exist.

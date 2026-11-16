@@ -3,21 +3,34 @@ package keel.catalog.iceberg;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.AbstractMap;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.UnprocessableEntityException;
 import org.apache.iceberg.expressions.ExpressionUtil;
+import org.apache.iceberg.expressions.Expressions;
+import org.apache.iceberg.metrics.CommitMetrics;
+import org.apache.iceberg.metrics.CommitMetricsResult;
 import org.apache.iceberg.metrics.CommitReport;
+import org.apache.iceberg.metrics.DefaultMetricsContext;
+import org.apache.iceberg.metrics.ImmutableCommitReport;
 import org.apache.iceberg.metrics.ImmutableScanReport;
 import org.apache.iceberg.metrics.MetricsReport;
+import org.apache.iceberg.metrics.ScanMetrics;
+import org.apache.iceberg.metrics.ScanMetricsResult;
 import org.apache.iceberg.metrics.ScanReport;
 import org.apache.iceberg.rest.requests.CommitTransactionRequest;
 import org.apache.iceberg.rest.requests.CommitTransactionRequestParser;
@@ -85,15 +98,41 @@ public final class RestRequest {
      * For a scan or commit report, {@code json} is the whole report, a scan's filter sanitized. For a type this server
      * does not know, {@code reportType} and {@code tableName} ("" when none was given) are the client's own strings,
      * and {@code json} holds those two alone: nothing else of the body leaves the catalog.
+     *
+     * @param operation  a commit report's operation as the client sent it ({@code append} and so on), "" otherwise
+     * @param engineName the {@code engine-name} in the report's metadata as the client sent it, "" when none
+     * @param results    a scan or commit report's results that the spec names; none for any other type
      */
-    public record MetricsSummary(String reportType, String tableName, long snapshotId, long bytes, String json) {
+    public record MetricsSummary(String reportType, String tableName, long snapshotId, long bytes, String json,
+                                 String operation, String engineName, List<Result> results) {
         public static final String SCAN = "scan-report";
         public static final String COMMIT = "commit-report";
+
+        public MetricsSummary {
+            results = List.copyOf(results);
+        }
 
         /** A scan or commit report, whose type name is the spec's, not one the client chose. */
         public boolean known() {
             return SCAN.equals(reportType) || COMMIT.equals(reportType);
         }
+    }
+
+    /**
+     * One result of a scan or commit report, by the name the spec gives it: {@code total-duration}, {@code attempts},
+     * {@code added-data-files}, {@code skipped-data-manifests} and so on. A result the spec does not name, and a
+     * counter in a unit other than the one the spec gives it, are left out.
+     */
+    public sealed interface Result permits Timed, Counted {
+        String name();
+    }
+
+    /** A timer result: the time it measured in all, converted by the time unit the report states, over count events. */
+    public record Timed(String name, Duration total, long count) implements Result {
+    }
+
+    /** A counter result, in the unit the report states and the spec gives it: {@code bytes} or {@code count}. */
+    public record Counted(String name, long value, String unit) implements Result {
     }
 
     /** A request the server cannot accept: {@code status} is 400 or 422, {@code type} the Iceberg error class. */
@@ -206,13 +245,106 @@ public final class RestRequest {
         return guarded(() -> JsonUtil.parse(json, node -> {
             ReportMetricsRequest request = ReportMetricsRequestParser.fromJson(node);
             return switch (request.report()) {
-                case ScanReport scan -> new MetricsSummary(MetricsSummary.SCAN, scan.tableName(), scan.snapshotId(), bytes,
-                        compact(ImmutableScanReport.copyOf(scan).withFilter(ExpressionUtil.sanitize(scan.filter()))));
-                case CommitReport commit -> new MetricsSummary(MetricsSummary.COMMIT, commit.tableName(),
-                        commit.snapshotId(), bytes, compact(commit));
+                case ScanReport scan -> {
+                    String compact = compact(ImmutableScanReport.copyOf(scan)
+                            .withFilter(ExpressionUtil.sanitize(scan.filter())));
+                    yield new MetricsSummary(MetricsSummary.SCAN, scan.tableName(), scan.snapshotId(), bytes, compact,
+                            "", engineName(scan.metadata()), results(compact, SCAN_RESULTS));
+                }
+                case CommitReport commit -> {
+                    String compact = compact(commit);
+                    yield new MetricsSummary(MetricsSummary.COMMIT, commit.tableName(), commit.snapshotId(), bytes,
+                            compact, commit.operation() == null ? "" : commit.operation(),
+                            engineName(commit.metadata()), results(compact, COMMIT_RESULTS));
+                }
                 case null, default -> unknownReport(node, bytes);
             };
         }));
+    }
+
+    private static final String TIMER = "timer";
+
+    /**
+     * The results the spec gives each report type, as "timer" or a counter's unit, read from iceberg-core's own
+     * reports with every result present: a scan's from fresh scan metrics, a commit's from a snapshot summary that
+     * holds every key.
+     */
+    private static final Map<String, String> SCAN_RESULTS = specResults(ImmutableScanReport.builder()
+            .tableName("spec").snapshotId(0).filter(Expressions.alwaysTrue()).schemaId(0)
+            .scanMetrics(ScanMetricsResult.fromScanMetrics(ScanMetrics.of(new DefaultMetricsContext())))
+            .build());
+    private static final Map<String, String> COMMIT_RESULTS = specResults(ImmutableCommitReport.builder()
+            .tableName("spec").snapshotId(0).sequenceNumber(0).operation("append")
+            .commitMetrics(CommitMetricsResult.from(CommitMetrics.of(new DefaultMetricsContext()),
+                    new AbstractMap<String, String>() {
+                        @Override
+                        public Set<Map.Entry<String, String>> entrySet() {
+                            return Set.of();
+                        }
+
+                        @Override
+                        public boolean containsKey(Object key) {
+                            return true;
+                        }
+
+                        @Override
+                        public String get(Object key) {
+                            return "0";
+                        }
+                    }))
+            .build());
+
+    /**
+     * The results the spec gives a scan or commit report, by name: {@code timer}, or the unit of a counter
+     * ({@code bytes} or {@code count}). Empty for any other report type.
+     */
+    public static Map<String, String> reportResults(String reportType) {
+        return switch (reportType) {
+            case MetricsSummary.SCAN -> SCAN_RESULTS;
+            case MetricsSummary.COMMIT -> COMMIT_RESULTS;
+            default -> Map.of();
+        };
+    }
+
+    private static Map<String, String> specResults(MetricsReport report) {
+        Map<String, String> results = new LinkedHashMap<>();
+        metrics(compact(report)).properties().forEach(result -> results.put(result.getKey(),
+                result.getValue().has("time-unit") ? TIMER : result.getValue().get("unit").asText()));
+        return Map.copyOf(results);
+    }
+
+    /**
+     * The results of a report as the parser wrote it again, so only names it knows: a timer's total converted by the
+     * time unit it states, a counter kept only in the unit the spec gives it.
+     */
+    private static List<Result> results(String compact, Map<String, String> spec) {
+        List<Result> results = new ArrayList<>();
+        metrics(compact).properties().forEach(entry -> {
+            String name = entry.getKey();
+            JsonNode result = entry.getValue();
+            String unit = spec.get(name);
+            if (TIMER.equals(unit)) {
+                TimeUnit timeUnit = TimeUnit.valueOf(result.get("time-unit").asText().toUpperCase(Locale.ROOT));
+                results.add(new Timed(name, Duration.of(result.get("total-duration").asLong(), timeUnit.toChronoUnit()),
+                        result.get("count").asLong()));
+            } else if (unit != null && unit.equals(result.get("unit").asText())) {
+                results.add(new Counted(name, result.get("value").asLong(), unit));
+            }
+        });
+        return results;
+    }
+
+    private static JsonNode metrics(String compact) {
+        try {
+            return Metadata.REQUESTS.readTree(compact).path("metrics");
+        } catch (JsonProcessingException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    private static String engineName(Map<String, String> metadata) {
+        String name = metadata == null ? null : metadata.get("engine-name");
+        return name == null ? "" : name;
     }
 
     /** Written again by the parser: one compact line, whatever whitespace the client sent. */
@@ -231,7 +363,7 @@ public final class RestRequest {
             }
             gen.writeEndObject();
         }, false);
-        return new MetricsSummary(type, table == null ? "" : table, -1, bytes, kept);
+        return new MetricsSummary(type, table == null ? "" : table, -1, bytes, kept, "", "", List.of());
     }
 
     /**
