@@ -100,14 +100,17 @@ public final class CatalogMetrics {
                 .increment();
     }
 
-    /** Times one credential vend (D21): issued, none (no credentials for this caller) or failed. */
+    /**
+     * Times one credential vend (D21): issued (new credentials), cached (from the credential cache), none (no
+     * credentials for this caller) or failed.
+     */
     public Vended vend(String catalog, Supplier<Vended> vend) {
         long start = System.nanoTime();
         String outcome = "failed";
         String error = NONE;
         try {
             Vended vended = vend.get();
-            outcome = vended.credentials().isEmpty() ? NONE : "issued";
+            outcome = vended.credentials().isEmpty() ? NONE : vended.cached() ? "cached" : "issued";
             return vended;
         } catch (CatalogError e) {
             error = e.type();

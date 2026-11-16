@@ -29,6 +29,7 @@ import keel.catalog.server.S3ForTests;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.Operations;
 import keel.catalog.server.rest.ServerAlerts;
+import keel.catalog.server.storage.StsCredentialVending;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -68,8 +69,9 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 /**
  * The catalog's own meters (backlog 39), read from the server's registry after driving its routes: every call timed
  * by the spec's operationId with its outcome and error type, in SLO buckets; commits by outcome and the requirement
- * that failed; loads, 304s and the metadata cache; credential vends; alerts; client reports by the units they state;
- * and labels that never name a namespace, table, person or filter value. Each test reads what its own calls added.
+ * that failed; loads, 304s and the metadata cache; credential vends, new or cached; alerts; client reports by the
+ * units they state; and labels that never name a namespace, table, person or filter value. Each test reads what its
+ * own calls added.
  * Every loaded metadata file is "large" here, so each first load of a file alerts.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -250,11 +252,12 @@ class CatalogMetricsRoutesTest {
     @Test
     @DisplayName("credential vends are timed, and a failed vend is counted with the error the client gets")
     void vendsAreTimedAndFailuresCounted() throws Exception {
-        double issued = vends("issued", "none");
+        double cached = vends("cached", "none");
         double failed = vends("failed", "ServiceUnavailableException");
 
+        // The table's create issued its creator credentials, so the creator's load is served them from the cache.
         assertThat(send("GET", table(), null).statusCode()).isEqualTo(200);
-        assertThat(vends("issued", "none")).isEqualTo(issued + 1);
+        assertThat(vends("cached", "none")).isEqualTo(cached + 1);
 
         AUDIT_DOWN.set(true);
         // A new table's credentials are new, and cannot be audited: its create answers without them, its load fails.
@@ -267,6 +270,26 @@ class CatalogMetricsRoutesTest {
         assertThat(timer.totalTime(TimeUnit.NANOSECONDS)).isPositive();
         eventually(() -> assertThat(timerCount("loadTable", "trading", "5xx", "ServiceUnavailableException"))
                 .isGreaterThanOrEqualTo(1));
+    }
+
+    @Test
+    @DisplayName("a vend that mints new credentials counts as issued, and one served from the cache as cached")
+    void cachedVendsAreCountedApartFromNewIssues() throws Exception {
+        // Only the table's creator has credentials for it so far.
+        String bob = IssuerForTests.bearer("bob-meters", IssuerForTests.GROUP);
+        double issued = vends("issued", "none");
+        double cached = vends("cached", "none");
+        double assumed = assumeRoles();
+
+        assertThat(call("GET", "/v1/trading" + table(), null, bob).statusCode()).isEqualTo(200);
+        assertThat(vends("issued", "none")).as("Bob's first load mints").isEqualTo(issued + 1);
+        assertThat(vends("cached", "none")).isEqualTo(cached);
+        assertThat(assumeRoles()).as("with one AssumeRole").isEqualTo(assumed + 1);
+
+        assertThat(call("GET", "/v1/trading" + table(), null, bob).statusCode()).isEqualTo(200);
+        assertThat(vends("cached", "none")).as("his second is served from the cache").isEqualTo(cached + 1);
+        assertThat(vends("issued", "none")).isEqualTo(issued + 1);
+        assertThat(assumeRoles()).as("with none").isEqualTo(assumed + 1);
     }
 
     @Test
@@ -438,6 +461,11 @@ class CatalogMetricsRoutesTest {
     private double vends(String outcome, String error) {
         Timer timer = registry.find(VENDS).tags(CATALOG, "trading", OUTCOME, outcome, ERROR_TYPE, error).timer();
         return timer == null ? 0 : timer.count();
+    }
+
+    /** STS AssumeRole calls, each one observation (spans.md). */
+    private double assumeRoles() {
+        return registry.find(StsCredentialVending.ASSUME_ROLE).timers().stream().mapToDouble(Timer::count).sum();
     }
 
     private double counter(String name) {

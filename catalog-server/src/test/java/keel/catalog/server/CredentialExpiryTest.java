@@ -45,7 +45,7 @@ class CredentialExpiryTest {
         @Primary
         CredentialVending expiringCredentials() {
             return request -> new CredentialVending.Vended(
-                    Map.of(), List.of(), EPOCH.get(), Optional.of(EXPIRES.get()));
+                    Map.of(), List.of(), EPOCH.get(), Optional.of(EXPIRES.get()), false);
         }
     }
 

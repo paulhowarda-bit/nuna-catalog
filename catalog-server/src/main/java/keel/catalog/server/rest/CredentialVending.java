@@ -50,11 +50,12 @@ public interface CredentialVending {
      * @param config      FileIO properties for the load response's {@code config}
      * @param epoch       changes whenever the credentials would; part of the ETag (D14)
      * @param expiresAt   when the credentials expire, if they do
+     * @param cached      whether the credentials came from the credential cache, so none were issued for this vend
      */
     record Vended(Map<String, String> config, List<StorageCredential> credentials, String epoch,
-                  Optional<Instant> expiresAt) {
+                  Optional<Instant> expiresAt, boolean cached) {
 
-        public static final Vended NONE = new Vended(Map.of(), List.of(), "none", Optional.empty());
+        public static final Vended NONE = new Vended(Map.of(), List.of(), "none", Optional.empty(), false);
 
         public Vended {
             config = Map.copyOf(config);
