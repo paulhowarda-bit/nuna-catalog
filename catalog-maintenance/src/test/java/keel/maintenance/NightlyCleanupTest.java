@@ -5,6 +5,7 @@ import static keel.maintenance.WorkerMetricsTest.tableNeed;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -12,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -37,7 +39,8 @@ import org.junit.jupiter.api.Test;
  *   <li>In the window each table is assessed once a night; Jobs start for the needy tables only, equality deletes
  *       first and then the neediest, as many at once as the settings allow, each to stop at the window's end. The
  *       first scan after it counts the Jobs it cut off and the needy tables left over; the next night starts
- *       again.</li>
+ *       again. The catalog keeps each assessment, how each Job stands or ended, and each scan, as the worker
+ *       reports them (D38).</li>
  *   <li>An orphan scan the window's end cuts short is not recorded, so the table is scanned the next night, though
  *       the orphan interval is two.</li>
  * </ul>
@@ -56,6 +59,8 @@ class NightlyCleanupTest {
     private final TestCatalog catalog = TestCatalog.get();
     private final FakeClock clock = new FakeClock();
     private final MeterRegistry meters = new SimpleMeterRegistry();
+    /** The tables {@link #compacted} made, by id. */
+    private final Map<UUID, TableIdentifier> names = new HashMap<>();
 
     @AfterEach
     void quiet() {
@@ -125,7 +130,7 @@ class NightlyCleanupTest {
             UUID equality = id(withDeletes);
             UUID many = id(compacted(writer, "many_small", 10, Map.of()));
             UUID some = id(compacted(writer, "some_small", 6, Map.of()));
-            compacted(writer, "fine", 1, Map.of());
+            UUID fine = id(compacted(writer, "fine", 1, Map.of()));
 
             ScanReport opened = at(OPENS, worker);
             assertThat(opened.tablesAssessed).isEqualTo(4);
@@ -139,6 +144,27 @@ class NightlyCleanupTest {
             assertThat(tableNeed(meters, "some_small")).isEqualTo(1.2);
             assertThat(meters.find(WorkerMetrics.TABLE_NEED).tag(WorkerMetrics.TABLE, "fine").gauge())
                     .as("no need, no series").isNull();
+            // The catalog keeps each assessment and the Job's start, as the worker reports them (D38).
+            JsonNode assessed = health(equality).path("assessment");
+            assertAbout(assessed.path("assessed-at"), OPENS);
+            assertThat(assessed.path("reasons").toString()).isEqualTo("[\"equality-deletes\"]");
+            assertThat(assessed.path("data-files").asLong()).isEqualTo(4);
+            assertThat(assessed.path("small-files").asLong()).as("four, too few to rewrite at a threshold of 100")
+                    .isZero();
+            assertThat(assessed.path("equality-delete-files").asLong()).isEqualTo(1);
+            assertThat(assessed.path("delete-files").asLong()).isEqualTo(1);
+            assertThat(health(equality).at("/last-compaction/outcome").asText()).isEqualTo("running");
+            assertAbout(health(equality).at("/last-compaction/started-at"), OPENS);
+            assertThat(health(many).at("/assessment/score").asDouble()).isEqualTo(2.0);
+            assertThat(health(many).at("/assessment/small-files").asLong()).isEqualTo(10);
+            assertThat(health(many).at("/assessment/small-file-share").asDouble()).isEqualTo(1.0);
+            assertThat(health(fine).at("/assessment/needs-compaction").asBoolean(true)).isFalse();
+            assertThat(health(fine).at("/assessment/reasons").isEmpty()).isTrue();
+            JsonNode scanned = catalog.scan(opened.id);
+            assertThat(scanned.path("worker").asText()).isEqualTo(TestCatalog.WORKER);
+            assertThat(scanned.path("outcome").asText()).isEqualTo("succeeded");
+            assertAbout(scanned.path("started-at"), OPENS);
+            assertAbout(scanned.path("ended-at"), OPENS);
 
             assertThat(at(OPENS.plus(Duration.ofMinutes(30)), worker).compactionsStarted).as("one Job at a time")
                     .isZero();
@@ -146,6 +172,9 @@ class NightlyCleanupTest {
             ScanReport midnight = at(Instant.parse("2027-03-28T00:00:00Z"), worker);
             assertThat(midnight.compactionsStarted).isEqualTo(1);
             assertThat(compactor.order()).as("then the neediest").containsExactly(equality, many);
+            assertThat(health(equality).at("/last-compaction/outcome").asText()).isEqualTo("succeeded");
+            assertAbout(health(equality).at("/last-compaction/started-at"), OPENS);
+            assertAbout(health(equality).at("/last-compaction/ended-at"), Instant.parse("2027-03-28T00:00:00Z"));
             assertThat(at(CLOSES.minusSeconds(1), worker).compactionsStarted).isZero();
 
             ScanReport closed = at(CLOSES, worker);
@@ -155,10 +184,18 @@ class NightlyCleanupTest {
             assertThat(counter(meters, "keel.maintenance.compactions.cut.off")).isEqualTo(1);
             assertThat(counter(meters, "keel.maintenance.tables.left.over")).isEqualTo(1);
             assertThat(compactor.launches(some)).isZero();
+            assertThat(health(many).at("/last-compaction/outcome").asText()).isEqualTo("cut-off");
+            assertAbout(health(many).at("/last-compaction/ended-at"), CLOSES);
+            assertThat(health(some).at("/assessment/needs-compaction").asBoolean()).isTrue();
+            assertThat(health(some).has("last-compaction")).as("never compacted").isFalse();
 
             ScanReport next = at(NEXT_OPENS, worker);
             assertThat(next.tablesAssessed).as("the next night, assessed again").isEqualTo(4);
             assertThat(compactor.order()).containsExactly(equality, many, equality);
+            assertAbout(health(some).at("/assessment/assessed-at"), NEXT_OPENS);
+            assertThat(health(equality).at("/last-compaction/outcome").asText()).as("tonight's Job").isEqualTo(
+                    "running");
+            assertAbout(health(equality).at("/last-compaction/started-at"), NEXT_OPENS);
         }
     }
 
@@ -228,10 +265,21 @@ class NightlyCleanupTest {
         TableIdentifier id = TestCatalog.table(writer, name);
         Table table = writer.loadTable(id);
         appendSmallFiles(table, files);
-        Map<String, String> compaction = new java.util.HashMap<>(policy);
+        Map<String, String> compaction = new HashMap<>(policy);
         compaction.put("compaction.enabled", "true");
         catalog.policy(id, compaction);
+        names.put(id(table), id);
         return table;
+    }
+
+    /** The table's health as the catalog keeps it from the worker's reports (D38). */
+    private JsonNode health(UUID table) {
+        return catalog.health(names.get(table));
+    }
+
+    /** The instant the catalog keeps, within the minute after {@code at}: the worker's clock runs on once set. */
+    private static void assertAbout(JsonNode instant, Instant at) {
+        assertThat(Instant.parse(instant.asText())).isBetween(at, at.plus(Duration.ofMinutes(1)));
     }
 
     private static UUID id(Table table) {

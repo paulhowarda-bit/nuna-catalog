@@ -9,6 +9,7 @@ import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitHook;
 import keel.catalog.store.CommitLookup;
 import keel.catalog.store.CommitResult;
+import keel.catalog.store.CompactionRun;
 import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Grant;
 import keel.catalog.store.GrantRecord;
@@ -17,6 +18,7 @@ import keel.catalog.store.IdempotencyResult;
 import keel.catalog.store.JournalRecord;
 import keel.catalog.store.KeyState;
 import keel.catalog.store.LegalHold;
+import keel.catalog.store.MaintenanceScan;
 import keel.catalog.store.Name;
 import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.ObjectCreation;
@@ -31,6 +33,8 @@ import keel.catalog.store.SchemaVersion;
 import keel.catalog.store.Securable;
 import keel.catalog.store.StorageProfile;
 import keel.catalog.store.StoreException;
+import keel.catalog.store.TableAssessment;
+import keel.catalog.store.TableHealth;
 import keel.catalog.store.TrustedEngine;
 import keel.catalog.store.WriteResult;
 import java.sql.Connection;
@@ -69,6 +73,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlOutbox outbox;
     private final SqlGovernance governance;
     private final SqlDeletions deletions;
+    private final SqlHealth health;
 
     public SqlCatalogStore(DataSource dataSource) {
         this(dataSource, CommitHook.NONE);
@@ -87,6 +92,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.outbox = new SqlOutbox(transactions);
         this.governance = new SqlGovernance(transactions);
         this.deletions = new SqlDeletions(transactions);
+        this.health = new SqlHealth(transactions);
     }
 
     // ---- commit core (sections 4 and 5.1) ----
@@ -331,6 +337,38 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public WriteResult completeDeletions(UUID objectId, List<UUID> ids, Change change) {
         return deletions.complete(objectId, ids, change);
+    }
+
+    // ---- the worker's state (D38) ----
+
+    @Override
+    public WriteResult recordAssessment(UUID objectId, TableAssessment assessment) {
+        return health.recordAssessment(objectId, assessment);
+    }
+
+    @Override
+    public WriteResult recordCompaction(UUID objectId, CompactionRun compaction) {
+        return health.recordCompaction(objectId, compaction);
+    }
+
+    @Override
+    public Optional<TableHealth> readTableHealth(UUID objectId) {
+        return health.read(objectId);
+    }
+
+    @Override
+    public Page<TableHealth> listNeediestTables(PageRequest page) {
+        return health.listNeediest(page);
+    }
+
+    @Override
+    public void recordScan(MaintenanceScan scan, int keep) {
+        health.recordScan(scan, keep);
+    }
+
+    @Override
+    public List<MaintenanceScan> listScans() {
+        return health.listScans();
     }
 
     // ---- grants ----

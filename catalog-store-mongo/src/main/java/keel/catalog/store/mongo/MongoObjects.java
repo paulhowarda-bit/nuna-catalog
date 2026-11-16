@@ -18,6 +18,7 @@ import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
 import static keel.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static keel.catalog.store.mongo.MongoCatalogStore.POINTER;
+import static keel.catalog.store.mongo.MongoCatalogStore.TABLE_HEALTH;
 
 import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoCollection;
@@ -322,7 +323,7 @@ final class MongoObjects {
         });
     }
 
-    /** Marks a claimed object purged and deletes its grants and its pending deletions. */
+    /** Marks a claimed object purged and deletes its grants, its pending deletions and its health. */
     WriteResult completePurge(UUID objectId, String claimant, Change change) {
         return transactions.change(change, "purge complete", tx -> {
             Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(PURGING)));
@@ -338,6 +339,7 @@ final class MongoObjects {
                             .append("purgeClaimant", BsonNull.VALUE).append("clock", tx.clock())));
             tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
             tx.collection(PENDING_DELETION).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId)));
+            tx.collection(TABLE_HEALTH).deleteOne(tx.session, byId(uuid(objectId)));
             return WriteResult.APPLIED;
         });
     }
@@ -423,7 +425,7 @@ final class MongoObjects {
         return transactions.database().getCollection(OBJECT, BsonDocument.class);
     }
 
-    private static CatalogObject object(BsonDocument doc) {
+    static CatalogObject object(BsonDocument doc) {
         return new CatalogObject(uuid(doc.get("catalogId")), uuid(doc.get("_id")), uuid(doc.get("namespaceId")),
                 new Name(doc.getString("nameNorm").getValue(), doc.getString("name").getValue()),
                 CatalogObject.Kind.valueOf(doc.getString("kind").getValue()),

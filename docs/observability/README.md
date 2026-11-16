@@ -5,6 +5,10 @@ OpenTelemetry collector over OTLP/HTTP, and write their log lines to stdout as J
 endpoint is named, so the tests, the demo and a laptop run need no collector. Backlog 38 laid this foundation; 39, 40
 and 41 add the catalog's own meters and spans.
 
+The worker's meters are in worker-metrics.md, the catalog's in catalog-metrics.md and its spans in spans.md. What the
+catalog keeps of the worker's own work, each table's assessment and the recent scans, for the console's health pages,
+is in table-health.md (backlog 47).
+
 ## What is exported
 
 - **Metrics.** Spring Boot's standard meters, for example `http.server.requests` (a timer per route template,

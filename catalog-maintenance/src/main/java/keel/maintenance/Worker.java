@@ -71,6 +71,7 @@ final class Worker implements AutoCloseable {
     /** The tables this scan found due an orphan scan. */
     private final List<Management.TableWork> orphansDue = new ArrayList<>();
     private final WorkerMetrics metrics;
+    private final HealthReports health;
 
     /**
      * @param window         the nightly cleanup window: compaction and orphan scans start only inside it
@@ -88,6 +89,7 @@ final class Worker implements AutoCloseable {
         this.orphanInterval = orphanInterval;
         this.compactionJobs = compactionJobs;
         this.metrics = new WorkerMetrics(meters, clock);
+        this.health = new HealthReports(management);
     }
 
     /** The worker the settings describe. */
@@ -105,19 +107,27 @@ final class Worker implements AutoCloseable {
 
     /**
      * One scan: the tables, the night's compaction Jobs and orphan scans, then the purges, then the due deletions;
-     * recorded as meters ({@link WorkerMetrics}).
+     * recorded as meters ({@link WorkerMetrics}), and reported to the catalog as it starts and ends (D38).
      */
     ScanReport runOnce() {
         ScanReport report = new ScanReport();
-        metrics.scan(report, () -> {
-            Instant now = clock.instant();
+        metrics.scan(report, () -> scan(report.id, report));
+        return report;
+    }
+
+    private void scan(UUID id, ScanReport report) {
+        Instant now = clock.instant();
+        health.scanStarted(id, now, report);
+        boolean ended = false;
+        Optional<String> error = Optional.empty();
+        try {
             Optional<CleanupWindow.Night> night = window.night(now);
             if (tonight != null && !night.equals(Optional.of(tonight.night))) {
                 tonight.close(report);
                 tonight = null;
             }
             if (night.isPresent() && tonight == null) {
-                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics);
+                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics, health, clock);
             }
             orphansDue.clear();
             pages("the tables section", management::tables, tables -> tables.forEach(t -> maintain(t, now, report)),
@@ -126,8 +136,15 @@ final class Worker implements AutoCloseable {
             scanOrphans(now, report);
             pages("the purges section", management::purges, purges -> purges.forEach(p -> purge(p, report)), report);
             pages("the deletions section", management::deletions, due -> delete(due, report), report);
-        });
-        return report;
+            ended = true;
+        } catch (RuntimeException e) {
+            error = Optional.of(e.toString());
+            throw e;
+        } finally {
+            // As WorkerMetrics judges it: a scan succeeds when it read the whole work list.
+            health.scanEnded(id, now, clock.instant(),
+                    ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST), error, report);
+        }
     }
 
     private <T> void pages(String what, Function<Optional<String>, Management.Page<T>> list,

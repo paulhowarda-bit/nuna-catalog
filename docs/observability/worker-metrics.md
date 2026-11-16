@@ -68,6 +68,7 @@ The kinds of `keel.maintenance.failures`:
 | `compaction` | Assessing a table's need (reading its manifests), or launching its compaction Job. |
 | `purge` | Claiming, deleting or completing one dropped object's purge. |
 | `deletion` | Deleting one object's due files, or reporting them done. |
+| `report` | Reporting a scan, an assessment or a compaction Job to the catalog, which keeps them for the console (table-health.md). The work goes on. A report the catalog refuses because the table is gone or now another is not a failure. |
 
 Each failure is also a WARN log line naming the table or object, which the meters never do.
 
@@ -178,7 +179,7 @@ sum by (job) (increase(keel_maintenance_files_outside_total[1d])) > 0
 
 ## Adding a meter
 
-Items 47 (the scans kept by the catalog) and 49 (worker spans) build on these, as item 46 (compaction on need) did.
+Item 49 (worker spans) builds on these, as items 46 (compaction on need) and 47 (the reports the catalog keeps, table-health.md) did.
 
 - A new count of a scan: a field in `ScanReport` and one line in `WorkerMetrics.COUNTS`. A new kind of failure: a
   value of `ScanReport.Failure`. Both are registered when the worker starts.
@@ -197,8 +198,8 @@ Items 47 (the scans kept by the catalog) and 49 (worker spans) build on these, a
 | Test | Shows |
 |---|---|
 | `WorkerMetricsTest` | Every meter reads zero before the first scan; a scan adds each count, each need by reason and each failure by kind; only a scan that read the whole work list moves the last success, and one that throws is still counted; labels hold only a kind, an outcome or a reason, save the needy tables' gauge, which a needy table gets, keeps under its current name and loses once it needs none or is not assessed; this page lists every meter. |
-| `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, finds a table needing compaction for its small files and starts its Job, purges and skips a purge is counted as its report says and dated by the worker's clock, and the needy table has its gauge; one whose token source fails is a failure of kind `work-list` and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
-| `NightlyCleanupTest` | Scans across a cleanup window: tables assessed once a night, needs by reason, one Job at a time, the neediest first, the Job cut off and the table left over at the window's end, the needy tables' gauges. |
+| `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, finds a table needing compaction for its small files and starts its Job, purges and skips a purge is counted as its report says and dated by the worker's clock, and the needy table has its gauge; one whose token source fails is a failure of kind `work-list`, cannot report itself to the catalog either (`report`), and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
+| `NightlyCleanupTest` | Scans across a cleanup window: tables assessed once a night, needs by reason, one Job at a time, the neediest first, the Job cut off and the table left over at the window's end, the needy tables' gauges; the catalog keeps each assessment, Job and scan the worker reports. |
 | `TelemetryTest` | The worker's meters, from Boot's registry, arrive over OTLP: the failed first scan's `work-list` failures, its timer in milliseconds, the last success at `0`. |
 
 Each guarded rule's bite is in `bites/OBS-40/`; those of compaction on need are in `bites/D30/`.

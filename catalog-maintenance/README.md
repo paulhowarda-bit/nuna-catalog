@@ -48,6 +48,13 @@ A job that fails is logged, counted in the scan's report, and tried again at the
 on. Every job can be run again safely. Recording a file that is already pending changes nothing: the catalog
 keeps each file once per object, with the time it was first recorded.
 
+The worker also reports its own work to the catalog, which keeps it for the console's health pages (D38,
+`docs/observability/table-health.md`): each scan as it starts and ends (`PUT /management/v1/maintenance/scans/{id}`),
+and each table's assessment and compaction Job as it makes or starts and ends them
+(`PUT /management/v1/maintenance/tables/{id}/assessment`, `.../compaction`). A report the catalog does not take is
+logged and counted as a `report` failure, and the work goes on; one for a table dropped or replaced since the work list
+was read is refused, and left at that.
+
 The worker relies on the catalog's guards rather than repeating them. The work list leaves out held tables'
 expiry and orphan scans, frozen namespaces, unregistered tables and everything that is not active. The
 catalog refuses to remove a snapshot younger than its minimum age, refuses a purge claim under a hold or a
@@ -109,7 +116,9 @@ long after the scan, when another table may have taken the name. The files it re
 finished Job is kept a day for its log; how long it is kept schedules nothing.
 
 The worker's meters count the tables assessed, the needs by reason, the Jobs started and cut off and the tables
-left over, and give each needy table a series of its own (`docs/observability/worker-metrics.md`).
+left over, and give each needy table a series of its own (`docs/observability/worker-metrics.md`). The catalog keeps
+each table's latest assessment and how its last Job stands or ended, as the worker reports them, and lists the
+neediest tables in the worker's order (`docs/observability/table-health.md`).
 
 ## Running it
 
@@ -184,7 +193,7 @@ keel:
 - **In the catalog.** The worker's principal id must be listed in the catalog's
   `keel.security.maintenance-principals`. Its group needs `write` on every catalog it maintains. It always acts
   as itself, never for an end user. That gives it the work list, the purge claim and completion, the
-  pending-deletion routes, and storage access to tables flagged for row/column policy, with every such access
+  pending-deletion routes, the reports of its own work, and storage access to tables flagged for row/column policy, with every such access
   audited (D20). The credentials the catalog vends it read and write table files but never delete (D21).
 - **In storage, per store.** The worker needs `s3:ListBucket` on each bucket, beneath its prefixes, and
   `s3:DeleteObject` beneath them. It reads table files through vended credentials, not this identity.
@@ -240,7 +249,7 @@ day (`TestCatalog.allDay`).
 |---|---|---|
 | `CleanupWindowTest` | | The window without a catalog: its edges, across midnight, the nights the clocks go forward and back, all day. |
 | `CompactionNeedTest` | | The need from a table's manifests, on an in-memory catalog: small files per partition, delete files past their share (position deletes and deletion vectors), any equality delete, the policy's thresholds; the order; the Job's options. |
-| `NightlyCleanupTest` | | The worker across a window that closes early as the clocks go forward: nothing heavy outside it or after a restart in the day; one Job a table a night; equality deletes first, then the neediest; each Job's deadline at the window's end; the Job cut off and the table left over; an orphan scan cut short scanned again the next night. |
+| `NightlyCleanupTest` | | The worker across a window that closes early as the clocks go forward: nothing heavy outside it or after a restart in the day; one Job a table a night; equality deletes first, then the neediest; each Job's deadline at the window's end; the Job cut off and the table left over; an orphan scan cut short scanned again the next night; the catalog keeps each assessment, Job and scan as the worker reports them. |
 | `SnapshotExpiryTest` | | Expiry queues only unreachable files; branch and tag files survive expiry and the orphan scan. |
 | `OrphanScanTest` | | Young orphans are kept; old ones are queued; a sibling location (`t` and `t-twin`) is never touched. |
 | `GuardrailsTest` | | Held, frozen and unregistered tables are untouched until the hold and freeze go; a table no longer the one the work list named is neither assessed nor compacted. |
@@ -248,7 +257,7 @@ day (`TestCatalog.allDay`).
 | `PendingDeletionTest` | | Pending deletions wait for their time, then are deleted and reported done. |
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock, in a window of four hours a day: compaction and orphan scans once a night in the window and never outside it, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
-| `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say. |
+| `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say, and kept by the catalog as the worker reports them. |
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan changes nothing; the next one catches up. |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |
@@ -262,8 +271,9 @@ day (`TestCatalog.allDay`).
 - The night's state is kept in memory: which tables were assessed and scanned for orphans, the queue, the Jobs
   running. A worker restarted in the window assesses every table again and scans each for orphans again, one
   table after another; tonight's Job, already there, keeps a table from a second. A worker restarted after the
-  window closed, before a scan ended the night, does not count that night's cut-off Jobs and left-over tables.
-  Keeping these in the catalog is item 47 (D38).
+  window closed, before a scan ended the night, does not count that night's cut-off Jobs and left-over tables,
+  and the catalog shows those Jobs running until the table's next Job. The catalog keeps each assessment and Job the worker reports (item 47, D38), but only for the console: the worker
+  does not read them back.
 - Assessing a table reads its current manifests, every one, once a night. A table of very many manifests takes
   that long to assess; manifest rewrite keeps their number down.
 - The orphan scan holds every file a table reaches in memory. Size the worker for the largest table;
