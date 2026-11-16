@@ -17,7 +17,7 @@ end to end, the catalog's spans included, and the rest not at all.
 | `maintenance <part>` | `keel.maintenance.part` | part of a scan, below | `part`, `outcome`, `exception`; `section` or `report` on two parts |
 | `HTTP GET`, `HTTP PUT`, `HTTP POST` | `http.client.requests` | call to the catalog's management API, or to the identity provider for a token, through the JDK's client | `method`, `uri`, `status`, `outcome` |
 
-The parts, each a child of the scan's span:
+The parts, each a child of the scan's span, save an assessment's report, a child of its `compaction-assessment`:
 
 | `part` | One per | `outcome` |
 |---|---|---|
