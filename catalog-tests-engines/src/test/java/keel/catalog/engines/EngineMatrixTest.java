@@ -385,6 +385,9 @@ class EngineMatrixTest {
                 "--namespace", namespace, "--output-dir", rendered.toString(),
                 "--set", "config.keel.maintenance.catalog-uri=http://" + RELEASE + ":8181/",
                 "--set", "config.keel.maintenance.storage.s3.prefixes[0]=s3://warehouse/tables",
+                "--set-string", "config.keel.maintenance.cleanup-window.start=01:00",
+                "--set-string", "config.keel.maintenance.cleanup-window.end=05:00",
+                "--set", "config.keel.maintenance.cleanup-window.zone=UTC",
                 "--set", "config.keel.maintenance.compaction.image=" + SPARK_IMAGE,
                 "--set", "config.keel.maintenance.compaction.namespace=" + jobs);
         Path templates = rendered.resolve("keel-maintenance/templates");

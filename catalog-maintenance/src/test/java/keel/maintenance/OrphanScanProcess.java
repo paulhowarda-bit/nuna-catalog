@@ -30,7 +30,8 @@ public final class OrphanScanProcess {
             long before = heap();
             long start = System.nanoTime();
             long[] held = new long[1];
-            List<String> orphans = OrphanScan.find(table, storage, Instant.now(), () -> held[0] = heap() - before);
+            List<String> orphans = OrphanScan.find(table, storage, Instant.now(), () -> true,
+                    () -> held[0] = heap() - before);
             System.out.println("HEAP " + held[0]);
             orphans.forEach(orphan -> System.out.println("ORPHAN " + orphan));
             System.out.println("ORPHANS " + orphans.size());

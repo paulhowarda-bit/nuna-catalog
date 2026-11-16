@@ -1,7 +1,7 @@
 # The maintenance worker's meters
 
 The maintenance worker (`catalog-maintenance`, `keel-maintenance`) records what each scan did, how long it took and
-when one last succeeded, with Micrometer (backlog 40). They go out over OTLP with the worker's other telemetry
+when one last succeeded, with Micrometer (backlog 40), and how the night's compaction went (backlog 46). They go out over OTLP with the worker's other telemetry
 ([README.md](README.md)); the worker has no HTTP port, so Prometheus gets them through the collector. Every meter is
 registered when the worker starts, so a dashboard or an alert sees zeros before the first scan ends, not nothing.
 
@@ -21,7 +21,8 @@ through its tables, purges and due deletions (`catalog-maintenance/README.md`, "
 
 ## Meters
 
-Labels hold only bounded values: a failure's `kind` and a scan's `outcome`. Never a table, namespace, file or person.
+Labels hold only bounded values: a failure's `kind`, a scan's `outcome` and a compaction `reason`. Never a table,
+namespace, file or person, with one exception, `keel.maintenance.table.compaction.need` ("The needy tables" below).
 
 | Meter | Type | Labels | What it records | Supports |
 |---|---|---|---|---|
@@ -33,12 +34,26 @@ Labels hold only bounded values: a failure's `kind` and a scan's `outcome`. Neve
 | `keel.maintenance.manifests.rewritten` | counter | none | Manifests rewritten. | Panel |
 | `keel.maintenance.orphan.scans` | counter | none | Orphan scans, each listing one table's location. | Panel |
 | `keel.maintenance.orphans.found` | counter | none | Unreachable files an orphan scan found old enough, recorded for deletion. | Panel: a rise means writers leave files behind |
-| `keel.maintenance.compactions.started` | counter | none | Compaction Jobs started. | Panel |
+| `keel.maintenance.tables.assessed` | counter | none | Tables whose current manifests were read, in the cleanup window, to judge whether they need compaction: each table whose policy turns compaction on, once a night. | Panel: assessed against needing |
+| `keel.maintenance.tables.needing.compaction` | counter | `reason`, below | Tables an assessment found needing compaction, once for each reason they have. | Panel: needs by reason |
+| `keel.maintenance.compactions.started` | counter | none | Compaction Jobs started: at most one per table a night, the neediest first. | Panel |
+| `keel.maintenance.compactions.cut.off` | counter | none | Compaction Jobs the cleanup window's end stopped: still running when it closed, or stopped by Kubernetes at their deadline. The file groups they finished stay committed. | Compaction falling behind |
+| `keel.maintenance.tables.left.over` | counter | none | Tables that needed compaction and got no Job before the window closed, counted by the first scan after it closes. They are assessed again the next night. | Compaction falling behind |
+| `keel.maintenance.table.compaction.need` | gauge | `catalog`, `namespace`, `table` | For each table that needed compaction at its last assessment, how far past its thresholds it was: `1` at a threshold, `2` twice past it. | Panel: the neediest tables |
 | `keel.maintenance.files.recorded` | counter | none | Files handed to the catalog's pending-deletion list (some may be pending already). | Panel: recorded against deleted |
 | `keel.maintenance.files.outside` | counter | none | Unreferenced files left alone because they lie outside their table's location. | Files outside a table |
 | `keel.maintenance.purges.completed` | counter | none | Dropped objects purged. | Purges failing |
 | `keel.maintenance.purges.skipped` | counter | none | Purges another worker holds, or the catalog refused or rate-limited. | Panel |
 | `keel.maintenance.files.deleted` | counter | none | Files deleted: due pending deletions and purged objects' files. | Deletions failing |
+
+The reasons of `keel.maintenance.tables.needing.compaction` (the thresholds are maintenance policy keys,
+`catalog-maintenance/README.md`, "Compaction on need"):
+
+| `reason` | The table has |
+|---|---|
+| `small-files` | In one partition, at least `compaction.min-input-files` data files under 75% of `compaction.target-file-size-bytes`. |
+| `deletes` | More delete files (position deletes, deletion vectors, equality deletes) than `compaction.delete-file-ratio` of its data files. |
+| `equality-deletes` | Any equality-delete file. |
 
 The kinds of `keel.maintenance.failures`:
 
@@ -50,11 +65,28 @@ The kinds of `keel.maintenance.failures`:
 | `snapshot-expiry` | Expiring a table's snapshots, or recording the files it left unreferenced. |
 | `manifest-rewrite` | Rewriting a table's manifests, or recording files. |
 | `orphan-scan` | Scanning a table's location for orphans, or recording them. |
-| `compaction` | Launching a compaction Job. |
+| `compaction` | Assessing a table's need (reading its manifests), or launching its compaction Job. |
 | `purge` | Claiming, deleting or completing one dropped object's purge. |
 | `deletion` | Deleting one object's due files, or reporting them done. |
 
 Each failure is also a WARN log line naming the table or object, which the meters never do.
+
+## The needy tables
+
+`keel.maintenance.table.compaction.need` is the one meter labelled by table, as Paul accepted (D30, amended
+2026-11-15): a series for every table that needs compaction, labelled with its catalog, its namespace (levels joined
+with `.`) and its name, with no cap. Everyone with access to the metrics, Grafana included, sees those names.
+
+- A table gets its series at the first assessment that finds it needy and keeps it while it stays needy; the next
+  assessment that finds no need removes it. A renamed table's series moves to its new name. A table not assessed in a
+  night (dropped, its compaction turned off, under a DR freeze) loses its series when that night's window closes.
+- The value is the larger of its small files over `compaction.min-input-files` and its delete files' share of its
+  data files over `compaction.delete-file-ratio`. A table with equality deletes needs compaction whatever its value,
+  and its Job starts first.
+- There are as many series as needy tables, so a catalog of many neglected tables makes many: that is what the series
+  is for, and the fix is in the tables' writers.
+
+The log names each needy table too, at INFO, with its counts, and each Job started, finished, cut off or left over.
 
 ## Names in Prometheus
 
@@ -66,6 +98,8 @@ receiver, with their default translation, dots become underscores, the unit is a
 | `keel.maintenance.scan` | `keel_maintenance_scan_milliseconds_count`, `_sum`, by `outcome`. Over OTLP Micrometer sends times in its base time unit, milliseconds (`management.otlp.metrics.export.base-time-unit`); `TelemetryTest` checks the unit. |
 | `keel.maintenance.scan.last.success` | `keel_maintenance_scan_last_success_seconds` |
 | `keel.maintenance.failures` | `keel_maintenance_failures_total`, by `kind` |
+| `keel.maintenance.tables.needing.compaction` | `keel_maintenance_tables_needing_compaction_total`, by `reason` |
+| `keel.maintenance.table.compaction.need` | `keel_maintenance_table_compaction_need`, by `catalog`, `namespace`, `table` |
 | `keel.maintenance.tables` and the other counters | `keel_maintenance_tables_total` and so on |
 
 The resource attributes (`service.name`, the pod) become the series' `job` and `instance` labels, or labels of their
@@ -127,6 +161,14 @@ sum by (job) (rate(keel_maintenance_scan_milliseconds_sum[1h]))
   / sum by (job) (rate(keel_maintenance_scan_milliseconds_count[1h])) > 600 * 1000
 ```
 
+**Compaction falling behind** (ticket). Needy tables were left over at the window's end, or Jobs cut off by it,
+night after night (the rule's `for: 3d`). The window is too short for the work, or `compaction.max-jobs` too low:
+
+```
+sum by (job) (increase(keel_maintenance_tables_left_over_total[1d]))
+  + sum by (job) (increase(keel_maintenance_compactions_cut_off_total[1d])) > 0
+```
+
 **Files outside a table** (ticket). A table writes files outside its own location (a `write.data.path` elsewhere),
 which the worker never records or deletes, so they stay in storage:
 
@@ -136,15 +178,15 @@ sum by (job) (increase(keel_maintenance_files_outside_total[1d])) > 0
 
 ## Adding a meter
 
-Items 46 (compaction on need), 47 (the scans kept by the catalog) and 49 (worker spans) build on these.
+Items 47 (the scans kept by the catalog) and 49 (worker spans) build on these, as item 46 (compaction on need) did.
 
 - A new count of a scan: a field in `ScanReport` and one line in `WorkerMetrics.COUNTS`. A new kind of failure: a
   value of `ScanReport.Failure`. Both are registered when the worker starts.
 - Register a new meter when the worker starts, not when it first has something to count: Prometheus misses the first
   increase of a counter that appears already above zero.
-- Labels stay bounded. The one exception Paul accepted is item 46's series for each needy table, labelled with
-  catalog, namespace and table name (D30, amended 2026-11-15); give it a meter of its own and allow it in
-  `WorkerMetricsTest.assertBoundedLabels`.
+- Labels stay bounded. The one exception Paul accepted is item 46's series for each needy table,
+  `keel.maintenance.table.compaction.need`, labelled with catalog, namespace and table name (D30, amended
+  2026-11-15); `WorkerMetricsTest.assertBoundedLabels` allows it and no other.
 - A meter name keeps one set of label keys: a Prometheus registry refuses a second. An Observation (item 49) makes a
   timer of its own name with an `error` label, so name a scan's Observation apart from `keel.maintenance.scan`, or
   replace that timer with it, keeping `outcome`.
@@ -154,8 +196,9 @@ Items 46 (compaction on need), 47 (the scans kept by the catalog) and 49 (worker
 
 | Test | Shows |
 |---|---|
-| `WorkerMetricsTest` | Every meter reads zero before the first scan; a scan adds each count and each failure by kind; only a scan that read the whole work list moves the last success, and one that throws is still counted; labels hold only a kind or an outcome; this page lists every meter. |
-| `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, starts a compaction, purges and skips a purge is counted as its report says and dated by the worker's clock; one whose token source fails is a failure of kind `work-list` and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
+| `WorkerMetricsTest` | Every meter reads zero before the first scan; a scan adds each count, each need by reason and each failure by kind; only a scan that read the whole work list moves the last success, and one that throws is still counted; labels hold only a kind, an outcome or a reason, save the needy tables' gauge, which a needy table gets, keeps under its current name and loses once it needs none or is not assessed; this page lists every meter. |
+| `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, finds a table needing compaction for its small files and starts its Job, purges and skips a purge is counted as its report says and dated by the worker's clock, and the needy table has its gauge; one whose token source fails is a failure of kind `work-list` and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
+| `NightlyCleanupTest` | Scans across a cleanup window: tables assessed once a night, needs by reason, one Job at a time, the neediest first, the Job cut off and the table left over at the window's end, the needy tables' gauges. |
 | `TelemetryTest` | The worker's meters, from Boot's registry, arrive over OTLP: the failed first scan's `work-list` failures, its timer in milliseconds, the last success at `0`. |
 
-Each guarded rule's bite is in `bites/OBS-40/`.
+Each guarded rule's bite is in `bites/OBS-40/`; those of compaction on need are in `bites/D30/`.

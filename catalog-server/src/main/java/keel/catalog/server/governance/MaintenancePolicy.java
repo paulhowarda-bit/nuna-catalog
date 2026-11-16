@@ -1,6 +1,7 @@
 package keel.catalog.server.governance;
 
 import keel.catalog.core.CatalogError;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -26,20 +27,31 @@ public final class MaintenancePolicy {
     public static final String ORPHAN_OLDER_THAN = "orphan-removal.older-than";
     public static final String COMPACTION_ENABLED = "compaction.enabled";
     public static final String COMPACTION_TARGET_FILE_SIZE = "compaction.target-file-size-bytes";
+    /**
+     * How many data files under 75% of the target size one partition must hold for the table to need compaction
+     * (D30, amended 2026-11-15); rewrite_data_files' {@code min-input-files}, 5 by default.
+     */
+    public static final String COMPACTION_MIN_INPUT_FILES = "compaction.min-input-files";
+    /**
+     * The share of its data files that its delete files (position, equality, deletion vectors) must pass for a table
+     * to need compaction; 0.3 by default, rewrite_data_files' {@code delete-ratio-threshold}.
+     */
+    public static final String COMPACTION_DELETE_FILE_RATIO = "compaction.delete-file-ratio";
     public static final String REWRITE_ENABLED = "manifest-rewrite.enabled";
     public static final String REWRITE_MIN_MANIFESTS = "manifest-rewrite.min-manifests";
 
-    private enum Type { BOOLEAN, DURATION, COUNT }
+    private enum Type { BOOLEAN, DURATION, COUNT, RATIO }
 
     /** Every key a policy may set, with its type; the order is the order a resolved policy lists them. */
     private static final Map<String, Type> KEYS = keys();
 
     /** What a policy starts from when the deployment sets no defaults: nothing runs. */
-    static final Map<String, String> BUILT_IN = Map.of(
-            EXPIRY_ENABLED, "false", EXPIRY_MAX_AGE, "P5D", EXPIRY_MIN_SNAPSHOTS, "1",
-            ORPHAN_ENABLED, "false", ORPHAN_OLDER_THAN, "P14D",
-            COMPACTION_ENABLED, "false", COMPACTION_TARGET_FILE_SIZE, "536870912",
-            REWRITE_ENABLED, "false", REWRITE_MIN_MANIFESTS, "100");
+    static final Map<String, String> BUILT_IN = Map.ofEntries(
+            Map.entry(EXPIRY_ENABLED, "false"), Map.entry(EXPIRY_MAX_AGE, "P5D"), Map.entry(EXPIRY_MIN_SNAPSHOTS, "1"),
+            Map.entry(ORPHAN_ENABLED, "false"), Map.entry(ORPHAN_OLDER_THAN, "P14D"),
+            Map.entry(COMPACTION_ENABLED, "false"), Map.entry(COMPACTION_TARGET_FILE_SIZE, "536870912"),
+            Map.entry(COMPACTION_MIN_INPUT_FILES, "5"), Map.entry(COMPACTION_DELETE_FILE_RATIO, "0.3"),
+            Map.entry(REWRITE_ENABLED, "false"), Map.entry(REWRITE_MIN_MANIFESTS, "100"));
 
     private static Map<String, Type> keys() {
         Map<String, Type> keys = new LinkedHashMap<>();
@@ -50,6 +62,8 @@ public final class MaintenancePolicy {
         keys.put(ORPHAN_OLDER_THAN, Type.DURATION);
         keys.put(COMPACTION_ENABLED, Type.BOOLEAN);
         keys.put(COMPACTION_TARGET_FILE_SIZE, Type.COUNT);
+        keys.put(COMPACTION_MIN_INPUT_FILES, Type.COUNT);
+        keys.put(COMPACTION_DELETE_FILE_RATIO, Type.RATIO);
         keys.put(REWRITE_ENABLED, Type.BOOLEAN);
         keys.put(REWRITE_MIN_MANIFESTS, Type.COUNT);
         return Collections.unmodifiableMap(keys);
@@ -69,8 +83,8 @@ public final class MaintenancePolicy {
     }
 
     /**
-     * A level's own keys, checked and in canonical form (ISO-8601 durations, plain integers, lower-case
-     * booleans), sorted by key.
+     * A level's own keys, checked and in canonical form (ISO-8601 durations, plain integers, plain decimals,
+     * lower-case booleans), sorted by key.
      *
      * @throws CatalogError 400 for an unknown key or a value of the wrong type
      */
@@ -165,6 +179,17 @@ public final class MaintenancePolicy {
                     return duration.toString();
                 } catch (DateTimeParseException e) {
                     throw CatalogError.badRequest(key + " is an ISO-8601 duration such as P7D or PT12H, not " + value);
+                }
+            }
+            case RATIO -> {
+                try {
+                    BigDecimal ratio = new BigDecimal(value);
+                    if (ratio.signum() <= 0) {
+                        throw CatalogError.badRequest(key + " must be above 0, not " + value);
+                    }
+                    return ratio.stripTrailingZeros().toPlainString();
+                } catch (NumberFormatException e) {
+                    throw CatalogError.badRequest(key + " is a decimal number such as 0.3, not " + value);
                 }
             }
             default -> {

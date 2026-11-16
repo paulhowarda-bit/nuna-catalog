@@ -24,6 +24,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -68,7 +71,8 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
  *
  * <p>The worker decides ages by its own clock: a test gives it one ({@link FakeClock}, starting at the wall clock)
  * and moves it with {@link #advance}, which moves the server's clock as far, so the server never finds a snapshot
- * younger than the worker does. Snapshot times and S3 modification times are wall-clock times.
+ * younger than the worker does. Snapshot times and S3 modification times are wall-clock times. Its cleanup window is
+ * open all day unless a test gives it another ({@link #allDay}).
  */
 final class TestCatalog {
 
@@ -303,8 +307,30 @@ final class TestCatalog {
 
     /** The worker, signing in with {@code tokens} and recording its meters in {@code meters}. */
     Worker worker(Clock clock, Compactor compactor, Storage storage, TokenSource tokens, MeterRegistry meters) {
+        return worker(clock, compactor, storage, tokens, meters, allDay(clock), 2);
+    }
+
+    /** The worker, its cleanup window {@code window}, running at most {@code maxJobs} compaction Jobs at once. */
+    Worker worker(Clock clock, Compactor compactor, Storage storage, TokenSource tokens, MeterRegistry meters,
+                  CleanupWindow window, int maxJobs) {
+        return worker(clock, compactor, storage, tokens, meters, window, Duration.ofDays(1), maxJobs);
+    }
+
+    /** The same, scanning a table for orphans at most once per {@code orphanInterval}. */
+    Worker worker(Clock clock, Compactor compactor, Storage storage, TokenSource tokens, MeterRegistry meters,
+                  CleanupWindow window, Duration orphanInterval, int maxJobs) {
         return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens, Map.of()), storage,
-                compactor, clock, Duration.ofDays(1), Duration.ofDays(1), meters);
+                compactor, clock, window, orphanInterval, maxJobs, meters);
+    }
+
+    /**
+     * A cleanup window open all day, each night ending as the next begins twelve hours from {@code clock}'s time of
+     * day now: a test's scans, whole days apart or a few hours, fall in one night a day.
+     */
+    static CleanupWindow allDay(Clock clock) {
+        LocalTime turn = LocalTime.ofInstant(clock.instant().minus(Duration.ofHours(12)), ZoneOffset.UTC)
+                .truncatedTo(ChronoUnit.SECONDS);
+        return new CleanupWindow(turn, turn, ZoneOffset.UTC);
     }
 
     /** The worker's management client. */

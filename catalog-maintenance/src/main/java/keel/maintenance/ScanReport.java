@@ -34,8 +34,18 @@ final class ScanReport {
     int snapshotsExpired;
     int manifestsRewritten;
     int orphanScans;
+    /** Orphan scans the window's end stopped; not counted in {@link #orphanScans}, and done again the next night. */
+    int orphanScansCutShort;
     int orphansFound;
+    /** Tables whose manifests were read to judge whether they need compaction. */
+    int tablesAssessed;
+    /** Tables that need compaction, by reason; a table may have more than one. */
+    final Map<CompactionNeed.Reason, Integer> needs = new EnumMap<>(CompactionNeed.Reason.class);
     int compactionsStarted;
+    /** Compaction Jobs the window's end stopped, counted once the window has closed. */
+    int compactionsCutOff;
+    /** Tables that needed compaction and got no Job before the window closed. */
+    int tablesLeftOver;
     /** Files handed to the catalog's pending-deletion list (some may have been pending already). */
     int filesRecorded;
     /** Files left alone because they lie outside their table's location, which the catalog would refuse. */
@@ -61,9 +71,11 @@ final class ScanReport {
     @Override
     public String toString() {
         return "tables " + tables + ", snapshots expired " + snapshotsExpired + ", manifests rewritten "
-                + manifestsRewritten + ", orphan scans " + orphanScans + " (" + orphansFound + " orphans), compactions "
-                + compactionsStarted + ", files recorded " + filesRecorded + " (" + filesOutside + " outside), purged "
-                + purged + " (" + purgesSkipped + " skipped), files deleted " + filesDeleted + ", failures "
-                + failures.size();
+                + manifestsRewritten + ", orphan scans " + orphanScans + " (" + orphansFound + " orphans, "
+                + orphanScansCutShort + " cut short), tables assessed " + tablesAssessed + " (needing compaction "
+                + needs + "), compactions " + compactionsStarted + " (" + compactionsCutOff + " cut off, "
+                + tablesLeftOver + " tables left over), files recorded " + filesRecorded + " (" + filesOutside
+                + " outside), purged " + purged + " (" + purgesSkipped + " skipped), files deleted " + filesDeleted
+                + ", failures " + failures.size();
     }
 }

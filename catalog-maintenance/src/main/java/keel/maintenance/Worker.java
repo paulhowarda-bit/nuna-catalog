@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -26,16 +27,26 @@ import org.slf4j.LoggerFactory;
  *
  * <ol>
  *   <li><b>Tables</b> whose resolved policy runs a job, with the catalog's guardrails applied (a hold stops expiry
- *       and orphan removal, a DR freeze every job, and only active tables are listed): snapshot expiry, manifest
- *       rewrite, an orphan scan at most once per orphan interval, and a compaction Job at most once per compaction
- *       interval. Each table is loaded by name first and left alone unless it is still the table the work list
- *       named, by id. Nothing here deletes: every file a job leaves unreferenced goes to the catalog's pending-deletion
- *       list, which holds it for the database's PITR window (D30 (5), (8)).</li>
+ *       and orphan removal, a DR freeze every job, and only active tables are listed): snapshot expiry and manifest
+ *       rewrite at every scan. While the nightly cleanup window is open (D30, amended 2026-11-15), each table whose
+ *       policy turns compaction on is assessed once a night from its manifests, and one whose policy turns orphan
+ *       removal on is due an orphan scan, at most once a night and once per orphan interval. Each table is loaded by
+ *       name first and left alone unless it is still the table the work list named, by id. Nothing here deletes:
+ *       every file a job leaves unreferenced goes to the catalog's pending-deletion list, which holds it for the
+ *       database's PITR window (D30 (5), (8)).</li>
+ *   <li><b>Compaction</b>: Jobs for the tables that need one, neediest first, as many at once as the settings allow,
+ *       each to stop at the window's end ({@link NightlyCompaction}).</li>
+ *   <li><b>Orphan scans</b> due tonight, one after another while the window is open. One the window's end cuts short
+ *       is not recorded, and its table is scanned again the next night.</li>
  *   <li><b>Purges</b>: each dropped object past its window is claimed, everything under its location deleted, and
  *       the purge completed (D30 (6)). A worker that died part-way gets its own claim back and starts again.</li>
  *   <li><b>Deletions</b> the catalog lists as due: deleted with the worker's own storage identity, then reported
  *       done.</li>
  * </ol>
+ *
+ * <p>Outside the window nothing heavy starts, after a restart too: expiry, manifest rewrite, purges and deletions
+ * run round the clock. The first scan after the window closes ends the night: it counts the Jobs the window's end
+ * cut off and the needy tables left over.
  *
  * <p>Every job is idempotent: a scan that runs again after a crash, or sees the effect of its own last commit,
  * finds less to do or records files already pending, which the catalog keeps as they were. One table, purge or
@@ -50,22 +61,32 @@ final class Worker implements AutoCloseable {
     private final Storage storage;
     private final Compactor compactor;
     private final Clock clock;
+    private final CleanupWindow window;
     private final Duration orphanInterval;
-    private final Duration compactionInterval;
-    /** When each table's last orphan scan and compaction started, by table id; empty after a restart. */
-    private final Map<UUID, Instant> orphanScans = new ConcurrentHashMap<>();
-    private final Map<UUID, Instant> compactions = new ConcurrentHashMap<>();
+    private final int compactionJobs;
+    /** The night of each table's last orphan scan not cut short, by table id; empty after a restart. */
+    private final Map<UUID, LocalDate> orphanScans = new ConcurrentHashMap<>();
+    /** The window's opening now under way, or the last one until a scan has closed it; none before the first. */
+    private NightlyCompaction tonight;
+    /** The tables this scan found due an orphan scan. */
+    private final List<Management.TableWork> orphansDue = new ArrayList<>();
     private final WorkerMetrics metrics;
 
+    /**
+     * @param window         the nightly cleanup window: compaction and orphan scans start only inside it
+     * @param orphanInterval the least time between two orphan scans of one table, rounded up to whole nights
+     * @param compactionJobs how many compaction Jobs run at once
+     */
     Worker(Management management, Catalogs catalogs, Storage storage, Compactor compactor, Clock clock,
-           Duration orphanInterval, Duration compactionInterval, MeterRegistry meters) {
+           CleanupWindow window, Duration orphanInterval, int compactionJobs, MeterRegistry meters) {
         this.management = management;
         this.catalogs = catalogs;
         this.storage = storage;
         this.compactor = compactor;
         this.clock = clock;
+        this.window = window;
         this.orphanInterval = orphanInterval;
-        this.compactionInterval = compactionInterval;
+        this.compactionJobs = compactionJobs;
         this.metrics = new WorkerMetrics(meters, clock);
     }
 
@@ -75,20 +96,34 @@ final class Worker implements AutoCloseable {
         Management management = new Management(settings.catalogUri(), tokens, HttpClient.newHttpClient(),
                 settings.pageSize());
         Compactor compactor = settings.compaction().enabled()
-                ? new KubernetesJobs(settings.compaction(), settings.compactionInterval(), settings.catalogUri(), tokens)
+                ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, clock)
                 : Compactor.NONE;
         return new Worker(management, new Catalogs(settings.catalogUri(), tokens, Map.of()),
-                Storage.of(settings.storage()), compactor, clock, settings.orphanInterval(),
-                settings.compactionInterval(), meters);
+                Storage.of(settings.storage()), compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
+                settings.compaction().maxJobs(), meters);
     }
 
-    /** One scan: the tables, then the purges, then the due deletions; recorded as meters ({@link WorkerMetrics}). */
+    /**
+     * One scan: the tables, the night's compaction Jobs and orphan scans, then the purges, then the due deletions;
+     * recorded as meters ({@link WorkerMetrics}).
+     */
     ScanReport runOnce() {
         ScanReport report = new ScanReport();
         metrics.scan(report, () -> {
             Instant now = clock.instant();
+            Optional<CleanupWindow.Night> night = window.night(now);
+            if (tonight != null && !night.equals(Optional.of(tonight.night))) {
+                tonight.close(report);
+                tonight = null;
+            }
+            if (night.isPresent() && tonight == null) {
+                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics);
+            }
+            orphansDue.clear();
             pages("the tables section", management::tables, tables -> tables.forEach(t -> maintain(t, now, report)),
                     report);
+            compact(report);
+            scanOrphans(now, report);
             pages("the purges section", management::purges, purges -> purges.forEach(p -> purge(p, report)), report);
             pages("the deletions section", management::deletions, due -> delete(due, report), report);
         });
@@ -114,32 +149,31 @@ final class Worker implements AutoCloseable {
 
     // ---- tables ----
 
-    /** One table's jobs that are due; package-private so a test can hand it a stale work item. */
+    /**
+     * One table's jobs that are due: expiry and manifest rewrite now; in the window, its compaction assessment now and
+     * its orphan scan noted for after the night's Jobs have started. Package-private so a test can hand it a stale
+     * work item.
+     */
     void maintain(Management.TableWork work, Instant now, ScanReport report) {
         report.tables++;
         boolean expire = work.runs("snapshot-expiry.enabled");
         boolean rewrite = work.runs("manifest-rewrite.enabled");
-        boolean orphans = work.runs("orphan-removal.enabled") && due(orphanScans, work.id(), orphanInterval, now);
-        boolean compact = work.runs("compaction.enabled") && compactor != Compactor.NONE
-                && due(compactions, work.id(), compactionInterval, now);
-        if (!(expire || rewrite || orphans || compact)) {
+        Optional<CleanupWindow.Night> open = open();
+        boolean orphans = open.isPresent() && work.runs("orphan-removal.enabled")
+                && orphanScanDue(work.id(), open.get());
+        boolean assess = open.isPresent() && work.runs("compaction.enabled") && compactor != Compactor.NONE
+                && !tonight.assessed(work.id());
+        if (!(expire || rewrite || assess)) {
+            if (orphans) {
+                orphansDue.add(work);
+            }
             return;
         }
-        Table table;
-        try {
-            table = catalogs.load(work.catalog(), work.namespace(), work.name());
-        } catch (RuntimeException e) {
-            LOG.warn("Cannot load table {} ({})", work.name(), work.id(), e);
-            report.failed(ScanReport.Failure.TABLE_LOAD, "loading " + work.id(), e);
+        Optional<Table> loaded = load(work, report);
+        if (loaded.isEmpty()) {
             return;
         }
-        if (!work.id().toString().equals(table.uuid().toString())) {
-            // Dropped, renamed or unregistered, and another table now has the name, since the work list was read:
-            // its own policy is not this one, so nothing here runs on it. The next scan sees it as it is.
-            report.failed(ScanReport.Failure.TABLE_CHANGED, "table " + work.id() + " is now another table, "
-                    + table.uuid());
-            return;
-        }
+        Table table = loaded.get();
         if (expire) {
             job(ScanReport.Failure.SNAPSHOT_EXPIRY, "expiring snapshots of", work, report, () -> {
                 Set<String> unreferenced = ConcurrentHashMap.newKeySet();
@@ -157,30 +191,98 @@ final class Worker implements AutoCloseable {
                 record(work, table, unreferenced, report);
             });
         }
+        if (assess && open().isPresent()) {
+            job(ScanReport.Failure.COMPACTION, "assessing compaction of", work, report,
+                    () -> tonight.assess(work, table, report));
+        }
         if (orphans) {
+            orphansDue.add(work);
+        }
+    }
+
+    /**
+     * The table as the work list named it, loaded by name; none when it cannot be loaded or another table now has the
+     * name, each reported.
+     */
+    private Optional<Table> load(Management.TableWork work, ScanReport report) {
+        Table table;
+        try {
+            table = catalogs.load(work.catalog(), work.namespace(), work.name());
+        } catch (RuntimeException e) {
+            LOG.warn("Cannot load table {} ({})", work.name(), work.id(), e);
+            report.failed(ScanReport.Failure.TABLE_LOAD, "loading " + work.id(), e);
+            return Optional.empty();
+        }
+        if (!work.id().toString().equals(table.uuid().toString())) {
+            // Dropped, renamed or unregistered, and another table now has the name, since the work list was read:
+            // its own policy is not this one, so nothing here runs on it. The next scan sees it as it is.
+            report.failed(ScanReport.Failure.TABLE_CHANGED, "table " + work.id() + " is now another table, "
+                    + table.uuid());
+            return Optional.empty();
+        }
+        return Optional.of(table);
+    }
+
+    /** Tonight's opening of the cleanup window, if it is open now. */
+    private Optional<CleanupWindow.Night> open() {
+        return tonight != null && tonight.night.contains(clock.instant()) ? Optional.of(tonight.night)
+                : Optional.empty();
+    }
+
+    /** Whether the table is due an orphan scan tonight: none yet tonight, and the orphan interval's nights passed. */
+    private boolean orphanScanDue(UUID table, CleanupWindow.Night night) {
+        LocalDate last = orphanScans.get(table);
+        long nights = Math.max(1, (orphanInterval.toSeconds() + Duration.ofDays(1).toSeconds() - 1)
+                / Duration.ofDays(1).toSeconds());
+        return last == null || !night.date().isBefore(last.plusDays(nights));
+    }
+
+    /** Starts the night's compaction Jobs that can start now; see {@link NightlyCompaction#launch}. */
+    void compact(ScanReport report) {
+        if (tonight != null) {
+            tonight.launch(clock, report);
+        }
+    }
+
+    /**
+     * The orphan scans this scan found due, one table after another while the window is open. Before each, Jobs whose
+     * slots have freed are started, so a long run of scans does not hold compaction back.
+     */
+    private void scanOrphans(Instant now, ScanReport report) {
+        for (Management.TableWork work : orphansDue) {
+            Optional<CleanupWindow.Night> open = open();
+            if (open.isEmpty()) {
+                return;
+            }
+            compact(report);
+            Optional<Table> loaded = load(work, report);
+            if (loaded.isEmpty()) {
+                continue;
+            }
+            Table table = loaded.get();
+            CleanupWindow.Night night = open.get();
             job(ScanReport.Failure.ORPHAN_SCAN, "scanning for orphans of", work, report, () -> {
-                orphanScans.put(work.id(), now);
-                List<String> found = OrphanScan.find(table, storage,
-                        now.minus(work.duration("orphan-removal.older-than")), () -> { });
+                LocalDate previous = orphanScans.put(work.id(), night.date());
+                List<String> found;
+                try {
+                    found = OrphanScan.find(table, storage, now.minus(work.duration("orphan-removal.older-than")),
+                            () -> night.contains(clock.instant()), () -> { });
+                } catch (OrphanScan.CutShort e) {
+                    // Not recorded: the table is scanned again the next night.
+                    if (previous == null) {
+                        orphanScans.remove(work.id());
+                    } else {
+                        orphanScans.put(work.id(), previous);
+                    }
+                    report.orphanScansCutShort++;
+                    LOG.info("The window's end cut short the orphan scan of table {} ({})", work.name(), work.id());
+                    return;
+                }
                 report.orphanScans++;
                 report.orphansFound += found.size();
                 record(work, table, found, report);
             });
         }
-        if (compact) {
-            job(ScanReport.Failure.COMPACTION, "launching compaction of", work, report, () -> {
-                Compactor.Launch launch = compactor.launch(work);
-                compactions.put(work.id(), now);
-                if (launch == Compactor.Launch.STARTED) {
-                    report.compactionsStarted++;
-                }
-            });
-        }
-    }
-
-    private static boolean due(Map<UUID, Instant> last, UUID table, Duration interval, Instant now) {
-        Instant then = last.get(table);
-        return then == null || !now.isBefore(then.plus(interval));
     }
 
     private static void job(ScanReport.Failure kind, String what, Management.TableWork work, ScanReport report,

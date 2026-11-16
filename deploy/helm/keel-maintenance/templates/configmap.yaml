@@ -2,6 +2,10 @@
 {{- if not (dig "keel" "maintenance" "storage" dict .Values.config) -}}
 {{- fail "config.keel.maintenance.storage needs at least one profile: the worker's own storage identity" -}}
 {{- end -}}
+{{- range $part := list "start" "end" "zone" -}}
+{{- $_ := required (printf "config.keel.maintenance.cleanup-window.%s is required: the nightly window in which compaction and orphan scans run (start and end as local times such as \"01:00\", zone a named zone such as Europe/London)" $part) (dig "keel" "maintenance" "cleanup-window" $part "" $.Values.config) -}}
+{{- end -}}
+{{- /* toYaml quotes the times, which Spring's YAML 1.1 would otherwise read as base-60 numbers. */ -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

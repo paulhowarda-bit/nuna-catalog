@@ -1,6 +1,9 @@
 package keel.catalog.server.governance;
 
+import static keel.catalog.server.governance.MaintenancePolicy.COMPACTION_DELETE_FILE_RATIO;
 import static keel.catalog.server.governance.MaintenancePolicy.COMPACTION_ENABLED;
+import static keel.catalog.server.governance.MaintenancePolicy.COMPACTION_MIN_INPUT_FILES;
+import static keel.catalog.server.governance.MaintenancePolicy.COMPACTION_TARGET_FILE_SIZE;
 import static keel.catalog.server.governance.MaintenancePolicy.EXPIRY_ENABLED;
 import static keel.catalog.server.governance.MaintenancePolicy.EXPIRY_MAX_AGE;
 import static keel.catalog.server.governance.MaintenancePolicy.ORPHAN_ENABLED;
@@ -33,6 +36,35 @@ class MaintenancePolicyTest {
         assertRefused(Map.of(EXPIRY_MAX_AGE, "PT30M"));
         assertRefused(Map.of(ORPHAN_OLDER_THAN, "P7D"));
         assertRefused(Map.of(REWRITE_MIN_MANIFESTS, "0"));
+    }
+
+    /**
+     * The thresholds of compaction's need (D30, amended 2026-11-15): a count and a ratio, resolved like the target
+     * size, rewrite_data_files' own defaults when no level sets them.
+     */
+    @Test
+    void compactionThresholdsDefaultToRewriteDataFilesOwn() {
+        Map<String, MaintenancePolicy.Setting> resolved = MaintenancePolicy.resolve(SETTINGS, List.of(
+                new SimpleEntry<>("table:t", Map.of(COMPACTION_DELETE_FILE_RATIO, "0.1"))), false, false, null);
+        assertThat(resolved.get(COMPACTION_MIN_INPUT_FILES)).isEqualTo(new MaintenancePolicy.Setting("5", "built-in",
+                null));
+        assertThat(resolved.get(COMPACTION_DELETE_FILE_RATIO)).isEqualTo(new MaintenancePolicy.Setting("0.1",
+                "table:t", null));
+        assertThat(MaintenancePolicy.resolve(SETTINGS, List.of(), false, false, null).get(COMPACTION_DELETE_FILE_RATIO)
+                .value()).isEqualTo("0.3");
+        assertThat(MaintenancePolicy.keyNames()).containsSubsequence(COMPACTION_TARGET_FILE_SIZE,
+                COMPACTION_MIN_INPUT_FILES, COMPACTION_DELETE_FILE_RATIO);
+
+        assertThat(MaintenancePolicy.canonical(Map.of(COMPACTION_MIN_INPUT_FILES, "010",
+                COMPACTION_DELETE_FILE_RATIO, "0.250"), SETTINGS)).containsExactly(
+                Map.entry(COMPACTION_DELETE_FILE_RATIO, "0.25"), Map.entry(COMPACTION_MIN_INPUT_FILES, "10"));
+        assertThat(MaintenancePolicy.canonical(Map.of(COMPACTION_DELETE_FILE_RATIO, "2"), SETTINGS))
+                .containsEntry(COMPACTION_DELETE_FILE_RATIO, "2");
+        assertRefused(Map.of(COMPACTION_DELETE_FILE_RATIO, "0"));
+        assertRefused(Map.of(COMPACTION_DELETE_FILE_RATIO, "-0.3"));
+        assertRefused(Map.of(COMPACTION_DELETE_FILE_RATIO, "a third"));
+        assertRefused(Map.of(COMPACTION_MIN_INPUT_FILES, "0"));
+        assertRefused(Map.of(COMPACTION_MIN_INPUT_FILES, "2.5"));
     }
 
     @Test
