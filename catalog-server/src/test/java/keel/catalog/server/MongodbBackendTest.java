@@ -10,7 +10,6 @@ import java.util.Map;
 import javax.sql.DataSource;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.SafetyFinding;
-import keel.catalog.store.mongo.MongoCatalogStore;
 import org.bson.Document;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -51,9 +50,9 @@ class MongodbBackendTest {
 
     @Test
     void theServerRunsOnMongodbWithoutADataSource() {
-        assertThat(store).isInstanceOf(MongoCatalogStore.class);
         assertThat(dataSource.getIfAvailable()).isNull();
-        // One member, so a majority cannot survive losing it; everything else the store checks holds.
+        // Only MongoDB's store reports this (the bean is that store, observed): one member, so a majority cannot
+        // survive losing it. Everything else the store checks holds.
         assertThat(store.selfCheck()).extracting(SafetyFinding::code).containsExactly("mongo.too-few-voters");
         new BackendFlow(port).run();
     }

@@ -360,11 +360,15 @@ class CatalogMetricsRoutesTest {
             assertThat(ids).extracting(Meter.Id::getName).contains(REQUESTS, COMMITS, VENDS,
                     "keel.catalog.report.result.data.files");
             List<Tag> tags = ids.stream().flatMap(id -> id.getTags().stream()).toList();
+            // The label names are the catalog meters' (catalog-metrics.md). The timers of the store, object store,
+            // STS and Kafka calls beneath a request (keel.store and the rest, spans.md) have their own; their values
+            // are held to the same rule below.
+            List<Meter.Id> catalog = ids.stream().filter(id -> id.getName().startsWith("keel.catalog.")).toList();
             // The registry's own bucket gauges carry each bucket's bound, as a histogram's buckets do in Prometheus.
-            assertThat(ids.stream().filter(id -> !id.getName().endsWith(".histogram"))
+            assertThat(catalog.stream().filter(id -> !id.getName().endsWith(".histogram"))
                     .flatMap(id -> id.getTags().stream())).extracting(Tag::getKey)
                     .allMatch(CatalogMetrics.LABELS::contains);
-            assertThat(ids.stream().filter(id -> id.getName().endsWith(".histogram"))
+            assertThat(catalog.stream().filter(id -> id.getName().endsWith(".histogram"))
                     .flatMap(id -> id.getTags().stream())).extracting(Tag::getKey)
                     .allMatch(key -> key.equals("le") || CatalogMetrics.LABELS.contains(key));
             assertThat(tags).extracting(Tag::getValue).noneMatch(value -> Stream.of(namespace, table, stranger,

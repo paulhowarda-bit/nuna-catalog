@@ -13,7 +13,6 @@ import java.util.Properties;
 import javax.sql.DataSource;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.SafetyFinding;
-import keel.catalog.store.oracle.OracleCatalogStore;
 import oracle.jdbc.pool.OracleDataSource;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -52,11 +51,11 @@ class OracleBackendTest {
 
     @Test
     void theServerRunsOnOracle() throws SQLException {
-        assertThat(store).isInstanceOf(OracleCatalogStore.class);
         // The documented key reaches the pool as written, where the driver looks for it.
         assertThat(dataSource.unwrap(HikariDataSource.class).getDataSourceProperties())
                 .containsEntry("oracle.jdbc.ReadTimeout", "120000");
-        // Free has no Data Guard; everything else the store checks holds for the session the pool hands out.
+        // Only Oracle's store reports this (the bean is that store, observed): Free has no Data Guard. Everything
+        // else the store checks holds for the session the pool hands out.
         assertThat(store.selfCheck()).extracting(SafetyFinding::code).containsExactly("ora.no-data-guard");
         new BackendFlow(port).run();
     }

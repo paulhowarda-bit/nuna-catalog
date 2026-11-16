@@ -29,6 +29,8 @@ dependencies {
     testImplementation(project(":catalog-tests-s3"))
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("io.opentelemetry.proto:opentelemetry-proto:${property("opentelemetry-proto.version")}")
+    // Micrometer's OpenTelemetry bridge, on the runtime classpath through the starter; ObservedTest builds one.
+    testImplementation("io.micrometer:micrometer-tracing-bridge-otel")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-oracle-free")

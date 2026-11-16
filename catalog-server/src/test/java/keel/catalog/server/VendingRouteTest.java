@@ -12,6 +12,7 @@ import keel.catalog.server.storage.StorageSettings;
 import keel.catalog.objectstore.StoreKind;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.tests.s3.TestS3;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -330,16 +331,17 @@ class VendingRouteTest {
         StorageSettings.Profile injected = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
                 "us-east-1", root, List.of(root), role, "a", "b", "arn:aws:iam:::user/w\"}],\"Statement\":[{\"x");
         Clock clock = Clock.systemUTC();
+        ObservationRegistry none = ObservationRegistry.NOOP;
 
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile,
-                "eu", nested), Map.of(), false), store, rest, clock)).hasMessageContaining("overlap");
+                "eu", nested), Map.of(), false), store, rest, clock, none)).hasMessageContaining("overlap");
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile), Map.of(), true), store, rest,
-                clock)).hasMessageContaining("must use https");
+                clock, none)).hasMessageContaining("must use https");
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, injected), Map.of(), false), store,
-                rest, clock)).hasMessageContaining("maintenance-principal").hasMessageContaining("character outside");
+                rest, clock, none)).hasMessageContaining("maintenance-principal").hasMessageContaining("character outside");
         assertThatThrownBy(() -> new CatalogStorage(settings(Map.of(S3ForTests.PROFILE, profile),
                 Map.of("trading", new StorageSettings.Catalog(S3ForTests.PROFILE, "other-keys", "Test Entity")), false), store,
-                rest, clock)).hasMessageContaining("a catalog's boundary never changes");
+                rest, clock, none)).hasMessageContaining("a catalog's boundary never changes");
     }
 
     private static StorageSettings settings(Map<String, StorageSettings.Profile> profiles,
