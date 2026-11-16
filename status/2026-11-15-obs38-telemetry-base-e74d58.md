@@ -41,7 +41,8 @@ Checked:
 - The fast build, `./gradlew build`, after merging main (4acb145): green on the second run, catalog-server's 139
   tests among it. The first run failed one test, `TwoIssuersTest#aTokenFromAnUntrustedIssuerIsRefused`, on a connection
   reset from the Keycloak container's token endpoint, before the catalog was called, with the keel-demo stack and
-  another session's build in Docker. An earlier run stopped at `:bitesApply` on the M5 bite above.
+  another session's build in Docker. An earlier run stopped at `:bitesApply` on the M5 bite above. After merging main
+  again (4eba722, backlog 37): green on the first run, every bite applying.
 
 Not covered:
 - The worker makes no spans of its own and its calls to the catalog carry no trace context: backlog 49.
