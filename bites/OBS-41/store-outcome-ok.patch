@@ -1,0 +1,17 @@
+Breaks: A store call's outcome no longer names its result's kind: every commit and write is ok.
+Module: catalog-server
+Test: ObservedTest#storeOutcomesNameTheResultsKind+aStoreCallNamesItsMethodAndOutcome
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedStore.java b/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedStore.java
+index e9ac504..75db81a 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedStore.java
++++ b/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedStore.java
+@@ -73,7 +73,7 @@ public final class ObservedStore implements InvocationHandler {
+             case Optional<?> optional -> optional.isPresent() ? "found" : "absent";
+             case Enum<?> constant -> constant.name().toLowerCase(Locale.ROOT).replace('_', '-');
+             case Record kind when kind.getClass().getEnclosingClass() != null
+-                    && kind.getClass().getEnclosingClass().isSealed() -> words(kind.getClass().getSimpleName());
++                    && kind.getClass().getEnclosingClass().isSealed() -> "ok";
+             case null, default -> "ok";
+         };
+     }
