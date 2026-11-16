@@ -1,0 +1,17 @@
+Breaks: a scan report's filter leaves the catalog as the client sent it, literals included.
+Module: catalog-iceberg
+Test: MetricsReportRequestTest#aScanFilterIsSanitizedWhateverTheClientSent
+
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+index f680e8b..3e69ee2 100644
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+@@ -207,7 +207,7 @@ public final class RestRequest {
+             ReportMetricsRequest request = ReportMetricsRequestParser.fromJson(node);
+             return switch (request.report()) {
+                 case ScanReport scan -> new MetricsSummary(MetricsSummary.SCAN, scan.tableName(), scan.snapshotId(), bytes,
+-                        compact(ImmutableScanReport.copyOf(scan).withFilter(ExpressionUtil.sanitize(scan.filter()))));
++                        compact(ImmutableScanReport.copyOf(scan).withFilter(scan.filter())));
+                 case CommitReport commit -> new MetricsSummary(MetricsSummary.COMMIT, commit.tableName(),
+                         commit.snapshotId(), bytes, compact(commit));
+                 case null, default -> unknownReport(node, bytes);
