@@ -502,6 +502,35 @@ final class TestCatalog {
         expect(manage(operator(), "DELETE", "/namespaces/" + namespace.level(0) + "/dr-freeze", null), 204);
     }
 
+    /** The table's health as the catalog keeps it from the worker's reports (D38), read as a writer. */
+    JsonNode health(TableIdentifier table) {
+        return read(expect(manage(writerTokens(), "GET", path(table) + "/health", null), 200).body());
+    }
+
+    /** The worker's last scans as the catalog keeps them (D38), read as a platform operator. */
+    JsonNode scans() {
+        HttpRequest request = HttpRequest.newBuilder(uri.resolve("management/v1/maintenance/scans"))
+                .header("Authorization", "Bearer " + operator().token()).GET().build();
+        try {
+            return read(expect(http.send(request, HttpResponse.BodyHandlers.ofString()), 200).body());
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    /** The scan as the catalog keeps it from the worker's reports, or a missing node when it keeps none. */
+    JsonNode scan(UUID id) {
+        for (JsonNode scan : scans().path("scans")) {
+            if (scan.path("id").asText().equals(id.toString())) {
+                return scan;
+            }
+        }
+        return com.fasterxml.jackson.databind.node.MissingNode.getInstance();
+    }
+
     // ---- what the catalog and the store hold ----
 
     /** Every file pending deletion for the object, due or not, as the catalog's database holds them. */

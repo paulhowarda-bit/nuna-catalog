@@ -24,12 +24,15 @@ import java.util.UUID;
 
 /**
  * The catalog's management routes the worker uses (D30), as a maintenance principal acting as itself: the work list,
- * the purge claim and its completion, and the pending deletions it records and completes.
+ * the purge claim and its completion, the pending deletions it records and completes, and its reports of its own work
+ * (D38).
  */
 final class Management {
 
     /** A file list or id list the catalog takes in one request. */
     static final int BATCH = 1000;
+    /** The largest score the catalog keeps (TableAssessment.MAX_SCORE): a billion times past a threshold. */
+    private static final double MAX_SCORE = 1e9;
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -162,6 +165,76 @@ final class Management {
             expect("completing deletions of " + objectId, send("POST", object(catalog, objectId)
                     + "/pending-deletions/complete", body), 204);
         }
+    }
+
+    // ---- reports of the worker's own work, for the console (D38; docs/observability/table-health.md) ----
+
+    /**
+     * Reports a scan's start, or with {@code outcome} ({@code succeeded} or {@code failed}) its end: the failed jobs
+     * by kind, and why a failed scan failed. A scan that has ended keeps its end.
+     */
+    void reportScan(UUID id, Instant started, Optional<Instant> ended, Optional<String> outcome,
+                    Map<String, Integer> failures, Optional<String> error) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("started-at", started.toString());
+        ended.ifPresent(at -> body.put("ended-at", at.toString()));
+        outcome.ifPresent(value -> body.put("outcome", value));
+        ObjectNode kinds = body.putObject("failures");
+        failures.forEach(kinds::put);
+        error.ifPresent(message -> body.put("error", message));
+        expect("the report of scan " + id, send("PUT", "management/v1/maintenance/scans/" + id, body), 204);
+    }
+
+    /**
+     * Reports a table's assessment, made at {@code at}; false when the catalog refused it, the table being gone or
+     * its name now another table's since the work list was read.
+     */
+    boolean reportAssessment(TableWork table, CompactionNeed need, Instant at) {
+        ObjectNode body = named(table);
+        body.put("assessed-at", at.toString());
+        body.put("data-files", need.dataFiles());
+        body.put("small-files", need.smallFiles());
+        body.put("position-delete-files", need.positionDeleteFiles());
+        body.put("deletion-vectors", need.deletionVectors());
+        body.put("equality-delete-files", need.equalityDeleteFiles());
+        ArrayNode reasons = body.putArray("reasons");
+        need.reasons().forEach(reason -> reasons.add(reason.label));
+        double score = need.score();
+        body.put("score", Double.isNaN(score) ? 0 : Math.min(score, MAX_SCORE));
+        return reported("the assessment of " + table.id(), send("PUT", "management/v1/maintenance/tables/"
+                + table.id() + "/assessment", body));
+    }
+
+    /**
+     * Reports how a table's compaction stands: {@code running}, or once {@code ended}, {@code succeeded},
+     * {@code failed} or {@code cut-off}. False when the catalog refused it, as for an assessment.
+     */
+    boolean reportCompaction(TableWork table, Instant started, Optional<Instant> ended, String outcome) {
+        ObjectNode body = named(table);
+        body.put("started-at", started.toString());
+        ended.ifPresent(at -> body.put("ended-at", at.toString()));
+        body.put("outcome", outcome);
+        return reported("the compaction report of " + table.id(), send("PUT", "management/v1/maintenance/tables/"
+                + table.id() + "/compaction", body));
+    }
+
+    /** A report's body, naming the table as the work list did, so the catalog refuses it for another table. */
+    private static ObjectNode named(TableWork table) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("catalog", table.catalog());
+        ArrayNode namespace = body.putArray("namespace");
+        table.namespace().forEach(namespace::add);
+        body.put("name", table.name());
+        return body;
+    }
+
+    /** True when the catalog kept the report, false when the table is gone or now another (404, 409). */
+    private static boolean reported(String what, HttpResponse<String> response) {
+        if (response.statusCode() == 404 || response.statusCode() == 409) {
+            return false;
+        }
+        expect(what, response, 204);
+        return true;
     }
 
     private <T> Page<T> page(Section section, Optional<String> token, java.util.function.Function<JsonNode, T> item) {

@@ -8,6 +8,7 @@ import static keel.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static keel.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static keel.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static keel.catalog.store.mongo.MongoCatalogStore.JOURNAL;
+import static keel.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_SCAN;
 import static keel.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static keel.catalog.store.mongo.MongoCatalogStore.OBJECT;
 import static keel.catalog.store.mongo.MongoCatalogStore.OUTBOX;
@@ -15,6 +16,7 @@ import static keel.catalog.store.mongo.MongoCatalogStore.OUTBOX_RELAY;
 import static keel.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static keel.catalog.store.mongo.MongoCatalogStore.POINTER;
 import static keel.catalog.store.mongo.MongoCatalogStore.PROJECTION_PIECE;
+import static keel.catalog.store.mongo.MongoCatalogStore.TABLE_HEALTH;
 
 import com.mongodb.ErrorCategory;
 import com.mongodb.MongoCommandException;
@@ -25,6 +27,7 @@ import com.mongodb.client.model.UpdateOptions;
 import java.util.List;
 import java.util.function.Consumer;
 import org.bson.BsonArray;
+import org.bson.BsonBoolean;
 import org.bson.BsonDateTime;
 import org.bson.BsonDocument;
 import org.bson.BsonInt32;
@@ -122,6 +125,19 @@ final class MongoSchema {
                     }
                 }
                 index(database, PENDING_DELETION, "pending_deletion_object", true, null, "objectId", "location");
+            }),
+            // v1.x (D38): what the maintenance worker reports of its own work, for the console's health dashboard.
+            // table_health holds each table's latest assessment and last compaction, by the table's id; the neediest
+            // are read by urgency (equality deletes first), then the highest score. maintenance_scan holds the
+            // recent scans. Both collections are new and no server of the previous release touches them, so
+            // building their indexes locks nothing it uses.
+            new Step(7, "table health and maintenance scans", database -> {
+                database.getCollection(TABLE_HEALTH, BsonDocument.class).createIndex(
+                        new BsonDocument("urgency", new BsonInt32(1)).append("score", new BsonInt32(-1))
+                                .append("_id", new BsonInt32(1)),
+                        new IndexOptions().name("table_health_neediest")
+                                .partialFilterExpression(new BsonDocument("needed", BsonBoolean.TRUE)));
+                index(database, MAINTENANCE_SCAN, "maintenance_scan_started", false, null, "startedAt", "_id");
             }));
 
     private MongoSchema() {

@@ -48,6 +48,7 @@ import keel.catalog.store.suite.CatalogStoreUnderTest;
 import keel.catalog.store.suite.Changes;
 import keel.catalog.store.suite.CommitSuite;
 import keel.catalog.store.suite.GovernanceSuite;
+import keel.catalog.store.suite.HealthSuite;
 import keel.catalog.store.suite.GrantSuite;
 import keel.catalog.store.suite.GroupSuite;
 import keel.catalog.store.suite.IdempotencySuite;
@@ -138,6 +139,14 @@ class OracleStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Governance extends GovernanceSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return oracle;
+        }
+    }
+
+    @Nested
+    class Health extends HealthSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return oracle;

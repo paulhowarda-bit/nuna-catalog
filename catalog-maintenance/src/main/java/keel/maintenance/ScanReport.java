@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /** What one scan of the work list did; logged after each scan and recorded as meters ({@link WorkerMetrics}). */
 final class ScanReport {
@@ -20,7 +21,9 @@ final class ScanReport {
         ORPHAN_SCAN("orphan-scan"),
         COMPACTION("compaction"),
         PURGE("purge"),
-        DELETION("deletion");
+        DELETION("deletion"),
+        /** A report of the worker's own work to the catalog (D38), which did not take it; the work went on. */
+        REPORT("report");
 
         final String label;
 
@@ -29,6 +32,8 @@ final class ScanReport {
         }
     }
 
+    /** The scan's id, as reported to the catalog (D38). */
+    final UUID id = UUID.randomUUID();
     /** Tables the work list named. */
     int tables;
     int snapshotsExpired;
@@ -58,6 +63,8 @@ final class ScanReport {
     final List<String> failures = new ArrayList<>();
     /** How many of {@link #failures} are of each kind. */
     final Map<Failure, Integer> failuresByKind = new EnumMap<>(Failure.class);
+    /** The first of {@link #failures} of each kind. */
+    final Map<Failure, String> firstFailures = new EnumMap<>(Failure.class);
 
     void failed(Failure kind, String what, RuntimeException e) {
         failed(kind, what + ": " + e);
@@ -66,6 +73,7 @@ final class ScanReport {
     void failed(Failure kind, String message) {
         failures.add(message);
         failuresByKind.merge(kind, 1, Integer::sum);
+        firstFailures.putIfAbsent(kind, message);
     }
 
     @Override

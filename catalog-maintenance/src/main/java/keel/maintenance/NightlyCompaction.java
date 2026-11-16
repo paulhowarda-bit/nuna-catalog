@@ -1,12 +1,14 @@
 package keel.maintenance;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import org.apache.iceberg.Table;
@@ -23,6 +25,9 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Kept in memory: a worker restarted in the window assesses its tables again, and a table whose Job ran before the
  * restart finds tonight's Job already there and starts no second one.
+ *
+ * <p>Each assessment is reported to the catalog as it is made, and each Job as it starts and as it ends (D38): a Job
+ * found already there is reported as starting when it was found.
  */
 final class NightlyCompaction {
 
@@ -42,16 +47,23 @@ final class NightlyCompaction {
     private final Compactor compactor;
     private final int maxJobs;
     private final WorkerMetrics metrics;
+    private final HealthReports health;
+    private final Clock clock;
     private final Set<UUID> assessed = new HashSet<>();
     private final List<Queued> queue = new ArrayList<>();
     /** Tonight's Jobs not yet seen to finish, by table. */
     private final Map<UUID, Management.TableWork> running = new LinkedHashMap<>();
+    /** When each of tonight's Jobs started, or was found already there, by table. */
+    private final Map<UUID, Instant> started = new LinkedHashMap<>();
 
-    NightlyCompaction(CleanupWindow.Night night, Compactor compactor, int maxJobs, WorkerMetrics metrics) {
+    NightlyCompaction(CleanupWindow.Night night, Compactor compactor, int maxJobs, WorkerMetrics metrics,
+                      HealthReports health, Clock clock) {
         this.night = night;
         this.compactor = compactor;
         this.maxJobs = maxJobs;
         this.metrics = metrics;
+        this.health = health;
+        this.clock = clock;
     }
 
     /** Whether the table has been assessed tonight. */
@@ -59,13 +71,15 @@ final class NightlyCompaction {
         return assessed.contains(table);
     }
 
-    /** Reads the table's current manifests and queues it if it needs compaction. */
+    /** Reads the table's current manifests, reports what they show, and queues it if it needs compaction. */
     void assess(Management.TableWork work, Table table, ScanReport report) {
+        Instant at = clock.instant();
         CompactionNeed need = CompactionNeed.assess(table, work.policy());
         assessed.add(work.id());
         report.tablesAssessed++;
         need.reasons().forEach(reason -> report.needs.merge(reason, 1, Integer::sum));
         metrics.assessed(work, need);
+        health.assessed(work, need, at, report);
         if (need.needed()) {
             LOG.info("Table {} ({}) needs compaction: {}", work.name(), work.id(), need);
             queue.add(new Queued(work, need));
@@ -87,11 +101,11 @@ final class NightlyCompaction {
                 switch (compactor.launch(table, next.need(), night)) {
                     case STARTED -> {
                         report.compactionsStarted++;
-                        running.put(table.id(), table);
+                        started(table, clock.instant(), report);
                         LOG.info("Started compaction of table {} ({}), {}, to stop by {}", table.name(), table.id(),
                                 next.need(), night.closes());
                     }
-                    case EXISTS -> running.put(table.id(), table);
+                    case EXISTS -> started(table, clock.instant(), report);
                     case OFF -> {
                     }
                 }
@@ -127,7 +141,20 @@ final class NightlyCompaction {
             }
             case SUCCEEDED -> LOG.info("The compaction Job of table {} ({}) succeeded", table.name(), table.id());
         }
+        ended(table, state, report);
         return true;
+    }
+
+    /** Notes a Job running, started or found at {@code at}, and reports it. */
+    private void started(Management.TableWork table, Instant at, ScanReport report) {
+        running.put(table.id(), table);
+        started.put(table.id(), at);
+        health.compaction(table, at, Optional.empty(), Compactor.State.RUNNING, report);
+    }
+
+    /** Reports how a Job ended, now. */
+    private void ended(Management.TableWork table, Compactor.State state, ScanReport report) {
+        health.compaction(table, started.remove(table.id()), Optional.of(clock.instant()), state, report);
     }
 
     /**
@@ -146,7 +173,9 @@ final class NightlyCompaction {
             if (state == Compactor.State.RUNNING || state == Compactor.State.CUT_OFF) {
                 report.compactionsCutOff++;
                 LOG.info("The window's end cut off the compaction Job of table {} ({})", table.name(), table.id());
+                state = Compactor.State.CUT_OFF;
             }
+            ended(table, state, report);
         }
         queue.sort(ORDER);
         for (Queued left : queue) {

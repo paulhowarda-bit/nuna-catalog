@@ -197,15 +197,16 @@ final class OracleGovernance {
     /**
      * Runs a MERGE, once more if it lost a race to insert the same key: Oracle's MERGE is not an
      * atomic upsert, but the losing insert waited for the winner's commit, so the second run updates.
+     * Returns the rows it merged.
      */
-    private static void upsert(Connection connection, String key, String merge, Object... parameters) throws SQLException {
+    static int upsert(Connection connection, String key, String merge, Object... parameters) throws SQLException {
         try {
-            update(connection, merge, parameters);
+            return update(connection, merge, parameters);
         } catch (SQLIntegrityConstraintViolationException e) {
             if (!Jdbc.violates(e, key)) {
                 throw e;
             }
-            update(connection, merge, parameters);
+            return update(connection, merge, parameters);
         }
     }
 

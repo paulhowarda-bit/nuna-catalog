@@ -6,6 +6,7 @@ import static keel.maintenance.WorkerMetricsTest.lastSuccess;
 import static keel.maintenance.WorkerMetricsTest.scans;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
@@ -31,7 +32,8 @@ import org.junit.jupiter.api.Test;
  *       small files and starts its Job, purges a dropped table and skips one another worker holds is counted as its
  *       report says, timed as a success and dated by the worker's clock; the needy table has its gauge;</li>
  *   <li>a scan that cannot read the work list (the worker's token source fails) is timed as a failure, counted as
- *       {@code work-list} failures, and leaves the last success where it was; the next good scan moves it;</li>
+ *       {@code work-list} failures, and leaves the last success where it was; the next good scan moves it; the
+ *       catalog, which the worker could not reach either, keeps no record of it ({@code report} failures);</li>
  *   <li>a scan whose store fails its orphan scan, purge and deletions counts each failure by its kind, and still
  *       succeeds: it read the whole work list.</li>
  * </ol>
@@ -118,7 +120,9 @@ class ScanMetricsTest {
             catalog.advance(Duration.ofHours(1), clock);
             reports.add(worker.runOnce());
 
-            assertThat(reports.getLast().failuresByKind).isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 3));
+            assertThat(reports.getLast().failuresByKind).as("nor could it report its start and end")
+                    .isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 3, ScanReport.Failure.REPORT, 2));
+            assertThat(catalog.scan(reports.getLast().id).isMissingNode()).isTrue();
             assertCounted(meters, reports);
             assertThat(failures(meters, ScanReport.Failure.WORK_LIST)).isEqualTo(3);
             assertThat(scans(meters, WorkerMetrics.FAILURE)).isEqualTo(1);
@@ -153,6 +157,13 @@ class ScanMetricsTest {
             assertThat(failures(meters, ScanReport.Failure.DELETION)).isGreaterThanOrEqualTo(1);
             assertThat(scans(meters, WorkerMetrics.SUCCESS)).as("failed jobs, the work list read").isEqualTo(3);
             assertThat(lastSuccess(meters)).isBetween(before.toEpochMilli() / 1000.0, after.toEpochMilli() / 1000.0);
+            // The catalog keeps the scan as the worker reported it (D38): succeeded, its failed jobs by kind.
+            JsonNode kept = catalog.scan(reports.getLast().id);
+            assertThat(kept.path("outcome").asText()).isEqualTo("succeeded");
+            assertThat(kept.at("/failures/orphan-scan").asInt()).isEqualTo(
+                    reports.getLast().failuresByKind.get(ScanReport.Failure.ORPHAN_SCAN));
+            assertThat(kept.at("/failures/purge").asInt()).isGreaterThanOrEqualTo(1);
+            assertThat(kept.at("/failures/deletion").asInt()).isGreaterThanOrEqualTo(1);
             WorkerMetricsTest.assertBoundedLabels(meters);
 
             // The store back: the claimed purge resumes, and the other worker finishes its own.

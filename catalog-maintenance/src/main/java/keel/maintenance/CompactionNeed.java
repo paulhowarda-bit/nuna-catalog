@@ -11,6 +11,7 @@ import java.util.Set;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileContent;
+import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.ManifestFile;
 import org.apache.iceberg.ManifestFiles;
 import org.apache.iceberg.ManifestReader;
@@ -46,9 +47,17 @@ import org.apache.iceberg.io.FileIO;
  * @param minInputFiles       the small-file threshold
  * @param deleteFileRatio     the delete-file threshold, as a share of data files
  * @param targetFileSize      the target file size, in bytes
+ * @param deletionVectors     live deletion vectors (v3), which are among the delete files; the catalog shows them
+ *                            apart from position-delete files (D38)
  */
 record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long equalityDeleteFiles, long minInputFiles,
-                      double deleteFileRatio, long targetFileSize) {
+                      double deleteFileRatio, long targetFileSize, long deletionVectors) {
+
+    /** A need with no deletion vectors among its delete files. */
+    CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long equalityDeleteFiles, long minInputFiles,
+                   double deleteFileRatio, long targetFileSize) {
+        this(dataFiles, smallFiles, deleteFiles, equalityDeleteFiles, minInputFiles, deleteFileRatio, targetFileSize, 0);
+    }
 
     static final String TARGET_FILE_SIZE = "compaction.target-file-size-bytes";
     static final String MIN_INPUT_FILES = "compaction.min-input-files";
@@ -104,12 +113,15 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
         }
         long deleteFiles = 0;
         long equality = 0;
+        long vectors = 0;
         for (ManifestFile manifest : current.deleteManifests(io)) {
             try (ManifestReader<DeleteFile> files = ManifestFiles.readDeleteManifest(manifest, io, specs)) {
                 for (DeleteFile file : files) {
                     deleteFiles++;
                     if (file.content() == FileContent.EQUALITY_DELETES) {
                         equality++;
+                    } else if (file.format() == FileFormat.PUFFIN) {
+                        vectors++;
                     }
                 }
             } catch (IOException e) {
@@ -118,7 +130,7 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
         }
         long smallFiles = smallByPartition.values().stream().filter(count -> count >= minInput)
                 .mapToLong(Long::longValue).sum();
-        return new CompactionNeed(dataFiles, smallFiles, deleteFiles, equality, minInput, ratio, target);
+        return new CompactionNeed(dataFiles, smallFiles, deleteFiles, equality, minInput, ratio, target, vectors);
     }
 
     /** Why the table needs compaction; empty when it does not. */
@@ -147,6 +159,11 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
      */
     double score() {
         return Math.max((double) smallFiles / minInputFiles, deleteShare() / deleteFileRatio);
+    }
+
+    /** Live position-delete files that are not deletion vectors. */
+    long positionDeleteFiles() {
+        return deleteFiles - equalityDeleteFiles - deletionVectors;
     }
 
     private double deleteShare() {

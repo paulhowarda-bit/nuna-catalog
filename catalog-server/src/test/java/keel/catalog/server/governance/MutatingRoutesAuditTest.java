@@ -49,6 +49,15 @@ class MutatingRoutesAuditTest {
             "POST /management/v1/catalogs/{catalog}/grants/check", "the caller's own batch check: stores nothing,"
                     + " and M5 does not audit its answers");
 
+    /**
+     * Management routes that keep the maintenance worker's reports of its own work (D38): bookkeeping, not changes to
+     * the catalog, so they write no audit record; their refusals are audited like every other's.
+     */
+    private static final Map<String, String> REPORTS = Map.of(
+            "PUT /management/v1/maintenance/scans/{id}", "a scan's start or end",
+            "PUT /management/v1/maintenance/tables/{id}/assessment", "a table's assessment",
+            "PUT /management/v1/maintenance/tables/{id}/compaction", "how a table's compaction stands");
+
     private static final String M = "/management/v1/catalogs/{catalog}";
     private static final Map<String, String> LEVELS = Map.of(
             "", "catalog",
@@ -101,6 +110,7 @@ class MutatingRoutesAuditTest {
             }
         });
         mutating.removeAll(NOT_MUTATING.keySet());
+        mutating.removeAll(REPORTS.keySet());
 
         Map<String, Function<String, EventType>> cases = cases();
         assertThat(cases.keySet()).as("a case for every mutating route").containsExactlyInAnyOrderElementsOf(mutating);
@@ -186,6 +196,12 @@ class MutatingRoutesAuditTest {
                 "/objects/" + dropped() + "/pending-deletions/complete", "{\"ids\":[\"" + UUID.randomUUID() + "\"]}",
                 rid(id)));
         cases.put("POST " + M + "/dr-reconcile", id -> api.manage("POST", "/dr-reconcile", null, rid(id)));
+        cases.put("PUT /management/v1/maintenance/scans/{id}", id -> api.manage("PUT", "/maintenance/scans/"
+                + UUID.randomUUID(), "{\"started-at\":\"2026-11-15T01:00:00Z\"}", rid(id)));
+        cases.put("PUT /management/v1/maintenance/tables/{id}/assessment", id -> api.manage("PUT",
+                "/maintenance/tables/" + api.id(withTable(), "tables", "t") + "/assessment", "{}", rid(id)));
+        cases.put("PUT /management/v1/maintenance/tables/{id}/compaction", id -> api.manage("PUT",
+                "/maintenance/tables/" + api.id(withTable(), "tables", "t") + "/compaction", "{}", rid(id)));
         return cases;
     }
 

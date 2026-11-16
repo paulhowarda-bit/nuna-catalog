@@ -23,6 +23,7 @@ import keel.catalog.store.CommitBatch;
 import keel.catalog.store.CommitHook;
 import keel.catalog.store.CommitLookup;
 import keel.catalog.store.CommitResult;
+import keel.catalog.store.CompactionRun;
 import keel.catalog.store.GovernanceAttribute;
 import keel.catalog.store.Grant;
 import keel.catalog.store.GrantRecord;
@@ -31,6 +32,7 @@ import keel.catalog.store.IdempotencyResult;
 import keel.catalog.store.JournalRecord;
 import keel.catalog.store.KeyState;
 import keel.catalog.store.LegalHold;
+import keel.catalog.store.MaintenanceScan;
 import keel.catalog.store.Name;
 import keel.catalog.store.NamespaceRecord;
 import keel.catalog.store.ObjectCreation;
@@ -45,6 +47,8 @@ import keel.catalog.store.SchemaVersion;
 import keel.catalog.store.Securable;
 import keel.catalog.store.StorageProfile;
 import keel.catalog.store.StoreException;
+import keel.catalog.store.TableAssessment;
+import keel.catalog.store.TableHealth;
 import keel.catalog.store.TrustedEngine;
 import keel.catalog.store.WriteResult;
 import java.time.Duration;
@@ -93,6 +97,8 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String HOLD = "legal_hold";
     static final String ENGINE = "trusted_engine";
     static final String PENDING_DELETION = "pending_deletion";
+    static final String TABLE_HEALTH = "table_health";
+    static final String MAINTENANCE_SCAN = "maintenance_scan";
 
     /** Projections longer than this are stored in pieces (section 7). */
     public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
@@ -118,6 +124,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoOutbox outbox;
     private final MongoGovernance governance;
     private final MongoDeletions deletions;
+    private final MongoHealth health;
 
     public MongoCatalogStore(MongoClient client, String databaseName) {
         this(client, databaseName, CommitHook.NONE);
@@ -147,6 +154,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.outbox = new MongoOutbox(transactions);
         this.governance = new MongoGovernance(transactions);
         this.deletions = new MongoDeletions(transactions);
+        this.health = new MongoHealth(transactions);
     }
 
     // ---- commit core (sections 4, 5.3 and 7) ----
@@ -416,6 +424,38 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public WriteResult completeDeletions(UUID objectId, List<UUID> ids, Change change) {
         return deletions.complete(objectId, ids, change);
+    }
+
+    // ---- the worker's state (D38) ----
+
+    @Override
+    public WriteResult recordAssessment(UUID objectId, TableAssessment assessment) {
+        return health.recordAssessment(objectId, assessment);
+    }
+
+    @Override
+    public WriteResult recordCompaction(UUID objectId, CompactionRun compaction) {
+        return health.recordCompaction(objectId, compaction);
+    }
+
+    @Override
+    public Optional<TableHealth> readTableHealth(UUID objectId) {
+        return health.read(objectId);
+    }
+
+    @Override
+    public Page<TableHealth> listNeediestTables(PageRequest page) {
+        return health.listNeediest(page);
+    }
+
+    @Override
+    public void recordScan(MaintenanceScan scan, int keep) {
+        health.recordScan(scan, keep);
+    }
+
+    @Override
+    public List<MaintenanceScan> listScans() {
+        return health.listScans();
     }
 
     // ---- grants ----

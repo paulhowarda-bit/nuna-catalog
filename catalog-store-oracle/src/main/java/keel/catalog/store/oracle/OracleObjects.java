@@ -35,7 +35,7 @@ import java.util.UUID;
  */
 final class OracleObjects {
 
-    private static final String COLUMNS = "id, catalog_id, namespace_id, name_norm, name, kind, state, dropped_at,"
+    static final String COLUMNS = "id, catalog_id, namespace_id, name_norm, name, kind, state, dropped_at,"
             + " purge_after, location_root, purge_claimant";
     /**
      * No legal hold and no DR freeze on object {@code o}, a namespace that held it when it was last placed or
@@ -268,6 +268,7 @@ final class OracleObjects {
             update(connection, "UPDATE catalog_object SET state = 'PURGED', purge_claimant = NULL WHERE id = ?", objectId);
             update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
             update(connection, "DELETE FROM pending_deletion WHERE object_id = ?", objectId);
+            update(connection, "DELETE FROM table_health WHERE object_id = ?", objectId);
             return WriteResult.APPLIED;
         });
     }
@@ -361,7 +362,7 @@ final class OracleObjects {
                 instant(row, "purge_after"), Jdbc.text(row, "purge_claimant")), objectId);
     }
 
-    private static CatalogObject object(ResultSet row) throws SQLException {
+    static CatalogObject object(ResultSet row) throws SQLException {
         return new CatalogObject(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "id"), Jdbc.uuid(row, "namespace_id"),
                 new Name(Jdbc.text(row, "name_norm"), Jdbc.text(row, "name")),
                 CatalogObject.Kind.valueOf(row.getString("kind")), CatalogObject.State.valueOf(row.getString("state")),
