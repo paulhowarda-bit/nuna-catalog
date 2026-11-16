@@ -6,6 +6,14 @@
 {{- end -}}
 {{- end -}}
 
+{{/*
+The headless Service whose name resolves to every ready server: each server asks the others for their figures for the
+console's health page (docs/observability/health-page.md). A Service name is one DNS label, at most 63 characters.
+*/}}
+{{- define "keel-catalog.peersName" -}}
+{{- printf "%s-peers" (include "keel-catalog.fullname" . | trunc 57 | trimSuffix "-") -}}
+{{- end -}}
+
 {{- define "keel-catalog.selectorLabels" -}}
 app.kubernetes.io/name: {{ .Chart.Name }}
 app.kubernetes.io/instance: {{ .Release.Name }}

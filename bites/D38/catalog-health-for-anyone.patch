@@ -1,0 +1,15 @@
+Breaks: catalog health for the whole deployment is shown to anyone signed in, not only platform operators.
+Module: catalog-server
+Test: ConsoleHealthTest#someoneWithNoGrantSeesNoCatalogHealthAndNoTable
+diff --git a/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java b/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java
+index 4ee66bc..fa38f68 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java
++++ b/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java
+@@ -73,7 +73,6 @@ class CatalogHealthRoutes {
+     /** The whole deployment's figures over the last day, and which servers they come from; platform operators only. */
+     @GetMapping(path = CATALOG, produces = MediaType.APPLICATION_JSON_VALUE)
+     ResponseEntity<String> catalog(HttpServletRequest http) {
+-        operator(http, "readCatalogHealth");
+         HealthWindow.Window own = window.lastDay();
+         List<Peers.Answer> answers = peers.ask(http.getHeader("Authorization"));
+ 

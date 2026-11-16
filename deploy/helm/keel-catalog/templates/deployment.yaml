@@ -57,6 +57,10 @@ spec:
             - name: JAVA_TOOL_OPTIONS
               value: {{ .Values.javaToolOptions | quote }}
             {{- include "keel-catalog.telemetryEnv" . | nindent 12 }}
+            # The other servers, which the console's health page gathers catalog health from: the headless Service,
+            # whose name resolves to every ready server (docs/observability/health-page.md).
+            - name: KEEL_HEALTH_PEERS
+              value: {{ printf "%s.%s.svc:8181" (include "keel-catalog.peersName" .) .Release.Namespace | quote }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

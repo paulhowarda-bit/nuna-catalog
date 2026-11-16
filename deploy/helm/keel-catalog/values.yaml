@@ -15,7 +15,8 @@ imagePullSecrets: []
 # The server's settings, as Spring Boot properties in YAML form: rendered into application.yaml in a ConfigMap.
 # Nothing secret goes here; secrets go in `secrets`. Every keel.* setting is documented on its settings class
 # in catalog-server (DatabaseSettings, StorageSettings, SecuritySettings, AuditSettings, GovernanceSettings,
-# RestSettings, UiSettings). The server refuses to start without its database or a trusted issuer.
+# RestSettings, UiSettings, HealthSettings). The server refuses to start without its database or a trusted issuer.
+# The chart sets keel.health.peers itself, to its headless Service (templates/service-peers.yaml).
 config:
   spring:
     datasource:

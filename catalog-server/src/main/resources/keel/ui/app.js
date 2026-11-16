@@ -4,6 +4,7 @@ import * as api from './api.js';
 import {claims, finishSignIn, signedIn, signedOut, startSignIn, useToken, whenSignedOut} from './auth.js';
 import {fill, h, failure} from './dom.js';
 import {detail} from './detail.js';
+import {healthPage} from './health.js';
 
 const SEP = '\u001f';
 const main = document.getElementById('main');
@@ -11,6 +12,7 @@ const catalogPick = document.getElementById('catalog-pick');
 const catalogSelect = document.getElementById('catalog-select');
 const who = document.getElementById('who');
 const signOutButton = document.getElementById('sign-out');
+const healthButton = document.getElementById('health-link');
 
 let config = {'dev-token-login': false, oidc: null};
 
@@ -45,11 +47,12 @@ document.getElementById('theme-toggle').addEventListener('click', () => {
 
 // ---- where we are: kept in the URL fragment so a view can be reloaded or shared ----
 
-/** {catalog, kind: catalog|namespace|table|view, namespace: [], name, tab} */
+/** {page: health | null, catalog, kind: catalog|namespace|table|view, namespace: [], name, tab} */
 function route() {
   const p = new URLSearchParams(location.hash.slice(1));
   const namespace = p.get('ns') ? p.get('ns').split(SEP) : [];
   return {
+    page: p.get('p') || null,
     catalog: p.get('c') || null,
     kind: p.get('k') || (namespace.length ? 'namespace' : 'catalog'),
     namespace,
@@ -57,6 +60,11 @@ function route() {
     tab: p.get('tab') || null,
   };
 }
+
+healthButton.addEventListener('click', () => {
+  if (location.hash === '#p=health') show();
+  else location.hash = '#p=health';
+});
 
 export function go(target, tab) {
   const p = new URLSearchParams();
@@ -91,6 +99,8 @@ signOutButton.addEventListener('click', () => {
 function signInScreen(message) {
   catalogPick.hidden = true;
   signOutButton.hidden = true;
+  healthButton.hidden = true;
+  layoutShown = false;
   fill(who);
   const parts = [h('h1', null, 'Sign in'),
     message ? h('p', {class: 'notice'}, message) : null];
@@ -140,12 +150,15 @@ function showWho() {
     groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null,
     expires ? h('span', {class: 'muted'}, ' · until ' + expires.toLocaleString()) : null));
   signOutButton.hidden = false;
+  healthButton.hidden = false;
 }
 
 // ---- the tree ----
 
 const nodes = new Map(); // key -> {expanded, children: {namespaces, tables, views} | null, error, li}
 let currentCatalog = null;
+/** Whether main holds the tree and pane, rather than the sign-in screen or the health page. */
+let layoutShown = false;
 
 function key(levels) {
   return levels.join(SEP);
@@ -284,7 +297,14 @@ async function show() {
     return;
   }
   const r = route();
-  if (!r.catalog || r.catalog !== currentCatalog) {
+  if (r.page === 'health') {
+    layoutShown = false;
+    healthButton.setAttribute('aria-current', 'page');
+    fill(main, healthPage());
+    return;
+  }
+  healthButton.removeAttribute('aria-current');
+  if (!r.catalog || r.catalog !== currentCatalog || !layoutShown) {
     await chooseCatalog(r.catalog);
     return;
   }
@@ -313,6 +333,7 @@ async function chooseCatalog(wanted) {
     nodes.clear();
   }
   fill(main, h('div', {class: 'layout'}, tree, pane));
+  layoutShown = true;
   if (route().catalog !== chosen) go({catalog: chosen, kind: 'catalog', namespace: []});
   else show();
 }
@@ -325,7 +346,8 @@ window.addEventListener('hashchange', () => {
 async function start() {
   showWho();
   currentCatalog = null;
-  await chooseCatalog(route().catalog);
+  layoutShown = false;
+  await show();
 }
 
 async function boot() {
