@@ -121,7 +121,10 @@ final class TestCatalog {
         }
     }
 
-    private TestCatalog(String host) {
+    /**
+     * @param arguments more of the server's settings, as command-line arguments, which win over its application.yaml
+     */
+    private TestCatalog(String host, String... arguments) {
         Backing shared = backing();
         Map<String, Object> properties = new LinkedHashMap<>(s3.serverProperties(PROFILE, bucket));
         if (!host.equals("localhost") && s3.kind != TestS3.Kind.AWS) {
@@ -150,11 +153,13 @@ final class TestCatalog {
         properties.put("keel.audit.request-timeout", "1s");
         properties.put("keel.audit.probe-interval", "1s");
         properties.put("keel.audit.relay-interval", "100ms");
+        List<String> args = new ArrayList<>(List.of(arguments));
+        // A free port, as an argument: builder properties are only defaults, and application.yaml's 8181 would win
+        // over them, clashing with any catalog already running here (the demo).
+        args.add("--server.port=0");
         ConfigurableApplicationContext server = new SpringApplicationBuilder(CatalogServer.class, ServerClock.class)
                 .properties(properties)
-                // A free port, as an argument: builder properties are only defaults, and application.yaml's 8181
-                // would win over them, clashing with any catalog already running here (the demo).
-                .run("--server.port=0");
+                .run(args.toArray(String[]::new));
         jdbc = server.getBean(JdbcTemplate.class);
         int port = server.getEnvironment().getRequiredProperty("local.server.port", Integer.class);
         uri = URI.create("http://" + host + ":" + port + "/");
@@ -183,6 +188,19 @@ final class TestCatalog {
             forPods = new TestCatalog("host.docker.internal");
         }
         return forPods.uri;
+    }
+
+    /**
+     * A catalog that exports its spans over OTLP/HTTP to {@code traces}: a second server on the same database and
+     * store, for a test of the worker's trace. Its sampler keeps every request whose caller's trace was kept, and 10%
+     * of the rest, as a deployment's does. Its spans come from {@code keel-catalog}: on this module's class path the
+     * worker's application.yaml comes first, which names every server here {@code keel-maintenance}.
+     */
+    static synchronized TestCatalog traced(String traces) {
+        get();
+        return new TestCatalog("localhost", "--management.opentelemetry.tracing.export.otlp.endpoint=" + traces,
+                "--management.opentelemetry.tracing.export.schedule-delay=100ms",
+                "--spring.application.name=keel-catalog");
     }
 
     private static synchronized Backing backing() {
