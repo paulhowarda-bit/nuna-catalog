@@ -21,8 +21,10 @@ through its tables, purges and due deletions (`catalog-maintenance/README.md`, "
 
 ## Meters
 
-Labels hold only bounded values: a failure's `kind`, a scan's `outcome` and a compaction `reason`. Never a table,
-namespace, file or person, with one exception, `keel.maintenance.table.compaction.need` ("The needy tables" below).
+Labels hold only bounded values: a failure's `kind`, a scan's `outcome` and a compaction `reason`, and on the three
+timers the spans make (backlog 49), a `part`, an `exception`'s simple name, a call's `method`, route and `status`.
+Never a table, namespace, file or person, with one exception, `keel.maintenance.table.compaction.need` ("The needy
+tables" below).
 
 | Meter | Type | Labels | What it records | Supports |
 |---|---|---|---|---|
@@ -45,6 +47,12 @@ namespace, file or person, with one exception, `keel.maintenance.table.compactio
 | `keel.maintenance.purges.completed` | counter | none | Dropped objects purged. | Purges failing |
 | `keel.maintenance.purges.skipped` | counter | none | Purges another worker holds, or the catalog refused or rate-limited. | Panel |
 | `keel.maintenance.files.deleted` | counter | none | Files deleted: due pending deletions and purged objects' files. | Deletions failing |
+| `keel.maintenance.scan.run` | timer | `outcome`, `exception`, `error` | Each scan, as its span's observation (worker-spans.md): the same durations as `keel.maintenance.scan`, which alerts use. Registered at the first scan. | None of its own |
+| `keel.maintenance.part` | timer | `part`, `outcome`, `exception`, `error` | Each part of a scan, as its span's observation: a work list page, a table's load, each job, a purge, a deletion, a report. Registered at first use. | Panel: where a scan's time goes |
+| `http.client.requests` | timer | `method`, `uri` (a route), `status`, `outcome`, `error` | Each call to the catalog and to the identity provider, Micrometer's (`micrometer-java11`). Registered at first use. | Panel: the catalog's answers to the worker |
+
+Micrometer also keeps a long-task timer for each of the last three, `<name>.active`, counting those under way, labelled
+as they were when they started.
 
 The reasons of `keel.maintenance.tables.needing.compaction` (the thresholds are maintenance policy keys,
 `catalog-maintenance/README.md`, "Compaction on need"):
@@ -179,7 +187,8 @@ sum by (job) (increase(keel_maintenance_files_outside_total[1d])) > 0
 
 ## Adding a meter
 
-Item 49 (worker spans) builds on these, as items 46 (compaction on need) and 47 (the reports the catalog keeps, table-health.md) did.
+Items 46 (compaction on need), 47 (the reports the catalog keeps, table-health.md) and 49 (the worker's spans,
+worker-spans.md) built on these.
 
 - A new count of a scan: a field in `ScanReport` and one line in `WorkerMetrics.COUNTS`. A new kind of failure: a
   value of `ScanReport.Failure`. Both are registered when the worker starts.
@@ -188,9 +197,10 @@ Item 49 (worker spans) builds on these, as items 46 (compaction on need) and 47 
 - Labels stay bounded. The one exception Paul accepted is item 46's series for each needy table,
   `keel.maintenance.table.compaction.need`, labelled with catalog, namespace and table name (D30, amended
   2026-11-15); `WorkerMetricsTest.assertBoundedLabels` allows it and no other.
-- A meter name keeps one set of label keys: a Prometheus registry refuses a second. An Observation (item 49) makes a
-  timer of its own name with an `error` label, so name a scan's Observation apart from `keel.maintenance.scan`, or
-  replace that timer with it, keeping `outcome`.
+- A meter name keeps one set of label keys: a Prometheus registry refuses a second. An Observation makes a timer of
+  its own name with an `error` label, so the scan's Observation is `keel.maintenance.scan.run`, apart from
+  `keel.maintenance.scan`, and an attribute only some parts have (`section`, `report`) goes on the span alone, as a
+  high-cardinality key value (worker-spans.md).
 - List the meter here: `WorkerMetricsTest#theDocsListEveryMeter` fails until it is.
 
 ## Tests and bites

@@ -1,0 +1,16 @@
+Breaks: the scan's observation is never in scope, so each part starts a trace of its own.
+Module: catalog-maintenance
+Test: ScanSpansTest#aScanIsTheRootAndEachPartItsChild
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java b/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
+index 320903f..0719c7f 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
+@@ -77,7 +77,7 @@ final class ScanSpans {
+      */
+     void scan(ScanReport report, Runnable scan) {
+         Observation observation = Observation.createNotStarted(SCAN, registry).contextualName(SCAN_SPAN).start();
+-        try (Observation.Scope scope = observation.openScope()) {
++        try {
+             scan.run();
+             observation.lowCardinalityKeyValue(OUTCOME, report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST)
+                     ? WorkerMetrics.FAILURE : WorkerMetrics.SUCCESS);

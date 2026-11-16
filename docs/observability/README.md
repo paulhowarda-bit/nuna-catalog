@@ -3,9 +3,10 @@
 The catalog server (`keel-catalog`) and the maintenance worker (`keel-maintenance`) send metrics, traces and logs to an
 OpenTelemetry collector over OTLP/HTTP, and write their log lines to stdout as JSON. Nothing is exported until an
 endpoint is named, so the tests, the demo and a laptop run need no collector. Backlog 38 laid this foundation; 39, 40
-and 41 add the catalog's own meters and spans.
+and 41 add the catalog's own meters and spans, and 49 the worker's spans.
 
-The worker's meters are in worker-metrics.md, the catalog's in catalog-metrics.md and its spans in spans.md. What the
+The worker's meters are in worker-metrics.md and its spans in worker-spans.md, the catalog's in catalog-metrics.md and
+its spans in spans.md. What the
 catalog keeps of the worker's own work, each table's assessment and the recent scans, for the console's health pages,
 is in table-health.md (backlog 47).
 
@@ -18,8 +19,8 @@ is in table-health.md (backlog 47).
 - **Traces.** A server span for every HTTP request the catalog answers, named for its method and route template. A
   caller's W3C `traceparent` is honoured, so a client's trace continues into the catalog. Beneath it, each call the
   request makes to the database, the object store, STS and Kafka is a span of its own, with a timer of the same name
-  (spans.md, backlog 41). The worker makes no spans of its own yet, and its calls to the catalog carry no trace
-  context (backlog 49).
+  (spans.md, backlog 41). Each of the worker's scans is a trace of its own, a span for each part of it, and its calls
+  to the catalog carry the trace, so the catalog's spans for them join it (worker-spans.md, backlog 49).
 - **Logs.** Every log line, to stdout as JSON and, when a logs endpoint is named, as an OTLP log record.
 
 Each signal carries the resource attributes `service.name` (`keel-catalog` or `keel-maintenance`, or
@@ -101,7 +102,8 @@ No metric label or span attribute names a person (the principal, the end user in
 value. Boot's request meters and spans label by route template (`/v1/{prefix}/namespaces/{namespace}/...`), method,
 status and outcome; the span also records the request's path, which names namespaces and tables but never a person or a
 filter (scan filters travel in request bodies). `TelemetryTest#noPersonOrFilterValueInLabelsOrAttributes` checks this.
-New meters and spans (39-41) must keep to it.
+New meters and spans (39-41, 49) must keep to it. The worker's spans name no table or namespace at all; their calls'
+`uri` is a route (worker-spans.md).
 
 ## Prometheus later
 
@@ -117,5 +119,6 @@ lines over OTLP (`TelemetryWiring`, the worker's `Telemetry`) touches OpenTeleme
 | `catalog-server` `ExportNeedsEndpointTest` | With no endpoint nothing exports; each endpoint switches its own signal on; the standard variables count. |
 | `catalog-server` `FailedExportTest` | A collector that never answers fails and slows no request. |
 | `catalog-maintenance` `TelemetryTest` | The worker's metrics, a span and its log lines arrive, also from the standard variables alone; with no endpoint nothing exports. |
+| `catalog-maintenance` `WorkerTraceTest` | A scan's span and the catalog's spans for its calls arrive in one trace (worker-spans.md). |
 
-Each guarded rule's bite is in `bites/OBS-38/`.
+Each guarded rule's bite is in `bites/OBS-38/`; those of the worker's spans in `bites/OBS-49/`.

@@ -83,6 +83,10 @@ Its rules hold at work. Some of its facts describe Paul's home machine:
 
   OkHttp and the Kotlin standard library are not needed: the exporter sends over the JDK's HTTP client.
 
+  The worker's spans (backlog 49) add `io.micrometer:micrometer-java11` 1.17.2, which observes its calls to the
+  catalog on the JDK's HTTP client and sends their trace (docs/observability/worker-spans.md). Boot's BOM manages it;
+  it depends on nothing new.
+
 Then the fast build must be green before anything else:
 
 ```bash

@@ -132,7 +132,8 @@ The image is built from that jar (see `deploy/image/maintenance.Dockerfile`), an
 `deploy/helm/keel-maintenance` runs it. The worker has no HTTP port. It logs a line per scan and a warning
 per failed job, and records as meters what each scan did, how long it took and when one last succeeded, which
 go out over OTLP with its other telemetry: `docs/observability/worker-metrics.md` lists them and the alerts each
-supports.
+supports. Each scan is also a trace, a span for each part of it, which its calls to the catalog carry to the catalog
+as `traceparent`, so the catalog's spans for them join it (`docs/observability/worker-spans.md`).
 
 ### Settings (`keel.maintenance.*`)
 

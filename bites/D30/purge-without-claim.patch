@@ -2,19 +2,19 @@ Breaks: the worker deletes a dropped object's files whatever its purge claim ans
 Module: catalog-maintenance
 Test: PurgeTest#purgeRemovesThePrefixAfterAClaim
 diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-index b1d8612..d633ae7 100644
+index 62b16e8..1581ffd 100644
 --- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-@@ -206,11 +206,7 @@ final class Worker implements AutoCloseable {
+@@ -394,11 +394,7 @@ final class Worker implements AutoCloseable {
  
-     private void purge(Management.PurgeWork purge, ScanReport report) {
-         try {
--            Management.Claim claim = management.claimPurge(purge.catalog(), purge.id());
--            if (claim != Management.Claim.CLAIMED) {
--                report.purgesSkipped++;
--                return;
--            }
-+            management.claimPurge(purge.catalog(), purge.id());
-             String root = purge.location().endsWith("/") ? purge.location() : purge.location() + "/";
-             List<String> batch = new ArrayList<>(Management.BATCH);
-             for (FileInfo file : storage.list(root)) {
+     /** Claims the object's purge, deletes its files and completes it: {@code purged}, or {@code skipped}. */
+     private String purged(Management.PurgeWork purge, ScanReport report) {
+-        Management.Claim claim = management.claimPurge(purge.catalog(), purge.id());
+-        if (claim != Management.Claim.CLAIMED) {
+-            report.purgesSkipped++;
+-            return "skipped";
+-        }
++        management.claimPurge(purge.catalog(), purge.id());
+         String root = purge.location().endsWith("/") ? purge.location() : purge.location() + "/";
+         List<String> batch = new ArrayList<>(Management.BATCH);
+         for (FileInfo file : storage.list(root)) {
