@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.openqa.selenium.By;
+import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -85,10 +86,14 @@ public final class ConsoleBrowser implements AutoCloseable {
                 bearer.replaceFirst("^Bearer ", ""));
     }
 
-    /** Waits up to {@link #WAIT} for {@code condition} to give a non-null, non-false value, then returns it. */
+    /**
+     * Waits up to {@link #WAIT} for {@code condition} to give a non-null, non-false value, then returns it. An element
+     * the console redraws between being found and being read is stale; the wait looks again rather than failing.
+     */
     public <T> T await(String what, Function<WebDriver, T> condition) {
         return new WebDriverWait(driver, WAIT)
                 .withMessage(() -> what + "; the page shows:\n" + visibleText())
+                .ignoring(StaleElementReferenceException.class)
                 .until(condition);
     }
 
