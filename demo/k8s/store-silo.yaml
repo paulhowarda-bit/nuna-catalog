@@ -1,4 +1,5 @@
-# -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000).
+# -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000). Its console, MinIO's, is on the
+# pod's 9001 (otherwise a random port at each start); the demo publishes it on localhost:8184 (ports.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,12 +16,13 @@ spec:
         - name: silo
           image: ${SILO_IMAGE}
           imagePullPolicy: Never
-          args: ["server", "/data"]
+          args: ["server", "/data", "--console-address", ":9001"]
           env:
             - {name: MINIO_ROOT_USER, value: keeltest}
             - {name: MINIO_ROOT_PASSWORD, value: keeltest-secret-key}
           ports:
             - containerPort: 9000
+            - containerPort: 9001
           readinessProbe:
             httpGet:
               path: /minio/health/live
