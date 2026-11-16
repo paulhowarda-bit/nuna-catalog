@@ -2,14 +2,14 @@ Breaks: the compaction Job is not told the table's id, so it compacts whatever t
 Module: catalog-maintenance
 Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
 diff --git a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
-index b4b71c1..a7b201d 100644
+index 6182e77..b14dac6 100644
 --- a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
 +++ b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
-@@ -123,7 +123,6 @@ final class KubernetesJobs implements Compactor {
+@@ -161,7 +161,6 @@ final class KubernetesJobs implements Compactor {
          env(env, "KEEL_SCRIPT", SCRIPT);
          env(env, "KEEL_CONF", sparkConf(table).toString());
          env(env, "KEEL_TABLE", JSON.valueToTree(levels(table)).toString());
 -        env(env, "KEEL_TABLE_UUID", table.id().toString());
-         ObjectNode options = JSON.createObjectNode();
-         String target = table.policy().get("compaction.target-file-size-bytes");
-         if (target != null) {
+         env(env, "KEEL_OPTIONS", JSON.valueToTree(need.options()).toString());
+         env(env, "KEEL_DRIVER_MEMORY", settings.driverMemory());
+         env.addObject().put("name", "KEEL_AUTH").putObject("valueFrom").putObject("secretKeyRef")

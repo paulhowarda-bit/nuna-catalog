@@ -2,10 +2,10 @@ Breaks: a scan in which one job failed is timed as failed and leaves the last su
 Module: catalog-maintenance
 Test: WorkerMetricsTest#aScanAddsEachCountAndEachFailureByItsKind
 diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
-index 8d8605b..382e4ea 100644
+index 816a4c1..28770ea 100644
 --- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
-@@ -103,7 +103,7 @@ final class WorkerMetrics {
+@@ -134,7 +134,7 @@ final class WorkerMetrics {
              scan.run();
              ended = true;
          } finally {
@@ -13,4 +13,4 @@ index 8d8605b..382e4ea 100644
 +            boolean success = ended && report.failures.isEmpty();
              counts.forEach((count, counter) -> counter.increment(count.of().applyAsInt(report)));
              report.failuresByKind.forEach((kind, times) -> failures.get(kind).increment(times));
-             (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
+             report.needs.forEach((reason, tables) -> needing.get(reason).increment(tables));

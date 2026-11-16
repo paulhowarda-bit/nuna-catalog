@@ -6,6 +6,8 @@ import java.net.http.HttpClient;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.LocalTime;
+import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.Map;
 import org.apache.iceberg.io.FileInfo;
@@ -50,8 +52,8 @@ public final class PurgeProcess {
             }
         };
         try (Worker worker = new Worker(new Management(catalog, tokens, HttpClient.newHttpClient(), 100),
-                new Catalogs(catalog, tokens, Map.of()), slow, Compactor.NONE, Clock.systemUTC(), Duration.ofDays(1),
-                Duration.ofDays(1), new SimpleMeterRegistry())) {
+                new Catalogs(catalog, tokens, Map.of()), slow, Compactor.NONE, Clock.systemUTC(),
+                new CleanupWindow(LocalTime.MIDNIGHT, LocalTime.MIDNIGHT, ZoneOffset.UTC), Duration.ofDays(1), 1, new SimpleMeterRegistry())) {
             System.out.println("SCANNED " + worker.runOnce());
         }
     }

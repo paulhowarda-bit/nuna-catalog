@@ -2,16 +2,24 @@ package keel.maintenance;
 
 import java.net.URI;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * The engine matrix's way into the maintenance worker's compaction (D30 (3)): the worker's own {@link KubernetesJobs},
- * package-private, launching the Job the worker would for one table whose policy turns compaction on.
+ * The engine matrix's way into the maintenance worker's compaction (D30 (3), amended 2026-11-15): the worker's own
+ * {@link KubernetesJobs}, package-private, launching the Job the worker would for one table that needs compaction, in a
+ * cleanup window that opens now and closes in half an hour.
  */
 public final class MatrixCompaction {
+
+    /** The policy's built-in target file size, which the worker passes on: 512 MiB. */
+    private static final long TARGET_FILE_SIZE = 536870912L;
 
     private MatrixCompaction() {
     }
@@ -36,7 +44,7 @@ public final class MatrixCompaction {
                                 String catalog, UUID id, List<String> namespace, String name, String location,
                                 String token) {
         WorkerSettings.Compaction settings = new WorkerSettings.Compaction(image, "Never", jobs, "keel-compaction",
-                apiServer, serviceAccount, catalogUri, "2Gi", "1g", Duration.ofMinutes(30), 185, Map.of());
+                apiServer, serviceAccount, catalogUri, "2Gi", "1g", 1, 185, Map.of());
         TokenSource tokens = new TokenSource() {
             @Override
             public String token() {
@@ -50,10 +58,16 @@ public final class MatrixCompaction {
         };
         Management.TableWork table = new Management.TableWork(catalog, id, namespace, name, location,
                 Map.of("compaction.enabled", "true"));
-        Compactor.Launch launch = new KubernetesJobs(settings, Duration.ofHours(1), catalogUri, tokens).launch(table);
+        Instant now = Instant.now();
+        CleanupWindow.Night night = new CleanupWindow.Night(LocalDate.ofInstant(now, ZoneOffset.UTC), now,
+                now.plus(Duration.ofMinutes(30)));
+        // rewrite_data_files' own thresholds, as the worker passes them for a table whose policy sets none.
+        CompactionNeed need = new CompactionNeed(0, 0, 0, 0, 5, 0.3, TARGET_FILE_SIZE);
+        Compactor.Launch launch = new KubernetesJobs(settings, catalogUri, tokens, Clock.systemUTC())
+                .launch(table, need, night);
         if (launch != Compactor.Launch.STARTED) {
             throw new IllegalStateException("compaction of " + id + " did not start: " + launch);
         }
-        return KubernetesJobs.jobName(table);
+        return KubernetesJobs.jobName(table, night);
     }
 }

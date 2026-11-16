@@ -1,0 +1,16 @@
+Breaks: a compaction Job's deadline is the window's whole length, not the time left to its end, so a Job started late in the window runs past it.
+Module: catalog-maintenance
+Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+index 6182e77..0183727 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+@@ -174,7 +174,7 @@ final class KubernetesJobs implements Compactor {
+ 
+     /** Seconds from now to the window's end, rounded up: at least one, which Kubernetes requires. */
+     private long deadline(CleanupWindow.Night night) {
+-        return Math.max(1, (Duration.between(clock.instant(), night.closes()).toMillis() + 999) / 1000);
++        return Math.max(1, (Duration.between(night.opens(), night.closes()).toMillis() + 999) / 1000);
+     }
+ 
+     private ObjectNode sparkConf(Management.TableWork table) {

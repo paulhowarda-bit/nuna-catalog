@@ -6,7 +6,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
@@ -81,31 +80,33 @@ class GuardrailsTest {
      */
     @Test
     void aTableNoLongerTheOneTheWorkListNamedIsLeftAlone() throws Exception {
-        List<UUID> launched = new CopyOnWriteArrayList<>();
-        Compactor compactor = table -> {
-            launched.add(table.id());
-            return Compactor.Launch.STARTED;
-        };
+        StubCompactor compactor = new StubCompactor();
         FakeClock clock = new FakeClock();
         try (RESTCatalog writer = catalog.writer(); Worker worker = catalog.worker(clock, compactor)) {
             TableIdentifier id = TestCatalog.table(writer, "taken-over");
             Table table = writer.loadTable(id);
+            table.newAppend().appendFile(TestCatalog.dataFile(table, "small")).commit();
             UUID stale = UUID.randomUUID();
+            // Opens tonight's window; the work list names nothing of this test's.
+            worker.runOnce();
             ScanReport report = new ScanReport();
 
             worker.maintain(work(id, table, stale), clock.instant(), report);
+            worker.compact(report);
 
-            assertThat(launched).isEmpty();
+            assertThat(compactor.launched).isEmpty();
+            assertThat(report.tablesAssessed).isZero();
             assertThat(report.compactionsStarted).isZero();
             assertThat(report.failures).singleElement().asString().contains(stale.toString(), table.uuid().toString());
             assertThat(report.failuresByKind).isEqualTo(Map.of(ScanReport.Failure.TABLE_CHANGED, 1));
             UUID current = UUID.fromString(table.uuid().toString());
-            worker.maintain(work(id, table, current), clock.instant(), new ScanReport());
-            assertThat(launched).as("the table the work list names").containsExactly(current);
+            ScanReport next = new ScanReport();
+            worker.maintain(work(id, table, current), clock.instant(), next);
+            worker.compact(next);
+            assertThat(compactor.order()).as("the table the work list names").containsExactly(current);
         }
     }
 
-    /** The work list's item for a table whose policy runs compaction alone, under the given id. */
     @Test
     void onlyFilesBeneathTheTablesOwnLocationAreRecorded() {
         String root = "s3://lake/tables/orders-1/";
@@ -117,9 +118,13 @@ class GuardrailsTest {
                         Worker.beneath(file, root));
     }
 
+    /**
+     * The work list's item for a table whose policy runs compaction alone, under the given id; one small file is
+     * enough to need it.
+     */
     private static Management.TableWork work(TableIdentifier id, Table table, UUID tableId) {
         return new Management.TableWork(TestCatalog.CATALOG, tableId, List.of(id.namespace().levels()), id.name(),
-                table.location(), Map.of("compaction.enabled", "true"));
+                table.location(), Map.of("compaction.enabled", "true", "compaction.min-input-files", "1"));
     }
 
     /** A table with two snapshots and an orphan, whose policy runs expiry and orphan removal. */

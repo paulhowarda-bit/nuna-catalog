@@ -1,0 +1,19 @@
+Breaks: an orphan scan the window's end cut short is recorded as tonight's, so its table waits a whole orphan interval for a scan that never finished.
+Module: catalog-maintenance
+Test: NightlyCleanupTest#anOrphanScanTheWindowsEndCutsShortIsScannedAgainTheNextNight
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+index 6e5d46d..93a5653 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+@@ -269,11 +269,6 @@ final class Worker implements AutoCloseable {
+                             () -> night.contains(clock.instant()), () -> { });
+                 } catch (OrphanScan.CutShort e) {
+                     // Not recorded: the table is scanned again the next night.
+-                    if (previous == null) {
+-                        orphanScans.remove(work.id());
+-                    } else {
+-                        orphanScans.put(work.id(), previous);
+-                    }
+                     report.orphanScansCutShort++;
+                     LOG.info("The window's end cut short the orphan scan of table {} ({})", work.name(), work.id());
+                     return;

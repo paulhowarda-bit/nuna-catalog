@@ -2,8 +2,9 @@
 
 Runs Iceberg's rewrite_data_files on the table KEEL_TABLE (its namespace levels and name, as a JSON list) in the
 catalog "keel", signed in as the worker (KEEL_AUTH, from the Job's Secret). KEEL_CONF holds the Spark settings and
-KEEL_OPTIONS the procedure's options. The files it replaces stay where they are: snapshot expiry takes the
-snapshots that use them, and the worker deletes them through the catalog's pending-deletion list.
+KEEL_OPTIONS the procedure's options, partial progress among them: Kubernetes stops the Job at the cleanup window's
+end, and the file groups it finished by then stay committed. The files it replaces stay where they are: snapshot
+expiry takes the snapshots that use them, and the worker deletes them through the catalog's pending-deletion list.
 
 The pod may start long after the worker decided to compact: the table may have been dropped, renamed or unregistered
 meanwhile and another taken its name. So the table is loaded first and the Job stops, exit 3 and a TABLE CHANGED

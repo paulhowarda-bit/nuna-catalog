@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.ManifestContent;
 import org.apache.iceberg.ManifestFile;
@@ -39,8 +40,19 @@ import org.apache.iceberg.util.ThreadPools;
  *
  * <p>Memory: one reachable set of every file the table reaches, the listing streamed past it, and the candidates.
  * The second read adds only what was committed meanwhile.
+ *
+ * <p>A scan runs only while the cleanup window is open (D30, amended 2026-11-15): the listing stops, and the scan
+ * with it, once {@code open} says the window has closed. A scan cut short finds nothing.
  */
 final class OrphanScan {
+
+    /** The cleanup window closed while the scan listed the table's location. */
+    static final class CutShort extends RuntimeException {
+
+        CutShort(String location) {
+            super("the cleanup window closed while listing " + location);
+        }
+    }
 
     private OrphanScan() {
     }
@@ -48,9 +60,12 @@ final class OrphanScan {
     /**
      * The orphans of {@code table} older than {@code cutoff}, beneath its location.
      *
+     * @param open         whether the scan may go on; asked for every file listed and before the second read
      * @param afterListing runs between the listing and the second metadata read (tests use it)
+     * @throws CutShort when {@code open} says no
      */
-    static List<String> find(Table table, Storage storage, Instant cutoff, Runnable afterListing) {
+    static List<String> find(Table table, Storage storage, Instant cutoff, BooleanSupplier open,
+                             Runnable afterListing) {
         TableMetadata before = metadata(table);
         String root = before.location().endsWith("/") ? before.location() : before.location() + "/";
         Reach reach = new Reach();
@@ -58,9 +73,15 @@ final class OrphanScan {
         List<String> candidates = new ArrayList<>();
         long cut = cutoff.toEpochMilli();
         for (FileInfo file : storage.list(root)) {
+            if (!open.getAsBoolean()) {
+                throw new CutShort(root);
+            }
             if (file.createdAtMillis() < cut && !reach.files.contains(Storage.normalize(file.location()))) {
                 candidates.add(file.location());
             }
+        }
+        if (!open.getAsBoolean()) {
+            throw new CutShort(root);
         }
         afterListing.run();
         table.refresh();
