@@ -232,9 +232,10 @@ class ConsoleHealthTest {
                 .contains("No compaction has run for this table.");
 
         browser.open("/ui/#c=trading&k=table&ns=" + hidden + "&n=secret&tab=health");
-        WebElement refused = browser.awaitText(By.cssSelector("section.pane .tab-body .alert-refused"), "403");
-        assertThat(refused.getText()).contains("ForbiddenException");
-        assertThat(driver.findElements(By.id("table-health-verdict"))).isEmpty();
+        WebElement shown = loadedTab();
+        assertThat(shown.findElements(By.id("table-health-verdict"))).as("the health of a table they may not read")
+                .isEmpty();
+        assertThat(shown.getText()).contains("Refused by the catalog", "403 ForbiddenException");
     }
 
     @Test
@@ -310,6 +311,13 @@ class ConsoleHealthTest {
     private List<List<String>> rows(String table) {
         return browser.await(By.cssSelector(table)).findElements(By.cssSelector("tbody tr")).stream()
                 .map(row -> row.findElements(By.xpath("./td")).stream().map(WebElement::getText).toList()).toList();
+    }
+
+    /** The pane's tab body once its tab has loaded, whatever it shows. */
+    private WebElement loadedTab() {
+        return browser.await("the tab has not loaded", d -> d.findElements(By.cssSelector("section.pane .tab-body"))
+                .stream().filter(body -> body.isDisplayed() && !body.getText().isBlank()
+                        && body.findElements(By.cssSelector("p.loading")).isEmpty()).findFirst().orElse(null));
     }
 
     private static String cell(WebElement row, int n) {
