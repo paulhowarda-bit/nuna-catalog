@@ -1,0 +1,16 @@
+Breaks: a failed purge is counted as a failed deletion, so the purges-failing alert never fires.
+Module: catalog-maintenance
+Test: ScanMetricsTest
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+index 762a1a2..e82e8e3 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+@@ -255,7 +255,7 @@ final class Worker implements AutoCloseable {
+             report.purged++;
+         } catch (RuntimeException e) {
+             LOG.warn("Failed purging {} ({})", purge.name(), purge.id(), e);
+-            report.failed(ScanReport.Failure.PURGE, "purging " + purge.id(), e);
++            report.failed(ScanReport.Failure.DELETION, "purging " + purge.id(), e);
+         }
+     }
+ 

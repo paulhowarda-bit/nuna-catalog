@@ -98,6 +98,7 @@ class GuardrailsTest {
             assertThat(launched).isEmpty();
             assertThat(report.compactionsStarted).isZero();
             assertThat(report.failures).singleElement().asString().contains(stale.toString(), table.uuid().toString());
+            assertThat(report.failuresByKind).isEqualTo(Map.of(ScanReport.Failure.TABLE_CHANGED, 1));
             UUID current = UUID.fromString(table.uuid().toString());
             worker.maintain(work(id, table, current), clock.instant(), new ScanReport());
             assertThat(launched).as("the table the work list names").containsExactly(current);
