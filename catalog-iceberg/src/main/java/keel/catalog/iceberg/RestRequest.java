@@ -1,6 +1,8 @@
 package keel.catalog.iceberg;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -12,7 +14,10 @@ import java.util.function.Supplier;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.UnprocessableEntityException;
+import org.apache.iceberg.expressions.ExpressionUtil;
 import org.apache.iceberg.metrics.CommitReport;
+import org.apache.iceberg.metrics.ImmutableScanReport;
+import org.apache.iceberg.metrics.MetricsReport;
 import org.apache.iceberg.metrics.ScanReport;
 import org.apache.iceberg.rest.requests.CommitTransactionRequest;
 import org.apache.iceberg.rest.requests.CommitTransactionRequestParser;
@@ -28,6 +33,7 @@ import org.apache.iceberg.rest.requests.ReportMetricsRequest;
 import org.apache.iceberg.rest.requests.ReportMetricsRequestParser;
 import org.apache.iceberg.rest.requests.UpdateNamespacePropertiesRequest;
 import org.apache.iceberg.rest.requests.UpdateTableRequestParser;
+import org.apache.iceberg.util.JsonUtil;
 
 /**
  * Reads the Iceberg REST request bodies the routes need, with iceberg-core's own request classes, and
@@ -74,8 +80,20 @@ public final class RestRequest {
     public record TableCommit(Identifier identifier, String json) {
     }
 
-    /** What the server forwards to telemetry from a metrics report (D13); the full report is {@code json}. */
-    public record MetricsSummary(String reportType, String tableName, long snapshotId, String json) {
+    /**
+     * What the server forwards to telemetry from a metrics report (D13). {@code bytes} is the body's size in UTF-8.
+     * For a scan or commit report, {@code json} is the whole report, a scan's filter sanitized. For a type this server
+     * does not know, {@code reportType} and {@code tableName} ("" when none was given) are the client's own strings,
+     * and {@code json} holds those two alone: nothing else of the body leaves the catalog.
+     */
+    public record MetricsSummary(String reportType, String tableName, long snapshotId, long bytes, String json) {
+        public static final String SCAN = "scan-report";
+        public static final String COMMIT = "commit-report";
+
+        /** A scan or commit report, whose type name is the spec's, not one the client chose. */
+        public boolean known() {
+            return SCAN.equals(reportType) || COMMIT.equals(reportType);
+        }
     }
 
     /** A request the server cannot accept: {@code status} is 400 or 422, {@code type} the Iceberg error class. */
@@ -178,16 +196,42 @@ public final class RestRequest {
                 .toList();
     }
 
+    /**
+     * A metrics report as it may leave the catalog (D13). A scan report's filter is sanitized here, whatever the
+     * client sent: the stock Java client sanitizes it before sending, but nothing obliges another client to. A type
+     * the parser does not know keeps only the type and table name it was sent with; its values cannot be sanitized.
+     */
     public static MetricsSummary reportMetrics(String json) {
-        ReportMetricsRequest request = guarded(() -> ReportMetricsRequestParser.fromJson(json));
-        // Written again by the parser: one compact line, whatever whitespace the client sent.
-        String compact = ReportMetricsRequestParser.toJson(request);
-        return switch (request.report()) {
-            case ScanReport scan -> new MetricsSummary("scan-report", scan.tableName(), scan.snapshotId(), compact);
-            case CommitReport commit ->
-                    new MetricsSummary("commit-report", commit.tableName(), commit.snapshotId(), compact);
-            default -> new MetricsSummary("unknown", "", -1, compact);
-        };
+        long bytes = json.getBytes(StandardCharsets.UTF_8).length;
+        return guarded(() -> JsonUtil.parse(json, node -> {
+            ReportMetricsRequest request = ReportMetricsRequestParser.fromJson(node);
+            return switch (request.report()) {
+                case ScanReport scan -> new MetricsSummary(MetricsSummary.SCAN, scan.tableName(), scan.snapshotId(), bytes,
+                        compact(ImmutableScanReport.copyOf(scan).withFilter(ExpressionUtil.sanitize(scan.filter()))));
+                case CommitReport commit -> new MetricsSummary(MetricsSummary.COMMIT, commit.tableName(),
+                        commit.snapshotId(), bytes, compact(commit));
+                case null, default -> unknownReport(node, bytes);
+            };
+        }));
+    }
+
+    /** Written again by the parser: one compact line, whatever whitespace the client sent. */
+    private static String compact(MetricsReport report) {
+        return ReportMetricsRequestParser.toJson(ReportMetricsRequest.of(report));
+    }
+
+    private static MetricsSummary unknownReport(JsonNode node, long bytes) {
+        String type = JsonUtil.getString("report-type", node);
+        String table = JsonUtil.getStringOrNull("table-name", node);
+        String kept = JsonUtil.generate(gen -> {
+            gen.writeStartObject();
+            gen.writeStringField("report-type", type);
+            if (table != null) {
+                gen.writeStringField("table-name", table);
+            }
+            gen.writeEndObject();
+        }, false);
+        return new MetricsSummary(type, table == null ? "" : table, -1, bytes, kept);
     }
 
     /**

@@ -1,0 +1,17 @@
+Breaks: a report of a type the server does not know is forwarded whole, body and all.
+Module: catalog-iceberg
+Test: MetricsReportRequestTest#anUnknownTypeKeepsItsNameTableAndSizeButNotItsBody
+
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+index f680e8b..d10f6db 100644
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+@@ -231,7 +231,7 @@ public final class RestRequest {
+             }
+             gen.writeEndObject();
+         }, false);
+-        return new MetricsSummary(type, table == null ? "" : table, -1, bytes, kept);
++        return new MetricsSummary(type, table == null ? "" : table, -1, bytes, node.toString());
+     }
+ 
+     /**
