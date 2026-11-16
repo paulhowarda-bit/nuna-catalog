@@ -181,8 +181,8 @@ class WorkerMetricsTest {
 
         Set<String> names = meters.getMeters().stream().map(meter -> meter.getId().getName())
                 .filter(name -> name.startsWith(WorkerMetrics.PREFIX)).collect(Collectors.toSet());
-        assertThat(names).hasSize(COUNTED.size() + 3);
         assertThat(names).allSatisfy(name -> assertThat(docs).as(name).contains("`" + name + "`"));
+        assertThat(names).hasSize(COUNTED.size() + 3);
     }
 
     /** Puts {@link #COUNTED}'s numbers in a report, as a scan's jobs would. */
