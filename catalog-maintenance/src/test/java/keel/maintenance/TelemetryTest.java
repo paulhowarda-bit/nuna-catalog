@@ -40,8 +40,9 @@ import tools.jackson.databind.json.JsonMapper;
  * The worker's telemetry (backlog 38). With OTLP endpoints set, its metrics, a span and its log lines arrive at a
  * receiver standing in for a collector, from keel-maintenance, and its log lines go to stdout as JSON; with none,
  * nothing exports. The worker runs as the service does, pointed at a catalog that is not there: it logs that it
- * starts scanning, and a WARN line for each part of its first scan, all failing. It makes no spans of its own yet (backlog 40), so the test makes one
- * through the worker's ObservationRegistry, as its code will.
+ * starts scanning, and a WARN line for each part of its first scan, all failing, and its meters (backlog 40) count
+ * that scan. It makes no spans of its own yet (backlog 49), so the test makes one through the worker's
+ * ObservationRegistry, as its code will.
  */
 @ExtendWith(OutputCaptureExtension.class)
 class TelemetryTest {
@@ -74,6 +75,20 @@ class TelemetryTest {
                     .service()).isEqualTo("keel-maintenance");
             assertThat(receiver.awaitLog(l -> l.item().getBody().getStringValue().startsWith("Scan failure: "), ARRIVAL)
                     .service()).isEqualTo("keel-maintenance");
+            // The worker's own meters, from Boot's registry: its first scan read none of the work list's three sections.
+            assertThat(receiver.awaitMetric(m -> m.item().getName().equals(WorkerMetrics.FAILURES)
+                    && m.item().getSum().getDataPointsList().stream().anyMatch(point -> point.getAsDouble() == 3
+                    && OtlpReceiver.attribute(point.getAttributesList(), WorkerMetrics.KIND).orElse("")
+                            .equals(ScanReport.Failure.WORK_LIST.label)), ARRIVAL).service())
+                    .isEqualTo("keel-maintenance");
+            OtlpReceiver.Received<io.opentelemetry.proto.metrics.v1.Metric> scan = receiver.awaitMetric(m ->
+                    m.item().getName().equals(WorkerMetrics.SCAN) && m.item().getHistogram().getDataPointsList()
+                            .stream().anyMatch(point -> point.getCount() == 1 && OtlpReceiver.attribute(
+                                    point.getAttributesList(), WorkerMetrics.OUTCOME).orElse("")
+                                    .equals(WorkerMetrics.FAILURE)), ARRIVAL);
+            assertThat(scan.item().getUnit()).as("over OTLP, Micrometer's base time unit").isEqualTo("milliseconds");
+            assertThat(receiver.awaitMetric(m -> m.item().getName().equals(WorkerMetrics.LAST_SUCCESS), ARRIVAL)
+                    .item().getGauge().getDataPoints(0).getAsDouble()).as("no scan has succeeded").isZero();
         }
         JsonNode line = Stream.of(output.getOut().split("\\R")).filter(l -> l.startsWith("{")).map(JSON::readTree)
                 .filter(json -> json.path("message").asString().startsWith("Scanning ")).findFirst()

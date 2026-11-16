@@ -1,0 +1,16 @@
+Breaks: a scan in which one job failed is timed as failed and leaves the last success, so one table failing at every scan pages as a worker that does not scan.
+Module: catalog-maintenance
+Test: WorkerMetricsTest#aScanAddsEachCountAndEachFailureByItsKind
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+index 8d8605b..382e4ea 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+@@ -103,7 +103,7 @@ final class WorkerMetrics {
+             scan.run();
+             ended = true;
+         } finally {
+-            boolean success = ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST);
++            boolean success = ended && report.failures.isEmpty();
+             counts.forEach((count, counter) -> counter.increment(count.of().applyAsInt(report)));
+             report.failuresByKind.forEach((kind, times) -> failures.get(kind).increment(times));
+             (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
