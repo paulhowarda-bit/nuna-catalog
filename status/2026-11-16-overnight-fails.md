@@ -20,3 +20,7 @@ only); the item stays open until both pass in an overnight run.
 scan's load as its parent; the expiry's commit loads the table on the same route, and that span can arrive first. It
 now finds the load span, then the catalog span that is its child. Checked: the test passes, and `bites/run.sh
 bites/OBS-49` gives 7 of 7 BITES, restored.
+
+**Backlog 55, run by hand** (Paul, after landing): both tests passed on adad94c. `ConcurrentWritersTest` 5 of 5 in
+518 s, each server vending on its first warm-up load; the CockroachDB CAS test 1,000 rounds in 342 s with no commit
+repeated. No stall met, so the item waits for the overnight run.
