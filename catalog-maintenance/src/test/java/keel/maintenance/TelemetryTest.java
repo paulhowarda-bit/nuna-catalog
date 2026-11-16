@@ -201,6 +201,9 @@ class TelemetryTest {
         return List.of(
                 "--keel.maintenance.catalog-uri=http://127.0.0.1:" + closedPort() + "/",
                 "--keel.maintenance.scan-interval=PT1H",
+                "--keel.maintenance.cleanup-window.start=22:30",
+                "--keel.maintenance.cleanup-window.end=04:00",
+                "--keel.maintenance.cleanup-window.zone=Europe/London",
                 "--keel.maintenance.token.file=" + token,
                 "--keel.maintenance.storage.test.prefixes[0]=s3://telemetry-test/tables",
                 // The server, on this module's test class path only, brings JDBC; the worker has no database.

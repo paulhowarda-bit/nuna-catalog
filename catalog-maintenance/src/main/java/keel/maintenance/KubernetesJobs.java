@@ -18,7 +18,9 @@ import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,13 +30,15 @@ import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 
 /**
- * Compaction as one Kubernetes Job per table (D30 (3)): the repo's Spark image
- * ({@code catalog-tests-engines/images/spark}) runs Iceberg's rewrite_data_files, signed in to the catalog as the
- * worker. The Job is named after the table, so at most one runs per table; a finished Job stays for the compaction
- * interval ({@code ttlSecondsAfterFinished}), which is what spaces two compactions of one table apart, across
- * restarts of the worker too. The worker's sign-in (the client-credentials grant, so the Job renews its own token)
- * goes into a Secret of a name never used before, created after the Job and owned by it, so Kubernetes deletes it
- * with the Job. The Job names the table by its levels and by its id, and its script stops unless the table it loads
+ * Compaction as one Kubernetes Job per table and night (D30 (3), amended 2026-11-15): the repo's Spark image
+ * ({@code catalog-tests-engines/images/spark}) runs Iceberg's rewrite_data_files with partial progress, signed in to
+ * the catalog as the worker. The Job is named after the table and the night, so at most one runs per table a night,
+ * across restarts of the worker too, and a Job kept from an earlier night never stops tonight's. Its deadline
+ * ({@code activeDeadlineSeconds}) is the window's end: Kubernetes stops it then, and the file groups it finished stay
+ * committed. A finished Job is kept a day ({@code ttlSecondsAfterFinished}), so its log is there the morning after;
+ * how long it is kept schedules nothing. The worker's sign-in (the client-credentials grant, so the Job renews its own
+ * token) goes into a Secret of a name never used before, created after the Job and owned by it, so Kubernetes deletes
+ * it with the Job. The Job names the table by its levels and by its id, and its script stops unless the table it loads
  * has that id: another table may have taken the name before the pod starts.
  *
  * <p>The Jobs run in a namespace of their own, never the worker's (nor the catalog's): a pod may run as any service
@@ -49,16 +53,22 @@ final class KubernetesJobs implements Compactor {
     private static final String COMMAND = "printf '%s' \"$KEEL_SCRIPT\" > /tmp/compact.py && exec /opt/spark/bin/"
             + "spark-submit --master 'local[2]' --driver-memory \"$KEEL_DRIVER_MEMORY\" /tmp/compact.py";
 
+    /** How long a finished Job is kept: a day, for its log. It schedules nothing. */
+    static final Duration KEPT = Duration.ofDays(1);
+
     private final WorkerSettings.Compaction settings;
-    private final Duration interval;
+    private final Clock clock;
     private final URI catalogUri;
     private final TokenSource tokens;
     private final String namespace;
     private final HttpClient http;
 
-    KubernetesJobs(WorkerSettings.Compaction settings, Duration interval, URI workerCatalogUri, TokenSource tokens) {
+    /**
+     * @param clock the worker's clock, which times each Job's deadline to the window's end
+     */
+    KubernetesJobs(WorkerSettings.Compaction settings, URI workerCatalogUri, TokenSource tokens, Clock clock) {
         this.settings = settings;
-        this.interval = interval;
+        this.clock = clock;
         this.catalogUri = settings.catalogUri() != null ? settings.catalogUri() : workerCatalogUri;
         this.tokens = tokens;
         this.namespace = settings.namespace();
@@ -71,26 +81,26 @@ final class KubernetesJobs implements Compactor {
                 .connectTimeout(Duration.ofSeconds(10)).build();
     }
 
-    /** The Job that compacts this table. */
-    static String jobName(Management.TableWork table) {
-        return "keel-compact-" + table.id();
+    /** The Job that compacts this table on this night: {@code keel-compact-<table id>-<the night's date>}. */
+    static String jobName(Management.TableWork table, CleanupWindow.Night night) {
+        return "keel-compact-" + table.id() + "-" + night.date().format(DateTimeFormatter.BASIC_ISO_DATE);
     }
 
     @Override
-    public Launch launch(Management.TableWork table) {
-        String name = jobName(table);
+    public Launch launch(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night) {
+        String name = jobName(table, night);
         HttpResponse<String> existing = send("GET", "/apis/batch/v1/namespaces/" + namespace + "/jobs/" + name, null);
         if (existing.statusCode() == 200) {
-            return Launch.RUNNING;
+            return Launch.EXISTS;
         }
         expect("reading Job " + name, existing, 404);
         // A name no earlier Job's Secret has, so it never meets one Kubernetes has not collected yet. The pod waits
         // for it to appear.
         String secretName = name + "-" + UUID.randomUUID().toString().substring(0, 8);
         HttpResponse<String> created = send("POST", "/apis/batch/v1/namespaces/" + namespace + "/jobs",
-                job(table, secretName));
+                job(table, need, night, secretName));
         if (created.statusCode() == 409) {
-            return Launch.RUNNING;
+            return Launch.EXISTS;
         }
         String uid = read(expect("creating Job " + name, created, 201).body()).path("metadata").path("uid").asText();
         expect("creating Secret " + secretName, send("POST", "/api/v1/namespaces/" + namespace + "/secrets",
@@ -98,16 +108,44 @@ final class KubernetesJobs implements Compactor {
         return Launch.STARTED;
     }
 
-    private ObjectNode job(Management.TableWork table, String secretName) {
-        String name = jobName(table);
+    @Override
+    public State state(Management.TableWork table, CleanupWindow.Night night) {
+        String name = jobName(table, night);
+        HttpResponse<String> job = send("GET", "/apis/batch/v1/namespaces/" + namespace + "/jobs/" + name, null);
+        if (job.statusCode() == 404) {
+            return State.SUCCEEDED;
+        }
+        for (JsonNode condition : read(expect("reading Job " + name, job, 200).body()).path("status")
+                .path("conditions")) {
+            if (!"True".equals(condition.path("status").asText())) {
+                continue;
+            }
+            switch (condition.path("type").asText()) {
+                case "Complete", "SuccessCriteriaMet" -> {
+                    return State.SUCCEEDED;
+                }
+                case "Failed", "FailureTarget" -> {
+                    return "DeadlineExceeded".equals(condition.path("reason").asText()) ? State.CUT_OFF
+                            : State.FAILED;
+                }
+                default -> {
+                }
+            }
+        }
+        return State.RUNNING;
+    }
+
+    private ObjectNode job(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night,
+                           String secretName) {
+        String name = jobName(table, night);
         ObjectNode job = JSON.createObjectNode().put("apiVersion", "batch/v1").put("kind", "Job");
         ObjectNode metadata = job.putObject("metadata").put("name", name);
         labels(metadata, table);
         metadata.putObject("annotations").put("keel.catalog/table",
                 table.catalog() + ":" + String.join(".", table.namespace()) + "." + table.name());
         ObjectNode spec = job.putObject("spec").put("backoffLimit", 0)
-                .put("ttlSecondsAfterFinished", interval.toSeconds())
-                .put("activeDeadlineSeconds", settings.deadline().toSeconds());
+                .put("ttlSecondsAfterFinished", KEPT.toSeconds())
+                .put("activeDeadlineSeconds", deadline(night));
         ObjectNode template = spec.putObject("template");
         labels(template.putObject("metadata"), table);
         ObjectNode pod = template.putObject("spec").put("restartPolicy", "Never").put("enableServiceLinks", false)
@@ -124,12 +162,7 @@ final class KubernetesJobs implements Compactor {
         env(env, "KEEL_CONF", sparkConf(table).toString());
         env(env, "KEEL_TABLE", JSON.valueToTree(levels(table)).toString());
         env(env, "KEEL_TABLE_UUID", table.id().toString());
-        ObjectNode options = JSON.createObjectNode();
-        String target = table.policy().get("compaction.target-file-size-bytes");
-        if (target != null) {
-            options.put("target-file-size-bytes", target);
-        }
-        env(env, "KEEL_OPTIONS", options.toString());
+        env(env, "KEEL_OPTIONS", JSON.valueToTree(need.options()).toString());
         env(env, "KEEL_DRIVER_MEMORY", settings.driverMemory());
         env.addObject().put("name", "KEEL_AUTH").putObject("valueFrom").putObject("secretKeyRef")
                 .put("name", secretName).put("key", "auth");
@@ -137,6 +170,11 @@ final class KubernetesJobs implements Compactor {
         resources.putObject("limits").put("memory", settings.memory());
         resources.putObject("requests").put("memory", settings.memory());
         return job;
+    }
+
+    /** Seconds from now to the window's end, rounded up: at least one, which Kubernetes requires. */
+    private long deadline(CleanupWindow.Night night) {
+        return Math.max(1, (Duration.between(clock.instant(), night.closes()).toMillis() + 999) / 1000);
     }
 
     private ObjectNode sparkConf(Management.TableWork table) {

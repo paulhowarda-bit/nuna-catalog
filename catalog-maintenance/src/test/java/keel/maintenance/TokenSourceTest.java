@@ -14,6 +14,8 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -106,7 +108,8 @@ class TokenSourceTest {
     }
 
     private static WorkerSettings settings(WorkerSettings.Token token, WorkerSettings.Compaction compaction) {
-        return new WorkerSettings(URI.create("http://keel-catalog:8181/"), Duration.ofMinutes(10), Duration.ofDays(1),
+        return new WorkerSettings(URI.create("http://keel-catalog:8181/"), Duration.ofMinutes(10),
+                new CleanupWindow(LocalTime.of(1, 0), LocalTime.of(5, 0), ZoneId.of("Europe/London")),
                 Duration.ofDays(1), 100, token, Map.of("s3", new WorkerSettings.StorageProfile(
                         List.of("s3://lake/tables"), null, "us-east-1", false, null, null)), compaction);
     }
@@ -114,6 +117,6 @@ class TokenSourceTest {
     private static WorkerSettings.Compaction compaction(String image, String namespace) {
         return new WorkerSettings.Compaction(image, "IfNotPresent", namespace, "keel-compaction",
                 URI.create("https://kubernetes.default.svc"), Path.of("/var/run/secrets/kubernetes.io/serviceaccount"),
-                null, "2Gi", "1g", Duration.ofHours(2), 185, Map.of());
+                null, "2Gi", "1g", 2, 185, Map.of());
     }
 }

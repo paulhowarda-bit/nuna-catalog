@@ -1,0 +1,16 @@
+Breaks: the cleanup window holds every instant, so compaction Jobs and orphan scans start at any hour, and a worker restarted in the day starts them at once.
+Module: catalog-maintenance
+Test: NightlyCleanupTest#nothingHeavyStartsOutsideTheWindowNorAfterARestartInTheDay
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/CleanupWindow.java b/catalog-maintenance/src/main/java/keel/maintenance/CleanupWindow.java
+index efc8278..766979f 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/CleanupWindow.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/CleanupWindow.java
+@@ -43,7 +43,7 @@ public record CleanupWindow(LocalTime start, LocalTime end, ZoneId zone) {
+     public record Night(LocalDate date, Instant opens, Instant closes) {
+ 
+         boolean contains(Instant instant) {
+-            return !instant.isBefore(opens) && instant.isBefore(closes);
++            return true;
+         }
+     }
+ 

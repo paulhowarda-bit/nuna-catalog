@@ -48,7 +48,7 @@ class OrphanRaceTest {
             Table scanned = worker.load(TestCatalog.CATALOG, List.of(id.namespace().levels()), id.name());
 
             // Every file looks old enough: only reachability decides.
-            List<String> found = OrphanScan.find(scanned, storage, Instant.now().plus(Duration.ofDays(1)),
+            List<String> found = OrphanScan.find(scanned, storage, Instant.now().plus(Duration.ofDays(1)), () -> true,
                     () -> table.newAppend().appendFile(late).commit());
 
             assertThat(found).contains(orphan).doesNotContain(late.location());
@@ -81,7 +81,7 @@ class OrphanRaceTest {
             while (Instant.now().isBefore(end)) {
                 Table scanned = worker.load(TestCatalog.CATALOG, List.of(id.namespace().levels()), id.name());
                 // An orphan age of 10 seconds: far longer than the writer takes from writing a file to committing it.
-                found.addAll(OrphanScan.find(scanned, storage, Instant.now().minusSeconds(10), () -> { }));
+                found.addAll(OrphanScan.find(scanned, storage, Instant.now().minusSeconds(10), () -> true, () -> { }));
                 scans++;
             }
             stop.set(true);

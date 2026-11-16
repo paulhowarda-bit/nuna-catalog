@@ -17,8 +17,16 @@ config:
       # Required: the catalog as the worker reaches it.
       # catalog-uri: http://keel-catalog:8181/
       scan-interval: PT10M
+      # Required: the nightly cleanup window (D30, amended 2026-11-15), the only time compaction and orphan scans
+      # start; each compaction Job stops at its end. start and end are local times in zone, a named zone; an end
+      # before the start crosses midnight, and an end equal to the start keeps it open all day. The chart quotes
+      # the times in the worker's application.yaml, where YAML 1.1 would read an unquoted 22:30 as the number 1350.
+      cleanup-window: {}
+      #   start: "22:30"
+      #   end: "04:00"
+      #   zone: Europe/London
+      # The least time between two orphan scans of one table, in whole nights.
       orphan-interval: P1D
-      compaction-interval: P1D
       # How the worker signs in: the client-credentials grant (endpoint, client-id, and client-secret in
       # `secrets`), or a token file another process keeps fresh (file). Its principal id must be listed in the
       # catalog's keel.security.maintenance-principals, and its group needs write on every catalog it maintains.
@@ -31,11 +39,14 @@ config:
       # region, path-style-access, access-key-id (secret-access-key in `secrets`); no keys means the AWS SDK's
       # default chain, e.g. IRSA through serviceAccount.annotations.
       storage: {}
-      # Compaction as one Kubernetes Job per table (D30 (3)). Off unless an image is named: the repo's Spark
-      # image, catalog-tests-engines/images/spark. It needs the client-credentials grant and token.scope (the Job
-      # signs in itself), and a namespace for the Jobs alone, created beforehand: never the release's nor the
-      # catalog's. The chart grants the worker's service account get and create on Jobs and create on Secrets
-      # there, and makes job-service-account there, an account with no rights that the Jobs' pods run as.
+      # Compaction as Kubernetes Jobs (D30 (3), amended 2026-11-15): in the cleanup window, one Job per table that
+      # needs it and night, the neediest first, max-jobs at once. Which tables need it is maintenance policy
+      # (compaction.min-input-files, compaction.delete-file-ratio), set in the catalog. Off unless an image is
+      # named: the repo's Spark image, catalog-tests-engines/images/spark. It needs the client-credentials grant
+      # and token.scope (the Job signs in itself), and a namespace for the Jobs alone, created beforehand: never the
+      # release's nor the catalog's. The chart grants the worker's service account get and create on Jobs and
+      # create on Secrets there, and makes job-service-account there, an account with no rights that the Jobs' pods
+      # run as.
       compaction:
         image: ""
         image-pull-policy: IfNotPresent
@@ -45,7 +56,7 @@ config:
         # catalog-uri: http://keel-catalog:8181/
         memory: 2Gi
         driver-memory: 1g
-        deadline: PT2H
+        max-jobs: 2
 
 # Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
 # the property's value, e.g. keel.maintenance.token.client-secret or

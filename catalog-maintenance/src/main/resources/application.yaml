@@ -10,7 +10,7 @@ keel:
   maintenance:
     scan-interval: PT10M
     orphan-interval: P1D
-    compaction-interval: P1D
+    # cleanup-window (start, end, zone) has no default: each deployment names its own night.
 
 # Telemetry (docs/observability/README.md). Metrics, traces and logs go over OTLP only when an endpoint is set: the
 # standard OTEL_* variables, or Boot's management.* properties. Log lines go to stdout as JSON, in Elastic Common

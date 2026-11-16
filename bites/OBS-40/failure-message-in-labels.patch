@@ -2,16 +2,16 @@ Breaks: each failure is counted under a label holding its message, which names t
 Module: catalog-maintenance
 Test: WorkerMetricsTest#labelsHoldOnlyAKindOrAnOutcome
 diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
-index 8d8605b..495686e 100644
+index 816a4c1..b6b3f31 100644
 --- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
-@@ -105,7 +105,8 @@ final class WorkerMetrics {
+@@ -136,7 +136,8 @@ final class WorkerMetrics {
          } finally {
              boolean success = ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST);
              counts.forEach((count, counter) -> counter.increment(count.of().applyAsInt(report)));
 -            report.failuresByKind.forEach((kind, times) -> failures.get(kind).increment(times));
 +            report.failures.forEach(message -> registry.counter(FAILURES, KIND, "scan", "failure", message)
 +                    .increment());
+             report.needs.forEach((reason, tables) -> needing.get(reason).increment(tables));
              (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
                      TimeUnit.NANOSECONDS);
-             if (success) {

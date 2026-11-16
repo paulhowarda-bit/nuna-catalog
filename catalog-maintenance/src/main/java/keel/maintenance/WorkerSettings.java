@@ -14,22 +14,24 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * maintenance principal (the catalog's {@code keel.security.maintenance-principals}) and reaches storage with its own
  * identity, the only one a deployment's delete policy lets delete (D21).
  *
- * @param catalogUri         the catalog's base URI, e.g. {@code http://keel-catalog:8181/}
- * @param scanInterval       how often the worker reads the work list and does what is due (D30 (2))
- * @param orphanInterval     the least time between two orphan scans of one table: a scan lists the table's whole prefix
- * @param compactionInterval the least time between two compaction Jobs for one table; a finished Job is kept this long
- * @param pageSize           work list items per page
- * @param token              how the worker gets its bearer token
- * @param storage            its own storage identity, per store: every table location the catalog lists must lie
- *                           under one profile's prefixes
- * @param compaction         compaction as Kubernetes Jobs; off unless an image is named
+ * @param catalogUri     the catalog's base URI, e.g. {@code http://keel-catalog:8181/}
+ * @param scanInterval   how often the worker reads the work list and does what is due (D30 (2))
+ * @param cleanupWindow  the nightly window, the only time compaction and orphan scans start (D30, amended
+ *                       2026-11-15); required, since only the deployment knows its night
+ * @param orphanInterval the least time between two orphan scans of one table, rounded up to whole nights: a scan lists
+ *                       the table's whole prefix
+ * @param pageSize       work list items per page
+ * @param token          how the worker gets its bearer token
+ * @param storage        its own storage identity, per store: every table location the catalog lists must lie under one
+ *                       profile's prefixes
+ * @param compaction     compaction as Kubernetes Jobs; off unless an image is named
  */
 @ConfigurationProperties("keel.maintenance")
 public record WorkerSettings(
         URI catalogUri,
         @DefaultValue("PT10M") Duration scanInterval,
+        CleanupWindow cleanupWindow,
         @DefaultValue("P1D") Duration orphanInterval,
-        @DefaultValue("P1D") Duration compactionInterval,
         @DefaultValue("100") int pageSize,
         Token token,
         @DefaultValue Map<String, StorageProfile> storage,
@@ -37,6 +39,8 @@ public record WorkerSettings(
 
     public WorkerSettings {
         Objects.requireNonNull(catalogUri, "keel.maintenance.catalog-uri names no catalog");
+        Objects.requireNonNull(cleanupWindow, "keel.maintenance.cleanup-window: set start, end and zone, the nightly"
+                + " window in which compaction and orphan scans run");
         Objects.requireNonNull(token, "keel.maintenance.token: set file, or endpoint, client-id and client-secret");
         if (storage.isEmpty()) {
             throw new IllegalArgumentException("keel.maintenance.storage names no storage profile: the worker reads"
@@ -60,6 +64,9 @@ public record WorkerSettings(
                 throw new IllegalArgumentException("keel.maintenance.compaction.namespace must name a namespace for"
                         + " the Jobs alone, never the catalog's or the worker's: a pod may run as any service"
                         + " account and mount any Secret of its namespace");
+            }
+            if (compaction.maxJobs() < 1) {
+                throw new IllegalArgumentException("keel.maintenance.compaction.max-jobs must be at least 1");
             }
         }
         storage = Map.copyOf(storage);
@@ -116,8 +123,9 @@ public record WorkerSettings(
     }
 
     /**
-     * Compaction (D30 (3)): one Kubernetes Job per table, running the repo's Spark image
-     * ({@code catalog-tests-engines/images/spark}) with rewrite_data_files, signed in as the worker.
+     * Compaction (D30 (3), amended 2026-11-15): in the cleanup window, one Kubernetes Job per table that needs it,
+     * running the repo's Spark image ({@code catalog-tests-engines/images/spark}) with rewrite_data_files, signed in as
+     * the worker, and stopped at the window's end.
      *
      * @param image           the Spark image; compaction is off without one
      * @param imagePullPolicy its pull policy
@@ -129,7 +137,7 @@ public record WorkerSettings(
      * @param catalogUri      the catalog as the Job's pods reach it; by default the worker's {@code catalog-uri}
      * @param memory          the Job container's memory limit
      * @param driverMemory    Spark's driver memory, within that limit
-     * @param deadline        how long a Job may run before Kubernetes stops it
+     * @param maxJobs         how many Jobs run at once; the neediest tables go first
      * @param runAsUser       the Spark image's user id (185 in the apache/spark images)
      * @param sparkConf       more Spark settings for every Job
      */
@@ -137,7 +145,7 @@ public record WorkerSettings(
                              String jobServiceAccount, @DefaultValue("https://kubernetes.default.svc") URI apiServer,
                              @DefaultValue("/var/run/secrets/kubernetes.io/serviceaccount") Path serviceAccount,
                              URI catalogUri, @DefaultValue("2Gi") String memory, @DefaultValue("1g") String driverMemory,
-                             @DefaultValue("PT2H") Duration deadline, @DefaultValue("185") long runAsUser,
+                             @DefaultValue("2") int maxJobs, @DefaultValue("185") long runAsUser,
                              @DefaultValue Map<String, String> sparkConf) {
 
         public Compaction {
