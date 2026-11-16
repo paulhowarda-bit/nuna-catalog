@@ -1,0 +1,16 @@
+Breaks: a call's catalog label is the warehouse prefix it sent, even one that names no catalog.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#labelsNameNoTableNamespacePersonOrFilterValue
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
+index 8946b27..ef0e6de 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
+@@ -31,6 +31,7 @@ class Lookup {
+ 
+     /** The catalog the prefix names, which also labels the request's meters. */
+     CatalogRecord catalog(String prefix) {
++        RequestMetrics.catalog(prefix);
+         CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow(
+                 () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+         RequestMetrics.catalog(catalog.name());

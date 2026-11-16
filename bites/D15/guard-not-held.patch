@@ -3,10 +3,10 @@ Module: catalog-core
 Test: TransactionTest$Retrying#guardMovedBeforeTheSwap
 
 diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-index 49ae41b..db1cdb1 100644
+index 8bc44f8..ff95515 100644
 --- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-@@ -650,7 +650,8 @@ public final class CommitEngine {
+@@ -897,7 +897,8 @@ public final class CommitEngine {
                                  && governance.get(i).regulated();
                          planned.add(new Planned(object, base, changed, json, regulated));
                      }
@@ -14,5 +14,5 @@ index 49ae41b..db1cdb1 100644
 +                    case Outcome.NoChange noChange -> {
 +                    }
                      case Outcome.RequirementFailed failed -> {
-                         return new Failure(409, COMMIT_FAILED, table + ": " + failed.message());
-                     }
+                         return new Failure(409, COMMIT_FAILED, table + ": " + failed.message(),
+                                 failed.requirement());

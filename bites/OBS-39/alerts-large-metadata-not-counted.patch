@@ -1,0 +1,16 @@
+Breaks: a large-metadata alert is logged but not counted.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#alertsAreCountedByKind
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/ServerAlerts.java b/catalog-server/src/main/java/keel/catalog/server/rest/ServerAlerts.java
+index 8ec4068..310fb51 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/rest/ServerAlerts.java
++++ b/catalog-server/src/main/java/keel/catalog/server/rest/ServerAlerts.java
+@@ -71,7 +71,6 @@ public final class ServerAlerts implements Alerts {
+         if ((stats.metadataChars() > maxChars || stats.snapshots() > maxSnapshots) && alerted.add(location)) {
+             LOG.warn("large-metadata table={} location={} chars={} snapshots={} (limits {} and {})", tableId,
+                     location, stats.metadataChars(), stats.snapshots(), maxChars, maxSnapshots);
+-            largeMetadata.increment();
+         }
+     }
+ }

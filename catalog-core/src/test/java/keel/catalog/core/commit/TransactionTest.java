@@ -461,7 +461,9 @@ class TransactionTest {
             TableChange[] nothing = {change("Orders", noOp("Orders")), change("Lines", noOp("Lines"))};
             assertThat(transact(noOpKey, nothing)).isEqualTo(new Applied(How.UNCHANGED));
 
-            assertThat(transact(refusedKey, change("Orders", set("Orders", "a", "1")), stale)).isEqualTo(refused);
+            // The same answer; which requirement failed is not kept with the key.
+            assertThat(transact(refusedKey, change("Orders", set("Orders", "a", "1")), stale))
+                    .usingRecursiveComparison().ignoringFields("requirement").isEqualTo(refused);
             assertThat(transact(noOpKey, nothing)).isEqualTo(new Applied(How.REPLAYED));
             assertThat(h.faults.calls("commit")).isZero();
         }

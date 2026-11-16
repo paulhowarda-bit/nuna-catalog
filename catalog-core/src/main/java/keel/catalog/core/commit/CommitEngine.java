@@ -462,7 +462,8 @@ public final class CommitEngine {
                     new Metadata.Journal("[]", request.json()), alreadyExists(request, request.operation().kind),
                     Optional.empty());
             case Outcome.BadRequest bad -> new Failure(400, bad.type(), bad.message());
-            case Outcome.RequirementFailed failed -> new Failure(409, COMMIT_FAILED, failed.message());
+            case Outcome.RequirementFailed failed -> new Failure(409, COMMIT_FAILED, failed.message(),
+                    failed.requirement());
             case Outcome.NoChange noChange -> throw new IllegalStateException("a create always writes metadata");
             case Outcome.NotFound notFound -> throw new IllegalStateException("a create never reads metadata");
         };
@@ -707,7 +708,8 @@ public final class CommitEngine {
             case Outcome.NewMetadata created -> stagedCreate(request, created);
             case Outcome.NotFound notFound -> noSuch(request);
             case Outcome.BadRequest bad -> new Failure(400, bad.type(), bad.message());
-            case Outcome.RequirementFailed failed -> new Failure(409, COMMIT_FAILED, failed.message());
+            case Outcome.RequirementFailed failed -> new Failure(409, COMMIT_FAILED, failed.message(),
+                    failed.requirement());
             case Outcome.NoChange noChange -> throw new IllegalStateException("a create always writes metadata");
         };
     }
@@ -799,7 +801,7 @@ public final class CommitEngine {
                             How.UNCHANGED);
                 }
                 case Outcome.RequirementFailed failed -> {
-                    return new Failure(409, COMMIT_FAILED, failed.message());
+                    return new Failure(409, COMMIT_FAILED, failed.message(), failed.requirement());
                 }
                 case Outcome.BadRequest bad -> {
                     return new Failure(400, bad.type(), bad.message());
@@ -897,7 +899,8 @@ public final class CommitEngine {
                     }
                     case Outcome.NoChange noChange -> held.add(new PointerHold(object.mainKey(), base));
                     case Outcome.RequirementFailed failed -> {
-                        return new Failure(409, COMMIT_FAILED, table + ": " + failed.message());
+                        return new Failure(409, COMMIT_FAILED, table + ": " + failed.message(),
+                                failed.requirement());
                     }
                     case Outcome.BadRequest bad -> {
                         return new Failure(400, bad.type(), table + ": " + bad.message());
