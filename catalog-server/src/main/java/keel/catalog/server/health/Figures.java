@@ -31,7 +31,8 @@ import tools.jackson.databind.node.ObjectNode;
  *       synchronous audit records published to Kafka (spans.md, {@code keel.audit.publish}).</li>
  *   <li>{@code vends.<outcome>}, and {@code vends.failed.<error type>}: credential vends (catalog-metrics.md).</li>
  *   <li>{@code load}, {@code not-modified}, {@code commit}, each with {@code .le.<ms>} at the SLO bounds: loads
- *       answered 200, loads answered 304, and commits ({@code updateTable}, {@code commitTransaction}) answered 200.</li>
+ *       answered 200, loads answered 304, and commits ({@code updateTable}, {@code commitTransaction}) answered
+ *       200.</li>
  * </ul>
  */
 final class Figures {

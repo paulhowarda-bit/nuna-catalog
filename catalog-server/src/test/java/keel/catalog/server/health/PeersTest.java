@@ -26,7 +26,8 @@ class PeersTest {
     static final String ANSWER = """
             {"server":{"id":"%s","name":"%s","started-at":"2027-03-01T00:00:00Z"},
              "from":"2027-03-01T00:00:00Z","to":"2027-03-01T12:00:00Z",
-             "figures":{"alerts.metadata-integrity":2,"load":10,"load.le.50":10,"vends.failed.ForbiddenException":1}}""";
+             "figures":{"alerts.metadata-integrity":2,"load":10,"load.le.50":10,
+              "vends.failed.ForbiddenException":1}}""";
 
     private final List<HttpServer> servers = new CopyOnWriteArrayList<>();
     private final List<String> tokens = new CopyOnWriteArrayList<>();

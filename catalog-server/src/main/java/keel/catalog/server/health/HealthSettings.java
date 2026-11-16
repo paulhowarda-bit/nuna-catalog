@@ -22,7 +22,8 @@ public record HealthSettings(@DefaultValue List<String> peers, @DefaultValue("3s
         peers = List.copyOf(peers);
         for (String peer : peers) {
             URI uri = URI.create("http://" + peer);
-            if (uri.getHost() == null || uri.getPort() < 0 || !uri.getRawPath().isEmpty() || uri.getRawQuery() != null) {
+            if (uri.getHost() == null || uri.getPort() < 0 || !uri.getRawPath().isEmpty()
+                    || uri.getRawQuery() != null) {
                 throw new IllegalArgumentException("keel.health.peers holds host:port entries, not " + peer);
             }
         }

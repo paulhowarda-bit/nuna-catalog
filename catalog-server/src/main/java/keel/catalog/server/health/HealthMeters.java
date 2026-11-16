@@ -28,7 +28,7 @@ public final class HealthMeters extends SimpleMeterRegistry {
             Duration.ofMillis(25), Duration.ofMillis(50), Duration.ofMillis(100), Duration.ofMillis(250),
             Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofMillis(2500), Duration.ofSeconds(5));
 
-    /** Long enough that no histogram here ever rolls over: the five years Micrometer's own cumulative registries use. */
+    /** Long enough that no histogram here ever rolls over: five years, as Micrometer's cumulative registries keep. */
     private static final Duration NEVER = Duration.ofDays(1825);
 
     HealthMeters(Clock clock) {
