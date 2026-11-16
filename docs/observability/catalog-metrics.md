@@ -35,7 +35,7 @@ line (item 37) and the alert lines on the `keel.alerts` logger.
 |---|---|---|---|
 | `keel.catalog.requests` | Timer; histogram buckets at 10, 50 and 300 ms | `catalog`, `operation.id`, `outcome` (`2xx`, `3xx`, `4xx`, `5xx`), `error.type` | How long does each kind of Iceberg call take, and how often does it fail, and with what? |
 | `keel.catalog.commits` | Counter | `catalog`, `operation.id`, `outcome`, `requirement.type`, `error.type` | How do commits end, and how many lose to a concurrent change, by requirement? |
-| `keel.catalog.credential.vends` | Timer | `catalog`, `outcome` (`issued`, `none`, `failed`), `error.type` | How long does vending storage credentials take, and how often does it fail? |
+| `keel.catalog.credential.vends` | Timer | `catalog`, `outcome` (`issued`, `cached`, `none`, `failed`), `error.type` | How long does vending storage credentials take, how often is it served from the cache, and how often does it fail? |
 | `keel.catalog.metadata.cache.lookups` | Counter | `outcome` (`hit`, `miss`) | How often is a table's current metadata file served from memory rather than read from the object store? |
 | `keel.catalog.alerts.metadata.integrity` | Counter | none | Has a metadata file stopped hashing to what its pointer recorded? |
 | `keel.catalog.alerts.regulated.schema.change` | Counter | none | Has a commit changed a regulated table's schema or partition spec? |
@@ -83,15 +83,18 @@ registration response, or from the `loadCredentials` route.
 
 | `outcome` | Meaning |
 |---|---|
-| `issued` | Credentials were handed out. A vend served from the credential cache counts here too. |
+| `issued` | New credentials were minted for this vend, audited and handed out. |
+| `cached` | Credentials were handed out from the credential cache: the same caller had been given them for this table and access, and they were not yet near expiry. No credentials were minted, so no credential issue was audited. |
 | `none` | No credentials, because a trusted engine declined them (`X-Iceberg-Access-Delegation`). |
 | `failed` | None could be issued. `error.type` is the error, such as `ServiceUnavailableException` when STS or the audit is down, or `ForbiddenException` when the location is outside the storage profile. |
 
+An `issued` vend made one STS AssumeRole, the `sts assume-role` span and `keel.sts` timer beneath its request
+(spans.md); a `cached` one made none. Two vends for the same caller, table and access at once mint once: the one that
+waits for the other counts as `cached`. The share of vends served from the cache is the `cached` count over the
+`issued` and `cached` counts together.
+
 A failed vend in a create, commit or registration response does not fail the response. The change is already
 committed, so the response carries no credentials and the client asks the credentials route.
-
-Cache hits are not yet counted apart from new issues. That needs a change in `storage/StsCredentialVending.java`,
-which waits for item 41 to land (backlog 53).
 
 ### `keel.catalog.metadata.cache.lookups`
 

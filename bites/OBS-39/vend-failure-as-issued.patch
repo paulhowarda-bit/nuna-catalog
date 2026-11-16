@@ -3,11 +3,11 @@ Module: catalog-server
 Test: CatalogMetricsRoutesTest#vendsAreTimedAndFailuresCounted
 
 diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
-index 6461eb0..d9cbd8d 100644
+index a177601..86a2c71 100644
 --- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
 +++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
-@@ -103,7 +103,7 @@ public final class CatalogMetrics {
-     /** Times one credential vend (D21): issued, none (no credentials for this caller) or failed. */
+@@ -106,7 +106,7 @@ public final class CatalogMetrics {
+      */
      public Vended vend(String catalog, Supplier<Vended> vend) {
          long start = System.nanoTime();
 -        String outcome = "failed";
