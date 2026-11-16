@@ -18,7 +18,9 @@
   held Docker (S3 read timeouts, the audit consumer reading 0 records, PostgreSQL refusing connections, Chrome
   sessions not created; 17 and 12 failures, none in the metrics tests). The third, with the demo down, failed one
   test: `ConsoleBrowserTest#grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim`, a Selenium
-  `StaleElementReferenceException`, which had passed in the second run.
+  `StaleElementReferenceException`, which had passed in the second run. After merging `main` (4acb145) the same test
+  failed the same way once more; alone the class passed 7 of 7. It is a race in the test's wait (backlog 51). The
+  next fast build passed: 1,241 tests, none skipped or failed, `:bitesApply` included, 8 min 17 s.
 - Found while doing it: Iceberg's sanitizer hash is an unkeyed 31-bit Murmur3, and hashing every SSN recovered
   `123-45-6789` from its `(hash-7f7bcfed)` in 8.2 s (two candidates). Backlog 45 puts the choice to Paul.
 
