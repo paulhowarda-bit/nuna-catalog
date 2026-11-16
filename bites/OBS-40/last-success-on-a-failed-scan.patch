@@ -1,0 +1,16 @@
+Breaks: the last-success gauge moves at the end of every scan that returns, one that could not read the work list included, so the worker-not-scanning alert never fires while the catalog or the identity provider is unreachable.
+Module: catalog-maintenance
+Test: ScanMetricsTest
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+index 8d8605b..af95cda 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+@@ -108,7 +108,7 @@ final class WorkerMetrics {
+             report.failuresByKind.forEach((kind, times) -> failures.get(kind).increment(times));
+             (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
+                     TimeUnit.NANOSECONDS);
+-            if (success) {
++            if (ended) {
+                 lastSuccess = clock.millis() / 1000.0;
+             }
+         }

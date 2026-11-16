@@ -1,0 +1,16 @@
+Breaks: keel.maintenance.files.deleted counts the files recorded for deletion instead of those deleted.
+Module: catalog-maintenance
+Test: WorkerMetricsTest#aScanAddsEachCountAndEachFailureByItsKind
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+index 8d8605b..36d11ba 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+@@ -56,7 +56,7 @@ final class WorkerMetrics {
+             new Count(PREFIX + "purges.skipped", "Purges another worker holds, or the catalog refused or rate-limited",
+                     report -> report.purgesSkipped),
+             new Count(PREFIX + "files.deleted", "Files deleted: due pending deletions and purged objects' files",
+-                    report -> report.filesDeleted));
++                    report -> report.filesRecorded));
+ 
+     private final MeterRegistry registry;
+     private final Clock clock;

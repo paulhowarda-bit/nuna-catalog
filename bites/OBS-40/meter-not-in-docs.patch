@@ -1,0 +1,15 @@
+Breaks: a new meter is added without a line in docs/observability/worker-metrics.md.
+Module: catalog-maintenance
+Test: WorkerMetricsTest#theDocsListEveryMeter
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+index 8d8605b..cdbf375 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+@@ -55,6 +55,7 @@ final class WorkerMetrics {
+             new Count(PREFIX + "purges.completed", "Dropped objects purged", report -> report.purged),
+             new Count(PREFIX + "purges.skipped", "Purges another worker holds, or the catalog refused or rate-limited",
+                     report -> report.purgesSkipped),
++            new Count(PREFIX + "files.listed", "Files an orphan scan listed", report -> 0),
+             new Count(PREFIX + "files.deleted", "Files deleted: due pending deletions and purged objects' files",
+                     report -> report.filesDeleted));
+ 

@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import keel.catalog.objectstore.DeletePolicy;
 import keel.catalog.objectstore.ObjectLocation;
 import keel.catalog.objectstore.StoreKind;
@@ -296,9 +298,13 @@ final class TestCatalog {
     }
 
     Worker worker(Clock clock, Compactor compactor, Storage storage) {
-        TokenSource tokens = workerTokens();
+        return worker(clock, compactor, storage, workerTokens(), new SimpleMeterRegistry());
+    }
+
+    /** The worker, signing in with {@code tokens} and recording its meters in {@code meters}. */
+    Worker worker(Clock clock, Compactor compactor, Storage storage, TokenSource tokens, MeterRegistry meters) {
         return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens, Map.of()), storage,
-                compactor, clock, Duration.ofDays(1), Duration.ofDays(1));
+                compactor, clock, Duration.ofDays(1), Duration.ofDays(1), meters);
     }
 
     /** The worker's management client. */

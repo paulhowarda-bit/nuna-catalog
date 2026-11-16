@@ -1,0 +1,28 @@
+Breaks: a failure counter appears only at its kind's first failure, so before it a dashboard shows nothing and Prometheus misses the first increase.
+Module: catalog-maintenance
+Test: WorkerMetricsTest#everyMeterReadsZeroBeforeTheFirstScan
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+index 8d8605b..9040a48 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+@@ -76,10 +76,6 @@ final class WorkerMetrics {
+         for (Count count : COUNTS) {
+             counts.put(count, Counter.builder(count.name()).description(count.description()).register(registry));
+         }
+-        for (ScanReport.Failure kind : ScanReport.Failure.values()) {
+-            failures.put(kind, Counter.builder(FAILURES).description("Failed jobs and work list reads, by kind")
+-                    .tag(KIND, kind.label).register(registry));
+-        }
+         succeeded = scanTimer(SUCCESS);
+         failed = scanTimer(FAILURE);
+         Gauge.builder(LAST_SUCCESS, this, metrics -> metrics.lastSuccess).strongReference(true).baseUnit("seconds")
+@@ -105,7 +101,8 @@ final class WorkerMetrics {
+         } finally {
+             boolean success = ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST);
+             counts.forEach((count, counter) -> counter.increment(count.of().applyAsInt(report)));
+-            report.failuresByKind.forEach((kind, times) -> failures.get(kind).increment(times));
++            report.failuresByKind.forEach((kind, times) -> failures.computeIfAbsent(kind, k -> Counter.builder(FAILURES)
++                    .tag(KIND, k.label).register(registry)).increment(times));
+             (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
+                     TimeUnit.NANOSECONDS);
+             if (success) {
