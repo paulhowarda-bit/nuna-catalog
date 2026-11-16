@@ -1,0 +1,16 @@
+Breaks: the figures over the last day count everything since the server started.
+Module: catalog-server
+Test: HealthWindowTest#theLastDayIsNowLessTheNewestReadingADayOld
+diff --git a/catalog-server/src/main/java/keel/catalog/server/health/HealthWindow.java b/catalog-server/src/main/java/keel/catalog/server/health/HealthWindow.java
+index 6618f65..6281223 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/health/HealthWindow.java
++++ b/catalog-server/src/main/java/keel/catalog/server/health/HealthWindow.java
+@@ -80,7 +80,7 @@ final class HealthWindow implements AutoCloseable {
+     private void prune(Instant now) {
+         Instant dayAgo = now.minus(DAY);
+         while (readings.size() > 1 && !readings.get(1).at().isAfter(dayAgo)) {
+-            readings.removeFirst();
++            break;
+         }
+     }
+ 
