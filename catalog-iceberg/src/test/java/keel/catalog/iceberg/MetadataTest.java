@@ -12,6 +12,7 @@ import keel.catalog.iceberg.Outcome.NotFound;
 import keel.catalog.iceberg.Outcome.RequirementFailed;
 import java.io.IOException;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -119,7 +120,7 @@ class MetadataTest {
                  "updates": []}""", base("v3-append"), location("v3-append"));
 
         assertThat(outcome).isEqualTo(new RequirementFailed("Requirement failed: UUID does not match: expected "
-                + GoldenCase.V3_UUID + " != ffffffff-0000-4000-8000-00000000000f"));
+                + GoldenCase.V3_UUID + " != ffffffff-0000-4000-8000-00000000000f", Optional.of("assert-table-uuid")));
     }
 
     @Test
@@ -135,7 +136,8 @@ class MetadataTest {
     void stagedCreateOfAnExistingTableIsAConflict() {
         Outcome outcome = Metadata.commitTable(stagedCreate(""), base("v3-create"), location("v3-create"));
 
-        assertThat(outcome).isEqualTo(new RequirementFailed("Requirement failed: table already exists"));
+        assertThat(outcome).isEqualTo(new RequirementFailed("Requirement failed: table already exists",
+                Optional.of("assert-create")));
     }
 
     /** A stale first-row-id is iceberg-core's RetryableValidationException, answered 409 as the reference does. */

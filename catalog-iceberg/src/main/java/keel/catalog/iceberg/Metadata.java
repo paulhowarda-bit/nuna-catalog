@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.apache.iceberg.EnvironmentContext;
 import org.apache.iceberg.MetadataUpdate.UpgradeFormatVersion;
@@ -32,6 +33,7 @@ import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.UpdateRequirement;
 import org.apache.iceberg.UpdateRequirement.AssertTableDoesNotExist;
+import org.apache.iceberg.UpdateRequirementParser;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.exceptions.ValidationException;
 import org.apache.iceberg.rest.RESTSerializers;
@@ -144,7 +146,7 @@ public final class Metadata {
                 if (!others.isEmpty()) {
                     return new BadRequest("Invalid create requirements: " + others);
                 }
-                requirements.forEach(r -> r.validate(base));
+                require(requirements, r -> r.validate(base));
                 int version = request.updates().stream()
                         .filter(UpgradeFormatVersion.class::isInstance)
                         .map(u -> ((UpgradeFormatVersion) u).formatVersion())
@@ -156,7 +158,7 @@ public final class Metadata {
             if (base == null) {
                 return new NotFound();
             }
-            requirements.forEach(r -> r.validate(base));
+            require(requirements, r -> r.validate(base));
             TableMetadata.Builder builder = TableMetadata.buildFrom(base);
             try {
                 request.updates().forEach(u -> u.applyTo(builder));
@@ -215,7 +217,7 @@ public final class Metadata {
         ViewMetadata base = ViewMetadataParser.fromJson(currentJson);
         return guarded(() -> {
             UpdateTableRequest request = UpdateTableRequestParser.fromJson(requestJson);
-            request.requirements().forEach(r -> r.validate(base));
+            require(request.requirements(), r -> r.validate(base));
             ViewMetadata.Builder builder = ViewMetadata.buildFrom(base);
             request.updates().forEach(u -> u.applyTo(builder));
             ViewMetadata updated = builder.build();
@@ -302,12 +304,39 @@ public final class Metadata {
     private static Outcome guarded(Supplier<Outcome> work) {
         try {
             return work.get();
+        } catch (Unmet e) {
+            return new RequirementFailed(e.getMessage(), Optional.of(e.type));
         } catch (CommitFailedException e) {
             return new RequirementFailed(e.getMessage());
         } catch (ValidationException | IllegalArgumentException | IllegalStateException
                  | UnsupportedOperationException | UncheckedIOException e) {
             boolean referenceType = e instanceof IllegalArgumentException || e instanceof ValidationException;
             return new BadRequest(referenceType ? e.getClass().getSimpleName() : "BadRequestException", e.getMessage());
+        }
+    }
+
+    /** Checks each requirement in turn; the first that does not hold is named in the outcome. */
+    private static void require(List<UpdateRequirement> requirements, Consumer<UpdateRequirement> check) {
+        for (UpdateRequirement requirement : requirements) {
+            try {
+                check.accept(requirement);
+            } catch (CommitFailedException e) {
+                throw new Unmet(requirement, e);
+            }
+        }
+    }
+
+    /** A requirement that does not hold, with its type as the spec names it ({@code assert-ref-snapshot-id}...). */
+    private static final class Unmet extends RuntimeException {
+        private final String type;
+
+        Unmet(UpdateRequirement requirement, CommitFailedException cause) {
+            super(cause.getMessage(), cause);
+            try {
+                this.type = REQUESTS.readTree(UpdateRequirementParser.toJson(requirement)).get("type").asText();
+            } catch (JsonProcessingException e) {
+                throw new UncheckedIOException(e);
+            }
         }
     }
 }

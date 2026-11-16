@@ -1,0 +1,17 @@
+Breaks: the commit SLO's bucket sits at 250 ms, not 300.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
+index ae767f1..d5321ec 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
++++ b/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
+@@ -34,7 +34,7 @@ public final class RequestMetrics extends OncePerRequestFilter {
+     public static final String REQUESTS = "keel.catalog.requests";
+     /** The histogram's bucket bounds: the SLOs, set here rather than in configuration. */
+     public static final List<Duration> SLO = List.of(Duration.ofMillis(10), Duration.ofMillis(50),
+-            Duration.ofMillis(300));
++            Duration.ofMillis(250));
+     private static final String CATALOG_ATTRIBUTE = RequestMetrics.class.getName() + ".catalog";
+ 
+     private final MeterProvider<Timer> timers;
