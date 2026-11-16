@@ -171,7 +171,9 @@ class KubernetesCompactionTest {
                 String cutJob = KubernetesJobs.jobName(cutWork, closing);
                 assertThat(await(jobs, cutJob)).as("failed").isEqualTo(",1");
                 assertThat(kubectl(Duration.ofMinutes(1), null, "get", "job", cutJob, "-n", jobs, "-o",
-                        "jsonpath={.status.conditions[?(@.type==\"Failed\")].reason}").strip())
+                        // Single quotes: Java on Windows passes double quotes inside an argument unescaped, and
+                        // the process receives them stripped.
+                        "jsonpath={.status.conditions[?(@.type=='Failed')].reason}").strip())
                         .isEqualTo("DeadlineExceeded");
                 assertThat(compactor.state(cutWork, closing)).isEqualTo(Compactor.State.CUT_OFF);
             }
