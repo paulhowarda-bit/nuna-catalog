@@ -44,8 +44,9 @@ line (item 37) and the alert lines on the `keel.alerts` logger.
 
 ### `keel.catalog.requests`
 
-This meter times every call to a route of the Iceberg REST spec: the `/v1/` routes and `POST /v1/oauth/tokens`. Any
-other request is left to Boot's `http.server.requests`: the management API, the console and the actuator.
+This meter times every call to a route of the Iceberg REST spec that the catalog serves, `POST /v1/oauth/tokens`
+included. Other requests (the management API, the console, the actuator) are timed only by Boot's
+`http.server.requests`.
 
 The timing starts right after the request's trace and request ID are set, before authentication, so a refused call
 is timed too. It ends when the response has been written.
