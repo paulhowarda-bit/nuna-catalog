@@ -15,7 +15,7 @@ import org.apache.iceberg.rest.RESTCatalog;
 /**
  * The worker as an Iceberg REST client of each catalog it maintains (D30 (1)): one client per catalog name, signed
  * in with the worker's token, reading and writing table files with the credentials the catalog vends it, which do
- * not include delete (D21).
+ * not include delete (D21). Each request carries the current trace, so the catalog's spans join the scan's.
  */
 final class Catalogs implements AutoCloseable {
 
@@ -26,10 +26,11 @@ final class Catalogs implements AutoCloseable {
 
     /**
      * @param extra more client properties, over the worker's own (tests use it)
+     * @param trace the current trace, sent with every request
      */
-    Catalogs(URI uri, TokenSource tokens, Map<String, String> extra) {
+    Catalogs(URI uri, TokenSource tokens, Map<String, String> extra, TraceHeaders trace) {
         this.uri = uri;
-        this.source = BearerAuthManager.register(tokens);
+        this.source = BearerAuthManager.register(tokens, trace);
         this.extra = Map.copyOf(extra);
     }
 

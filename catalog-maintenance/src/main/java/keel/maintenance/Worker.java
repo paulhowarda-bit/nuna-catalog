@@ -1,6 +1,9 @@
 package keel.maintenance;
 
+import io.micrometer.common.KeyValues;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.java11.instrument.binder.jdk.MicrometerHttpClient;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.http.HttpClient;
 import java.time.Clock;
 import java.time.Duration;
@@ -10,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -51,6 +55,8 @@ import org.slf4j.LoggerFactory;
  * <p>Every job is idempotent: a scan that runs again after a crash, or sees the effect of its own last commit,
  * finds less to do or records files already pending, which the catalog keeps as they were. One table, purge or
  * file group failing is reported and the scan moves on.
+ *
+ * <p>The scan and each of its parts are spans ({@link ScanSpans}), and its calls to the catalog carry their trace.
  */
 final class Worker implements AutoCloseable {
 
@@ -71,15 +77,18 @@ final class Worker implements AutoCloseable {
     /** The tables this scan found due an orphan scan. */
     private final List<Management.TableWork> orphansDue = new ArrayList<>();
     private final WorkerMetrics metrics;
+    private final ScanSpans spans;
     private final HealthReports health;
 
     /**
      * @param window         the nightly cleanup window: compaction and orphan scans start only inside it
      * @param orphanInterval the least time between two orphan scans of one table, rounded up to whole nights
      * @param compactionJobs how many compaction Jobs run at once
+     * @param observations   where the scans and their parts are observed: spans and timers
      */
     Worker(Management management, Catalogs catalogs, Storage storage, Compactor compactor, Clock clock,
-           CleanupWindow window, Duration orphanInterval, int compactionJobs, MeterRegistry meters) {
+           CleanupWindow window, Duration orphanInterval, int compactionJobs, MeterRegistry meters,
+           ObservationRegistry observations) {
         this.management = management;
         this.catalogs = catalogs;
         this.storage = storage;
@@ -89,29 +98,36 @@ final class Worker implements AutoCloseable {
         this.orphanInterval = orphanInterval;
         this.compactionJobs = compactionJobs;
         this.metrics = new WorkerMetrics(meters, clock);
-        this.health = new HealthReports(management);
+        this.spans = new ScanSpans(observations);
+        this.health = new HealthReports(management, spans);
     }
 
-    /** The worker the settings describe. */
-    static Worker of(WorkerSettings settings, Clock clock, MeterRegistry meters) {
-        TokenSource tokens = TokenSource.of(settings.token(), clock);
-        Management management = new Management(settings.catalogUri(), tokens, HttpClient.newHttpClient(),
-                settings.pageSize());
+    /**
+     * The worker the settings describe. Each of its calls to the catalog and its identity provider is observed: a span
+     * within the scan's, whose trace it carries as {@code traceparent}, and an {@code http.client.requests} timer.
+     */
+    static Worker of(WorkerSettings settings, Clock clock, MeterRegistry meters, ObservationRegistry observations,
+                     TraceHeaders trace) {
+        HttpClient http = MicrometerHttpClient.instrumentationBuilder(HttpClient.newHttpClient(), meters)
+                .observationRegistry(observations).uriMapper(Management::route).build();
+        TokenSource tokens = TokenSource.of(settings.token(), clock, http);
+        Management management = new Management(settings.catalogUri(), tokens, http, settings.pageSize());
         Compactor compactor = settings.compaction().enabled()
                 ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, clock)
                 : Compactor.NONE;
-        return new Worker(management, new Catalogs(settings.catalogUri(), tokens, Map.of()),
+        return new Worker(management, new Catalogs(settings.catalogUri(), tokens, Map.of(), trace),
                 Storage.of(settings.storage()), compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
-                settings.compaction().maxJobs(), meters);
+                settings.compaction().maxJobs(), meters, observations);
     }
 
     /**
      * One scan: the tables, the night's compaction Jobs and orphan scans, then the purges, then the due deletions;
-     * recorded as meters ({@link WorkerMetrics}), and reported to the catalog as it starts and ends (D38).
+     * recorded as meters ({@link WorkerMetrics}) and spans ({@link ScanSpans}), and reported to the catalog as it
+     * starts and ends (D38).
      */
     ScanReport runOnce() {
         ScanReport report = new ScanReport();
-        metrics.scan(report, () -> scan(report.id, report));
+        spans.scan(report, () -> metrics.scan(report, () -> scan(report.id, report)));
         return report;
     }
 
@@ -127,15 +143,17 @@ final class Worker implements AutoCloseable {
                 tonight = null;
             }
             if (night.isPresent() && tonight == null) {
-                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics, health, clock);
+                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics, spans, health,
+                        clock);
             }
             orphansDue.clear();
-            pages("the tables section", management::tables, tables -> tables.forEach(t -> maintain(t, now, report)),
-                    report);
+            pages(Management.Section.TABLES, management::tables,
+                    tables -> tables.forEach(t -> maintain(t, now, report)), report);
             compact(report);
             scanOrphans(now, report);
-            pages("the purges section", management::purges, purges -> purges.forEach(p -> purge(p, report)), report);
-            pages("the deletions section", management::deletions, due -> delete(due, report), report);
+            pages(Management.Section.PURGES, management::purges, purges -> purges.forEach(p -> purge(p, report)),
+                    report);
+            pages(Management.Section.DELETIONS, management::deletions, due -> delete(due, report), report);
             ended = true;
         } catch (RuntimeException e) {
             error = Optional.of(e.toString());
@@ -147,13 +165,18 @@ final class Worker implements AutoCloseable {
         }
     }
 
-    private <T> void pages(String what, Function<Optional<String>, Management.Page<T>> list,
+    /** Reads one section of the work list, page by page, each read a part of the scan, and hands on each page. */
+    private <T> void pages(Management.Section section, Function<Optional<String>, Management.Page<T>> list,
                            Consumer<List<T>> each, ScanReport report) {
+        String name = section.name().toLowerCase(Locale.ROOT);
+        String what = "the " + name + " section";
         Optional<String> token = Optional.empty();
         do {
             Management.Page<T> page;
             try {
-                page = list.apply(token);
+                Optional<String> from = token;
+                page = spans.part(ScanSpans.Part.WORK_LIST, KeyValues.of(ScanSpans.SECTION, name),
+                        () -> list.apply(from), read -> ScanSpans.OK);
             } catch (RuntimeException e) {
                 LOG.warn("Cannot read {} of the work list", what, e);
                 report.failed(ScanReport.Failure.WORK_LIST, what, e);
@@ -192,7 +215,8 @@ final class Worker implements AutoCloseable {
         }
         Table table = loaded.get();
         if (expire) {
-            job(ScanReport.Failure.SNAPSHOT_EXPIRY, "expiring snapshots of", work, report, () -> {
+            job(ScanReport.Failure.SNAPSHOT_EXPIRY, ScanSpans.Part.SNAPSHOT_EXPIRY, "expiring snapshots of", work,
+                    report, () -> {
                 Set<String> unreferenced = ConcurrentHashMap.newKeySet();
                 report.snapshotsExpired += TableJobs.expire(table, now, work.duration("snapshot-expiry"
                         + ".max-snapshot-age"), (int) work.count("snapshot-expiry.min-snapshots-to-keep"),
@@ -201,7 +225,8 @@ final class Worker implements AutoCloseable {
             });
         }
         if (rewrite) {
-            job(ScanReport.Failure.MANIFEST_REWRITE, "rewriting manifests of", work, report, () -> {
+            job(ScanReport.Failure.MANIFEST_REWRITE, ScanSpans.Part.MANIFEST_REWRITE, "rewriting manifests of", work,
+                    report, () -> {
                 Set<String> unreferenced = ConcurrentHashMap.newKeySet();
                 report.manifestsRewritten += TableJobs.rewriteManifests(table,
                         work.count("manifest-rewrite.min-manifests"), unreferenced::add);
@@ -209,8 +234,8 @@ final class Worker implements AutoCloseable {
             });
         }
         if (assess && open().isPresent()) {
-            job(ScanReport.Failure.COMPACTION, "assessing compaction of", work, report,
-                    () -> tonight.assess(work, table, report));
+            job(ScanReport.Failure.COMPACTION, ScanSpans.Part.COMPACTION_ASSESSMENT, "assessing compaction of", work,
+                    report, () -> tonight.assess(work, table, report));
         }
         if (orphans) {
             orphansDue.add(work);
@@ -224,13 +249,15 @@ final class Worker implements AutoCloseable {
     private Optional<Table> load(Management.TableWork work, ScanReport report) {
         Table table;
         try {
-            table = catalogs.load(work.catalog(), work.namespace(), work.name());
+            table = spans.part(ScanSpans.Part.TABLE_LOAD, KeyValues.empty(),
+                    () -> catalogs.load(work.catalog(), work.namespace(), work.name()),
+                    loaded -> sameTable(work, loaded) ? "loaded" : "changed");
         } catch (RuntimeException e) {
             LOG.warn("Cannot load table {} ({})", work.name(), work.id(), e);
             report.failed(ScanReport.Failure.TABLE_LOAD, "loading " + work.id(), e);
             return Optional.empty();
         }
-        if (!work.id().toString().equals(table.uuid().toString())) {
+        if (!sameTable(work, table)) {
             // Dropped, renamed or unregistered, and another table now has the name, since the work list was read:
             // its own policy is not this one, so nothing here runs on it. The next scan sees it as it is.
             report.failed(ScanReport.Failure.TABLE_CHANGED, "table " + work.id() + " is now another table, "
@@ -238,6 +265,11 @@ final class Worker implements AutoCloseable {
             return Optional.empty();
         }
         return Optional.of(table);
+    }
+
+    /** Whether the table loaded is the one the work list named, by id. */
+    private static boolean sameTable(Management.TableWork work, Table table) {
+        return work.id().toString().equals(table.uuid().toString());
     }
 
     /** Tonight's opening of the cleanup window, if it is open now. */
@@ -278,7 +310,8 @@ final class Worker implements AutoCloseable {
             }
             Table table = loaded.get();
             CleanupWindow.Night night = open.get();
-            job(ScanReport.Failure.ORPHAN_SCAN, "scanning for orphans of", work, report, () -> {
+            job(ScanReport.Failure.ORPHAN_SCAN, ScanSpans.Part.ORPHAN_SCAN, "scanning for orphans of", work, report,
+                    () -> {
                 LocalDate previous = orphanScans.put(work.id(), night.date());
                 List<String> found;
                 try {
@@ -302,10 +335,11 @@ final class Worker implements AutoCloseable {
         }
     }
 
-    private static void job(ScanReport.Failure kind, String what, Management.TableWork work, ScanReport report,
-                            Runnable job) {
+    /** One job on a table, as a part of the scan; a failure is reported as {@code kind}, and the scan goes on. */
+    private void job(ScanReport.Failure kind, ScanSpans.Part part, String what, Management.TableWork work,
+                     ScanReport report, Runnable job) {
         try {
-            job.run();
+            spans.part(part, job);
         } catch (RuntimeException e) {
             LOG.warn("Failed {} table {} ({})", what, work.name(), work.id(), e);
             report.failed(kind, what + " " + work.id(), e);
@@ -351,31 +385,37 @@ final class Worker implements AutoCloseable {
 
     private void purge(Management.PurgeWork purge, ScanReport report) {
         try {
-            Management.Claim claim = management.claimPurge(purge.catalog(), purge.id());
-            if (claim != Management.Claim.CLAIMED) {
-                report.purgesSkipped++;
-                return;
-            }
-            String root = purge.location().endsWith("/") ? purge.location() : purge.location() + "/";
-            List<String> batch = new ArrayList<>(Management.BATCH);
-            for (FileInfo file : storage.list(root)) {
-                batch.add(file.location());
-                if (batch.size() == Management.BATCH) {
-                    storage.delete(batch);
-                    report.filesDeleted += batch.size();
-                    batch.clear();
-                }
-            }
-            if (!batch.isEmpty()) {
-                storage.delete(batch);
-                report.filesDeleted += batch.size();
-            }
-            management.completePurge(purge.catalog(), purge.id());
-            report.purged++;
+            spans.part(ScanSpans.Part.PURGE, KeyValues.empty(), () -> purged(purge, report), outcome -> outcome);
         } catch (RuntimeException e) {
             LOG.warn("Failed purging {} ({})", purge.name(), purge.id(), e);
             report.failed(ScanReport.Failure.PURGE, "purging " + purge.id(), e);
         }
+    }
+
+    /** Claims the object's purge, deletes its files and completes it: {@code purged}, or {@code skipped}. */
+    private String purged(Management.PurgeWork purge, ScanReport report) {
+        Management.Claim claim = management.claimPurge(purge.catalog(), purge.id());
+        if (claim != Management.Claim.CLAIMED) {
+            report.purgesSkipped++;
+            return "skipped";
+        }
+        String root = purge.location().endsWith("/") ? purge.location() : purge.location() + "/";
+        List<String> batch = new ArrayList<>(Management.BATCH);
+        for (FileInfo file : storage.list(root)) {
+            batch.add(file.location());
+            if (batch.size() == Management.BATCH) {
+                storage.delete(batch);
+                report.filesDeleted += batch.size();
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            storage.delete(batch);
+            report.filesDeleted += batch.size();
+        }
+        management.completePurge(purge.catalog(), purge.id());
+        report.purged++;
+        return "purged";
     }
 
     // ---- pending deletions ----
@@ -388,10 +428,12 @@ final class Worker implements AutoCloseable {
             String catalog = (String) key.get(0);
             UUID object = (UUID) key.get(1);
             try {
-                storage.delete(deletions.stream().map(Management.DeletionWork::location).toList());
-                management.completeDeletions(catalog, object,
-                        deletions.stream().map(Management.DeletionWork::id).toList());
-                report.filesDeleted += deletions.size();
+                spans.part(ScanSpans.Part.DELETION, () -> {
+                    storage.delete(deletions.stream().map(Management.DeletionWork::location).toList());
+                    management.completeDeletions(catalog, object,
+                            deletions.stream().map(Management.DeletionWork::id).toList());
+                    report.filesDeleted += deletions.size();
+                });
             } catch (RuntimeException e) {
                 LOG.warn("Failed deleting {} files of {}", deletions.size(), object, e);
                 report.failed(ScanReport.Failure.DELETION, "deleting files of " + object, e);

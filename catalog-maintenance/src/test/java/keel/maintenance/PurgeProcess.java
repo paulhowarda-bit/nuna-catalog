@@ -1,6 +1,7 @@
 package keel.maintenance;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.nio.file.Path;
@@ -52,8 +53,9 @@ public final class PurgeProcess {
             }
         };
         try (Worker worker = new Worker(new Management(catalog, tokens, HttpClient.newHttpClient(), 100),
-                new Catalogs(catalog, tokens, Map.of()), slow, Compactor.NONE, Clock.systemUTC(),
-                new CleanupWindow(LocalTime.MIDNIGHT, LocalTime.MIDNIGHT, ZoneOffset.UTC), Duration.ofDays(1), 1, new SimpleMeterRegistry())) {
+                new Catalogs(catalog, tokens, Map.of(), TraceHeaders.NONE), slow, Compactor.NONE, Clock.systemUTC(),
+                new CleanupWindow(LocalTime.MIDNIGHT, LocalTime.MIDNIGHT, ZoneOffset.UTC), Duration.ofDays(1), 1, new SimpleMeterRegistry(),
+                ObservationRegistry.NOOP)) {
             System.out.println("SCANNED " + worker.runOnce());
         }
     }

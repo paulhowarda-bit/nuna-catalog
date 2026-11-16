@@ -25,7 +25,7 @@ public final class OrphanScanProcess {
         ChildJvm.quietLogging();
         URI uri = URI.create(args[0]);
         TokenSource tokens = new TokenSource.FileToken(Path.of(args[1]));
-        try (Storage storage = ChildJvm.storage(args, 2); Catalogs catalogs = new Catalogs(uri, tokens, Map.of())) {
+        try (Storage storage = ChildJvm.storage(args, 2); Catalogs catalogs = new Catalogs(uri, tokens, Map.of(), TraceHeaders.NONE)) {
             Table table = catalogs.load(args[6], List.of(args[7]), args[8]);
             long before = heap();
             long start = System.nanoTime();

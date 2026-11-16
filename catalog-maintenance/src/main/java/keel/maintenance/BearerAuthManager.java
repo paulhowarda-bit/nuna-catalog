@@ -1,5 +1,6 @@
 package keel.maintenance;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,7 +12,8 @@ import org.apache.iceberg.rest.auth.DefaultAuthSession;
 
 /**
  * Signs every request of Iceberg's REST client with the worker's current token ({@code rest.auth.type} names this
- * class). Iceberg builds the manager by name, so the token source is found through the catalog property
+ * class), and adds the current trace ({@link TraceHeaders}), so the catalog's spans for the request join the worker's
+ * (backlog 49). Iceberg builds the manager by name, so the token source is found through the catalog property
  * {@value #SOURCE}, which {@link #register} hands out.
  */
 public final class BearerAuthManager implements AuthManager {
@@ -19,15 +21,22 @@ public final class BearerAuthManager implements AuthManager {
     /** The catalog property naming the registered token source. */
     static final String SOURCE = "keel.token-source";
 
-    private static final Map<String, TokenSource> SOURCES = new ConcurrentHashMap<>();
+    /** A token source and the trace headers to send with it. */
+    private record Source(TokenSource tokens, TraceHeaders trace) {
+    }
+
+    private static final Map<String, Source> SOURCES = new ConcurrentHashMap<>();
 
     public BearerAuthManager(String name) {
     }
 
-    /** Makes a token source known to the managers Iceberg builds; returns the value of {@value #SOURCE}. */
-    static String register(TokenSource tokens) {
+    /**
+     * Makes a token source, and where the current trace comes from, known to the managers Iceberg builds; returns the
+     * value of {@value #SOURCE}.
+     */
+    static String register(TokenSource tokens, TraceHeaders trace) {
         String id = UUID.randomUUID().toString();
-        SOURCES.put(id, tokens);
+        SOURCES.put(id, new Source(tokens, trace));
         return id;
     }
 
@@ -37,11 +46,15 @@ public final class BearerAuthManager implements AuthManager {
 
     @Override
     public AuthSession catalogSession(RESTClient client, Map<String, String> properties) {
-        TokenSource tokens = SOURCES.get(properties.get(SOURCE));
-        if (tokens == null) {
+        Source source = SOURCES.get(properties.get(SOURCE));
+        if (source == null) {
             throw new IllegalStateException("no token source " + properties.get(SOURCE) + " is registered");
         }
-        return (DefaultAuthSession) () -> HTTPHeaders.of(Map.of("Authorization", "Bearer " + tokens.token()));
+        return (DefaultAuthSession) () -> {
+            Map<String, String> headers = new HashMap<>(source.trace().current());
+            headers.put("Authorization", "Bearer " + source.tokens().token());
+            return HTTPHeaders.of(headers);
+        };
     }
 
     @Override

@@ -25,6 +25,9 @@ dependencies {
     implementation("io.opentelemetry.instrumentation:opentelemetry-logback-appender-1.0:" +
         property("opentelemetry-logback-appender.version"))
     runtimeOnly("io.opentelemetry:opentelemetry-exporter-sender-jdk")
+    // Observes the worker's calls to the catalog on the JDK's HttpClient, so each carries the scan's trace
+    // (W3C traceparent) and the catalog's spans join it (backlog 49).
+    implementation("io.micrometer:micrometer-java11")
     // iceberg-aws declares no SDK dependencies; its client factory loads these classes.
     listOf("sts", "kms", "glue", "dynamodb").forEach {
         runtimeOnly("software.amazon.awssdk:$it") {

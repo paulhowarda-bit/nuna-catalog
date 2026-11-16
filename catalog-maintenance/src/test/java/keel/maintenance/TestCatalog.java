@@ -7,6 +7,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jwt.JWTClaimsSet;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import keel.catalog.objectstore.DeletePolicy;
 import keel.catalog.objectstore.ObjectLocation;
 import keel.catalog.objectstore.StoreKind;
@@ -319,8 +320,9 @@ final class TestCatalog {
     /** The same, scanning a table for orphans at most once per {@code orphanInterval}. */
     Worker worker(Clock clock, Compactor compactor, Storage storage, TokenSource tokens, MeterRegistry meters,
                   CleanupWindow window, Duration orphanInterval, int maxJobs) {
-        return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens, Map.of()), storage,
-                compactor, clock, window, orphanInterval, maxJobs, meters);
+        return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens, Map.of(),
+                TraceHeaders.NONE), storage, compactor, clock, window, orphanInterval, maxJobs, meters,
+                ObservationRegistry.NOOP);
     }
 
     /**
@@ -350,7 +352,7 @@ final class TestCatalog {
         properties.put(CatalogProperties.URI, uri.toString());
         properties.put(CatalogProperties.WAREHOUSE_LOCATION, CATALOG);
         properties.put("rest.auth.type", BearerAuthManager.class.getName());
-        properties.put(BearerAuthManager.SOURCE, BearerAuthManager.register(writerTokens()));
+        properties.put(BearerAuthManager.SOURCE, BearerAuthManager.register(writerTokens(), TraceHeaders.NONE));
         properties.put(CatalogProperties.FILE_IO_IMPL, "org.apache.iceberg.aws.s3.S3FileIO");
         properties.put("http-client.type", "apache");
         properties.put("header.X-Iceberg-Access-Delegation", "vended-credentials");
