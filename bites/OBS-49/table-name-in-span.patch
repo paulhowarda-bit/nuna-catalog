@@ -1,0 +1,16 @@
+Breaks: a table's load span names the table.
+Module: catalog-maintenance
+Test: WorkerTraceTest
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+index 62b16e8..e0967b7 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+@@ -249,7 +249,7 @@ final class Worker implements AutoCloseable {
+     private Optional<Table> load(Management.TableWork work, ScanReport report) {
+         Table table;
+         try {
+-            table = spans.part(ScanSpans.Part.TABLE_LOAD, KeyValues.empty(),
++            table = spans.part(ScanSpans.Part.TABLE_LOAD, KeyValues.of("table", work.name()),
+                     () -> catalogs.load(work.catalog(), work.namespace(), work.name()),
+                     loaded -> sameTable(work, loaded) ? "loaded" : "changed");
+         } catch (RuntimeException e) {

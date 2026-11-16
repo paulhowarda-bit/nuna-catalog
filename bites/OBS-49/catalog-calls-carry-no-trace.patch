@@ -1,0 +1,17 @@
+Breaks: the worker's calls to the catalog go through a bare JDK client, so they carry no traceparent and the catalog's spans for them start traces of their own.
+Module: catalog-maintenance
+Test: WorkerTraceTest
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+index 62b16e8..c70e65d 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+@@ -108,8 +108,7 @@ final class Worker implements AutoCloseable {
+      */
+     static Worker of(WorkerSettings settings, Clock clock, MeterRegistry meters, ObservationRegistry observations,
+                      TraceHeaders trace) {
+-        HttpClient http = MicrometerHttpClient.instrumentationBuilder(HttpClient.newHttpClient(), meters)
+-                .observationRegistry(observations).uriMapper(Management::route).build();
++        HttpClient http = HttpClient.newHttpClient();
+         TokenSource tokens = TokenSource.of(settings.token(), clock, http);
+         Management management = new Management(settings.catalogUri(), tokens, http, settings.pageSize());
+         Compactor compactor = settings.compaction().enabled()

@@ -1,0 +1,16 @@
+Breaks: a call's uri is its path as sent, naming the catalog and the table's, object's or scan's id.
+Module: catalog-maintenance
+Test: ScanSpansTest#aCallsUriIsItsRouteNamingNoCatalogOrId
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Management.java b/catalog-maintenance/src/main/java/keel/maintenance/Management.java
+index f02c3b8..cb8c3af 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Management.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Management.java
+@@ -265,7 +265,7 @@ final class Management {
+                 segments[i] = "{id}";
+             }
+         }
+-        return String.join("/", segments);
++        return request.uri().getRawPath();
+     }
+ 
+     private static String object(String catalog, UUID id) {
