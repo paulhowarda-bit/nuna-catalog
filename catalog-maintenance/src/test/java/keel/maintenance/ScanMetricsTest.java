@@ -10,21 +10,33 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The worker's meters after real scans of a catalog's work list (backlog 40). A scan that expires snapshots, rewrites
- * manifests, finds an orphan, starts a compaction, purges a dropped table and skips one another worker holds is
- * counted as its report says, timed as a success, and dated by the worker's clock. A scan that cannot read the work
- * list (its token source fails) is timed as a failure and counted by kind, and leaves the last success where it was;
- * the next good scan moves it. No meter is labelled with anything but a failure's kind or a scan's outcome.
+ * The worker's meters after real scans of a catalog's work list (backlog 40):
+ *
+ * <ol>
+ *   <li>a scan that expires snapshots, rewrites manifests, finds an orphan, starts a compaction, purges a dropped table
+ *       and skips one another worker holds is counted as its report says, timed as a success and dated by the
+ *       worker's clock;</li>
+ *   <li>a scan that cannot read the work list (the worker's token source fails) is timed as a failure, counted as
+ *       {@code work-list} failures, and leaves the last success where it was; the next good scan moves it;</li>
+ *   <li>a scan whose store fails its orphan scan, purge and deletions counts each failure by its kind, and still
+ *       succeeds: it read the whole work list.</li>
+ * </ol>
+ *
+ * No meter is labelled with anything but a failure's kind or a scan's outcome.
  */
 class ScanMetricsTest {
 
@@ -43,24 +55,12 @@ class ScanMetricsTest {
         MeterRegistry meters = new SimpleMeterRegistry();
         FakeClock clock = new FakeClock();
         AtomicBoolean signedOut = new AtomicBoolean();
-        TokenSource workerTokens = catalog.workerTokens();
-        TokenSource tokens = new TokenSource() {
-            @Override
-            public String token() {
-                if (signedOut.get()) {
-                    throw new IllegalStateException("the identity provider did not answer");
-                }
-                return workerTokens.token();
-            }
-
-            @Override
-            public Map<String, String> clientProperties() {
-                return workerTokens.clientProperties();
-            }
-        };
+        AtomicBoolean storeDown = new AtomicBoolean();
         Compactor compactor = table -> Compactor.Launch.STARTED;
+        List<ScanReport> reports = new ArrayList<>();
         try (RESTCatalog writer = catalog.writer();
-             Worker worker = catalog.worker(clock, compactor, Storage.of(catalog.storageProfiles()), tokens, meters)) {
+             Worker worker = catalog.worker(clock, compactor, failing(Storage.of(catalog.storageProfiles()), storeDown),
+                     failing(catalog.workerTokens(), signedOut), meters)) {
             TableIdentifier id = TestCatalog.table(writer, "metered");
             Table table = writer.loadTable(id);
             // Three appends: three snapshots and three small data manifests.
@@ -78,15 +78,14 @@ class ScanMetricsTest {
             catalog.expect(catalog.manage(catalog.otherWorkerTokens(), "POST", "/objects/" + theirs
                     + "/purge-claim", null), 200);
 
+            // 1. Everything a scan does.
             Instant before = clock.instant();
-            ScanReport report = worker.runOnce();
+            reports.add(worker.runOnce());
             Instant after = clock.instant();
 
-            assertThat(report.failuresByKind).doesNotContainKey(ScanReport.Failure.WORK_LIST);
+            assertThat(reports.getLast().failuresByKind).doesNotContainKey(ScanReport.Failure.WORK_LIST);
             assertThat(catalog.state(purged)).isEqualTo("PURGED");
-            for (WorkerMetrics.Count count : WorkerMetrics.COUNTS) {
-                assertThat(counter(meters, count.name())).as(count.name()).isEqualTo(count.of().applyAsInt(report));
-            }
+            assertCounted(meters, reports);
             // At least what this test set up; other tests' leftovers in the shared catalog may add to it.
             assertThat(counter(meters, "keel.maintenance.tables")).isGreaterThanOrEqualTo(1);
             assertThat(counter(meters, "keel.maintenance.snapshots.expired")).isGreaterThanOrEqualTo(2);
@@ -98,10 +97,6 @@ class ScanMetricsTest {
             assertThat(counter(meters, "keel.maintenance.purges.completed")).isGreaterThanOrEqualTo(1);
             assertThat(counter(meters, "keel.maintenance.purges.skipped")).isGreaterThanOrEqualTo(1);
             assertThat(counter(meters, "keel.maintenance.files.deleted")).isGreaterThanOrEqualTo(2);
-            for (ScanReport.Failure kind : ScanReport.Failure.values()) {
-                assertThat(failures(meters, kind)).as(kind.label)
-                        .isEqualTo((double) report.failuresByKind.getOrDefault(kind, 0));
-            }
             assertThat(scans(meters, WorkerMetrics.SUCCESS)).isEqualTo(1);
             assertThat(scans(meters, WorkerMetrics.FAILURE)).isZero();
             assertThat(meters.get(WorkerMetrics.SCAN).tag(WorkerMetrics.OUTCOME, WorkerMetrics.SUCCESS).timer()
@@ -110,11 +105,13 @@ class ScanMetricsTest {
             assertThat(succeeded).as("dated by the worker's clock")
                     .isBetween(before.toEpochMilli() / 1000.0, after.toEpochMilli() / 1000.0);
 
+            // 2. The work list unread, then read again.
             signedOut.set(true);
             catalog.advance(Duration.ofHours(1), clock);
-            ScanReport unread = worker.runOnce();
+            reports.add(worker.runOnce());
 
-            assertThat(unread.failuresByKind).isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 3));
+            assertThat(reports.getLast().failuresByKind).isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 3));
+            assertCounted(meters, reports);
             assertThat(failures(meters, ScanReport.Failure.WORK_LIST)).isEqualTo(3);
             assertThat(scans(meters, WorkerMetrics.FAILURE)).isEqualTo(1);
             assertThat(scans(meters, WorkerMetrics.SUCCESS)).isEqualTo(1);
@@ -123,15 +120,52 @@ class ScanMetricsTest {
             signedOut.set(false);
             catalog.advance(Duration.ofHours(1), clock);
             before = clock.instant();
-            worker.runOnce();
+            reports.add(worker.runOnce());
             after = clock.instant();
 
+            assertCounted(meters, reports);
             assertThat(scans(meters, WorkerMetrics.SUCCESS)).isEqualTo(2);
+            assertThat(lastSuccess(meters)).isBetween(before.toEpochMilli() / 1000.0, after.toEpochMilli() / 1000.0);
+
+            // 3. Jobs failing: the orphan scan of "metered" is due again, the files the first scan recorded are due
+            // for deletion, and a newly dropped table for its purge, all on a store that fails.
+            String unpurgeable = drop(writer, "unpurgeable");
+            storeDown.set(true);
+            catalog.advance(PAST_THE_WINDOW, clock);
+            before = clock.instant();
+            reports.add(worker.runOnce());
+            after = clock.instant();
+
+            assertThat(reports.getLast().failuresByKind).containsKeys(ScanReport.Failure.ORPHAN_SCAN,
+                    ScanReport.Failure.PURGE, ScanReport.Failure.DELETION)
+                    .doesNotContainKey(ScanReport.Failure.WORK_LIST);
+            assertCounted(meters, reports);
+            assertThat(failures(meters, ScanReport.Failure.ORPHAN_SCAN)).isGreaterThanOrEqualTo(1);
+            assertThat(failures(meters, ScanReport.Failure.PURGE)).isGreaterThanOrEqualTo(1);
+            assertThat(failures(meters, ScanReport.Failure.DELETION)).isGreaterThanOrEqualTo(1);
+            assertThat(scans(meters, WorkerMetrics.SUCCESS)).as("failed jobs, the work list read").isEqualTo(3);
             assertThat(lastSuccess(meters)).isBetween(before.toEpochMilli() / 1000.0, after.toEpochMilli() / 1000.0);
             WorkerMetricsTest.assertBoundedLabels(meters);
 
+            // The store back: the claimed purge resumes, and the other worker finishes its own.
+            storeDown.set(false);
+            catalog.advance(Duration.ofHours(1), clock);
+            worker.runOnce();
+            assertThat(catalog.state(unpurgeable)).isEqualTo("PURGED");
             catalog.expect(catalog.manage(catalog.otherWorkerTokens(), "POST", "/objects/" + theirs + "/purge", null),
                     204);
+        }
+    }
+
+    /** Every count and every kind of failure as the reports, summed, say. */
+    private static void assertCounted(MeterRegistry meters, List<ScanReport> reports) {
+        for (WorkerMetrics.Count count : WorkerMetrics.COUNTS) {
+            assertThat(counter(meters, count.name())).as(count.name())
+                    .isEqualTo(reports.stream().mapToInt(count.of()).sum());
+        }
+        for (ScanReport.Failure kind : ScanReport.Failure.values()) {
+            assertThat(failures(meters, kind)).as(kind.label)
+                    .isEqualTo(reports.stream().mapToInt(report -> report.failuresByKind.getOrDefault(kind, 0)).sum());
         }
     }
 
@@ -142,5 +176,51 @@ class ScanMetricsTest {
         table.newAppend().appendFile(TestCatalog.dataFile(table, "a")).commit();
         assertThat(writer.dropTable(id, false)).isTrue();
         return table.uuid().toString();
+    }
+
+    /** {@code tokens}, failing while {@code down} is set, as an identity provider that does not answer. */
+    private static TokenSource failing(TokenSource tokens, AtomicBoolean down) {
+        return new TokenSource() {
+            @Override
+            public String token() {
+                if (down.get()) {
+                    throw new IllegalStateException("the identity provider did not answer");
+                }
+                return tokens.token();
+            }
+
+            @Override
+            public Map<String, String> clientProperties() {
+                return tokens.clientProperties();
+            }
+        };
+    }
+
+    /** {@code storage}, failing every listing and deletion while {@code down} is set. */
+    private static Storage failing(Storage storage, AtomicBoolean down) {
+        return new Storage() {
+            @Override
+            public Iterable<FileInfo> list(String prefix) {
+                check();
+                return storage.list(prefix);
+            }
+
+            @Override
+            public void delete(Collection<String> locations) {
+                check();
+                storage.delete(locations);
+            }
+
+            @Override
+            public void close() {
+                storage.close();
+            }
+
+            private void check() {
+                if (down.get()) {
+                    throw new IllegalStateException("the store did not answer");
+                }
+            }
+        };
     }
 }

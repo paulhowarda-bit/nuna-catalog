@@ -155,7 +155,7 @@ Items 46 (compaction on need), 47 (the scans kept by the catalog) and 49 (worker
 | Test | Shows |
 |---|---|
 | `WorkerMetricsTest` | Every meter reads zero before the first scan; a scan adds each count and each failure by kind; only a scan that read the whole work list moves the last success, and one that throws is still counted; labels hold only a kind or an outcome; this page lists every meter. |
-| `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, starts a compaction, purges and skips a purge is counted as its report says and dated by the worker's clock; one whose token source fails is a failure of kind `work-list` and leaves the last success where it was; the next moves it. |
+| `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, starts a compaction, purges and skips a purge is counted as its report says and dated by the worker's clock; one whose token source fails is a failure of kind `work-list` and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
 | `TelemetryTest` | The worker's meters, from Boot's registry, arrive over OTLP: the failed first scan's `work-list` failures, its timer in milliseconds, the last success at `0`. |
 
 Each guarded rule's bite is in `bites/OBS-40/`.
