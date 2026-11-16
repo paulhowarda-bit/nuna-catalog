@@ -13,6 +13,7 @@ import keel.catalog.security.TrustedEngine;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.RestSettings;
 import keel.catalog.server.StoreOutage;
+import keel.catalog.server.telemetry.RequestIds;
 import keel.catalog.server.ui.UiWiring;
 import keel.catalog.store.GovernanceStore;
 import keel.catalog.store.StoreException;
@@ -29,7 +30,6 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +49,6 @@ final class Authentication extends OncePerRequestFilter {
     static final String END_USER_GROUPS = "X-Keel-End-User-Groups";
 
     private static final Logger LOG = LoggerFactory.getLogger(Authentication.class);
-    private static final String REQUEST_ID = "X-Request-ID";
 
     private final TokenAuthenticator authenticator;
     private final GovernanceStore registry;
@@ -147,10 +146,7 @@ final class Authentication extends OncePerRequestFilter {
 
     private void refuse(HttpServletRequest request, HttpServletResponse response, int status, String reason,
                         String token, String challenge) throws IOException {
-        String requestId = request.getHeader(REQUEST_ID);
-        if (requestId == null || requestId.isBlank() || requestId.length() > 128) {
-            requestId = UUID.randomUUID().toString();
-        }
+        String requestId = RequestIds.of(request);
         Claimed claimed = claimed(token);
         try {
             audit.publish(CatalogEvent.create(rest.auditSource(), clock.instant(), new AuthFailure(claimed.issuer(),

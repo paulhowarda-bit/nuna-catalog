@@ -1,0 +1,17 @@
+Breaks: the worker pushes metrics to Boot's default localhost:4318 with no endpoint set.
+Module: catalog-maintenance
+Test: TelemetryTest#withNoEndpointMetricsStayOff
+
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Telemetry.java b/catalog-maintenance/src/main/java/keel/maintenance/Telemetry.java
+index 5c37f87..77df893 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/Telemetry.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/Telemetry.java
+@@ -69,7 +69,7 @@ class Telemetry {
+ 
+         @Override
+         public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+-            if (ENDPOINTS.stream().noneMatch(environment::containsProperty)) {
++            if (ENDPOINTS.isEmpty()) {
+                 // Last: below every property source, so any explicit setting wins.
+                 environment.getPropertySources().addLast(new MapPropertySource("keelMetricsExportNeedsEndpoint",
+                         Map.of(ENABLED, "false")));

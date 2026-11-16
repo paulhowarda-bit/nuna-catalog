@@ -64,6 +64,24 @@ Its rules hold at work. Some of its facts describe Paul's home machine:
   `maven { url = uri("https://<internal repository>") }`. Every library and plugin resolves from it, so
   each must be an approved artifact (PLT-6). A missing one fails the build by name; list those for Paul.
 - **Docker** for the tests (Testcontainers) and the images; **kubectl** and **helm** for the install.
+- **Telemetry (backlog 38)** added these to the server's and the worker's class paths; the mirror must hold them
+  (docs/observability/README.md). Spring Boot's BOM manages all but the two marked, whose versions are in
+  `gradle.properties`:
+  - `org.springframework.boot`, 4.1.2: `spring-boot-starter-opentelemetry`, `spring-boot-opentelemetry`,
+    `spring-boot-starter-micrometer-metrics`, `spring-boot-micrometer-metrics`, `spring-boot-micrometer-observation`,
+    `spring-boot-micrometer-tracing`, `spring-boot-micrometer-tracing-opentelemetry`;
+  - `io.micrometer`: `micrometer-core` and `micrometer-registry-otlp` 1.17.2, `micrometer-tracing` and
+    `micrometer-tracing-bridge-otel` 1.7.2, `context-propagation` 1.2.1;
+  - `io.opentelemetry`, 1.62.0: `opentelemetry-exporter-otlp`, `-exporter-otlp-common`, `-exporter-common`,
+    `-exporter-sender-jdk`, `-extension-trace-propagators`, and `opentelemetry-api-incubator` 1.62.0-alpha (the API
+    and SDK, 1.62.0, were already there);
+  - `io.opentelemetry.instrumentation`: `opentelemetry-logback-appender-1.0` 2.28.0-alpha (marked),
+    `opentelemetry-instrumentation-api` 2.28.0, `opentelemetry-instrumentation-api-incubator` 2.28.0-alpha;
+  - `io.opentelemetry.proto:opentelemetry-proto` 1.10.0-alpha (marked; the OTLP meter registry's), with
+    `com.google.protobuf:protobuf-java` 4.36.2;
+  - `io.opentelemetry.semconv:opentelemetry-semconv` 1.41.1, `org.hdrhistogram:HdrHistogram` 2.2.2.
+
+  OkHttp and the Kotlin standard library are not needed: the exporter sends over the JDK's HTTP client.
 
 Then the fast build must be green before anything else:
 

@@ -39,3 +39,49 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- define "keel-maintenance.compaction" -}}
 {{- if dig "keel" "maintenance" "compaction" "image" "" .Values.config -}}true{{- end -}}
 {{- end -}}
+
+{{/*
+The standard OTEL_* variables for the telemetry values (docs/observability/README.md). Spring Boot reads them; with no
+endpoint nothing is exported.
+*/}}
+{{- define "keel-maintenance.telemetryEnv" -}}
+{{- $t := .Values.telemetry -}}
+- name: KEEL_POD_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: metadata.name
+- name: KEEL_NODE_NAME
+  valueFrom:
+    fieldRef:
+      fieldPath: spec.nodeName
+- name: OTEL_SERVICE_NAME
+  value: {{ .Chart.Name }}
+{{- $attributes := list (printf "service.namespace=%s" .Release.Namespace) (printf "service.version=%s" (.Values.image.tag | default .Chart.AppVersion)) "service.instance.id=$(KEEL_POD_NAME)" (printf "k8s.namespace.name=%s" .Release.Namespace) "k8s.pod.name=$(KEEL_POD_NAME)" "k8s.node.name=$(KEEL_NODE_NAME)" }}
+{{- range $name, $value := $t.resourceAttributes }}
+{{- $attributes = append $attributes (printf "%s=%s" $name (toString $value)) }}
+{{- end }}
+- name: OTEL_RESOURCE_ATTRIBUTES
+  value: {{ join "," $attributes | quote }}
+- name: OTEL_TRACES_SAMPLER
+  value: parentbased_traceidratio
+- name: OTEL_TRACES_SAMPLER_ARG
+  value: {{ $t.sampling | toString | quote }}
+{{- if $t.endpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ $t.endpoint | quote }}
+{{- if $t.headersSecret.name }}
+- name: OTEL_EXPORTER_OTLP_HEADERS
+  valueFrom:
+    secretKeyRef:
+      name: {{ $t.headersSecret.name }}
+      key: {{ $t.headersSecret.key }}
+{{- else if $t.headers }}
+- name: OTEL_EXPORTER_OTLP_HEADERS
+  value: {{ $t.headers | quote }}
+{{- end }}
+{{- if $t.caConfigMap.name }}
+- name: OTEL_EXPORTER_OTLP_CERTIFICATE
+  value: /etc/keel/otlp-ca/{{ $t.caConfigMap.key }}
+{{- end }}
+{{- end }}
+{{- end }}

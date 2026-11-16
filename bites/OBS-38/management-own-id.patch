@@ -1,0 +1,17 @@
+Breaks: a management route's audit events take an id of their own, not the request's.
+Module: catalog-server
+Test: TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/Management.java b/catalog-server/src/main/java/keel/catalog/server/governance/Management.java
+index 1bd9abf..b348095 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/governance/Management.java
++++ b/catalog-server/src/main/java/keel/catalog/server/governance/Management.java
+@@ -144,7 +144,7 @@ class Management {
+     Request request(HttpServletRequest http) {
+         Caller caller = callers.caller(http);
+         return new Request(caller, new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
+-                caller.engine(), RequestIds.of(http)));
++                caller.engine(), java.util.UUID.randomUUID().toString()));
+     }
+ 
+     /** The change that writes {@code data} to the outbox with the mutation, at {@code at}. */

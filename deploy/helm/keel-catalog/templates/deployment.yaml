@@ -56,6 +56,7 @@ spec:
               value: optional:configtree:/etc/keel/secrets/
             - name: JAVA_TOOL_OPTIONS
               value: {{ .Values.javaToolOptions | quote }}
+            {{- include "keel-catalog.telemetryEnv" . | nindent 12 }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -102,6 +103,11 @@ spec:
             {{- end }}
             - name: tmp
               mountPath: /tmp
+            {{- if and .Values.telemetry.endpoint .Values.telemetry.caConfigMap.name }}
+            - name: otlp-ca
+              mountPath: /etc/keel/otlp-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -113,6 +119,11 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
+        {{- if and .Values.telemetry.endpoint .Values.telemetry.caConfigMap.name }}
+        - name: otlp-ca
+          configMap:
+            name: {{ .Values.telemetry.caConfigMap.name }}
+        {{- end }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- range . }}

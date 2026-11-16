@@ -1,0 +1,17 @@
+Breaks: an authentication refusal is audited with an id of its own, not the request's.
+Module: catalog-server
+Test: TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+index 5418235..ca39286 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+@@ -146,7 +146,7 @@ final class Authentication extends OncePerRequestFilter {
+ 
+     private void refuse(HttpServletRequest request, HttpServletResponse response, int status, String reason,
+                         String token, String challenge) throws IOException {
+-        String requestId = RequestIds.of(request);
++        String requestId = java.util.UUID.randomUUID().toString();
+         Claimed claimed = claimed(token);
+         try {
+             audit.publish(CatalogEvent.create(rest.auditSource(), clock.instant(), new AuthFailure(claimed.issuer(),

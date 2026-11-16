@@ -1,0 +1,116 @@
+# Observability
+
+The catalog server (`keel-catalog`) and the maintenance worker (`keel-maintenance`) send metrics, traces and logs to an
+OpenTelemetry collector over OTLP/HTTP, and write their log lines to stdout as JSON. Nothing is exported until an
+endpoint is named, so the tests, the demo and a laptop run need no collector. Backlog 38 laid this foundation; 39, 40
+and 41 add the catalog's own meters and spans.
+
+## What is exported
+
+- **Metrics.** Spring Boot's standard meters, for example `http.server.requests` (a timer per route template,
+  method, status and outcome), `jvm.*`, `process.*`, `system.*` and `logback.events`. Pushed every
+  minute (`management.otlp.metrics.export.step`). The catalog's own meters come with backlog 39 (the server) and 40
+  (the worker).
+- **Traces.** A server span for every HTTP request the catalog answers, named for its method and route template. A
+  caller's W3C `traceparent` is honoured, so a client's trace continues into the catalog. The worker makes no spans of
+  its own yet, and its calls to the catalog carry no trace context (backlog 49); the database, object-store, STS and
+  Kafka calls get spans with backlog 41.
+- **Logs.** Every log line, to stdout as JSON and, when a logs endpoint is named, as an OTLP log record.
+
+Each signal carries the resource attributes `service.name` (`keel-catalog` or `keel-maintenance`, or
+`OTEL_SERVICE_NAME`) and whatever `OTEL_RESOURCE_ATTRIBUTES` adds; the Helm charts add the namespace, version, pod and
+node (deploy/README.md, "Telemetry").
+
+## Log lines
+
+The format is Elastic Common Schema (`logging.structured.format.console: ecs` in each `application.yaml`). A line
+written while a request runs carries:
+
+- `traceId` and `spanId`, the request's span;
+- `requestId`, the request ID below;
+- `service.name`, `log.level`, `log.logger`, `message`, and `error.*` with the stack trace when there is one.
+
+Over OTLP the trace and span IDs are the record's own, and `requestId` is an attribute. To use Logstash's or GELF's
+format instead, set `LOGGING_STRUCTURED_FORMAT_CONSOLE=logstash` (or `gelf`).
+
+## The request ID
+
+One key joins an audit event, an STS session (and so CloudTrail), a log line and a trace:
+
+- A client's `X-Request-ID` of 1 to 128 characters, not blank, is kept.
+- Otherwise the request ID is the request's trace ID, 32 hex characters, which is also the caller's when it sent a
+  `traceparent`.
+- Every response carries `X-Request-ID`, errors included (401, 403, 404, 500, the token route and the console's files).
+- The audit events record it as `actor.requestId`. Credential vending puts it in the STS session's `keel-request` tag
+  and its session name, cleaned for STS as before.
+
+`RequestIds` (catalog-server, `telemetry`) decides it once per request, right after Boot opens the request's span.
+
+## Pointing it at a collector
+
+The standard OpenTelemetry variables are enough; Spring Boot reads them:
+
+| Variable | Meaning |
+|---|---|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector's OTLP/HTTP base URL, e.g. `http://otel-collector:4318`. Switches on all three signals; `/v1/metrics`, `/v1/traces` and `/v1/logs` are added to it. |
+| `OTEL_EXPORTER_OTLP_{METRICS,TRACES,LOGS}_ENDPOINT` | One signal's full URL instead. |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `name=value` pairs, separated by commas, sent with every export. |
+| `OTEL_EXPORTER_OTLP_CERTIFICATE` | A PEM file with the CA that signed an https collector's certificate. |
+| `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource the signals come from. |
+| `OTEL_TRACES_SAMPLER`, `OTEL_TRACES_SAMPLER_ARG` | Which traces are kept, e.g. `parentbased_traceidratio` and `0.1`. Without them Boot keeps 10 % of new traces (`management.tracing.sampling.probability`). |
+
+The Helm charts set these from their `telemetry` values (deploy/README.md, "Telemetry"). Outside Kubernetes, Boot's own
+properties do the same: `management.otlp.metrics.export.url`, `management.opentelemetry.tracing.export.otlp.endpoint`,
+`management.opentelemetry.logging.export.otlp.endpoint`, and their `headers`.
+
+- **OTLP/HTTP with protobuf only.** OTLP over gRPC (port 4317) is not supported.
+- **Off until an endpoint is named.** Boot exports traces and logs only then. For metrics Boot alone would push to
+  `localhost:4318` every minute; `MetricsExportNeedsEndpoint` (in each module) keeps metrics off until a metrics
+  endpoint is set. `management.otlp.metrics.export.enabled` or `OTEL_METRICS_EXPORTER`, when set, decides instead.
+- **Sampling.** The charts keep 10 % of new traces (`telemetry.sampling`), and every request whose caller's trace was
+  sampled. Metrics and logs are never sampled.
+- The OTLP exporter sends over the JDK's HTTP client (`opentelemetry-exporter-sender-jdk`); OkHttp is excluded from
+  every module (`build.gradle.kts`).
+
+## Audit stays on Kafka
+
+Telemetry never replaces audit [D23]. Audit events still go to Kafka, synchronously, and credential vending fails
+closed without them; the outbox still carries the changes. A trace, a metric or a log record can be sampled, dropped
+or lost; an audit event cannot.
+
+## A failed export never fails or slows a request
+
+A request only hands its span and log records to bounded in-memory queues (2,048 each by default); a background thread
+sends them in batches, and drops what does not fit when the collector is slow or down. Metrics are read and pushed on a
+thread of their own. `FailedExportTest` points all three at a collector that takes connections and never answers, with
+queues of 8 and exports timing out after 4 s: 300 requests in a row all answer, none slower than 2 s, where a blocking
+export would hold one for the export's timeout.
+
+What a dead collector does cost: each failed export logs a warning or an error, and a server or worker that stops waits
+for its last exports, up to their timeouts (10 s each), before it exits. Within the charts' grace periods (45 s and
+70 s) that delays a shutdown but loses no request.
+
+## What labels and attributes never hold
+
+No metric label or span attribute names a person (the principal, the end user in `X-Keel-End-User`) or holds a filter
+value. Boot's request meters and spans label by route template (`/v1/{prefix}/namespaces/{namespace}/...`), method,
+status and outcome; the span also records the request's path, which names namespaces and tables but never a person or a
+filter (scan filters travel in request bodies). `TelemetryTest#noPersonOrFilterValueInLabelsOrAttributes` checks this.
+New meters and spans (39-41) must keep to it.
+
+## Prometheus later
+
+Catalog code uses Micrometer's API (Observation, MeterRegistry), never the OpenTelemetry SDK, so scraping by
+Prometheus instead of pushing OTLP is a dependency and a setting, not a code change. Only the wiring that sends log
+lines over OTLP (`TelemetryWiring`, the worker's `Telemetry`) touches OpenTelemetry's API.
+
+## Tests and bites
+
+| Test | Shows |
+|---|---|
+| `catalog-server` `TelemetryTest` | A REST call's span and metric arrive at a small OTLP receiver; the request ID rules; every response carries the ID; log lines carry the IDs on stdout and over OTLP; no person or filter value in labels or attributes. |
+| `catalog-server` `ExportNeedsEndpointTest` | With no endpoint nothing exports; each endpoint switches its own signal on; the standard variables count. |
+| `catalog-server` `FailedExportTest` | A collector that never answers fails and slows no request. |
+| `catalog-maintenance` `TelemetryTest` | The worker's metrics, a span and its log lines arrive, also from the standard variables alone; with no endpoint nothing exports. |
+
+Each guarded rule's bite is in `bites/OBS-38/`.

@@ -1,0 +1,17 @@
+Breaks: each request's span and metrics are labelled with the principal.
+Module: catalog-server
+Test: TelemetryTest#noPersonOrFilterValueInLabelsOrAttributes
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+index 5418235..521fbe3 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+@@ -106,6 +106,8 @@ final class Authentication extends OncePerRequestFilter {
+             return;
+         }
+         request.setAttribute(CALLER, caller);
++        org.springframework.web.filter.ServerHttpObservationFilter.findObservationContext(request).ifPresent(context ->
++                context.addLowCardinalityKeyValue(io.micrometer.common.KeyValue.of("principal", caller.principal().id())));
+         chain.doFilter(request, response);
+     }
+ 

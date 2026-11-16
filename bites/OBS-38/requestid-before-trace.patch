@@ -1,0 +1,17 @@
+Breaks: the request id is decided before Boot opens the request's span, so there is no trace id to take.
+Module: catalog-server
+Test: TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java
+index 91807b5..82994e6 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java
++++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java
+@@ -28,7 +28,7 @@ class TelemetryWiring {
+     FilterRegistrationBean<RequestIds> requestIds(Tracer tracer) {
+         FilterRegistrationBean<RequestIds> registration = new FilterRegistrationBean<>(new RequestIds(tracer));
+         // After the trace starts, and before authentication, whose refusals are audited with the id.
+-        registration.setOrder(OBSERVATION_FILTER_ORDER + 1);
++        registration.setOrder(OBSERVATION_FILTER_ORDER - 1);
+         return registration;
+     }
+ 

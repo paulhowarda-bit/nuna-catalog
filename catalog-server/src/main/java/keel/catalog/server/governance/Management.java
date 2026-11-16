@@ -12,6 +12,7 @@ import keel.catalog.core.principal.Principal;
 import keel.catalog.iceberg.RestRequest;
 import keel.catalog.server.rest.Callers;
 import keel.catalog.server.rest.RestSettings;
+import keel.catalog.server.telemetry.RequestIds;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogStore;
@@ -46,7 +47,7 @@ class Management {
     static final String NAMESPACE = CATALOG + "/namespaces/{namespace}";
     static final String TABLE = NAMESPACE + "/tables/{table}";
     static final String VIEW = NAMESPACE + "/views/{view}";
-    static final String REQUEST_ID = "X-Request-ID";
+    static final String REQUEST_ID = RequestIds.HEADER;
 
     static final JsonMapper JSON = JsonMapper.builder().build();
 
@@ -142,12 +143,8 @@ class Management {
 
     Request request(HttpServletRequest http) {
         Caller caller = callers.caller(http);
-        String id = http.getHeader(REQUEST_ID);
-        if (id == null || id.isBlank() || id.length() > 128) {
-            id = UUID.randomUUID().toString();
-        }
         return new Request(caller, new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
-                caller.engine(), id));
+                caller.engine(), RequestIds.of(http)));
     }
 
     /** The change that writes {@code data} to the outbox with the mutation, at {@code at}. */

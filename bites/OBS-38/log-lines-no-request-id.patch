@@ -1,0 +1,16 @@
+Breaks: log lines written during a request no longer carry its request id.
+Module: catalog-server
+Test: TelemetryTest#logLinesCarryTheIds
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+index 1503ce8..da7c27d 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
++++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+@@ -49,7 +49,6 @@ public final class RequestIds extends OncePerRequestFilter {
+         }
+         request.setAttribute(ATTRIBUTE, id);
+         response.setHeader(HEADER, id);
+-        MDC.put(MDC_KEY, id);
+         try {
+             chain.doFilter(request, response);
+         } finally {
