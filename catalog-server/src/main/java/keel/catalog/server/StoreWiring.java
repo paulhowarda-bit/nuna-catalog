@@ -2,7 +2,10 @@ package keel.catalog.server;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import io.micrometer.observation.ObservationRegistry;
+import java.util.Locale;
 import javax.sql.DataSource;
+import keel.catalog.server.tracing.ObservedStore;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.mongo.MongoCatalogStore;
 import keel.catalog.store.oracle.OracleCatalogStore;
@@ -15,7 +18,8 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * The catalog store on the database {@code keel.database.backend} names (D7), migrated before the server takes
- * requests. Server code reaches the database only through this store.
+ * requests. Server code reaches the database only through this store, and each of its calls is observed
+ * (docs/observability/spans.md).
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(DatabaseSettings.class)
@@ -23,10 +27,10 @@ class StoreWiring {
 
     @Bean
     CatalogStore catalogStore(DatabaseSettings settings, ObjectProvider<DataSource> dataSource,
-                              ObjectProvider<MongoClient> mongoClient) {
+                              ObjectProvider<MongoClient> mongoClient, ObservationRegistry observations) {
         CatalogStore store = store(settings, dataSource, mongoClient);
         store.migrate();
-        return store;
+        return ObservedStore.of(store, settings.backend().name().toLowerCase(Locale.ROOT), observations);
     }
 
     /** The store for the backend {@code settings} names, not yet migrated: making one reaches no database. */

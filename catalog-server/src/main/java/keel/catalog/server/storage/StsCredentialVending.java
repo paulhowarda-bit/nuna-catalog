@@ -17,6 +17,9 @@ import keel.catalog.objectstore.StoreKind;
 import keel.catalog.objectstore.VendedCredentials;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.CredentialVending;
+import keel.catalog.server.tracing.Observed;
+import io.micrometer.common.KeyValues;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -41,9 +44,12 @@ import org.slf4j.LoggerFactory;
  * read-only to anyone else. None of them deletes, a maintenance principal's included: the maintenance worker deletes
  * with its own storage identity (D30). Each caller's credentials are cached for most
  * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
- * thrown away (D23). A trusted engine that asks for no delegation gets none.
+ * thrown away (D23). A trusted engine that asks for no delegation gets none. Each AssumeRole is observed as
+ * {@value #ASSUME_ROLE} (docs/observability/spans.md); a cached set calls nothing.
  */
 public final class StsCredentialVending implements CredentialVending {
+
+    public static final String ASSUME_ROLE = "keel.sts";
 
     private static final Logger LOG = LoggerFactory.getLogger(StsCredentialVending.class);
 
@@ -52,15 +58,17 @@ public final class StsCredentialVending implements CredentialVending {
     private final URI source;
     private final Clock clock;
     private final CredentialCache cache;
+    private final ObservationRegistry observations;
 
     /**
      * @param refreshMargin no 304 when credentials expire within this (D14); cached credentials are renewed
      *                      a minute before that, so a load normally carries credentials a client may cache
      */
     public StsCredentialVending(CatalogStorage storage, AuditPublisher audit, URI source, StorageSettings settings,
-                                Duration refreshMargin, Clock clock) {
+                                Duration refreshMargin, Clock clock, ObservationRegistry observations) {
         this.storage = storage;
         this.audit = audit;
+        this.observations = observations;
         this.source = source;
         this.clock = clock;
         Duration quarter = settings.credentialLifetime().dividedBy(4);
@@ -99,7 +107,9 @@ public final class StsCredentialVending implements CredentialVending {
         SessionIdentity identity = new SessionIdentity(caller.principal().id(),
                 caller.endUser().map(Principal::id), caller.engine(), request.requestId(), request.catalog().name(),
                 request.tableId());
-        VendedCredentials credentials = bound.vendor().vend(request.location(), access, identity);
+        VendedCredentials credentials = Observed.call(observations, ASSUME_ROLE, "sts assume-role",
+                KeyValues.of("profile", bound.name(), "access", access.name().toLowerCase(Locale.ROOT).replace('_', '-')),
+                () -> bound.vendor().vend(request.location(), access, identity), issued -> "issued");
         Actor actor = new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                 caller.engine(), request.requestId());
         try {
