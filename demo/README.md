@@ -24,7 +24,8 @@ demo/demo.sh up
   - `stack.yaml`: PostgreSQL, Kafka, kafbat, and `idp`, which serves the demo issuer's keys
     (`demo/Mint.java`). The demo patches kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak;
     the engine matrix on its own leaves kafbat open.
-  - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, and the job that makes the warehouse bucket.
+  - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, with its console on the pod's 9001, and the job
+    that makes the warehouse bucket.
   - The catalog: the Helm chart `deploy/helm/keel-catalog`, release `keel-catalog`, one server, image
     `keel-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
@@ -48,8 +49,8 @@ demo/demo.sh up
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, CockroachDB, and
     Kafka Connect, image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
-  console), **8182** (kafbat), **8183** (SingleStore Studio), **8185** (CloudBeaver) and **8186** (Kafka
-  Connect's REST API, while the CDC leg runs). `up` stops if something else holds one of them, such as a
+  console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185** (CloudBeaver)
+  and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else holds one of them, such as a
   `kubectl port-forward`.
 - Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each;
@@ -169,7 +170,7 @@ Accounts that run the demo rather than people in it:
 |---|---|---|
 | Keycloak `admin` | `keel-test` | Keycloak's admin console, <http://localhost:8180/admin> |
 | SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
-| Silo `keeltest` | `keeltest-secret-key` | the S3 store's root; not published outside the cluster |
+| Silo `keeltest` | `keeltest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <http://localhost:8184>: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
 | PostgreSQL `backoffice` | `keel-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
 | Oracle `treasury` | `keel-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |

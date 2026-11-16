@@ -208,11 +208,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183 8185 8186; do
+  for port in 8180 8181 8182 8183 8184 8185 8186; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8183, 8185 and 8186. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8186. Stop what holds them." >&2
     return 1
   fi
 }
@@ -379,6 +379,8 @@ SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, p
 Trino:        CloudBeaver on http://localhost:8185: each person's connections sign in as them, to keel through
               Trino with their own token, and to the CDC leg's databases
 Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
+Silo:         its console on http://localhost:8184   (user keeltest, password keeltest-secret-key: the S3
+              store's root, which sees every bucket)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
               while it runs)
