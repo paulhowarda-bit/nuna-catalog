@@ -1,0 +1,16 @@
+Breaks: every data file under the target size counts as small, not only those under 75% of it, so tables of files rewrite_data_files would leave alone get Jobs that rewrite nothing.
+Module: catalog-maintenance
+Test: CompactionNeedTest#smallFilesAreThoseUnderThreeQuartersOfTheTarget
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+index 3540e5c..822708c 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+@@ -84,7 +84,7 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
+         if (current == null) {
+             return new CompactionNeed(0, 0, 0, 0, minInput, ratio, target);
+         }
+-        long small = (long) (target * SizeBasedFileRewritePlanner.MIN_FILE_SIZE_DEFAULT_RATIO);
++        long small = target;
+         Map<Integer, PartitionSpec> specs = table.specs();
+         FileIO io = table.io();
+         long dataFiles = 0;

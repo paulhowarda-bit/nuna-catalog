@@ -1,0 +1,16 @@
+Breaks: any delete file makes a table need compaction, whatever their share of its data files, so a table with one position delete is rewritten every night.
+Module: catalog-maintenance
+Test: CompactionNeedTest#deleteFilesPastTheirShareOfTheDataFiles
+diff --git a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+index 3540e5c..a92498a 100644
+--- a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
++++ b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+@@ -127,7 +127,7 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
+         if (smallFiles > 0) {
+             reasons.add(Reason.SMALL_FILES);
+         }
+-        if (dataFiles > 0 && deleteShare() > deleteFileRatio) {
++        if (deleteFiles > 0) {
+             reasons.add(Reason.DELETES);
+         }
+         if (equalityDeleteFiles > 0) {
