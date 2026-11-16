@@ -30,7 +30,7 @@ import org.springframework.test.context.ContextConfiguration;
 class ConsoleTest {
 
     static final List<String> FILES = List.of("index.html", "app.js", "api.js", "auth.js", "detail.js", "dom.js",
-            "style.css", "favicon.svg");
+            "health.js", "style.css", "favicon.svg");
 
     private final HttpClient http = HttpClient.newHttpClient();
 

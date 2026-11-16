@@ -3,6 +3,7 @@
 import * as api from './api.js';
 import {badge, facts, fill, failure, h, load, mono, table, tabs, when} from './dom.js';
 import {go, rememberTab} from './app.js';
+import {tableHealthPanel} from './health.js';
 
 const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-grants', 'manage-tags'];
 
@@ -109,6 +110,7 @@ function tableTabs(target) {
     {id: 'partitioning', label: 'Partitioning & sort', render: withTable(m => partitioning(m.metadata))},
     {id: 'snapshots', label: 'Snapshots', render: withTable(m => snapshots(m.metadata))},
     {id: 'history', label: 'Metadata history', render: withTable(history)},
+    {id: 'health', label: 'Health', render: () => tableHealthPanel(target)},
     {id: 'governance', label: 'Governance', render: () => governancePanel(target)},
     {id: 'grants', label: 'Grants', render: () => grantsPanel(target, false)},
     {id: 'audit', label: 'Audit', render: () => auditPanel(target)},

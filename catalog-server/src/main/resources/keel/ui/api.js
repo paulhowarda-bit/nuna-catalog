@@ -164,3 +164,26 @@ export function revoke(catalog, securableSpec, group, privilege) {
   return call(`/management/v1/catalogs/${encodeURIComponent(catalog)}/grants/revoke`,
     {method: 'POST', body: {securable: securableSpec, group, privilege}});
 }
+
+// ---- health (D38) ----
+
+/** The whole deployment's catalog health over the last day, gathered from every server; platform operators only. */
+export function catalogHealth() {
+  return call('/management/v1/health/catalog');
+}
+
+/** The maintenance worker's recent scans and its last successful one; platform operators only. */
+export function scans() {
+  return call('/management/v1/maintenance/scans');
+}
+
+/** One page of the neediest tables the caller may read, neediest first. */
+export function neediest(pageToken) {
+  return call('/management/v1/maintenance/tables?pageSize=50'
+    + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''));
+}
+
+/** A table's health: its latest assessment and last compaction, with select on it. */
+export function tableHealth(target) {
+  return call(managed(target) + '/health');
+}

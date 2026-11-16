@@ -269,6 +269,13 @@ pre.raw { max-width: 60vw; max-height: 320px; overflow: auto; background: var(--
 .status-line:empty { display: none; }
 .window { margin-top: 8px; font-size: 12px; }
 
+/* ---- the health page ---- */
+
+.health { height: 100%; overflow: auto; padding: 12px 18px 40px; }
+.health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 18px; }
+.badge-ok { color: var(--ok); border-color: var(--ok); }
+#health-link[aria-current="page"] { color: var(--accent); border-color: var(--accent); }
+
 @media (max-width: 760px) {
   .layout { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
   .tree { border-right: 0; border-bottom: 1px solid var(--line); }
