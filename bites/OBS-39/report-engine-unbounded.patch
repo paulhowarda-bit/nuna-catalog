@@ -1,0 +1,17 @@
+Breaks: every engine name a client sends becomes a label value, however many there are.
+Module: catalog-server
+Test: CatalogMetricsTest#engineNamesAndOperationsStayBounded
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+index 6461eb0..ef23930 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+@@ -161,7 +161,7 @@ public final class CatalogMetrics {
+         if (!ENGINE.matcher(name).matches()) {
+             return OTHER;
+         }
+-        if (engines.contains(name) || engines.size() < MAX_ENGINES && engines.add(name)) {
++        if (engines.contains(name) || engines.add(name)) {
+             return name;
+         }
+         return OTHER;

@@ -1,0 +1,17 @@
+Breaks: a requirement that does not hold is no longer named in the outcome, so no commit is counted by its requirement.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#commitsCountByOutcomeAndTheRequirementThatFailed
+
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
+index 060724c..fe58eb8 100644
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
+@@ -305,7 +305,7 @@ public final class Metadata {
+         try {
+             return work.get();
+         } catch (Unmet e) {
+-            return new RequirementFailed(e.getMessage(), Optional.of(e.type));
++            return new RequirementFailed(e.getMessage());
+         } catch (CommitFailedException e) {
+             return new RequirementFailed(e.getMessage());
+         } catch (ValidationException | IllegalArgumentException | IllegalStateException

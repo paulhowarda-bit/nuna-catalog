@@ -1,0 +1,20 @@
+Breaks: a commit refused because a requirement failed counts as any other refusal, its requirement unnamed.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#commitsCountByOutcomeAndTheRequirementThatFailed
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+index 6461eb0..2bd78c5 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+@@ -74,11 +74,6 @@ public final class CatalogMetrics {
+         switch (reply) {
+             case CommitReply.Success success -> outcome = how(success.how());
+             case CommitReply.Applied applied -> outcome = how(applied.how());
+-            case CommitReply.Failure failure when failure.requirement().isPresent() -> {
+-                outcome = "requirement-failed";
+-                requirement = failure.requirement().get();
+-                error = failure.type();
+-            }
+             case CommitReply.Failure failure -> {
+                 outcome = "refused";
+                 error = failure.type();

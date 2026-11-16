@@ -1,0 +1,17 @@
+Breaks: client report meters are labelled with the report's table name.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#labelsNameNoTableNamespacePersonOrFilterValue
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+index 6461eb0..df357b4 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+@@ -132,7 +132,7 @@ public final class CatalogMetrics {
+         if (!summary.known()) {
+             return;
+         }
+-        Tags tags = Tags.of(CATALOG, catalog, REPORT_TYPE, summary.reportType(),
++        Tags tags = Tags.of(CATALOG, catalog, "table", summary.tableName(), REPORT_TYPE, summary.reportType(),
+                 OPERATION, summary.operation().isEmpty() ? NONE
+                         : OPERATIONS.contains(summary.operation()) ? summary.operation() : OTHER,
+                 ENGINE_NAME, engine(summary.engineName()));
