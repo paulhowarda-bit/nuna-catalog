@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 /**
  * The catalog's management routes the worker uses (D30), as a maintenance principal acting as itself: the work list,
@@ -35,6 +36,9 @@ final class Management {
     private static final double MAX_SCORE = 1e9;
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    /** A table's, object's or scan's id in a path. */
+    private static final Pattern ID =
+            Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     /** One section of the work list, as the catalog names it. */
     enum Section { TABLES, PURGES, DELETIONS }
@@ -246,6 +250,22 @@ final class Management {
         List<T> items = new ArrayList<>();
         body.path(section.name().toLowerCase(java.util.Locale.ROOT)).forEach(node -> items.add(item.apply(node)));
         return new Page<>(items, Optional.ofNullable(body.path("next-page-token").asText(null)));
+    }
+
+    /**
+     * The request's path as a route: each id {@code {id}}, the catalog's name {@code {catalog}}, no query. The
+     * {@code uri} of the span and timer Micrometer makes for each call (Worker.of), so neither names a table or object.
+     */
+    static String route(HttpRequest request) {
+        String[] segments = request.uri().getRawPath().split("/", -1);
+        for (int i = 0; i < segments.length; i++) {
+            if (i > 0 && segments[i - 1].equals("catalogs")) {
+                segments[i] = "{catalog}";
+            } else if (ID.matcher(segments[i]).matches()) {
+                segments[i] = "{id}";
+            }
+        }
+        return String.join("/", segments);
     }
 
     private static String object(String catalog, UUID id) {

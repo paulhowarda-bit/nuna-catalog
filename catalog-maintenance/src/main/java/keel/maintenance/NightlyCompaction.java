@@ -1,5 +1,6 @@
 package keel.maintenance;
 
+import io.micrometer.common.KeyValues;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -7,6 +8,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -47,6 +49,7 @@ final class NightlyCompaction {
     private final Compactor compactor;
     private final int maxJobs;
     private final WorkerMetrics metrics;
+    private final ScanSpans spans;
     private final HealthReports health;
     private final Clock clock;
     private final Set<UUID> assessed = new HashSet<>();
@@ -57,11 +60,12 @@ final class NightlyCompaction {
     private final Map<UUID, Instant> started = new LinkedHashMap<>();
 
     NightlyCompaction(CleanupWindow.Night night, Compactor compactor, int maxJobs, WorkerMetrics metrics,
-                      HealthReports health, Clock clock) {
+                      ScanSpans spans, HealthReports health, Clock clock) {
         this.night = night;
         this.compactor = compactor;
         this.maxJobs = maxJobs;
         this.metrics = metrics;
+        this.spans = spans;
         this.health = health;
         this.clock = clock;
     }
@@ -88,7 +92,8 @@ final class NightlyCompaction {
 
     /**
      * Starts Jobs from the head of the queue while fewer than {@code maxJobs} run and the window is open. A Job
-     * that cannot be started is counted as a {@code compaction} failure and stays queued, to be tried again.
+     * that cannot be started is counted as a {@code compaction} failure and stays queued, to be tried again. Each
+     * launch is a part of the scan ({@link ScanSpans}): {@code started}, {@code exists} or {@code off}.
      */
     void launch(Clock clock, ScanReport report) {
         running.entrySet().removeIf(entry -> finished(entry.getValue(), report));
@@ -98,7 +103,10 @@ final class NightlyCompaction {
             Queued next = queue.removeFirst();
             Management.TableWork table = next.table();
             try {
-                switch (compactor.launch(table, next.need(), night)) {
+                Compactor.Launch launch = spans.part(ScanSpans.Part.COMPACTION_LAUNCH, KeyValues.empty(),
+                        () -> compactor.launch(table, next.need(), night),
+                        launched -> launched.name().toLowerCase(Locale.ROOT));
+                switch (launch) {
                     case STARTED -> {
                         report.compactionsStarted++;
                         started(table, clock.instant(), report);

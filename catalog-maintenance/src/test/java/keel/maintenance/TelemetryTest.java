@@ -41,8 +41,8 @@ import tools.jackson.databind.json.JsonMapper;
  * receiver standing in for a collector, from keel-maintenance, and its log lines go to stdout as JSON; with none,
  * nothing exports. The worker runs as the service does, pointed at a catalog that is not there: it logs that it
  * starts scanning, and a WARN line for each part of its first scan, all failing, and its meters (backlog 40) count
- * that scan. It makes no spans of its own yet (backlog 49), so the test makes one through the worker's
- * ObservationRegistry, as its code will.
+ * that scan. The test makes a span of its own through the worker's ObservationRegistry; WorkerTraceTest checks the
+ * worker's scans' spans (backlog 49).
  */
 @ExtendWith(OutputCaptureExtension.class)
 class TelemetryTest {

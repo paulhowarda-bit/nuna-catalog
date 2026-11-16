@@ -2,14 +2,14 @@ Breaks: the worker runs a table's due jobs without checking its id, so a table t
 Module: catalog-maintenance
 Test: GuardrailsTest#aTableNoLongerTheOneTheWorkListNamedIsLeftAlone
 diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-index 6e5d46d..f6d6d7e 100644
+index 62b16e8..d763d32 100644
 --- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-@@ -213,7 +213,7 @@ final class Worker implements AutoCloseable {
+@@ -257,7 +257,7 @@ final class Worker implements AutoCloseable {
              report.failed(ScanReport.Failure.TABLE_LOAD, "loading " + work.id(), e);
              return Optional.empty();
          }
--        if (!work.id().toString().equals(table.uuid().toString())) {
+-        if (!sameTable(work, table)) {
 +        if (false) {
              // Dropped, renamed or unregistered, and another table now has the name, since the work list was read:
              // its own policy is not this one, so nothing here runs on it. The next scan sees it as it is.

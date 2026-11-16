@@ -38,7 +38,7 @@ class OrphanRaceTest {
     @Test
     void aFileCommittedBetweenTheListingAndTheSecondReadIsReachable() throws Exception {
         try (RESTCatalog writer = catalog.writer(); Catalogs worker = new Catalogs(catalog.uri, catalog.workerTokens(),
-                Map.of()); Storage storage = Storage.of(catalog.storageProfiles())) {
+                Map.of(), TraceHeaders.NONE); Storage storage = Storage.of(catalog.storageProfiles())) {
             TableIdentifier id = TestCatalog.table(writer, "raced");
             Table table = writer.loadTable(id);
             table.newAppend().appendFile(TestCatalog.dataFile(table, "first")).commit();
@@ -59,7 +59,7 @@ class OrphanRaceTest {
     void aWriterCommittingThroughoutTheScansLosesNothing() throws Exception {
         ExecutorService threads = Executors.newSingleThreadExecutor();
         try (RESTCatalog writer = catalog.writer(); Catalogs worker = new Catalogs(catalog.uri, catalog.workerTokens(),
-                Map.of()); Storage storage = Storage.of(catalog.storageProfiles())) {
+                Map.of(), TraceHeaders.NONE); Storage storage = Storage.of(catalog.storageProfiles())) {
             TableIdentifier id = TestCatalog.table(writer, "busy");
             Table table = writer.loadTable(id);
             String orphan = table.location() + "/data/orphan.parquet";

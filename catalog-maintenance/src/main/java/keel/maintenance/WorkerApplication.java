@@ -1,6 +1,9 @@
 package keel.maintenance;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
+import io.micrometer.tracing.Tracer;
+import io.micrometer.tracing.propagation.Propagator;
 import java.time.Clock;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,9 +35,11 @@ public class WorkerApplication {
         return Clock.systemUTC();
     }
 
+    /** The worker, its scans observed in Boot's registry and their trace carried to the catalog (backlog 49). */
     @Bean(destroyMethod = "close")
-    Worker worker(WorkerSettings settings, Clock clock, MeterRegistry meters) {
-        return Worker.of(settings, clock, meters);
+    Worker worker(WorkerSettings settings, Clock clock, MeterRegistry meters, ObservationRegistry observations,
+                  Tracer tracer, Propagator propagator) {
+        return Worker.of(settings, clock, meters, observations, TraceHeaders.of(tracer, propagator));
     }
 
     @Bean

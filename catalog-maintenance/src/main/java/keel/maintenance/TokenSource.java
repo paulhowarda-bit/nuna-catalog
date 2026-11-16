@@ -34,10 +34,9 @@ public interface TokenSource {
      */
     Map<String, String> clientProperties();
 
-    /** The token source the settings name. */
-    static TokenSource of(WorkerSettings.Token settings, Clock clock) {
-        return settings.file() != null ? new FileToken(settings.file())
-                : new ClientCredentials(settings, HttpClient.newHttpClient(), clock);
+    /** The token source the settings name, asking the identity provider for tokens through {@code http}. */
+    static TokenSource of(WorkerSettings.Token settings, Clock clock, HttpClient http) {
+        return settings.file() != null ? new FileToken(settings.file()) : new ClientCredentials(settings, http, clock);
     }
 
     /** A token kept in a file by something else (a mounted Secret), read again whenever the file changes. */
