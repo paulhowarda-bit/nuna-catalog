@@ -1,0 +1,18 @@
+Breaks: A call made outside any observation is observed, so each starts a trace of its own.
+Module: catalog-server
+Test: ObservedTest#outsideAnObservationNothingIsObserved
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java b/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java
+index 35306d7..31da29b 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java
++++ b/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java
+@@ -36,9 +36,6 @@ public final class Observed {
+      */
+     public static <T> T call(ObservationRegistry registry, String name, String contextualName, KeyValues keys,
+                              Supplier<T> call, Function<? super T, String> outcome) {
+-        if (registry.getCurrentObservation() == null) {
+-            return call.get();
+-        }
+         Observation observation = Observation.createNotStarted(name, registry)
+                 .contextualName(contextualName)
+                 .lowCardinalityKeyValues(keys)

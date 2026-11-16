@@ -121,7 +121,7 @@ class TelemetryTest {
         assertThat(config.statusCode()).isEqualTo(200);
         String id = requestId(config);
 
-        OtlpReceiver.Received<Span> span = RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(id), ARRIVAL);
+        OtlpReceiver.Received<Span> span = awaitServerSpan(id);
         assertThat(span.service()).isEqualTo("keel-catalog");
         assertThat(span.item().getKind()).isEqualTo(Span.SpanKind.SPAN_KIND_SERVER);
         assertThat(attribute(span.item().getAttributesList(), "uri")).hasValue("/v1/config");
@@ -143,7 +143,7 @@ class TelemetryTest {
         assertThat(load.statusCode()).as(load.body()).isEqualTo(200);
         String id = requestId(load);
         assertThat(id).matches(TRACE_ID);
-        RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(id), ARRIVAL);
+        awaitServerSpan(id);
         assertThat(audit.events()).extracting(CatalogEvent::data).filteredOn(CredentialIssue.class::isInstance)
                 .singleElement().satisfies(data -> {
                     CredentialIssue issue = (CredentialIssue) data;
@@ -157,7 +157,7 @@ class TelemetryTest {
         assertThat(refused.statusCode()).isEqualTo(401);
         String refusedId = requestId(refused);
         assertThat(refusedId).matches(TRACE_ID).isNotEqualTo(id);
-        RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(refusedId), ARRIVAL);
+        awaitServerSpan(refusedId);
         assertThat(audit.authFailures()).last().satisfies(failure ->
                 assertThat(failure.requestId()).isEqualTo(refusedId));
 
@@ -166,7 +166,7 @@ class TelemetryTest {
         assertThat(denied.statusCode()).as("a management route").isEqualTo(403);
         String deniedId = requestId(denied);
         assertThat(deniedId).matches(TRACE_ID);
-        RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(deniedId), ARRIVAL);
+        awaitServerSpan(deniedId);
         assertThat(audit.denials()).last().satisfies(denial ->
                 assertThat(denial.actor().requestId()).isEqualTo(deniedId));
     }
@@ -220,7 +220,7 @@ class TelemetryTest {
         assertThat(failed.statusCode()).isEqualTo(500);
         String id = requestId(failed);
         assertThat(id).matches(TRACE_ID);
-        Span span = RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(id), ARRIVAL).item();
+        Span span = awaitServerSpan(id).item();
 
         JsonNode line = Stream.of(output.getOut().split("\\R")).filter(l -> l.startsWith("{") && l.contains(id))
                 .map(JSON::readTree).filter(json -> json.path("message").asString().equals("unhandled request failure"))
@@ -259,7 +259,7 @@ class TelemetryTest {
 
         for (HttpResponse<String> response : List.of(report, config, onBehalf)) {
             String id = requestId(response);
-            RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(id), ARRIVAL);
+            awaitServerSpan(id);
         }
         RECEIVER.awaitMetric(m -> m.item().getName().equals("http.server.requests")
                 && attributeValues(m.item(), "status").contains("403"), ARRIVAL);
@@ -275,6 +275,15 @@ class TelemetryTest {
         HttpResponse<String> created = send("POST", "/v1/trading/namespaces/" + namespace + "/tables",
                 TABLE.formatted(name), bearer("alice"));
         assertThat(created.statusCode()).as(created.body()).isEqualTo(200);
+    }
+
+    /**
+     * The request's own span, the server span of its trace. The calls it makes to the store, the object store, STS
+     * and Kafka have spans of their own beneath it (docs/observability/spans.md), and may arrive first.
+     */
+    private static OtlpReceiver.Received<Span> awaitServerSpan(String traceId) {
+        return RECEIVER.awaitSpan(s -> hex(s.item().getTraceId()).equals(traceId)
+                && s.item().getKind() == Span.SpanKind.SPAN_KIND_SERVER, ARRIVAL);
     }
 
     private static String bearer(String principal) {

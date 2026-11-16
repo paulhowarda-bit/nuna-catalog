@@ -17,6 +17,9 @@ import keel.catalog.objectstore.StoreKind;
 import keel.catalog.objectstore.VendedCredentials;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.CredentialVending;
+import keel.catalog.server.tracing.Observed;
+import io.micrometer.common.KeyValues;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -32,6 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,9 +45,12 @@ import org.slf4j.LoggerFactory;
  * read-only to anyone else. None of them deletes, a maintenance principal's included: the maintenance worker deletes
  * with its own storage identity (D30). Each caller's credentials are cached for most
  * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
- * thrown away (D23). A trusted engine that asks for no delegation gets none.
+ * thrown away (D23). A trusted engine that asks for no delegation gets none. Each AssumeRole is observed as
+ * {@value #ASSUME_ROLE} (docs/observability/spans.md); a cached set calls nothing, and its vend says it was cached.
  */
 public final class StsCredentialVending implements CredentialVending {
+
+    public static final String ASSUME_ROLE = "keel.sts";
 
     private static final Logger LOG = LoggerFactory.getLogger(StsCredentialVending.class);
 
@@ -52,15 +59,17 @@ public final class StsCredentialVending implements CredentialVending {
     private final URI source;
     private final Clock clock;
     private final CredentialCache cache;
+    private final ObservationRegistry observations;
 
     /**
      * @param refreshMargin no 304 when credentials expire within this (D14); cached credentials are renewed
      *                      a minute before that, so a load normally carries credentials a client may cache
      */
     public StsCredentialVending(CatalogStorage storage, AuditPublisher audit, URI source, StorageSettings settings,
-                                Duration refreshMargin, Clock clock) {
+                                Duration refreshMargin, Clock clock, ObservationRegistry observations) {
         this.storage = storage;
         this.audit = audit;
+        this.observations = observations;
         this.source = source;
         this.clock = clock;
         Duration quarter = settings.credentialLifetime().dividedBy(4);
@@ -80,9 +89,13 @@ public final class StsCredentialVending implements CredentialVending {
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
         CredentialCache.Key key = new CredentialCache.Key(bound.name(), request.location(), access,
                 caller.principal().id(), subject, caller.engine());
+        AtomicBoolean minted = new AtomicBoolean();
         VendedCredentials credentials;
         try {
-            credentials = cache.get(key, () -> mint(bound, request, access));
+            credentials = cache.get(key, () -> {
+                minted.set(true);
+                return mint(bound, request, access);
+            });
         } catch (LocationRejectedException e) {
             throw CatalogError.of(403, "ForbiddenException", "Table location " + e.location()
                     + " is outside storage profile " + bound.name());
@@ -91,7 +104,7 @@ public final class StsCredentialVending implements CredentialVending {
             throw CatalogError.of(503, "ServiceUnavailableException",
                     "Storage credentials cannot be issued now; retry later");
         }
-        return vended(bound, credentials, request.refreshPath());
+        return vended(bound, credentials, request.refreshPath(), !minted.get());
     }
 
     private VendedCredentials mint(CatalogStorage.Bound bound, Request request, Access access) {
@@ -99,7 +112,9 @@ public final class StsCredentialVending implements CredentialVending {
         SessionIdentity identity = new SessionIdentity(caller.principal().id(),
                 caller.endUser().map(Principal::id), caller.engine(), request.requestId(), request.catalog().name(),
                 request.tableId());
-        VendedCredentials credentials = bound.vendor().vend(request.location(), access, identity);
+        VendedCredentials credentials = Observed.call(observations, ASSUME_ROLE, "sts assume-role",
+                KeyValues.of("profile", bound.name(), "access", access.name().toLowerCase(Locale.ROOT).replace('_', '-')),
+                () -> bound.vendor().vend(request.location(), access, identity), issued -> "issued");
         Actor actor = new Actor(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                 caller.engine(), request.requestId());
         try {
@@ -113,7 +128,8 @@ public final class StsCredentialVending implements CredentialVending {
         return credentials;
     }
 
-    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String refreshPath) {
+    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String refreshPath,
+                                 boolean cached) {
         Map<String, String> secrets = new LinkedHashMap<>();
         secrets.put("s3.access-key-id", credentials.accessKeyId());
         secrets.put("s3.secret-access-key", credentials.secretAccessKey());
@@ -128,7 +144,7 @@ public final class StsCredentialVending implements CredentialVending {
         config.put("client.refresh-credentials-endpoint", refreshPath);
         config.put("client.refresh-credentials-enabled", "true");
         return new Vended(config, List.of(new StorageCredential(credentials.location(), secrets)),
-                epoch(credentials.accessKeyId()), Optional.of(credentials.expiresAt()));
+                epoch(credentials.accessKeyId()), Optional.of(credentials.expiresAt()), cached);
     }
 
     /** Only a header that lists nothing but {@code none} declines delegation. */

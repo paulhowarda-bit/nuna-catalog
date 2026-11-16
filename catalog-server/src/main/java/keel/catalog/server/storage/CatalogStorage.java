@@ -16,12 +16,14 @@ import keel.catalog.objectstore.StorageProfile;
 import keel.catalog.objectstore.StorageRules;
 import keel.catalog.objectstore.StoreKind;
 import keel.catalog.server.rest.RestSettings;
+import keel.catalog.server.tracing.ObservedTableFiles;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogSettings;
 import keel.catalog.store.CatalogStore;
 import keel.catalog.store.Change;
 import keel.catalog.store.OutboxEvent;
 import keel.catalog.store.WriteResult;
+import io.micrometer.observation.ObservationRegistry;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.LinkedHashMap;
@@ -40,6 +42,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
  * the catalogs bound to them. At startup it refuses overlapping profiles and plain-http endpoints, records
  * changed profiles, creates declared catalogs, and refuses a declared catalog the store binds differently.
  * The catalog never calls KMS: encryption at rest is the bucket's default key, and the key set is recorded.
+ * Each profile's requests to its object store are observed (docs/observability/spans.md).
  */
 public final class CatalogStorage implements AutoCloseable {
 
@@ -55,7 +58,8 @@ public final class CatalogStorage implements AutoCloseable {
     private final List<AutoCloseable> resources = new java.util.ArrayList<>();
     private final Map<UUID, Bound> catalogs = new ConcurrentHashMap<>();
 
-    public CatalogStorage(StorageSettings settings, CatalogStore store, RestSettings rest, Clock clock) {
+    public CatalogStorage(StorageSettings settings, CatalogStore store, RestSettings rest, Clock clock,
+                          ObservationRegistry observations) {
         this.store = store;
         Map<String, StorageProfile> parsed = new LinkedHashMap<>();
         settings.profiles().forEach((name, profile) -> parsed.put(name, parse(name, profile, settings.requireTls())));
@@ -71,7 +75,7 @@ public final class CatalogStorage implements AutoCloseable {
                     settings.credentialLifetime());
             resources.add(files);
             resources.add(vendor);
-            TableFiles tableFiles = new ProfileTableFiles(profile, files);
+            TableFiles tableFiles = new ObservedTableFiles(new ProfileTableFiles(profile, files), name, observations);
             Bound bound = new Bound(name, profileId(name), profile, tableFiles, StorageRules.standard(tableFiles),
                     vendor);
             profiles.put(bound.id(), bound);

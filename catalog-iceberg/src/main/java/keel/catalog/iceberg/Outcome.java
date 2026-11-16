@@ -1,5 +1,7 @@
 package keel.catalog.iceberg;
 
+import java.util.Optional;
+
 /** What applying a create or commit request to the current metadata produced. */
 public sealed interface Outcome {
 
@@ -17,8 +19,15 @@ public sealed interface Outcome {
     /**
      * A requirement does not hold against the current metadata, or the request carries a value the table
      * has moved past (a stale sequence number or first-row-id): 409, and a server retry cannot help.
+     *
+     * @param requirement the type of the requirement that does not hold, as the spec names it
+     *                    ({@code assert-ref-snapshot-id} and so on); empty for a stale value
      */
-    record RequirementFailed(String message) implements Outcome {
+    record RequirementFailed(String message, Optional<String> requirement) implements Outcome {
+
+        public RequirementFailed(String message) {
+            this(message, Optional.empty());
+        }
     }
 
     /**

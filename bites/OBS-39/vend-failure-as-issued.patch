@@ -1,0 +1,17 @@
+Breaks: a credential vend that failed is counted as issued.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#vendsAreTimedAndFailuresCounted
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+index a177601..86a2c71 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+@@ -106,7 +106,7 @@ public final class CatalogMetrics {
+      */
+     public Vended vend(String catalog, Supplier<Vended> vend) {
+         long start = System.nanoTime();
+-        String outcome = "failed";
++        String outcome = "issued";
+         String error = NONE;
+         try {
+             Vended vended = vend.get();

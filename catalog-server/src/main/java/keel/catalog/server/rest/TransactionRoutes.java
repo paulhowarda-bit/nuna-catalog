@@ -4,6 +4,7 @@ import keel.catalog.core.CatalogError;
 import keel.catalog.core.commit.CommitEngine;
 import keel.catalog.core.commit.CommitReply;
 import keel.catalog.iceberg.RestRequest;
+import keel.catalog.server.metrics.CatalogMetrics;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogObject.Kind;
 import keel.catalog.store.CatalogRecord;
@@ -38,13 +39,16 @@ class TransactionRoutes {
     private final RestSettings settings;
     private final Callers callers;
     private final Guard guard;
+    private final CatalogMetrics meters;
 
-    TransactionRoutes(Lookup lookup, Engines engines, RestSettings settings, Callers callers, Guard guard) {
+    TransactionRoutes(Lookup lookup, Engines engines, RestSettings settings, Callers callers, Guard guard,
+                      CatalogMetrics meters) {
         this.lookup = lookup;
         this.engines = engines;
         this.settings = settings;
         this.callers = callers;
         this.guard = guard;
+        this.meters = meters;
     }
 
     @PostMapping(COMMIT)
@@ -81,6 +85,7 @@ class TransactionRoutes {
         }
         CommitReply reply = engines.forTransaction(catalog, object -> paths.get(Named.of(object)), request)
                 .commitTransaction(changes, json, request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), Operations.COMMIT_TRANSACTION, reply);
         return ObjectRoutes.reply(reply, done -> {
             throw new IllegalStateException("a transaction answers without metadata");
         });

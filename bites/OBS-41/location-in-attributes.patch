@@ -1,0 +1,18 @@
+Breaks: An object store span carries the table's location as an attribute.
+Module: catalog-server
+Test: SpanTreeTest#noPersonPathOrCredentialInAttributes
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java b/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java
+index 3ff144c..ba74b85 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java
++++ b/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java
+@@ -36,7 +36,8 @@ public final class ObservedTableFiles implements TableFiles {
+ 
+     @Override
+     public Written write(String locationRoot, long version, String json) {
+-        return observe("write", () -> files.write(locationRoot, version, json), written -> "written");
++        return Observed.call(registry, NAME, "objectstore write", profile.and("operation", "write", "location",
++                locationRoot), () -> files.write(locationRoot, version, json), written -> "written");
+     }
+ 
+     /** {@code intact}, or {@code mismatch} when the bytes read do not hash as expected. */

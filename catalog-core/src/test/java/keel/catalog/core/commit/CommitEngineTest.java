@@ -644,7 +644,9 @@ class CommitEngineTest {
             assertThat(refused).isInstanceOfSatisfying(Failure.class, f -> assertThat(f.status()).isEqualTo(409));
             assertThat(commit("Orders", update(assertSchema(0), addColumn(1, "note")))).isInstanceOf(Success.class);
 
-            assertThat(commit("Orders", request, key)).isEqualTo(refused);
+            // The same answer; which requirement failed is not kept with the key.
+            assertThat(commit("Orders", request, key)).usingRecursiveComparison().ignoringFields("requirement")
+                    .isEqualTo(refused);
             assertThat(commit("Orders", request)).isInstanceOf(Success.class);
         }
 

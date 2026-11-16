@@ -8,7 +8,9 @@ import keel.catalog.core.commit.Rules;
 import keel.catalog.server.rest.AuditPublisher;
 import keel.catalog.server.rest.RestSettings;
 import keel.catalog.server.storage.StorageSettings;
+import keel.catalog.server.tracing.ObservedPublisher;
 import keel.catalog.store.CatalogStore;
+import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
@@ -83,10 +85,12 @@ class GovernanceWiring {
         return new AuditRuntime(audit, store, archive(audit, storage, clock), clock);
     }
 
+    /** Each synchronous record's publish, up to Kafka's acknowledgement, is observed (docs/observability/spans.md). */
     @Bean
-    AuditTrail auditTrail(AuditRuntime runtime, AuditSettings audit, RestSettings rest, Clock clock) {
-        return new AuditTrail(runtime.auditPublisher().map(EventPublisher.class::cast), rest.auditSource(), clock,
-                audit.probeInterval());
+    AuditTrail auditTrail(AuditRuntime runtime, AuditSettings audit, RestSettings rest, Clock clock,
+                          ObservationRegistry observations) {
+        return new AuditTrail(runtime.auditPublisher().map(publisher -> (EventPublisher) new ObservedPublisher(
+                publisher, audit.auditTopic(), observations)), rest.auditSource(), clock, audit.probeInterval());
     }
 
     /**

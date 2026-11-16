@@ -1,7 +1,9 @@
 package keel.catalog.server.rest;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import keel.catalog.core.commit.MetadataCache;
 import keel.catalog.iceberg.MetadataViews;
+import keel.catalog.server.metrics.CatalogMetrics;
 import java.time.Clock;
 import org.apache.tomcat.util.buf.EncodedSolidusHandling;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -10,7 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * The REST surface's collaborators. Telemetry is a seam; until it is wired, metrics reports are logged. The
+ * The REST surface's collaborators. Metrics reports are logged and their results measured. The
  * synchronous audit publisher is M7's, in {@code keel.catalog.server.governance}. Callers come from the security package
  * (M5); storage and credential vending are wired per catalog in {@code keel.catalog.server.storage} (M6).
  */
@@ -34,13 +36,17 @@ class RestWiring {
     }
 
     @Bean
-    ServerAlerts serverAlerts(RestSettings settings) {
-        return new ServerAlerts(settings.alertMetadataChars(), settings.alertSnapshots());
+    ServerAlerts serverAlerts(RestSettings settings, MeterRegistry registry) {
+        return new ServerAlerts(settings.alertMetadataChars(), settings.alertSnapshots(), registry);
     }
 
+    /** Each report to its log line, whole, and its results to the catalog's meters, aggregated. */
     @Bean
-    MetricsSink metricsSink() {
-        return MetricsSink.LOG;
+    MetricsSink metricsSink(CatalogMetrics metrics) {
+        return (catalog, namespace, table, summary) -> {
+            MetricsSink.LOG.report(catalog, namespace, table, summary);
+            metrics.report(catalog, summary);
+        };
     }
 
     /**

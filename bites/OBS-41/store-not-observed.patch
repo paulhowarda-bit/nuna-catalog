@@ -1,0 +1,17 @@
+Breaks: The catalog store is not observed: no store span or timer beneath a request.
+Module: catalog-server
+Test: SpanTreeTest#aCommitsSpanTree
+
+diff --git a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+index dbadbea..90a6893 100644
+--- a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
++++ b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+@@ -30,7 +30,7 @@ class StoreWiring {
+                               ObjectProvider<MongoClient> mongoClient, ObservationRegistry observations) {
+         CatalogStore store = store(settings, dataSource, mongoClient);
+         store.migrate();
+-        return ObservedStore.of(store, settings.backend().name().toLowerCase(Locale.ROOT), observations);
++        return store;
+     }
+ 
+     /** The store for the backend {@code settings} names, not yet migrated: making one reaches no database. */

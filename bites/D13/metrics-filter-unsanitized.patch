@@ -3,15 +3,15 @@ Module: catalog-iceberg
 Test: MetricsReportRequestTest#aScanFilterIsSanitizedWhateverTheClientSent
 
 diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
-index f680e8b..3e69ee2 100644
+index 2ce3ad2..bbb8aac 100644
 --- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
 +++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
-@@ -207,7 +207,7 @@ public final class RestRequest {
-             ReportMetricsRequest request = ReportMetricsRequestParser.fromJson(node);
+@@ -247,7 +247,7 @@ public final class RestRequest {
              return switch (request.report()) {
-                 case ScanReport scan -> new MetricsSummary(MetricsSummary.SCAN, scan.tableName(), scan.snapshotId(), bytes,
--                        compact(ImmutableScanReport.copyOf(scan).withFilter(ExpressionUtil.sanitize(scan.filter()))));
-+                        compact(ImmutableScanReport.copyOf(scan).withFilter(scan.filter())));
-                 case CommitReport commit -> new MetricsSummary(MetricsSummary.COMMIT, commit.tableName(),
-                         commit.snapshotId(), bytes, compact(commit));
-                 case null, default -> unknownReport(node, bytes);
+                 case ScanReport scan -> {
+                     String compact = compact(ImmutableScanReport.copyOf(scan)
+-                            .withFilter(ExpressionUtil.sanitize(scan.filter())));
++                            .withFilter(scan.filter()));
+                     yield new MetricsSummary(MetricsSummary.SCAN, scan.tableName(), scan.snapshotId(), bytes, compact,
+                             "", engineName(scan.metadata()), results(compact, SCAN_RESULTS));
+                 }

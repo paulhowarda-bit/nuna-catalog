@@ -4,6 +4,7 @@ import keel.catalog.core.CatalogError;
 import keel.catalog.core.Names;
 import keel.catalog.core.commit.CommitSettings;
 import keel.catalog.iceberg.Wire;
+import keel.catalog.server.metrics.RequestMetrics;
 import keel.catalog.server.rest.RestSettings;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogStore;
@@ -40,6 +41,7 @@ public class ConfigRoute {
         }
         CatalogRecord catalog = store.findCatalog(Names.normalize(warehouse))
                 .orElseThrow(() -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + warehouse));
+        RequestMetrics.catalog(catalog.name());
         return Wire.config(
                 Map.of(),
                 Map.of("prefix", catalog.normalizedName()),

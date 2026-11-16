@@ -3,6 +3,7 @@ package keel.catalog.server.rest;
 import keel.catalog.core.CatalogError;
 import keel.catalog.core.Names;
 import keel.catalog.iceberg.RestRequest;
+import keel.catalog.server.metrics.RequestMetrics;
 import keel.catalog.store.CatalogObject;
 import keel.catalog.store.CatalogRecord;
 import keel.catalog.store.CatalogStore;
@@ -28,9 +29,12 @@ class Lookup {
         this.settings = settings;
     }
 
+    /** The catalog the prefix names, which also labels the request's meters. */
     CatalogRecord catalog(String prefix) {
-        return store.findCatalog(Names.normalize(prefix)).orElseThrow(
+        CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow(
                 () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+        RequestMetrics.catalog(catalog.name());
+        return catalog;
     }
 
     /** The namespace path segment: levels joined by 0x1F. */

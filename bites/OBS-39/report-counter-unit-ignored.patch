@@ -1,0 +1,17 @@
+Breaks: a counter result is kept whatever unit the report states for it.
+Module: catalog-server
+Test: CatalogMetricsRoutesTest#clientReportsAreAggregatedByTheirUnits
+
+diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+index 2ce3ad2..76fe8bd 100644
+--- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
++++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+@@ -327,7 +327,7 @@ public final class RestRequest {
+                 TimeUnit timeUnit = TimeUnit.valueOf(result.get("time-unit").asText().toUpperCase(Locale.ROOT));
+                 results.add(new Timed(name, Duration.of(result.get("total-duration").asLong(), timeUnit.toChronoUnit()),
+                         result.get("count").asLong()));
+-            } else if (unit != null && unit.equals(result.get("unit").asText())) {
++            } else if (unit != null) {
+                 results.add(new Counted(name, result.get("value").asLong(), unit));
+             }
+         });
