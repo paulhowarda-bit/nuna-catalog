@@ -25,6 +25,7 @@ import keel.catalog.store.PointerHold;
 import keel.catalog.store.PointerKey;
 import keel.catalog.store.SafetyFinding;
 import keel.catalog.store.StoreException;
+import keel.catalog.store.StoreUnavailableException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,6 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
@@ -105,6 +107,7 @@ public abstract class CommitSuite {
     void exactlyOneWriterWinsEachRound() throws Exception {
         PointerKey key = newKey();
         ExecutorService writers = Executors.newFixedThreadPool(CAS_WRITERS);
+        AtomicInteger repeated = new AtomicInteger();
         try {
             Optional<Pointer> base = Optional.empty();
             for (int round = 0; round < CAS_ROUNDS; round++) {
@@ -117,7 +120,7 @@ public abstract class CommitSuite {
                 for (CommitBatch batch : batches) {
                     results.add(writers.submit(() -> {
                         start.await();
-                        return store.commit(batch);
+                        return commitRepeatingWhileUnavailable(batch, repeated);
                     }));
                 }
                 List<CommitBatch> winners = new ArrayList<>();
@@ -143,9 +146,33 @@ public abstract class CommitSuite {
             }
         } finally {
             writers.shutdownNow();
+            if (repeated.get() > 0) {
+                System.out.println("CAS: " + repeated + " commits repeated after the store could not reach the database");
+            }
         }
         assertThat(underTest.journalVersions(key)).as("one journal entry per committed version")
                 .containsExactlyElementsOf(LongStream.rangeClosed(1, CAS_ROUNDS).boxed().toList());
+    }
+
+    /**
+     * Commits {@code batch}, and commits it again while the store answers that it could not reach the database: that
+     * answer means nothing was applied, and a caller repeats the request ({@link StoreUnavailableException}). The
+     * overnight run of 2026-11-16 lost the CAS test to one CockroachDB connection that waited out its 15 s while the
+     * Docker host stalled; a third such answer in a row still fails the round.
+     */
+    private CommitResult commitRepeatingWhileUnavailable(CommitBatch batch, AtomicInteger repeated)
+            throws InterruptedException {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return store.commit(batch);
+            } catch (StoreUnavailableException e) {
+                if (attempt == 3) {
+                    throw e;
+                }
+                repeated.incrementAndGet();
+                Thread.sleep(1_000);
+            }
+        }
     }
 
     @Test

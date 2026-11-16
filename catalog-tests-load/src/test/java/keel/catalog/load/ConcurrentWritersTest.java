@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -34,6 +35,35 @@ class ConcurrentWritersTest {
         ServerProcess first = stack.server("writers-a");
         stack.grantWriters();
         servers = List.of(first, stack.server("writers-b"));
+        warmUp();
+    }
+
+    /**
+     * Has each server vend credentials once before any writer starts. A vend waits for Kafka's ack of its audit
+     * record (D23), and a server's first one also waits for the audit topic's metadata: in the overnight run of
+     * 2026-11-16 the server started last answered the first two loads of the run with 503, Kafka having taken more
+     * than the 5 s delivery timeout. The run measures contention, so it starts once each server has vended.
+     */
+    private static void warmUp() {
+        String token = stack.token("m8-writer", Stack.WRITERS);
+        List<String> namespace = List.of("load", "warm-up");
+        Catalog any = new Catalog(token, servers.getFirst().uri());
+        any.createNamespace(namespace);
+        any.createTable(namespace, "t", 2);
+        for (ServerProcess server : servers) {
+            Catalog one = new Catalog(token, server.uri());
+            long started = System.nanoTime();
+            long deadline = started + Duration.ofMinutes(2).toNanos();
+            while (one.load(namespace, "t", Map.of()).status() != 200) {
+                if (System.nanoTime() > deadline) {
+                    throw new IllegalStateException(server.name() + " vended no credentials in 2 minutes: "
+                            + one.serverErrors + "; see " + server.log());
+                }
+                ServerProcess.pause(Duration.ofSeconds(1));
+            }
+            System.out.printf("[m8] %s vended credentials after %.1fs, statuses %s%n", server.name(),
+                    (System.nanoTime() - started) / 1e9, one.statusSummary());
+        }
     }
 
     @AfterAll

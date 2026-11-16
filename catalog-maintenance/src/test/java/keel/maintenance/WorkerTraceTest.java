@@ -78,14 +78,17 @@ class WorkerTraceTest {
                 assertThat(read.getName()).isEqualTo("maintenance work-list");
                 assertThat(read.getParentSpanId()).isEqualTo(scan.getSpanId());
 
-                // The table's load, through Iceberg's REST client: the catalog's span is the load's child.
-                Span served = receiver.awaitSpan(s -> isCatalog(s) && s.item().getTraceId().equals(trace)
-                        && s.item().getName().startsWith("http get /v1/")
-                        && s.item().getName().endsWith("/tables/{table}"), ARRIVAL).item();
-                Span load = parent(receiver, served);
-                assertThat(load.getName()).isEqualTo("maintenance table-load");
+                // The table's load, through Iceberg's REST client: the catalog's span is the load's child. The expiry's
+                // commit loads the table again on the same route, and the catalog may end that span first, so the
+                // catalog's span is found from the load rather than the load from the first such span to arrive.
+                Span load = receiver.awaitSpan(s -> isWorker(s) && s.item().getTraceId().equals(trace)
+                        && s.item().getName().equals("maintenance table-load"), ARRIVAL).item();
                 assertThat(attribute(load, ScanSpans.OUTCOME)).isEqualTo("loaded");
                 assertThat(load.getParentSpanId()).isEqualTo(scan.getSpanId());
+                receiver.awaitSpan(s -> isCatalog(s) && s.item().getTraceId().equals(trace)
+                        && s.item().getParentSpanId().equals(load.getSpanId())
+                        && s.item().getName().startsWith("http get /v1/")
+                        && s.item().getName().endsWith("/tables/{table}"), ARRIVAL);
 
                 // A report of the scan, and the catalog's span for keeping it.
                 Span reported = receiver.awaitSpan(s -> isCatalog(s) && s.item().getTraceId().equals(trace)
