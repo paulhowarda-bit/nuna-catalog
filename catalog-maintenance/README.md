@@ -63,7 +63,9 @@ java -jar catalog-maintenance/build/libs/catalog-maintenance-<version>-exec.jar 
 
 The image is built from that jar (see `deploy/image/maintenance.Dockerfile`), and the Helm chart
 `deploy/helm/keel-maintenance` runs it. The worker has no HTTP port. It logs a line per scan and a warning
-per failed job.
+per failed job, and records as meters what each scan did, how long it took and when one last succeeded, which
+go out over OTLP with its other telemetry: `docs/observability/worker-metrics.md` lists them and the alerts each
+supports.
 
 ### Settings (`keel.maintenance.*`)
 
@@ -176,6 +178,7 @@ the server's clock is moved with it.
 | `PendingDeletionTest` | | Pending deletions wait for their time, then are deleted and reported done. |
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock: orphan scans and compactions at most once a day, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest, the Job before its Secret, the Jobs' own namespace; the token sources, and the settings compaction refuses. |
+| `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels; real scans counted as their reports say. |
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan changes nothing; the next one catches up. |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |

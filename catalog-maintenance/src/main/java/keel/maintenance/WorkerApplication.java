@@ -1,5 +1,6 @@
 package keel.maintenance;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import java.time.Clock;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,8 +33,8 @@ public class WorkerApplication {
     }
 
     @Bean(destroyMethod = "close")
-    Worker worker(WorkerSettings settings, Clock clock) {
-        return Worker.of(settings, clock);
+    Worker worker(WorkerSettings settings, Clock clock, MeterRegistry meters) {
+        return Worker.of(settings, clock, meters);
     }
 
     @Bean
