@@ -1,4 +1,4 @@
--- The demo's people as SingleStore users, for Studio (localhost:8183). They have no password: each signs in
+-- The demo's people as SingleStore users, for Studio (port 8183). They have no password: each signs in
 -- through Keycloak, and SingleStore checks the signed SAML response Studio passes on (singlestore.Dockerfile).
 -- demo.sh runs this as root on every up; a new SingleStore pod starts without them. gary and oscar administer
 -- SingleStore; ana reads, writes, creates, alters and drops in every database; stella reads every database. Both

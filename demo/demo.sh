@@ -14,23 +14,34 @@
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the pods and services
-#   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key, tokens and Keycloak keys)
+#   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key, tokens, Keycloak keys
+#                         and the certificate)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
 # Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use KEEL_DEMO_CONTEXT (default
 # docker-desktop), never the current context, and the stack is namespace KEEL_DEMO_NAMESPACE (default
 # keel-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
-# Services on localhost. The signing key, tokens and Keycloak's keys are kept in KEEL_DEMO_HOME (default
-# ~/.keel-demo).
+# Services on localhost. The signing key, tokens, Keycloak's keys and the certificate are kept in
+# KEEL_DEMO_HOME (default ~/.keel-demo).
+#
+# Every page is HTTPS, at https://<KEEL_DEMO_HOST>:<port> (default localhost), with the certificate in
+# $KEEL_DEMO_HOME/tls (publish_tls). At work, put work's certificate there and set KEEL_DEMO_HOST to its name
+# (docs/install-at-work.md).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN="${KEEL_DEMO_HOME:-$HOME/.keel-demo}"
 CONTEXT="${KEEL_DEMO_CONTEXT:-docker-desktop}"
 NS="${KEEL_DEMO_NAMESPACE:-keel-demo}"
+DEMO_HOST="${KEEL_DEMO_HOST:-localhost}"
+TLS="$RUN/tls"
 STACK="$REPO/demo/k8s"
 RELEASE=keel-catalog
-URL=http://localhost:8181
+URL="https://$DEMO_HOST:8181"
+# demo.sh's own calls: they trust the certificate's CA, and reach the ports on this machine whatever the name
+# resolves to. Git Bash's curl checks certificates with Windows (Schannel), which fails a CA that names no
+# revocation list, as the demo's own does, unless told to check revocation only where it can.
+CURL_TLS=(--cacert "$TLS/ca.crt" --ssl-revoke-best-effort --connect-to "$DEMO_HOST::127.0.0.1:")
 CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # SingleStore's root password, as demo/k8s/singlestore.yaml sets it. Local only.
@@ -43,7 +54,9 @@ OAUTH2_PROXY_IMAGE=quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
 CLOUDBEAVER_IMAGE=
 CONNECT_IMAGE=
 # Kafka Connect's REST API while the CDC leg runs (ports.yaml).
-CONNECT_URL=http://localhost:8186
+CONNECT_URL="https://$DEMO_HOST:8186"
+# The front door (ports.yaml): TLS on every port the demo publishes.
+NGINX_IMAGE=nginx:1.30.6-alpine
 # SQL*Plus's login to the CDC leg's Oracle as user treasury (demo/cdc/oracle.sql). Local only.
 ORACLE_TREASURY=treasury/\"keel-test\"@//localhost:1521/FREEPDB1
 
@@ -69,9 +82,11 @@ annotate_tokens() {
 # An image named in gradle.properties, the versions the builds use.
 image_of() { sed -n "s/^$1=//p" "$REPO/gradle.properties" | tr -d '\r'; }
 
-# A manifest from demo/k8s with the run's ${...} values put in, applied.
-apply() {
-  sed -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
+# A file from demo/k8s with the run's ${...} values put in.
+fill() {
+  sed -e "s|\${DEMO_HOST}|$DEMO_HOST|g" -e "s|\${NAMESPACE}|$NS|g" -e "s|\${NGINX_IMAGE}|$NGINX_IMAGE|g" \
+    -e "s|\${TLS_HASH}|$(cat "$TLS/tls.crt" "$TLS/tls.key" 2>/dev/null | sha256sum | cut -c1-12)|g" \
+    -e "s|\${SILO_IMAGE}|$(image_of silo.image)|g" -e "s|\${S3_ENDPOINT}|http://s3:9000|g" \
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
     -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" -e "s|\${OAUTH2_PROXY_IMAGE}|$OAUTH2_PROXY_IMAGE|g" \
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
@@ -84,7 +99,27 @@ apply() {
     -e "s|\${KEYCLOAK_REALM_HASH}|$(sha256sum "$STACK/keycloak-realm.json" | cut -c1-12)|g" \
     -e "s|\${KEYCLOAK_KEYS_HASH}|$(cat "$RUN"/keycloak/* 2>/dev/null | sha256sum | cut -c1-12)|g" \
     -e "s|\${MANIFEST_HASH}|$(sha256sum "$STACK/$1" | cut -c1-12)|g" -e "s|\${TOKENS_HASH}|$(tokens_hash)|g" \
-    "$STACK/$1" | k apply -f - >/dev/null
+    "$STACK/$1"
+}
+
+# A manifest from demo/k8s, filled in and applied.
+apply() { fill "$1" | k apply -f - >/dev/null; }
+
+# curl to the front door (ports.yaml), trusting the certificate's CA. It tries again when the request was never
+# sent: the connection failed (curl's 7) or its TLS handshake did (35), as when the node is starved while
+# Oracle starts in the CDC leg.
+tls_curl() {
+  local out rc
+  for _ in 1 2 3; do
+    rc=0
+    out=$(curl "${CURL_TLS[@]}" "$@") || rc=$?
+    if [[ $rc != 7 && $rc != 35 ]]; then
+      printf '%s' "$out"
+      return $rc
+    fi
+    sleep 2
+  done
+  return $rc
 }
 
 # An API call as a demo user; fails the script on anything but the expected status.
@@ -92,11 +127,12 @@ api() {
   local user=$1 method=$2 path=$3 body=${4:-} expect=${5:-2}
   local out status
   out=$(mktemp)
-  local args=(-s -o "$out" -w '%{http_code}' -X "$method" "$URL$path" -H "Authorization: Bearer $(token_of "$user")")
+  local args=(-s -o "$out" -w '%{http_code}' -X "$method" "$URL$path"
+    -H "Authorization: Bearer $(token_of "$user")")
   if [[ -n "$body" ]]; then
     args+=(-H 'Content-Type: application/json' --data "$body")
   fi
-  status=$(curl "${args[@]}")
+  status=$(tls_curl "${args[@]}")
   if [[ "$status" != $expect* ]]; then
     echo "$user $method $path answered $status: $(cat "$out")" >&2
     rm -f "$out"
@@ -135,8 +171,11 @@ build() {
 
   say "building the images: the catalog, SingleStore with the connector, the lake writer, CloudBeaver"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
-  SINGLESTORE_IMAGE="keel-demo-singlestore:$(cat "$jar" "$STACK/singlestore.Dockerfile" | sha256sum | cut -c1-12)"
-  docker build -q -f "$STACK/singlestore.Dockerfile" -t "$SINGLESTORE_IMAGE" "$RUN/images/singlestore" >/dev/null
+  # Studio's SAML address, in the image, names the host.
+  SINGLESTORE_IMAGE="keel-demo-singlestore:$( (cat "$jar" "$STACK/singlestore.Dockerfile"; echo "$DEMO_HOST") \
+    | sha256sum | cut -c1-12)"
+  docker build -q -f "$STACK/singlestore.Dockerfile" --build-arg "DEMO_HOST=$DEMO_HOST" -t "$SINGLESTORE_IMAGE" \
+    "$RUN/images/singlestore" >/dev/null
   docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
   mkdir -p "$RUN/images/cloudbeaver"
   cp "$REPO/demo/CloudBeaverUsers.java" "$STACK/cloudbeaver-signin.conf" "$RUN/images/cloudbeaver/"
@@ -146,7 +185,7 @@ build() {
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
-      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE" "$OAUTH2_PROXY_IMAGE"; do
+      "$KAFKA_UI_IMAGE" "$(image_of keycloak.image)" "$TRINO_IMAGE" "$OAUTH2_PROXY_IMAGE" "$NGINX_IMAGE"; do
     docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
   done
 }
@@ -194,6 +233,70 @@ publish_keycloak_keys() {
     --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
+# Whether $TLS holds the demo's own CA: its key beside it, and ca.crt still the demo's, not work's.
+demo_ca() {
+  [[ -f "$TLS/ca.key" && -f "$TLS/ca.crt" ]] \
+    && [[ "$(cd "$TLS" && openssl pkey -pubout -in ca.key 2>/dev/null)" == "$(cd "$TLS" && openssl x509 -pubkey -noout -in ca.crt 2>/dev/null)" ]]
+}
+
+# The certificate the front door (ports.yaml) serves on every port, from $TLS, published as Secret demo-tls:
+#   tls.crt  the server certificate for $DEMO_HOST, then any intermediate certificates (PEM)
+#   tls.key  its private key (PEM, not encrypted)
+#   ca.crt   the certificates of the CA that issued it (PEM), which demo.sh's own calls trust
+# At work these are work's files (docs/install-at-work.md). At home up makes them: a demo CA, which can only
+# vouch for localhost and 127.0.0.0/8 (its name constraints), made once, and a certificate from it for
+# localhost, made again when it nears its end. A browser trusts them once the CA is in the user's trust store
+# (print_access).
+publish_tls() {
+  if [[ ! -f "$TLS/tls.crt" && ! -f "$TLS/ca.crt" ]]; then
+    if [[ "$DEMO_HOST" != localhost ]]; then
+      echo "no certificate for $DEMO_HOST: put tls.crt, tls.key and ca.crt in $TLS (docs/install-at-work.md)" >&2
+      return 1
+    fi
+    mkdir -p "$TLS"
+    say "making the demo's CA and a certificate from it for localhost, in $TLS"
+    # In the folder, with bare file names, as in publish_keycloak_keys.
+    (cd "$TLS" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -newkey rsa:3072 -nodes -days 3650 \
+      -subj "/CN=keel demo CA" -addext "basicConstraints=critical,CA:TRUE" \
+      -addext "keyUsage=critical,keyCertSign,cRLSign" \
+      -addext "nameConstraints=critical,permitted;DNS:localhost,permitted;IP:127.0.0.0/255.0.0.0" \
+      -keyout ca.key -out ca.crt 2>/dev/null)
+  fi
+  # The demo's own certificate is made again a month before its end.
+  if demo_ca && ! openssl x509 -checkend 2592000 -noout -in "$TLS/tls.crt" >/dev/null 2>&1; then
+    (cd "$TLS" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -CA ca.crt -CAkey ca.key -newkey rsa:2048 -nodes \
+      -days 397 -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
+      -addext "extendedKeyUsage=serverAuth" -addext "basicConstraints=critical,CA:FALSE" \
+      -keyout tls.key -out tls.crt 2>/dev/null)
+  fi
+  local file
+  for file in tls.crt tls.key ca.crt; do
+    if [[ ! -f "$TLS/$file" ]]; then
+      echo "$TLS has no $file: the front door needs tls.crt, tls.key and ca.crt (docs/install-at-work.md)" >&2
+      return 1
+    fi
+  done
+  if ! (cd "$TLS" && openssl x509 -checkhost "$DEMO_HOST" -noout -in tls.crt >/dev/null); then
+    echo "$TLS/tls.crt is not for $DEMO_HOST (KEEL_DEMO_HOST); it names: $(cd "$TLS" \
+      && openssl x509 -noout -ext subjectAltName -in tls.crt | tail -n +2 | tr -d ' ')" >&2
+    return 1
+  fi
+  if ! (cd "$TLS" && openssl x509 -checkend 0 -noout -in tls.crt >/dev/null); then
+    echo "$TLS/tls.crt has expired" >&2
+    return 1
+  fi
+  if [[ "$(cd "$TLS" && openssl x509 -noout -pubkey -in tls.crt)" != "$(cd "$TLS" && openssl pkey -pubout -in tls.key 2>/dev/null)" ]]; then
+    echo "$TLS/tls.key is not tls.crt's key, or is encrypted (docs/install-at-work.md)" >&2
+    return 1
+  fi
+  if ! (cd "$TLS" && openssl verify -CAfile ca.crt -untrusted tls.crt tls.crt >/dev/null 2>&1); then
+    echo "$TLS/ca.crt did not issue tls.crt: it needs the CA's certificates, from tls.crt's issuer to the root" >&2
+    return 1
+  fi
+  k create secret tls demo-tls --cert="$TLS/tls.crt" --key="$TLS/tls.key" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
+}
+
 # Expired, about to expire, or minted before Mint.java had every user it has now.
 tokens_expired() {
   [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/trino.jwt" ]] && return 0
@@ -219,7 +322,7 @@ check_ports() {
 
 wait_for_console() {
   for _ in $(seq 1 120); do
-    curl -fs "$URL/ui/config.json" >/dev/null 2>&1 && return 0
+    curl -fs "${CURL_TLS[@]}" "$URL/ui/config.json" >/dev/null 2>&1 && return 0
     sleep 2
   done
   echo "the catalog did not answer on $URL; see: kubectl --context $CONTEXT -n $NS logs deployment/$RELEASE" >&2
@@ -350,13 +453,24 @@ SQL
 print_access() {
   local expires
   expires=$(tr -d '\r\n' < "$RUN/tokens/expires.txt")
+  local web="https://$DEMO_HOST"
   cat <<EOF
 
-The demo's people sign in once, through Keycloak (localhost:8180), and the console, kafbat, CloudBeaver and
+Every page is HTTPS, with the certificate in $TLS.
+EOF
+  if demo_ca; then
+    cat <<EOF
+It is the demo's own: a browser trusts it once you trust the demo's CA, which vouches only for localhost,
+in this user's Windows trust store (Windows asks you to confirm): certutil -user -addstore Root "$TLS/ca.crt"
+EOF
+  fi
+  cat <<EOF
+
+The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the console, kafbat, CloudBeaver and
 Studio ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
 Studio asks only the username, then "Sign in with SAML". To change user, use CloudBeaver's Logout (it ends
 Keycloak's session too), or sign out of each UI and of Keycloak
-(http://localhost:8180/realms/keel/protocol/openid-connect/logout, then Logout), or use a private window.
+($web:8180/realms/keel/protocol/openid-connect/logout, then Logout), or use a private window.
 To show everything in one sign-in, use presenter / presenter-demo in the console and kafbat: all four people's
 groups at once. CloudBeaver and Studio have no presenter.
 
@@ -373,13 +487,13 @@ Tag steward stella, platform operator oscar, SingleStore, the lake writer, the e
 and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc,trino}.jwt
 oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics, but only
 read the catalog's (keel.*), the Connect worker's and those starting with _. oscar reads kafbat's audit log.
-Kafka:        kafbat on http://localhost:8182
-SingleStore:  Studio on http://localhost:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
+Kafka:        kafbat on $web:8182
+SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
               Studio takes no passwords, so not root)
-Trino:        CloudBeaver on http://localhost:8185: each person's connections sign in as them, to keel through
+Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to keel through
               Trino with their own token, and to the CDC leg's databases
-Keycloak:     http://localhost:8180/admin   (user admin, password keel-test; realm keel)
-Silo:         its console on http://localhost:8184   (user keeltest, password keeltest-secret-key: the S3
+Keycloak:     $web:8180/admin   (user admin, password keel-test; realm keel)
+Silo:         its console on $web:8184   (user keeltest, password keeltest-secret-key: the S3
               store's root, which sees every bucket)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
@@ -404,13 +518,17 @@ build_connect() {
 # A call to Kafka Connect's REST API, with the body of a PUT on stdin; prints the answer, fails the script on
 # anything but 2xx.
 connect_api() {
-  local method=$1 path=$2 out status
+  local method=$1 path=$2 out in status
   out=$(mktemp)
+  in=$(mktemp)
   local args=(-s -o "$out" -w '%{http_code}' -X "$method" "$CONNECT_URL$path")
   if [[ "$method" == PUT ]]; then
-    args+=(-H 'Content-Type: application/json' --data-binary @-)
+    # From a file, so a second try sends it again.
+    cat > "$in"
+    args+=(-H 'Content-Type: application/json' --data-binary "@$in")
   fi
-  status=$(curl "${args[@]}")
+  status=$(tls_curl "${args[@]}")
+  rm -f "$in"
   if [[ "$status" != 2* ]]; then
     echo "Kafka Connect $method $path answered $status: $(cat "$out")" >&2
     rm -f "$out"
@@ -426,7 +544,7 @@ HISTORY_TABLES=("history%1Fpostgres%1Fsettlement instructions" "history%1Foracle
 
 # Rows in a table of catalog lakehouse (its newest snapshot's total-records; 0 before the first commit).
 table_rows() {
-  curl -s -H "Authorization: Bearer $(token_of ana)" "$URL/v1/$CATALOG/namespaces/$1/tables/$2" \
+  curl -s "${CURL_TLS[@]}" -H "Authorization: Bearer $(token_of ana)" "$URL/v1/$CATALOG/namespaces/$1/tables/$2" \
     | grep -o '"total-records" *: *"[0-9]*"' | tail -1 | grep -o '[0-9]*' || echo 0
 }
 
@@ -439,7 +557,8 @@ wait_for_rows() {
     (( have > want )) && break
     sleep 2
   done
-  echo "${ns//%1F/.}.$table holds $have rows, not $want. The connectors: curl -s '$CONNECT_URL/connectors?expand=status'" >&2
+  echo "${ns//%1F/.}.$table holds $have rows, not $want. The connectors: curl -s --cacert '$TLS/ca.crt'" \
+    "--ssl-revoke-best-effort '$CONNECT_URL/connectors?expand=status'" >&2
   return 1
 }
 
@@ -495,7 +614,7 @@ cdc_apply() {
   # Oracle restarts once into archive log mode (demo/cdc/oracle.sql): about two minutes.
   k rollout status deployment/oracle --timeout=10m >/dev/null
   for _ in $(seq 1 30); do
-    curl -fs "$CONNECT_URL/connectors" >/dev/null 2>&1 && break
+    curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors" >/dev/null 2>&1 && break
     sleep 2
   done
   local connector
@@ -581,9 +700,10 @@ The CDC leg, into catalog lakehouse as user cdc (group demo-loaders):
   PostgreSQL backoffice, settlement.instructions  ->  history.postgres.settlement.instructions   (demo/demo.sh psql)
   Oracle FREEPDB1, TREASURY.PAYMENTS               ->  history.oracle.treasury.payments          (demo/demo.sh sqlplus)
   CockroachDB custody, positions.holdings          ->  history.cockroach.positions.holdings      (demo/demo.sh cockroach)
-Kafka Connect: curl -s '$CONNECT_URL/connectors?expand=status'. kafbat (http://localhost:8182) shows Debezium's
-change events as they arrive, and the console shows each sink commit as a snapshot of its history table.
-Query the source databases in CloudBeaver (http://localhost:8185): each person's backoffice, treasury and
+Kafka Connect: curl -s --cacert '$TLS/ca.crt' --ssl-revoke-best-effort '$CONNECT_URL/connectors?expand=status'.
+kafbat (https://$DEMO_HOST:8182) shows Debezium's change events as they arrive, and the console shows each sink
+commit as a snapshot of its history table.
+Query the source databases in CloudBeaver (https://$DEMO_HOST:8185): each person's backoffice, treasury and
 custody connections sign in as them. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and
 starts it again. Then read the history in CloudBeaver's Trino connection, oldest change first:
   SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
@@ -621,12 +741,14 @@ up() {
   check_ports
   publish_tokens
   publish_keycloak_keys
+  publish_tls
 
   say "starting PostgreSQL, Kafka, kafbat, the issuer's key server, Keycloak and Silo (namespace $NS, context $CONTEXT)"
   apply stack.yaml
-  k patch deployment kafka-ui --type strategic --patch-file "$STACK/kafka-ui-signin.yaml" >/dev/null
+  k patch deployment kafka-ui --type strategic --patch "$(fill kafka-ui-signin.yaml)" >/dev/null
   apply store-silo.yaml
-  k create configmap keycloak-realm --from-file=keel.json="$STACK/keycloak-realm.json" --dry-run=client -o yaml \
+  fill keycloak-realm.json > "$RUN/keycloak-realm.json"
+  k create configmap keycloak-realm --from-file=keel.json="$RUN/keycloak-realm.json" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   apply keycloak.yaml
   k wait --for=condition=available --timeout=8m deployment/postgres deployment/kafka deployment/idp \
@@ -639,8 +761,9 @@ up() {
   say "installing the catalog (chart deploy/helm/keel-catalog) and publishing it on $URL"
   # The image's id as a pod annotation: a rebuilt image under the same tag rolls the server, an unchanged
   # one does not.
+  fill demo-values.yaml > "$RUN/demo-values.yaml"
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/keel-catalog" \
-    -f "$STACK/catalog-values.yaml" -f "$STACK/demo-values.yaml" \
+    -f "$STACK/catalog-values.yaml" -f "$RUN/demo-values.yaml" \
     --set-string "podAnnotations.keel-demo/image=$(image_id keel-catalog:demo)" --wait --timeout 10m >/dev/null
   # The server makes its tables only as it starts, so one that outlived its PostgreSQL pod is restarted.
   if [[ -z "$(k exec deployment/postgres -- psql -U catalog -d catalog -tAc "SELECT to_regclass('flyway_schema_history')")" ]]; then

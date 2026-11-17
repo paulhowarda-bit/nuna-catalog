@@ -2,11 +2,19 @@
 # signing people in through Keycloak.
 # Context: a folder holding keel-changefeed-connector.jar (demo.sh builds it).
 FROM ghcr.io/singlestore-labs/singlestoredb-dev:0.2.88
+# The host the browser reaches the demo on (demo.sh, KEEL_DEMO_HOST): SingleStore checks that Studio's SAML
+# sign-ins were sent to https://<host>:8183, the front door's port for Studio (ports.yaml).
+ARG DEMO_HOST=localhost
 COPY keel-changefeed-connector.jar /server/singlestoredb-server-10.9.0-d16d12a6ad/extractors/lib-extractor-connect/
 USER root
 # Studio's page otherwise loads Segment, Google Analytics, Mixpanel and Intercom into the browser after sign-in,
 # and checks singlestore.com for upgrades.
 RUN printf 'disableUITelemetry = true\ndisableUpgradeNotifications = true\n' >> /etc/singlestore/singlestoredb-studio.hcl
+# Studio serves HTTPS, behind the front door (ports.yaml), with the same certificate (Secret demo-tls, which
+# singlestore.yaml mounts): it builds the address Keycloak sends the SAML response to from the request it gets,
+# and over plain HTTP that address would be http://, which Keycloak refuses.
+RUN printf '%s\n' 'HTTPSCertificateFile = "/etc/keel-demo/tls/tls.crt"' \
+      'HTTPSCertificateKeyFile = "/etc/keel-demo/tls/tls.key"' >> /etc/singlestore/singlestoredb-studio.hcl
 # Studio signs people in with SAML: its sign-in page sends the browser to Keycloak (client singlestore-studio),
 # which sends back a signed SAML response, and Studio signs in to SingleStore as the person with that response
 # as the password. SingleStore checks it: Keycloak's signature (the realm's certificate, which singlestore.yaml
@@ -38,6 +46,6 @@ RUN printf '%s\n' \
       'saml_require_signature_validation = ON' \
       'saml_x509_certificate = keycloak-saml.crt' \
       'saml_assertion_audience = singlestore-studio' \
-      'saml_message_recipient = http://localhost:8183/api/saml-assert' \
+      "saml_message_recipient = https://$DEMO_HOST:8183/api/saml-assert" \
       'saml_use_NameID = ON' >> /data/master/memsql.cnf \
  && ln -s /etc/keel-demo/keycloak-saml.crt /server/singlestoredb-server-10.9.0-d16d12a6ad/keycloak-saml.crt

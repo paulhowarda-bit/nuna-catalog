@@ -1,5 +1,5 @@
 # -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000). Its console, MinIO's, is on the
-# pod's 9001 (otherwise a random port at each start); the demo publishes it on localhost:8184 (ports.yaml).
+# pod's 9001 (otherwise a random port at each start); the demo publishes it on port 8184 (ports.yaml).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,4 +38,6 @@ metadata:
 spec:
   selector: {app: s3}
   ports:
-    - port: 9000
+    - {name: s3, port: 9000}
+    # The console, for the demo's front door (ports.yaml).
+    - {name: console, port: 9001}

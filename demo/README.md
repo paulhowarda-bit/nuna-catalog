@@ -44,16 +44,17 @@ demo/demo.sh up
     `demo/CloudBeaverUsers.java`, which adds the people below as the pod starts, each with connections that
     sign in as them (`cloudbeaver.Dockerfile`). The proxy, `quay.io/oauth2-proxy/oauth2-proxy:v7.15.6`, runs
     beside it in the pod and signs people in through Keycloak.
-  - `ports.yaml`: the ports below.
+  - `ports.yaml`: the front door, `nginx:1.30.6-alpine`, which serves the ports below over HTTPS (below), and
+    their Services.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, CockroachDB, and
     Kafka Connect, image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
-- Ports on localhost, from Docker Desktop's LoadBalancer Services: **8180** (Keycloak), **8181** (catalog and
-  console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185** (CloudBeaver)
-  and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else holds one of them, such as a
-  `kubectl port-forward`.
+- Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
+  (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
+  (CloudBeaver) and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else
+  holds one of them, such as a `kubectl port-forward`.
 - Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
-  Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each;
+  Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
   Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
@@ -64,7 +65,42 @@ demo/demo.sh up
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
 
-At the end it prints the console URL, <http://localhost:8181/ui/>, the passwords and the tokens.
+At the end it prints the console URL, <https://localhost:8181/ui/>, the passwords and the tokens.
+
+## HTTPS and the certificate
+
+Every page is HTTPS. The front door (`k8s/ports.yaml`), nginx, takes ports 8180 to 8186, ends TLS with one
+certificate and passes each request on over plain HTTP inside the cluster, where the stack's pods reach each
+other by their Service names, as before. Studio alone is HTTPS behind it too, with the same certificate: it
+builds the address Keycloak returns its SAML sign-in to from the request it gets, and Keycloak refuses an
+`http://` one. Keycloak and kafbat build their addresses from the front door's
+`X-Forwarded` headers, and it turns any `http://` redirect a service sends into `https://`. No client
+certificates: people sign in through Keycloak, and services send tokens.
+
+The certificate is in `~/.keel-demo/tls`, published as Secret `demo-tls`:
+
+| File | What it is |
+|---|---|
+| `tls.crt` | the server certificate, then any intermediate certificates (PEM) |
+| `tls.key` | its private key (PEM, not encrypted) |
+| `ca.crt` | the certificates of the CA that issued it (PEM), which `demo.sh`'s own calls trust |
+
+- **At home** `up` makes them: a demo CA (`ca.key` beside it), which can only vouch for `localhost` and
+  127.0.0.0/8 (its name constraints, so its key cannot vouch for any other site), and a certificate from it
+  for `localhost`, made again a month before it ends. A browser warns until you trust the demo's CA in your
+  Windows user's trust store, once (Windows asks you to confirm; `certmgr.msc`, Trusted Root Certification
+  Authorities, removes it):
+
+  ```bash
+  certutil -user -addstore Root ~/.keel-demo/tls/ca.crt
+  ```
+
+- **At work**: put work's certificate in the folder and set `KEEL_DEMO_HOST` to its name
+  (`docs/install-at-work.md`, section 10). Every address the demo gives, Keycloak's issuer and every sign-in
+  address included, is then `https://<KEEL_DEMO_HOST>:<port>`.
+- `up` refuses a certificate that does not name the host, has expired, is not its key's, or was not issued
+  by `ca.crt`. A new certificate replaces the front door's pod; a new host also replaces Keycloak, kafbat,
+  CloudBeaver, the catalog and SingleStore, whose image names Studio's SAML address.
 
 ## Sign in
 
@@ -95,8 +131,8 @@ plus reading, and lets a grant admin or a platform operator hold no grant at all
 data in the catalog, and of the four people only `ana` changes it. Try the console as `ana` and as `gary`.
 Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but not
 Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
-sign out of Keycloak at <http://localhost:8180/realms/keel/protocol/openid-connect/logout> (click Logout),
-or use a private window. Keycloak's own page, <http://localhost:8180/realms/keel/account>, shows who is
+sign out of Keycloak at <https://localhost:8180/realms/keel/protocol/openid-connect/logout> (click Logout),
+or use a private window. Keycloak's own page, <https://localhost:8180/realms/keel/account>, shows who is
 signed in there; its users hold the realm's default roles (`default-roles-keel` in
 `k8s/keycloak-realm.json`), without which that page fails with "Something went wrong". Keycloak's users and
 sessions go with its pod.
@@ -116,9 +152,9 @@ Trino connection sends their own token, so the catalog lets them do there what i
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
-| kafbat, <http://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
-| SingleStore Studio, <http://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
-| CloudBeaver, <http://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
+| kafbat, <https://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
+| SingleStore Studio, <https://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
+| CloudBeaver, <https://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers Kafka, and `demo-analysts`,
 `demo-grant-admins` and `demo-stewards` administer topics, except the ones the demo runs on, which they only
@@ -150,11 +186,9 @@ its own terms:
   `singlestore-studio`; the recipient; and that its NameID, the Keycloak username, is the user signing in.
   So signed in to Keycloak as `ana`, typing `oscar` is refused ("the SAML NameID is not valid"), and an
   edited response fails the signature. The people have no SingleStore password, and Studio offers no
-  password sign-in, so `root` uses `demo/demo.sh sql`. The response travels in clear, over http on localhost
-  from the browser to Studio, and SingleStore accepts it again for an hour (the assertion's lifetime, as
-  long as a console token), so anyone who can read that traffic on the machine can sign in as that person
-  meanwhile. That is accepted: the demo holds only test data and runs without TLS by choice
-  (`docs/install-at-work.md`, section 10).
+  password sign-in, so `root` uses `demo/demo.sh sql`. The response travels over HTTPS to Studio, and
+  SingleStore accepts it again for an hour (the assertion's lifetime, as long as a console token), so whoever
+  gets hold of one can sign in as that person meanwhile. That is accepted: the demo holds only test data.
 - **Keys**: the realm signs with a fixed key, not one Keycloak makes at each start, because SingleStore reads
   its certificate only as it starts. `up` makes the key, its certificate and CloudBeaver's client and cookie
   secrets once, with `openssl`, in `~/.keel-demo/keycloak`, and loads them as Secret `keycloak-keys`. To
@@ -168,9 +202,9 @@ Accounts that run the demo rather than people in it:
 
 | Account | Password | For |
 |---|---|---|
-| Keycloak `admin` | `keel-test` | Keycloak's admin console, <http://localhost:8180/admin> |
+| Keycloak `admin` | `keel-test` | Keycloak's admin console, <https://localhost:8180/admin> |
 | SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
-| Silo `keeltest` | `keeltest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <http://localhost:8184>: every bucket, its objects, users, policies and settings |
+| Silo `keeltest` | `keeltest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
 | PostgreSQL `backoffice` | `keel-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
 | Oracle `treasury` | `keel-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
@@ -190,8 +224,12 @@ demo/demo.sh token
 Tokens are in `~/.keel-demo/tokens/<user>.jwt`. A curl call as a user:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.keel-demo/tokens/ana.jwt)" "http://localhost:8181/v1/lakehouse/namespaces"
+curl --cacert ~/.keel-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $(cat ~/.keel-demo/tokens/ana.jwt)" "https://localhost:8181/v1/lakehouse/namespaces"
 ```
+
+Git Bash's curl checks certificates with Windows, which fails the demo's CA, as it names no revocation list,
+unless told to check revocation only where it can (`--ssl-revoke-best-effort`).
 
 ## What is loaded
 
@@ -216,7 +254,7 @@ Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the co
 demo/demo.sh sql
 ```
 
-Or Studio on <http://localhost:8183>, as one of the people above, through Keycloak. Two databases, and a
+Or Studio on <https://localhost:8183>, as one of the people above, through Keycloak. Two databases, and a
 third once the engines have run:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
@@ -270,7 +308,7 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 
 ## Trino and CloudBeaver
 
-CloudBeaver is on <http://localhost:8185>: a database navigator and SQL editor in the browser, where the
+CloudBeaver is on <https://localhost:8185>: a database navigator and SQL editor in the browser, where the
 people above sign in through Keycloak. Each person has four connections of their own, which sign in as them, and sees only
 those: "keel (Trino, as ana)" for `ana`, and the three CDC sources below. The Trino connection reaches a Trino
 whose catalogs `lakehouse` and `engines` are keel's. It sends Trino the person's own token as the extra
@@ -310,7 +348,7 @@ storage credentials the catalog vends them:
 - CloudBeaver's administrator is `oscar`: Settings, then Administration. `oscar` sees every person's
   connections and may use them. Scripts and settings last as long as its pod, and `engines` and `cdc` restart it; each new
   pod adds the users and their connections again.
-- Its page loads only from localhost:8185. The image drops CloudBeaver's version check, which had the
+- Its page loads only from its own address, port 8185. The image drops CloudBeaver's version check, which had the
   Administration page fetch dbeaver.com; its Version Update tab now says "Version is up to date" without
   checking. Two features would still reach outside, and the demo uses neither: the map view of a geometry
   value fetches tiles from openstreetmap.org, and the AI assistant calls whichever AI service an
@@ -375,7 +413,7 @@ The people have accounts in all three databases, with their Keycloak passwords:
 (Debezium's LogMiner user), and CockroachDB's `debezium` and `root` run the leg. In PostgreSQL and
 CockroachDB a table `ana` creates is hers: besides her, only `gary` can alter or drop it.
 
-CloudBeaver (<http://localhost:8185>) queries the three databases while the leg runs, through each person's
+CloudBeaver (<https://localhost:8185>) queries the three databases while the leg runs, through each person's
 own connections: "backoffice (PostgreSQL, as ana)", "treasury (Oracle, as ana)" and "custody (CockroachDB, as
 ana)" for `ana`. They sign in as the person, with the privileges above: `ana` and `gary` change rows there, and
 their changes reach the history tables as any other does; `stella` and `oscar` read. CloudBeaver commits each
@@ -421,7 +459,8 @@ ORDER BY "_cdc"."offset";
 - The first `cdc` pulls Oracle's image (about 5 GB) and builds Kafka Connect's image from Maven Central.
 - kafbat shows the connectors under Kafka Connect, cluster `cdc`: each one's status, tasks and config, with
   restart, pause and resume for `oscar`. While the leg is stopped the cluster is unreachable there.
-- Kafka Connect's REST API is on <http://localhost:8186>: `curl -s 'http://localhost:8186/connectors?expand=status'`.
+- Kafka Connect's REST API is on <https://localhost:8186>:
+  `curl -s --cacert ~/.keel-demo/tls/ca.crt --ssl-revoke-best-effort 'https://localhost:8186/connectors?expand=status'`.
 
 ```bash
 demo/demo.sh cdc stop
@@ -446,7 +485,7 @@ Results: `catalog-tests-engines/build/engines-run/results.txt`, and every comman
 
 ## Kafka
 
-kafbat on <http://localhost:8182>, where the people above sign in through Keycloak, shows the stack's Kafka:
+kafbat on <https://localhost:8182>, where the people above sign in through Keycloak, shows the stack's Kafka:
 the catalog's audit and change topics, and once the engines have run, Kafka Connect's source topic
 `m8-kafka-events` and the sink's control topic. While the CDC leg runs: Debezium's change topics, the sinks'
 control topics, Oracle's schema history and the worker's own `cdc-connect-*` topics.

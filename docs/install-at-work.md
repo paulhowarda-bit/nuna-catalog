@@ -305,6 +305,7 @@ CloudBeaver's sign-in secrets once, in `~/.keel-demo/keycloak`.
 | `trinodb/trino:484` | Trino |
 | `dbeaver/cloudbeaver:26.2.4` | CloudBeaver, Trino's UI (`demo/k8s/cloudbeaver.Dockerfile`) |
 | `quay.io/oauth2-proxy/oauth2-proxy:v7.15.6` | CloudBeaver's sign-in through Keycloak (`demo/k8s/cloudbeaver.yaml`) |
+| `nginx:1.30.6-alpine` | the front door: HTTPS on every port (`demo/k8s/ports.yaml`) |
 | `gvenzl/oracle-free:23.26.3-slim-faststart` | the CDC leg's Oracle (`demo.sh cdc`; also in section 2) |
 | `cockroachdb/cockroach:v25.4.20` | the CDC leg's CockroachDB (`demo.sh cdc`; also in section 2) |
 | `maven:3.9.11-eclipse-temurin-21` | building the CDC leg's Kafka Connect image (`demo/k8s/connect.Dockerfile`) |
@@ -322,21 +323,51 @@ What reaches beyond the machine (checked 2026-11-13):
   check against api.github.com (`stack.yaml`); and CloudBeaver's version check, which had its Administration
   page fetch dbeaver.com/product/cloudbeaver-ce-version.json (`cloudbeaver.Dockerfile`); and the CDC leg's
   CockroachDB diagnostics reporting (`COCKROACH_SKIP_ENABLING_DIAGNOSTIC_REPORTING`, `cdc.yaml`).
-- **CloudBeaver** loads its page only from localhost and holds no outside connection; its Trino driver is in
+- **CloudBeaver** loads its page only from its own address and holds no outside connection; its Trino driver is in
   the image. Two features would reach outside, and the demo uses neither: the map view of a geometry value
   (tiles from openstreetmap.org) and the AI assistant (whichever AI service an administrator configures).
 - Everything else in the stack talks only to the cluster: the catalog and its console, Keycloak, CloudBeaver's
   sign-in proxy, Silo, PostgreSQL, Kafka, the key server, the lake writer, Trino and the CDC leg. `demo.sh engines` builds the
   engine images, which need the mirrors in section 2.
 
-The demo runs without TLS by choice: it holds only test data, and self-signed certificates do not work well at
-work (Paul, 2026-11-15). Hooking it up to work's certificate authority, identity provider and AWS roles can only
-be done there, on site. For sign-in, that means pointing the console, kafbat, CloudBeaver's sign-in proxy and
-Studio's SAML setting at work's identity provider instead of the demo's Keycloak, and giving SingleStore that
-provider's signing certificate (`demo/README.md`, "How CloudBeaver and Studio sign in through Keycloak").
+### HTTPS with work's certificate
 
-Every page works without TLS at `localhost`: the console and kafbat with their
-Keycloak sign-in, Keycloak's admin console, Studio and CloudBeaver (checked 2026-11-13). Opened by the
-machine's name or address instead, the console's sign-in fails: a plain-http page gets the browser's Web
-Crypto only on localhost, and Keycloak's issuer and the console's redirect address are both localhost.
-kafbat's sign-in fails the same way, as Keycloak knows its redirect address only as localhost:8182.
+Every page of the demo is HTTPS through one front door, nginx (`demo/k8s/ports.yaml`), with the certificate in
+`~/.keel-demo/tls` (`KEEL_DEMO_HOME/tls`). At home `up` makes a demo CA and a certificate from it for
+`localhost` there. At work, plug in work's certificate instead (Paul, 2026-11-17: "I now have real
+certificates at work that I just want to plug into this"):
+
+1. Put three PEM files in `~/.keel-demo/tls`, in place of the demo's, and delete the demo's `ca.key`: it marks
+   the demo's own certificate, which `up` makes again:
+   - `tls.crt`: the server certificate, then the intermediate certificates;
+   - `tls.key`: its private key, not encrypted;
+   - `ca.crt`: the CA's certificates, from `tls.crt`'s issuer up to the root.
+
+   From a `.pfx` (in that folder, in Git Bash; each asks for the file's password):
+
+   ```bash
+   openssl pkcs12 -in work.pfx -clcerts -nokeys -out server.crt
+   openssl pkcs12 -in work.pfx -cacerts -nokeys -out ca.crt
+   openssl pkcs12 -in work.pfx -nocerts -nodes -out tls.key
+   cat server.crt ca.crt > tls.crt
+   ```
+
+   For an old `.pfx`, whose encryption OpenSSL 3 calls unsupported, add `-legacy` to each. If it holds no CA
+   certificates, `ca.crt` comes from work's PKI team (the issuing CA's and the root's).
+2. Set `KEEL_DEMO_HOST` to a name the certificate is for (one of a wildcard's names, for a wildcard) and run
+   `demo/demo.sh up`. `up` refuses a certificate that does not name the host, has expired, is not its key's, or
+   was not issued by `ca.crt`, and says which.
+3. Open `https://<KEEL_DEMO_HOST>:8181/ui/`. The name has to reach this machine: if it resolves to an address
+   Docker Desktop does not publish the ports on, a hosts-file line `127.0.0.1 <name>` (an administrator's
+   change) points it here. `demo.sh`'s own calls go to 127.0.0.1 whatever the name resolves to.
+
+The browser trusts work's certificate as it trusts work's sites, since the laptop already trusts work's CA.
+Every address the demo gives is then `https://<KEEL_DEMO_HOST>:<port>`: Keycloak's issuer, the sign-in
+addresses of the console, kafbat, CloudBeaver and Studio, and Silo's console. Opened by any other name, sign-in
+fails: Keycloak's issuer and the redirect addresses name only that host.
+
+Inside the cluster the demo stays plain HTTP: it holds only test data. TLS on every hop (D26) is for keel's
+own deployment at work. Hooking the demo up to work's identity provider and AWS roles can only be done on
+site: for sign-in, that means pointing the console, kafbat, CloudBeaver's sign-in proxy and Studio's SAML
+setting at work's identity provider instead of the demo's Keycloak, and giving SingleStore that provider's
+signing certificate (`demo/README.md`, "How CloudBeaver and Studio sign in through Keycloak").

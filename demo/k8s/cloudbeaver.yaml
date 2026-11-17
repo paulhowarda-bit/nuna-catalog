@@ -1,5 +1,5 @@
 # CloudBeaver Community (image cloudbeaver.Dockerfile, without its version check), a SQL UI in the browser.
-# Only demo.sh applies this; ports.yaml publishes it on localhost:8185.
+# Only demo.sh applies this; the front door (ports.yaml) publishes it on port 8185, over HTTPS.
 #
 # The demo's people sign in through Keycloak, as in the console and kafbat, so someone signed in there is not
 # asked again. CloudBeaver Community cannot sign in through Keycloak itself, so oauth2-proxy runs beside it in
@@ -83,16 +83,16 @@ spec:
           env:
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: cloudbeaver-cookie-secret}}
-            # Every page of the demo is on localhost, and a browser sends a cookie to every port of a host.
+            # Every page of the demo is on one host, and a browser sends a cookie to every port of a host.
             - {name: OAUTH2_PROXY_COOKIE_NAME, value: keel_cloudbeaver_signin}
-            - {name: OAUTH2_PROXY_COOKIE_SECURE, value: "false"}
+            - {name: OAUTH2_PROXY_COOKIE_SECURE, value: "true"}
             # As long as Keycloak's own session can last (ssoSessionMaxLifespan).
             - {name: OAUTH2_PROXY_COOKIE_EXPIRE, value: 10h}
-            - {name: OAUTH2_PROXY_REDIRECT_URL, value: "http://localhost:8185/oauth2/callback"}
+            - {name: OAUTH2_PROXY_REDIRECT_URL, value: "https://${DEMO_HOST}:8185/oauth2/callback"}
             - {name: OAUTH2_PROXY_EMAIL_DOMAINS, value: "*"}
             - {name: OAUTH2_PROXY_SKIP_PROVIDER_BUTTON, value: "true"}
             # The sign-out page ends at Keycloak's logout page.
-            - {name: OAUTH2_PROXY_WHITELIST_DOMAINS, value: "localhost:8180"}
+            - {name: OAUTH2_PROXY_WHITELIST_DOMAINS, value: "${DEMO_HOST}:8180"}
           volumeMounts:
             - {name: signin, mountPath: /etc/oauth2-proxy, readOnly: true}
             - {name: signin-secret, mountPath: /etc/oauth2-proxy-secret, readOnly: true}
@@ -119,6 +119,16 @@ spec:
             items:
               - {key: cloudbeaver-client-secret, path: client-secret}
 ---
+# The sign-in proxy, for the front door (ports.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudbeaver
+spec:
+  selector: {app: cloudbeaver}
+  ports:
+    - port: 4180
+---
 # The sign-in proxy's configuration (oauth2-proxy's alpha configuration: only it can strip request headers).
 apiVersion: v1
 kind: ConfigMap
@@ -136,21 +146,21 @@ data:
         - id: signout
           path: /keel-signout/
           uri: file:///etc/oauth2-proxy/signout/
-    # The browser goes to Keycloak on localhost:8180; the proxy fetches tokens and keys inside the cluster, from
-    # keycloak:8080. Keycloak names itself localhost:8180 either way, so discovery, which would fetch
-    # localhost:8180 from inside the pod, is off, and each address is given.
+    # The browser goes to Keycloak through the front door, on <host>:8180; the proxy fetches tokens and keys inside
+    # the cluster, from keycloak:8080. Keycloak names itself https://<host>:8180 either way, so discovery, which
+    # would fetch that address from inside the pod, is off, and each address is given.
     providers:
       - id: keycloak
         name: Keycloak
         provider: oidc
         clientID: cloudbeaver
         clientSecretFile: /etc/oauth2-proxy-secret/client-secret
-        loginURL: http://localhost:8180/realms/keel/protocol/openid-connect/auth
+        loginURL: https://${DEMO_HOST}:8180/realms/keel/protocol/openid-connect/auth
         redeemURL: http://keycloak:8080/realms/keel/protocol/openid-connect/token
         scope: openid email profile
         code_challenge_method: S256
         oidcConfig:
-          issuerURL: http://localhost:8180/realms/keel
+          issuerURL: https://${DEMO_HOST}:8180/realms/keel
           skipDiscovery: true
           jwksURL: http://keycloak:8080/realms/keel/protocol/openid-connect/certs
           emailClaim: email
@@ -185,5 +195,5 @@ data:
       fetch("/api/gql", {method: "POST", headers: {"Content-Type": "application/json"},
                          body: JSON.stringify({query: "mutation { closeSession }"})})
         .finally(() => location.replace("/oauth2/sign_out?rd="
-          + encodeURIComponent("http://localhost:8180/realms/keel/protocol/openid-connect/logout")));
+          + encodeURIComponent("https://${DEMO_HOST}:8180/realms/keel/protocol/openid-connect/logout")));
     </script>
