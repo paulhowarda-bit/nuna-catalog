@@ -3,8 +3,9 @@
 # stack.yaml again leaves these settings alone.
 #
 # The demo's people sign in through Keycloak (realm keel, client kafbat), as in the console. The browser goes to
-# Keycloak on localhost:8180; kafbat fetches tokens and keys inside the cluster from keycloak:8080. There is no
-# issuer-uri: Spring would look the issuer up at localhost:8180, which inside the pod is not Keycloak. Roles by
+# Keycloak through the front door, on https://<host>:8180; kafbat fetches tokens and keys inside the cluster from
+# keycloak:8080. There is no issuer-uri: Spring would look the issuer up at <host>:8180, which inside the pod is
+# not Keycloak. kafbat builds its own sign-in address from the front door's X-Forwarded headers. Roles by
 # Keycloak group: the operators (oscar) administer Kafka in kafbat. The analysts, grant admins and stewards
 # (ana, gary, stella) administer topics: create, change settings, produce and clear messages, and delete. They
 # only read the topics the demo runs on: the catalog's keel.*, the Connect worker's cdc-connect-*, and those
@@ -26,6 +27,7 @@ spec:
             - {name: KAFKA_CLUSTERS_0_AUDIT_CONSOLEAUDITENABLED, value: "true"}
             - {name: KAFKA_CLUSTERS_0_AUDIT_REQUIREAUDITTOPIC, value: "true"}
             - {name: KAFKA_CLUSTERS_0_AUDIT_LEVEL, value: ALTER_ONLY}
+            - {name: SERVER_FORWARDHEADERSSTRATEGY, value: FRAMEWORK}
             - name: SPRING_APPLICATION_JSON
               value: |
                 {
@@ -36,7 +38,7 @@ spec:
                     "scope": ["openid"],
                     "authorizationGrantType": "authorization_code",
                     "redirectUri": "{baseUrl}/login/oauth2/code/{registrationId}",
-                    "authorizationUri": "http://localhost:8180/realms/keel/protocol/openid-connect/auth",
+                    "authorizationUri": "https://${DEMO_HOST}:8180/realms/keel/protocol/openid-connect/auth",
                     "tokenUri": "http://keycloak:8080/realms/keel/protocol/openid-connect/token",
                     "jwkSetUri": "http://keycloak:8080/realms/keel/protocol/openid-connect/certs",
                     "userInfoUri": "http://keycloak:8080/realms/keel/protocol/openid-connect/userinfo",

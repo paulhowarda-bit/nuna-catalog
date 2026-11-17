@@ -88,8 +88,8 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
-      "redirectUris": ["http://localhost:8181/ui/*"],
-      "webOrigins": ["http://localhost:8181"],
+      "redirectUris": ["https://${DEMO_HOST}:8181/ui/*"],
+      "webOrigins": ["https://${DEMO_HOST}:8181"],
       "attributes": {"pkce.code.challenge.method": "S256"},
       "fullScopeAllowed": false,
       "protocolMappers": [
@@ -138,8 +138,8 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
-      "redirectUris": ["http://localhost:8182/login/oauth2/code/keycloak"],
-      "webOrigins": ["http://localhost:8182"],
+      "redirectUris": ["https://${DEMO_HOST}:8182/login/oauth2/code/keycloak"],
+      "webOrigins": ["https://${DEMO_HOST}:8182"],
       "attributes": {"pkce.code.challenge.method": "S256"},
       "fullScopeAllowed": false,
       "protocolMappers": [
@@ -180,11 +180,11 @@
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,
-      "redirectUris": ["http://localhost:8185/oauth2/callback"],
-      "webOrigins": ["http://localhost:8185"],
+      "redirectUris": ["https://${DEMO_HOST}:8185/oauth2/callback"],
+      "webOrigins": ["https://${DEMO_HOST}:8185"],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:8185/*"
+        "post.logout.redirect.uris": "https://${DEMO_HOST}:8185/*"
       },
       "fullScopeAllowed": false,
       "protocolMappers": [
@@ -224,7 +224,7 @@
       "enabled": true,
       "frontchannelLogout": false,
       "fullScopeAllowed": false,
-      "redirectUris": ["http://localhost:8183/api/saml-assert"],
+      "redirectUris": ["https://${DEMO_HOST}:8183/api/saml-assert"],
       "attributes": {
         "saml.client.signature": "false",
         "saml.server.signature": "true",
@@ -234,7 +234,7 @@
         "saml.authnstatement": "true",
         "saml_force_name_id_format": "true",
         "saml_name_id_format": "username",
-        "saml_assertion_consumer_url_post": "http://localhost:8183/api/saml-assert"
+        "saml_assertion_consumer_url_post": "https://${DEMO_HOST}:8183/api/saml-assert"
       }
     }
   ]

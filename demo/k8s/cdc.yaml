@@ -10,7 +10,7 @@
 #   cockroach   CockroachDB, one node, database custody, table positions.holdings, captured through a
 #               changefeed (demo/cdc/cockroach.sql, ConfigMap cockroach-initdb)
 #   connect     Kafka Connect, distributed mode, image connect.Dockerfile; demo.sh adds the connectors in
-#               demo/cdc/connectors through its REST API, which ports.yaml publishes on localhost:8186
+#               demo/cdc/connectors through its REST API, which ports.yaml publishes on port 8186
 #
 # Memory: 2.25 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
 # demo.sh cdc stops Trino while the leg runs. CloudBeaver stays, to query the databases. No volumes: the

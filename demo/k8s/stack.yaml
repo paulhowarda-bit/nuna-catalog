@@ -133,7 +133,7 @@ spec:
 # kafbat UI for the stack's Kafka: topics (the Kafka Connect source topic, the sink's control topic, the
 # catalog's audit and change topics), their messages and consumer groups, and the CDC leg's Kafka Connect
 # connectors. The demo publishes it on
-# localhost:8182 (ports.yaml); otherwise kubectl port-forward svc/kafka-ui 8080:8080.
+# port 8182 (ports.yaml); otherwise kubectl port-forward svc/kafka-ui 8080:8080.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

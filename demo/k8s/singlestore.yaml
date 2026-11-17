@@ -4,7 +4,7 @@
 # signing people in through Keycloak with SAML (singlestore.Dockerfile), tagged with the hash of the jar and the
 # Dockerfile so a change replaces the pod; a matrix run on its own uses the plain image, and has no Secret
 # keycloak-keys, so the certificate's volume is optional. No volume for the data: it goes with the pod (demo.sh
-# seeds a new one). The demo publishes Studio on localhost:8183. It reserves 1.5 GB though it uses over 2 GB:
+# seeds a new one). The demo publishes Studio on port 8183. It reserves 1.5 GB though it uses over 2 GB:
 # with Keycloak, a fuller reservation leaves no room on Docker Desktop's node for Spark's 2 GB job.
 apiVersion: apps/v1
 kind: Deployment
@@ -46,9 +46,11 @@ spec:
             timeoutSeconds: 5
             periodSeconds: 5
             failureThreshold: 120
-          # The certificate SingleStore checks Studio's SAML sign-ins against: Keycloak's realm signing key's.
+          # The certificate SingleStore checks Studio's SAML sign-ins against: Keycloak's realm signing key's. And
+          # the front door's certificate, which Studio serves HTTPS with (singlestore.Dockerfile).
           volumeMounts:
             - {name: keycloak-certificate, mountPath: /etc/keel-demo, readOnly: true}
+            - {name: tls, mountPath: /etc/keel-demo/tls, readOnly: true}
           resources:
             requests: {memory: 1536Mi}
             limits: {memory: 3Gi}
@@ -59,6 +61,8 @@ spec:
             optional: true
             items:
               - {key: realm-certificate-pem, path: keycloak-saml.crt}
+        - name: tls
+          secret: {secretName: demo-tls, optional: true}
 ---
 apiVersion: v1
 kind: Service

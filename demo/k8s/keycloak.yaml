@@ -1,8 +1,9 @@
 # Keycloak: the demo's sign-in with a username and password, until a directory (AD, Entra ID) is configured.
 # Realm keel (keycloak-realm.json, which demo.sh loads as ConfigMap keycloak-realm) holds the demo's people,
 # their groups and the clients of the console, kafbat, CloudBeaver and SingleStore Studio. The browser reaches
-# Keycloak on localhost:8180 (ports.yaml), so its tokens carry issuer http://localhost:8180/realms/keel; the
-# catalog fetches the realm's keys inside the cluster, from http://keycloak:8080. Development mode, with an
+# Keycloak through the front door on https://<host>:8180 (ports.yaml, demo.sh's KEEL_DEMO_HOST), so its tokens
+# carry issuer https://<host>:8180/realms/keel, and it takes the front door's X-Forwarded headers; the catalog
+# fetches the realm's keys inside the cluster, from http://keycloak:8080. Development mode, with an
 # in-memory database: users and sessions go with the pod, and the realm is imported again when it starts.
 # Only demo.sh applies this; a matrix run has none.
 #
@@ -32,7 +33,7 @@ spec:
           image: ${KEYCLOAK_IMAGE}
           imagePullPolicy: Never
           args: ["start-dev", "--import-realm", "--http-port=8080", "--health-enabled=true",
-                 "--hostname=http://localhost:8180"]
+                 "--hostname=https://${DEMO_HOST}:8180", "--proxy-headers=xforwarded"]
           env:
             - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
             - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: keel-test}
