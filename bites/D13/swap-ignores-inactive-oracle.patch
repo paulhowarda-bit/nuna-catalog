@@ -2,10 +2,10 @@ Breaks: a commit swaps the pointer of a dropped or unregistered object.
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#aCommitAfterTheDropIsRefused
 
-diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
 index bdb5038..d982661 100644
---- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java
-+++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
 @@ -144,7 +144,7 @@ final class Pointers {
          for (PointerSwap swap : batch.swaps()) {
              Optional<String> state = Jdbc.first(connection, "SELECT state FROM catalog_object WHERE id = ? FOR UPDATE",

@@ -2,10 +2,10 @@ Breaks: a register brings back a dropped table after its undrop window closed.
 Module: catalog-core
 Test: RegisteringTest$Reviving#windowClosed
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index de49253..721cabb 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -542,7 +542,7 @@ public final class CommitEngine {
          }
          boolean dropped = holder.state() == CatalogObject.State.DROPPED;

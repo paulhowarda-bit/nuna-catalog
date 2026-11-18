@@ -2,10 +2,10 @@ Breaks: a commit refused because a requirement failed counts as any other refusa
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#commitsCountByOutcomeAndTheRequirementThatFailed
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 index 6461eb0..2bd78c5 100644
---- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 @@ -74,11 +74,6 @@ public final class CatalogMetrics {
          switch (reply) {
              case CommitReply.Success success -> outcome = how(success.how());

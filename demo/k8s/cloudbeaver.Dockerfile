@@ -30,6 +30,6 @@ RUN conf=/opt/cloudbeaver/conf/cloudbeaver.conf \
  && ! grep -q '"local"' "$conf" \
  && grep -q 'provider: "reverseProxy"' "$conf" \
  && rm /tmp/cloudbeaver-signin.conf
-# The users: cloudbeaver.yaml's postStart hook runs java -cp /opt/keel-demo CloudBeaverUsers.
-COPY CloudBeaverUsers.java /opt/keel-demo/
-RUN javac -d /opt/keel-demo /opt/keel-demo/CloudBeaverUsers.java
+# The users: cloudbeaver.yaml's postStart hook runs java -cp /opt/nuna-demo CloudBeaverUsers.
+COPY CloudBeaverUsers.java /opt/nuna-demo/
+RUN javac -d /opt/nuna-demo /opt/nuna-demo/CloudBeaverUsers.java

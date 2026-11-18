@@ -14,7 +14,7 @@ from pyspark.sql import SparkSession
 
 ENGINE = "compaction"
 TABLE = "fid.m8.compaction.t"
-spark = SparkSession.builder.appName("keel-engine-matrix-compaction").getOrCreate()
+spark = SparkSession.builder.appName("nuna-engine-matrix-compaction").getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 
 

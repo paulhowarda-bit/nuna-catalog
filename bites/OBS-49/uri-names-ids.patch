@@ -1,10 +1,10 @@
 Breaks: a call's uri is its path as sent, naming the catalog and the table's, object's or scan's id.
 Module: catalog-maintenance
 Test: ScanSpansTest#aCallsUriIsItsRouteNamingNoCatalogOrId
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Management.java b/catalog-maintenance/src/main/java/keel/maintenance/Management.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Management.java b/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
 index f02c3b8..cb8c3af 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/Management.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/Management.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Management.java
 @@ -265,7 +265,7 @@ final class Management {
                  segments[i] = "{id}";
              }

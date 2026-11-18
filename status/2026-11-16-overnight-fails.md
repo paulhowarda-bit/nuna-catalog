@@ -2,7 +2,7 @@
 
 Paul asked for a heavy build and for the overnight run's failures to be fixed.
 
-**The heavy build** (`./gradlew build -Pheavy --continue` on 23987ca, 24 min, the keel-demo stack down): every module
+**The heavy build** (`./gradlew build -Pheavy --continue` on 23987ca, 24 min, the nuna-demo stack down): every module
 ran, 1,819 tests, one failure. `KubernetesCompactionTest` passed (backlog 54's quoting fix, landed at 04:36, had not
 run before), and so did the Oracle, MongoDB and CockroachDB suites, conformance and the engines module, which the
 overnight run's heavy build never reached. The one failure, `WorkerTraceTest`, was a race in the test: backlog 56,

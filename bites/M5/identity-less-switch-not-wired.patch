@@ -1,10 +1,10 @@
 Breaks: The server never passes the configured D17 switch to the authorizer.
 Module: catalog-server
 Test: SecurityGateTest#onlyRegisteredEnginesMayNameAnEndUserAndTheSwitchRefusesIdentityLessRegulatedWrites
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/SecurityWiring.java b/catalog-server/src/main/java/keel/catalog/server/security/SecurityWiring.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/SecurityWiring.java b/catalog-server/src/main/java/nuna/catalog/server/security/SecurityWiring.java
 index fb2a2fa..c893274 100644
---- a/catalog-server/src/main/java/keel/catalog/server/security/SecurityWiring.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/SecurityWiring.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/SecurityWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/SecurityWiring.java
 @@ -31,7 +31,7 @@ class SecurityWiring {
  
      @Bean

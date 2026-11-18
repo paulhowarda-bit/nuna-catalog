@@ -1,10 +1,10 @@
 Breaks: the requests of Iceberg's REST client (table loads, commits) carry no traceparent, so the catalog's spans for a table's load start traces of their own.
 Module: catalog-maintenance
 Test: WorkerTraceTest
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/BearerAuthManager.java b/catalog-maintenance/src/main/java/keel/maintenance/BearerAuthManager.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/BearerAuthManager.java b/catalog-maintenance/src/main/java/nuna/maintenance/BearerAuthManager.java
 index f2f6728..8a24ee1 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/BearerAuthManager.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/BearerAuthManager.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/BearerAuthManager.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/BearerAuthManager.java
 @@ -51,7 +51,7 @@ public final class BearerAuthManager implements AuthManager {
              throw new IllegalStateException("no token source " + properties.get(SOURCE) + " is registered");
          }

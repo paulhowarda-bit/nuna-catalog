@@ -2,10 +2,10 @@ Breaks: the store checks no regulated or row/column-policy flag, so one set afte
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#unregisterRefusals
 
-diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
 index c5c88d0..6855d22 100644
---- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
-+++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
 @@ -152,7 +152,7 @@ final class OracleObjects {
              if (Guards.frozen(connection, objectId, locked.get().catalogId(), path(connection, objectId))) {
                  return new WriteResult.Refused(WriteResult.Reason.FROZEN);

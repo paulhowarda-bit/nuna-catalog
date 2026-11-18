@@ -10,7 +10,7 @@
 # Where the result files came from:
 #   assertion           M4/default-check-never-applies, run as run.sh runs it: a failed assertion
 #   context             D13/default-warehouse-ignored with Testcontainers' Ryuk image unreachable
-#                       (TESTCONTAINERS_RYUK_CONTAINER_IMAGE=localhost:1/keel-no-such-ryuk:0):
+#                       (TESTCONTAINERS_RYUK_CONTAINER_IMAGE=localhost:1/nuna-no-such-ryuk:0):
 #                       "Failed to load ApplicationContext", then the failure threshold
 #   context-from-code   M8/store-skips-postgresql-steps: the patch itself stops the context loading
 #                       (journal_extend does not exist), which proves no more than the case above

@@ -1,6 +1,6 @@
 # The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): three source databases, and Kafka
 # Connect running Debezium and the Apache Iceberg sink, which write every change into Iceberg history tables
-# through the catalog. Only demo.sh applies this. Every object carries label keel-demo/cdc, by which
+# through the catalog. Only demo.sh applies this. Every object carries label nuna-demo/cdc, by which
 # demo.sh cdc stop deletes them.
 #
 #   backoffice  PostgreSQL 18 (logical WAL), database backoffice, table settlement.instructions
@@ -22,7 +22,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backoffice
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   strategy: {type: Recreate}
   selector:
@@ -30,7 +30,7 @@ spec:
   template:
     metadata:
       labels: {app: backoffice}
-      annotations: {keel-demo/initdb: "${BACKOFFICE_SQL_HASH}"}
+      annotations: {nuna-demo/initdb: "${BACKOFFICE_SQL_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -41,7 +41,7 @@ spec:
           env:
             - {name: POSTGRES_DB, value: backoffice}
             - {name: POSTGRES_USER, value: backoffice}
-            - {name: POSTGRES_PASSWORD, value: keel-test}
+            - {name: POSTGRES_PASSWORD, value: nuna-test}
           ports:
             - containerPort: 5432
           volumeMounts:
@@ -63,7 +63,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: backoffice
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   selector: {app: backoffice}
   ports:
@@ -73,7 +73,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: oracle
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   strategy: {type: Recreate}
   selector:
@@ -81,7 +81,7 @@ spec:
   template:
     metadata:
       labels: {app: oracle}
-      annotations: {keel-demo/startdb: "${ORACLE_SQL_HASH}"}
+      annotations: {nuna-demo/startdb: "${ORACLE_SQL_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -107,7 +107,7 @@ spec:
               SQL
               exec container-entrypoint.sh
           env:
-            - {name: ORACLE_PASSWORD, value: keel-test}
+            - {name: ORACLE_PASSWORD, value: nuna-test}
           ports:
             - containerPort: 1521
           volumeMounts:
@@ -133,7 +133,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: oracle
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   selector: {app: oracle}
   ports:
@@ -149,7 +149,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cockroach
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   strategy: {type: Recreate}
   selector:
@@ -157,7 +157,7 @@ spec:
   template:
     metadata:
       labels: {app: cockroach}
-      annotations: {keel-demo/initdb: "${COCKROACH_SQL_HASH}"}
+      annotations: {nuna-demo/initdb: "${COCKROACH_SQL_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -188,25 +188,25 @@ apiVersion: v1
 kind: Service
 metadata:
   name: cockroach
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   selector: {app: cockroach}
   ports:
     - port: 26257
 ---
 # The worker. Its own topics are cdc-connect-*; the connectors' token for the catalog (user cdc, group
-# demo-loaders) is in environment variable KEEL_TOKEN, which connector configurations name as
-# ${env:KEEL_TOKEN}. offset.flush.interval.ms is short because the Iceberg sink polls its control topic only
+# demo-loaders) is in environment variable NUNA_TOKEN, which connector configurations name as
+# ${env:NUNA_TOKEN}. offset.flush.interval.ms is short because the Iceberg sink polls its control topic only
 # about once per offset flush when idle (catalog-tests-engines/images/kafka-connect/run.sh).
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: connect-worker
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 data:
   worker.properties: |
     bootstrap.servers=kafka:9092
-    group.id=keel-demo-cdc
+    group.id=nuna-demo-cdc
     config.storage.topic=cdc-connect-configs
     offset.storage.topic=cdc-connect-offsets
     status.storage.topic=cdc-connect-status
@@ -226,7 +226,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: connect
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   strategy: {type: Recreate}
   selector:
@@ -235,7 +235,7 @@ spec:
     metadata:
       labels: {app: connect}
       # The worker reads its configuration only as it starts, so a changed file replaces the pod.
-      annotations: {keel-demo/manifest: "${MANIFEST_HASH}"}
+      annotations: {nuna-demo/manifest: "${MANIFEST_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -245,7 +245,7 @@ spec:
           command: ["/opt/kafka/bin/connect-distributed.sh", "/etc/connect/worker.properties"]
           env:
             - {name: KAFKA_HEAP_OPTS, value: "-Xms256m -Xmx384m"}
-            - name: KEEL_TOKEN
+            - name: NUNA_TOKEN
               valueFrom:
                 secretKeyRef: {name: demo-cdc-token, key: token}
           ports:
@@ -267,7 +267,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: connect
-  labels: {keel-demo/cdc: "true"}
+  labels: {nuna-demo/cdc: "true"}
 spec:
   selector: {app: connect}
   ports:

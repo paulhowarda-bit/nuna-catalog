@@ -1,14 +1,14 @@
 Breaks: any caller may claim and complete a purge, not only a maintenance principal.
 Module: catalog-server
 Test: LifecycleTest#onlyAMaintenancePrincipalPurgesAndOnlyAfterTheWindow
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 index 06457d9..3b57ecd 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 @@ -177,7 +177,6 @@ class LifecycleRoutes {
          Request request = management.request(http);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
-         keel.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
+         nuna.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
 -        guard.requireMaintenance(request, audit, "claimPurge");
          String claimant = request.caller().principal().id();
          if (object.state() == CatalogObject.State.PURGING) {
@@ -16,7 +16,7 @@ index 06457d9..3b57ecd 100644
 @@ -231,7 +230,6 @@ class LifecycleRoutes {
          Request request = management.request(http);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
-         keel.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
+         nuna.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
 -        guard.requireMaintenance(request, audit, "purge");
          String claimant = request.caller().principal().id();
          if (object.state() == CatalogObject.State.DROPPED) {

@@ -1,10 +1,10 @@
 Breaks: every caller who may load a table gets read-write credentials, select-only callers too.
 Module: catalog-server
 Test: VendingRouteTest#selectOnlyCallersGetReadOnlyCredentials
-diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 index e82ee84..bc08f50 100644
---- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 @@ -76,7 +76,7 @@ public final class StsCredentialVending implements CredentialVending {
              return Vended.NONE;
          }

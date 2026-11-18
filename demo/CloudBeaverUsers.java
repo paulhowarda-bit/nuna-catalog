@@ -8,8 +8,8 @@
  * ("name:password ..."), whose password is their database password, the same as their Keycloak one. Then, for
  * every person, the administrator too, it adds four connections and grants them to that person alone:
  *
- *   keel (Trino, as <person>)             Trino as user <person>, sending their catalog token as Trino's extra
- *                                         credential "token". Trino hands it to keel (demo/k8s/trino.yaml), so
+ *   nuna (Trino, as <person>)             Trino as user <person>, sending their catalog token as Trino's extra
+ *                                         credential "token". Trino hands it to nuna (demo/k8s/trino.yaml), so
  *                                         the catalog sees the person.
  *   backoffice (PostgreSQL, as <person>)  the CDC leg's PostgreSQL, signed in as the person (demo/cdc/backoffice.sql)
  *   treasury (Oracle, as <person>)        the CDC leg's Oracle, signed in as the person (demo/cdc/oracle.sql)
@@ -35,7 +35,7 @@ import java.util.regex.Pattern;
 
 static final URI API = URI.create("http://localhost:8978/api/gql");
 static final HttpClient HTTP = HttpClient.newBuilder().cookieHandler(new CookieManager()).build();
-static final Path TOKENS = Path.of("/opt/keel-demo/tokens");
+static final Path TOKENS = Path.of("/opt/nuna-demo/tokens");
 /** The project of the connections the administrator shares. */
 static final String SHARED = "g_GlobalConfiguration";
 /** The headers the sign-in proxy sets, as cloudbeaver.Dockerfile names them to CloudBeaver. */
@@ -61,7 +61,7 @@ void main() throws Exception {
         String user = person.getKey();
         String password = person.getValue();
         String token = Files.readString(TOKENS.resolve(user)).trim();
-        connection(connections, user, "keel (Trino, as " + user + ")",
+        connection(connections, user, "nuna (Trino, as " + user + ")",
             "\"driverId\": \"generic:trino_jdbc\", \"configurationType\": \"MANUAL\", \"host\": \"trino\", "
                 + "\"port\": \"8080\", \"properties\": {\"extraCredentials\": " + json("token:" + token) + "}, "
                 + login("native", user, null));

@@ -2,10 +2,10 @@ Breaks: the table ETag leaves out the labels, so a label change still answers 30
 Module: catalog-server
 Test: GovernanceRoutesTest#loadsCarryTheEffectiveLabelsAndALabelChangeChangesTheETag
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java b/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java b/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java
 index 015ba8b..8dad29b 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/ETags.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/ETags.java
 @@ -25,7 +25,7 @@ final class ETags {
          new TreeMap<>(labels).forEach((label, value) -> labelled.append(label.length()).append(':').append(label)
                  .append(value.length()).append(':').append(value));

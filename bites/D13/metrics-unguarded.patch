@@ -2,10 +2,10 @@ Breaks: the metrics route asks nothing, so any caller reports on any table.
 Module: catalog-server
 Test: SecurityGateTest#metricsAreReportedOnlyOnATableTheCallerMayRead
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 index e400b6a..21705f0 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 @@ -298,8 +298,6 @@ class TableRoutes {
          CatalogRecord catalog = lookup.catalog(prefix);
          List<String> levels = Lookup.levels(namespace);

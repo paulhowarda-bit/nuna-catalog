@@ -2,10 +2,10 @@ Breaks: Any client may name an end user.
 Module: catalog-security
 Test: TrustedEngineTest#anUnregisteredClientMayNotActForAnotherUser
 
-diff --git a/catalog-security/src/main/java/keel/catalog/security/TokenAuthenticator.java b/catalog-security/src/main/java/keel/catalog/security/TokenAuthenticator.java
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
 index 3d0450a..d602e5e 100644
---- a/catalog-security/src/main/java/keel/catalog/security/TokenAuthenticator.java
-+++ b/catalog-security/src/main/java/keel/catalog/security/TokenAuthenticator.java
+--- a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
 @@ -83,7 +83,7 @@ public final class TokenAuthenticator {
          Principal principal = new Principal(required(jwt, claims.userIdClaim(), iss), groups(jwt, claims.groupsClaim(), iss));
          String clientId = required(jwt, claims.clientIdClaim(), iss);

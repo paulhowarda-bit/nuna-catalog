@@ -2,10 +2,10 @@ Breaks: anyone signed in may remove a maintenance policy, without modify.
 Module: catalog-server
 Test: ManagementAuthorizationTest#removingTheMaintenancePolicyNeedsModify
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 index 501b568..cf1ccbd 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 @@ -287,7 +287,6 @@ class GovernanceRoutes {
                                          HttpServletRequest http) {
          Target target = management.target(prefix, namespace, table, view);

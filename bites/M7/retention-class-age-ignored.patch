@@ -1,10 +1,10 @@
 Breaks: snapshot removal ignores the retention class minimum age.
 Module: catalog-core
 Test: RulesTest$SnapshotMinimumAge#aSnapshotYoungerThanItsClassAllowsStays
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java b/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
 index bab2d2a..d3cd454 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/Rules.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
 @@ -116,7 +116,7 @@ public final class Rules {
              Optional<GovernanceAttribute> retentionClass = change.governance()
                      .nearest(GovernanceAttribute.Kind.RETENTION_CLASS);

@@ -2,10 +2,10 @@ Breaks: The console marks fields added since the first schema, not since the one
 Module: catalog-server
 Test: ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory
 
-diff --git a/catalog-server/src/main/resources/keel/ui/detail.js b/catalog-server/src/main/resources/keel/ui/detail.js
+diff --git a/catalog-server/src/main/resources/nuna/ui/detail.js b/catalog-server/src/main/resources/nuna/ui/detail.js
 index fe4a6a1..e8f414a 100644
---- a/catalog-server/src/main/resources/keel/ui/detail.js
-+++ b/catalog-server/src/main/resources/keel/ui/detail.js
+--- a/catalog-server/src/main/resources/nuna/ui/detail.js
++++ b/catalog-server/src/main/resources/nuna/ui/detail.js
 @@ -200,7 +200,7 @@ function schemaRows(type, depth, rows, previousIds, identifiers) {
  function schemaTable(schemas, schema) {
    const ordered = [...schemas].sort((a, b) => a['schema-id'] - b['schema-id']);

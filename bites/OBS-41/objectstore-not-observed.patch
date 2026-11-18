@@ -2,10 +2,10 @@ Breaks: Metadata reads and writes on the object store are not observed.
 Module: catalog-server
 Test: SpanTreeTest#aCommitsSpanTree
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
 index baeb028..aa491a5 100644
---- a/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/storage/CatalogStorage.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
 @@ -75,7 +75,7 @@ public final class CatalogStorage implements AutoCloseable {
                      settings.credentialLifetime());
              resources.add(files);

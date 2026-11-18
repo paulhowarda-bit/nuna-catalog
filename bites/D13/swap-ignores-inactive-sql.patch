@@ -2,10 +2,10 @@ Breaks: a commit swaps the pointer of a dropped or unregistered object.
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$CatalogObjects#aCommitAfterTheDropIsRefused
 
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 index 3bff591..96902c9 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 @@ -132,7 +132,7 @@ final class Pointers {
          for (PointerSwap swap : batch.swaps()) {
              Optional<String> state = Jdbc.first(connection, "SELECT state FROM catalog_object WHERE id = ? FOR SHARE",

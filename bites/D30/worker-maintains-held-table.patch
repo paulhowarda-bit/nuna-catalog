@@ -1,10 +1,10 @@
 Breaks: the worker runs expiry and the orphan scan whenever the policy names them, even when the catalog has switched them off for a legal hold.
 Module: catalog-maintenance
 Test: GuardrailsTest#heldFrozenAndUnregisteredTablesAreUntouched
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 index 6e5d46d..7d69fe7 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 @@ -156,10 +156,10 @@ final class Worker implements AutoCloseable {
       */
      void maintain(Management.TableWork work, Instant now, ScanReport report) {

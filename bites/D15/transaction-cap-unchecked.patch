@@ -2,10 +2,10 @@ Breaks: A transaction may name any number of tables.
 Module: catalog-server
 Test: RestRoutesTest#transactionsCommitEveryTableOrNone
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 index d1e49f0..ae9da04 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 @@ -55,10 +55,6 @@ class TransactionRoutes {
          CatalogRecord catalog = lookup.catalog(prefix);
          String json = body == null ? "" : body;

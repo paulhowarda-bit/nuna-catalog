@@ -1,10 +1,10 @@
 Breaks: catalog health is one server's figures, not gathered from every server of the deployment.
 Module: catalog-server
 Test: ConsoleHealthTest#anOperatorSeesTheWholeDeploymentsHealth
-diff --git a/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java b/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java
 index 4ee66bc..b3f0964 100644
---- a/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/health/CatalogHealthRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java
 @@ -75,7 +75,7 @@ class CatalogHealthRoutes {
      ResponseEntity<String> catalog(HttpServletRequest http) {
          operator(http, "readCatalogHealth");

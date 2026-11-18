@@ -1,10 +1,10 @@
 Breaks: a scan that could not read the work list is a success on its span, unlike its timer.
 Module: catalog-maintenance
 Test: ScanSpansTest#aScanThatCannotReadTheWorkListFails
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java b/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java b/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java
 index 320903f..a373ec8 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java
 @@ -79,8 +79,7 @@ final class ScanSpans {
          Observation observation = Observation.createNotStarted(SCAN, registry).contextualName(SCAN_SPAN).start();
          try (Observation.Scope scope = observation.openScope()) {

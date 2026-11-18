@@ -6,15 +6,15 @@
 -- PyIceberg's own v2 table.
 -- The database stays from run to run: in the demo's SingleStore, DROP DATABASE waits for as long as the change
 -- feed's pipeline (ops.orders_to_lake) runs. Emptying the tables and remaking the pipelines does not wait.
-CREATE DATABASE IF NOT EXISTS keel_m8;
-USE keel_m8;
+CREATE DATABASE IF NOT EXISTS nuna_m8;
+USE nuna_m8;
 
 CREATE TABLE IF NOT EXISTS spark_v2 (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v2;
 DROP PIPELINE IF EXISTS spark_v2_pipe;
 CREATE PIPELINE spark_v2_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v2", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v2", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -27,8 +27,8 @@ CREATE TABLE IF NOT EXISTS spark_v3 (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v3;
 DROP PIPELINE IF EXISTS spark_v3_pipe;
 CREATE PIPELINE spark_v3_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v3", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS spark_v3_dv (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v3_dv;
 DROP PIPELINE IF EXISTS spark_v3_dv_pipe;
 CREATE PIPELINE spark_v3_dv_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3_dv", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS spark_v2_cow (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v2_cow;
 DROP PIPELINE IF EXISTS spark_v2_cow_pipe;
 CREATE PIPELINE spark_v2_cow_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v2_cow", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v2_cow", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS spark_v2_mor (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v2_mor;
 DROP PIPELINE IF EXISTS spark_v2_mor_pipe;
 CREATE PIPELINE spark_v2_mor_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v2_mor", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v2_mor", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -85,8 +85,8 @@ CREATE TABLE IF NOT EXISTS spark_v3_cow (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v3_cow;
 DROP PIPELINE IF EXISTS spark_v3_cow_pipe;
 CREATE PIPELINE spark_v3_cow_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v3_cow", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3_cow", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -100,8 +100,8 @@ CREATE TABLE IF NOT EXISTS spark_v3_mor (id BIGINT, name TEXT, note TEXT);
 DELETE FROM spark_v3_mor;
 DROP PIPELINE IF EXISTS spark_v3_mor_pipe;
 CREATE PIPELINE spark_v3_mor_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_v3_mor", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_v3_mor", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -117,8 +117,8 @@ CREATE TABLE IF NOT EXISTS spark_schema (name TEXT, id BIGINT, note TEXT, info_a
 DELETE FROM spark_schema;
 DROP PIPELINE IF EXISTS spark_schema_pipe;
 CREATE PIPELINE spark_schema_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_schema", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_schema", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -134,8 +134,8 @@ CREATE TABLE IF NOT EXISTS spark_partition (id BIGINT, cat TEXT);
 DELETE FROM spark_partition;
 DROP PIPELINE IF EXISTS spark_partition_pipe;
 CREATE PIPELINE spark_partition_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_partition", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_partition", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -149,8 +149,8 @@ CREATE TABLE IF NOT EXISTS spark_maint (id BIGINT, name TEXT);
 DELETE FROM spark_maint;
 DROP PIPELINE IF EXISTS spark_maint_pipe;
 CREATE PIPELINE spark_maint_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_maint", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_maint", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -164,8 +164,8 @@ CREATE TABLE IF NOT EXISTS spark_upgrade (id BIGINT, name TEXT);
 DELETE FROM spark_upgrade;
 DROP PIPELINE IF EXISTS spark_upgrade_pipe;
 CREATE PIPELINE spark_upgrade_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.spark.t_upgrade", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.spark.t_upgrade", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'
@@ -179,8 +179,8 @@ CREATE TABLE IF NOT EXISTS pyiceberg_writes (id BIGINT, name TEXT);
 DELETE FROM pyiceberg_writes;
 DROP PIPELINE IF EXISTS pyiceberg_writes_pipe;
 CREATE PIPELINE pyiceberg_writes_pipe AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "engines",
-         "table_id": "m8.shared.pyiceberg.t_writes", "catalog.token": "${KEEL_TOKEN}",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "engines",
+         "table_id": "m8.shared.pyiceberg.t_writes", "catalog.token": "${NUNA_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "${S3_ENDPOINT}", "region": "us-east-1", "ingest_mode": "one_time"}'
 CREDENTIALS '{}'

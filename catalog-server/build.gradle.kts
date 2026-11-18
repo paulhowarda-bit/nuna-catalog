@@ -8,7 +8,7 @@ description = "The Spring Boot server: REST routes, config, error mapping, self-
 dependencies {
     api(project(":catalog-core"))
     api(project(":catalog-iceberg"))
-    // One backend per deployment, chosen by keel.database.backend (StoreWiring).
+    // One backend per deployment, chosen by nuna.database.backend (StoreWiring).
     api(project(":catalog-store-sql"))
     api(project(":catalog-store-oracle"))
     api(project(":catalog-store-mongo"))

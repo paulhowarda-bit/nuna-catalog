@@ -1,10 +1,10 @@
 Breaks: needy tables are compacted least needy first, so in a short window the tables furthest past their thresholds are the ones left over.
 Module: catalog-maintenance
 Test: CompactionNeedTest#equalityDeletesFirstThenTheNeediest
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
 index 3540e5c..f0306f0 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
 @@ -70,7 +70,7 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
      /** Equality deletes first, then the furthest past its thresholds. */
      static final Comparator<CompactionNeed> NEEDIEST_FIRST = Comparator

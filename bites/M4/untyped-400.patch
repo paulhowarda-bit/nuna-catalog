@@ -2,10 +2,10 @@ Breaks: iceberg-core's 400s lose the reference's error type, so the Iceberg clie
 Module: catalog-iceberg
 Test: MetadataTest#unknownSchemaIdIsABadRequest
 
-diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java
 index a1cf973..20c4e38 100644
---- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
-+++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java
 @@ -279,7 +279,7 @@ public final class Metadata {
              return new RequirementFailed(e.getMessage());
          } catch (ValidationException | IllegalArgumentException | IllegalStateException

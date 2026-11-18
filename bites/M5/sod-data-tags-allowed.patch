@@ -2,10 +2,10 @@ Breaks: Data and tag duties no longer conflict.
 Module: catalog-security
 Test: SeparationTest#aTagStewardMayReadButNotChangeData
 
-diff --git a/catalog-security/src/main/java/keel/catalog/security/Separation.java b/catalog-security/src/main/java/keel/catalog/security/Separation.java
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Separation.java b/catalog-security/src/main/java/nuna/catalog/security/Separation.java
 index c514fae..9be81bf 100644
---- a/catalog-security/src/main/java/keel/catalog/security/Separation.java
-+++ b/catalog-security/src/main/java/keel/catalog/security/Separation.java
+--- a/catalog-security/src/main/java/nuna/catalog/security/Separation.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Separation.java
 @@ -42,7 +42,7 @@ public final class Separation {
              if (this == GRANTS || other == GRANTS) {
                  return true;

@@ -1,42 +1,42 @@
-# Five engines earn a keel test drive
+# Five engines earn a nuna test drive
 
-Five of the engines not yet assessed deserve a hands-on run against keel, and only one of them documents every requirement. **Spice.ai OSS should be tested first.** It is one Apache-2.0 binary or container that serves Arrow Flight SQL and HTTP, reads v1 to v3 tables including deletion vectors, and uses the credentials keel vends. It has two drawbacks: it refuses a vended endpoint on a private address until you repeat that endpoint in its own config, and it reaches keel under a single identity. **Starburst Enterprise is the only engine that documents the whole checklist.** That includes passing the signed-in user's own OAuth2 token through to the catalog. It is a licensed Trino, needs Trino-sized nodes, and has no published price. **Polars is the easiest to run** (a handful of Python wheels) and carries each user's own token by construction, but it cannot read equality deletes. **Kyuubi in front of Spark is the open-source route to per-user identity.** It inherits Spark's clean pass against keel, at the cost of ZooKeeper and per-user Spark pods. **PuppyGraph earns a place only if you want graph queries over keel's tables.** Its documentation states that vended credentials "do not include a storage endpoint", which is the gap that broke StarRocks 4.1.7 against keel, and it documents nothing about deletes, format v3 or nested namespaces. Every other engine surveyed either fails a hard requirement on paper or documents too little to rank. The best predictor of the endpoint failure is the Iceberg library an engine embeds: Java Iceberg and iceberg-rust build their file access from the `config` map that keel returns, while engines with their own storage layer ignore it.
+Five of the engines not yet assessed deserve a hands-on run against nuna, and only one of them documents every requirement. **Spice.ai OSS should be tested first.** It is one Apache-2.0 binary or container that serves Arrow Flight SQL and HTTP, reads v1 to v3 tables including deletion vectors, and uses the credentials nuna vends. It has two drawbacks: it refuses a vended endpoint on a private address until you repeat that endpoint in its own config, and it reaches nuna under a single identity. **Starburst Enterprise is the only engine that documents the whole checklist.** That includes passing the signed-in user's own OAuth2 token through to the catalog. It is a licensed Trino, needs Trino-sized nodes, and has no published price. **Polars is the easiest to run** (a handful of Python wheels) and carries each user's own token by construction, but it cannot read equality deletes. **Kyuubi in front of Spark is the open-source route to per-user identity.** It inherits Spark's clean pass against nuna, at the cost of ZooKeeper and per-user Spark pods. **PuppyGraph earns a place only if you want graph queries over nuna's tables.** Its documentation states that vended credentials "do not include a storage endpoint", which is the gap that broke StarRocks 4.1.7 against nuna, and it documents nothing about deletes, format v3 or nested namespaces. Every other engine surveyed either fails a hard requirement on paper or documents too little to rank. The best predictor of the endpoint failure is the Iceberg library an engine embeds: Java Iceberg and iceberg-rust build their file access from the `config` map that nuna returns, while engines with their own storage layer ignore it.
 
-*Provenance: this report synthesises four research notes from 2026-11-12 covering more than 50 engines and services, plus a reading of keel's own source on the same day. No engine named here was run. The comparison results for Spark, Trino, Flink, PyIceberg, DuckDB, SingleStore and StarRocks come from earlier hands-on runs against keel. Claims the researchers inferred rather than read are marked as inferences.*
+*Provenance: this report synthesises four research notes from 2026-11-12 covering more than 50 engines and services, plus a reading of nuna's own source on the same day. No engine named here was run. The comparison results for Spark, Trino, Flink, PyIceberg, DuckDB, SingleStore and StarRocks come from earlier hands-on runs against nuna. Claims the researchers inferred rather than read are marked as inferences.*
 
-## Keel supplies the endpoint, and failing engines never read it
+## Nuna supplies the endpoint, and failing engines never read it
 
-Keel returns the vended STS credentials twice on every table load:
+Nuna returns the vended STS credentials twice on every table load:
 - **In the response's `config` map**, alongside `client.region`, `s3.endpoint` (for any store that is not AWS) and `s3.path-style-access`.
 - **In a `storage-credentials` entry** scoped to the table's prefix. This entry carries the keys only.
 
-Silo/MinIO and Ceph always get path-style addressing, because "their endpoints rarely carry a wildcard DNS name per bucket" ([StsCredentialVending.java](../catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java), [StoreKind.java](../catalog-objectstore/src/main/java/keel/catalog/objectstore/StoreKind.java)). **Keel vends whether or not the client sends `X-Iceberg-Access-Delegation`.** Only a registered trusted engine that sends exactly `none` gets nothing. That has three consequences:
+Silo/MinIO and Ceph always get path-style addressing, because "their endpoints rarely carry a wildcard DNS name per bucket" ([StsCredentialVending.java](../catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java), [StoreKind.java](../catalog-objectstore/src/main/java/nuna/catalog/objectstore/StoreKind.java)). **Nuna vends whether or not the client sends `X-Iceberg-Access-Delegation`.** Only a registered trusted engine that sends exactly `none` gets nothing. That has three consequences:
 - Clients that never send the header, such as iceberg-rust and Spice, still receive credentials.
 - A client that reads only `storage-credentials` gets keys but no endpoint.
-- A client that does everything right needs no storage settings at all. Spark, Trino, Flink, PyIceberg, DuckDB and SingleStore showed exactly that: all of them created or read keel's tables with vended credentials alone ([engine matrix](../catalog-tests-engines/README.md)).
+- A client that does everything right needs no storage settings at all. Spark, Trino, Flink, PyIceberg, DuckDB and SingleStore showed exactly that: all of them created or read nuna's tables with vended credentials alone ([engine matrix](../catalog-tests-engines/README.md)).
 
-StarRocks 4.1.7 is the counter-example. Configured as its documentation describes, it sent keel's Silo credentials to `s3.us-east-1.amazonaws.com`, and every read failed with an S3 400 error ([StarRocks note](C:/Users/paulh/.claude/notes/starrocks-iceberg-facts.md)).
+StarRocks 4.1.7 is the counter-example. Configured as its documentation describes, it sent nuna's Silo credentials to `s3.us-east-1.amazonaws.com`, and every read failed with an S3 400 error ([StarRocks note](C:/Users/paulh/.claude/notes/starrocks-iceberg-facts.md)).
 
-Authentication narrows the field further. **Keel issues no tokens:** its `/v1/oauth/tokens` route only returns an error that names the identity provider (IdP). It also requires `exp` and checks `aud` against a per-issuer list ([Authentication.java](../catalog-server/src/main/java/keel/catalog/server/security/Authentication.java), [TokenAuthenticator.java](../catalog-security/src/main/java/keel/catalog/security/TokenAuthenticator.java)). An engine therefore needs one of two things:
+Authentication narrows the field further. **Nuna issues no tokens:** its `/v1/oauth/tokens` route only returns an error that names the identity provider (IdP). It also requires `exp` and checks `aud` against a per-issuer list ([Authentication.java](../catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java), [TokenAuthenticator.java](../catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java)). An engine therefore needs one of two things:
 - a static JWT, which suits tests but stops working when it expires;
 - a client-credentials grant against an external token endpoint.
 
-An engine that can only call the catalog's own token route cannot connect. End-user identity can reach keel in two ways:
+An engine that can only call the catalog's own token route cannot connect. End-user identity can reach nuna in two ways:
 - the user's own JWT, sent as the bearer token;
-- a registered trusted engine's token, plus `X-Keel-End-User` and `X-Keel-End-User-Groups` headers.
+- a registered trusted engine's token, plus `X-Nuna-End-User` and `X-Nuna-End-User-Groups` headers.
 
-Either way, the user appears in keel's credential-issue audit event. Every engine below sets its catalog headers once per catalog, not per user, so **the trusted-engine path has no off-the-shelf client today**. In practice, per-user identity means the user's own token reaches keel.
+Either way, the user appears in nuna's credential-issue audit event. Every engine below sets its catalog headers once per catalog, not per user, so **the trusted-engine path has no off-the-shelf client today**. In practice, per-user identity means the user's own token reaches nuna.
 
 The library each engine embeds sorts the field before any test is run:
 
-| Embedded Iceberg client | Where it gets storage settings | Engines in this survey | Expected against keel |
+| Embedded Iceberg client | Where it gets storage settings | Engines in this survey | Expected against nuna |
 |---|---|---|---|
 | Java Iceberg (`S3FileIO`) | The load-table `config` | Spark, Trino, Flink, Kafka Connect (all passed); Kyuubi, Starburst, Comet's write path | Honours the vended endpoint; proven for the first four |
-| iceberg-rust | `config`, with user settings layered on top; `storage-credentials` is parsed but not used | Spice (fork of 0.11), Databend (fork of 0.8), RisingWave (`rest_rust`), Comet's reader, DataFusion | Honours keel's endpoint and path-style, because keel puts both in `config` |
+| iceberg-rust | `config`, with user settings layered on top; `storage-credentials` is parsed but not used | Spice (fork of 0.11), Databend (fork of 0.8), RisingWave (`rest_rust`), Comet's reader, DataFusion | Honours nuna's endpoint and path-style, because nuna puts both in `config` |
 | PyIceberg plus the engine's own reader | PyIceberg's FileIO properties, translated | Polars, Daft | Endpoint mapped; path-style key ignored, but path-style is used whenever an endpoint is set |
 | The engine's own storage layer | The engine's own S3 settings | StarRocks (observed), PuppyGraph (documented), Presto (`hive.s3.*`), Sail (AWS environment), TigerGraph loader, Druid | Vended endpoint or vended keys ignored |
 
-The iceberg-rust row rests on its REST client code. It merges `response.config` with the user's settings and does not merge `storage-credentials` into FileIO, and since 0.10.0 it has defaulted S3 to virtual-host addressing ([catalog.rs](https://github.com/apache/iceberg-rust/blob/main/crates/catalog/rest/src/catalog.rs), [releases](https://api.github.com/repos/apache/iceberg-rust/releases)). Keel's explicit `s3.path-style-access=true` is what keeps those clients off virtual-host addressing on Silo and Ceph.
+The iceberg-rust row rests on its REST client code. It merges `response.config` with the user's settings and does not merge `storage-credentials` into FileIO, and since 0.10.0 it has defaulted S3 to virtual-host addressing ([catalog.rs](https://github.com/apache/iceberg-rust/blob/main/crates/catalog/rest/src/catalog.rs), [releases](https://api.github.com/repos/apache/iceberg-rust/releases)). Nuna's explicit `s3.path-style-access=true` is what keeps those clients off virtual-host addressing on Silo and Ceph.
 
 ## Spice and Polars are the easy wins, each with one sharp edge
 
@@ -44,7 +44,7 @@ The iceberg-rust row rests on its REST client code. It merges `response.config` 
 
 **Spice 2.4.2 (9 November 2026) is the easiest shared SQL server in the survey that meets the format requirements.** It runs on a fork of iceberg-rust 0.11.0 and a forked DataFusion 55.2 ([Cargo.toml](https://github.com/spiceai/spiceai/blob/trunk/Cargo.toml)).
 
-It authenticates with `iceberg_token`, or with `iceberg_oauth2_credential` against an external `iceberg_oauth2_server_url` ([Spice Iceberg docs](https://github.com/spiceai/docs/blob/trunk/website/docs/components/catalogs/iceberg.md)). That covers both of keel's modes.
+It authenticates with `iceberg_token`, or with `iceberg_oauth2_credential` against an external `iceberg_oauth2_server_url` ([Spice Iceberg docs](https://github.com/spiceai/docs/blob/trunk/website/docs/components/catalogs/iceberg.md)). That covers both of nuna's modes.
 
 Its documentation states the one trap: **Spice "refuses a catalog-supplied endpoint that resolves to a private, loopback, or link-local address"**. You must set `iceberg_s3_endpoint` and `iceberg_s3_region`, or turn the check off with `SPICE_URL_TABLE_ALLOW_PRIVATE_HOSTS`. Vended credentials themselves "are passed through unchanged" ([iceberg.rs](https://github.com/spiceai/spiceai/blob/trunk/crates/runtime/src/catalogconnector/iceberg.rs)). This fails closed, where StarRocks fails by leaking credentials to AWS. Repeating one endpoint is a fair price for that. Path-style access defaults to true.
 
@@ -61,18 +61,18 @@ Its documentation states the one trap: **Spice "refuses a catalog-supplied endpo
 - **Token refresh.** Upstream iceberg-rust still carries "TODO: Support automatic token refreshing" and has no retry on a 401 ([oauth2.rs](https://github.com/apache/iceberg-rust/blob/main/crates/catalog/rest/src/auth/oauth2.rs)). A long-running Spice server that uses either a static JWT or a once-fetched client-credentials token will fail when that token expires, unless Spice's fork fixed this. Nobody has checked.
 - **STS renewal.** Whether Spice re-requests STS credentials during long accelerations is not documented either.
 
-Every user of a Spice server reaches keel as the server.
+Every user of a Spice server reaches nuna as the server.
 
 ### Polars
 
-**Polars 2.1.0 (25 October 2026, MIT) is the lightest option and gives per-user identity for free.** It hands catalog access to PyIceberg, which has already passed keel's matrix with a static token, nested namespaces and vended credentials ([catalog resolver](https://github.com/pola-rs/polars/blob/main/py-polars/src/polars/io/iceberg/_catalog_resolver.py)).
+**Polars 2.1.0 (25 October 2026, MIT) is the lightest option and gives per-user identity for free.** It hands catalog access to PyIceberg, which has already passed nuna's matrix with a static token, nested namespaces and vended credentials ([catalog resolver](https://github.com/pola-rs/polars/blob/main/py-polars/src/polars/io/iceberg/_catalog_resolver.py)).
 
 Polars translates a table's FileIO properties into object-store options. `s3.endpoint` becomes `aws_endpoint_url`, and the session token is carried over. **`s3.path-style-access` is not mapped.** Path-style then depends on object_store's virtual-host setting defaulting to off; the researcher recalled this rather than read it ([_dataset.py](https://github.com/pola-rs/polars/blob/main/py-polars/src/polars/io/iceberg/_dataset.py)).
 
 **Deletes are the sharp edge:**
 - The native reader applies position deletes, limited to one data file each, and since py-1.44.0 it applies v3 deletion vectors ([releases](https://api.github.com/repos/pola-rs/polars/releases)).
 - Equality deletes make the native planner raise `NotImplementedError` and fall back to PyIceberg. The Iceberg status page lists PyIceberg as unable to read equality deletes ([status.md](https://github.com/apache/iceberg/blob/main/site/docs/status.md)).
-- So **Polars cannot read tables written as upserts by Flink or Kafka Connect, or keel's demo change-feed table.**
+- So **Polars cannot read tables written as upserts by Flink or Kafka Connect, or nuna's demo change-feed table.**
 
 **Writes:**
 - Supported: append and overwrite through `sink_iceberg`, schema merge, dynamic partition overwrite, `CREATE`/`DROP` in SQL, and an unstable `delete_iceberg` that calls PyIceberg.
@@ -97,14 +97,14 @@ Polars translates a table's FileIO properties into object-store options. `s3.end
 - **Vended credentials and nested namespaces** are opt-in flags, both defaulting to false ([metastores](https://docs.starburst.io/latest/object-storage/metastores.html)).
 - **Format v3:** the connector lists v3 deletion vectors, row lineage, `variant`, nanosecond timestamps and column defaults ([Iceberg connector](https://docs.starburst.io/latest/connector/iceberg.html)).
 
-The SEP docs do not say how it treats a vended `s3.endpoint`. SEP is Trino underneath, and Trino passed keel's matrix with vended credentials only, so it should work. That is an inference, not a test.
+The SEP docs do not say how it treats a vended `s3.endpoint`. SEP is Trino underneath, and Trino passed nuna's matrix with vended credentials only, so it should work. That is an inference, not a test.
 
 **The pass-through has hard edges:**
 - "No token refresh mechanism is supported", so every token must outlive the longest query.
-- The REST metadata cache switches off for per-user modes, which adds load on keel.
+- The REST metadata cache switches off for per-user modes, which adds load on nuna.
 - The only documented token exchange is for Databricks Unity.
 
-For keel, this means its issuer policy must accept the audience of tokens issued to SEP, or the IdP must add keel's audience to them. The Iceberg connector page also contradicts itself: it lists v3 row-level writes as deletion vectors, yet still says "Version 3 support is experimental; row-level updates, deletes, and OPTIMIZE are not supported."
+For nuna, this means its issuer policy must accept the audience of tokens issued to SEP, or the IdP must add nuna's audience to them. The Iceberg connector page also contradicts itself: it lists v3 row-level writes as deletion vectors, yet still says "Version 3 support is experimental; row-level updates, deletes, and OPTIMIZE are not supported."
 
 **Operations:**
 - SEP is deployed with Helm on Kubernetes 1.26 to 1.36 or OpenShift.
@@ -115,14 +115,14 @@ For keel, this means its issuer policy must accept the audience of tokens issued
 
 ### Kyuubi in front of Spark
 
-**Kyuubi 1.12.0 (28 July 2026, Apache-2.0) turns Spark into a multi-user SQL service.** It inherits Spark's Iceberg client unchanged, so it meets every requirement Spark met against keel ([Kyuubi Iceberg doc](https://github.com/apache/kyuubi/blob/master/docs/connector/spark/iceberg.md)).
+**Kyuubi 1.12.0 (28 July 2026, Apache-2.0) turns Spark into a multi-user SQL service.** It inherits Spark's Iceberg client unchanged, so it meets every requirement Spark met against nuna ([Kyuubi Iceberg doc](https://github.com/apache/kyuubi/blob/master/docs/connector/spark/iceberg.md)).
 
 **Identity.** The Spark engine runs as the session user, because `kyuubi.engine.doAs.enabled` defaults to true. The share level, `CONNECTION` or `USER` (the default), gives each connection or each user its own engine ([share levels](https://github.com/apache/kyuubi/blob/master/docs/deployment/engine_share_level.md)). That structure makes real pass-through possible.
 
 The researcher's suggested route, which has not been tested:
 - Use share level `CONNECTION`.
-- The client puts `spark.sql.catalog.keel.token=<its own JWT>` in the JDBC URL.
-- That private Spark engine then talks to keel as the user, and keel's own token check stops anyone from claiming to be someone else.
+- The client puts `spark.sql.catalog.nuna.token=<its own JWT>` in the JDBC URL.
+- That private Spark engine then talks to nuna as the user, and nuna's own token check stops anyone from claiming to be someone else.
 - Use `kyuubi.session.conf.restrict.list` to stop clients from overriding the catalog URI ([settings](https://github.com/apache/kyuubi/blob/master/docs/configuration/settings.md)).
 
 Two limits apply:
@@ -140,9 +140,9 @@ Two limits apply:
 
 Gluten's Velox backend is not a substitute. It offloads only unpartitioned tables without equality deletes and does not mention deletion vectors ([Gluten Iceberg](https://github.com/apache/gluten/blob/main/docs/backends/velox/get-started/VeloxIceberg.md)).
 
-## PuppyGraph queries keel in place but repeats the StarRocks gap
+## PuppyGraph queries nuna in place but repeats the StarRocks gap
 
-**PuppyGraph 1.18.0 (4 November 2026) is the only graph engine in this survey that queries Iceberg in place through a generic REST catalog.** It maps tables to nodes and edges and serves openCypher over Bolt and Gremlin. That pays off only if relationships, lineage edges for example, are already stored as rows in keel ([llms.txt](https://docs.puppygraph.com/llms.txt)).
+**PuppyGraph 1.18.0 (4 November 2026) is the only graph engine in this survey that queries Iceberg in place through a generic REST catalog.** It maps tables to nodes and edges and serves openCypher over Bolt and Gremlin. That pays off only if relationships, lineage edges for example, are already stored as rows in nuna ([llms.txt](https://docs.puppygraph.com/llms.txt)).
 
 **Requirement by requirement, it is weak:**
 - **Authentication:** OAuth2 client credentials (`credential`, `scope`, `oauthServerUri`) against an external IdP. There is no documented static-token key ([Connecting to Iceberg](https://docs.puppygraph.com/connecting/connecting-to-iceberg/)).
@@ -150,9 +150,9 @@ Gluten's Velox backend is not a substitute. It offloads only unpartitioned table
 - **Formats:** a search of the full docs and every release note found nothing on format versions, equality deletes or deletion vectors. The type map has no v3 types.
 - **Nested namespaces:** mentioned only for semantic-model import.
 - **Writes:** PuppyGraph writes no Iceberg ([releases](https://docs.puppygraph.com/releases/)).
-- **Identity:** propagation of the signed-in user exists only for Snowflake and Elasticsearch, so every PuppyGraph user reaches keel as one service principal.
+- **Identity:** propagation of the signed-in user exists only for Snowflake and Elasticsearch, so every PuppyGraph user reaches nuna as one service principal.
 
-The researcher inferred that PuppyGraph's SQL layer descends from StarRocks or Doris. The evidence is a `PRIORITY_IP_CIDR` setting, leader/follower metadata election, an AVX2 requirement, StarRocks-style key models and REST property names that mirror StarRocks'. If that is right, keel should expect StarRocks' behaviour until a test proves otherwise.
+The researcher inferred that PuppyGraph's SQL layer descends from StarRocks or Doris. The evidence is a `PRIORITY_IP_CIDR` setting, leader/follower metadata election, an AVX2 requirement, StarRocks-style key models and REST property names that mirror StarRocks'. If that is right, nuna should expect StarRocks' behaviour until a test proves otherwise.
 
 **Operations are heavy for what it does:**
 - The image is 3.4 GB ([Docker Hub](https://hub.docker.com/v2/repositories/puppygraph/puppygraph/tags/1.18.0)).
@@ -212,23 +212,23 @@ Ease and fit pull in opposite directions. The ranking below puts ease first, bec
 | 4 | Kyuubi 1.12.0 + Spark | Shared SQL gateway | 4 | 2 | Spark's proven pass plus per-connection user tokens; ZooKeeper and Spark pods |
 | 5 | PuppyGraph 1.18.0 | Graph queries | 5 | 5 | In-place Cypher/Gremlin; documented endpoint gap; proprietary |
 
-Run every engine against the demo stack, on Silo first and then on Ceph, with keel's URI and a token and **no S3 endpoint or keys in the engine's own config**. Run the tests in this order and stop an engine at the first failure that cannot be configured around:
+Run every engine against the demo stack, on Silo first and then on Ceph, with nuna's URI and a token and **no S3 endpoint or keys in the engine's own config**. Run the tests in this order and stop an engine at the first failure that cannot be configured around:
 
 | # | Test | Engines | Pass looks like |
 |---|---|---|---|
 | 1 | **Vended endpoint and path-style.** Read `m8.shared.spark.t_v2` with no storage settings | All five; Comet's reader too | The store's access log shows path-style requests at the Silo or Ceph Service. No AWS-format request IDs. Spice: expect a refusal, then a pass with `iceberg_s3_endpoint` set. PuppyGraph: try "Get from metastore", then Amazon S3 with "Credentials vended by the catalog" plus the endpoint |
-| 2 | **Token lifetime.** Keep the engine up past the JWT's `exp` and past keel's STS lifetime | Spice (static and client credentials), Starburst (pass-through), Kyuubi | Queries keep working, or fail with a clear 401 that a restart fixes. No silent hang. Starburst: a query that outlives its token |
+| 2 | **Token lifetime.** Keep the engine up past the JWT's `exp` and past nuna's STS lifetime | Spice (static and client credentials), Starburst (pass-through), Kyuubi | Queries keep working, or fail with a clear 401 that a restart fixes. No silent hang. Starburst: a query that outlives its token |
 | 3 | **Deep namespace.** Read and, where the engine writes, create in `m8.deep.<engine>` and a four-level namespace | All five | Same rows as Spark. Spice: two tables with the same leaf namespace name |
 | 4 | **Deletes.** Read Spark's v3 table with a deletion vector, a v2 table with a position delete, and the demo change-feed table with equality deletes | All five | Deleted rows absent. Polars: refuses the equality-delete table instead of returning its rows |
 | 5 | **v3 writes.** Run `DELETE` on a v3 table | Spice (equality deletes), Starburst, Kyuubi; Polars append | Commit succeeds, and Spark and SingleStore read the result. Polars: whether `sink_iceberg` appends to v3 |
-| 6 | **End-user identity.** Connect as two different users | Starburst (`OAUTH2_PASSTHROUGH`), Kyuubi (`CONNECTION` plus a token in the URL), Polars (the user's token) | Keel's credential-issue audit event names each user; keel's `aud` list accepts Starburst's tokens |
+| 6 | **End-user identity.** Connect as two different users | Starburst (`OAUTH2_PASSTHROUGH`), Kyuubi (`CONNECTION` plus a token in the URL), Polars (the user's token) | Nuna's credential-issue audit event names each user; nuna's `aud` list accepts Starburst's tokens |
 | 7 | **Air-gapped install.** Build from a mirrored registry or wheelhouse with egress blocked | All five | Starts and passes tests 1 to 4 with no outbound connection. PuppyGraph: licence activation offline |
 
 ## Conclusion
 
-Whether an engine works with keel is decided less by the engine than by the Iceberg client inside it. Every engine whose storage access comes from Java Iceberg or iceberg-rust should pick up keel's endpoint without help, because keel places it in `config`. Every engine with its own storage layer should be presumed to fail until test 1 passes. That turns "evaluate a new engine" into a five-minute triage: find the embedded client first. It also gives keel a cheap safeguard, because it already returns `s3.endpoint` and `s3.path-style-access` in the place both client families read.
+Whether an engine works with nuna is decided less by the engine than by the Iceberg client inside it. Every engine whose storage access comes from Java Iceberg or iceberg-rust should pick up nuna's endpoint without help, because nuna places it in `config`. Every engine with its own storage layer should be presumed to fail until test 1 passes. That turns "evaluate a new engine" into a five-minute triage: find the embedded client first. It also gives nuna a cheap safeguard, because it already returns `s3.endpoint` and `s3.path-style-access` in the place both client families read.
 
-The identity requirement has an awkward answer. Keel's trusted-engine headers have no off-the-shelf client, because every engine fixes its catalog headers per catalog, and every shared server except Starburst reaches keel under a single identity. Per-user identity therefore comes from one of three architectures:
+The identity requirement has an awkward answer. Nuna's trusted-engine headers have no off-the-shelf client, because every engine fixes its catalog headers per catalog, and every shared server except Starburst reaches nuna under a single identity. Per-user identity therefore comes from one of three architectures:
 - per-user processes, such as Polars, DuckDB and PyIceberg;
 - per-user engines, such as Kyuubi at share level `CONNECTION`;
 - a licensed pass-through, in Starburst.

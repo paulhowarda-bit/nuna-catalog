@@ -2,10 +2,10 @@ Breaks: a change commit does not check that nothing was committed since the snap
 Module: singlestore-change-feed
 Test: IcebergCopyTest#aSecondWriterFailsInsteadOfApplyingTheSameChangesAgain
 
-diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java
 index 7806ba1..8f42343 100644
---- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
-+++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/IcebergCopy.java
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/IcebergCopy.java
 @@ -390,7 +390,6 @@ final class IcebergCopy {
          if (base != null) {
              delta.validateFromSnapshot(base);

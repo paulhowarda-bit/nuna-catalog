@@ -1,0 +1,17 @@
+{{- $_ := required "config.nuna.maintenance.catalog-uri is required: the catalog the worker maintains" (dig "nuna" "maintenance" "catalog-uri" "" .Values.config) -}}
+{{- if not (dig "nuna" "maintenance" "storage" dict .Values.config) -}}
+{{- fail "config.nuna.maintenance.storage needs at least one profile: the worker's own storage identity" -}}
+{{- end -}}
+{{- range $part := list "start" "end" "zone" -}}
+{{- $_ := required (printf "config.nuna.maintenance.cleanup-window.%s is required: the nightly window in which compaction and orphan scans run (start and end as local times such as \"01:00\", zone a named zone such as Europe/London)" $part) (dig "nuna" "maintenance" "cleanup-window" $part "" $.Values.config) -}}
+{{- end -}}
+{{- /* toYaml quotes the times, which Spring's YAML 1.1 would otherwise read as base-60 numbers. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nuna-maintenance.fullname" . }}
+  labels:
+    {{- include "nuna-maintenance.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}

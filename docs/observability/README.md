@@ -1,6 +1,6 @@
 # Observability
 
-The catalog server (`keel-catalog`) and the maintenance worker (`keel-maintenance`) send metrics, traces and logs to an
+The catalog server (`nuna-catalog`) and the maintenance worker (`nuna-maintenance`) send metrics, traces and logs to an
 OpenTelemetry collector over OTLP/HTTP, and write their log lines to stdout as JSON. Nothing is exported until an
 endpoint is named, so the tests, the demo and a laptop run need no collector. Backlog 38 laid this foundation; 39, 40
 and 41 add the catalog's own meters and spans, and 49 the worker's spans.
@@ -24,7 +24,7 @@ server, is in health-page.md (backlog 48).
   to the catalog carry the trace, so the catalog's spans for them join it (worker-spans.md, backlog 49).
 - **Logs.** Every log line, to stdout as JSON and, when a logs endpoint is named, as an OTLP log record.
 
-Each signal carries the resource attributes `service.name` (`keel-catalog` or `keel-maintenance`, or
+Each signal carries the resource attributes `service.name` (`nuna-catalog` or `nuna-maintenance`, or
 `OTEL_SERVICE_NAME`) and whatever `OTEL_RESOURCE_ATTRIBUTES` adds; the Helm charts add the namespace, version, pod and
 node (deploy/README.md, "Telemetry").
 
@@ -48,7 +48,7 @@ One key joins an audit event, an STS session (and so CloudTrail), a log line and
 - Otherwise the request ID is the request's trace ID, 32 hex characters, which is also the caller's when it sent a
   `traceparent`.
 - Every response carries `X-Request-ID`, errors included (401, 403, 404, 500, the token route and the console's files).
-- The audit events record it as `actor.requestId`. Credential vending puts it in the STS session's `keel-request` tag
+- The audit events record it as `actor.requestId`. Credential vending puts it in the STS session's `nuna-request` tag
   and its session name, cleaned for STS as before.
 
 `RequestIds` (catalog-server, `telemetry`) decides it once per request, right after Boot opens the request's span.
@@ -99,7 +99,7 @@ for its last exports, up to their timeouts (10 s each), before it exits. Within 
 
 ## What labels and attributes never hold
 
-No metric label or span attribute names a person (the principal, the end user in `X-Keel-End-User`) or holds a filter
+No metric label or span attribute names a person (the principal, the end user in `X-Nuna-End-User`) or holds a filter
 value. Boot's request meters and spans label by route template (`/v1/{prefix}/namespaces/{namespace}/...`), method,
 status and outcome; the span also records the request's path, which names namespaces and tables but never a person or a
 filter (scan filters travel in request bodies). `TelemetryTest#noPersonOrFilterValueInLabelsOrAttributes` checks this.

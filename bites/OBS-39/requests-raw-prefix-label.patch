@@ -2,10 +2,10 @@ Breaks: a call's catalog label is the warehouse prefix it sent, even one that na
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#labelsNameNoTableNamespacePersonOrFilterValue
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
 index 8946b27..ef0e6de 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/Lookup.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
 @@ -31,6 +31,7 @@ class Lookup {
  
      /** The catalog the prefix names, which also labels the request's meters. */

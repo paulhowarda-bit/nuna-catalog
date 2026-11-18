@@ -2,10 +2,10 @@ Breaks: the request timer has no histogram buckets at the SLO bounds.
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
 index ae767f1..68be645 100644
---- a/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
 @@ -42,7 +42,6 @@ public final class RequestMetrics extends OncePerRequestFilter {
      RequestMetrics(MeterRegistry registry) {
          this.timers = Timer.builder(REQUESTS)

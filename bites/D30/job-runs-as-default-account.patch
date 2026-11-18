@@ -1,10 +1,10 @@
 Breaks: the compaction Job's pod runs as its namespace's default service account, not the one with no rights.
 Module: catalog-maintenance
 Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 index b4b71c1..b89e420 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 @@ -113,7 +113,6 @@ final class KubernetesJobs implements Compactor {
          ObjectNode pod = template.putObject("spec").put("restartPolicy", "Never").put("enableServiceLinks", false)
                  .put("automountServiceAccountToken", false);

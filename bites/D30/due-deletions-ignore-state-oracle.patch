@@ -1,10 +1,10 @@
 Breaks: the due pending deletions ignore the object's state, so an unregistered table's files are deleted.
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#anUnregisteredTablesPendingDeletionsNeverComeDue
-diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleDeletions.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleDeletions.java
 index 7260aae..dbda6a7 100644
---- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java
-+++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleDeletions.java
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleDeletions.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleDeletions.java
 @@ -67,7 +67,7 @@ final class OracleDeletions {
              parameters.add(page.size() + 1);
              List<PendingDeletion> due = query(connection, "SELECT " + COLUMNS + " FROM pending_deletion d"

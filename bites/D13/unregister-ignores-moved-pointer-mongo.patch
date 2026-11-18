@@ -2,10 +2,10 @@ Breaks: unregister ignores a main pointer moved since it was read, so it applies
 Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$CatalogObjects#unregisterRefusals
 
-diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 index 1a0b677..3c39cee 100644
---- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
-+++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 @@ -163,8 +163,8 @@ final class MongoObjects {
                  return new WriteResult.Missing(WriteResult.Subject.OBJECT);
              }

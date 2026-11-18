@@ -2,10 +2,10 @@ Breaks: client report meters are labelled with the report's table name.
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#labelsNameNoTableNamespacePersonOrFilterValue
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 index 6461eb0..df357b4 100644
---- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 @@ -132,7 +132,7 @@ public final class CatalogMetrics {
          if (!summary.known()) {
              return;

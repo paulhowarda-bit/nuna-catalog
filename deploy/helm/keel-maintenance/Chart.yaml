@@ -1,6 +1,0 @@
-apiVersion: v2
-name: keel-maintenance
-description: The keel maintenance worker (D30), a separate service beside the catalog. It signs in to the catalog as a maintenance principal, expires snapshots, rewrites manifests, removes orphans, purges dropped tables, deletes the files the catalog lists as due with its own storage identity, and launches compaction as Kubernetes Jobs.
-type: application
-version: 0.1.0
-appVersion: 0.1.0-SNAPSHOT

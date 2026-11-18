@@ -2,10 +2,10 @@ Breaks: the pointer CAS accepts any current pointer, so concurrent writers overw
 Module: catalog-tests-load
 Test: ConcurrentWritersTest
 
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 index 3bff591..283e7fc 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 @@ -144,8 +144,7 @@ final class Pointers {
          Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
                          + " WHERE object_id = ? AND branch = ? FOR UPDATE",

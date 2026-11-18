@@ -1,10 +1,10 @@
 Breaks: the worker runs a table's due jobs without checking its id, so a table that took a dropped table's name is maintained under the old table's policy and its files recorded under the old id.
 Module: catalog-maintenance
 Test: GuardrailsTest#aTableNoLongerTheOneTheWorkListNamedIsLeftAlone
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 index 62b16e8..d763d32 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 @@ -257,7 +257,7 @@ final class Worker implements AutoCloseable {
              report.failed(ScanReport.Failure.TABLE_LOAD, "loading " + work.id(), e);
              return Optional.empty();

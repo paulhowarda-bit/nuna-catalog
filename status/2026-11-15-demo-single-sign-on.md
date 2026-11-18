@@ -17,7 +17,7 @@ another password.
     audience, recipient and NameID.
 - **Keys** (`keycloak.yaml`, `keycloak-realm.json`, `demo.sh`):
   - The realm signs with a fixed key, because SingleStore reads the certificate only as it starts.
-  - `demo.sh` makes that key and CloudBeaver's secrets once per machine with `openssl`, in `~/.keel-demo/keycloak`.
+  - `demo.sh` makes that key and CloudBeaver's secrets once per machine with `openssl`, in `~/.nuna-demo/keycloak`.
 
 Found and fixed on the way:
 

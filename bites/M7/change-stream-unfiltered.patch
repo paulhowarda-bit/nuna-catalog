@@ -2,10 +2,10 @@ Breaks: the change stream carries every audit record, reads and denials included
 Module: catalog-audit
 Test: ChangeStreamTest#fansOut
 
-diff --git a/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
 index 65d08a2..b90d6fc 100644
---- a/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
-+++ b/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
 @@ -33,7 +33,7 @@ public final class ChangeStream {
          Objects.requireNonNull(changes, "changes");
          return batch -> {

@@ -1,16 +1,16 @@
 Breaks: a MongoDB URI that names no database is accepted.
 Module: catalog-server
 Test: DatabaseSettingsTest#mongodbNeedsAUriThatNamesTheDatabaseAndBoundsEveryWait
-diff --git a/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java b/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java b/catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java
 index 0412b26..8a0fc63 100644
---- a/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/DatabaseSettings.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/DatabaseSettings.java
 @@ -45,7 +45,7 @@ public record DatabaseSettings(@DefaultValue("postgresql") Backend backend, Mong
-             Objects.requireNonNull(uri, "keel.database.mongodb.uri");
+             Objects.requireNonNull(uri, "nuna.database.mongodb.uri");
              // The messages never quote the string: it may hold a password.
              ConnectionString parsed = new ConnectionString(uri);
 -            if (parsed.getDatabase() == null) {
 +            if (false) {
-                 throw new IllegalArgumentException("keel.database.mongodb.uri must name the catalog's database,"
+                 throw new IllegalArgumentException("nuna.database.mongodb.uri must name the catalog's database,"
                          + " as in mongodb://h1,h2,h3/catalog?replicaSet=rs0&socketTimeoutMS=30000");
              }

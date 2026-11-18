@@ -1,5 +1,5 @@
 {
-  "realm": "keel",
+  "realm": "nuna",
   "enabled": true,
   "sslRequired": "none",
   "accessTokenLifespan": 3600,
@@ -9,8 +9,8 @@
   "registrationAllowed": false,
   "resetPasswordAllowed": false,
   "editUsernameAllowed": false,
-  "privateKey": "${KEEL_REALM_PRIVATE_KEY}",
-  "certificate": "${KEEL_REALM_CERTIFICATE}",
+  "privateKey": "${NUNA_REALM_PRIVATE_KEY}",
+  "certificate": "${NUNA_REALM_CERTIFICATE}",
   "roles": {
     "client": {
       "cloudbeaver": [{"name": "admin", "description": "CloudBeaver's team admin: its administrator"}]
@@ -28,9 +28,9 @@
       "enabled": true,
       "firstName": "Ana",
       "lastName": "Analyst",
-      "email": "ana@keel.demo",
+      "email": "ana@nuna.demo",
       "emailVerified": true,
-      "realmRoles": ["default-roles-keel"],
+      "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "ana-demo", "temporary": false}],
       "groups": ["/demo-analysts"]
     },
@@ -39,9 +39,9 @@
       "enabled": true,
       "firstName": "Gary",
       "lastName": "Grants",
-      "email": "gary@keel.demo",
+      "email": "gary@nuna.demo",
       "emailVerified": true,
-      "realmRoles": ["default-roles-keel"],
+      "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "gary-demo", "temporary": false}],
       "groups": ["/demo-grant-admins"]
     },
@@ -50,9 +50,9 @@
       "enabled": true,
       "firstName": "Stella",
       "lastName": "Steward",
-      "email": "stella@keel.demo",
+      "email": "stella@nuna.demo",
       "emailVerified": true,
-      "realmRoles": ["default-roles-keel"],
+      "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "stella-demo", "temporary": false}],
       "groups": ["/demo-stewards"]
     },
@@ -61,9 +61,9 @@
       "enabled": true,
       "firstName": "Oscar",
       "lastName": "Operator",
-      "email": "oscar@keel.demo",
+      "email": "oscar@nuna.demo",
       "emailVerified": true,
-      "realmRoles": ["default-roles-keel"],
+      "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "oscar-demo", "temporary": false}],
       "groups": ["/demo-operators"]
     },
@@ -72,17 +72,17 @@
       "enabled": true,
       "firstName": "Demo",
       "lastName": "Presenter",
-      "email": "presenter@keel.demo",
+      "email": "presenter@nuna.demo",
       "emailVerified": true,
-      "realmRoles": ["default-roles-keel"],
+      "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "presenter-demo", "temporary": false}],
       "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators"]
     }
   ],
   "clients": [
     {
-      "clientId": "keel-console",
-      "name": "Keel console",
+      "clientId": "nuna-console",
+      "name": "Nuna console",
       "enabled": true,
       "publicClient": true,
       "standardFlowEnabled": true,
@@ -94,13 +94,13 @@
       "fullScopeAllowed": false,
       "protocolMappers": [
         {
-          "name": "keel-audience",
+          "name": "nuna-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "config": {
             "access.token.claim": "true",
             "id.token.claim": "false",
-            "included.custom.audience": "keel-catalog"
+            "included.custom.audience": "nuna-catalog"
           }
         },
         {
@@ -176,7 +176,7 @@
       "enabled": true,
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
-      "secret": "${KEEL_CLOUDBEAVER_CLIENT_SECRET}",
+      "secret": "${NUNA_CLOUDBEAVER_CLIENT_SECRET}",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": false,
       "implicitFlowEnabled": false,

@@ -2,10 +2,10 @@ Breaks: a client's X-Request-ID of 129 characters is kept.
 Module: catalog-server
 Test: TelemetryTest#aClientsIdIsKeptWhenUsable
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
 index 1503ce8..3f31956 100644
---- a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
 @@ -44,7 +44,7 @@ public final class RequestIds extends OncePerRequestFilter {
      protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
              throws ServletException, IOException {

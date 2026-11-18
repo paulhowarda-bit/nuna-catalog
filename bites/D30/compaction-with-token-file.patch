@@ -1,16 +1,16 @@
 Breaks: compaction runs with a token file, whose token a Job could outlive.
 Module: catalog-maintenance
 Test: TokenSourceTest#compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
 index e36506b..46174c2 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
 @@ -46,7 +46,7 @@ public record WorkerSettings(
-             throw new IllegalArgumentException("keel.maintenance.scan-interval must be positive");
+             throw new IllegalArgumentException("nuna.maintenance.scan-interval must be positive");
          }
          if (compaction.enabled()) {
 -            if (token.file() != null) {
 +            if (false) {
-                 throw new IllegalArgumentException("keel.maintenance.compaction needs the client-credentials grant"
-                         + " (keel.maintenance.token.endpoint): a compaction Job runs up to its deadline and renews its"
+                 throw new IllegalArgumentException("nuna.maintenance.compaction needs the client-credentials grant"
+                         + " (nuna.maintenance.token.endpoint): a compaction Job runs up to its deadline and renews its"
                          + " own token, where a token file's token would expire under it");

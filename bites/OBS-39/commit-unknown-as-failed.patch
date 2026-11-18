@@ -2,10 +2,10 @@ Breaks: a commit that ended in an unknown state counts as failed.
 Module: catalog-server
 Test: CatalogMetricsTest#everyReplyOfTheEngineHasItsOutcome
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 index 6461eb0..dbac24c 100644
---- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 @@ -84,7 +84,7 @@ public final class CatalogMetrics {
                  error = failure.type();
              }

@@ -1,4 +1,4 @@
-# Installing keel at work (M9)
+# Installing nuna at work (M9)
 
 For the agents that install the catalog at work and carry out M9. Read this first, then `CLAUDE.md`,
 `backlog/README.md` and the open items (`./backlog.sh list`), `build-plan.md` (M9 and section 6, the open
@@ -22,12 +22,12 @@ today.
     `OrphanRaceTest`, `KillMidPurgeTest`, `KafkaDownTest`, and the store races
     (`commitRacingTheUnregisterExactlyOneApplies`, `lostReviveAnswerResolvesToCommitted`).
   - About 70 of the 200 recorded bites (`bites/`), which have never been run.
-  - The `keel-maintenance` Helm chart, which has never been installed.
+  - The `nuna-maintenance` Helm chart, which has never been installed.
   - The AWS S3 and MinIO delete policies, which have never been applied to a real store.
 - Paul will run the heavy pass (`./heavy.sh`) after the install to harden these. Do not run `-Pheavy`, the
   bites or `-Pnightly` unless he asks.
 - **The server runs on PostgreSQL, CockroachDB, Oracle or MongoDB**, one per deployment, chosen with
-  `keel.database.backend` (deploy/README.md, "The database"). Oracle and MongoDB were wired on 2026-11-13;
+  `nuna.database.backend` (deploy/README.md, "The database"). Oracle and MongoDB were wired on 2026-11-13;
   their server tests (`OracleBackendTest`, `MongodbBackendTest`) ran on Oracle Free and a one-member replica
   set, not yet on RAC, Exadata or a real replica set.
 - **The server does not run the stores' self-checks** (`selfCheck`), which the storage design says it does at
@@ -43,13 +43,13 @@ today.
 
 Its rules hold at work. Some of its facts describe Paul's home machine:
 
-- The absolute paths (`C:/Users/paulh/code/keel-catalog`) mean your main checkout.
+- The absolute paths (`C:/Users/paulh/code/nuna-catalog`) mean your main checkout.
 - `org.gradle.workers.max=2` and "Docker has 8 GB" are sized for his laptop. Leave the setting unless Paul
   changes it.
 - `docker-desktop` is his laptop's Kubernetes context. At work, name your cluster's context wherever a test or
-  script asks for one (`-Pengines.cluster=<context>`, `KEEL_K8S_CONTEXT`).
-- The repository and its folder are `keel-catalog` (renamed from `fidice-catalog` on 2026-11-13; GitHub
-  redirects the old URL).
+  script asks for one (`-Pengines.cluster=<context>`, `NUNA_K8S_CONTEXT`).
+- The repository and its folder are `nuna-catalog`, short for nunatak (renamed from `keel-catalog` on 2026-11-18,
+  and from `fidice-catalog` before that; GitHub redirects the old URLs).
 - Never push unless Paul asks, and the deferrals are his to make.
 
 ## 1. Build tools and repositories
@@ -126,10 +126,10 @@ command line (`-Ppostgres.image=<registry>/postgres:18.7`); the rest are fixed i
 ```bash
 ./gradlew :catalog-server:bootJar :catalog-maintenance:bootJar
 docker build -f deploy/image/Dockerfile --build-arg BASE_IMAGE=<approved Java 25 runtime> \
-  -t <registry>/keel-catalog:<version> catalog-server/build/libs
+  -t <registry>/nuna-catalog:<version> catalog-server/build/libs
 docker build -f deploy/image/maintenance.Dockerfile --build-arg BASE_IMAGE=<approved Java 25 runtime> \
-  -t <registry>/keel-maintenance:<version> catalog-maintenance/build/libs
-docker build -t <registry>/keel-spark:<version> catalog-tests-engines/images/spark
+  -t <registry>/nuna-maintenance:<version> catalog-maintenance/build/libs
+docker build -t <registry>/nuna-spark:<version> catalog-tests-engines/images/spark
 ```
 
 Both Java images run as uid 10001 and write only to `/tmp`. The base image needs `sleep` on the path (the
@@ -142,12 +142,12 @@ The charts run the catalog servers and the worker only. Everything else runs els
 - **Database.** PostgreSQL, CockroachDB, Oracle or MongoDB (see above): a database and a user that may create
   tables, with the extra rights deploy/README.md lists for Oracle and MongoDB. The first server of a release
   migrates the schema while older servers keep serving.
-- **Kafka** for audit and change events (`keel.audit.kafka-bootstrap-servers`). A load that vends credentials
+- **Kafka** for audit and change events (`nuna.audit.kafka-bootstrap-servers`). A load that vends credentials
   waits for Kafka's acknowledgement.
 - **Object stores** (AWS S3, Ceph or MinIO; PLT-3, PLT-5), with their buckets, named per region (PLT-4), and:
   - the catalog's own identity: an STS role on AWS S3 and Ceph, keys on MinIO. The role's trust policy must
     allow the catalog both `sts:AssumeRole` and `sts:TagSession`: every vend tags its session with whom it is
-    for (`keel-principal`, `keel-table` and others), and AWS refuses a tagged AssumeRole without the second;
+    for (`nuna-principal`, `nuna-table` and others), and AWS refuses a tagged AssumeRole without the second;
   - the worker's own identity, which alone may delete (D21, D30). On MinIO the catalog must not run as the
     root user, which ignores every policy.
 - **Identity providers** (SEC-1): for each issuer its `iss`, its JWKS URL, the audience and the claims for the
@@ -164,14 +164,14 @@ box). For work:
 
 ```yaml
 image:
-  repository: <registry>/keel-catalog
+  repository: <registry>/nuna-catalog
   tag: <version>
 config:
   spring:
     datasource:
       url: jdbc:postgresql://<host>:5432/<database>?sslmode=verify-full
       username: <user>
-  keel:
+  nuna:
     storage:
       profiles:
         lake:
@@ -191,7 +191,7 @@ config:
       issuers:
         - issuer: <iss>
           jwks-uri: <JWKS URL>
-          audiences: [keel-catalog]
+          audiences: [nuna-catalog]
           algorithms: [RS256]
           user-id-claim: <claim>
           groups-claim: <claim>
@@ -208,16 +208,16 @@ config:
       kafka-bootstrap-servers: <brokers>
 ```
 
-- Every `keel.*` setting is documented on its settings class in `catalog-server`: `StorageSettings`,
+- Every `nuna.*` setting is documented on its settings class in `catalog-server`: `StorageSettings`,
   `SecuritySettings`, `AuditSettings`, `GovernanceSettings`, `RestSettings`, `UiSettings`.
-- Leave `keel.storage.require-tls` at its default (true) and `keel.ui.dev-token-login` off.
+- Leave `nuna.storage.require-tls` at its default (true) and `nuna.ui.dev-token-login` off.
 - Passwords and keys go in a Secret read as a config tree, one key per property, never in the values file:
 
 ```bash
-kubectl -n <namespace> create secret generic keel-catalog-secrets \
+kubectl -n <namespace> create secret generic nuna-catalog-secrets \
   --from-literal=spring.datasource.password=...
-helm install keel-catalog deploy/helm/keel-catalog -n <namespace> -f <values.yaml> \
-  --set secrets.existingSecret=keel-catalog-secrets
+helm install nuna-catalog deploy/helm/nuna-catalog -n <namespace> -f <values.yaml> \
+  --set secrets.existingSecret=nuna-catalog-secrets
 ```
 
 - The chart's defaults: three replicas spread over zones, a disruption budget of one, probes on
@@ -230,10 +230,10 @@ helm install keel-catalog deploy/helm/keel-catalog -n <namespace> -f <values.yam
 
 ```bash
 kubectl create namespace <jobs namespace>          # only if compaction is wanted
-helm install keel-maintenance deploy/helm/keel-maintenance -n <namespace> -f <worker values.yaml>
+helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <worker values.yaml>
 ```
 
-- Settings are `keel.maintenance.*`; `catalog-maintenance/README.md` lists them all, with an example for one
+- Settings are `nuna.maintenance.*`; `catalog-maintenance/README.md` lists them all, with an example for one
   Ceph store. The worker needs the client-credentials grant with a scope (`token.endpoint`, `client-id`,
   `client-secret`, `scope`, `audience`) whenever compaction is on.
 - `storage.<profile>.prefixes` must cover every table location, and the keys there are the worker's own.
@@ -288,12 +288,12 @@ running there, but start it only when he asks. Two things to check:
 
 ## 10. The demo
 
-`demo/demo.sh up` (`demo/README.md`) runs the demo on a local Kubernetes cluster (`KEEL_DEMO_CONTEXT`,
+`demo/demo.sh up` (`demo/README.md`) runs the demo on a local Kubernetes cluster (`NUNA_DEMO_CONTEXT`,
 default `docker-desktop`). That cluster never pulls: every image comes from the local Docker engine. So pull
 each image below from the internal registry and tag it with the name shown
 (`docker tag <registry>/postgres:18.7 postgres:18.7`). `demo.sh` then pulls nothing, and its Dockerfiles build on
 the tagged images. `demo.sh` also needs `openssl`, which Git Bash has: it makes Keycloak's signing key and
-CloudBeaver's sign-in secrets once, in `~/.keel-demo/keycloak`.
+CloudBeaver's sign-in secrets once, in `~/.nuna-demo/keycloak`.
 
 | Image | Used for |
 |---|---|
@@ -333,11 +333,11 @@ What reaches beyond the machine (checked 2026-11-13):
 ### HTTPS with work's certificate
 
 Every page of the demo is HTTPS through one front door, nginx (`demo/k8s/ports.yaml`), with the certificate in
-`~/.keel-demo/tls` (`KEEL_DEMO_HOME/tls`). At home `up` makes a demo CA and a certificate from it for
+`~/.nuna-demo/tls` (`NUNA_DEMO_HOME/tls`). At home `up` makes a demo CA and a certificate from it for
 `localhost` there. At work, plug in work's certificate instead (Paul, 2026-11-17: "I now have real
 certificates at work that I just want to plug into this"):
 
-1. Put three PEM files in `~/.keel-demo/tls`, in place of the demo's, and delete the demo's `ca.key`: it marks
+1. Put three PEM files in `~/.nuna-demo/tls`, in place of the demo's, and delete the demo's `ca.key`: it marks
    the demo's own certificate, which `up` makes again:
    - `tls.crt`: the server certificate, then the intermediate certificates;
    - `tls.key`: its private key, not encrypted;
@@ -354,19 +354,19 @@ certificates at work that I just want to plug into this"):
 
    For an old `.pfx`, whose encryption OpenSSL 3 calls unsupported, add `-legacy` to each. If it holds no CA
    certificates, `ca.crt` comes from work's PKI team (the issuing CA's and the root's).
-2. Set `KEEL_DEMO_HOST` to a name the certificate is for (one of a wildcard's names, for a wildcard) and run
+2. Set `NUNA_DEMO_HOST` to a name the certificate is for (one of a wildcard's names, for a wildcard) and run
    `demo/demo.sh up`. `up` refuses a certificate that does not name the host, has expired, is not its key's, or
    was not issued by `ca.crt`, and says which.
-3. Open `https://<KEEL_DEMO_HOST>:8181/ui/`. The name has to reach this machine: if it resolves to an address
+3. Open `https://<NUNA_DEMO_HOST>:8181/ui/`. The name has to reach this machine: if it resolves to an address
    Docker Desktop does not publish the ports on, a hosts-file line `127.0.0.1 <name>` (an administrator's
    change) points it here. `demo.sh`'s own calls go to 127.0.0.1 whatever the name resolves to.
 
 The browser trusts work's certificate as it trusts work's sites, since the laptop already trusts work's CA.
-Every address the demo gives is then `https://<KEEL_DEMO_HOST>:<port>`: Keycloak's issuer, the sign-in
+Every address the demo gives is then `https://<NUNA_DEMO_HOST>:<port>`: Keycloak's issuer, the sign-in
 addresses of the console, kafbat, CloudBeaver and Studio, and Silo's console. Opened by any other name, sign-in
 fails: Keycloak's issuer and the redirect addresses name only that host.
 
-Inside the cluster the demo stays plain HTTP: it holds only test data. TLS on every hop (D26) is for keel's
+Inside the cluster the demo stays plain HTTP: it holds only test data. TLS on every hop (D26) is for nuna's
 own deployment at work. Hooking the demo up to work's identity provider and AWS roles can only be done on
 site: for sign-in, that means pointing the console, kafbat, CloudBeaver's sign-in proxy and Studio's SAML
 setting at work's identity provider instead of the demo's Keycloak, and giving SingleStore that provider's

@@ -2,10 +2,10 @@ Breaks: the relay marks a batch relayed even when delivery fails.
 Module: catalog-audit
 Test: OutboxRelayTest#failedDeliveryIsRetried
 
-diff --git a/catalog-audit/src/main/java/keel/catalog/audit/relay/OutboxRelay.java b/catalog-audit/src/main/java/keel/catalog/audit/relay/OutboxRelay.java
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/relay/OutboxRelay.java b/catalog-audit/src/main/java/nuna/catalog/audit/relay/OutboxRelay.java
 index 1481d8c..ef24c25 100644
---- a/catalog-audit/src/main/java/keel/catalog/audit/relay/OutboxRelay.java
-+++ b/catalog-audit/src/main/java/keel/catalog/audit/relay/OutboxRelay.java
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/relay/OutboxRelay.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/relay/OutboxRelay.java
 @@ -72,8 +72,8 @@ public final class OutboxRelay {
                      }
                  })

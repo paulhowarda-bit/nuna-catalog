@@ -7,12 +7,12 @@ Provenance markers used on every line:
 
 "master" means the project's default branch on 2026-11-12, which can be ahead of the latest release. Each claim says whether it comes from a release tag or from master. Raw files were fetched from raw.githubusercontent.com; the citations below give the equivalent github.com/blob URL.
 
-Keel requirements are abbreviated R1 (REST + OAuth2, end-user pass-through), R2 (vended credentials + vended `s3.endpoint`/path style), R3 (nested namespaces), R4 (v2/v3 reads, writes), R5 (Kubernetes), R6 (ease of operation).
+Nuna requirements are abbreviated R1 (REST + OAuth2, end-user pass-through), R2 (vended credentials + vended `s3.endpoint`/path style), R3 (nested namespaces), R4 (v2/v3 reads, writes), R5 (Kubernetes), R6 (ease of operation).
 
 ## Q1. Per engine: generic Iceberg REST catalog or not, embedded Iceberg library, v3/deletion-vector implications, and the R1–R6 fact sheet
 
 ### Takeaway
-Only three of these engines are real candidates for a shared SQL service over keel today: **PrestoDB** (Java/C++, REST with OAuth2 and nested namespaces, but no vended credentials), **Kyuubi + Spark** (it inherits Spark's full Iceberg REST client, and per-user Spark engines give impersonation), and **RisingWave** (REST + OAuth2 + vended credentials + nested namespaces, but it is a streaming database whose batch path and v3 delete support are narrow). **Databend** is light to run, and its REST client can do vended credentials, but its nested namespaces and v3 deletion vectors are missing. **Impala** has a good REST/v3 story only on unreleased master (5.0); released 4.5.x embeds Iceberg 1.4.3 and has no REST catalog. **Hive 4.2** has a REST client but is heavy to run. Gluten and Comet are Spark add-ons. Druid only ingests. Apache Pinot has no Iceberg support; StarTree's support is proprietary. Drill reads only Iceberg folders on a file system, and Kylin is not relevant.
+Only three of these engines are real candidates for a shared SQL service over nuna today: **PrestoDB** (Java/C++, REST with OAuth2 and nested namespaces, but no vended credentials), **Kyuubi + Spark** (it inherits Spark's full Iceberg REST client, and per-user Spark engines give impersonation), and **RisingWave** (REST + OAuth2 + vended credentials + nested namespaces, but it is a streaming database whose batch path and v3 delete support are narrow). **Databend** is light to run, and its REST client can do vended credentials, but its nested namespaces and v3 deletion vectors are missing. **Impala** has a good REST/v3 story only on unreleased master (5.0); released 4.5.x embeds Iceberg 1.4.3 and has no REST catalog. **Hive 4.2** has a REST client but is heavy to run. Gluten and Comet are Spark add-ons. Druid only ingests. Apache Pinot has no Iceberg support; StarTree's support is proprietary. Drill reads only Iceberg folders on a file system, and Kylin is not relevant.
 
 ### Cited Findings
 
@@ -163,18 +163,18 @@ Only three of these engines are real candidates for a shared SQL service over ke
 - **Kylin:** the last release is 5.0.2 (2025-04-06). The `kylin5` branch tree has no Iceberg files. [P] — [releases API](https://api.github.com/repos/apache/kylin/releases), [kylin5 tree](https://github.com/apache/kylin/tree/kylin5)
 
 ### Inferences
-- **R1 summary.** Only PrestoDB has any per-user mechanism, and it is Trino's old `session=USER` design: a Presto-minted unsigned JWT that keel would have to accept through a token exchange.
-  - Presto also forwards extra credentials into the Iceberg `SessionContext`. Iceberg's OAuth2 session logic treats a `token` credential as a bearer token, so `--extra-credential token=<user JWT>` from the client could make Presto send the user's own JWT to keel. Untested; it depends on Iceberg 1.10.1/1.11 `OAuth2Manager` behaviour.
-  - Kyuubi can approximate pass-through with share level CONNECTION. A client puts `spark.sql.catalog.keel.token=<JWT>` in the JDBC URL, so its private Spark engine talks to keel as that user.
+- **R1 summary.** Only PrestoDB has any per-user mechanism, and it is Trino's old `session=USER` design: a Presto-minted unsigned JWT that nuna would have to accept through a token exchange.
+  - Presto also forwards extra credentials into the Iceberg `SessionContext`. Iceberg's OAuth2 session logic treats a `token` credential as a bearer token, so `--extra-credential token=<user JWT>` from the client could make Presto send the user's own JWT to nuna. Untested; it depends on Iceberg 1.10.1/1.11 `OAuth2Manager` behaviour.
+  - Kyuubi can approximate pass-through with share level CONNECTION. A client puts `spark.sql.catalog.nuna.token=<JWT>` in the JDBC URL, so its private Spark engine talks to nuna as that user.
     - Token expiry during a long session is not handled.
     - Under share level USER, the first session's token is used by every later session of that user.
   - Impala (REST: NONE only), Databend, RisingWave, Hive and StarTree have no pass-through.
 - **R2 summary.**
-  - **Presto would fail with vended-only setups.** It needs static `hive.s3.*` keys plus the endpoint. The credentials keel returns are stored but not used.
-  - **Databend should use keel's vended `s3.endpoint` and `s3.path-style-access`** if CREATE CATALOG omits them, because server config is merged first and user keys override it.
+  - **Presto would fail with vended-only setups.** It needs static `hive.s3.*` keys plus the endpoint. The credentials nuna returns are stored but not used.
+  - **Databend should use nuna's vended `s3.endpoint` and `s3.path-style-access`** if CREATE CATALOG omits them, because server config is merged first and user keys override it.
     - It has to send the delegation header, presumably via `"header.X-Iceberg-Access-Delegation"='vended-credentials'` in CONNECTION. That is undocumented and untested.
     - The fork only reads the `config` map of `LoadTableResult`. Credentials returned only in `storage-credentials` may be ignored.
-  - **RisingWave probably honours keel's vended endpoint when `s3.endpoint` is omitted,** through the iceberg-rust merge. Its docs always repeat the endpoint, so this is the exact StarRocks trap to test.
+  - **RisingWave probably honours nuna's vended endpoint when `s3.endpoint` is omitted,** through the iceberg-rust merge. Its docs always repeat the endpoint, so this is the exact StarRocks trap to test.
   - **Impala and StarTree (generic REST) do not do vended credentials at all.**
   - **Hive 4.2.x is unknown;** master detects the header.
   - **Kyuubi, Gluten and Comet follow Spark.** Comet's native reader configures its own object store; its write path forwards `table.io().properties()`. Whether its read path uses the vended `s3.endpoint` needs a test.
@@ -213,7 +213,7 @@ Only three of these engines are real candidates for a shared SQL service over ke
 ## Q2. Which are easier to operate than Trino, and why?
 
 ### Takeaway
-None is clearly easier than Trino while also meeting keel's requirements. Databend is the lightest to run: two Rust services and no JVM, though the metadata service holds state. It gives that up in nested namespaces, deletion vectors and documented OAuth. PrestoDB has the same coordinator-and-worker shape as Trino, plus a native-worker variant. Impala master can now run without HMS or catalogd, but that is unreleased. Hive, Kyuubi+Spark and RisingWave all need more moving parts than Trino.
+None is clearly easier than Trino while also meeting nuna's requirements. Databend is the lightest to run: two Rust services and no JVM, though the metadata service holds state. It gives that up in nested namespaces, deletion vectors and documented OAuth. PrestoDB has the same coordinator-and-worker shape as Trino, plus a native-worker variant. Impala master can now run without HMS or catalogd, but that is unreleased. Hive, Kyuubi+Spark and RisingWave all need more moving parts than Trino.
 
 ### Cited Findings
 - **Presto:** a coordinator plus workers, with optional HA mode and a resource manager. The official chart still defaults to 0.295 and was last touched 2025-10-28. [P] — [presto-helm-charts values.yaml](https://github.com/prestodb/presto-helm-charts/blob/main/charts/presto/values.yaml)
@@ -274,7 +274,7 @@ Active, with a release in the last three months: PrestoDB, Databend (nightly), C
   - StarTree's Iceberg support is proprietary on top of Apache Pinot.
   - Presto is governed by the Presto Foundation; IBM is a visible backer.
   - The rest are ASF projects. Impala's direction is driven largely by Cloudera, whose own build is ahead of Apache releases.
-- **Drill is effectively irrelevant** for keel: it has no catalog support, and a yearly or slower cadence.
+- **Drill is effectively irrelevant** for nuna: it has no catalog support, and a yearly or slower cadence.
 - **Kylin is irrelevant:** it has no Iceberg code.
 
 ### Gaps

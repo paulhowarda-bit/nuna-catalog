@@ -2,10 +2,10 @@ Breaks: log records sent over OTLP no longer carry the request id.
 Module: catalog-server
 Test: TelemetryTest#logLinesCarryTheIds
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/telemetry/TelemetryWiring.java b/catalog-server/src/main/java/nuna/catalog/server/telemetry/TelemetryWiring.java
 index 91807b5..35b250d 100644
---- a/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/TelemetryWiring.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/telemetry/TelemetryWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/telemetry/TelemetryWiring.java
 @@ -52,7 +52,6 @@ class TelemetryWiring {
              root = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
              appender.setContext(context);

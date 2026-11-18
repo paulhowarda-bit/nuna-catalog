@@ -61,7 +61,7 @@ dependencies {
 val connectorJar = tasks.register<Jar>("connectorJar") {
     group = "build"
     description = "The connector jar SingleStore loads: the loader, with the change feed and its libraries under lib/."
-    archiveFileName = "keel-changefeed-connector.jar"
+    archiveFileName = "nuna-changefeed-connector.jar"
     from(loader.output)
     into("lib") {
         from(tasks.jar)

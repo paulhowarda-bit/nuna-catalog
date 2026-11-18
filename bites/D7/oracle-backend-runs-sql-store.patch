@@ -1,11 +1,11 @@
-Breaks: keel.database.backend=oracle builds the PostgreSQL-wire store.
+Breaks: nuna.database.backend=oracle builds the PostgreSQL-wire store.
 Module: catalog-server
 Test: StoreWiringTest
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
 index c49e164..feb949b 100644
---- a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
 @@ -34,7 +34,7 @@ class StoreWiring {
                                ObjectProvider<MongoClient> mongoClient) {
          return switch (settings.backend()) {

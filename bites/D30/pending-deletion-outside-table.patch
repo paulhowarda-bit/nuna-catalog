@@ -1,10 +1,10 @@
 Breaks: a recording names files outside the table's location, another table's among them.
 Module: catalog-server
 Test: MaintenanceRoutesTest#onlyAnActiveOrDroppedTablesOwnFilesAreRecorded
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
 index 0a1bcda..de3073e 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
 @@ -163,7 +163,7 @@ class MaintenanceRoutes {
          String root = object.locationRoot().endsWith("/") ? object.locationRoot() : object.locationRoot() + "/";
          Set<String> locations = new LinkedHashSet<>();

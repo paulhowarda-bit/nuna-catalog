@@ -12,7 +12,7 @@ import time
 from pyspark.sql import SparkSession
 
 ENGINE = "spark"
-spark = SparkSession.builder.appName("keel-engine-matrix").getOrCreate()
+spark = SparkSession.builder.appName("nuna-engine-matrix").getOrCreate()
 spark.sparkContext.setLogLevel("WARN")
 STARTED = time.monotonic()
 

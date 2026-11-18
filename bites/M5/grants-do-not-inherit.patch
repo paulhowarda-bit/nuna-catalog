@@ -2,10 +2,10 @@ Breaks: The chain skips the namespaces above an object, so namespace grants stop
 Module: catalog-security
 Test: AuthorizerTest#grantsInheritDownwardIncludingToObjectsCreatedLater
 
-diff --git a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 index 7eb5785..a4db064 100644
---- a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
-+++ b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+--- a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 @@ -232,7 +232,7 @@ public final class Authorizer {
          }
          UUID catalogId = target.catalogId();

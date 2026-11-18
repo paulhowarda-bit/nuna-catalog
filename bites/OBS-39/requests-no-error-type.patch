@@ -2,10 +2,10 @@ Breaks: the request timer no longer says which Iceberg error a call failed with.
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
 index ae767f1..e61a950 100644
---- a/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/metrics/RequestMetrics.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/RequestMetrics.java
 @@ -76,7 +76,7 @@ public final class RequestMetrics extends OncePerRequestFilter {
              timers.withTags(CATALOG, catalog == null ? NONE : catalog.toString(),
                              OPERATION_ID, operation.get(),

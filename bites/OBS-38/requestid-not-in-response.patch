@@ -2,10 +2,10 @@ Breaks: responses no longer carry X-Request-ID.
 Module: catalog-server
 Test: TelemetryTest#everyResponseCarriesTheId
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
 index 1503ce8..c8bb89b 100644
---- a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
 @@ -48,7 +48,6 @@ public final class RequestIds extends OncePerRequestFilter {
              id = traceId();
          }

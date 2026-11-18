@@ -1,10 +1,10 @@
 Breaks: anyone signed in may read a maintenance policy, without describe on its target.
 Module: catalog-server
 Test: ManagementAuthorizationTest#readingTheMaintenancePolicyNeedsDescribe
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 index 58e0044..1d5baa8 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 @@ -216,7 +216,6 @@ class GovernanceRoutes {
                                    @PathVariable(required = false) String view,
                                    HttpServletRequest http) {

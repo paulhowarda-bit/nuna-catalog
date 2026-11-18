@@ -2,10 +2,10 @@ Breaks: register-view takes the file of an active view, whose UUID is held, and 
 Module: catalog-core
 Test: RegisteringTest$RegisteringViews#uuidTaken
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index be30cbe..717eb6d 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -512,8 +512,7 @@ public final class CommitEngine {
          ObjectName name = request.name();
          CatalogObject.Kind kind = request.operation().kind;

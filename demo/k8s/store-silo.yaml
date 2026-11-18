@@ -18,8 +18,8 @@ spec:
           imagePullPolicy: Never
           args: ["server", "/data", "--console-address", ":9001"]
           env:
-            - {name: MINIO_ROOT_USER, value: keeltest}
-            - {name: MINIO_ROOT_PASSWORD, value: keeltest-secret-key}
+            - {name: MINIO_ROOT_USER, value: nunatest}
+            - {name: MINIO_ROOT_PASSWORD, value: nunatest-secret-key}
           ports:
             - containerPort: 9000
             - containerPort: 9001

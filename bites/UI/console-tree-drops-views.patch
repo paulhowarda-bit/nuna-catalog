@@ -2,10 +2,10 @@ Breaks: The console's tree lists a namespace's tables but not its views.
 Module: catalog-server
 Test: ConsoleBrowserTest#theTreeOpensDownToTablesAndViews
 
-diff --git a/catalog-server/src/main/resources/keel/ui/app.js b/catalog-server/src/main/resources/keel/ui/app.js
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
 index 5e7d162..c4e5b7f 100644
---- a/catalog-server/src/main/resources/keel/ui/app.js
-+++ b/catalog-server/src/main/resources/keel/ui/app.js
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
 @@ -226,7 +226,6 @@ function children(levels) {
    const items = [
      ...c.namespaces.map(n => namespaceItem([...levels, n])),

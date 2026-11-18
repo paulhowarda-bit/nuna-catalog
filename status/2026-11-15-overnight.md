@@ -1,7 +1,7 @@
 # 2026-11-15, the first overnight run
 
 Run by hand at 06:14 on Paul's word (`overnight-task.ps1 -Force` from a one-off Task Scheduler task, deadline 12:00
-instead of 06:30), on `main` at 071d2cc. Ended 09:50, 216 min. Logs: `C:\Users\paulh\code\keel-overnight\runs\2026-11-15`.
+instead of 06:30), on `main` at 071d2cc. Ended 09:50, 216 min. Logs: `C:\Users\paulh\code\nuna-overnight\runs\2026-11-15`.
 
 | Leg | Result | Time |
 |---|---|---|
@@ -21,7 +21,7 @@ instead of 06:30), on `main` at 071d2cc. Ended 09:50, 216 min. Logs: `C:\Users\p
   catalog-tests-conformance 0, catalog-tests-engines 5, catalog-tests-load 11, catalog-tests-s3 0,
   singlestore-change-feed 0. The engine matrix ran Spark's `replace.required` and `replace.retype` lines. Backlog 2
   is done.
-- keel-demo was up; the run took it down at 06:14 and rebuilt it with `demo/demo.sh up` at 09:50, which worked.
+- nuna-demo was up; the run took it down at 06:14 and rebuilt it with `demo/demo.sh up` at 09:50, which worked.
 
 Not covered: the Ceph leg (backlog 32). The midnight start from Task Scheduler has not run yet; this run went through
 the same `overnight-task.ps1`, started by a one-off task.

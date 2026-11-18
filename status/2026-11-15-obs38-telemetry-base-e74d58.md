@@ -33,14 +33,14 @@ Checked:
   slower than 2 s, with 4 s export timeouts), and the worker's `TelemetryTest` (4, one starting the worker in a JVM of
   its own with the `OTEL_*` variables alone).
 - Bites, `bites/run.sh` on each: all 12 in `bites/OBS-38/` BITES, each on its intended assertion. Two were run twice:
-  `principal-in-labels` was SETUP the first time (Flyway's 30 s, with the keel-demo stack and another build in Docker)
+  `principal-in-labels` was SETUP the first time (Flyway's 30 s, with the nuna-demo stack and another build in Docker)
   and `refusal-own-id` first failed at table creation on a Silo read timeout; both then bit on their checks.
   `worker-metrics-export-always` did not bite at first: the worker's tests carry the server's jar and its rule, so a
   new test, `withNoEndpointMetricsStayOff`, checks the worker's rule and its registration directly.
 - `helm template` and `helm lint` on both charts, with and without an endpoint, headers Secret and CA.
 - The fast build, `./gradlew build`, after merging main (4acb145): green on the second run, catalog-server's 139
   tests among it. The first run failed one test, `TwoIssuersTest#aTokenFromAnUntrustedIssuerIsRefused`, on a connection
-  reset from the Keycloak container's token endpoint, before the catalog was called, with the keel-demo stack and
+  reset from the Keycloak container's token endpoint, before the catalog was called, with the nuna-demo stack and
   another session's build in Docker. An earlier run stopped at `:bitesApply` on the M5 bite above. After merging main
   again (4eba722, backlog 37): green on the first run, every bite applying.
 

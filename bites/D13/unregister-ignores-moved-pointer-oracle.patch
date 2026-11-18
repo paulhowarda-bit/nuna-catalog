@@ -2,10 +2,10 @@ Breaks: unregister ignores a main pointer moved since it was read, so it applies
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#unregisterRefusals
 
-diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
 index c5c88d0..4ff5746 100644
---- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
-+++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/OracleObjects.java
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
 @@ -143,7 +143,7 @@ final class OracleObjects {
              if (locked.isEmpty()) {
                  return new WriteResult.Missing(WriteResult.Subject.OBJECT);

@@ -2,10 +2,10 @@ Breaks: pointing main back at a snapshot the table had counts as a replace, so a
 Module: catalog-iceberg
 Test: BackstopTest$Schemas#aRollbackOfMainThatAlsoRetypesIsRefused
 
-diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Backstops.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Backstops.java
 index 899b3d7..4148c7b 100644
---- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
-+++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Backstops.java
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Backstops.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Backstops.java
 @@ -123,7 +123,7 @@ final class Backstops {
       */
      private static boolean replaced(TableMetadata before, TableMetadata after, boolean keepsRows) {

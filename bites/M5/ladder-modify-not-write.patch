@@ -2,10 +2,10 @@ Breaks: MODIFY no longer implies write.
 Module: catalog-security
 Test: SeparationTest#theLadderImpliesDownwardOnly
 
-diff --git a/catalog-security/src/main/java/keel/catalog/security/Privilege.java b/catalog-security/src/main/java/keel/catalog/security/Privilege.java
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Privilege.java b/catalog-security/src/main/java/nuna/catalog/security/Privilege.java
 index f4ea5e3..73804f0 100644
---- a/catalog-security/src/main/java/keel/catalog/security/Privilege.java
-+++ b/catalog-security/src/main/java/keel/catalog/security/Privilege.java
+--- a/catalog-security/src/main/java/nuna/catalog/security/Privilege.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Privilege.java
 @@ -44,7 +44,7 @@ public enum Privilege {
              return true;
          }

@@ -1,10 +1,10 @@
 Breaks: each failure is counted under a label holding its message, which names the table or object: a series per table, and names in every dashboard.
 Module: catalog-maintenance
 Test: WorkerMetricsTest#labelsHoldOnlyAKindOrAnOutcome
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 index 816a4c1..b6b3f31 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 @@ -136,7 +136,8 @@ final class WorkerMetrics {
          } finally {
              boolean success = ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST);

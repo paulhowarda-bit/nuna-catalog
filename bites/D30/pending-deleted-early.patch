@@ -1,10 +1,10 @@
 Breaks: the due-deletion scan lists every pending deletion, so the worker deletes a file before its not-before time.
 Module: catalog-maintenance
 Test: PendingDeletionTest#pendingDeletionsWaitForTheirTime
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java
 index ae3507e..a211fbd 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java
 @@ -76,7 +76,7 @@ final class SqlDeletions {
              }
              parameters.add(page.size() + 1);

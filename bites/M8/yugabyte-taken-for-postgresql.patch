@@ -2,10 +2,10 @@ Breaks: a YugabyteDB server is taken for PostgreSQL instead of being refused.
 Module: catalog-store-sql
 Test: UnsupportedBackendTest
 
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java
 index a00c7c0..c188ad0 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Backend.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Backend.java
 @@ -65,10 +65,6 @@ enum Backend {
          if (version.startsWith("CockroachDB")) {
              return COCKROACHDB;

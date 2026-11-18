@@ -1,10 +1,10 @@
 Breaks: A transaction may name one table twice.
 Module: catalog-server
 Test: RestRoutesTest#transactionsCommitEveryTableOrNone
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 index 307e2ee..90d527c 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 @@ -72,9 +72,7 @@ class TransactionRoutes {
              CatalogObject object = lookup.object(namespace, table, Kind.TABLE)
                      .orElseThrow(() -> Http.noSuchTable(qualified));

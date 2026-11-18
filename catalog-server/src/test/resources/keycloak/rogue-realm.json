@@ -38,14 +38,14 @@
       "fullScopeAllowed": false,
       "protocolMappers": [
         {
-          "name": "keel-audience",
+          "name": "nuna-audience",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-audience-mapper",
           "config": {
             "access.token.claim": "true",
             "id.token.claim": "false",
             "userinfo.token.claim": "false",
-            "included.custom.audience": "keel-catalog"
+            "included.custom.audience": "nuna-catalog"
           }
         },
         {

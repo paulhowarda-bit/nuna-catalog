@@ -2,10 +2,10 @@ Breaks: a client may set a new file IO property such as s3.endpoint, only not ch
 Module: catalog-objectstore
 Test: StorageRulesTest#noFileIoProperties
 
-diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageRules.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageRules.java
 index b7b0dce..80adab6 100644
---- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java
-+++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/StorageRules.java
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageRules.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageRules.java
 @@ -50,7 +50,7 @@ public final class StorageRules {
          Map<String, String> before = change.before() == null ? Map.of() : change.before().properties();
          for (Map.Entry<String, String> property : change.after().properties().entrySet()) {

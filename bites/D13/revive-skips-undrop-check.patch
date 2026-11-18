@@ -2,10 +2,10 @@ Breaks: registering a dropped table's own file brings it back without asking for
 Module: catalog-core
 Test: RegisteringTest$Reviving#undropRefused
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index be30cbe..37df59c 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -525,7 +525,6 @@ public final class CommitEngine {
                  return new Failure(409, "UndropWindowClosedException", "The undrop window of " + holder.id()
                          + " closed at " + holder.purgeAfter().get() + "; it is waiting to be purged");

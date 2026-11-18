@@ -1,0 +1,153 @@
+# nuna-catalog. One release is one deployment: one database and any number of catalogs (D28). The servers
+# are stateless; the database, Kafka, object stores and identity provider run elsewhere (D36) and are named
+# in `config` and `secrets`. See deploy/README.md.
+
+# One per zone of the region's three (D37). Any number can run against one database.
+replicaCount: 3
+
+image:
+  repository: nuna-catalog
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The server's settings, as Spring Boot properties in YAML form: rendered into application.yaml in a ConfigMap.
+# Nothing secret goes here; secrets go in `secrets`. Every nuna.* setting is documented on its settings class
+# in catalog-server (DatabaseSettings, StorageSettings, SecuritySettings, AuditSettings, GovernanceSettings,
+# RestSettings, UiSettings, HealthSettings). The server refuses to start without its database or a trusted issuer.
+# The chart sets nuna.health.peers itself, to its headless Service (templates/service-peers.yaml).
+config:
+  spring:
+    datasource:
+      # jdbc:postgresql://<host>:<port>/<database>, or jdbc:oracle:thin:@//<host>:<port>/<catalog service>.
+      # Unused on MongoDB.
+      url: ""
+      username: ""
+  nuna:
+    database:
+      # postgresql (PostgreSQL or CockroachDB), oracle or mongodb; deploy/README.md, "The database". MongoDB's
+      # connection string goes in `secrets`, as nuna.database.mongodb.uri.
+      backend: postgresql
+    security:
+      # Each: issuer, jwks-uri, audiences, algorithms, user-id-claim, groups-claim, client-id-claim.
+      issuers: []
+      grant-admin-groups: []
+      platform-operator-groups: []
+    storage:
+      # Each: kind, endpoint, region, table-root, allowed-prefixes, sts-role, access-key-id, and
+      # maintenance-principal, the maintenance worker's own storage identity (deploy/README.md, delete rights).
+      profiles: {}
+      catalogs: {}
+    audit:
+      kafka-bootstrap-servers: ""
+
+# Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
+# the property's value, e.g. spring.datasource.password or nuna.storage.profiles.<profile>.secret-access-key.
+secrets:
+  # A Secret you manage in the release's namespace. Takes precedence over `values`.
+  existingSecret: ""
+  # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
+  values: {}
+
+# The JVM sizes its heap from the container's memory limit.
+javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+
+# Extra environment variables for the server container.
+env: []
+
+# Metrics, traces and logs over OTLP/HTTP (docs/observability/README.md). Nothing is exported until an endpoint is
+# named; stdout gets JSON log lines either way. The chart sets the standard OTEL_* variables, which Spring Boot reads.
+telemetry:
+  # The collector's OTLP/HTTP base URL, e.g. http://otel-collector.observability:4318 (OTEL_EXPORTER_OTLP_ENDPOINT);
+  # /v1/metrics, /v1/traces and /v1/logs are added to it. OTLP over gRPC is not supported.
+  endpoint: ""
+  # Headers sent with every export, as name=value pairs separated by commas (OTEL_EXPORTER_OTLP_HEADERS), e.g. a
+  # tenant id. Credentials go in headersSecret, which takes precedence.
+  headers: ""
+  # A Secret in the release's namespace that holds the headers, in the same form, under `key`.
+  headersSecret:
+    name: ""
+    key: headers
+  # A ConfigMap in the release's namespace that holds, under `key`, the PEM certificate of the CA that signed the
+  # collector's, for an https endpoint (OTEL_EXPORTER_OTLP_CERTIFICATE).
+  caConfigMap:
+    name: ""
+    key: ca.crt
+  # The share of new traces recorded and exported, 0 to 1; a request whose caller's trace is sampled is always
+  # recorded (parentbased_traceidratio).
+  sampling: "0.1"
+  # Resource attributes beside the ones the chart sets (service.name, service.namespace, service.version,
+  # service.instance.id, k8s.namespace.name, k8s.pod.name, k8s.node.name), e.g. {deployment.environment.name: prod}.
+  resourceAttributes: {}
+
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    memory: 2Gi
+
+service:
+  type: ClusterIP
+  port: 8181
+  # None spreads requests over every server. A conditional load (304) is only answered by the server that
+  # minted the caller's credentials; see deploy/README.md before choosing ClientIP.
+  sessionAffinity: None
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: catalog.example.internal
+  # e.g. [{secretName: catalog-tls, hosts: [catalog.example.internal]}]
+  tls: []
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  # e.g. eks.amazonaws.com/role-arn for IRSA: the AWS SDK's default chain then vends from that role.
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+# Spread over zones first, then nodes. The chart adds the release's pod selector to each.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# Long enough for the preStop pause and Spring's graceful shutdown (30 s) to finish in-flight requests.
+terminationGracePeriodSeconds: 45
+
+# Start-up runs the schema migrations, so it may take minutes on the first start of a release.
+startupProbe:
+  periodSeconds: 5
+  failureThreshold: 120
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

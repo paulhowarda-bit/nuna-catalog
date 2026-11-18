@@ -2,10 +2,10 @@ Breaks: A held pointer is compared by a plain read and not locked, so it can mov
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest#holdLastsUntilCommit
 
-diff --git a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
 index 2ab14c7..c124e61 100644
---- a/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java
-+++ b/catalog-store-oracle/src/main/java/keel/catalog/store/oracle/Pointers.java
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
 @@ -84,7 +84,7 @@ final class Pointers {
              boolean matched = switch (lock) {
                  case PointerSwap swap when swap.expected().isEmpty() -> created(connection, swap, batch);

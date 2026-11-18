@@ -2,10 +2,10 @@ Breaks: setting or removing classification, owner or retention class writes no l
 Module: catalog-server
 Test: GovernanceRoutesTest#loadsCarryTheEffectiveLabelsAndALabelChangeChangesTheETag
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 index d7e931c..0999acf 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 @@ -367,7 +367,7 @@ class GovernanceRoutes {
       */
      private static List<EventData> events(GovernanceChange change, GovernanceAttribute.Kind kind, String value) {

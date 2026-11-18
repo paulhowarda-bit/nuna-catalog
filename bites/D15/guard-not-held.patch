@@ -2,10 +2,10 @@ Breaks: A transaction does not hold its read guards, so a guarded table can move
 Module: catalog-core
 Test: TransactionTest$Retrying#guardMovedBeforeTheSwap
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index 8bc44f8..ff95515 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -897,7 +897,8 @@ public final class CommitEngine {
                                  && governance.get(i).regulated();
                          planned.add(new Planned(object, base, changed, json, regulated));

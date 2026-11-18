@@ -1,10 +1,10 @@
 Breaks: expiry deletes the files it leaves unreferenced through the table's own FileIO instead of handing them to the catalog's pending-deletion list.
 Module: catalog-maintenance
 Test: SnapshotExpiryTest#expiryQueuesOnlyUnreachableFiles
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/TableJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/TableJobs.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/TableJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/TableJobs.java
 index 14d0083..43ff255 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/TableJobs.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/TableJobs.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/TableJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/TableJobs.java
 @@ -36,8 +36,7 @@ final class TableJobs {
                  .expireOlderThan(now.minus(maxAge).toEpochMilli())
                  .retainLast(retainLast)

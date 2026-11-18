@@ -1,16 +1,16 @@
 Breaks: compaction runs with no namespace of its own named for the Jobs.
 Module: catalog-maintenance
 Test: TokenSourceTest#compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
 index e36506b..a8edbf3 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerSettings.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
 @@ -56,7 +56,7 @@ public record WorkerSettings(
                          + " the Job's Iceberg client always asks for a scope (\"catalog\" when none is set), so the"
                          + " worker's own token request names the same one");
              }
 -            if (compaction.namespace() == null || compaction.namespace().isBlank()) {
 +            if (false) {
-                 throw new IllegalArgumentException("keel.maintenance.compaction.namespace must name a namespace for"
+                 throw new IllegalArgumentException("nuna.maintenance.compaction.namespace must name a namespace for"
                          + " the Jobs alone, never the catalog's or the worker's: a pod may run as any service"
                          + " account and mount any Secret of its namespace");

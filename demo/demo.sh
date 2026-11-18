@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The local demo of keel-catalog, on Docker Desktop's Kubernetes: the stack it shares with the engine matrix
+# The local demo of nuna-catalog, on Docker Desktop's Kubernetes: the stack it shares with the engine matrix
 # (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
 #
 #   demo/demo.sh up       build the jars and images, start the stack, load sample data once, print tokens
@@ -18,25 +18,25 @@
 #                         and the certificate)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
-# Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use KEEL_DEMO_CONTEXT (default
-# docker-desktop), never the current context, and the stack is namespace KEEL_DEMO_NAMESPACE (default
-# keel-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
+# Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
+# docker-desktop), never the current context, and the stack is namespace NUNA_DEMO_NAMESPACE (default
+# nuna-demo). Docker Desktop's cluster runs images from the local Docker engine and serves LoadBalancer
 # Services on localhost. The signing key, tokens, Keycloak's keys and the certificate are kept in
-# KEEL_DEMO_HOME (default ~/.keel-demo).
+# NUNA_DEMO_HOME (default ~/.nuna-demo).
 #
-# Every page is HTTPS, at https://<KEEL_DEMO_HOST>:<port> (default localhost), with the certificate in
-# $KEEL_DEMO_HOME/tls (publish_tls). At work, put work's certificate there and set KEEL_DEMO_HOST to its name
+# Every page is HTTPS, at https://<NUNA_DEMO_HOST>:<port> (default localhost), with the certificate in
+# $NUNA_DEMO_HOME/tls (publish_tls). At work, put work's certificate there and set NUNA_DEMO_HOST to its name
 # (docs/install-at-work.md).
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUN="${KEEL_DEMO_HOME:-$HOME/.keel-demo}"
-CONTEXT="${KEEL_DEMO_CONTEXT:-docker-desktop}"
-NS="${KEEL_DEMO_NAMESPACE:-keel-demo}"
-DEMO_HOST="${KEEL_DEMO_HOST:-localhost}"
+RUN="${NUNA_DEMO_HOME:-$HOME/.nuna-demo}"
+CONTEXT="${NUNA_DEMO_CONTEXT:-docker-desktop}"
+NS="${NUNA_DEMO_NAMESPACE:-nuna-demo}"
+DEMO_HOST="${NUNA_DEMO_HOST:-localhost}"
 TLS="$RUN/tls"
 STACK="$REPO/demo/k8s"
-RELEASE=keel-catalog
+RELEASE=nuna-catalog
 URL="https://$DEMO_HOST:8181"
 # demo.sh's own calls: they trust the certificate's CA, and reach the ports on this machine whatever the name
 # resolves to. Git Bash's curl checks certificates with Windows (Schannel), which fails a CA that names no
@@ -45,7 +45,7 @@ CURL_TLS=(--cacert "$TLS/ca.crt" --ssl-revoke-best-effort --connect-to "$DEMO_HO
 CATALOG=lakehouse
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # SingleStore's root password, as demo/k8s/singlestore.yaml sets it. Local only.
-S2_ROOT_PASSWORD=keel-test
+S2_ROOT_PASSWORD=nuna-test
 KAFKA_UI_IMAGE=kafbat/kafka-ui:v1.5.0
 SINGLESTORE_IMAGE=
 TRINO_IMAGE=trinodb/trino:484
@@ -58,7 +58,7 @@ CONNECT_URL="https://$DEMO_HOST:8186"
 # The front door (ports.yaml): TLS on every port the demo publishes.
 NGINX_IMAGE=nginx:1.30.6-alpine
 # SQL*Plus's login to the CDC leg's Oracle as user treasury (demo/cdc/oracle.sql). Local only.
-ORACLE_TREASURY=treasury/\"keel-test\"@//localhost:1521/FREEPDB1
+ORACLE_TREASURY=treasury/\"nuna-test\"@//localhost:1521/FREEPDB1
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 
@@ -75,7 +75,7 @@ annotate_tokens() {
   local deployment
   for deployment in trino cloudbeaver; do
     k patch deployment "$deployment" --type merge \
-      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"keel-demo/tokens\":\"$(tokens_hash)\"}}}}}" >/dev/null
+      -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"nuna-demo/tokens\":\"$(tokens_hash)\"}}}}}" >/dev/null
   done
 }
 
@@ -162,7 +162,7 @@ image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -
 build() {
   say "building the catalog server and change-feed connector jars (no tests run)"
   (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :singlestore-change-feed:connectorJar)
-  local jar="$REPO/singlestore-change-feed/build/libs/keel-changefeed-connector.jar"
+  local jar="$REPO/singlestore-change-feed/build/libs/nuna-changefeed-connector.jar"
   rm -rf "$RUN/images"
   mkdir -p "$RUN/images/singlestore" "$RUN/images/lake/lib"
   cp "$jar" "$RUN/images/singlestore/"
@@ -170,16 +170,16 @@ build() {
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
 
   say "building the images: the catalog, SingleStore with the connector, the lake writer, CloudBeaver"
-  docker build -q -f "$REPO/deploy/image/Dockerfile" -t keel-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
+  docker build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
   # Studio's SAML address, in the image, names the host.
-  SINGLESTORE_IMAGE="keel-demo-singlestore:$( (cat "$jar" "$STACK/singlestore.Dockerfile"; echo "$DEMO_HOST") \
+  SINGLESTORE_IMAGE="nuna-demo-singlestore:$( (cat "$jar" "$STACK/singlestore.Dockerfile"; echo "$DEMO_HOST") \
     | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/singlestore.Dockerfile" --build-arg "DEMO_HOST=$DEMO_HOST" -t "$SINGLESTORE_IMAGE" \
     "$RUN/images/singlestore" >/dev/null
-  docker build -q -f "$STACK/lake.Dockerfile" -t keel-demo-lake:local "$RUN/images/lake" >/dev/null
+  docker build -q -f "$STACK/lake.Dockerfile" -t nuna-demo-lake:local "$RUN/images/lake" >/dev/null
   mkdir -p "$RUN/images/cloudbeaver"
   cp "$REPO/demo/CloudBeaverUsers.java" "$STACK/cloudbeaver-signin.conf" "$RUN/images/cloudbeaver/"
-  CLOUDBEAVER_IMAGE="keel-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
+  CLOUDBEAVER_IMAGE="nuna-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
     "$STACK/cloudbeaver-signin.conf" | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
 
@@ -217,7 +217,7 @@ publish_keycloak_keys() {
     # In the folder, with bare file names: Git Bash must not turn the subject into a path, and its openssl, a
     # Windows program, cannot open /c/... paths that Git Bash has not turned into Windows ones.
     (cd "$dir" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -newkey rsa:2048 -nodes -days 3650 \
-      -subj "/CN=keel-demo-keycloak" -keyout realm-private-key.pem -out realm-certificate.pem.new)
+      -subj "/CN=nuna-demo-keycloak" -keyout realm-private-key.pem -out realm-certificate.pem.new)
     openssl rand -hex 24 > "$dir/cloudbeaver-client-secret"
     openssl rand -hex 16 > "$dir/cloudbeaver-cookie-secret"
     mv "$dir/realm-certificate.pem.new" "$dir/realm-certificate.pem"
@@ -257,7 +257,7 @@ publish_tls() {
     say "making the demo's CA and a certificate from it for localhost, in $TLS"
     # In the folder, with bare file names, as in publish_keycloak_keys.
     (cd "$TLS" && MSYS_NO_PATHCONV=1 openssl req -quiet -x509 -newkey rsa:3072 -nodes -days 3650 \
-      -subj "/CN=keel demo CA" -addext "basicConstraints=critical,CA:TRUE" \
+      -subj "/CN=nuna demo CA" -addext "basicConstraints=critical,CA:TRUE" \
       -addext "keyUsage=critical,keyCertSign,cRLSign" \
       -addext "nameConstraints=critical,permitted;DNS:localhost,permitted;IP:127.0.0.0/255.0.0.0" \
       -keyout ca.key -out ca.crt 2>/dev/null)
@@ -277,7 +277,7 @@ publish_tls() {
     fi
   done
   if ! (cd "$TLS" && openssl x509 -checkhost "$DEMO_HOST" -noout -in tls.crt >/dev/null); then
-    echo "$TLS/tls.crt is not for $DEMO_HOST (KEEL_DEMO_HOST); it names: $(cd "$TLS" \
+    echo "$TLS/tls.crt is not for $DEMO_HOST (NUNA_DEMO_HOST); it names: $(cd "$TLS" \
       && openssl x509 -noout -ext subjectAltName -in tls.crt | tail -n +2 | tr -d ' ')" >&2
     return 1
   fi
@@ -470,7 +470,7 @@ The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the cons
 Studio ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
 Studio asks only the username, then "Sign in with SAML". To change user, use CloudBeaver's Logout (it ends
 Keycloak's session too), or sign out of each UI and of Keycloak
-($web:8180/realms/keel/protocol/openid-connect/logout, then Logout), or use a private window.
+($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
 To show everything in one sign-in, use presenter / presenter-demo in the console and kafbat: all four people's
 groups at once. CloudBeaver and Studio have no presenter.
 
@@ -486,14 +486,14 @@ $(token_of gary)
 Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix, Kafka Connect
 and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc,trino}.jwt
 oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics, but only
-read the catalog's (keel.*), the Connect worker's and those starting with _. oscar reads kafbat's audit log.
+read the catalog's (nuna.*), the Connect worker's and those starting with _. oscar reads kafbat's audit log.
 Kafka:        kafbat on $web:8182
 SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
               Studio takes no passwords, so not root)
-Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to keel through
+Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to nuna through
               Trino with their own token, and to the CDC leg's databases
-Keycloak:     $web:8180/admin   (user admin, password keel-test; realm keel)
-Silo:         its console on $web:8184   (user keeltest, password keeltest-secret-key: the S3
+Keycloak:     $web:8180/admin   (user admin, password nuna-test; realm nuna)
+Silo:         its console on $web:8184   (user nunatest, password nunatest-secret-key: the S3
               store's root, which sees every bucket)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
@@ -511,7 +511,7 @@ cdc_running() { k get deployment connect >/dev/null 2>&1; }
 # Built on every cdc (and on every up while the leg runs), tagged with the hash of its Dockerfile and plugin
 # poms, so a change to either replaces the pod.
 build_connect() {
-  CONNECT_IMAGE="keel-demo-connect:$(cat "$STACK/connect.Dockerfile" "$REPO"/demo/cdc/plugins/*/pom.xml | sha256sum | cut -c1-12)"
+  CONNECT_IMAGE="nuna-demo-connect:$(cat "$STACK/connect.Dockerfile" "$REPO"/demo/cdc/plugins/*/pom.xml | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/connect.Dockerfile" -t "$CONNECT_IMAGE" "$REPO/demo/cdc/plugins" >/dev/null
 }
 
@@ -716,7 +716,7 @@ EOF
 # again, and from a pod of their own: a Kafka tool in the broker's pod could push it past its memory limit.
 cdc_stop() {
   say "deleting the CDC leg: its databases, Kafka Connect, and its Kafka topics (the history tables stay)"
-  k delete deployment,service,configmap -l keel-demo/cdc=true --ignore-not-found >/dev/null
+  k delete deployment,service,configmap -l nuna-demo/cdc=true --ignore-not-found >/dev/null
   k delete configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
   k wait --for=delete pod -l 'app in (backoffice, oracle, cockroach, connect)' --timeout=3m >/dev/null 2>&1 || true
   k delete pod cdc-cleanup --ignore-not-found >/dev/null
@@ -724,7 +724,7 @@ cdc_stop() {
     --image-pull-policy=Never --env=KAFKA_HEAP_OPTS=-Xmx128m --command -- sh -c '
       bin=/opt/kafka/bin; kafka=--bootstrap-server=kafka:9092
       $bin/kafka-topics.sh $kafka --delete --if-exists --topic "cdc-connect-.*|backoffice.*|oracle.*|cockroach.*"
-      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|cockroach|keel-demo-cdc"); do
+      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|cockroach|nuna-demo-cdc"); do
         $bin/kafka-consumer-groups.sh $kafka --delete --group "$group" >/dev/null
       done' >/dev/null
   say "starting Trino again"
@@ -748,7 +748,7 @@ up() {
   k patch deployment kafka-ui --type strategic --patch "$(fill kafka-ui-signin.yaml)" >/dev/null
   apply store-silo.yaml
   fill keycloak-realm.json > "$RUN/keycloak-realm.json"
-  k create configmap keycloak-realm --from-file=keel.json="$RUN/keycloak-realm.json" --dry-run=client -o yaml \
+  k create configmap keycloak-realm --from-file=nuna.json="$RUN/keycloak-realm.json" --dry-run=client -o yaml \
     | k apply -f - >/dev/null
   apply keycloak.yaml
   k wait --for=condition=available --timeout=8m deployment/postgres deployment/kafka deployment/idp \
@@ -758,13 +758,13 @@ up() {
   apply seed.yaml
   k wait --for=condition=complete --timeout=3m job/seed >/dev/null
 
-  say "installing the catalog (chart deploy/helm/keel-catalog) and publishing it on $URL"
+  say "installing the catalog (chart deploy/helm/nuna-catalog) and publishing it on $URL"
   # The image's id as a pod annotation: a rebuilt image under the same tag rolls the server, an unchanged
   # one does not.
   fill demo-values.yaml > "$RUN/demo-values.yaml"
-  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/keel-catalog" \
+  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install "$RELEASE" "$REPO/deploy/helm/nuna-catalog" \
     -f "$STACK/catalog-values.yaml" -f "$RUN/demo-values.yaml" \
-    --set-string "podAnnotations.keel-demo/image=$(image_id keel-catalog:demo)" --wait --timeout 10m >/dev/null
+    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-catalog:demo)" --wait --timeout 10m >/dev/null
   # The server makes its tables only as it starts, so one that outlived its PostgreSQL pod is restarted.
   if [[ -z "$(k exec deployment/postgres -- psql -U catalog -d catalog -tAc "SELECT to_regclass('flyway_schema_history')")" ]]; then
     say "PostgreSQL is new and empty: restarting the catalog so it makes its tables"
