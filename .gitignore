@@ -8,5 +8,7 @@ target/
 *.iml
 .vscode/
 .claude/worktrees/
+# The overnight run's clone, logs and bookkeeping (overnight.sh): each machine makes its own.
+.overnight/
 .claude/settings.local.json
 .DS_Store

@@ -8,7 +8,7 @@ The Windows side of the overnight run (overnight.sh, which says what the run doe
   .\overnight-task.ps1 -Dry          the same with --dry (-Force: with --force)
 
 Register it from the main checkout, so the task runs the copy of overnight.sh that main has. Each start and end
-is logged to task.log in the overnight folder (nuna-overnight next to the main checkout), with PowerShell's
+is logged to task.log in the overnight folder (.overnight in the main checkout, gitignored), with PowerShell's
 transcript in task-transcript.log; an error before that folder is found goes to %TEMP%\nuna-overnight-task.log.
 #>
 param([switch]$Register, [switch]$Unregister, [string]$TaskName = 'nuna overnight', [switch]$Dry, [switch]$Force)
@@ -47,7 +47,7 @@ trap {
     exit 1
 }
 $common = (& git -C $PSScriptRoot rev-parse --path-format=absolute --git-common-dir)
-$home_ = Join-Path (Split-Path (Split-Path $common)) 'nuna-overnight'
+$home_ = Join-Path (Split-Path $common) '.overnight'
 New-Item -ItemType Directory -Force $home_ | Out-Null
 $log = Join-Path $home_ 'task.log'
 Start-Transcript -Path (Join-Path $home_ 'task-transcript.log') -Append | Out-Null
