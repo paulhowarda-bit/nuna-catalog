@@ -2,10 +2,10 @@ Breaks: STS AssumeRole for a vend is not observed.
 Module: catalog-server
 Test: SpanTreeTest#aCommitsSpanTree
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 index fb8c8ae..8181cf9 100644
---- a/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/storage/StsCredentialVending.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 @@ -107,9 +107,7 @@ public final class StsCredentialVending implements CredentialVending {
          SessionIdentity identity = new SessionIdentity(caller.principal().id(),
                  caller.endUser().map(Principal::id), caller.engine(), request.requestId(), request.catalog().name(),

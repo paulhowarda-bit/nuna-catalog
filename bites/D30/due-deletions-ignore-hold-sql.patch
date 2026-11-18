@@ -1,10 +1,10 @@
 Breaks: the due pending deletions (and the purge scan) ignore legal holds, so a held table's files are deleted.
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$CatalogObjects#pendingDeletionsWaitOutHoldsAndFreezes
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
 index e8d4f31..aac0eda 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
 @@ -40,8 +40,7 @@ final class SqlObjects {
       * No legal hold and no DR freeze on object {@code o}, a namespace above it or its catalog: what the
       * purge queue and the due pending deletions ask of an object (D24, D30, D37).

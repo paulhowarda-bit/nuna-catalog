@@ -2,10 +2,10 @@ Breaks: the engine unregisters whatever table holds the name, so one that took i
 Module: catalog-core
 Test: RegisteringTest$Unregistering#onlyTheAuthorizedTable
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index de49253..9579c23 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -617,8 +617,7 @@ public final class CommitEngine {
      private CommitReply unregister(Request request) {
          Optional<CatalogObject> found = store.findObject(request.name().namespaceId(),

@@ -2,10 +2,10 @@ Breaks: one profile's prefix may contain another's.
 Module: catalog-objectstore
 Test: ProfileOverlapTest#overlapIsRefused
 
-diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/ProfileOverlap.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/ProfileOverlap.java
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/ProfileOverlap.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/ProfileOverlap.java
 index 38b01e2..d3b62af 100644
---- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/ProfileOverlap.java
-+++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/ProfileOverlap.java
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/ProfileOverlap.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/ProfileOverlap.java
 @@ -45,6 +45,6 @@ public final class ProfileOverlap {
      }
  

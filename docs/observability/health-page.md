@@ -2,8 +2,8 @@
 
 The console's health dashboard (D38, backlog 48): catalog health for the whole deployment, for platform operators;
 the tables that need compaction, for anyone, each shown only to those who may read it; and on each table's page, its
-health. The page is `health.js` in `catalog-server/src/main/resources/keel/ui/` (the **Health** button in the top
-bar, `#p=health`); the server side is `catalog-server`, package `keel.catalog.server.health`.
+health. The page is `health.js` in `catalog-server/src/main/resources/nuna/ui/` (the **Health** button in the top
+bar, `#p=health`); the server side is `catalog-server`, package `nuna.catalog.server.health`.
 
 Prometheus, Grafana and the alert rules (catalog-metrics.md, worker-metrics.md) stay the place for paging and long
 history. The page answers "how does the catalog stand today" without them, from the catalog itself.
@@ -12,7 +12,7 @@ history. The page answers "how does the catalog stand today" without them, from 
 
 | Part | Shown to | Read from |
 |---|---|---|
-| Catalog health | Platform operators (`keel.security.platform-operator-groups`, SEC-1) | `GET /management/v1/health/catalog` and `GET /management/v1/maintenance/scans` |
+| Catalog health | Platform operators (`nuna.security.platform-operator-groups`, SEC-1) | `GET /management/v1/health/catalog` and `GET /management/v1/maintenance/scans` |
 | Tables that need compaction | Anyone; each table only to a caller with `select` on it | `GET /management/v1/maintenance/tables` (table-health.md) |
 | A table's health, its **Health** tab | Anyone with `select` on the table | `GET .../tables/{table}/health` (table-health.md) |
 
@@ -27,11 +27,11 @@ Over the last day, for the whole deployment:
 - **Alerts fired**, by kind: metadata integrity, regulated schema change, large metadata (catalog-metrics.md, "The
   alerts").
 - **The audit's Kafka acknowledgement**: records acknowledged, their mean time and p99, and publishes that failed
-  (`keel.audit.publish`, spans.md). A failed publish refused the request it audited (D23).
+  (`nuna.audit.publish`, spans.md). A failed publish refused the request it audited (D23).
 - **Credential vending**: vends issued, served from the cache, declined by a trusted engine, and failed, with the
-  failures by error type (`keel.catalog.credential.vends`).
+  failures by error type (`nuna.catalog.credential.vends`).
 - **Latency against the SLOs**: loads answered 200 (p99 under 50 ms), loads answered 304 (under 10 ms) and commits,
-  `updateTable` and `commitTransaction`, answered 200 (under 300 ms), from `keel.catalog.requests`. Each row gives the
+  `updateTable` and `commitTransaction`, answered 200 (under 300 ms), from `nuna.catalog.requests`. Each row gives the
   count, how many finished within the objective, and the verdict: met when at least 99 in 100 did, which is the p99
   being within it. The p99 column says which histogram bucket the p99 falls in (`≤ 10 ms`, `≤ 50 ms`, `≤ 300 ms`, or
   `> 300 ms`). A row with no request in the window has no verdict.
@@ -59,28 +59,28 @@ Each server holds only its own meters, so the server the browser reaches asks th
    kept.
 3. **Asking the others.** `GET /management/v1/health/server` answers this server's own counts over the last day.
    `GET /management/v1/health/catalog` adds every other server's to this one's. The others are found by DNS:
-   `keel.health.peers` lists `host:port` entries, and each host is resolved to every address it has and each address
-   asked, all at once. The Helm chart sets it to its headless Service, `<release>-keel-catalog-peers.<namespace>.svc:8181`
+   `nuna.health.peers` lists `host:port` entries, and each host is resolved to every address it has and each address
+   asked, all at once. The Helm chart sets it to its headless Service, `<release>-nuna-catalog-peers.<namespace>.svc:8181`
    (`templates/service-peers.yaml`), whose name resolves to the address of every ready server. The servers mount no
    service account token and call no Kubernetes API. A server reached at two addresses, or this server reached through
    the Service, is counted once, by the random id each server takes when it starts.
 4. **The operator's own token.** Each request to another server carries the caller's own `Authorization` header, which
    that server checks as it checks any caller's. The server asking has already found the caller to be an operator, so
    no one else's token ever leaves it. No new secret or credential is needed between servers.
-5. **A server that does not answer** within `keel.health.peer-timeout` (3 s by default), refuses, or answers something
+5. **A server that does not answer** within `nuna.health.peer-timeout` (3 s by default), refuses, or answers something
    other than a server's health is listed with why ("could not connect", "no answer in time", "answered 403
    ForbiddenException"), and the page says its figures are missing. Nothing is guessed for it.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `keel.health.peers` | empty: this server alone | `host:port` entries; the chart sets its headless Service (`KEEL_HEALTH_PEERS`) |
-| `keel.health.peer-timeout` | `3s` | How long another server has to connect and answer |
+| `nuna.health.peers` | empty: this server alone | `host:port` entries; the chart sets its headless Service (`NUNA_HEALTH_PEERS`) |
+| `nuna.health.peer-timeout` | `3s` | How long another server has to connect and answer |
 
 The answers, for anyone scripting against them (platform operators only):
 
 ```json
 GET /management/v1/health/server
-{"server": {"id": "…", "name": "keel-catalog-6c9d…", "started-at": "…"}, "from": "…", "to": "…",
+{"server": {"id": "…", "name": "nuna-catalog-6c9d…", "started-at": "…"}, "from": "…", "to": "…",
  "figures": {"alerts.metadata-integrity": 0, "load": 1203, "load.le.10": 1100, "load.le.50": 1199, …}}
 
 GET /management/v1/health/catalog

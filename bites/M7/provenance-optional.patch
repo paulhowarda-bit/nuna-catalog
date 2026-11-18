@@ -2,10 +2,10 @@ Breaks: a pushed attribute without provenance is accepted.
 Module: catalog-server
 Test: GovernanceRoutesTest#pushedAttributesKeepTheirProvenanceAndTheNearestLevelWins
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 index 501b568..4e7137e 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 @@ -127,7 +127,7 @@ class GovernanceRoutes {
          guard.require(request, target, "setGovernanceAttribute", Privilege.MANAGE_TAGS);
          JsonNode json = Management.body(body);

@@ -4,7 +4,7 @@
 USE lake;
 
 CREATE PIPELINE xetra_trades_load AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "lakehouse",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "lakehouse",
          "table_id": "markets.equities.eu.xetra.trades", "catalog.token": "${SINGLESTORE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "http://s3:9000", "region": "us-east-1", "ingest_mode": "one_time"}'
@@ -16,7 +16,7 @@ SET trade_ts = DATE_ADD('1970-01-01', INTERVAL @trade_ts MICROSECOND);
 START PIPELINE xetra_trades_load FOREGROUND;
 
 CREATE PIPELINE countries_load AS LOAD DATA S3 ''
-CONFIG '{"catalog_type": "REST", "catalog.uri": "http://keel-catalog:8181", "catalog.warehouse": "lakehouse",
+CONFIG '{"catalog_type": "REST", "catalog.uri": "http://nuna-catalog:8181", "catalog.warehouse": "lakehouse",
          "table_id": "reference.countries", "catalog.token": "${SINGLESTORE_TOKEN}",
          "catalog.header.X-Iceberg-Access-Delegation": "vended-credentials", "iceberg_vended_credentials": true,
          "endpoint_url": "http://s3:9000", "region": "us-east-1", "ingest_mode": "one_time"}'

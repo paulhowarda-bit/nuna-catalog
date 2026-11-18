@@ -2,10 +2,10 @@ Breaks: The catalog store is not observed: no store span or timer beneath a requ
 Module: catalog-server
 Test: SpanTreeTest#aCommitsSpanTree
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
 index dbadbea..90a6893 100644
---- a/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/StoreWiring.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
 @@ -30,7 +30,7 @@ class StoreWiring {
                                ObjectProvider<MongoClient> mongoClient, ObservationRegistry observations) {
          CatalogStore store = store(settings, dataSource, mongoClient);

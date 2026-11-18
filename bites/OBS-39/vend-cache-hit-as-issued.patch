@@ -2,10 +2,10 @@ Breaks: a credential vend served from the cache is counted as a new issue.
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#cachedVendsAreCountedApartFromNewIssues
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 index a177601..f7f937b 100644
---- a/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/metrics/CatalogMetrics.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/metrics/CatalogMetrics.java
 @@ -110,7 +110,7 @@ public final class CatalogMetrics {
          String error = NONE;
          try {

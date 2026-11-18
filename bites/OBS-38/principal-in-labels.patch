@@ -2,10 +2,10 @@ Breaks: each request's span and metrics are labelled with the principal.
 Module: catalog-server
 Test: TelemetryTest#noPersonOrFilterValueInLabelsOrAttributes
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
 index 5418235..521fbe3 100644
---- a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
 @@ -106,6 +106,8 @@ final class Authentication extends OncePerRequestFilter {
              return;
          }

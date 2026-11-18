@@ -1,10 +1,10 @@
 Breaks: any worker completes a purge another worker claimed.
 Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$CatalogObjects#purgeIsClaimedThenCompleted
-diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 index 71e78ff..1d4fa56 100644
---- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
-+++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 @@ -329,9 +329,6 @@ final class MongoObjects {
              if (object.isEmpty()) {
                  return new WriteResult.Missing(WriteResult.Subject.OBJECT);

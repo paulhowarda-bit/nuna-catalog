@@ -1,10 +1,10 @@
 Breaks: the orphan scan ignores the policy's orphan age, so a file a writer has written but not yet committed is taken for an orphan.
 Module: catalog-maintenance
 Test: OrphanScanTest#youngOrphansAreKept
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java b/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java b/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java
 index 4b58879..348ae52 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java
 @@ -76,7 +76,7 @@ final class OrphanScan {
              if (!open.getAsBoolean()) {
                  throw new CutShort(root);

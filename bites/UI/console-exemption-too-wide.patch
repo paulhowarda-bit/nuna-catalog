@@ -2,9 +2,9 @@ Breaks: Every path under /ui skips authentication, not only the console's own fi
 Module: catalog-server
 Test: ConsoleTest#onlyTheConsoleFilesSkipAuthentication
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
---- a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
 @@ -74,7 +74,7 @@
          String path = request.getRequestURI().substring(request.getContextPath().length());
          // The fixed OAuth error names the IdP for clients that have no token yet (D13). The console's own files

@@ -2,10 +2,10 @@ Breaks: An object store span carries the table's location as an attribute.
 Module: catalog-server
 Test: SpanTreeTest#noPersonPathOrCredentialInAttributes
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java b/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedTableFiles.java b/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedTableFiles.java
 index 3ff144c..ba74b85 100644
---- a/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/tracing/ObservedTableFiles.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedTableFiles.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedTableFiles.java
 @@ -36,7 +36,8 @@ public final class ObservedTableFiles implements TableFiles {
  
      @Override

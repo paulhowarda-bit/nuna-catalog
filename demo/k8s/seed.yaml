@@ -16,5 +16,5 @@ spec:
           command: ["sh", "-ec"]
           args:
             - |
-              mc alias set s ${S3_ENDPOINT} keeltest keeltest-secret-key >/dev/null
+              mc alias set s ${S3_ENDPOINT} nunatest nunatest-secret-key >/dev/null
               mc mb --ignore-existing s/warehouse

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="nuna.catalog.iceberg.probe.ProbeNestedTest$AfterAllFails" tests="2" skipped="0" failures="1" errors="0" timestamp="2026-11-15T04:31:14.641Z" hostname="localhost" time="0.006">
+  <properties/>
+  <testcase name="one()" classname="nuna.catalog.iceberg.probe.ProbeNestedTest$AfterAllFails" time="0.001"/>
+  <testcase name="executionError" classname="nuna.catalog.iceberg.probe.ProbeNestedTest$AfterAllFails" time="0.0">
+    <failure message="java.lang.IllegalStateException: probe: @AfterAll failed" type="java.lang.IllegalStateException">java.lang.IllegalStateException: probe: @AfterAll failed
+	at nuna.catalog.iceberg.probe.ProbeNestedTest$AfterAllFails.stop(ProbeNestedTest.java:39)
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

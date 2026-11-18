@@ -1,10 +1,10 @@
 Breaks: the worker deletes a dropped object's files whatever its purge claim answers, so it deletes beneath an object another worker has claimed.
 Module: catalog-maintenance
 Test: PurgeTest#purgeRemovesThePrefixAfterAClaim
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 index 62b16e8..1581ffd 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 @@ -394,11 +394,7 @@ final class Worker implements AutoCloseable {
  
      /** Claims the object's purge, deletes its files and completes it: {@code purged}, or {@code skipped}. */

@@ -2,10 +2,10 @@ Breaks: the change stream leaves out label changes.
 Module: catalog-audit
 Test: ChangeStreamTest#fansOut
 
-diff --git a/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
 index 5d318d0..043d7dd 100644
---- a/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
-+++ b/catalog-audit/src/main/java/keel/catalog/audit/relay/ChangeStream.java
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
 @@ -19,8 +19,7 @@ public final class ChangeStream {
  
      /** The event types the change stream carries: what happened to namespaces, tables and views, and their labels. */

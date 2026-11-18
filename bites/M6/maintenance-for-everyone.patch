@@ -2,10 +2,10 @@ Breaks: every caller acting as itself is a maintenance principal, so anyone may 
 Module: catalog-server
 Test: ManagementAuthorizationTest#theWorkListIsForTheMaintenancePrincipal
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/SecuritySettings.java b/catalog-server/src/main/java/keel/catalog/server/security/SecuritySettings.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java b/catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java
 index 1d19911..30a0228 100644
---- a/catalog-server/src/main/java/keel/catalog/server/security/SecuritySettings.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/SecuritySettings.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/SecuritySettings.java
 @@ -48,7 +48,7 @@ public record SecuritySettings(
  
      /** Whether the caller is a maintenance principal acting as itself; one acting for an end user is not. */

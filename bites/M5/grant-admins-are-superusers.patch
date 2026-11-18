@@ -2,10 +2,10 @@ Breaks: Grant-admin groups pass every check, not only manage-grants.
 Module: catalog-security
 Test: AuthorizerTest#thereIsNoSuperuserNotEvenTheDeploymentsGrantAdmins
 
-diff --git a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 index 7eb5785..d5a06e2 100644
---- a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
-+++ b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+--- a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 @@ -184,7 +184,7 @@ public final class Authorizer {
                              List<GovernanceAttribute> attributes, boolean grantAdmin) {
          Operation operation = request.operation();

@@ -2,10 +2,10 @@ Breaks: A 403 is answered without publishing its Denial.
 Module: catalog-server
 Test: SecurityGateTest#privilegesInheritDownTheTreeAndNeverSideways
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Denials.java b/catalog-server/src/main/java/keel/catalog/server/security/Denials.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Denials.java b/catalog-server/src/main/java/nuna/catalog/server/security/Denials.java
 index 5acc048..5176935 100644
---- a/catalog-server/src/main/java/keel/catalog/server/security/Denials.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/Denials.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Denials.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Denials.java
 @@ -40,7 +40,7 @@ public class Denials {
                                 String message) {
          Denial denial = new Denial(operation, securable, privilege, reason + ": " + message, actor);

@@ -2,10 +2,10 @@ Breaks: when SingleStore no longer has the log after the copy's offsets, the fee
 Module: singlestore-change-feed
 Test: ChangeFeedTest
 
-diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java
 index ceb13c8..b0bb3d1 100644
---- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java
-+++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java
 @@ -175,7 +175,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
  
      /** The change feed stopped. A stale offset means a new snapshot; anything else fails this poll. */

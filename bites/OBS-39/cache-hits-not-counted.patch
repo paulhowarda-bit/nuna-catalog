@@ -2,10 +2,10 @@ Breaks: the metadata cache no longer counts its hits.
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#loadsCountMetadataCacheHits
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/MetadataCache.java b/catalog-core/src/main/java/keel/catalog/core/commit/MetadataCache.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/MetadataCache.java b/catalog-core/src/main/java/nuna/catalog/core/commit/MetadataCache.java
 index 07d97d5..64f161c 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/MetadataCache.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/MetadataCache.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/MetadataCache.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/MetadataCache.java
 @@ -26,7 +26,6 @@ public final class MetadataCache {
          if (json == null) {
              misses++;

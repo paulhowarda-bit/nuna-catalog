@@ -1,2 +1,2 @@
-org.springframework.boot.EnvironmentPostProcessor=keel.catalog.server.MongodbHasNoDataSource,\
-keel.catalog.server.telemetry.MetricsExportNeedsEndpoint
+org.springframework.boot.EnvironmentPostProcessor=nuna.catalog.server.MongodbHasNoDataSource,\
+nuna.catalog.server.telemetry.MetricsExportNeedsEndpoint

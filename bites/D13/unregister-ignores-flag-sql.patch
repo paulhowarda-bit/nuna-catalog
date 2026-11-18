@@ -2,10 +2,10 @@ Breaks: the store checks no regulated or row/column-policy flag, so one set afte
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$CatalogObjects#unregisterRefusals
 
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
 index 93f8d6e..62c0977 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlObjects.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
 @@ -144,7 +144,7 @@ final class SqlObjects {
              if (Guards.frozen(connection, objectId, locked.get().catalogId(), locked.get().path())) {
                  return new WriteResult.Refused(WriteResult.Reason.FROZEN);

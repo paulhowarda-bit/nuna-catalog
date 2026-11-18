@@ -106,7 +106,7 @@ tables with equality deletes first, then the furthest past their thresholds (the
 `min-input-files` and the delete files' share over `delete-file-ratio`). Each scan in the window starts Jobs as
 earlier ones finish, also between one orphan scan and the next.
 
-A Job is the Kubernetes Job `keel-compact-<table uuid>-<night's date>` in the Jobs' own namespace, so a table gets
+A Job is the Kubernetes Job `nuna-compact-<table uuid>-<night's date>` in the Jobs' own namespace, so a table gets
 one a night at most, across restarts of the worker too. It runs the repo's Spark image
 (`catalog-tests-engines/images/spark`) with `rewrite_data_files`, signed in as the worker, with the target size,
 `min-input-files` and partial progress; for deletes it also rewrites every data file with a delete
@@ -129,17 +129,17 @@ java -jar catalog-maintenance/build/libs/catalog-maintenance-<version>-exec.jar 
 ```
 
 The image is built from that jar (see `deploy/image/maintenance.Dockerfile`), and the Helm chart
-`deploy/helm/keel-maintenance` runs it. The worker has no HTTP port. It logs a line per scan and a warning
+`deploy/helm/nuna-maintenance` runs it. The worker has no HTTP port. It logs a line per scan and a warning
 per failed job, and records as meters what each scan did, how long it took and when one last succeeded, which
 go out over OTLP with its other telemetry: `docs/observability/worker-metrics.md` lists them and the alerts each
 supports. Each scan is also a trace, a span for each part of it, which its calls to the catalog carry to the catalog
 as `traceparent`, so the catalog's spans for them join it (`docs/observability/worker-spans.md`).
 
-### Settings (`keel.maintenance.*`)
+### Settings (`nuna.maintenance.*`)
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `catalog-uri` | required | The catalog as the worker reaches it, e.g. `http://keel-catalog:8181/`. |
+| `catalog-uri` | required | The catalog as the worker reaches it, e.g. `http://nuna-catalog:8181/`. |
 | `scan-interval` | `PT10M` | How often the worker reads the work list. |
 | `cleanup-window.start`, `end` | required | When the nightly cleanup window opens and closes, local times such as `"01:00"` and `"05:00"`, quoted in YAML. |
 | `cleanup-window.zone` | required | The window's time zone by name, e.g. `Europe/London`. |
@@ -155,7 +155,7 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `compaction.image` | none | The Spark image. Compaction is off without one. |
 | `compaction.image-pull-policy` | `IfNotPresent` | Its pull policy. |
 | `compaction.namespace` | required with an image | Where Jobs run: a namespace for them alone, never the worker's (refused at startup) nor the catalog's. A pod may run as any service account and mount any Secret of its namespace. |
-| `compaction.job-service-account` | the namespace's `default` | The service account the Jobs' pods run as: one with no rights and no token mounted (the chart makes `keel-compaction`). |
+| `compaction.job-service-account` | the namespace's `default` | The service account the Jobs' pods run as: one with no rights and no token mounted (the chart makes `nuna-compaction`). |
 | `compaction.api-server` | `https://kubernetes.default.svc` | The Kubernetes API server. |
 | `compaction.service-account` | `/var/run/secrets/kubernetes.io/serviceaccount` | The folder holding the service account's token, CA and namespace. |
 | `compaction.catalog-uri` | `catalog-uri` | The catalog as the Job's pods reach it. |
@@ -167,32 +167,32 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 An example, for one Ceph store:
 
 ```yaml
-keel:
+nuna:
   maintenance:
-    catalog-uri: http://keel-catalog:8181/
+    catalog-uri: http://nuna-catalog:8181/
     cleanup-window:
       start: "22:30"
       end: "04:00"
       zone: Europe/London
     token:
       endpoint: https://idp.example.internal/oauth2/token
-      client-id: keel-maintenance
-      client-secret: ${KEEL_MAINTENANCE_CLIENT_SECRET}
-      scope: keel-catalog
-      audience: keel-catalog
+      client-id: nuna-maintenance
+      client-secret: ${NUNA_MAINTENANCE_CLIENT_SECRET}
+      scope: nuna-catalog
+      audience: nuna-catalog
     storage:
       ceph:
         prefixes: [s3://lake/tables]
         endpoint: https://ceph.example.internal
         path-style-access: true
-        access-key-id: ${KEEL_MAINTENANCE_ACCESS_KEY}
-        secret-access-key: ${KEEL_MAINTENANCE_SECRET_KEY}
+        access-key-id: ${NUNA_MAINTENANCE_ACCESS_KEY}
+        secret-access-key: ${NUNA_MAINTENANCE_SECRET_KEY}
 ```
 
 ## The identity it needs
 
 - **In the catalog.** The worker's principal id must be listed in the catalog's
-  `keel.security.maintenance-principals`. Its group needs `write` on every catalog it maintains. It always acts
+  `nuna.security.maintenance-principals`. Its group needs `write` on every catalog it maintains. It always acts
   as itself, never for an end user. That gives it the work list, the purge claim and completion, the
   pending-deletion routes, the reports of its own work, and storage access to tables flagged for row/column policy, with every such access
   audited (D20). The credentials the catalog vends it read and write table files but never delete (D21).
@@ -222,20 +222,20 @@ keel:
 10001 and writes only to `/tmp`.
 
 ```
-docker build -f deploy/image/maintenance.Dockerfile -t keel-maintenance:<version> catalog-maintenance/build/libs
+docker build -f deploy/image/maintenance.Dockerfile -t nuna-maintenance:<version> catalog-maintenance/build/libs
 ```
 
-`deploy/helm/keel-maintenance` installs one release per catalog deployment, beside the `keel-catalog` release:
+`deploy/helm/nuna-maintenance` installs one release per catalog deployment, beside the `nuna-catalog` release:
 
 - one replica with the `Recreate` strategy, so two workers never overlap during an upgrade;
 - its own service account;
 - the settings under `config`, rendered into a ConfigMap; it refuses to render without the cleanup window,
-  `config.keel.maintenance.cleanup-window.start`, `end` and `zone` (for instance
-  `--set config.keel.maintenance.cleanup-window.start=22:30`), and quotes the times in the worker's YAML;
+  `config.nuna.maintenance.cleanup-window.start`, `end` and `zone` (for instance
+  `--set config.nuna.maintenance.cleanup-window.start=22:30`), and quotes the times in the worker's YAML;
 - secrets under `secrets` (or `secrets.existingSecret`), read as a Spring Boot config tree, each key a
-  property name such as `keel.maintenance.token.client-secret`;
-- with `config.keel.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
-  Jobs' namespace (`config.keel.maintenance.compaction.namespace`, which must exist).
+  property name such as `nuna.maintenance.token.client-secret`;
+- with `config.nuna.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
+  Jobs' namespace (`config.nuna.maintenance.compaction.namespace`, which must exist).
 
 See `values.yaml` for the rest.
 

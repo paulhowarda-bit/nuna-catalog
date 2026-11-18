@@ -2,10 +2,10 @@ Breaks: a requirement that does not hold is no longer named in the outcome, so n
 Module: catalog-server
 Test: CatalogMetricsRoutesTest#commitsCountByOutcomeAndTheRequirementThatFailed
 
-diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java
 index 060724c..fe58eb8 100644
---- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
-+++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/Metadata.java
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/Metadata.java
 @@ -305,7 +305,7 @@ public final class Metadata {
          try {
              return work.get();

@@ -5,7 +5,7 @@ plugins {
 description = "M8 hardening gates: load, contention, resilience and SLO runs against running servers. Every test runs overnight only (tagged overnight)."
 
 // The release before this one, for the rolling upgrade: main as the heavy pass left it, after the rename
-// to keel and before v1.x's phase 1. Its PostgreSQL schema stops at V4; this release adds V5 to V7.
+// to nuna and before v1.x's phase 1. Its PostgreSQL schema stops at V4; this release adds V5 to V7.
 val previousRelease = "2b1af36"
 
 // The server under test runs as its own process, from the runnable jar this build just made.

@@ -1,13 +1,13 @@
 Breaks: the compaction script compacts the table that has the name when its pod starts, whatever its id.
 Module: catalog-maintenance
 Test: KubernetesCompactionTest#compactionRunsAsAJobPerTable
-diff --git a/catalog-maintenance/src/main/resources/keel/maintenance/compact.py b/catalog-maintenance/src/main/resources/keel/maintenance/compact.py
+diff --git a/catalog-maintenance/src/main/resources/nuna/maintenance/compact.py b/catalog-maintenance/src/main/resources/nuna/maintenance/compact.py
 index 8eb13e9..9673b17 100644
---- a/catalog-maintenance/src/main/resources/keel/maintenance/compact.py
-+++ b/catalog-maintenance/src/main/resources/keel/maintenance/compact.py
+--- a/catalog-maintenance/src/main/resources/nuna/maintenance/compact.py
++++ b/catalog-maintenance/src/main/resources/nuna/maintenance/compact.py
 @@ -34,7 +34,7 @@ table = ".".join("`" + part.replace("`", "``") + "`" for part in json.loads(os.e
- expected = os.environ["KEEL_TABLE_UUID"]
- found = spark._jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(spark._jsparkSession, "keel." + table) \
+ expected = os.environ["NUNA_TABLE_UUID"]
+ found = spark._jvm.org.apache.iceberg.spark.Spark3Util.loadIcebergTable(spark._jsparkSession, "nuna." + table) \
      .uuid().toString()
 -if found != expected:
 +if False:

@@ -2,10 +2,10 @@ Breaks: anyone signed in may undrop, without create on the namespace.
 Module: catalog-server
 Test: ManagementAuthorizationTest#undropNeedsCreateOnTheNamespace
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 index 7397391..cd9eeee 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/LifecycleRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 @@ -125,8 +125,6 @@ class LifecycleRoutes {
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElseThrow(
                  () -> CatalogError.of(404, "NoSuchNamespaceException", "The namespace of " + id + " no longer exists"));

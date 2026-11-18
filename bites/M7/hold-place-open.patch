@@ -2,10 +2,10 @@ Breaks: anyone signed in may place a legal hold, without manage-tags.
 Module: catalog-server
 Test: ManagementAuthorizationTest#placingAHoldNeedsManageTags
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 index 501b568..8b23195 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 @@ -157,7 +157,6 @@ class GovernanceRoutes {
                                       HttpServletRequest http) {
          Target target = management.target(prefix, namespace, table, view);

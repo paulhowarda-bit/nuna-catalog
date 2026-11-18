@@ -2,10 +2,10 @@ Breaks: a restarted archive consumer starts its chain over and archives records 
 Module: catalog-audit
 Test: LockedArchiveTest#consumerArchivesExactlyOnce
 
-diff --git a/catalog-audit/src/main/java/keel/catalog/audit/archive/ArchiveConsumer.java b/catalog-audit/src/main/java/keel/catalog/audit/archive/ArchiveConsumer.java
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveConsumer.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveConsumer.java
 index 1c39fc8..838054c 100644
---- a/catalog-audit/src/main/java/keel/catalog/audit/archive/ArchiveConsumer.java
-+++ b/catalog-audit/src/main/java/keel/catalog/audit/archive/ArchiveConsumer.java
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveConsumer.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchiveConsumer.java
 @@ -106,7 +106,7 @@ public final class ArchiveConsumer implements AutoCloseable {
          for (ConsumerRecord<byte[], byte[]> record : consumer.poll(timeout)) {
              TopicPartition partition = new TopicPartition(record.topic(), record.partition());

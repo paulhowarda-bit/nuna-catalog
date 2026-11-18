@@ -1,10 +1,10 @@
 Breaks: the delete policies leave lifecycle rules open, whose expiration deletes table files with no DeleteObject call.
 Module: catalog-objectstore
 Test: DeletePolicyTest#aws+ceph+minio
-diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java
 index 00c2047..bd996fc 100644
---- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
-+++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java
 @@ -29,7 +29,7 @@ public final class DeletePolicy {
       * Also denied, on the bucket: a lifecycle rule, whose expiration deletes objects without anyone calling
       * DeleteObject (removing one needs the same right), on every store.

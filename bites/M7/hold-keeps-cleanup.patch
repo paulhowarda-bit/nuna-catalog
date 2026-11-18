@@ -2,10 +2,10 @@ Breaks: a hold does not switch off snapshot expiry and orphan removal.
 Module: catalog-server
 Test: MaintenancePolicyTest#guardrailsWin
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java
 index 0535ed8..bb565f4 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/MaintenancePolicy.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenancePolicy.java
 @@ -132,7 +132,7 @@ public final class MaintenancePolicy {
              for (String key : List.of(EXPIRY_ENABLED, ORPHAN_ENABLED, COMPACTION_ENABLED, REWRITE_ENABLED)) {
                  resolved.put(key, new Setting("false", "guardrail", "frozen for DR reconcile"));

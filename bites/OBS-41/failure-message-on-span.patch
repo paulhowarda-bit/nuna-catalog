@@ -2,10 +2,10 @@ Breaks: A failed call's span records the exception itself, message and stack tra
 Module: catalog-server
 Test: ObservedTest#aFailureRecordsItsTypeNeverItsMessage
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java b/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/tracing/Observed.java b/catalog-server/src/main/java/nuna/catalog/server/tracing/Observed.java
 index 35306d7..2ca9f62 100644
---- a/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/tracing/Observed.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/tracing/Observed.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/tracing/Observed.java
 @@ -51,7 +51,7 @@ public final class Observed {
          } catch (RuntimeException | Error e) {
              observation.lowCardinalityKeyValue(OUTCOME, "error");

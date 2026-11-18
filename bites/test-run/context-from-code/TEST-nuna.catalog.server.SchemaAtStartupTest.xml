@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="nuna.catalog.server.SchemaAtStartupTest" tests="1" skipped="0" failures="1" errors="0" timestamp="2026-11-15T04:45:59.785Z" hostname="localhost" time="27.631">
+  <properties/>
+  <testcase name="theJournalIsPartitionedWithMonthsAhead()" classname="nuna.catalog.server.SchemaAtStartupTest" time="0.05">
+    <failure message="java.lang.IllegalStateException: Failed to load ApplicationContext for [WebMergedContextConfiguration@2cd31214 testClass = nuna.catalog.server.SchemaAtStartupTest, locations = [], classes = [nuna.catalog.server.CatalogServer], contextInitializerClasses = [nuna.catalog.server.IssuerForTests], activeProfiles = [], propertySourceDescriptors = [], propertySourceProperties = [&quot;org.springframework.boot.test.context.SpringBootTestContextBootstrapper=true&quot;, &quot;server.port=0&quot;], contextCustomizers = [org.springframework.boot.testcontainers.service.connection.ServiceConnectionContextCustomizer@0, org.springframework.boot.test.autoconfigure.OnFailureConditionReportContextCustomizerFactory$OnFailureConditionReportContextCustomizer@5b6e8f77, [ImportsContextCustomizer@594f508f key = [nuna.catalog.server.PostgresForTests, nuna.catalog.server.S3ForTests]], org.springframework.boot.test.context.PropertyMappingContextCustomizer@0, org.springframework.boot.test.context.filter.ExcludeFilterContextCustomizer@3eb631b8, org.springframework.boot.test.json.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer@4b6ac111, org.springframework.test.context.support.DynamicPropertiesContextCustomizer@0, org.springframework.boot.web.server.context.SpringBootTestRandomPortContextCustomizer@378bd86d, org.springframework.boot.test.context.SpringBootTestAnnotation@2c2d5bab], resourceBasePath = &quot;src/main/webapp&quot;, contextLoader = org.springframework.boot.test.context.SpringBootContextLoader, parent = null]" type="java.lang.IllegalStateException">java.lang.IllegalStateException: Failed to load ApplicationContext for [WebMergedContextConfiguration@2cd31214 testClass = nuna.catalog.server.SchemaAtStartupTest, locations = [], classes = [nuna.catalog.server.CatalogServer], contextInitializerClasses = [nuna.catalog.server.IssuerForTests], activeProfiles = [], propertySourceDescriptors = [], propertySourceProperties = [&quot;org.springframework.boot.test.context.SpringBootTestContextBootstrapper=true&quot;, &quot;server.port=0&quot;], contextCustomizers = [org.springframework.boot.testcontainers.service.connection.ServiceConnectionContextCustomizer@0, org.springframework.boot.test.autoconfigure.OnFailureConditionReportContextCustomizerFactory$OnFailureConditionReportContextCustomizer@5b6e8f77, [ImportsContextCustomizer@594f508f key = [nuna.catalog.server.PostgresForTests, nuna.catalog.server.S3ForTests]], org.springframework.boot.test.context.PropertyMappingContextCustomizer@0, org.springframework.boot.test.context.filter.ExcludeFilterContextCustomizer@3eb631b8, org.springframework.boot.test.json.DuplicateJsonObjectContextCustomizerFactory$DuplicateJsonObjectContextCustomizer@4b6ac111, org.springframework.test.context.support.DynamicPropertiesContextCustomizer@0, org.springframework.boot.web.server.context.SpringBootTestRandomPortContextCustomizer@378bd86d, org.springframework.boot.test.context.SpringBootTestAnnotation@2c2d5bab], resourceBasePath = &quot;src/main/webapp&quot;, contextLoader = org.springframework.boot.test.context.SpringBootContextLoader, parent = null]
+	at org.springframework.test.context.cache.DefaultCacheAwareContextLoaderDelegate.lambda$loadContext$0(DefaultCacheAwareContextLoaderDelegate.java:195)
+	at org.springframework.test.context.cache.DefaultContextCache.put(DefaultContextCache.java:214)
+	at org.springframework.test.context.cache.DefaultCacheAwareContextLoaderDelegate.loadContext(DefaultCacheAwareContextLoaderDelegate.java:160)
+	...
+Caused by: org.springframework.context.ApplicationContextException: Unable to start web server
+	at org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext.onRefresh(ServletWebServerApplicationContext.java:155)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:615)
+	at org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:131)
+	...
+Caused by: org.springframework.boot.web.server.WebServerException: Unable to start embedded Tomcat
+	at org.springframework.boot.tomcat.TomcatWebServer.initialize(TomcatWebServer.java:138)
+	at org.springframework.boot.tomcat.TomcatWebServer.&lt;init&gt;(TomcatWebServer.java:98)
+	at org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory.getTomcatWebServer(TomcatServletWebServerFactory.java:417)
+	...
+Caused by: org.springframework.beans.factory.UnsatisfiedDependencyException: Error creating bean with name 'authentication' defined in class path resource [nuna/catalog/server/security/SecurityWiring.class]: Unsatisfied dependency expressed through method 'authentication' parameter 1: Error creating bean with name 'catalogStore' defined in class path resource [nuna/catalog/server/StoreWiring.class]: Failed to instantiate [nuna.catalog.store.CatalogStore]: Factory method 'catalogStore' threw exception with message: journal partition extension failed before COMMIT was sent
+	at org.springframework.beans.factory.support.ConstructorResolver.createArgumentArray(ConstructorResolver.java:804)
+	at org.springframework.beans.factory.support.ConstructorResolver.instantiateUsingFactoryMethod(ConstructorResolver.java:546)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod(AbstractAutowireCapableBeanFactory.java:1358)
+	...
+Caused by: org.springframework.beans.factory.BeanCreationException: Error creating bean with name 'catalogStore' defined in class path resource [nuna/catalog/server/StoreWiring.class]: Failed to instantiate [nuna.catalog.store.CatalogStore]: Factory method 'catalogStore' threw exception with message: journal partition extension failed before COMMIT was sent
+	at org.springframework.beans.factory.support.ConstructorResolver.instantiate(ConstructorResolver.java:657)
+	at org.springframework.beans.factory.support.ConstructorResolver.instantiateUsingFactoryMethod(ConstructorResolver.java:645)
+	at org.springframework.beans.factory.support.AbstractAutowireCapableBeanFactory.instantiateUsingFactoryMethod(AbstractAutowireCapableBeanFactory.java:1358)
+	...
+Caused by: org.springframework.beans.BeanInstantiationException: Failed to instantiate [nuna.catalog.store.CatalogStore]: Factory method 'catalogStore' threw exception with message: journal partition extension failed before COMMIT was sent
+	at org.springframework.beans.factory.support.SimpleInstantiationStrategy.lambda$instantiate$0(SimpleInstantiationStrategy.java:183)
+	at org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiateWithFactoryMethod(SimpleInstantiationStrategy.java:72)
+	at org.springframework.beans.factory.support.SimpleInstantiationStrategy.instantiate(SimpleInstantiationStrategy.java:152)
+	...
+Caused by: nuna.catalog.store.StoreException: journal partition extension failed before COMMIT was sent
+	at nuna.catalog.store.sql.Transactions.failed(Transactions.java:222)
+	at nuna.catalog.store.sql.Transactions.runOrRollBack(Transactions.java:299)
+	at nuna.catalog.store.sql.Transactions.lambda$writeAndRetryOnFailure$0(Transactions.java:152)
+	...
+Caused by: org.postgresql.util.PSQLException: ERROR: function journal_extend(timestamp with time zone) does not exist
+  Hint: No function matches the given name and argument types. You might need to add explicit type casts.
+  Position: 8
+	at org.postgresql.core.v3.QueryExecutorImpl.receiveErrorResponse(QueryExecutorImpl.java:2993)
+	at org.postgresql.core.v3.QueryExecutorImpl.processResults(QueryExecutorImpl.java:2656)
+	at org.postgresql.core.v3.QueryExecutorImpl.execute(QueryExecutorImpl.java:446)
+	...
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

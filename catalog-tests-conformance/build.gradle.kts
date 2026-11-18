@@ -50,7 +50,7 @@ dependencies {
 
 tasks.test {
     // Only our harness runs here; it launches the RCK classes itself.
-    include("keel/**/*Test.class")
+    include("nuna/**/*Test.class")
     listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
 
     val reasons = file("rck-reasons.txt")

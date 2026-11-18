@@ -17,7 +17,7 @@ Three routes, all answering JSON. Times are ISO-8601 instants, kept to the milli
 |---|---|---|
 | `GET /management/v1/maintenance/tables` | Anyone; each table is shown only to a caller with `select` on it | The neediest tables, a page at a time |
 | `GET /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health` | `select` on the table | One table's health |
-| `GET /management/v1/maintenance/scans` | Platform operators (`keel.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
+| `GET /management/v1/maintenance/scans` | Platform operators (`nuna.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
 
 A caller without the privilege gets 403 `ForbiddenException`, audited like every refusal on a management route; a
 table that does not exist, 404 `NoSuchTableException`.
@@ -101,7 +101,7 @@ kept even when 50 failed scans have come since.
   "scans": [
     {
       "id": "0b7e...",
-      "worker": "keel-maintenance",
+      "worker": "nuna-maintenance",
       "started-at": "2027-03-28T01:00:00Z",
       "ended-at": "2027-03-28T01:00:04Z",
       "outcome": "succeeded",
@@ -123,7 +123,7 @@ kept even when 50 failed scans have come since.
 
 ## The worker's reports
 
-The worker reports as a maintenance principal acting as itself (`keel.security.maintenance-principals`), as with its
+The worker reports as a maintenance principal acting as itself (`nuna.security.maintenance-principals`), as with its
 other management calls; anyone else gets 403. Each answers 204.
 
 | Route | Body |

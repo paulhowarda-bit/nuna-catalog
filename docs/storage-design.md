@@ -25,7 +25,7 @@ The contract every backend implements, designed against all three families at on
 
 ## 3. Interface
 
-Java package `keel.catalog.store`. All methods are one atomic unit; reads of pointers go to the primary/leader only [D8.3]. Section 9 replaces the M2 sketch below with the whole contract; the M1 core is now `CommitStore`.
+Java package `nuna.catalog.store`. All methods are one atomic unit; reads of pointers go to the primary/leader only [D8.3]. Section 9 replaces the M2 sketch below with the whole contract; the M1 core is now `CommitStore`.
 
 ```java
 public interface CatalogStore {

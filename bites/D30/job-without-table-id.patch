@@ -1,15 +1,15 @@
 Breaks: the compaction Job is not told the table's id, so it compacts whatever table has the name when its pod starts.
 Module: catalog-maintenance
 Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 index 6182e77..b14dac6 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 @@ -161,7 +161,6 @@ final class KubernetesJobs implements Compactor {
-         env(env, "KEEL_SCRIPT", SCRIPT);
-         env(env, "KEEL_CONF", sparkConf(table).toString());
-         env(env, "KEEL_TABLE", JSON.valueToTree(levels(table)).toString());
--        env(env, "KEEL_TABLE_UUID", table.id().toString());
-         env(env, "KEEL_OPTIONS", JSON.valueToTree(need.options()).toString());
-         env(env, "KEEL_DRIVER_MEMORY", settings.driverMemory());
-         env.addObject().put("name", "KEEL_AUTH").putObject("valueFrom").putObject("secretKeyRef")
+         env(env, "NUNA_SCRIPT", SCRIPT);
+         env(env, "NUNA_CONF", sparkConf(table).toString());
+         env(env, "NUNA_TABLE", JSON.valueToTree(levels(table)).toString());
+-        env(env, "NUNA_TABLE_UUID", table.id().toString());
+         env(env, "NUNA_OPTIONS", JSON.valueToTree(need.options()).toString());
+         env(env, "NUNA_DRIVER_MEMORY", settings.driverMemory());
+         env.addObject().put("name", "NUNA_AUTH").putObject("valueFrom").putObject("secretKeyRef")

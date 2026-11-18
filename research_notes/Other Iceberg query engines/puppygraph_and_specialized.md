@@ -9,10 +9,10 @@ Out of scope, mentioned only as comparison points: Dremio, Trino, DuckDB, StarRo
 
 ---
 
-## Summary: does each engine work with keel, and how hard is it to run?
+## Summary: does each engine work with nuna, and how hard is it to run?
 
 ### Takeaway
-PuppyGraph is the only engine here that queries Iceberg tables in place through a generic Iceberg REST catalog with OAuth2 client credentials and an external token endpoint. Its gaps for keel:
+PuppyGraph is the only engine here that queries Iceberg tables in place through a generic Iceberg REST catalog with OAuth2 client credentials and an external token endpoint. Its gaps for nuna:
 - It documents that "vended credentials do not include a storage endpoint", so the Silo/Ceph endpoint has to be repeated in its own config (the same failure class as StarRocks 4.1.7).
 - It has no end-user token passthrough to an Iceberg catalog.
 - It does not document v2 or v3 delete support, v3 types or nested namespaces.
@@ -44,11 +44,11 @@ None of the other graph, search or vector engines meets the REST, vended-credent
 | StarTree (commercial Pinot) | Yes (External Tables) | Glue, Unity, Polaris/Open Catalog (OAuth2), Hive; generic REST not verified | Not verified | Not verified | v2 eq/pos deletes + v3 DVs (preview, 0.16.0+) | SaaS/BYOC | Commercial |
 
 ### Inferences
-- [I] For keel, PuppyGraph is the only candidate worth a hands-on test, and the test should start with three things:
+- [I] For nuna, PuppyGraph is the only candidate worth a hands-on test, and the test should start with three things:
   1. vended credentials against Silo/Ceph with a path-style-only endpoint;
   2. a table in a 4-level namespace;
   3. a v2 table with equality deletes and a v3 table with deletion vectors.
-- [I] Every vector or search engine here would need keel to hand out the table's `metadata.json` location (Milvus, LadybugDB) or would need a copy. None uses keel's REST protocol to read Iceberg data.
+- [I] Every vector or search engine here would need nuna to hand out the table's `metadata.json` location (Milvus, LadybugDB) or would need a copy. None uses nuna's REST protocol to read Iceberg data.
 
 ### Gaps
 - No independent (non-vendor) evaluation of any of these engines against a self-hosted IRC with vended credentials was found.
@@ -69,7 +69,7 @@ PuppyGraph supports a generic Iceberg REST catalog with OAuth2 client credential
   — [Connecting to Iceberg](https://docs.puppygraph.com/connecting/connecting-to-iceberg/)
 - [P verbatim] Generic REST fields are `RestUri`, `Warehouse`, `Security` ("Security authentication mode of the REST catalog"), `Credential` ("The Oauth2 client authentication credential") and `Scope` ("Authorization scope for client credentials or token exchange"). — [Connecting to Iceberg](https://docs.puppygraph.com/connecting/connecting-to-iceberg/)
 - [P verbatim] Schema-file keys from worked examples:
-  - OneLake: `"security": "oauth2"`, `"credential": "<client_id>:<client_secret>"`, `"scope": "https://storage.azure.com/.default"`, `"oauthServerUri": "https://login.microsoftonline.com/<tenant_id>/oauth2/v2.0/token"`. This is exactly the client-credentials-against-an-external-IdP pattern keel needs.
+  - OneLake: `"security": "oauth2"`, `"credential": "<client_id>:<client_secret>"`, `"scope": "https://storage.azure.com/.default"`, `"oauthServerUri": "https://login.microsoftonline.com/<tenant_id>/oauth2/v2.0/token"`. This is exactly the client-credentials-against-an-external-IdP pattern nuna needs.
   - Polaris: `"credential": "root:s3cr3t"`, `"oauthServerUri": "http://polaris:8181/api/catalog/v1/oauth/tokens"`.
   — [llms-full.txt, "Querying OneLake Data as a Graph" and "Querying Polaris Data as a Graph"](https://docs.puppygraph.com/llms-full.txt); [Polaris tutorial](https://docs.puppygraph.com/getting-started/querying-polaris-data-as-a-graph/)
 - [P verbatim] For Snowflake Horizon, a programmatic access token goes in `credential` with `"authType": "oauth2"` and an `oauthServerUri`. The docs warn: "Do not use a key-pair JWT as the credential for a lasting connection… it expires one hour after it is created… and PuppyGraph does not create a new one." — [Connecting to Iceberg](https://docs.puppygraph.com/connecting/connecting-to-iceberg/)
@@ -80,9 +80,9 @@ PuppyGraph supports a generic Iceberg REST catalog with OAuth2 client credential
 - [P verbatim] Row-level security comes from entitlement tables inside PuppyGraph and is applied at every traversal hop. It fills in "the authenticated PuppyGraph username, not the database session user". — [llms-full.txt, Row-Level Security](https://docs.puppygraph.com/llms-full.txt); [RLS page](https://docs.puppygraph.com/security/row-level-security/)
 
 ### Inferences
-- [I] Keel's client-credentials mode works: set `security=oauth2`, `credential=<id>:<secret>`, `scope`, and `oauthServerUri=<IdP token endpoint>`.
-- [I] Keel's static-token mode is unsupported as documented. There is no `token` key. Passing a pre-minted JWT as `credential` would make it be used as a client secret, not as a bearer token.
-- [I] Per-user catalog authorisation in keel cannot be used. Every PuppyGraph user reaches keel as one service principal, so access control must be rebuilt in PuppyGraph RBAC and RLS.
+- [I] Nuna's client-credentials mode works: set `security=oauth2`, `credential=<id>:<secret>`, `scope`, and `oauthServerUri=<IdP token endpoint>`.
+- [I] Nuna's static-token mode is unsupported as documented. There is no `token` key. Passing a pre-minted JWT as `credential` would make it be used as a client secret, not as a bearer token.
+- [I] Per-user catalog authorisation in nuna cannot be used. Every PuppyGraph user reaches nuna as one service principal, so access control must be rebuilt in PuppyGraph RBAC and RLS.
 
 ### Gaps
 - The allowed values of `Security` beyond `oauth2` (for example `none` or `sigv4`) are not listed.
@@ -109,7 +109,7 @@ PuppyGraph accepts vended credentials ("Get from metastore"), but its docs state
 - [P verbatim] Query-result export works to "any S3-compatible storage service, with or without path-style access" (1.12.0). — [Releases](https://docs.puppygraph.com/releases/)
 
 ### Inferences
-- [I] PuppyGraph ignores the `s3.endpoint` and `s3.path-style-access` that keel vends. This is the StarRocks 4.1.7 behaviour, and it fits the evidence below that PuppyGraph's SQL layer comes from StarRocks or Doris.
+- [I] PuppyGraph ignores the `s3.endpoint` and `s3.path-style-access` that nuna vends. This is the StarRocks 4.1.7 behaviour, and it fits the evidence below that PuppyGraph's SQL layer comes from StarRocks or Doris.
 - [I] For Silo or Ceph RGW, the endpoint must be repeated in PuppyGraph. If the store needs path-style addressing (typical for Ceph RGW without wildcard DNS), the vended-credentials-plus-endpoint mode may fail. Test this before anything else.
 - [I] The 3000 s cap on cached table versions for REST looks designed to stay under a typical 1-hour vended-credential lifetime.
 - [I] Evidence that PuppyGraph's engine comes from StarRocks or Doris (not stated by the vendor):
@@ -149,7 +149,7 @@ PuppyGraph queries Iceberg in place by default, with metadata and data caches an
 - [I] Caching delete-file lists suggests v2 merge-on-read deletes are applied at read time. That is unconfirmed.
 - [I] If the engine is StarRocks/Doris-derived, its v2 position and equality delete and v3 support would track that lineage. Treat it as unknown until tested.
 - [I] Nested namespaces probably work in the `schema` field as a dotted path, given the OSI import note. This is unverified.
-- [I] PuppyGraph is a read-only consumer of keel.
+- [I] PuppyGraph is a read-only consumer of nuna.
 
 ### Gaps
 - Nothing found on: deletion vectors, row lineage, variant, nanosecond timestamps, geometry/geography, the maximum format version, or nested-namespace addressing in `externalDataSource`.
@@ -174,7 +174,7 @@ PuppyGraph maps existing tables to nodes and edges through a JSON schema and ser
   — [Releases](https://docs.puppygraph.com/releases/); [Connecting to Iceberg](https://docs.puppygraph.com/connecting/connecting-to-iceberg/)
 
 ### Inferences
-- [I] To traverse lineage, keel or a pipeline would need to publish lineage or relationship data as Iceberg tables (for example `dataset` nodes and `derives_from` edges). PuppyGraph does not graph the catalog's own metadata.
+- [I] To traverse lineage, nuna or a pipeline would need to publish lineage or relationship data as Iceberg tables (for example `dataset` nodes and `derives_from` edges). PuppyGraph does not graph the catalog's own metadata.
 - [I] Performance depends heavily on caches or local tables. Cold in-place traversals over object storage will be slower than the headline claims.
 
 ### Gaps
@@ -257,7 +257,7 @@ The latest version is 1.18.0 (2026-11-04). The 1.x line went GA on 2026-06-29 an
 - [S] Integration partners publishing joint material include Dremio, Starburst, StreamNative and a Databricks managed-Iceberg integration press release. — [Starburst blog](https://www.starburst.io/blog/starburst-and-puppygraph/); [Dremio developer post](https://developer.dremio.com/run-graph-queries-on-apache-iceberg-tables-with-dremio-puppygraph); [press release](https://www.silicon.co.uk/press-release/puppygraph-announces-new-native-integration-to-support-databricks-managed-iceberg-tables)
 
 ### Inferences
-- [I] Any Kubernetes cluster, SSO or more than 2 sources needs Enterprise. A production deployment for keel is therefore a paid licence.
+- [I] Any Kubernetes cluster, SSO or more than 2 sources needs Enterprise. A production deployment for nuna is therefore a paid licence.
 - [I] The pricing page says nothing about source availability. No public source repository was found, so it is closed source.
 
 ### Gaps
@@ -300,8 +300,8 @@ No mainstream graph database other than PuppyGraph queries Iceberg in place thro
 - [P verbatim] GraphFrames released v0.12.3 on 2026-10-05. — [GitHub releases API](https://api.github.com/repos/graphframes/graphframes/releases)
 
 ### Inferences
-- [I] TigerGraph's loader can take keel's static token or client credentials, if the "not supported" sentence is stale. It still needs static S3 keys and repeats the endpoint, and it copies data. It is not an in-place engine.
-- [I] LadybugDB and Kuzu are embedded in-process libraries with no server, Helm chart or catalog client. With keel they work only if given raw `metadata.json` locations and static keys.
+- [I] TigerGraph's loader can take nuna's static token or client credentials, if the "not supported" sentence is stale. It still needs static S3 keys and repeats the endpoint, and it copies data. It is not an in-place engine.
+- [I] LadybugDB and Kuzu are embedded in-process libraries with no server, Helm chart or catalog client. With nuna they work only if given raw `metadata.json` locations and static keys.
 - [I] GraphFrames meets exactly what Spark meets, which is already assessed. Its footprint is a Spark cluster.
 
 ### Gaps
@@ -347,10 +347,10 @@ No mainstream graph database other than PuppyGraph queries Iceberg in place thro
   — [StarTree External Tables](https://docs.startree.ai/integrations/external-tables.md); [StarTree deletion vectors](https://docs.startree.ai/corecapabilities/external-table/deletion-vectors.md)
 
 ### Inferences
-- [I] None of these meets keel's requirements 1 and 2 together.
-  - Milvus and LanceDB/Ladybug bypass the catalog protocol, so there are no vended credentials and keel's authorisation is not enforced.
+- [I] None of these meets nuna's requirements 1 and 2 together.
+  - Milvus and LanceDB/Ladybug bypass the catalog protocol, so there are no vended credentials and nuna's authorisation is not enforced.
   - Elasticsearch cannot read Iceberg tables yet. It would also ignore deletes, because it reads raw Parquet.
-- [I] With keel, Milvus would need its own static S3 credentials and a pipeline that resolves the current `metadata.json` and snapshot ID from keel, then calls refresh.
+- [I] With nuna, Milvus would need its own static S3 credentials and a pipeline that resolves the current `metadata.json` and snapshot ID from nuna, then calls refresh.
 - [I] StarTree's Polaris path (OAuth2 principal credentials) suggests a generic IRC might work. This is unverified, and StarTree is not an on-prem open-source option.
 
 ### Gaps

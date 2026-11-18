@@ -1,11 +1,11 @@
-Breaks: /v1/config ignores keel.rest.default-warehouse, so a client that names no warehouse gets 400.
+Breaks: /v1/config ignores nuna.rest.default-warehouse, so a client that names no warehouse gets 400.
 Module: catalog-server
 Test: ConfigRouteDefaultWarehouseTest
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
 index 983cbd9..7b85eed 100644
---- a/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/ConfigRoute.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
 @@ -33,7 +33,7 @@ public class ConfigRoute {
  
      @GetMapping(path = "/v1/config", produces = MediaType.APPLICATION_JSON_VALUE)

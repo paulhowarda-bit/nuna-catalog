@@ -1,10 +1,10 @@
 Breaks: a token file's token is handed to a compaction Job, which can outlive it.
 Module: catalog-maintenance
 Test: TokenSourceTest#aTokenFileIsReadAgainWhenItChanges
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/TokenSource.java b/catalog-maintenance/src/main/java/keel/maintenance/TokenSource.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java b/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
 index fc79ce4..654941a 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/TokenSource.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/TokenSource.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/TokenSource.java
 @@ -68,8 +68,7 @@ public interface TokenSource {
          /** Never: a Job may outlive the token in the file (the settings refuse compaction with one). */
          @Override

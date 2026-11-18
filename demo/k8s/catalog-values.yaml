@@ -6,7 +6,7 @@
 replicaCount: 1
 
 image:
-  repository: keel-catalog
+  repository: nuna-catalog
   pullPolicy: Never
 
 resources:
@@ -21,7 +21,7 @@ config:
     datasource:
       url: jdbc:postgresql://postgres:5432/catalog
       username: catalog
-  keel:
+  nuna:
     storage:
       catalogs:
         lakehouse:

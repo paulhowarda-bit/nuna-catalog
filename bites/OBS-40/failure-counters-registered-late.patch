@@ -1,10 +1,10 @@
 Breaks: a failure counter appears only at its kind's first failure, so before it a dashboard shows nothing and Prometheus misses the first increase.
 Module: catalog-maintenance
 Test: WorkerMetricsTest#everyMeterReadsZeroBeforeTheFirstScan
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 index 816a4c1..704e7d9 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/WorkerMetrics.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 @@ -103,10 +103,6 @@ final class WorkerMetrics {
          for (Count count : COUNTS) {
              counts.put(count, Counter.builder(count.name()).description(count.description()).register(registry));

@@ -1,10 +1,10 @@
 Breaks: A transaction does not authorize its tables.
 Module: catalog-server
 Test: SecurityGateTest#aTransactionNeedsTheRightOnEveryTable
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 index 307e2ee..88ecf90 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TransactionRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 @@ -75,7 +75,6 @@ class TransactionRoutes {
              if (paths.put(Named.of(object), path) != null) {
                  throw CatalogError.badRequest("Table " + qualified + " is named more than once in the transaction");

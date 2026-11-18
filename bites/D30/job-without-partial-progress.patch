@@ -1,10 +1,10 @@
 Breaks: the compaction Job runs rewrite_data_files without partial progress, so when the window's end stops it every file group it rewrote is lost.
 Module: catalog-maintenance
 Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
 index 3540e5c..a8fefd7 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
 @@ -162,7 +162,6 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
          Map<String, String> options = new LinkedHashMap<>();
          options.put(RewriteDataFiles.TARGET_FILE_SIZE_BYTES, Long.toString(targetFileSize));

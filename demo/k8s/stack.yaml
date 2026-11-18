@@ -151,7 +151,7 @@ spec:
           image: ${KAFKA_UI_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: KAFKA_CLUSTERS_0_NAME, value: keel}
+            - {name: KAFKA_CLUSTERS_0_NAME, value: nuna}
             - {name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS, value: "kafka:9092"}
             # The CDC leg's Kafka Connect (cdc.yaml): its connectors, their tasks and configs. Unreachable
             # while the leg is stopped.

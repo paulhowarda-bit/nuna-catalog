@@ -1,10 +1,10 @@
 Breaks: the due pending deletions (and the purge scan) ignore legal holds, so a held table's files are deleted.
 Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$CatalogObjects#pendingDeletionsWaitOutHoldsAndFreezes
-diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 index 71e78ff..d0cb149 100644
---- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
-+++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 @@ -275,10 +275,6 @@ final class MongoObjects {
              targets.addAll(holdTargets(object));
          }

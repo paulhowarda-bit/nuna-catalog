@@ -2,10 +2,10 @@ Breaks: a REST route's audit events and STS session take an id of their own, not
 Module: catalog-server
 Test: TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/RequestContext.java b/catalog-server/src/main/java/keel/catalog/server/rest/RequestContext.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/RequestContext.java b/catalog-server/src/main/java/nuna/catalog/server/rest/RequestContext.java
 index 5d4066c..8a8b175 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/RequestContext.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/RequestContext.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/RequestContext.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/RequestContext.java
 @@ -10,7 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
  public record RequestContext(Caller caller, String requestId) {
  

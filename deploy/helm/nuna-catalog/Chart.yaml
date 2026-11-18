@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nuna-catalog
+description: The nuna Iceberg REST catalog server. Runs the stateless servers only; the database, Kafka, object stores and identity provider are run elsewhere and named in the values.
+type: application
+version: 0.1.0
+appVersion: 0.1.0-SNAPSHOT

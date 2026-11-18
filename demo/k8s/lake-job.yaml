@@ -12,11 +12,11 @@ spec:
       restartPolicy: Never
       containers:
         - name: lake
-          image: keel-demo-lake:local
+          image: nuna-demo-lake:local
           imagePullPolicy: Never
           args: ["${MODE}"]
           env:
-            - name: KEEL_TOKEN
+            - name: NUNA_TOKEN
               valueFrom:
                 secretKeyRef: {name: demo-lake-token, key: token}
           resources:

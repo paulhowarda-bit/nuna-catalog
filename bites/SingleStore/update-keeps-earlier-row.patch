@@ -2,10 +2,10 @@ Breaks: an update or delete never removes the key's rows from earlier commits.
 Module: singlestore-change-feed
 Test: IcebergCopyTest#theCopyEndsWithSingleStoresRows
 
-diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeBatch.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeBatch.java
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java
 index f32193f..9c42dc7 100644
---- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeBatch.java
-+++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeBatch.java
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java
 @@ -76,7 +76,7 @@ final class ChangeBatch {
              key.add(event.values()[position]);
          }

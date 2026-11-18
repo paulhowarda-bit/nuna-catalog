@@ -2,10 +2,10 @@ Breaks: a register with overwrite onto a held name is answered as if overwrite w
 Module: catalog-server
 Test: RestRoutesTest#registerBringsADroppedTableBackAndRefusesTakenUuidsAndLocationsOutsideTheProfile
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 index e400b6a..f43e84d 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 @@ -230,7 +230,7 @@ class TableRoutes {
          NamespaceRecord record = lookup.existingNamespace(catalog, levels);
          RequestContext request = RequestContext.of(http, callers);

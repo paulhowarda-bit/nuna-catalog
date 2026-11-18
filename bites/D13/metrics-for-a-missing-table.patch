@@ -2,10 +2,10 @@ Breaks: a metrics report on a table that does not exist answers 204.
 Module: catalog-server
 Test: RestRoutesTest#metricsCredentialsAndTokens
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 index e400b6a..48b9617 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 @@ -297,6 +297,9 @@ class TableRoutes {
                                   HttpServletRequest http) {
          CatalogRecord catalog = lookup.catalog(prefix);

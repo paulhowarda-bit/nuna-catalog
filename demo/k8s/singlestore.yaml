@@ -20,7 +20,7 @@ spec:
     metadata:
       labels: {app: singlestore}
       # SingleStore reads Keycloak's certificate only as it starts, so a new one replaces the pod.
-      annotations: {keel-demo/keys: "${KEYCLOAK_KEYS_HASH}"}
+      annotations: {nuna-demo/keys: "${KEYCLOAK_KEYS_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -28,7 +28,7 @@ spec:
           image: ${SINGLESTORE_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: ROOT_PASSWORD, value: keel-test}
+            - {name: ROOT_PASSWORD, value: nuna-test}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_OBSERVE_QUERIES, value: "1"}
             - {name: SINGLESTORE_SET_GLOBAL_ENABLE_ICEBERG_INGEST, value: "1"}
             # The dev image's license turns this on at every start: crash reports, DDL and table metadata to
@@ -49,8 +49,8 @@ spec:
           # The certificate SingleStore checks Studio's SAML sign-ins against: Keycloak's realm signing key's. And
           # the front door's certificate, which Studio serves HTTPS with (singlestore.Dockerfile).
           volumeMounts:
-            - {name: keycloak-certificate, mountPath: /etc/keel-demo, readOnly: true}
-            - {name: tls, mountPath: /etc/keel-demo/tls, readOnly: true}
+            - {name: keycloak-certificate, mountPath: /etc/nuna-demo, readOnly: true}
+            - {name: tls, mountPath: /etc/nuna-demo/tls, readOnly: true}
           resources:
             requests: {memory: 1536Mi}
             limits: {memory: 3Gi}

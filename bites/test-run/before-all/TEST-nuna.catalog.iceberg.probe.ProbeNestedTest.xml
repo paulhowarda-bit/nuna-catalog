@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="nuna.catalog.iceberg.probe.ProbeNestedTest" tests="1" skipped="0" failures="1" errors="0" timestamp="2026-11-15T04:31:14.655Z" hostname="localhost" time="0.004">
+  <properties/>
+  <testcase name="initializationError" classname="nuna.catalog.iceberg.probe.ProbeNestedTest" time="0.0">
+    <failure message="java.lang.IllegalStateException: probe: outer PER_CLASS fixture did not start" type="java.lang.IllegalStateException">java.lang.IllegalStateException: probe: outer PER_CLASS fixture did not start
+	at nuna.catalog.iceberg.probe.ProbeNestedTest.start(ProbeNestedTest.java:15)
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

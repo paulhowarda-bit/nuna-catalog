@@ -1,10 +1,10 @@
 Breaks: a failed purge is counted as a failed deletion, so the purges-failing alert never fires.
 Module: catalog-maintenance
 Test: ScanMetricsTest
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 index 62b16e8..7e7c8b9 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/Worker.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 @@ -388,7 +388,7 @@ final class Worker implements AutoCloseable {
              spans.part(ScanSpans.Part.PURGE, KeyValues.empty(), () -> purged(purge, report), outcome -> outcome);
          } catch (RuntimeException e) {

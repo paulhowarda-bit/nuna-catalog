@@ -2,10 +2,10 @@ Breaks: A held pointer is compared but not marked, so nothing conflicts with a c
 Module: catalog-store-mongo
 Test: MongoStoreSuiteTest#holdLastsUntilCommit
 
-diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java
 index fe15eb6..d49c6df 100644
---- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java
-+++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/Pointers.java
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Pointers.java
 @@ -145,7 +145,6 @@ final class Pointers {
          if (held == null) {
              return false;

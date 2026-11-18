@@ -1,0 +1,19 @@
+# Headless: the name resolves to the address of every ready server, not to one virtual IP. Each server resolves it to
+# gather catalog health for the console's health page from all of them (docs/observability/health-page.md). The
+# servers mount no service account token and call no Kubernetes API; DNS is all they need. A server that is starting
+# or stopping is not ready, so it is not listed and not asked.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuna-catalog.peersName" . }}
+  labels:
+    {{- include "nuna-catalog.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: false
+  selector:
+    {{- include "nuna-catalog.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 8181
+      targetPort: http

@@ -2,7 +2,7 @@
 # catalog server's (deploy/image/Dockerfile).
 #
 #   ./gradlew :catalog-maintenance:bootJar
-#   docker build -f deploy/image/maintenance.Dockerfile -t keel-maintenance:<version> catalog-maintenance/build/libs
+#   docker build -f deploy/image/maintenance.Dockerfile -t nuna-maintenance:<version> catalog-maintenance/build/libs
 #
 # The build context is the folder holding the runnable jar (*-exec.jar); nothing else is sent to Docker.
 # BASE_IMAGE is any Java 25 runtime. At work, pass the approved one from the curated registry (PLT-6).

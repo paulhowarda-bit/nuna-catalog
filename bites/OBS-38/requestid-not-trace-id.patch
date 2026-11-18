@@ -2,10 +2,10 @@ Breaks: a request without X-Request-ID gets a random id instead of its trace id.
 Module: catalog-server
 Test: TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java b/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
 index 1503ce8..ad92168 100644
---- a/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/telemetry/RequestIds.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/telemetry/RequestIds.java
 @@ -45,7 +45,7 @@ public final class RequestIds extends OncePerRequestFilter {
              throws ServletException, IOException {
          String id = request.getHeader(HEADER);

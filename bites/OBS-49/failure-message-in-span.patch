@@ -1,10 +1,10 @@
 Breaks: a failed part's span records the exception itself, whose message names a table's location.
 Module: catalog-maintenance
 Test: ScanSpansTest#aFailureRecordsItsTypeNeverItsMessage
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java b/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java b/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java
 index 320903f..634256d 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/ScanSpans.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/ScanSpans.java
 @@ -127,7 +127,7 @@ final class ScanSpans {
      private static void failed(Observation observation, String outcome, Throwable e) {
          observation.lowCardinalityKeyValue(OUTCOME, outcome);

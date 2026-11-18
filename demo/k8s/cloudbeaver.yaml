@@ -13,8 +13,8 @@
 # proxy's and Keycloak's (signout.html, below). Each person has four connections of their own, which sign in as
 # them:
 #
-#   keel (Trino, as <person>)             Trino (trino.yaml), catalogs lakehouse and engines. The connection
-#                                         sends the person's catalog token, and Trino hands it to keel, so keel
+#   nuna (Trino, as <person>)             Trino (trino.yaml), catalogs lakehouse and engines. The connection
+#                                         sends the person's catalog token, and Trino hands it to nuna, so nuna
 #                                         sees the person.
 #   backoffice (PostgreSQL, as <person>)  the CDC leg's PostgreSQL (cdc.yaml), database backoffice
 #   treasury (Oracle, as <person>)        the CDC leg's Oracle (cdc.yaml), PDB FREEPDB1
@@ -45,9 +45,9 @@ spec:
       # The hook reads this file and the tokens (Secret demo-people-tokens), and the proxy its secrets (Secret
       # keycloak-keys), only as the pod starts, so a changed file, new tokens or new secrets replace the pod.
       annotations:
-        keel-demo/manifest: "${MANIFEST_HASH}"
-        keel-demo/tokens: "${TOKENS_HASH}"
-        keel-demo/keys: "${KEYCLOAK_KEYS_HASH}"
+        nuna-demo/manifest: "${MANIFEST_HASH}"
+        nuna-demo/tokens: "${TOKENS_HASH}"
+        nuna-demo/keys: "${KEYCLOAK_KEYS_HASH}"
     spec:
       enableServiceLinks: false
       containers:
@@ -55,7 +55,7 @@ spec:
           image: ${CLOUDBEAVER_IMAGE}
           imagePullPolicy: Never
           env:
-            - {name: CB_SERVER_NAME, value: keel demo}
+            - {name: CB_SERVER_NAME, value: nuna demo}
             - {name: CB_ADMIN_NAME, value: oscar}
             - {name: CB_ADMIN_PASSWORD, value: oscar-demo}
             - {name: DEMO_USERS, value: "ana:ana-demo gary:gary-demo stella:stella-demo"}
@@ -67,9 +67,9 @@ spec:
           lifecycle:
             postStart:
               exec:
-                command: ["java", "-Xmx64m", "-cp", "/opt/keel-demo", "CloudBeaverUsers"]
+                command: ["java", "-Xmx64m", "-cp", "/opt/nuna-demo", "CloudBeaverUsers"]
           volumeMounts:
-            - {name: tokens, mountPath: /opt/keel-demo/tokens, readOnly: true}
+            - {name: tokens, mountPath: /opt/nuna-demo/tokens, readOnly: true}
           # No readiness probe: CloudBeaver answers on 127.0.0.1 only, which the kubelet cannot reach, and the
           # postStart hook holds the container back until CloudBeaver answers and has its users.
           resources:
@@ -84,7 +84,7 @@ spec:
             - name: OAUTH2_PROXY_COOKIE_SECRET
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: cloudbeaver-cookie-secret}}
             # Every page of the demo is on one host, and a browser sends a cookie to every port of a host.
-            - {name: OAUTH2_PROXY_COOKIE_NAME, value: keel_cloudbeaver_signin}
+            - {name: OAUTH2_PROXY_COOKIE_NAME, value: nuna_cloudbeaver_signin}
             - {name: OAUTH2_PROXY_COOKIE_SECURE, value: "true"}
             # As long as Keycloak's own session can last (ssoSessionMaxLifespan).
             - {name: OAUTH2_PROXY_COOKIE_EXPIRE, value: 10h}
@@ -144,7 +144,7 @@ data:
           path: /
           uri: http://127.0.0.1:8978/
         - id: signout
-          path: /keel-signout/
+          path: /nuna-signout/
           uri: file:///etc/oauth2-proxy/signout/
     # The browser goes to Keycloak through the front door, on <host>:8180; the proxy fetches tokens and keys inside
     # the cluster, from keycloak:8080. Keycloak names itself https://<host>:8180 either way, so discovery, which
@@ -155,14 +155,14 @@ data:
         provider: oidc
         clientID: cloudbeaver
         clientSecretFile: /etc/oauth2-proxy-secret/client-secret
-        loginURL: https://${DEMO_HOST}:8180/realms/keel/protocol/openid-connect/auth
-        redeemURL: http://keycloak:8080/realms/keel/protocol/openid-connect/token
+        loginURL: https://${DEMO_HOST}:8180/realms/nuna/protocol/openid-connect/auth
+        redeemURL: http://keycloak:8080/realms/nuna/protocol/openid-connect/token
         scope: openid email profile
         code_challenge_method: S256
         oidcConfig:
-          issuerURL: https://${DEMO_HOST}:8180/realms/keel
+          issuerURL: https://${DEMO_HOST}:8180/realms/nuna
           skipDiscovery: true
-          jwksURL: http://keycloak:8080/realms/keel/protocol/openid-connect/certs
+          jwksURL: http://keycloak:8080/realms/nuna/protocol/openid-connect/certs
           emailClaim: email
           groupsClaim: cloudbeaver_teams
           audienceClaims: [aud]
@@ -195,5 +195,5 @@ data:
       fetch("/api/gql", {method: "POST", headers: {"Content-Type": "application/json"},
                          body: JSON.stringify({query: "mutation { closeSession }"})})
         .finally(() => location.replace("/oauth2/sign_out?rd="
-          + encodeURIComponent("https://${DEMO_HOST}:8180/realms/keel/protocol/openid-connect/logout")));
+          + encodeURIComponent("https://${DEMO_HOST}:8180/realms/nuna/protocol/openid-connect/logout")));
     </script>

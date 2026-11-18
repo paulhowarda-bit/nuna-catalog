@@ -1,10 +1,10 @@
 Breaks: D20 off: anyone with select gets storage access to a flagged table.
 Module: catalog-security
 Test: AuthorizerTest#aFlaggedTableGivesStorageAccessOnlyToTrustedEngines
-diff --git a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 index 4fffc2d..bec0595 100644
---- a/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
-+++ b/catalog-security/src/main/java/keel/catalog/security/Authorizer.java
+--- a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
 @@ -230,7 +230,7 @@ public final class Authorizer {
              return new Decision.Denied(Reason.UNCLASSIFIED, null, "table " + object.name().display()
                      + " is in a regulated area and has no classification; it is closed until it is classified");

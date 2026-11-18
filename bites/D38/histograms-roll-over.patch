@@ -1,10 +1,10 @@
 Breaks: the health registry's histograms roll over every few minutes, as SimpleMeterRegistry's do, so the SLO buckets read empty.
 Module: catalog-server
 Test: HealthWindowTest#theRegistryKeepsEveryHistogramBucketWhereSimpleMeterRegistryLetsThemGo
-diff --git a/catalog-server/src/main/java/keel/catalog/server/health/HealthMeters.java b/catalog-server/src/main/java/keel/catalog/server/health/HealthMeters.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java b/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java
 index 7107d21..534a3d0 100644
---- a/catalog-server/src/main/java/keel/catalog/server/health/HealthMeters.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/health/HealthMeters.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java
 @@ -46,10 +46,4 @@ public final class HealthMeters extends SimpleMeterRegistry {
          });
      }

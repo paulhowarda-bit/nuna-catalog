@@ -28,19 +28,19 @@ import java.util.UUID;
  */
 public final class Mint {
 
-    static final String ISSUER = "https://idp.demo/keel";
-    static final String AUDIENCE = "keel-catalog";
-    static final String KEY_ID = "keel-demo-1";
+    static final String ISSUER = "https://idp.demo/nuna";
+    static final String AUDIENCE = "nuna-catalog";
+    static final String KEY_ID = "nuna-demo-1";
     static final Duration LIFETIME = Duration.ofDays(7);
 
     /** user -> {client id, groups}. */
     static final Map<String, String[]> USERS = new LinkedHashMap<>();
 
     static {
-        USERS.put("ana", new String[] {"keel-console", "demo-analysts"});
-        USERS.put("gary", new String[] {"keel-console", "demo-grant-admins"});
-        USERS.put("stella", new String[] {"keel-console", "demo-stewards"});
-        USERS.put("oscar", new String[] {"keel-console", "demo-operators"});
+        USERS.put("ana", new String[] {"nuna-console", "demo-analysts"});
+        USERS.put("gary", new String[] {"nuna-console", "demo-grant-admins"});
+        USERS.put("stella", new String[] {"nuna-console", "demo-stewards"});
+        USERS.put("oscar", new String[] {"nuna-console", "demo-operators"});
         USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
         USERS.put("lake", new String[] {"lake-writer-demo", "demo-loaders"});
         // Kafka Connect's Iceberg sinks in the CDC leg (demo.sh cdc).

@@ -1,11 +1,11 @@
 # Commercial and enterprise engines that can query Iceberg through an external REST catalog (self-hosted focus), as of 12 November 2026
 
-*Provenance tags used on every line. **[P]**: I read it in a primary source (vendor docs, vendor press release, vendor GitHub) at the URL given, on 2026-11-12. **[S]**: a secondary source I opened (third-party article, competitor blog, pricing tracker). **[S-snip]**: only seen in a search-engine summary of the page; I did not open the page, so treat it as weaker than [S]. **[I]**: my inference. "Not found" means I looked and found nothing, not that the feature is absent. The keel requirements are numbered R1 to R6 as in the brief (R1 REST protocol and OAuth2 bearer JWT, plus end-user pass-through; R2 vended credentials with vended `s3.endpoint` and `s3.path-style-access`; R3 nested namespaces; R4 v2 and v3 reads, and writes; R5 on-prem or Kubernetes, footprint; R6 ease of operation and air-gapped install).*
+*Provenance tags used on every line. **[P]**: I read it in a primary source (vendor docs, vendor press release, vendor GitHub) at the URL given, on 2026-11-12. **[S]**: a secondary source I opened (third-party article, competitor blog, pricing tracker). **[S-snip]**: only seen in a search-engine summary of the page; I did not open the page, so treat it as weaker than [S]. **[I]**: my inference. "Not found" means I looked and found nothing, not that the feature is absent. The nuna requirements are numbered R1 to R6 as in the brief (R1 REST protocol and OAuth2 bearer JWT, plus end-user pass-through; R2 vended credentials with vended `s3.endpoint` and `s3.path-style-access`; R3 nested namespaces; R4 v2 and v3 reads, and writes; R5 on-prem or Kubernetes, footprint; R6 ease of operation and air-gapped install).*
 
 ## Key question 1: Which of these can be deployed entirely on-prem and still connect to a third-party Iceberg REST catalog, rather than only to their own catalog?
 
 ### Takeaway
-Starburst Enterprise is the only commercial product that documents the whole keel checklist on-prem. It covers a static token or client credentials, end-user token pass-through, vended credentials, nested namespaces, v2 deletes and v3. Dell Data Lakehouse is a Starburst build and has the same features. Firebolt self-managed (Core, under the Elastic License 2.0), Vertica (now Rocket Software), Denodo's embedded Presto, EDB PGAA, Couchbase Enterprise Analytics and Exasol's Lakehouse Turbo can also run fully on-prem against a generic REST catalog, but each has gaps. Firebolt and Vertica do not read v3, and Vertica reads no delete files at all. Firebolt and Exasol do not document honouring a vended S3 endpoint. Exasol copies data into its own store. Several products cannot use keel this way. e6data needs its SaaS control plane. Oracle is not certified for generic REST catalogs, does not support credential vending, and fails on delete files. Teradata on-prem supports Hive only. Cloudera's on-prem side is a REST catalog server, and its engine-side REST client is a cloud-only preview. IBM watsonx.data documents external REST catalogs only for SaaS. CedarDB, Ocient and Yellowbrick have no Iceberg support today.
+Starburst Enterprise is the only commercial product that documents the whole nuna checklist on-prem. It covers a static token or client credentials, end-user token pass-through, vended credentials, nested namespaces, v2 deletes and v3. Dell Data Lakehouse is a Starburst build and has the same features. Firebolt self-managed (Core, under the Elastic License 2.0), Vertica (now Rocket Software), Denodo's embedded Presto, EDB PGAA, Couchbase Enterprise Analytics and Exasol's Lakehouse Turbo can also run fully on-prem against a generic REST catalog, but each has gaps. Firebolt and Vertica do not read v3, and Vertica reads no delete files at all. Firebolt and Exasol do not document honouring a vended S3 endpoint. Exasol copies data into its own store. Several products cannot use nuna this way. e6data needs its SaaS control plane. Oracle is not certified for generic REST catalogs, does not support credential vending, and fails on delete files. Teradata on-prem supports Hive only. Cloudera's on-prem side is a REST catalog server, and its engine-side REST client is a cloud-only preview. IBM watsonx.data documents external REST catalogs only for SaaS. CedarDB, Ocient and Yellowbrick have no Iceberg support today.
 
 ### Cited Findings
 
@@ -240,24 +240,24 @@ Starburst Enterprise is the only commercial product that documents the whole kee
 | Google BigQuery / Lakehouse (formerly BigLake) | No generic third-party attach documented. Google's "catalog federation" means routing REST clients **into** BigQuery. "Lakehouse connects Google Cloud to remote external catalogs, such as Databricks Unity Catalog". — [P] https://docs.cloud.google.com/lakehouse/docs/use-catalog-federation | "Storage access delegation (credential vending) isn't supported when routing requests to the BigQuery catalog." — [P, same page] | BigLake was renamed "Lakehouse for Apache Iceberg" in Apr 2026. — [S-snip] https://www.snowflake.com/en/developers/guides/getting-started-with-snowflake-and-bigquery-via-iceberg/ |
 | Microsoft Fabric / OneLake | Partly. A Mirrored Catalog "mirrors tables from an external Iceberg REST Catalog (IRC) API-compliant provider" through delegated shortcuts. The source types are only `DremioIcebergCatalog`, `AzureMonitorMirroredCatalog`, `AWSIcebergCatalog`, `MirroredGoogleLakehouseRuntimeCatalog` and `AvevaConnectCatalog`. There is no generic type; "Additional source types may be added over time" (page updated 29 Sep 2026). — [P] https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/mirrored-catalog-definition | Dremio mirroring (preview, Apr 2026) uses credential vending. — [S-snip] https://learn.microsoft.com/en-us/fabric/fundamentals/whats-new | Glue mirroring needs public-internet reachability. — [S-snip] https://learn.microsoft.com/en-us/fabric/mirroring/catalog-mirroring/aws-glue-tutorial |
 | Starburst Galaxy | Named REST catalogs only: S3 Tables, Apache Polaris (S3, GCS), Lakekeeper (ADLS), plus Unity. No arbitrary REST catalog is named. — [P] https://docs.starburst.io/starburst-galaxy/working-with-data/create-catalogs/ | Not stated | The navigation lists "AWS PrivateLink for on-prem data source"; otherwise Galaxy's IP ranges must be allow-listed. — [P, same page] |
-| MotherDuck | Yes. `CREATE DATABASE ... (TYPE ICEBERG, "secret" ..., endpoint ..., warehouse ...)`, with secrets for OAuth2 client credentials or `TOKEN`. — [P] https://motherduck.com/docs/integrations/file-formats/apache-iceberg.md | `access_delegation_mode` defaults to `'vended_credentials'`. — [P, same page] | Reads support "S3, S3-compatible object storage (including Cloudflare R2), S3 Tables, and GCS". Queries run on MotherDuck's cloud compute, so keel and Silo or Ceph would have to be internet-reachable [I]. Writes use merge-on-read. — [P, same page] |
+| MotherDuck | Yes. `CREATE DATABASE ... (TYPE ICEBERG, "secret" ..., endpoint ..., warehouse ...)`, with secrets for OAuth2 client credentials or `TOKEN`. — [P] https://motherduck.com/docs/integrations/file-formats/apache-iceberg.md | `access_delegation_mode` defaults to `'vended_credentials'`. — [P, same page] | Reads support "S3, S3-compatible object storage (including Cloudflare R2), S3 Tables, and GCS". Queries run on MotherDuck's cloud compute, so nuna and Silo or Ceph would have to be internet-reachable [I]. Writes use merge-on-read. — [P, same page] |
 
 ### Inferences
-- **Fully on-prem against keel, best fit first**:
+- **Fully on-prem against nuna, best fit first**:
   1. Starburst Enterprise, or the Dell Data Lakehouse build of it.
   2. Denodo Embedded MPP, which is PrestoDB underneath, so Presto's REST client limits apply.
-  3. Firebolt self-managed: v1/v2 read-only, and keel would have to issue client credentials, since static tokens are not supported for generic REST.
+  3. Firebolt self-managed: v1/v2 read-only, and nuna would have to issue client credentials, since static tokens are not supported for generic REST.
   4. Vertica: no delete files.
   5. EDB PGAA and Couchbase Enterprise Analytics: niche, Postgres or JSON analytics.
   6. Exasol Lakehouse Turbo: a cache, and it needs a Linux cluster with Podman.
   7. No longer self-hostable without vendor egress: e6data, because its control plane is SaaS.
-- **Unknown for every on-prem product, Starburst included**: whether the engine uses the vended `s3.endpoint` and `s3.path-style-access`. EDB PGAA only shows an `endpoint` in its non-vended `store_config`. Firebolt only documents S3-compatible endpoints for its own storage. This is the main item to test with keel and Silo/Ceph before buying anything.
-- **Oracle and Teradata** do not work with keel's model on-prem today. Oracle has no credential vending, fails on delete files and does not certify generic REST catalogs. Teradata on-prem supports Hive only.
-- **Cloudera** is mainly a competing catalog (its HMS-embedded REST server) rather than a client of keel.
-- **IBM watsonx.data** probably can register keel through Presto's REST connector, since its SaaS docs show this for other REST catalogs. On-prem parity, vended credentials and nested namespaces are unconfirmed.
+- **Unknown for every on-prem product, Starburst included**: whether the engine uses the vended `s3.endpoint` and `s3.path-style-access`. EDB PGAA only shows an `endpoint` in its non-vended `store_config`. Firebolt only documents S3-compatible endpoints for its own storage. This is the main item to test with nuna and Silo/Ceph before buying anything.
+- **Oracle and Teradata** do not work with nuna's model on-prem today. Oracle has no credential vending, fails on delete files and does not certify generic REST catalogs. Teradata on-prem supports Hive only.
+- **Cloudera** is mainly a competing catalog (its HMS-embedded REST server) rather than a client of nuna.
+- **IBM watsonx.data** probably can register nuna through Presto's REST connector, since its SaaS docs show this for other REST catalogs. On-prem parity, vended credentials and nested namespaces are unconfirmed.
 
 ### Gaps
-- No product documents honouring a vended `s3.endpoint` or `s3.path-style-access`, or says whether the endpoint must be repeated in engine config. This covers SEP, Firebolt, Exasol, Vertica, Denodo, PGAA and Couchbase. It needs a test against keel.
+- No product documents honouring a vended `s3.endpoint` or `s3.path-style-access`, or says whether the endpoint must be repeated in engine config. This covers SEP, Firebolt, Exasol, Vertica, Denodo, PGAA and Couchbase. It needs a test against nuna.
 - Vertica 26.2 and 26.3 docs could not be read (Rocket's JavaScript portal), so any REST, vended-credential or delete-file changes after 26.1 are unknown. Vertica Community Edition status under Rocket was not checked.
 - IBM watsonx.data software docs (ibm.com/docs) returned 403. The on-prem external-catalog procedure, vended credentials, v3, footprint and licensing are all unconfirmed.
 - Starburst air-gapped install procedure: only "use your own Docker registry" was found. SEP list pricing is unverified.
@@ -269,7 +269,7 @@ Starburst Enterprise is the only commercial product that documents the whole kee
 ## Key question 2: Which add identity pass-through, fine-grained access control or operations tooling that would justify paying over open-source Trino or DuckDB?
 
 ### Takeaway
-For keel the deciding feature is end-user identity reaching the catalog, and only Starburst Enterprise documents it. It forwards the logged-in user's OAuth2 access token to an Iceberg REST catalog (`OAUTH2_PASSTHROUGH`, documented since 477-e, Nov 2025), with per-user `session=USER`. Starburst adds built-in RBAC with masks, filters and audit, Ranger and Immuta integration, Helm charts and a licence-gated cache. Firebolt adds a real Kubernetes operator, e6data and Exasol add governance or caching, and AWS Lake Formation adds trusted identity propagation (cloud only). All of these call the catalog with one service identity.
+For nuna the deciding feature is end-user identity reaching the catalog, and only Starburst Enterprise documents it. It forwards the logged-in user's OAuth2 access token to an Iceberg REST catalog (`OAUTH2_PASSTHROUGH`, documented since 477-e, Nov 2025), with per-user `session=USER`. Starburst adds built-in RBAC with masks, filters and audit, Ranger and Immuta integration, Helm charts and a licence-gated cache. Firebolt adds a real Kubernetes operator, e6data and Exasol add governance or caching, and AWS Lake Formation adds trusted identity propagation (cloud only). All of these call the catalog with one service identity.
 
 ### Cited Findings
 - **Starburst identity**:
@@ -294,11 +294,11 @@ For keel the deciding feature is end-user identity reaching the catalog, and onl
 - **MotherDuck (paid DuckDB)**: persisted REST catalogs with secrets, writes and vended credentials, but only on MotherDuck cloud compute. — [P] https://motherduck.com/docs/integrations/file-formats/apache-iceberg.md
 
 ### Inferences
-- **Starburst is the only paid option that would let keel enforce per-user authorization on reads through Trino-family SQL**:
-  - keel must accept access tokens whose audience is SEP's, or SEP must exchange them. Generic exchange is documented only for Databricks.
+- **Starburst is the only paid option that would let nuna enforce per-user authorization on reads through Trino-family SQL**:
+  - nuna must accept access tokens whose audience is SEP's, or SEP must exchange them. Generic exchange is documented only for Databricks.
   - The tokens must outlive the longest query.
   - `session=USER` disables the REST metadata cache, so expect more catalog load.
-- **For DuckDB users**: MotherDuck is not a self-hosted upgrade path for an on-prem keel. Its compute is in MotherDuck's cloud.
+- **For DuckDB users**: MotherDuck is not a self-hosted upgrade path for an on-prem nuna. Its compute is in MotherDuck's cloud.
 - **If identity pass-through is not needed**: Firebolt's operator, which is Apache-2.0, is the most complete Kubernetes-native operations tooling. However, Firebolt's Iceberg support (v1/v2 read, no DML, no static token) is weaker than open-source Trino's, and that is assessed elsewhere.
 
 ### Gaps
@@ -338,9 +338,9 @@ For keel the deciding feature is end-user identity reaching the catalog, and onl
   - MotherDuck added persisted Iceberg REST catalogs (DuckDB 1.5.2+). — [P] https://motherduck.com/docs/integrations/file-formats/apache-iceberg.md; the version requirement is [S-snip]
 
 ### Inferences
-- **Dremio self-managed**: under SAP its future is undefined in the public record. The open-source code drop appears to have stopped in Sept 2025, and the free trial and Community Edition were de-emphasised before the deal. Treat Dremio Community as a risky long-term dependency for an on-prem keel deployment.
+- **Dremio self-managed**: under SAP its future is undefined in the public record. The open-source code drop appears to have stopped in Sept 2025, and the free trial and Community Edition were de-emphasised before the deal. Treat Dremio Community as a risky long-term dependency for an on-prem nuna deployment.
 - **Vertica under Rocket** (a mainframe and modernisation vendor) is likely to stay on-prem friendly. Its Iceberg reader is still basic as of 26.1: no delete files, no v3.
-- **Free self-hosted commercial engines that can sit on keel**:
+- **Free self-hosted commercial engines that can sit on nuna**:
   - Firebolt Core (ELv2, unlimited) is the only new one that is truly unlimited.
   - Exasol Personal is single-user.
   - Dremio Community is free but under new ownership.

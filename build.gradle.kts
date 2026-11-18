@@ -1,7 +1,7 @@
 import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
 import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
-// keel catalog: Iceberg REST catalog server. Author: Paul Howard.
+// nuna catalog: Iceberg REST catalog server. Author: Paul Howard.
 //
 //   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas
 //                              (PostgreSQL only), and a check that every recorded bite still applies
@@ -54,7 +54,7 @@ subprojects {
     apply(plugin = "java-library")
     apply(plugin = "io.spring.dependency-management")
 
-    group = "keel"
+    group = "nuna"
     version = "0.1.0-SNAPSHOT"
 
     configure<JavaPluginExtension> {
@@ -125,7 +125,7 @@ subprojects {
             }
         }
         if (nightly) {
-            systemProperty("keel.suite.cas-rounds", "1000")
+            systemProperty("nuna.suite.cas-rounds", "1000")
         }
         if (nightly || heavy) {
             // The CAS test and the heavy tier's race and fault tests look for a race, and the load runs
@@ -136,7 +136,7 @@ subprojects {
         }
         // The one S3 store every test uses (catalog-tests-s3, TestS3): -Ps3=silo, ceph or aws.
         listOf("s3", "silo.image", "ceph.image").forEach { systemProperty(it, project.property(it)!!) }
-        systemProperty("keel.aws.profile", providers.gradleProperty("keel.aws.profile").getOrElse(""))
+        systemProperty("nuna.aws.profile", providers.gradleProperty("nuna.aws.profile").getOrElse(""))
         // In the fast build every test of some modules is tagged out.
         failOnNoDiscoveredTests = false
         // What the test JVMs had under Maven on this 16 GB machine (the JVM's default, a quarter

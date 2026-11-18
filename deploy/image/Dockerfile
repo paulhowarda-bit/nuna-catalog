@@ -2,7 +2,7 @@
 # code change re-ships only the small application layers, not the 111 libraries.
 #
 #   ./gradlew :catalog-server:bootJar
-#   docker build -f deploy/image/Dockerfile -t keel-catalog:<version> catalog-server/build/libs
+#   docker build -f deploy/image/Dockerfile -t nuna-catalog:<version> catalog-server/build/libs
 #
 # The build context is the folder holding the runnable jar (*-exec.jar); nothing else is sent to Docker.
 # BASE_IMAGE is any Java 25 runtime. At work, pass the approved one from the curated registry (PLT-6).

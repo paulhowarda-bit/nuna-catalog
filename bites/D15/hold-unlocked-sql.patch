@@ -2,10 +2,10 @@ Breaks: A held pointer is compared by a plain read and not locked, so it can mov
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest#holdLastsUntilCommit
 
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 index 32fa4a3..28d76d6 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 @@ -84,7 +84,7 @@ final class Pointers {
              boolean matched = switch (lock) {
                  case PointerSwap swap when swap.expected().isEmpty() -> insert(connection, swap, batch);

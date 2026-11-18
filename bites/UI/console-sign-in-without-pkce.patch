@@ -2,10 +2,10 @@ Breaks: The console asks the IdP for a code without a PKCE challenge.
 Module: catalog-server
 Test: ConsoleSignInTest#signsInThroughThePkceFlowAndTheCatalogAcceptsTheToken
 
-diff --git a/catalog-server/src/main/resources/keel/ui/auth.js b/catalog-server/src/main/resources/keel/ui/auth.js
+diff --git a/catalog-server/src/main/resources/nuna/ui/auth.js b/catalog-server/src/main/resources/nuna/ui/auth.js
 index 1d1508a..18d730d 100644
---- a/catalog-server/src/main/resources/keel/ui/auth.js
-+++ b/catalog-server/src/main/resources/keel/ui/auth.js
+--- a/catalog-server/src/main/resources/nuna/ui/auth.js
++++ b/catalog-server/src/main/resources/nuna/ui/auth.js
 @@ -83,7 +83,7 @@ export async function startSignIn(oidc) {
    const url = new URL(meta.authorization_endpoint);
    url.search = new URLSearchParams({

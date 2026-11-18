@@ -2,10 +2,10 @@ Breaks: a restarted feed does not send the receipts after the last one SingleSto
 Module: singlestore-change-feed
 Test: ChangeFeedTest
 
-diff --git a/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java b/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java
 index cee2325..1c02e27 100644
---- a/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java
-+++ b/singlestore-change-feed/src/main/java/keel/changefeed/engine/ChangeFeed.java
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeFeed.java
 @@ -115,7 +115,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
      }
  

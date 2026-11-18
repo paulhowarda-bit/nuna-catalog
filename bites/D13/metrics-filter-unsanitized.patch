@@ -2,10 +2,10 @@ Breaks: a scan report's filter leaves the catalog as the client sent it, literal
 Module: catalog-iceberg
 Test: MetricsReportRequestTest#aScanFilterIsSanitizedWhateverTheClientSent
 
-diff --git a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java
 index 2ce3ad2..bbb8aac 100644
---- a/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
-+++ b/catalog-iceberg/src/main/java/keel/catalog/iceberg/RestRequest.java
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/RestRequest.java
 @@ -247,7 +247,7 @@ public final class RestRequest {
              return switch (request.report()) {
                  case ScanReport scan -> {

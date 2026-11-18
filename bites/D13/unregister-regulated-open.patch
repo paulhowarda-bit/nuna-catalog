@@ -2,10 +2,10 @@ Breaks: a table in a regulated area can be unregistered.
 Module: catalog-server
 Test: SecurityGateTest#unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 index 12ff24f..e046158 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 @@ -261,7 +261,7 @@ class TableRoutes {
              guard.onObject(request, catalog, object, path, Guard.UNREGISTER_TABLE);
              GovernanceChain governance = GovernanceChain.of(store, object);

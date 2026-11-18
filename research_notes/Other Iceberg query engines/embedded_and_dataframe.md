@@ -1,8 +1,8 @@
-# Embedded, single-node and dataframe engines over an Iceberg REST catalog (keel), as of 2026-11-12
+# Embedded, single-node and dataframe engines over an Iceberg REST catalog (nuna), as of 2026-11-12
 
 Provenance tags used on every line: **[P]** read in a primary source (repo source code, repo docs read as raw Markdown, official docs, GitHub/PyPI/crates.io APIs) at the URL given; **[S]** secondary (search-result summary or a page read only through a summarising fetch); **[I]** my inference. GitHub source files were read on their default branch on 2026-11-12 unless a tag is named in the URL. Release dates come from the GitHub releases API, PyPI JSON API or crates.io API, read 2026-11-12. Nothing was installed or run.
 
-## Key question 1: for each engine, which Iceberg library does it use, and how does it meet keel's six requirements (REST + OAuth2 JWT, vended credentials with on-prem endpoint, nested namespaces, v2/v3 reads, writes, on-prem/air-gapped running)?
+## Key question 1: for each engine, which Iceberg library does it use, and how does it meet nuna's six requirements (REST + OAuth2 JWT, vended credentials with on-prem endpoint, nested namespaces, v2/v3 reads, writes, on-prem/air-gapped running)?
 
 ### Takeaway
 Only three engines are real candidates today: **Spice.ai** (a Rust server on a fork of iceberg-rust; the most complete end to end, but it refuses a vended endpoint on a private IP unless you repeat the endpoint in its config), **Polars** and **Daft** (Python libraries that use PyIceberg for the catalog, so they inherit PyIceberg's auth and vended-credential handling; both pass the vended `s3.endpoint` through, but neither reads equality deletes). **DataFusion with iceberg-rust** works as a library, with the best v2/v3 delete support. It has no token refresh, no built-in access-delegation header, and its DataFusion glue moved to a new repository (`apache/datafusion-iceberg`) after 0.11.x. **Sail** has the richest Iceberg feature set (v3 deletion vectors, MERGE) and a multi-user Spark Connect/Flight SQL endpoint. But its main branch still does not *apply* vended credentials: it fingerprints them and uses its own configured S3 credentials, so it fails requirement 2 as stated. **chDB** inherits ClickHouse's DataLakeCatalog. **GlareDB** is dormant and has only a stub REST catalog. **Ballista** has no Iceberg support. **MotherDuck** is cloud-only.
@@ -177,9 +177,9 @@ Only three engines are real candidates today: **Spice.ai** (a Rust server on a f
   - **Spice** additionally refuses it when it resolves to a private address, failing closed rather than sending to AWS. The fix is to repeat `iceberg_s3_endpoint`/`iceberg_s3_region`, or set `SPICE_URL_TABLE_ALLOW_PRIVATE_HOSTS`.
   - **Sail** ignores vended credentials entirely. With no `AWS_ENDPOINT` set it would use its ambient AWS chain and default AWS endpoints, so the endpoint and static keys must be repeated in its environment.
   - **chDB/ClickHouse** has a separate `storage_endpoint` setting; whether vended `s3.endpoint` overrides it should be taken from the ClickHouse assessment.
-- [I] iceberg-rust uses only `LoadTableResult.config`, not `storage-credentials`. If keel returns STS keys only in `storage-credentials`, then DataFusion/iceberg-rust and Spice will not use them, and they will fall back to ambient credentials. Keel should put `s3.access-key-id`, `s3.secret-access-key`, `s3.session-token`, `s3.endpoint` and `s3.path-style-access=true` in `config` as well.
-- [I] iceberg-rust and Spice do not send `X-Iceberg-Access-Delegation` by default. If keel vends only when that header is present, iceberg-rust users must add `header.X-Iceberg-Access-Delegation=vended-credentials` (possible in `.icebergrc` because props pass verbatim). Spice's documented parameter list has no generic header option, so with Spice keel would have to vend by default.
-- [I] iceberg-rust defaults to virtual-host addressing (since 0.10.0). Keel must vend `s3.path-style-access=true` (or the client must set it) for Silo or Ceph without wildcard DNS. Spice defaults to path-style. Daft and Polars use path-style whenever an endpoint is set, because the Daft `force_virtual_addressing` and object_store `virtual_hosted_style_request` defaults are false. The object_store default is recalled, not read.
+- [I] iceberg-rust uses only `LoadTableResult.config`, not `storage-credentials`. If nuna returns STS keys only in `storage-credentials`, then DataFusion/iceberg-rust and Spice will not use them, and they will fall back to ambient credentials. Nuna should put `s3.access-key-id`, `s3.secret-access-key`, `s3.session-token`, `s3.endpoint` and `s3.path-style-access=true` in `config` as well.
+- [I] iceberg-rust and Spice do not send `X-Iceberg-Access-Delegation` by default. If nuna vends only when that header is present, iceberg-rust users must add `header.X-Iceberg-Access-Delegation=vended-credentials` (possible in `.icebergrc` because props pass verbatim). Spice's documented parameter list has no generic header option, so with Spice nuna would have to vend by default.
+- [I] iceberg-rust defaults to virtual-host addressing (since 0.10.0). Nuna must vend `s3.path-style-access=true` (or the client must set it) for Silo or Ceph without wildcard DNS. Spice defaults to path-style. Daft and Polars use path-style whenever an endpoint is set, because the Daft `force_virtual_addressing` and object_store `virtual_hosted_style_request` defaults are false. The object_store default is recalled, not read.
 - [I] With a client-credentials JWT, iceberg-rust (and so the playground and probably Spice) fetches a token once and never refreshes it. Long-lived processes will start failing with 401 when the IdP's token expires. Sail's token-file option suits Kubernetes, where an external sidecar or kubelet rotates the file.
 - [I] DataFusion's `IcebergCatalogProvider` builds schemas only from top-level namespaces, so a table in `a.b.c.d` is not reachable through `catalog.schema.table` SQL. You would register `IcebergTableProvider`s per table in code. Spice exposes nested tables under the leaf namespace name, which can collide when two branches share a leaf name.
 - [I] Air-gapped install:
@@ -200,7 +200,7 @@ Only three engines are real candidates today: **Spice.ai** (a Rust server on a f
 ## Key question 2: which engines can serve many users (a SQL endpoint over Postgres wire, Arrow Flight SQL or Spark Connect) versus a single process?
 
 ### Takeaway
-**Sail** (Spark Connect server, plus an Arrow Flight SQL server and Kubernetes cluster mode) and **Spice** (an Arrow Flight SQL and HTTP SQL server with an mTLS and auth module) are the only in-scope engines with a built-in multi-user endpoint over Iceberg. DataFusion/iceberg-rust, Polars, Daft and chDB are in-process libraries or CLIs. Ballista has a Flight SQL frontend but no Iceberg support. None of the in-scope engines offers a Postgres-wire endpoint in the material read. Neither multi-user server passes each end user's own catalog token through to keel: both use one catalog identity per server configuration.
+**Sail** (Spark Connect server, plus an Arrow Flight SQL server and Kubernetes cluster mode) and **Spice** (an Arrow Flight SQL and HTTP SQL server with an mTLS and auth module) are the only in-scope engines with a built-in multi-user endpoint over Iceberg. DataFusion/iceberg-rust, Polars, Daft and chDB are in-process libraries or CLIs. Ballista has a Flight SQL frontend but no Iceberg support. None of the in-scope engines offers a Postgres-wire endpoint in the material read. Neither multi-user server passes each end user's own catalog token through to nuna: both use one catalog identity per server configuration.
 
 ### Cited Findings
 - [P] Sail: `sail flight server --ip … --port 32010`, or `pysail.flight.FlightSqlServer`, starts an Arrow Flight SQL server, and any Flight SQL client (e.g. ADBC) can connect. — [docs/guide/integrations/flight-sql.md](https://github.com/lakehq/sail/blob/main/docs/guide/integrations/flight-sql.md)
@@ -215,7 +215,7 @@ Only three engines are real candidates today: **Spice.ai** (a Rust server on a f
 
 ### Inferences
 - [I] Per-user token passthrough:
-  - In Sail and Spice, every user of the server reaches keel with the server's single configured token or credential. keel's per-user authorisation would collapse to one service identity unless a gateway or proxy does token exchange.
+  - In Sail and Spice, every user of the server reaches nuna with the server's single configured token or credential. nuna's per-user authorisation would collapse to one service identity unless a gateway or proxy does token exchange.
   - In the library engines (Polars, Daft, chDB, DataFusion), each user's own process can hold that user's JWT, so passthrough is natural.
   - A custom DataFusion Flight SQL server could implement per-user passthrough with iceberg-rust's `contextual_session`, but no shipped server does.
 - [I] Authentication on Sail's own Spark Connect and Flight SQL endpoints is not documented in the pages read. Plan to front them with a proxy or network policy.
@@ -228,7 +228,7 @@ Only three engines are real candidates today: **Spice.ai** (a Rust server on a f
 ## Key question 3: which are production-ready versus experimental for Iceberg reads and writes as of November 2026?
 
 ### Takeaway
-- **Most production-shaped for keel:** Spice 2.4.x reads (v1-v3 including deletion vectors), with append and equality-delete DELETE writes. It is a versioned 2.x product with weekly releases, and has the private-endpoint caveat.
+- **Most production-shaped for nuna:** Spice 2.4.x reads (v1-v3 including deletion vectors), with append and equality-delete DELETE writes. It is a versioned 2.x product with weekly releases, and has the private-endpoint caveat.
 - **Production-usable as libraries, with caveats:**
   - Polars 2.x reads: native position deletes and DVs, but no equality deletes; several Iceberg APIs are flagged unstable.
   - Daft 0.7.x reads and appends: position deletes only, no DV evidence.
@@ -248,8 +248,8 @@ Only three engines are real candidates today: **Spice.ai** (a Rust server on a f
 - [P] ClickHouse DataLakeCatalog requires `SET allow_database_iceberg = 1`. — [ClickHouse docs](https://clickhouse.com/docs/engines/database-engines/datalakecatalog)
 
 ### Inferences
-- [I] For keel's tables written by other engines with **equality deletes** (Flink/streaming upserts), only the iceberg-rust family (DataFusion, Spice) and Sail read them correctly. Polars cannot, and Daft is unproven. For **v3 deletion vectors**, Sail, Spice, iceberg-rust 0.11 and Polars read them. **Geometry and geography** are unsupported everywhere in scope.
-- [I] Rough maturity ranking for read-only analytics against keel today: Spice ≈ Polars > Daft > DataFusion/iceberg-rust (library-grade, DIY server) > Sail (blocked on vended credentials) > chDB (depends on ClickHouse findings) >> GlareDB and Ballista (not usable).
+- [I] For nuna's tables written by other engines with **equality deletes** (Flink/streaming upserts), only the iceberg-rust family (DataFusion, Spice) and Sail read them correctly. Polars cannot, and Daft is unproven. For **v3 deletion vectors**, Sail, Spice, iceberg-rust 0.11 and Polars read them. **Geometry and geography** are unsupported everywhere in scope.
+- [I] Rough maturity ranking for read-only analytics against nuna today: Spice ≈ Polars > Daft > DataFusion/iceberg-rust (library-grade, DIY server) > Sail (blocked on vended credentials) > chDB (depends on ClickHouse findings) >> GlareDB and Ballista (not usable).
 
 ### Gaps
 - No public adoption data (named production users) was found for any engine's *Iceberg* path specifically. Stars and release cadence are the only adoption signals collected.

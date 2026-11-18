@@ -9,7 +9,7 @@
 #   ./overnight.sh --dry     check the plumbing: the builds run with -m and the nightly lists its tests, no bite
 #                            runs, and nothing is recorded as tested
 #
-# Everything lives in $KEEL_OVERNIGHT_HOME (default: keel-overnight next to the main checkout):
+# Everything lives in $NUNA_OVERNIGHT_HOME (default: nuna-overnight next to the main checkout):
 #   clone/           a clone of this repo, reset to main's tip at each run; the bites patch its files
 #   runs/<date>/     summary.md, one log per leg, the logs of bites that did not bite, and for each leg that did
 #                    not pass, <leg>-results/: its test result files and what docker info said just after
@@ -24,12 +24,12 @@
 #   3. ./nightly.sh: the overnight tests and the CAS test
 #   4. bites/run.sh, one bite at a time, only if leg 1 passed (a bite run against a failing build proves
 #      nothing)
-# KEEL_OVERNIGHT_LEGS picks legs by name (default "heavy ceph nightly bites"); with heavy left out, the bites run.
-# Nothing starts after $KEEL_OVERNIGHT_DEADLINE (default 06:30), and a leg still running then is stopped, so
+# NUNA_OVERNIGHT_LEGS picks legs by name (default "heavy ceph nightly bites"); with heavy left out, the bites run.
+# Nothing starts after $NUNA_OVERNIGHT_DEADLINE (default 06:30), and a leg still running then is stopped, so
 # the day starts with Docker free. Each leg, and the bites, start once the containers of the leg before are gone,
 # and Testcontainers is given 60 s, not 10, to reach Docker (backlog 32).
 #
-# If the keel-demo stack is running, the run takes it down first (demo/demo.sh down) and rebuilds it at the end
+# If the nuna-demo stack is running, the run takes it down first (demo/demo.sh down) and rebuilds it at the end
 # (demo/demo.sh up): fresh sample data, no CDC leg. Its deployments keep no volumes, so pausing them could not
 # keep their data anyway (Paul, 2026-11-15). A dry run only says what it would do.
 
@@ -40,12 +40,12 @@ main() {
     repo=$(cd "$(dirname "$0")" && pwd)
     # Next to the main checkout, wherever this copy of the script is.
     main_checkout=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
-    home=${KEEL_OVERNIGHT_HOME:-$(dirname "$main_checkout")/keel-overnight}
-    deadline_at=${KEEL_OVERNIGHT_DEADLINE:-06:30}
-    context=${KEEL_DEMO_CONTEXT:-docker-desktop}
-    demo_ns=${KEEL_DEMO_NAMESPACE:-keel-demo}
-    legs=${KEEL_OVERNIGHT_LEGS:-heavy ceph nightly bites}
-    demo_sh=${KEEL_DEMO_SCRIPT:-$main_checkout/demo/demo.sh}
+    home=${NUNA_OVERNIGHT_HOME:-$(dirname "$main_checkout")/nuna-overnight}
+    deadline_at=${NUNA_OVERNIGHT_DEADLINE:-06:30}
+    context=${NUNA_DEMO_CONTEXT:-docker-desktop}
+    demo_ns=${NUNA_DEMO_NAMESPACE:-nuna-demo}
+    legs=${NUNA_OVERNIGHT_LEGS:-heavy ceph nightly bites}
+    demo_sh=${NUNA_DEMO_SCRIPT:-$main_checkout/demo/demo.sh}
     # How long a test JVM's Testcontainers keeps asking Docker before it gives up, for good: every later test in
     # that JVM fails at once. Its default, 10 s, ran out in the Ceph leg of 2026-11-15 (backlog 32).
     export TESTCONTAINERS_CLIENT_PING_TIMEOUT=${TESTCONTAINERS_CLIENT_PING_TIMEOUT:-60}
@@ -90,18 +90,18 @@ main() {
 
     demo_down=false
     demo_note="not running"
-    demo() { (cd "$main_checkout" && KEEL_DEMO_CONTEXT="$context" KEEL_DEMO_NAMESPACE="$demo_ns" \
+    demo() { (cd "$main_checkout" && NUNA_DEMO_CONTEXT="$context" NUNA_DEMO_NAMESPACE="$demo_ns" \
         timeout 1800 "$demo_sh" "$@") >>"$runs/demo.log" 2>&1; }
     rebuild_demo() {
         $demo_down || return 0
         demo_down=false
-        say "rebuilding keel-demo: demo/demo.sh up"
+        say "rebuilding nuna-demo: demo/demo.sh up"
         if demo up; then
             demo_note+="; rebuilt with demo/demo.sh up at $(date +%H:%M)"
         else
             demo_note+="; demo/demo.sh up FAILED at $(date +%H:%M), see demo.log"
         fi
-        say "keel-demo: $demo_note"
+        say "nuna-demo: $demo_note"
     }
     finish() {
         rebuild_demo
@@ -151,7 +151,7 @@ main() {
     if [ -n "$running" ] && $dry; then
         demo_note="running ($running); a real run would take it down and rebuild it after"
     elif [ -n "$running" ]; then
-        say "keel-demo is running ($running); taking it down"
+        say "nuna-demo is running ($running); taking it down"
         demo_down=true
         if demo down; then
             demo_note="was running ($running): taken down for the run"
@@ -205,12 +205,12 @@ main() {
     wanted() { [[ " $legs " == *" $1 "* ]]; }
 
     # leg <key> <title> <log> <command...>: runs the command in the clone until the deadline and records a row.
-    # Returns 0 if it passed, 1 if it failed or did not run, 2 if KEEL_OVERNIGHT_LEGS left it out.
+    # Returns 0 if it passed, 1 if it failed or did not run, 2 if NUNA_OVERNIGHT_LEGS left it out.
     leg() {
         local key=$1 title=$2 log=$3 marker status result t0
         shift 3
         if ! wanted "$key"; then
-            rows+=("| $title | left out (KEEL_OVERNIGHT_LEGS) | | |")
+            rows+=("| $title | left out (NUNA_OVERNIGHT_LEGS) | | |")
             return 2
         fi
         if [ "$(left)" -le 60 ]; then
@@ -263,7 +263,7 @@ main() {
     ran=0; bit=0; not_bit=0
     t0=$(date +%s)
     if ! wanted bites; then
-        rows+=("| Bites | left out (KEEL_OVERNIGHT_LEGS) | | |")
+        rows+=("| Bites | left out (NUNA_OVERNIGHT_LEGS) | | |")
     elif [ "$heavy_ok" -eq 1 ]; then
         rows+=("| Bites | not run: the heavy build did not pass | | |")
     elif $dry; then
@@ -309,7 +309,7 @@ main() {
         echo "- Commit: $(git -C "$clone" log -1 --format='%h %s' "$target")"
         [ -n "$last" ] && echo "- Last run tested: $(git -C "$repo" log -1 --format='%h' "$last" 2>/dev/null || echo "$last")"
         echo "- From $(clock "$started") to $(clock "$ended"), $(minutes $(( ended - started ))); deadline $deadline_at"
-        echo "- keel-demo: $demo_note"
+        echo "- nuna-demo: $demo_note"
         echo "- Logs: $runs"
         echo
         echo "| Leg | Result | Time | Log |"

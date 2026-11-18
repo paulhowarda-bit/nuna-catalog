@@ -9,12 +9,12 @@
   strings appear only inside escaped JSON, so a type holding a newline cannot start a forged line. A `table-name`
   that is not a string answers 400, as a bad scan or commit report does.
 - Tests: `MetricsReportRequestTest` (catalog-iceberg, 7) and `MetricsReportTest` (catalog-server, 4, read from the
-  `keel.telemetry.metrics` logger behind the route), all passing; `RestRoutesTest#metricsCredentialsAndTokens` and
+  `nuna.telemetry.metrics` logger behind the route), all passing; `RestRoutesTest#metricsCredentialsAndTokens` and
   `SecurityGateTest#metricsAreReportedOnlyOnATableTheCallerMayRead` still pass.
 - Bites in `bites/D13/`, each run once with `bites/run.sh`, each BITES (1 of 1 failed) with the tree restored:
   `metrics-filter-unsanitized`, `metrics-unknown-body-forwarded`, `metrics-unknown-type-leads-the-line`. The two
   earlier metrics bites patch `TableRoutes.java`, which this branch leaves alone; both still apply.
-- Fast build: three runs before the merge with `main`. The first two failed on Docker waits while the keel-demo stack
+- Fast build: three runs before the merge with `main`. The first two failed on Docker waits while the nuna-demo stack
   held Docker (S3 read timeouts, the audit consumer reading 0 records, PostgreSQL refusing connections, Chrome
   sessions not created; 17 and 12 failures, none in the metrics tests). The third, with the demo down, failed one
   test: `ConsoleBrowserTest#grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim`, a Selenium

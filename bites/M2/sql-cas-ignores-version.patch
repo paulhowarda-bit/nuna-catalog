@@ -1,10 +1,10 @@
 Breaks: the pointer CAS compares only the metadata location, not the version.
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest#staleVersionAtTheSameLocationConflicts
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 index 32fa4a3..60aba2e 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/Pointers.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
 @@ -98,7 +98,7 @@ final class Pointers {
          Optional<Locked> locked = Jdbc.first(connection, "SELECT version, metadata_location FROM pointer"
                          + " WHERE object_id = ? AND branch = ? FOR UPDATE",

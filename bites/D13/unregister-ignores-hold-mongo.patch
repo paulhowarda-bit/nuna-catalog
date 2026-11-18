@@ -2,10 +2,10 @@ Breaks: unregister checks no legal hold, so a held table can be unregistered.
 Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$CatalogObjects#unregisterRefusals
 
-diff --git a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 index dfb30d3..4a4a199 100644
---- a/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
-+++ b/catalog-store-mongo/src/main/java/keel/catalog/store/mongo/MongoObjects.java
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 @@ -167,7 +167,7 @@ final class MongoObjects {
                      || !main.get().getString("metadataLocation").getValue().equals(expected.metadataLocation())) {
                  return new WriteResult.VersionMismatch(main.map(p -> p.getInt64("version").getValue()).orElse(0L));

@@ -1,0 +1,15 @@
+{{- if ne (lower .Values.config.nuna.database.backend) "mongodb" -}}
+{{- $_ := required "config.spring.datasource.url is required: the catalog's database" .Values.config.spring.datasource.url -}}
+{{- end -}}
+{{- if not .Values.config.nuna.security.issuers -}}
+{{- fail "config.nuna.security.issuers needs at least one trusted token issuer" -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nuna-catalog.fullname" . }}
+  labels:
+    {{- include "nuna-catalog.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}

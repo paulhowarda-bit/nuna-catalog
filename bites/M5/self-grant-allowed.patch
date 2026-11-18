@@ -2,10 +2,10 @@ Breaks: A caller may grant to a group they belong to.
 Module: catalog-server
 Test: SecurityGateTest#separationOfDutiesHoldsForEveryGrant
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 index c4b77cc..3864788 100644
---- a/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/GrantRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 @@ -234,7 +234,7 @@ class GrantRoutes {
          Operation operation = grant ? GRANT : REVOKE;
          require(request, on, operation);

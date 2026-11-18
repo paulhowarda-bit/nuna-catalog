@@ -4,7 +4,7 @@
 # demo.sh applies this; a matrix run publishes nothing.
 #
 # The front door is nginx (Deployment front): it ends TLS with the certificate in Secret demo-tls, which demo.sh
-# makes from ~/.keel-demo/tls (publish_tls), and passes each request on over plain HTTP inside the cluster, to
+# makes from ~/.nuna-demo/tls (publish_tls), and passes each request on over plain HTTP inside the cluster, to
 # the same Services the stack's pods use; only Studio is HTTPS behind it too, with the same certificate. So the
 # certificate is in one place, and work's replaces the demo's there. Each request carries X-Forwarded-Proto https and its Host, from which Keycloak and kafbat build their
 # addresses, and nginx turns any http:// redirect a service sends into https://. Plain http to a port is sent to
@@ -21,7 +21,7 @@ spec:
     metadata:
       labels: {app: front}
       # A new certificate or configuration replaces the pod.
-      annotations: {keel-demo/tls: "${TLS_HASH}", keel-demo/config: "${MANIFEST_HASH}"}
+      annotations: {nuna-demo/tls: "${TLS_HASH}", nuna-demo/config: "${MANIFEST_HASH}"}
     spec:
       enableServiceLinks: false
       containers:
@@ -91,7 +91,7 @@ data:
     error_page 497 =301 https://$http_host$request_uri;
 
     server { listen 8180 ssl; location / { set $to keycloak.${NAMESPACE}.svc.cluster.local:8080; proxy_pass http://$to; } }
-    server { listen 8181 ssl; location / { set $to keel-catalog.${NAMESPACE}.svc.cluster.local:8181; proxy_pass http://$to; } }
+    server { listen 8181 ssl; location / { set $to nuna-catalog.${NAMESPACE}.svc.cluster.local:8181; proxy_pass http://$to; } }
     server { listen 8182 ssl; location / { set $to kafka-ui.${NAMESPACE}.svc.cluster.local:8080; proxy_pass http://$to; } }
     # Studio serves HTTPS itself (singlestore.Dockerfile says why), with the same certificate; nginx does not check it.
     server { listen 8183 ssl; location / { set $to singlestore.${NAMESPACE}.svc.cluster.local:8080; proxy_pass https://$to; } }

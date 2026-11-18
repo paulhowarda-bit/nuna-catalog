@@ -1,6 +1,6 @@
 # The maintenance worker's spans
 
-Backlog 49. Each scan of the maintenance worker (`keel-maintenance`) is a trace: a span for the scan at its root, a
+Backlog 49. Each scan of the maintenance worker (`nuna-maintenance`) is a trace: a span for the scan at its root, a
 span for each part of the scan beneath it, and beneath those a span for each call a part makes to the catalog. Those
 calls carry the trace to the catalog as a W3C `traceparent`, so the catalog's own spans for answering them (README.md,
 "Traces"; spans.md) join the scan's trace, and the catalog's request ID for each call is the scan's trace ID (README.md,
@@ -13,8 +13,8 @@ end to end, the catalog's spans included, and the rest not at all.
 
 | Span | Observation (timer) | One per | Attributes |
 |---|---|---|---|
-| `maintenance scan` | `keel.maintenance.scan.run` | scan, every `scan-interval`; the trace's root | `outcome`, `exception` |
-| `maintenance <part>` | `keel.maintenance.part` | part of a scan, below | `part`, `outcome`, `exception`; `section` or `report` on two parts |
+| `maintenance scan` | `nuna.maintenance.scan.run` | scan, every `scan-interval`; the trace's root | `outcome`, `exception` |
+| `maintenance <part>` | `nuna.maintenance.part` | part of a scan, below | `part`, `outcome`, `exception`; `section` or `report` on two parts |
 | `HTTP GET`, `HTTP PUT`, `HTTP POST` | `http.client.requests` | call to the catalog's management API, or to the identity provider for a token, through the JDK's client | `method`, `uri`, `status`, `outcome` |
 
 The parts, each a child of the scan's span, save an assessment's report, a child of its `compaction-assessment`:
@@ -75,21 +75,21 @@ replaced by `{id}` and the catalog's name by `{catalog}` (`/management/v1/catalo
 without its query (`Management.route`). The token endpoint's `uri` is its path, set by the deployment. The catalog's
 server spans in the same trace still record the request's path (README.md, "What labels and attributes never hold").
 
-`section` and `report` are on the span alone, not on the `keel.maintenance.part` timer: a timer's name keeps one set of
+`section` and `report` are on the span alone, not on the `nuna.maintenance.part` timer: a timer's name keeps one set of
 labels (worker-metrics.md, "Adding a meter").
 
 ## The timers
 
-Each observation is also a timer of its name (worker-metrics.md lists them): `keel.maintenance.scan.run` and
-`keel.maintenance.part` by `outcome`, `exception` and Micrometer's `error` (`Failed` for every failure), the part's by
+Each observation is also a timer of its name (worker-metrics.md lists them): `nuna.maintenance.scan.run` and
+`nuna.maintenance.part` by `outcome`, `exception` and Micrometer's `error` (`Failed` for every failure), the part's by
 `part` too; `http.client.requests` by `method`, `uri`, `status`, `outcome` and `error`; and for each, a long-task timer
 `<name>.active` of those under way. The scan timer
-`keel.maintenance.scan` stays what alerts are built on: it is registered when the worker starts, these at their first
+`nuna.maintenance.scan` stays what alerts are built on: it is registered when the worker starts, these at their first
 use.
 
 ## Code, tests and bites
 
-`ScanSpans` (catalog-maintenance, `keel.maintenance`) makes the scan's and the parts' observations; `Worker`,
+`ScanSpans` (catalog-maintenance, `nuna.maintenance`) makes the scan's and the parts' observations; `Worker`,
 `NightlyCompaction` and `HealthReports` call it. `Worker.of` wraps the worker's JDK client in Micrometer's
 (`micrometer-java11`'s `MicrometerHttpClient`), for its management calls and its token requests; `TraceHeaders` and
 `BearerAuthManager` carry the current span to Iceberg's client. `WorkerApplication` hands the worker Boot's

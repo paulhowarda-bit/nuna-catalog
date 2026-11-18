@@ -1,10 +1,10 @@
 Breaks: the delete policies leave the bucket policy open to change, so a principal that may replace it takes the deny away.
 Module: catalog-objectstore
 Test: DeletePolicyTest#aws+minio
-diff --git a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java
 index 00c2047..68ccda3 100644
---- a/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
-+++ b/catalog-objectstore/src/main/java/keel/catalog/objectstore/DeletePolicy.java
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/DeletePolicy.java
 @@ -36,7 +36,7 @@ public final class DeletePolicy {
       * both; on Ceph the bucket's owner may, so the catalog's user must not own the bucket. On MinIO a bucket policy
       * opens a bucket to anonymous requests, deletes included.

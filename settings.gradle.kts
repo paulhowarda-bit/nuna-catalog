@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "keel-catalog"
+rootProject.name = "nuna-catalog"
 
 include(
     "catalog-tests-s3",

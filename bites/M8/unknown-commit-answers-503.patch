@@ -2,10 +2,10 @@ Breaks: a commit whose COMMIT was lost and whose outcome the store cannot decide
 Module: catalog-core
 Test: CommitEngineTest$Idempotency#outageWhileSettlingStaysUnknown
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index 49ae41b..493d5e0 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -728,6 +728,8 @@ public final class CommitEngine {
          CommitLookup lookup;
          try {

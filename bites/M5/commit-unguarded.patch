@@ -1,10 +1,10 @@
 Breaks: A commit to an existing table is not authorized.
 Module: catalog-server
 Test: SecurityGateTest#privilegesInheritDownTheTreeAndNeverSideways
-diff --git a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 index b0989a1..0836724 100644
---- a/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/rest/TableRoutes.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 @@ -182,7 +182,6 @@ class TableRoutes {
          RequestContext request = RequestContext.of(http, callers);
          Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);

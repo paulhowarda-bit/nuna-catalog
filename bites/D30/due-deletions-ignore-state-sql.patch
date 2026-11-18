@@ -1,10 +1,10 @@
 Breaks: the due pending deletions ignore the object's state, so an unregistered table's files are deleted.
 Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$CatalogObjects#anUnregisteredTablesPendingDeletionsNeverComeDue
-diff --git a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java
 index ae3507e..50f6c42 100644
---- a/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
-+++ b/catalog-store-sql/src/main/java/keel/catalog/store/sql/SqlDeletions.java
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDeletions.java
 @@ -77,7 +77,7 @@ final class SqlDeletions {
              parameters.add(page.size() + 1);
              List<PendingDeletion> due = query(connection, "SELECT " + COLUMNS + " FROM pending_deletion d"

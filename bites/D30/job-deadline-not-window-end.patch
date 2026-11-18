@@ -1,10 +1,10 @@
 Breaks: a compaction Job's deadline is the window's whole length, not the time left to its end, so a Job started late in the window runs past it.
 Module: catalog-maintenance
 Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 index 6182e77..0183727 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/KubernetesJobs.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 @@ -174,7 +174,7 @@ final class KubernetesJobs implements Compactor {
  
      /** Seconds from now to the window's end, rounded up: at least one, which Kubernetes requires. */

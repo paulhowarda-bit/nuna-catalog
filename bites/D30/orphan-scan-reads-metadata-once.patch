@@ -1,10 +1,10 @@
 Breaks: the orphan scan checks its listing only against the metadata read before it, so a file committed during the listing is queued as an orphan.
 Module: catalog-maintenance
 Test: OrphanRaceTest#aFileCommittedBetweenTheListingAndTheSecondReadIsReachable
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java b/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java b/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java
 index 947db92..042c40c 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/OrphanScan.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java
 @@ -66,7 +66,6 @@ final class OrphanScan {
          table.refresh();
          Reach since = reach.next();

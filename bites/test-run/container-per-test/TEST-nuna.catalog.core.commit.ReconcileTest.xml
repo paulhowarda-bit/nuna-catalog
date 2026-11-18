@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="nuna.catalog.core.commit.ReconcileTest" tests="2" skipped="0" failures="2" errors="0" timestamp="2026-11-15T04:47:37.132Z" hostname="localhost" time="418.522">
+  <properties/>
+  <testcase name="movesThroughProvenFilesAndLeavesTheTipToTheOperator()" classname="nuna.catalog.core.commit.ReconcileTest" time="0.183">
+    <failure message="org.testcontainers.containers.ContainerFetchException: Can't get Docker image: RemoteDockerImage(imageName=localhost:1/nuna-no-such-ryuk:0, imagePullPolicy=DefaultPullPolicy(), imageNameSubstitutor=org.testcontainers.utility.ImageNameSubstitutor$LogWrappedImageNameSubstitutor@102ecc22)" type="org.testcontainers.containers.ContainerFetchException">org.testcontainers.containers.ContainerFetchException: Can't get Docker image: RemoteDockerImage(imageName=localhost:1/nuna-no-such-ryuk:0, imagePullPolicy=DefaultPullPolicy(), imageNameSubstitutor=org.testcontainers.utility.ImageNameSubstitutor$LogWrappedImageNameSubstitutor@102ecc22)
+	at org.testcontainers.containers.GenericContainer.getDockerImageName(GenericContainer.java:1308)
+	at org.testcontainers.containers.GenericContainer.doStart(GenericContainer.java:346)
+	at org.testcontainers.containers.GenericContainer.start(GenericContainer.java:317)
+	...
+Caused by: org.testcontainers.shaded.org.awaitility.core.ConditionTimeoutException: Condition with Lambda expression in org.testcontainers.images.RemoteDockerImage was not fulfilled within 2 minutes.
+	at org.testcontainers.shaded.org.awaitility.core.ConditionAwaiter.await(ConditionAwaiter.java:167)
+	at org.testcontainers.shaded.org.awaitility.core.CallableCondition.await(CallableCondition.java:78)
+	at org.testcontainers.shaded.org.awaitility.core.CallableCondition.await(CallableCondition.java:26)
+	...
+</failure>
+  </testcase>
+  <testcase name="twoTipsAtOneVersionAreNotGuessedBetween()" classname="nuna.catalog.core.commit.ReconcileTest" time="0.001">
+    <failure message="org.testcontainers.containers.ContainerFetchException: Can't get Docker image: RemoteDockerImage(imageName=localhost:1/nuna-no-such-ryuk:0, imagePullPolicy=DefaultPullPolicy(), imageNameSubstitutor=org.testcontainers.utility.ImageNameSubstitutor$LogWrappedImageNameSubstitutor@102ecc22)" type="org.testcontainers.containers.ContainerFetchException">org.testcontainers.containers.ContainerFetchException: Can't get Docker image: RemoteDockerImage(imageName=localhost:1/nuna-no-such-ryuk:0, imagePullPolicy=DefaultPullPolicy(), imageNameSubstitutor=org.testcontainers.utility.ImageNameSubstitutor$LogWrappedImageNameSubstitutor@102ecc22)
+	at org.testcontainers.containers.GenericContainer.getDockerImageName(GenericContainer.java:1308)
+	at org.testcontainers.containers.GenericContainer.doStart(GenericContainer.java:346)
+	at org.testcontainers.containers.GenericContainer.start(GenericContainer.java:317)
+	...
+Caused by: org.testcontainers.shaded.org.awaitility.core.ConditionTimeoutException: Condition with Lambda expression in org.testcontainers.images.RemoteDockerImage was not fulfilled within 2 minutes.
+	at org.testcontainers.shaded.org.awaitility.core.ConditionAwaiter.await(ConditionAwaiter.java:167)
+	at org.testcontainers.shaded.org.awaitility.core.CallableCondition.await(CallableCondition.java:78)
+	at org.testcontainers.shaded.org.awaitility.core.CallableCondition.await(CallableCondition.java:26)
+	...
+</failure>
+  </testcase>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -2,9 +2,9 @@ Breaks: A 401 is answered without publishing its AuthFailure.
 Module: catalog-server
 Test: SecurityGateTest#missingWrongAudienceExpiredAndUnknownIssuerTokensAreRefused
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
---- a/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/security/Authentication.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
 @@ -149,7 +149,7 @@
          String requestId = RequestIds.of(request);
          Claimed claimed = claimed(token);

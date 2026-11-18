@@ -1,10 +1,10 @@
 Breaks: an equality-delete file makes a table need compaction only through the delete share, so a few equality deletes, which every reader must join against, wait for many more.
 Module: catalog-maintenance
 Test: CompactionNeedTest#anyEqualityDeleteFileNeedsCompaction
-diff --git a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java b/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
 index 3540e5c..7d63b00 100644
---- a/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
-+++ b/catalog-maintenance/src/main/java/keel/maintenance/CompactionNeed.java
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/CompactionNeed.java
 @@ -130,7 +130,7 @@ record CompactionNeed(long dataFiles, long smallFiles, long deleteFiles, long eq
          if (dataFiles > 0 && deleteShare() > deleteFileRatio) {
              reasons.add(Reason.DELETES);

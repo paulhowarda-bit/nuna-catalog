@@ -2,10 +2,10 @@ Breaks: register looks for no object holding the file's UUID, so a dropped table
 Module: catalog-server
 Test: RestRoutesTest#registerBringsADroppedTableBackAndRefusesTakenUuidsAndLocationsOutsideTheProfile
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index be30cbe..37d377a 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -486,7 +486,7 @@ public final class CommitEngine {
                  }
                  TableFiles.Written file = new TableFiles.Written(metadataLocation, read.sha256());

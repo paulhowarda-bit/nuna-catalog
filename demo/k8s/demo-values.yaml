@@ -6,7 +6,7 @@ image:
   tag: demo
 
 config:
-  keel:
+  nuna:
     storage:
       require-tls: false
       profiles:
@@ -16,28 +16,28 @@ config:
           region: us-east-1
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
-          access-key-id: keeltest
+          access-key-id: nunatest
     security:
       issuers:
-        - issuer: https://idp.demo/keel
+        - issuer: https://idp.demo/nuna
           jwks-uri: http://idp:8080/keys.json
-          audiences: [keel-catalog]
+          audiences: [nuna-catalog]
           algorithms: [RS256]
           user-id-claim: sub
           groups-claim: groups
           client-id-claim: azp
-        - issuer: https://${DEMO_HOST}:8180/realms/keel
-          jwks-uri: http://keycloak:8080/realms/keel/protocol/openid-connect/certs
-          audiences: [keel-catalog]
+        - issuer: https://${DEMO_HOST}:8180/realms/nuna
+          jwks-uri: http://keycloak:8080/realms/nuna/protocol/openid-connect/certs
+          audiences: [nuna-catalog]
           algorithms: [RS256]
           user-id-claim: preferred_username
           groups-claim: groups
           client-id-claim: azp
     ui:
       oidc:
-        issuer: https://${DEMO_HOST}:8180/realms/keel
-        client-id: keel-console
+        issuer: https://${DEMO_HOST}:8180/realms/nuna
+        client-id: nuna-console
 
 secrets:
   values:
-    keel.storage.profiles.s3.secret-access-key: keeltest-secret-key
+    nuna.storage.profiles.s3.secret-access-key: nunatest-secret-key

@@ -2,10 +2,10 @@ Breaks: a register brings a table back from any file with its UUID, such as an o
 Module: catalog-core
 Test: RegisteringTest$Reviving#onlyTheFileItLeftAt
 
-diff --git a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 index de49253..3ae7199 100644
---- a/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
-+++ b/catalog-core/src/main/java/keel/catalog/core/commit/CommitEngine.java
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 @@ -559,7 +559,7 @@ public final class CommitEngine {
          for (int attempt = 1; ; attempt++) {
              Pointer base = store.readPointer(holder.mainKey())

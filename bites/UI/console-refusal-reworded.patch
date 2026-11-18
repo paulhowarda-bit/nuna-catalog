@@ -2,10 +2,10 @@ Breaks: The console words a refusal its own way instead of showing the catalog's
 Module: catalog-server
 Test: ConsoleBrowserTest#refusalsAreShownExactlyAsTheCatalogAnswered+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim
 
-diff --git a/catalog-server/src/main/resources/keel/ui/dom.js b/catalog-server/src/main/resources/keel/ui/dom.js
+diff --git a/catalog-server/src/main/resources/nuna/ui/dom.js b/catalog-server/src/main/resources/nuna/ui/dom.js
 index f37b16d..e36ff6e 100644
---- a/catalog-server/src/main/resources/keel/ui/dom.js
-+++ b/catalog-server/src/main/resources/keel/ui/dom.js
+--- a/catalog-server/src/main/resources/nuna/ui/dom.js
++++ b/catalog-server/src/main/resources/nuna/ui/dom.js
 @@ -78,7 +78,7 @@ export function failure(error) {
      return h('div', {class: 'alert' + (refused ? ' alert-refused' : ''), role: 'alert'},
        h('strong', null, refused ? 'Refused by the catalog' : 'The catalog answered with an error'),

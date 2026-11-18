@@ -18,37 +18,37 @@ demo/demo.sh up
   connector jar from this checkout (no tests run) and the images below, so the stack never runs code older
   than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
   runs them from the local Docker engine, and `up` pulls the public ones there.
-- Everything runs in namespace `keel-demo` (`KEEL_DEMO_NAMESPACE`) of context `docker-desktop`
-  (`KEEL_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
+- Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
+  (`NUNA_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
   - `stack.yaml`: PostgreSQL, Kafka, kafbat, and `idp`, which serves the demo issuer's keys
     (`demo/Mint.java`). The demo patches kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak;
     the engine matrix on its own leaves kafbat open.
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, with its console on the pod's 9001, and the job
     that makes the warehouse bucket.
-  - The catalog: the Helm chart `deploy/helm/keel-catalog`, release `keel-catalog`, one server, image
-    `keel-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
+  - The catalog: the Helm chart `deploy/helm/nuna-catalog`, release `nuna-catalog`, one server, image
+    `nuna-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
     issuers, the console's sign-in, and Silo).
-  - `keycloak.yaml`: Keycloak in development mode, with realm `keel` (`keycloak-realm.json`): the people
+  - `keycloak.yaml`: Keycloak in development mode, with realm `nuna` (`keycloak-realm.json`): the people
     below, their groups, and the clients of the console, kafbat, CloudBeaver and Studio. Its signing key and
     CloudBeaver's secrets come from Secret `keycloak-keys`, which `up` makes once per machine in
-    `~/.keel-demo/keycloak` (with `openssl`) and keeps. Only the demo runs it; the engine matrix on its own
+    `~/.nuna-demo/keycloak` (with `openssl`) and keeps. Only the demo runs it; the engine matrix on its own
     does not.
-  - `singlestore.yaml`: image `keel-demo-singlestore:<connector hash>`, the dev image with the change-feed
+  - `singlestore.yaml`: image `nuna-demo-singlestore:<connector hash>`, the dev image with the change-feed
     connector built in and Studio signing people in through Keycloak (`singlestore.Dockerfile`). A changed
     connector replaces the pod, and `up` loads the new one again.
   - `trino.yaml`: Trino, image `trinodb/trino:484`.
-  - `cloudbeaver.yaml`: CloudBeaver Community, image `keel-demo-cloudbeaver:<hash>`:
+  - `cloudbeaver.yaml`: CloudBeaver Community, image `nuna-demo-cloudbeaver:<hash>`:
     `dbeaver/cloudbeaver:26.2.4` without its version check, signing people in from a proxy's headers, and with
     `demo/CloudBeaverUsers.java`, which adds the people below as the pod starts, each with connections that
     sign in as them (`cloudbeaver.Dockerfile`). The proxy, `quay.io/oauth2-proxy/oauth2-proxy:v7.15.6`, runs
     beside it in the pod and signs people in through Keycloak.
   - `ports.yaml`: the front door, `nginx:1.30.6-alpine`, which serves the ports below over HTTPS (below), and
     their Services.
-  - The lake writer runs as a job when needed (`lake-job.yaml`, image `keel-demo-lake:local`).
+  - The lake writer runs as a job when needed (`lake-job.yaml`, image `nuna-demo-lake:local`).
   - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, CockroachDB, and
-    Kafka Connect, image `keel-demo-connect:<hash>` (`connect.Dockerfile`).
+    Kafka Connect, image `nuna-demo-connect:<hash>` (`connect.Dockerfile`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
   (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
   (CloudBeaver) and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else
@@ -77,7 +77,7 @@ builds the address Keycloak returns its SAML sign-in to from the request it gets
 `X-Forwarded` headers, and it turns any `http://` redirect a service sends into `https://`. No client
 certificates: people sign in through Keycloak, and services send tokens.
 
-The certificate is in `~/.keel-demo/tls`, published as Secret `demo-tls`:
+The certificate is in `~/.nuna-demo/tls`, published as Secret `demo-tls`:
 
 | File | What it is |
 |---|---|
@@ -92,12 +92,12 @@ The certificate is in `~/.keel-demo/tls`, published as Secret `demo-tls`:
   Authorities, removes it):
 
   ```bash
-  certutil -user -addstore Root ~/.keel-demo/tls/ca.crt
+  certutil -user -addstore Root ~/.nuna-demo/tls/ca.crt
   ```
 
-- **At work**: put work's certificate in the folder and set `KEEL_DEMO_HOST` to its name
+- **At work**: put work's certificate in the folder and set `NUNA_DEMO_HOST` to its name
   (`docs/install-at-work.md`, section 10). Every address the demo gives, Keycloak's issuer and every sign-in
-  address included, is then `https://<KEEL_DEMO_HOST>:<port>`.
+  address included, is then `https://<NUNA_DEMO_HOST>:<port>`.
 - `up` refuses a certificate that does not name the host, has expired, is not its key's, or was not issued
   by `ca.crt`. A new certificate replaces the front door's pod; a new host also replaces Keycloak, kafbat,
   CloudBeaver, the catalog and SingleStore, whose image names Studio's SAML address.
@@ -108,9 +108,9 @@ The console offers two ways in:
 
 - **Sign in with localhost:8180**: Keycloak's login page, by username and password, standing in for a
   directory (AD, Entra ID) until one is configured. The console signs in as it would with any IdP (OIDC
-  authorization code with PKCE, `keel.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
+  authorization code with PKCE, `nuna.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
   It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.
-- **The token box** (`keel.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
+- **The token box** (`nuna.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
   Machine users (`singlestore`, `lake`, `cdc`, `engine-matrix`, `trino`) have tokens only.
 
 | User | Password | Group | What the catalog lets them do |
@@ -131,9 +131,9 @@ plus reading, and lets a grant admin or a platform operator hold no grant at all
 data in the catalog, and of the four people only `ana` changes it. Try the console as `ana` and as `gary`.
 Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but not
 Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
-sign out of Keycloak at <https://localhost:8180/realms/keel/protocol/openid-connect/logout> (click Logout),
-or use a private window. Keycloak's own page, <https://localhost:8180/realms/keel/account>, shows who is
-signed in there; its users hold the realm's default roles (`default-roles-keel` in
+sign out of Keycloak at <https://localhost:8180/realms/nuna/protocol/openid-connect/logout> (click Logout),
+or use a private window. Keycloak's own page, <https://localhost:8180/realms/nuna/account>, shows who is
+signed in there; its users hold the realm's default roles (`default-roles-nuna` in
 `k8s/keycloak-realm.json`), without which that page fails with "Something went wrong". Keycloak's users and
 sessions go with its pod.
 
@@ -158,10 +158,10 @@ Trino connection sends their own token, so the catalog lets them do there what i
 
 kafbat's roles go by Keycloak group: `demo-operators` administers Kafka, and `demo-analysts`,
 `demo-grant-admins` and `demo-stewards` administer topics, except the ones the demo runs on, which they only
-read: the catalog's audit and change topics (`keel.*`), the Connect worker's `cdc-connect-*`, and any name
+read: the catalog's audit and change topics (`nuna.*`), the Connect worker's `cdc-connect-*`, and any name
 starting with `_`. The CDC leg's change, control and schema-history topics stay theirs to administer. kafbat
 records every change made through it, refused ones included, with who made it, in topic `__kui-audit-log`, which
-only `demo-operators` read in kafbat, and in its log (`kubectl -n keel-demo logs deployment/kafka-ui | grep -w
+only `demo-operators` read in kafbat, and in its log (`kubectl -n nuna-demo logs deployment/kafka-ui | grep -w
 audit`). Like the console, kafbat's sign-out leaves Keycloak's session.
 
 How CloudBeaver and Studio sign in through Keycloak, neither of which CloudBeaver Community or Studio does on
@@ -191,7 +191,7 @@ its own terms:
   gets hold of one can sign in as that person meanwhile. That is accepted: the demo holds only test data.
 - **Keys**: the realm signs with a fixed key, not one Keycloak makes at each start, because SingleStore reads
   its certificate only as it starts. `up` makes the key, its certificate and CloudBeaver's client and cookie
-  secrets once, with `openssl`, in `~/.keel-demo/keycloak`, and loads them as Secret `keycloak-keys`. To
+  secrets once, with `openssl`, in `~/.nuna-demo/keycloak`, and loads them as Secret `keycloak-keys`. To
   change them, delete that folder and run `up`: Keycloak, CloudBeaver and SingleStore restart with the new
   ones.
 - **At work**: this Keycloak and its keys are stand-ins. CloudBeaver's sign-in proxy, Studio's SAML setting
@@ -202,13 +202,13 @@ Accounts that run the demo rather than people in it:
 
 | Account | Password | For |
 |---|---|---|
-| Keycloak `admin` | `keel-test` | Keycloak's admin console, <https://localhost:8180/admin> |
-| SingleStore `root` | `keel-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
-| Silo `keeltest` | `keeltest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>: every bucket, its objects, users, policies and settings |
+| Keycloak `admin` | `nuna-test` | Keycloak's admin console, <https://localhost:8180/admin> |
+| SingleStore `root` | `nuna-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
+| Silo `nunatest` | `nunatest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
-| PostgreSQL `backoffice` | `keel-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
-| Oracle `treasury` | `keel-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
-| Oracle `SYS`, `SYSTEM` | `keel-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
+| PostgreSQL `backoffice` | `nuna-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
+| Oracle `treasury` | `nuna-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
+| Oracle `SYS`, `SYSTEM` | `nuna-test` | the CDC leg's Oracle (`ORACLE_PASSWORD`) |
 | Oracle `c##dbzuser` | `dbz` | Debezium's LogMiner user |
 | CockroachDB `root` | none: the node's client certificate | the CDC leg's CockroachDB; `demo/demo.sh cockroach` |
 | CockroachDB `debezium` | `dbz` | Debezium's login: `SELECT` and `CHANGEFEED` on `positions.holdings` |
@@ -221,11 +221,11 @@ CloudBeaver and the CDC leg's Kafka Connect are restarted, so they carry the new
 demo/demo.sh token
 ```
 
-Tokens are in `~/.keel-demo/tokens/<user>.jwt`. A curl call as a user:
+Tokens are in `~/.nuna-demo/tokens/<user>.jwt`. A curl call as a user:
 
 ```bash
-curl --cacert ~/.keel-demo/tls/ca.crt --ssl-revoke-best-effort \
-  -H "Authorization: Bearer $(cat ~/.keel-demo/tokens/ana.jwt)" "https://localhost:8181/v1/lakehouse/namespaces"
+curl --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+  -H "Authorization: Bearer $(cat ~/.nuna-demo/tokens/ana.jwt)" "https://localhost:8181/v1/lakehouse/namespaces"
 ```
 
 Git Bash's curl checks certificates with Windows, which fails the demo's CA, as it names no revocation list,
@@ -260,7 +260,7 @@ third once the engines have run:
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
   view `xetra_daily`.
-- `keel_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
+- `nuna_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
 
 ### SingleStore to Iceberg: the change feed
 
@@ -310,8 +310,8 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 
 CloudBeaver is on <https://localhost:8185>: a database navigator and SQL editor in the browser, where the
 people above sign in through Keycloak. Each person has four connections of their own, which sign in as them, and sees only
-those: "keel (Trino, as ana)" for `ana`, and the three CDC sources below. The Trino connection reaches a Trino
-whose catalogs `lakehouse` and `engines` are keel's. It sends Trino the person's own token as the extra
+those: "nuna (Trino, as ana)" for `ana`, and the three CDC sources below. The Trino connection reaches a Trino
+whose catalogs `lakehouse` and `engines` are nuna's. It sends Trino the person's own token as the extra
 credential `token`, and Trino hands it to the catalog with each request (`iceberg.rest-catalog.session=USER`).
 So the catalog sees the person, and each one reads and changes what they may in the console, with the
 storage credentials the catalog vends them:
@@ -321,7 +321,7 @@ storage credentials the catalog vends them:
 - `stella` reads. `gary` and `oscar` see the namespaces and tables listed, but every read fails with
   "Failed to load table", since the catalog refuses them: they hold no grant (D18).
 - Each query is in the catalog's audit trail as the person: a read, a refusal, the credentials vended. Its
-  engine reads `keel-console`, the client that `demo/Mint.java` names in the people's tokens.
+  engine reads `nuna-console`, the client that `demo/Mint.java` names in the people's tokens.
 
 - The navigator lists every namespace at every depth, as a schema named by its dotted path; quote it in SQL:
 
@@ -335,8 +335,8 @@ storage credentials the catalog vends them:
   extra credential is the token of whoever asks:
 
   ```bash
-  kubectl --context docker-desktop -n keel-demo exec deployment/trino -- trino --user ana --debug \
-    --extra-credential "token=$(cat ~/.keel-demo/tokens/ana.jwt)" \
+  kubectl --context docker-desktop -n nuna-demo exec deployment/trino -- trino --user ana --debug \
+    --extra-credential "token=$(cat ~/.nuna-demo/tokens/ana.jwt)" \
     --execute 'SELECT * FROM lakehouse."finance.ledger".accounts'
   ```
 
@@ -460,7 +460,7 @@ ORDER BY "_cdc"."offset";
 - kafbat shows the connectors under Kafka Connect, cluster `cdc`: each one's status, tasks and config, with
   restart, pause and resume for `oscar`. While the leg is stopped the cluster is unreachable there.
 - Kafka Connect's REST API is on <https://localhost:8186>:
-  `curl -s --cacert ~/.keel-demo/tls/ca.crt --ssl-revoke-best-effort 'https://localhost:8186/connectors?expand=status'`.
+  `curl -s --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort 'https://localhost:8186/connectors?expand=status'`.
 
 ```bash
 demo/demo.sh cdc stop
@@ -480,7 +480,7 @@ own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's i
 all into catalog `engines` as `engine-matrix`. Trino and CloudBeaver stop for the run and start again after
 it. It takes about 4 minutes once the engine images exist; the first
 run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
-shows, and SingleStore's copies in database `keel_m8`.
+shows, and SingleStore's copies in database `nuna_m8`.
 Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
 
 ## Kafka
@@ -496,7 +496,7 @@ demo/demo.sh down
 ```
 
 This deletes the namespace and everything in it. The signing key, tokens and Keycloak's keys stay in
-`~/.keel-demo`; the next `up` loads the sample data again.
+`~/.nuna-demo`; the next `up` loads the sample data again.
 
 ```bash
 demo/demo.sh status

@@ -2,10 +2,10 @@ Breaks: Publishing a synchronous audit record to Kafka is not observed.
 Module: catalog-server
 Test: SpanTreeTest#aLoadsSpanTree
 
-diff --git a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceWiring.java b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceWiring.java
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
 index 38e1dfd..001e5cb 100644
---- a/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceWiring.java
-+++ b/catalog-server/src/main/java/keel/catalog/server/governance/GovernanceWiring.java
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
 @@ -89,8 +89,8 @@ class GovernanceWiring {
      @Bean
      AuditTrail auditTrail(AuditRuntime runtime, AuditSettings audit, RestSettings rest, Clock clock,
