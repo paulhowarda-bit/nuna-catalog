@@ -9,7 +9,7 @@
 #   ./overnight.sh --dry     check the plumbing: the builds run with -m and the nightly lists its tests, no bite
 #                            runs, and nothing is recorded as tested
 #
-# Everything lives in $NUNA_OVERNIGHT_HOME (default: nuna-overnight next to the main checkout):
+# Everything lives in $NUNA_OVERNIGHT_HOME (default: .overnight in the main checkout, which .gitignore covers):
 #   clone/           a clone of this repo, reset to main's tip at each run; the bites patch its files
 #   runs/<date>/     summary.md, one log per leg, the logs of bites that did not bite, and for each leg that did
 #                    not pass, <leg>-results/: its test result files and what docker info said just after
@@ -38,9 +38,9 @@
 main() {
     set -u
     repo=$(cd "$(dirname "$0")" && pwd)
-    # Next to the main checkout, wherever this copy of the script is.
+    # In the main checkout, wherever this copy of the script is.
     main_checkout=$(dirname "$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir)")
-    home=${NUNA_OVERNIGHT_HOME:-$(dirname "$main_checkout")/nuna-overnight}
+    home=${NUNA_OVERNIGHT_HOME:-$main_checkout/.overnight}
     deadline_at=${NUNA_OVERNIGHT_DEADLINE:-06:30}
     context=${NUNA_DEMO_CONTEXT:-docker-desktop}
     demo_ns=${NUNA_DEMO_NAMESPACE:-nuna-demo}
