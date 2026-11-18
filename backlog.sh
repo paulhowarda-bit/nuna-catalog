@@ -10,6 +10,7 @@
 #   ./backlog.sh release <n> [--force]  give up the claim (--force: someone else's)
 #   ./backlog.sh claims                 every claim and number in flight, and whether its worktree and branch remain
 #   ./backlog.sh sweep                  release the claims whose item is finished or whose work is gone
+#   ./backlog.sh log                    the whole backlog as one Markdown log, from this checkout's item files
 #
 # Claims and numbers are git refs, refs/backlog/claims/<n> and refs/backlog/ids/<n>. Every worktree of this clone
 # sees the same refs, and nothing pushes them. Git creates a ref that must not exist yet atomically, so two agents
@@ -22,7 +23,7 @@
 
 set -u
 die() { echo "backlog.sh: $*" >&2; exit 1; }
-usage=$(sed -n '2,12s/^# \{0,1\}//p' "$0")
+usage=$(sed -n '2,13s/^# \{0,1\}//p' "$0")
 
 top=$(git rev-parse --show-toplevel) || exit 2
 cd "$top" || exit 2
@@ -108,8 +109,8 @@ cmd_add() {
         tries=$((tries + 1)); [ $tries -lt 100 ] || die "could not take a number near $n"
         n=$((n + 1))
     done
-    printf '# %s. %s\n\nStatus: open\nAdded: %s by %s\n\n' "$n" "$t" "$today" "$by" > "backlog/$n.md"
-    echo "backlog/$n.md: add a Touches: line beneath Added: naming the folders and files it will change, write what is wrong or missing, the evidence, and what done looks like; then commit and land it"
+    printf '# %s. %s\n\nStatus: open\nAdded: %s by %s\nEffort: ?\n\n' "$n" "$t" "$today" "$by" > "backlog/$n.md"
+    echo "backlog/$n.md: add a Touches: line beneath Added: naming the folders and files it will change, set Effort: to S, M, L or XL and say why (backlog/README.md), write what is wrong or missing, the evidence, and what done looks like; then commit and land it"
 }
 
 # The item's Touches: line, main's copy first, as space-separated areas.
@@ -224,6 +225,69 @@ cmd_claims() {
     numbers "$mode"
 }
 
+# The whole backlog as one Markdown log, from this checkout's item files: the open items in a table with their effort,
+# then each of them in full, then the done and dropped ones. land.sh writes it to BACKLOG.md in each landing's merge.
+cmd_log() {
+    local files
+    files=$(ls backlog | sed -n 's/^\([0-9][0-9]*\)\.md$/\1/p' | sort -n | sed 's|.*|backlog/&.md|')
+    # shellcheck disable=SC2086
+    awk '
+    function cell(s) { gsub(/\|/, "\\|", s); return s }
+    FNR == 1 { n++; num[n] = FILENAME; gsub(/^backlog\/|\.md$/, "", num[n])
+               t = $0; sub(/^# *[0-9]+\. */, "", t); title[n] = t; part = 0; next }
+    part == 0 { if ($0 == "") part = 1; next }
+    part == 1 && $0 == "" { part = 2; next }
+    part == 1 { if ($0 != "Status: open") head[n] = head[n] "- " $0 "\n"
+                if (sub(/^Status: */, "")) status[n] = $0
+                else if (sub(/^Effort: */, "")) effort[n] = $0
+                else if (sub(/^Added: */, "")) added[n] = $1
+                else if (sub(/^(Done|Decided): */, "") && when[n] == "") { when[n] = $1; sub(/,$/, "", when[n]) }
+                next }
+    { body[n] = body[n] $0 "\n" }
+    END {
+        for (i = 1; i <= n; i++) {
+            sub(/\n+$/, "\n", body[i])
+            if (status[i] != "open") continue
+            open++
+            e = effort[i]; why[i] = ""
+            if ((p = index(e, ",")) > 0) { why[i] = substr(e, p + 1); e = substr(e, 1, p - 1) }
+            gsub(/^ +| +$/, "", e); sub(/^ +/, "", why[i])
+            size[i] = (e ~ /^(S|M|L|XL)$/) ? e : "?"
+            count[size[i]]++
+        }
+        print "# Backlog"
+        print ""
+        print "Every item in `backlog/`, in one file. `./backlog.sh log` makes it from the item files, and `land.sh` puts it"
+        print "in every landing, so it is as current as `main`. Do not edit it: change the item file, `backlog/<n>.md`, and"
+        print "land that. Who holds an item is not here: `./backlog.sh list` shows the claims."
+        print ""
+        print "Effort is the working time one agent needs to finish the item, builds and tests included, once nothing it waits"
+        print "on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a"
+        print "milestone). The words after the size say why, and what the item waits on, if anything."
+        print ""
+        line = sprintf("**%d open:** %d S, %d M, %d L, %d XL", open, count["S"], count["M"], count["L"], count["XL"])
+        if (count["?"]) line = line sprintf(", and %d not estimated yet (`Effort: ?`)", count["?"])
+        print line "."
+        print ""
+        print "| # | Effort | Item | Why that size | Added |"
+        print "|--:|:-:|:--|:--|:--|"
+        for (i = 1; i <= n; i++) if (status[i] == "open")
+            printf "| [%s](backlog/%s.md) | %s | %s | %s | %s |\n", num[i], num[i], size[i], cell(title[i]), cell(why[i]), added[i]
+        print ""
+        print "## Open items in full"
+        for (i = 1; i <= n; i++) if (status[i] == "open") {
+            print ""; print "### " num[i] ". " title[i]; print ""; printf "%s", head[i]; print ""; printf "%s", body[i]
+        }
+        print ""
+        print "## Done and dropped"
+        print ""
+        print "| # | Item | Status | On |"
+        print "|--:|:--|:--|:--|"
+        for (i = 1; i <= n; i++) if (status[i] != "open")
+            printf "| [%s](backlog/%s.md) | %s | %s | %s |\n", num[i], num[i], cell(title[i]), status[i], when[i]
+    }' $files
+}
+
 cmd=${1:-list}
 shift 2>/dev/null
 case $cmd in
@@ -234,5 +298,6 @@ case $cmd in
     release) number "${1:-}"; cmd_release "$@" ;;
     claims) cmd_claims; exit 0 ;;
     sweep) cmd_claims sweep; exit 0 ;;
+    log) cmd_log ;;
     *) echo "$usage"; exit 2 ;;
 esac

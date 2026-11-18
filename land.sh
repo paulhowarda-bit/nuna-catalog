@@ -5,6 +5,9 @@
 # agent that did the work), and run the build. This merges it into main only if main has not moved since, so the
 # merge is clean by construction. Two landings take turns through the ref refs/backlog/landing, so neither can move
 # main under the other between that check and the merge.
+#
+# BACKLOG.md, the whole backlog in one log, is made from the item files as they stand after the merge
+# (./backlog.sh log) and goes into the same merge commit, so it is always as current as main.
 
 set -u
 die() { echo "land.sh: $*" >&2; exit 1; }
@@ -33,8 +36,18 @@ trap 'git update-ref -d "$ref" "$turn"' EXIT
 [ -z "$(git -C "$checkout" status --porcelain)" ] || die "the main checkout has changes, so another session is working there: report $br as ready instead"
 git merge-base --is-ancestor main "$br" ||
     die "main has moved since $br last merged it: merge main into $br again, run the build, then land"
-if ! git -C "$checkout" merge --no-ff -q -m "$msg" "$br"; then
+[ -n "$(git rev-list -1 main.."$br")" ] || die "$br holds nothing main lacks: there is nothing to land"
+# Merge without committing, put in BACKLOG.md made from the merged item files, and commit both as one merge.
+merge_with_log() {
+    local out log
+    out=$(git -C "$checkout" merge --no-ff --no-commit -q "$br" 2>&1) || { printf '%s\n' "$out" >&2; return 1; }
+    log=$(cd "$checkout" && ./backlog.sh log) || { echo "land.sh: ./backlog.sh log failed on the merged item files" >&2; return 1; }
+    printf '%s\n' "$log" > "$checkout/BACKLOG.md" && git -C "$checkout" add BACKLOG.md && git -C "$checkout" commit -q -m "$msg"
+}
+if ! merge_with_log; then
     git -C "$checkout" merge --abort 2>/dev/null
+    if git -C "$checkout" cat-file -e HEAD:BACKLOG.md 2>/dev/null; then git -C "$checkout" checkout -q HEAD -- BACKLOG.md
+    else rm -f "$checkout/BACKLOG.md"; fi
     die "the merge into main stopped (above), and main is as it was"
 fi
 [ -z "$(git cherry main "$br" | grep '^+')" ] || die "landed, but git cherry -v main $br still lists commits main lacks: look"
