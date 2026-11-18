@@ -4,6 +4,12 @@ One item per file, `backlog/<n>.md`. `./backlog.sh` at the repo root lists the i
 and releases items. Started 2026-11-14 (Paul: agents claim an item so no other agent takes it, work it in their own
 worktree, update the backlog, land, then release the claim).
 
+To read the whole backlog, open `BACKLOG.md` at the repo root: one log of every item, the open ones first in a table
+with their effort, then each in full, then the done and dropped ones. `./backlog.sh log` makes it from the item files,
+and `land.sh` writes it into every landing's merge, so it is as current as `main`. Never edit it: edit the item file
+and land that. One generated file is the log, not one hand-edited file, because agents changing one shared file at
+once is what made merge conflicts; each still changes only its own item file.
+
 ## An item
 
 ```
@@ -12,6 +18,7 @@ worktree, update the backlog, land, then release the claim).
 Status: open
 Added: 2026-11-14 by Testing Agent
 Touches: catalog-objectstore/, catalog-maintenance/src/test/
+Effort: S, one test's setup in one module
 
 What is wrong or missing, with the evidence: a command and its output, or a file and line.
 What done looks like: the test, build or check that will show it.
@@ -21,6 +28,11 @@ What done looks like: the test, build or check that will show it.
   the date and branch, and the agent writes beneath it what was done and what, if anything, is left.
 - `Touches:` names the folders and files the work will change, separated by spaces or commas; `none` when it changes
   only its own item file and a `status/` entry. Claims use it to keep two agents out of the same area.
+- `Effort:` is the size of the work, then a comma and why: the working time one agent needs to finish the item,
+  builds and tests included, once nothing it waits on is in the way. **S** under 2 hours, **M** up to a day, **L** 2
+  to 5 days, **XL** more than 5 days (a milestone). Say there what the item waits on (Paul, work, another item), if
+  anything. `add` writes `Effort: ?`, which `BACKLOG.md` counts as not estimated; set it before landing the item.
+  Whoever learns the work is bigger or smaller than its size says, corrects it.
 - Only Paul drops or defers an item, and only he answers a question an item puts to him (titles say "Paul
   decides"). An agent that thinks an item should go, or reaches a choice that is his, asks him, one question at a
   time; it never drops, defers or rescopes an item itself.
@@ -41,7 +53,8 @@ about an item (an answer, a drop, a deferral, a change of scope):
 
 1. In your worktree, `./backlog.sh add "<title>" ["<who asked>"]`. It takes the next free number atomically, so two
    agents adding at once never get the same one, and writes the header of `backlog/<n>.md`.
-2. Write the `Touches:` line and the body: what is wrong or missing, the evidence, and what done looks like.
+2. Write the `Touches:` line, set `Effort:`, and write the body: what is wrong or missing, the evidence, and what done
+   looks like.
 3. Commit and land it like any branch. A branch that changes only Markdown lands without a build.
 
 Others can claim the item once it is on main. An agent that finds something while working on another item adds it on

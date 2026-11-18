@@ -8,14 +8,15 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - **In place:** when Paul says "in place", make the change in the main checkout itself, with no worktree or branch (Paul, 2026-11-14).
   - Start only if `git status --porcelain` there prints nothing; otherwise another session is working there, so ask.
   - Run the fast build as a landing would (none for Markdown only).
-  - Commit straight to `main`, ending the message with the attribution line.
+  - Commit straight to `main`, ending the message with the attribution line. If the change touches `backlog/`, run `./backlog.sh log > BACKLOG.md` first and commit it too: only `land.sh` refreshes it otherwise.
 - Bite runs (break a check, see its test fail, restore and hash-check) count as code changes, so they run inside the agent's own worktree, never in the main checkout, even in place.
 - Never push unless Paul asks.
 
 ## Backlog and claims
 
 - The backlog is `backlog/`, one file per item, `backlog/<n>.md`. `backlog/README.md` gives the format and the whole process; `./backlog.sh list` shows the open items and who holds each.
-- Add an item with `./backlog.sh add "<title>"` in your worktree (it takes the next number atomically), write a `Touches:` line (the folders and files the work will change), what is wrong, the evidence and what done looks like, then land it.
+- `BACKLOG.md` at the repo root is the whole backlog in one log for Paul to review: the open items with their effort, each in full, then the done and dropped ones. `./backlog.sh log` makes it from the item files, and `land.sh` puts it in every landing's merge. Never edit it: edit the item.
+- Add an item with `./backlog.sh add "<title>"` in your worktree (it takes the next number atomically), write a `Touches:` line (the folders and files the work will change), an `Effort:` line (S, M, L or XL and why: `backlog/README.md`), what is wrong, the evidence and what done looks like, then land it.
 - Claim an item before working on it: `./backlog.sh claim <n>` in the worktree that will carry the work. It fails if another agent holds the item, or holds one whose area overlaps this one's (the `Touches:` line, or the areas you name: `./backlog.sh claim <n> demo/ CLAUDE.md`), so two agents never change the same code at once: take another item. Claim only what you are about to start, and change only what you claimed.
 - When the work is done: `./backlog.sh done <n>`, write what was done, commit, land, then `./backlog.sh release <n>`. If you stop without finishing, release it; it stays open.
 - A worktree subagent cannot land, so the session that starts it claims the item first and releases it after landing.
@@ -42,7 +43,7 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 - Every landing uses the fast build, whatever the branch changes, except a branch whose every changed file is Markdown: it lands without a build (Paul, 2026-11-14). Nothing the build compiles, tests or applies is a `.md` file. Check with `git diff --name-only main...<branch>`. Don't run `-Pheavy` by hand: the overnight run does, every night that code changed.
 - When the work is finished and its build is green (or it changes only Markdown), land it without asking Paul:
   1. Merge the current `main` into the branch and run the fast build, `./gradlew build` (skipped for a Markdown-only branch). If that merge conflicts, settle it there, in the branch, as the agent that did the work, and run the build again. Never resolve a conflict in the main checkout.
-  2. Run `./land.sh <branch> "<message>"`, with a "Land …" message ending with the attribution line. It takes its turn with any other landing, merges into `main` with `--no-ff` only if `main` has not moved since step 1, so the merge cannot conflict, and checks `git cherry`. If `main` has moved, go back to step 1. If the main checkout has changes, another session is working there: report the branch as ready instead.
+  2. Run `./land.sh <branch> "<message>"`, with a "Land …" message ending with the attribution line. It takes its turn with any other landing, merges into `main` with `--no-ff` only if `main` has not moved since step 1, so the merge cannot conflict, writes `BACKLOG.md` into that merge, and checks `git cherry`. If `main` has moved, go back to step 1. If the main checkout has changes, another session is working there: report the branch as ready instead.
   3. Release the backlog items the branch finished: `./backlog.sh release <n>`.
 - After a branch lands, the session that started the agent archives it, which removes its worktree, then deletes the branch. Neither step needs asking.
 
