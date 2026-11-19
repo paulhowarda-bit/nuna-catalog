@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**34 open:** 7 S, 14 M, 9 L, 4 XL.
+**33 open:** 6 S, 14 M, 9 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -45,7 +45,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [61](backlog/61.md) | M | KubernetesCompactionTest: kubectl get job ran past its minute, after item 54's fix | the cause is unknown: kubectl's handling of the template, or a slow API | 2026-11-18 |
 | [62](backlog/62.md) | S | The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone | print worker.log on failure, then fix what it shows | 2026-11-18 |
-| [66](backlog/66.md) | S | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | find why the task did not wake the PC; the fix may be a power setting, which is Paul's to change | 2026-11-19 |
 
 ## Open items in full
 
@@ -580,29 +579,6 @@ item 66) failed the same test the same way, 21.1 s, `OtlpReceiver.await(OtlpRece
 ran. Evidence:
 `.overnight\runs\2026-11-19\heavy-results\catalog-maintenance\build\test-results\test\TEST-nuna.maintenance.TelemetryTest.xml`.
 
-### 66. The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight
-
-- Added: 2026-11-19 by the overnight run of 2026-11-19
-- Touches: overnight-task.ps1
-- Effort: S, find why the task did not wake the PC; the fix may be a power setting, which is Paul's to change
-
-The task `nuna overnight` is set to start at 00:00 and wake the computer (`WakeToRun: True`, from
-`overnight-task.ps1 -Register`). On 2026-11-19 it ran at 07:08:55 instead (`Get-ScheduledTaskInfo`: LastRunTime
-07:08:55, result 0). The System log shows the PC entering standby at 18:19:56 on 2026-11-18 (Kernel-Power 506) and
-leaving it at 07:08:49 (507): nothing woke it at midnight.
-
-What that cost: the run held Docker from 07:11 to 09:22, so the nuna-demo stack was down for those two hours of the
-morning; the bites did not get the night (they would not have run anyway, since the heavy build failed); and the
-07:00 report found no run, so the run went unrecorded until the overnight-1119-upgrade branch recorded it.
-
-Leads, unchecked: the power plan allows wake timers on mains only (`Allow wake timers`: AC 1, DC 0), and the task
-does not start on battery (`DisallowStartIfOnBatteries: True`), so a PC on battery at midnight would not run it;
-this PC uses Modern Standby, where wake timers can behave differently. `powercfg /waketimers` needs an elevated
-prompt.
-
-What done looks like: the cause is known, and the task starts at 00:00 with the PC in standby (or Paul decides how the
-PC is kept able to run it).
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -639,3 +615,4 @@ PC is kept able to run it).
 | [63](backlog/63.md) | The overnight folder moves inside the repo, gitignored | done | 2026-11-18 |
 | [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
+| [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
