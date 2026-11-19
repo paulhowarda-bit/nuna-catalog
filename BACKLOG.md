@@ -607,3 +607,4 @@ when it fails), the cause is fixed, and the test passes in the overnight run.
 | [58](backlog/58.md) | Demo: TLS at one front door, with a certificate that work's can replace | done | 2026-11-17 |
 | [59](backlog/59.md) | Rename keel to nuna, short for nunatak, everywhere | done | 2026-11-18 |
 | [63](backlog/63.md) | The overnight folder moves inside the repo, gitignored | done | 2026-11-18 |
+| [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
