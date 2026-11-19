@@ -88,6 +88,9 @@ spec:
             - {name: OAUTH2_PROXY_COOKIE_SECURE, value: "true"}
             # As long as Keycloak's own session can last (ssoSessionMaxLifespan).
             - {name: OAUTH2_PROXY_COOKIE_EXPIRE, value: 10h}
+            # A CSRF cookie of its own for each sign-in (it holds the PKCE code verifier): CloudBeaver's service worker
+            # starts a second sign-in beside the page's, and with one shared cookie the page's callback answered 500.
+            - {name: OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST, value: "true"}
             - {name: OAUTH2_PROXY_REDIRECT_URL, value: "https://${DEMO_HOST}:8185/oauth2/callback"}
             - {name: OAUTH2_PROXY_EMAIL_DOMAINS, value: "*"}
             - {name: OAUTH2_PROXY_SKIP_PROVIDER_BUTTON, value: "true"}
