@@ -95,7 +95,9 @@ final class Stack implements AutoCloseable {
                 "--nuna.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers(),
                 "--logging.level.root=WARN",
                 "--logging.level.nuna.audit.fallback=ERROR"));
-        ServerProcess server = ServerProcess.start(name, jar, s3.jvmOptions(), properties);
+        boolean thisRelease = jar.equals(Path.of(System.getProperty("m8.server-jar")));
+        ServerProcess server = ServerProcess.start(name, jar, s3.jvmOptions(),
+                thisRelease ? properties : PreviousRelease.settings(properties));
         servers.add(server);
         server.awaitReady(token("m8-writer", WRITERS), CATALOG);
         return server;
