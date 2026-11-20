@@ -8,13 +8,12 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**26 open:** 7 S, 11 M, 4 L, 4 XL.
+**26 open:** 9 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
-| [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
@@ -35,9 +34,10 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
-| [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
 | [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
 | [76](backlog/76.md) | S | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | two loops in two overnight tests; no wait. Before the first overnight run after item 15 lands, or that run may fail on it | 2026-11-20 |
+| [77](backlog/77.md) | S | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | two prepared patches to apply and a fast build; waits on items 15 and 71 releasing `rest/` and `telemetry/` | 2026-11-20 |
+| [78](backlog/78.md) | S | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | a guard change on six routes with tests, once Paul decides; waits on Paul | 2026-11-20 |
 
 ## Open items in full
 
@@ -77,21 +77,6 @@ its owner a policy change.
 Done when each policy has been applied as the catalog gives it (AWS: the `nuna-sandbox` account; MinIO: a store
 that enforces user policies), the worker deletes and lists beneath its prefixes and nobody else can, and the Ceph
 question has an answer, each recorded in `build-plan.md`.
-
-### 6. The server runs the store's self-check at startup (ask Paul before wiring it)
-
-- Decided: 2026-11-19, D8
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, one startup call, tested on four backends with a bite; after Paul decides
-
-The storage design says the server runs the store's `selfCheck()` at startup (D8.2). It does not: no class in
-`catalog-server/src/main` calls it (checked 2026-11-14). `build-plan.md` lists it as an M8 follow-up, and
-`docs/install-at-work.md` says to check the database's safety settings by hand and ask Paul before wiring it.
-
-Done when Paul has said how a failed check should act (refuse to start, or warn), and the server does that on each
-of the four backends, with a test and a bite.
-
-**Decided 2026-11-19 (D8):** a failed self-check refuses to start the server ("Refuse to start"). Test containers and the demo run single-node with fsync off, so they need an explicit setting that allows an unsafe database.
 
 ### 10. DR reconcile: prove the accepted tips from the audit archive
 
@@ -503,37 +488,6 @@ failing), with a heavy test that disables the job on a fresh schema and finds th
 Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
 job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
 
-### 73. Namespace, table and view names still leak through the management API
-
-- Decided: 2026-11-19, D18
-- Added: 2026-11-19 by agent-a3d0c67abbd88cfb2, from item 14
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/main/java/nuna/catalog/server/security/ catalog-server/src/test/
-- Effort: M, a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides
-
-Item 14 hid names on the Iceberg routes (D18 as amended 2026-11-19, "Hide names"): a caller that holds nothing on a
-namespace, table or view, or above it, or (for a namespace) on anything inside it, gets the 404 a missing one gets.
-The management API under `/management/v1/catalogs/{catalog}/...` still looks the name up first and asks second, so a
-signed-in caller can tell a name that exists (403) from one that does not (404):
-
-- `GovernanceRoutes`: governance, attributes, holds, policies and DR freezes, on a namespace, table or view, resolve
-  the target with `management.target(...)` (404 `NoSuchTableException` and the like) before `guard.require(...)`
-  (403). For example `GET .../namespaces/hr/tables/staff/governance` as a caller with nothing on `hr`.
-- `GrantRoutes`: a grant, a revoke and the listing of grants on an object resolve the securable with
-  `Securables.resolve` (404) before the privilege check (403); `SecurityGateTest#separationOfDutiesHoldsForEveryGrant`
-  shows the 403 for a namespace the granter holds nothing on.
-- `AuditReadRoutes` and `HealthRoutes` take a target through the same lookups.
-
-The `/check` route answers `allowed: false` alike for a missing and a refused object, so it does not leak.
-
-D18's amendment names HEAD, loads and the metrics route on the Iceberg API; whether hiding reaches the management
-API, whose callers are mostly stewards, grant admins and operators, is Paul's call. If it does, the Iceberg routes'
-rule and `Guard`'s check of grants inside a namespace (the catalog list's rule, item 20) are the model, and the hidden
-refusal is audited as every refusal is.
-
-Done when Paul has decided, and the management routes answer as he decided, with tests.
-
-**Decided 2026-11-19 (D18, amended again):** hide names on the management API too ("Hide there too"): a caller that holds nothing on a namespace, table or view gets the 404 a missing one gets, as on the Iceberg routes since item 14. Platform operators see no namespace, table or view name there unless granted ("Catalogs, not objects").
-
 ### 75. deploy/README.md and install-at-work.md still call the ETag routing choice open
 
 - Added: 2026-11-20 by agent on item 15
@@ -586,6 +540,73 @@ each loop only when the current window has longer left than the loop takes. `Slo
 should then read 32 of 32. The tests are `overnight`, so only the overnight run (or `./nightly.sh` on Paul's word)
 shows it.
 
+### 77. rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java catalog-server/src/test/java/nuna/catalog/server/rest/HiddenNamesTest.java bites/D18/namespace-blind-to-grants-inside.patch catalog-server/src/test/java/nuna/catalog/server/telemetry/TelemetryTest.java docs/observability/table-health.md
+- Effort: S, two prepared patches to apply and a fast build; waits on items 15 and 71 releasing `rest/` and `telemetry/`
+
+Item 73 hid names on the management API with item 14's rule (a caller that holds nothing on a namespace, table or
+view, above it or, for a namespace, inside it, is answered as for one that does not exist). The rule lived in
+`rest/Guard.java` as private methods, and `rest/` was held by item 15's agent, so item 73 moved a copy into a public
+`security/Holdings` (`something`, `onOrAbove`, `onAboveOrIn`) for the governance and grant routes and left `Guard`
+alone. Until `Guard` asks `Holdings`, the rule is written twice and the two can drift.
+
+Item 73 also changed what two files held by item 71's agent say:
+
+- `TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId` (heavy) sends otto, who holds nothing, to
+  `.../tables/t/governance` and expects 403; it now gets 404 `NoSuchTableException`, with the denial still audited
+  under its request id. It fails in the heavy build until changed.
+- `docs/observability/table-health.md`, under the routes table: "A caller without the privilege gets 403" is true
+  now only for a caller that holds something on the table.
+
+Two patches were prepared on 2026-11-20 against `main` with item 73 merged, in that session's scratchpad (handed to
+the coordinator; what each does is below, should the files be gone). Each passed `git apply --check`; neither was
+built:
+
+- `guard-uses-holdings.patch`: `Guard` takes `Holdings` in place of `CatalogStore` and calls
+  `holdings.onOrAbove(request.caller(), target)` and `holdings.onAboveOrIn(request.caller(), catalog.id(), id)`; its
+  `holdsOnOrAbove`, `holdsOnAboveOrIn`, `below` and `parent` go, with their imports. `HiddenNamesTest` builds `Guard`
+  with `new Holdings(authorizer, store, settings)`. `bites/D18/namespace-blind-to-grants-inside.patch` is recorded
+  again with the same break (`if (true || groups.isEmpty())`) in `Holdings`, still naming
+  `HiddenNamesTest#aGrantOnAnythingInANamespaceLetsTheCallerSeeTheNamespace`.
+- `telemetry-and-docs.patch`: the test expects 404; the doc says a refusal is 403 except on a table's health to a
+  caller that holds nothing on the table, which is 404 `NoSuchTableException`, and that every refusal is audited.
+
+Done when `Guard` asks `Holdings` and keeps no copy of the rule, `HiddenNamesTest` and the fast build pass, and the
+test and the doc say 404 for a caller that holds nothing.
+
+### 78. Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, a guard change on six routes with tests, once Paul decides; waits on Paul
+
+Item 73 hid namespace, table and view names on the management API (D18, amended again 2026-11-19: "Hide there too";
+"Catalogs, not objects"). Two kinds of route were left as they were, because the decision does not settle them:
+
+1. **The DR routes, which D37 gives to platform operators by name.** `PUT` and `DELETE .../dr-freeze` on a namespace,
+   table or view need a platform operator and no grant, so an operator that holds nothing there still learns whether
+   the name exists (200 or 204 for one that does, 404 for one that does not; a thaw of an unfrozen object answers
+   `NoSuchAttributeException`, of a missing one `NoSuchNamespaceException` and the like). `POST .../dr-reconcile`
+   answers with the path of every active table in the catalog. "Catalogs, not objects" says an operator sees no
+   object name unless granted; D37 says the freeze and the reconcile are operators' deployment actions. Either the DR
+   routes stay open to operators by name (D37 an exception to "Catalogs, not objects"), or an operator needs a grant
+   on what it freezes and sees only the tables it holds something on in a reconcile.
+   A caller that is not an operator and holds nothing on the target already gets the 404 since item 73.
+2. **The routes by object id.** `POST .../objects/{id}/undrop`, `GET .../objects/{id}/export`, and the maintenance
+   purge-claim and purge routes still answer 403 to a refused caller (one that holds nothing on the object; for the
+   purge routes, anyone but a maintenance principal) and 404 for an unknown id. They show no name, only whether an
+   id is in use, and an id is a random UUID the caller must already have. Either they stay as they are, or a caller
+   that holds nothing gets the unknown id's 404.
+
+Evidence: `GovernanceRoutes.freeze` and `thaw` (`guard.requireOperatorOn`, which hides only from non-operators),
+`ReconcileRoutes.reconcile`, `LifecycleRoutes.undrop` and `export` (`guard.require` on an `Authorizer.Target`, 403
+only), `claimPurge` and `purge` (`guard.requireMaintenance`), as of item 73's landing.
+
+Done when Paul has decided each, the decision is in `decision-ledger.md`, and the routes answer as he decided, with
+tests.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -593,6 +614,7 @@ shows it.
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
 | [5](backlog/5.md) | Install the nuna-maintenance Helm chart somewhere | done | 2026-11-20 |
+| [6](backlog/6.md) | The server runs the store's self-check at startup (ask Paul before wiring it) | done | 2026-11-20 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
 | [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
@@ -639,4 +661,5 @@ shows it.
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
+| [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |

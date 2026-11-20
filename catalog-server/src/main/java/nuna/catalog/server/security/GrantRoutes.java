@@ -10,6 +10,7 @@ import nuna.catalog.security.Authorizer.Decision;
 import nuna.catalog.security.Authorizer.Operation;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.server.rest.Callers;
 import nuna.catalog.server.rest.RequestContext;
 import nuna.catalog.server.rest.RestSettings;
@@ -52,7 +53,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Grant administration (D18, D19): grant and revoke to groups, list by principal (its groups), list by object,
- * the batch check, and the export for access certification. Every refusal is audited; every grant change goes
+ * the batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
+ * or view the caller holds nothing on is answered as if it did not exist (D18, item 73). Every grant change goes
  * through the outbox in the same transaction (D23). The separation-of-duties check runs inside the store's write
  * of the grant, so two grants made at once cannot together break it (backlog 13).
  */
@@ -82,16 +84,18 @@ class GrantRoutes {
     private final Separation separation;
     private final Callers callers;
     private final Denials denials;
+    private final Holdings holdings;
     private final RestSettings settings;
     private final Clock clock;
 
     GrantRoutes(CatalogStore store, Authorizer authorizer, Separation separation, Callers callers, Denials denials,
-                RestSettings settings, Clock clock) {
+                Holdings holdings, RestSettings settings, Clock clock) {
         this.store = store;
         this.authorizer = authorizer;
         this.separation = separation;
         this.callers = callers;
         this.denials = denials;
+        this.holdings = holdings;
         this.settings = settings;
         this.clock = clock;
     }
@@ -158,7 +162,9 @@ class GrantRoutes {
 
     /**
      * The batch check: may the caller do each of these? Answers for the caller's own subject, with every
-     * governance rule applied. A check is a question, not a refused request, so its answers are not audited.
+     * governance rule applied. A check is a question, not a refused request, so its answers are not audited. A
+     * no on a namespace, table or view the caller holds nothing on reads as the answer for one that does not
+     * exist (D18, amended 2026-11-19).
      */
     @PostMapping(GRANTS + "/check")
     ResponseEntity<String> check(@PathVariable String catalog, @RequestBody(required = false) String body,
@@ -171,6 +177,7 @@ class GrantRoutes {
         }
         Securables securables = new Securables(store, record);
         List<Authorizer.Request> requests = new ArrayList<>();
+        List<Securables.Resolved> resolvedAsked = new ArrayList<>();
         List<Integer> asked = new ArrayList<>();
         List<Map<String, Object>> results = new ArrayList<>();
         for (CheckSpec spec : checks.checks()) {
@@ -181,6 +188,7 @@ class GrantRoutes {
                 Securables.Resolved resolved = securables.resolve(spec.securable());
                 result.put("securable", securables.render(resolved.stored()));
                 requests.add(new Authorizer.Request(resolved.target(), new Operation("check", privilege, false)));
+                resolvedAsked.add(resolved);
                 asked.add(results.size());
             } catch (CatalogError e) {
                 if (e.status() != 404) {
@@ -194,9 +202,15 @@ class GrantRoutes {
         List<Decision> decisions = authorizer.decide(caller, requests);
         for (int i = 0; i < decisions.size(); i++) {
             Map<String, Object> result = results.get(asked.get(i));
+            Securables.Resolved resolved = resolvedAsked.get(i);
             result.put("allowed", decisions.get(i).allowed());
             if (decisions.get(i) instanceof Decision.Denied denied) {
-                result.put("reason", denied.message());
+                if (holdings.something(caller, resolved.target())) {
+                    result.put("reason", denied.message());
+                } else {
+                    result.remove("securable");
+                    result.put("reason", resolved.missing().getMessage());
+                }
             }
         }
         return json(Map.of("results", results));
@@ -293,11 +307,16 @@ class GrantRoutes {
         return conflict.isEmpty();
     }
 
+    /**
+     * A refusal is audited, then answered 403 to a caller that holds something on the namespace, table or view,
+     * and as if it did not exist to any other (D18, amended 2026-11-19), as on the Iceberg routes.
+     */
     private void require(RequestContext request, Securables.Resolved on, Operation operation) {
         if (authorizer.decide(request.caller(), on.target(), operation) instanceof Decision.Denied denied) {
-            throw denials.refuse(request.actor(), operation.name(), on.named(),
+            AccessDenied refused = denials.refuse(request.actor(), operation.name(), on.named(),
                     denied.privilege() == null ? null : denied.privilege().wireName(),
                     denied.reason().name().toLowerCase(java.util.Locale.ROOT), denied.message());
+            throw holdings.something(request.caller(), on.target()) ? refused : on.missing();
         }
     }
 

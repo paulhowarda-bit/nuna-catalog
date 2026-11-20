@@ -1,0 +1,17 @@
+Breaks: a caller that holds nothing on a namespace, table or view is refused with 403 on the management API again, so the name leaks.
+Module: catalog-server
+Test: ManagementHiddenNamesTest#everyRouteOnATableAnswersAsForATableThatDoesNotExist+everyRouteOnANamespaceAnswersAsForANamespaceThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
+index fc6be7f..b6fcdfc 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
+@@ -105,7 +105,7 @@ class ManagementGuard {
+ 
+     /** The refusal, already audited: 403 to a caller that holds something on the target, else the missing answer. */
+     private RuntimeException hidden(Request request, Authorizer.Target on, Target target, AccessDenied refused) {
+-        return holdings.something(request.caller(), on) ? refused : target.missing();
++        return refused;
+     }
+ 
+     private static Authorizer.Target on(Target target) {

@@ -33,8 +33,13 @@ today.
   `nuna.database.backend` (deploy/README.md, "The database"). Oracle and MongoDB were wired on 2026-11-13;
   their server tests (`OracleBackendTest`, `MongodbBackendTest`) ran on Oracle Free and a one-member replica
   set, not yet on RAC, Exadata or a real replica set.
-- **The server does not run the stores' self-checks** (`selfCheck`), which the storage design says it does at
-  startup. Check the database's safety settings by hand, and ask Paul before wiring it.
+- **The server refuses to start on an unsafe database** (D8, decided 2026-11-19; backlog 6). It runs the store's
+  self-check (`selfCheck`) before migrating, and any finding stops it with an error naming each one: no
+  synchronous standby, no Transaction Guard, a weak write concern, and so on (docs/storage-design.md section 7).
+  `nuna.database.allow-unsafe` names findings the server starts despite, each by its code, and logs each as a
+  warning; it is empty by default. Only test and demo databases on one node set it (the server's test settings,
+  the demo, `deploy/local`); never set it in production. At home it meets only containers: single nodes, and the
+  load tests' primary with a synchronous standby, which must pass with nothing allowed.
 - **Open work is in the backlog** (`backlog/`, started 2026-11-14), one file per item, seeded from
   `build-plan.md`. A title ending "(at work)" is work's to do; one saying "Paul decides" waits on him; "only when
   Paul asks" means wait for him. Claim an item before starting it (`backlog/README.md`). Claims stay on the
@@ -274,7 +279,7 @@ From `build-plan.md`; the open questions are in its section 6.
 
 - Approved artifacts in the curated repository (PLT-6).
 - RAC and Exadata, real IdPs, real object stores, and a DBA review of the self-check thresholds (PLT-2; the
-  server does not run the self-checks yet, above).
+  server refuses to start on any finding, above).
 - Bucket naming per region and the replication SLA for the DR runbook (PLT-4, D29).
 - Trusted engines and who attests to them (SEC-2, SEC-5); token exchange and workload identity (SEC-1);
   on-prem MinIO and Ceph versions and their STS support (PLT-3).

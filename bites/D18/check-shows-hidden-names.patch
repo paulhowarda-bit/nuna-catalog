@@ -1,0 +1,17 @@
+Breaks: the grant check shows a hidden object's id and the authorizer's reason to a caller that holds nothing on it, where a missing one answers that it does not exist.
+Module: catalog-server
+Test: GrantHiddenNamesTest#theCheckAnswersForAHiddenObjectAsForAMissingOne
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index b25c50b..45e3547 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -205,7 +205,7 @@ class GrantRoutes {
+             Securables.Resolved resolved = resolvedAsked.get(i);
+             result.put("allowed", decisions.get(i).allowed());
+             if (decisions.get(i) instanceof Decision.Denied denied) {
+-                if (holdings.something(caller, resolved.target())) {
++                if (true || holdings.something(caller, resolved.target())) {
+                     result.put("reason", denied.message());
+                 } else {
+                     result.remove("securable");
