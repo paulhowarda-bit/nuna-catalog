@@ -31,6 +31,15 @@ public interface TableFiles {
     /** Every table or view location beneath the table root, each the root a {@link #newLocation} gave out. */
     List<String> tableLocations();
 
+    /**
+     * Whether storage holds a file at {@code location}: any file of a table, data included. The DR reconcile's walk
+     * asks it of each file a step adds (D37, amended 2026-11-20).
+     */
+    boolean exists(String location);
+
+    /** Any file of a table, read whole: the DR reconcile's walk reads manifest lists and manifests with it. */
+    byte[] bytes(String location);
+
     /** @param sha256 lower-case hex */
     record Written(String location, String sha256) {
     }

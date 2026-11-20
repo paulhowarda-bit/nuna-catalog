@@ -49,11 +49,12 @@ import tools.jackson.databind.node.ObjectNode;
  * The answer lists the tables with something to report, and table locations in storage that no table or
  * view of any catalog holds (written after the database's last change; the operator registers them by name).
  *
- * <p>A table with a DR watermark is walked no further than it (D37, amended 2026-11-20; item 83). With
+ * <p>Each step is taken only when storage holds every file it adds, data included, and the walk stops at the first
+ * that lacks one, with or without a DR watermark (D37, amended 2026-11-20: "Walk with a file check"; item 83). With
  * {@code {"rewind": true}} (and neither {@code accept} nor {@code accept-archived}) the step moves the other way: each
- * table whose pointer is above its DR watermark, or that has none, is reported with the journaled commits a rewind
- * gives up; with {@code apply}, each such table under a DR freeze moves back to its watermark in one commit
- * ({@link Reconcile#rewind}).
+ * table and view whose pointer is above its DR watermark, or that has none, is reported with the journaled commits a
+ * rewind gives up; with {@code apply}, each such table and view under a DR freeze moves back to its watermark in one
+ * commit ({@link Reconcile#rewind}).
  */
 @RestController
 class ReconcileRoutes {
@@ -121,7 +122,7 @@ class ReconcileRoutes {
         Set<String> used = new HashSet<>();
         Set<String> contradicted = new TreeSet<>();
         int[] checked = {0};
-        forEachTable(catalog.id(), new ArrayList<>(), (table, levels) -> {
+        forEach(catalog.id(), CatalogObject.Kind.TABLE, new ArrayList<>(), (table, levels) -> {
             checked[0]++;
             Reconcile.Plan plan = reconcile.plan(table, accept,
                     archived.map(read -> read.commits().getOrDefault(table.id(), List.of())));
@@ -153,41 +154,50 @@ class ReconcileRoutes {
     }
 
     /**
-     * The rewind (D37, amended 2026-11-20): every active table whose pointer is not at its DR watermark, with the
-     * commits a rewind gives up; with {@code apply}, those under a DR freeze are moved back. A table with no watermark
-     * is reported, since none of its versions is known whole in the DR store, and is not moved.
+     * The rewind (D37, amended 2026-11-20): every active table, then every active view ("Rewind views too"), whose
+     * pointer is not at its DR watermark, with the commits a rewind gives up; with {@code apply}, those under a DR
+     * freeze are moved back. One with no watermark is reported, since none of its versions is known whole in the DR
+     * store, and is not moved: its owner decides.
      */
     private ObjectNode rewind(CatalogRecord catalog, Request request, Reconcile reconcile, boolean apply) {
         ObjectNode answer = Management.JSON.createObjectNode();
         answer.put("rewind", true);
         answer.put("apply", apply);
-        ArrayNode reported = answer.putArray("tables");
+        ArrayNode tables = answer.putArray("tables");
+        answer.put("tables-checked", rewind(catalog, CatalogObject.Kind.TABLE, request, reconcile, apply, tables));
+        ArrayNode views = answer.putArray("views");
+        answer.put("views-checked", rewind(catalog, CatalogObject.Kind.VIEW, request, reconcile, apply, views));
+        return answer;
+    }
+
+    /** Rewinds the catalog's active objects of one kind into {@code reported}; how many it checked. */
+    private int rewind(CatalogRecord catalog, CatalogObject.Kind kind, Request request, Reconcile reconcile,
+                       boolean apply, ArrayNode reported) {
         int[] checked = {0};
-        forEachTable(catalog.id(), new ArrayList<>(), (table, levels) -> {
+        forEach(catalog.id(), kind, new ArrayList<>(), (object, levels) -> {
             checked[0]++;
-            Reconcile.Rewind plan = reconcile.planRewind(table);
+            Reconcile.Rewind plan = reconcile.planRewind(object);
             if (plan.to().filter(to -> to.version() >= plan.from().version()).isPresent()) {
                 return;
             }
             Reconcile.Rewound rewound = null;
             if (apply && plan.problem().isEmpty()) {
                 List<String> path = new ArrayList<>(levels);
-                path.add(table.name().display());
+                path.add(object.name().display());
                 rewound = reconcile.rewind(plan, request.caller(), audit.commits(catalog.name(), path,
                         request.actor()));
             }
             reported.add(rewound(plan, levels, rewound));
         });
-        answer.put("tables-checked", checked[0]);
-        return answer;
+        return checked[0];
     }
 
     private static ObjectNode rewound(Reconcile.Rewind plan, List<String> levels, Reconcile.Rewound rewound) {
         ObjectNode node = Management.JSON.createObjectNode();
-        node.put("id", plan.table().id().toString());
+        node.put("id", plan.object().id().toString());
         ArrayNode path = node.putArray("path");
         levels.forEach(path::add);
-        path.add(plan.table().name().display());
+        path.add(plan.object().name().display());
         ObjectNode from = node.putObject("from");
         from.put("metadata-location", plan.from().metadataLocation());
         from.put("version", plan.from().version());
@@ -236,19 +246,22 @@ class ReconcileRoutes {
         }
     }
 
-    /** Active tables, depth first through the namespace tree; {@code levels} are the display names above each. */
-    private void forEachTable(UUID parentId, List<String> levels, TableVisitor visit) {
-        page(page -> store.listObjects(parentId, CatalogObject.Kind.TABLE, CatalogObject.State.ACTIVE, page),
-                table -> visit.visit(table, List.copyOf(levels)));
+    /**
+     * Active tables or views, depth first through the namespace tree; {@code levels} are the display names above
+     * each.
+     */
+    private void forEach(UUID parentId, CatalogObject.Kind kind, List<String> levels, ObjectVisitor visit) {
+        page(page -> store.listObjects(parentId, kind, CatalogObject.State.ACTIVE, page),
+                object -> visit.visit(object, List.copyOf(levels)));
         page(page -> store.listNamespaces(parentId, page), namespace -> {
             levels.add(namespace.name().display());
-            forEachTable(namespace.id(), levels, visit);
+            forEach(namespace.id(), kind, levels, visit);
             levels.removeLast();
         });
     }
 
-    private interface TableVisitor {
-        void visit(CatalogObject table, List<String> levels);
+    private interface ObjectVisitor {
+        void visit(CatalogObject object, List<String> levels);
     }
 
     private interface Lister<T> {

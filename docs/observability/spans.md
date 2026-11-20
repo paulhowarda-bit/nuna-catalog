@@ -9,7 +9,7 @@ Observation: one span and one timer of the same name, with the same tags.
 | Observation (timer) | Span | One per | Tags |
 |---|---|---|---|
 | `nuna.store` | `store <method>`, e.g. `store commit`, `store readPointer` | call to the catalog store: each is one transaction, on whichever backend is configured | `backend`, `operation`, `outcome`, `exception` |
-| `nuna.objectstore` | `objectstore <method>`: `write`, `read`, `metadataFiles`, `tableLocations` | request for metadata files to the object store | `profile`, `operation`, `outcome`, `exception` |
+| `nuna.objectstore` | `objectstore <method>`: `write`, `read`, `metadataFiles`, `tableLocations`, `exists`, `bytes` | request for metadata files to the object store, or, in the DR reconcile, for the files a step adds | `profile`, `operation`, `outcome`, `exception` |
 | `nuna.sts` | `sts assume-role` | AssumeRole for a credential vend; a vend served from the credential cache calls nothing | `profile`, `access`, `outcome`, `exception` |
 | `nuna.audit.publish` | `audit publish` | synchronous audit record (D23), such as a read or a credential issue, from the send to Kafka's acknowledgement | `topic`, `event`, `outcome`, `exception` |
 
@@ -18,7 +18,7 @@ The tags, and nothing else, are the spans' attributes:
 | Tag | Values |
 |---|---|
 | `backend` | `postgresql`, `oracle` or `mongodb` (`nuna.database.backend`) |
-| `operation` | the store's method (`commit`, `readPointer`, `findObject`, `grantsFor`, ...), or the object store's (`write`, `read`, `metadataFiles`, `tableLocations`) |
+| `operation` | the store's method (`commit`, `readPointer`, `findObject`, `grantsFor`, ...), or the object store's (`write`, `read`, `metadataFiles`, `tableLocations`, `exists`, `bytes`) |
 | `profile` | the storage profile's configured name |
 | `access` | `read` or `read-write` |
 | `topic` | the audit topic (`nuna.audit.audit-topic`) |
@@ -33,7 +33,7 @@ Outcomes:
   `absent`, `claimed`, `in-flight`, `done` or `mismatch`; a commit lookup `committed` or `not-committed`. A read that
   may find nothing is `found` or `absent`. Anything else is `ok`.
 - **Object store.** `written`; `intact`, or `mismatch` when the bytes read do not hash as the pointer says (D26);
-  `listed`.
+  `listed`; `found` or `absent`; `read`.
 - **STS.** `issued`.
 - **Kafka.** `acknowledged`.
 

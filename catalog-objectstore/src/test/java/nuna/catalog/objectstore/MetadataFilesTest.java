@@ -191,6 +191,28 @@ class MetadataFilesTest {
                 .isEqualTo(new TableFiles.Read(tampered, sha256Hex(tampered), false));
     }
 
+    @Test
+    @DisplayName("any file of a table, data included, is found with one HEAD and read whole, through the adapter too;"
+            + " a missing one is absent, and one outside the allowed prefixes is refused (the DR reconcile's check)")
+    void anyFileIsFoundAndRead() {
+        String data = newTable() + "/data/part-00000.parquet";
+        byte[] bytes = {0, 1, 2, (byte) 0xff};
+        ObjectLocation file = ObjectLocation.parse(data);
+        direct.putObject(request -> request.bucket(file.bucket()).key(file.key()), RequestBody.fromBytes(bytes));
+        ProfileTableFiles adapter = new ProfileTableFiles(profile, files);
+
+        assertThat(files.exists(data)).isTrue();
+        assertThat(files.bytes(data)).isEqualTo(bytes);
+        assertThat(adapter.exists(data)).isTrue();
+        assertThat(adapter.bytes(data)).isEqualTo(bytes);
+        String absent = newTable() + "/data/never.parquet";
+        assertThat(files.exists(absent)).isFalse();
+        assertThatThrownBy(() -> files.bytes(absent)).isInstanceOf(MetadataNotFoundException.class);
+        String outside = "s3://" + lake + "/elsewhere-" + UUID.randomUUID() + "/data/part-00000.parquet";
+        assertThatThrownBy(() -> files.exists(outside)).isInstanceOf(LocationRejectedException.class);
+        assertThatThrownBy(() -> files.bytes(outside)).isInstanceOf(LocationRejectedException.class);
+    }
+
     private String newTable() {
         return profile.newTableLocation(UUID.randomUUID());
     }

@@ -2,6 +2,8 @@ package nuna.catalog.core.commit;
 
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
+import nuna.catalog.iceberg.AddedFiles;
+import nuna.catalog.iceberg.Facts;
 import nuna.catalog.iceberg.Metadata;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogStore;
@@ -26,6 +28,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -47,11 +50,13 @@ import java.util.UUID;
  * standard a successor proves. Only a table under a DR freeze moves, so no commit races the walk.
  *
  * <p>Storage replicates to DR asynchronously and not in write order, so a proven file's manifests and data may not
- * have arrived. The maintenance worker's verifier keeps each table's DR watermark, the newest version whose every
- * file it found in the DR store (D37, amended 2026-11-20), and the walk never moves a table that has one past it
- * (item 83, folded into item 28). Since the watermark is written after the version it names, it is never above the
- * pointer; a table whose pointer is above it is moved back to it by the {@linkplain #rewind rewind}, which gives up
- * the commits in between.
+ * have arrived. The walk takes a step only when storage holds every file it adds to the version before it, data
+ * included, checked as it plans, and stops at the first step that lacks one (D37, amended 2026-11-20: "Walk with a
+ * file check"; item 83, folded into item 28). It counts a version's files as the maintenance worker's verifier does
+ * ({@link AddedFiles}), and walks every table so, with a DR watermark or without. The verifier keeps each table's and
+ * view's DR watermark, the newest version whose every file it found in the DR store; since the watermark is written
+ * after the version it names, it is never above the pointer, and an object whose pointer is above it is moved back
+ * to it by the {@linkplain #rewind rewind}, which gives up the commits in between.
  */
 public final class Reconcile {
 
@@ -94,15 +99,15 @@ public final class Reconcile {
     }
 
     /**
-     * A rewind of a table's main pointer to its DR watermark.
+     * A rewind of a table's or view's main pointer to its DR watermark.
      *
      * @param from    the pointer it starts from
-     * @param to      the watermark it moves back to; none when the table has none
+     * @param to      the watermark it moves back to; none when the object has none
      * @param sha256  of the watermark's metadata file as storage holds it; empty when there is a problem
      * @param lost    the journaled commits above the watermark, oldest first, which the rewind gives up
      * @param problem why it cannot rewind
      */
-    public record Rewind(CatalogObject table, Pointer from, Optional<DrWatermark> to, String sha256, List<Lost> lost,
+    public record Rewind(CatalogObject object, Pointer from, Optional<DrWatermark> to, String sha256, List<Lost> lost,
                          Optional<String> problem) {
     }
 
@@ -147,34 +152,45 @@ public final class Reconcile {
      * hold as recorded, or where {@code accept} names a file other than the one it records. Where the archive records
      * none, {@code accept} decides, as without the archive.
      *
-     * <p>A table with a DR watermark moves no further than it, whatever proves the files after it: their manifests
-     * and data are not known to be in the DR store (D37, amended 2026-11-20). The plan stops there and says how many
-     * proven files it left; when the pointer is already above the watermark, it says to rewind.
+     * <p>Each step is then checked against storage, oldest first: every file it adds to the version before it (the
+     * pointer's, for the first) must be there, its manifest list, the manifests and the data and delete files its
+     * snapshots add, and its statistics files (D37, amended 2026-11-20). The plan keeps the steps before the first that
+     * lacks one, takes no tip, and says which file is missing; a file that cannot be read stops it the same way.
      */
     public Plan plan(CatalogObject table, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
         Plan walked = walk(table, accept, archived);
-        Optional<DrWatermark> watermark = store.readDrWatermark(table.id());
-        if (watermark.isEmpty()) {
+        if (walked.steps().isEmpty()) {
             return walked;
         }
-        long safe = watermark.get().version();
-        Pointer from = walked.from();
-        List<Step> kept = walked.steps().stream().takeWhile(step -> step.version() <= safe).toList();
-        List<Step> beyond = walked.steps().subList(kept.size(), walked.steps().size());
-        if (from.version() > safe) {
-            return new Plan(table, from, List.of(), List.of(), Optional.of("the pointer, version " + from.version()
-                    + ", is above the DR watermark, version " + safe + ": its files are not known to be in the DR"
-                    + " store, and no file after it is taken; rewind the table to the watermark (\"rewind\": true)"),
-                    walked.contradicted());
+        String baseLocation = walked.from().metadataLocation();
+        String baseJson = files.read(baseLocation, walked.from().sha256()).json();
+        for (int taken = 0; taken < walked.steps().size(); taken++) {
+            Step step = walked.steps().get(taken);
+            String json;
+            Optional<String> missing;
+            try {
+                json = files.read(step.location(), step.sha256()).json();
+                missing = AddedFiles.firstMissing(baseLocation, baseJson, step.location(), json, files::bytes,
+                        files::exists);
+            } catch (RuntimeException e) {
+                return cut(walked, taken, "the files version " + step.version() + " adds (" + step.location()
+                        + ") cannot be checked: " + e.getMessage());
+            }
+            if (missing.isPresent()) {
+                return cut(walked, taken, "storage does not hold " + missing.get() + ", which version "
+                        + step.version() + " adds (" + step.location() + "): its files have not all reached this"
+                        + " store, so the walk stops before it");
+            }
+            baseLocation = step.location();
+            baseJson = json;
         }
-        if (beyond.isEmpty()) {
-            return walked;
-        }
-        return new Plan(table, from, kept, List.of(), Optional.of("the walk stops at the DR watermark, version "
-                + safe + ": " + beyond.size() + (beyond.size() == 1 ? " proven file follows" : " proven files follow")
-                + " it, from " + beyond.getFirst().location() + ", whose manifests and data are not known to be in the"
-                + " DR store"),
-                walked.contradicted());
+        return walked;
+    }
+
+    /** The plan's first {@code taken} steps and no tip, stopped by {@code problem}. */
+    private static Plan cut(Plan walked, int taken, String problem) {
+        return new Plan(walked.table(), walked.from(), List.copyOf(walked.steps().subList(0, taken)), List.of(),
+                Optional.of(problem), walked.contradicted());
     }
 
     private Plan walk(CatalogObject table, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
@@ -307,63 +323,65 @@ public final class Reconcile {
     }
 
     /**
-     * Plans moving {@code table}'s main pointer back to its DR watermark (D37, amended 2026-11-20): the newest
-     * version whose every file the verifier found in the DR store. It lists the journaled commits above the watermark,
-     * which the rewind gives up. There is nothing to rewind when the table has no watermark, its pointer is at it, or
-     * its pointer already holds the watermark's metadata (a rewind the verifier has not passed yet), and it cannot
-     * rewind when storage does not hold the watermark's metadata file as table metadata of this table.
+     * Plans moving a table's or view's main pointer back to its DR watermark (D37, amended 2026-11-20: views too):
+     * the newest version whose every file the verifier found in the DR store. It lists the journaled commits above the
+     * watermark, which the rewind gives up. There is nothing to rewind when the object has no watermark, its pointer is
+     * at it, or its pointer already holds the watermark's metadata (a rewind the verifier has not passed yet), and it
+     * cannot rewind when storage does not hold the watermark's metadata file as metadata of this object.
      */
-    public Rewind planRewind(CatalogObject table) {
-        Pointer from = store.readPointer(table.mainKey())
-                .orElseThrow(() -> new IllegalStateException("table " + table.id() + " has no pointer"));
-        Optional<DrWatermark> watermark = store.readDrWatermark(table.id());
+    public Rewind planRewind(CatalogObject object) {
+        String kind = kind(object);
+        Pointer from = store.readPointer(object.mainKey())
+                .orElseThrow(() -> new IllegalStateException(kind + " " + object.id() + " has no pointer"));
+        Optional<DrWatermark> watermark = store.readDrWatermark(object.id());
         if (watermark.isEmpty()) {
-            return new Rewind(table, from, watermark, "", List.of(), Optional.of("the table has no DR watermark: the"
-                    + " verifier has found none of its versions whole in the DR store, so there is none to rewind to"));
+            return new Rewind(object, from, watermark, "", List.of(), Optional.of("the " + kind + " has no DR watermark:"
+                    + " the verifier has found none of its versions whole in the DR store, so there is none to rewind"
+                    + " to"));
         }
         DrWatermark to = watermark.get();
         if (to.version() >= from.version()) {
-            return new Rewind(table, from, watermark, "", List.of(), Optional.of("the pointer is at the DR watermark,"
+            return new Rewind(object, from, watermark, "", List.of(), Optional.of("the pointer is at the DR watermark,"
                     + " version " + to.version() + "; there is nothing to rewind"));
         }
-        if (!files.metadataFiles(table.locationRoot()).contains(to.metadataLocation())) {
-            return new Rewind(table, from, watermark, "", lost(table, to.version()), Optional.of("storage does not hold"
-                    + " the DR watermark's file " + to.metadataLocation() + "; this is not the store the verifier"
+        if (!files.metadataFiles(object.locationRoot()).contains(to.metadataLocation())) {
+            return new Rewind(object, from, watermark, "", lost(object, to.version()), Optional.of("storage does not"
+                    + " hold the DR watermark's file " + to.metadataLocation() + "; this is not the store the verifier"
                     + " checked"));
         }
         TableFiles.Read read = files.read(to.metadataLocation(), "");
         if (read.sha256().equals(from.sha256())) {
-            return new Rewind(table, from, watermark, "", List.of(), Optional.of("the pointer, version "
+            return new Rewind(object, from, watermark, "", List.of(), Optional.of("the pointer, version "
                     + from.version() + ", already holds the DR watermark's metadata, version " + to.version()
                     + "; there is nothing to rewind until the verifier passes it"));
         }
-        List<Lost> lost = lost(table, to.version());
+        List<Lost> lost = lost(object, to.version());
         try {
-            Metadata.TableLink link = Metadata.tableLink(read.json(), to.metadataLocation());
-            if (!link.uuid().equals(table.id().toString())) {
-                return new Rewind(table, from, watermark, "", lost, Optional.of("file " + to.metadataLocation()
-                        + " belongs to table " + link.uuid()));
+            String uuid = facts(object, read.json(), to.metadataLocation()).uuid();
+            if (!uuid.equals(object.id().toString())) {
+                return new Rewind(object, from, watermark, "", lost, Optional.of("file " + to.metadataLocation()
+                        + " belongs to " + kind + " " + uuid));
             }
         } catch (RuntimeException e) {
-            return new Rewind(table, from, watermark, "", lost, Optional.of("file " + to.metadataLocation()
-                    + " is not table metadata: " + e.getMessage()));
+            return new Rewind(object, from, watermark, "", lost, Optional.of("file " + to.metadataLocation()
+                    + " is not " + kind + " metadata: " + e.getMessage()));
         }
-        return new Rewind(table, from, watermark, read.sha256(), lost, Optional.empty());
+        return new Rewind(object, from, watermark, read.sha256(), lost, Optional.empty());
     }
 
     /**
      * Moves the pointer back to the watermark in one journaled commit, published through {@code events} as the
      * fast-forward's steps are: it writes the watermark's metadata again as the next version, since a pointer only
-     * moves forward and the walk stops where a file's version is not the pointer's. Only a table under a DR freeze
-     * is rewound. It does not move the watermark, which the verifier keeps. A swap whose outcome was unknown is
+     * moves forward and the walk stops where a file's version is not the pointer's. Only a table or view under a DR
+     * freeze is rewound. It does not move the watermark, which the verifier keeps. A swap whose outcome was unknown is
      * decided as {@link #apply} decides a step's.
      */
     public Rewound rewind(Rewind plan, Caller caller, CommitEvents events) {
         if (plan.problem().isPresent()) {
             return new Rewound(plan, Optional.empty(), plan.problem());
         }
-        CatalogObject table = plan.table();
-        if (!frozen(table)) {
+        CatalogObject object = plan.object();
+        if (!frozen(object)) {
             return new Rewound(plan, Optional.empty(), Optional.of("not frozen for DR reconcile; place a DR freeze on"
                     + " it or above it"));
         }
@@ -374,22 +392,32 @@ public final class Reconcile {
                     + " changed since it was planned"));
         }
         Pointer before = plan.from();
-        TableFiles.Written written = files.write(table.locationRoot(), before.version() + 1, read.json());
+        TableFiles.Written written = files.write(object.locationRoot(), before.version() + 1, read.json());
         Pointer next = new Pointer(written.location(), before.version() + 1, written.sha256(),
-                Projection.of(Metadata.tableLink(read.json(), written.location()).facts()));
+                Projection.of(facts(object, read.json(), written.location())));
         String updates = "[{\"action\":\"dr-rewind\",\"metadata-location\":" + quote(written.location())
                 + ",\"watermark-version\":" + to.version() + ",\"watermark-location\":" + quote(to.metadataLocation())
                 + ",\"versions-given-up\":" + (before.version() - to.version()) + "}]";
-        Optional<String> refused = swap(table, before, next, updates, caller, events, "rewind");
+        Optional<String> refused = swap(object, before, next, updates, caller, events, "rewind");
         return refused.isPresent() ? new Rewound(plan, Optional.empty(), refused)
                 : new Rewound(plan, Optional.of(next), Optional.empty());
+    }
+
+    /** A table's or a view's metadata facts, read as its kind's metadata; throws on a file that is not. */
+    private static Facts facts(CatalogObject object, String json, String location) {
+        return object.kind() == CatalogObject.Kind.VIEW ? Metadata.viewFacts(json, location)
+                : Metadata.tableLink(json, location).facts();
+    }
+
+    private static String kind(CatalogObject object) {
+        return object.kind().name().toLowerCase(Locale.ROOT);
     }
 
     private boolean frozen(CatalogObject table) {
         return GovernanceChain.of(store, table).nearest(GovernanceAttribute.Kind.DR_FREEZE).isPresent();
     }
 
-    /** The journaled commits of the table's main pointer above {@code version}, oldest first. */
+    /** The journaled commits of the object's main pointer above {@code version}, oldest first. */
     private List<Lost> lost(CatalogObject table, long version) {
         List<Lost> lost = new ArrayList<>();
         PageRequest request = JournalStore.afterVersion(version, JOURNAL_PAGE);

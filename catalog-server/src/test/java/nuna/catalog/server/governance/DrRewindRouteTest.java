@@ -25,9 +25,9 @@ import software.amazon.awssdk.services.s3.S3Client;
 /**
  * The DR rewind (D37, amended 2026-11-20): the store is behind the database, as a DR store that replicates more
  * slowly than its database would be: the verifier found version 2 of a table whole, and version 3's metadata file
- * never arrived. The operators' readout shows the table behind; the reconcile takes no file past the watermark and
- * says to rewind; the rewind lists the commit it gives up and, only under a DR freeze, moves the table back to
- * version 2's metadata as version 4, published like any commit.
+ * never arrived. The operators' readout shows the table behind; the walk takes no step, storage lacking the pointer's
+ * own file; the rewind lists the commit it gives up and, only under a DR freeze, moves the table back to version 2's
+ * metadata as version 4, published like any commit. A view is rewound the same way ("Rewind views too").
  */
 @Tag("heavy")
 @GovernanceServer
@@ -92,7 +92,8 @@ class DrRewindRouteTest {
         String table = "$.tables[?(@.id == '" + id + "')]";
         HttpResponse<String> forward = expect(api.manage("POST", "/dr-reconcile", null, AUTH, api.operator()), 200);
         assertThat(JsonPath.<List<String>>read(forward.body(), table + ".problem")).singleElement().asString()
-                .contains("above the DR watermark, version 2").contains("\"rewind\": true");
+                .contains("storage does not hold the pointer's file " + v3);
+        assertThat(JsonPath.<List<List<Object>>>read(forward.body(), table + ".steps")).containsExactly(List.of());
 
         HttpResponse<String> dryRun = expect(api.manage("POST", "/dr-reconcile", "{\"rewind\":true}", AUTH,
                 api.operator()), 200);
@@ -138,10 +139,52 @@ class DrRewindRouteTest {
     }
 
     @Test
+    void aFrozenViewAboveItsWatermarkIsRewoundToIt() {
+        String ns = api.namespace();
+        api.view(ns, "recent");
+        String id = api.id(ns, "views", "recent");
+        String v2 = commitView(ns, "a");
+        String v3 = commitView(ns, "b");
+        expect(api.manage("PUT", "/maintenance/tables/" + id + "/dr-watermark",
+                "{\"version\":2,\"metadata-location\":\"" + v2 + "\"}", AUTH, api.maintenance()), 204);
+
+        String view = "$.views[?(@.id == '" + id + "')]";
+        HttpResponse<String> dryRun = expect(api.manage("POST", "/dr-reconcile", "{\"rewind\":true}", AUTH,
+                api.operator()), 200);
+        assertThat(JsonPath.<List<String>>read(dryRun.body(), view + ".watermark.metadata-location"))
+                .containsExactly(v2);
+        assertThat(JsonPath.<List<Integer>>read(dryRun.body(), view + ".lost[*].version")).containsExactly(3);
+        assertThat(JsonPath.<List<String>>read(dryRun.body(), view + ".lost[*].metadata-location"))
+                .containsExactly(v3);
+        assertThat(JsonPath.<List<Object>>read(dryRun.body(), "$.tables[?(@.id == '" + id + "')]")).isEmpty();
+        assertThat(JsonPath.<Integer>read(dryRun.body(), "$.views-checked")).isPositive();
+
+        expect(api.manage("PUT", "/namespaces/" + ns(ns) + "/dr-freeze", "{\"reason\":\"DR drill\"}",
+                AUTH, api.operator()), 200);
+        HttpResponse<String> applied = expect(api.manage("POST", "/dr-reconcile", "{\"rewind\":true,\"apply\":true}",
+                AUTH, api.operator()), 200);
+        assertThat(JsonPath.<List<Integer>>read(applied.body(), view + ".rewound-to.version")).containsExactly(4);
+        String v4 = JsonPath.read(loadView(ns), "$.metadata-location");
+        assertThat(v4).contains("/metadata/00004-");
+        assertThat(JsonPath.<String>read(loadView(ns), "$.metadata.properties.k")).as("version 2's metadata")
+                .isEqualTo("a");
+        expect(api.manage("DELETE", "/namespaces/" + ns(ns) + "/dr-freeze", null, AUTH, api.operator()), 204);
+    }
+
+    @Test
     void onlyAPlatformOperatorRewinds() {
         expectError(api.manage("POST", "/dr-reconcile", "{\"rewind\":true,\"apply\":true}"), 403, "ForbiddenException");
         expectError(api.manage("POST", "/dr-reconcile", "{\"rewind\":true,\"apply\":true}", AUTH, api.maintenance()),
                 403, "ForbiddenException");
+    }
+
+    private String commitView(String ns, String value) {
+        return JsonPath.read(expect(api.rest("POST", "/namespaces/" + ns(ns) + "/views/recent",
+                Api.SET_PROPERTY.formatted(value)), 200).body(), "$.metadata-location");
+    }
+
+    private String loadView(String ns) {
+        return expect(api.rest("GET", "/namespaces/" + ns(ns) + "/views/recent", null), 200).body();
     }
 
     private String load(String ns) {
