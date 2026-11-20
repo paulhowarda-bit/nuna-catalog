@@ -1,0 +1,17 @@
+Breaks: the walk's file check starts at the DR database's pointer again, not at the table's DR watermark, so a table whose pointer sits above its watermark on versions whose files never reached the DR store is walked on from it (D37, amended again 2026-11-20: "Check from the watermark").
+Module: catalog-core
+Test: ReconcileFileCheckTest#aStretchMissingAFileTakesNothing+aStretchThatCannotBeCheckedTakesNothing
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 828f37d..7d74c06 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -213,7 +213,7 @@ public final class Reconcile {
+      */
+     private Optional<String> sinceWatermark(CatalogObject table, Pointer from) {
+         Optional<DrWatermark> kept = store.readDrWatermark(table.id());
+-        if (kept.isEmpty() || kept.get().version() >= from.version()) {
++        if (true || kept.isEmpty() || kept.get().version() >= from.version()) {
+             return Optional.empty();
+         }
+         DrWatermark watermark = kept.get();

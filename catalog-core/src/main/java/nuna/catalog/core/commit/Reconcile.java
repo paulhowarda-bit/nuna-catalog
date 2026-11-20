@@ -33,6 +33,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.LongStream;
 
 /**
  * The reconcile-from-storage step of the DR runbook (D37). After a failover to a database that is behind
@@ -53,10 +54,12 @@ import java.util.UUID;
  * have arrived. The walk takes a step only when storage holds every file it adds to the version before it, data
  * included, checked as it plans, and stops at the first step that lacks one (D37, amended 2026-11-20: "Walk with a
  * file check"; item 83, folded into item 28). It counts a version's files as the maintenance worker's verifier does
- * ({@link AddedFiles}), and walks every table so, with a DR watermark or without. The verifier keeps each table's and
- * view's DR watermark, the newest version whose every file it found in the DR store; since the watermark is written
- * after the version it names, it is never above the pointer, and an object whose pointer is above it is moved back
- * to it by the {@linkplain #rewind rewind}, which gives up the commits in between.
+ * ({@link AddedFiles}). The verifier keeps each table's and view's DR watermark, the newest version whose every file
+ * it found in the DR store; since the watermark is written after the version it names, it is never above the pointer.
+ * A table whose pointer is above its watermark is checked from the watermark (D37, amended again 2026-11-20: "Check
+ * from the watermark"): every version between them, the pointer's included, must be whole in storage too, or the walk
+ * takes nothing for it and reports it for the {@linkplain #rewind rewind}, which moves it back to its watermark and
+ * gives up the commits in between. A table with no watermark is walked from its pointer.
  */
 public final class Reconcile {
 
@@ -156,9 +159,18 @@ public final class Reconcile {
      * pointer's, for the first) must be there, its manifest list, the manifests and the data and delete files its
      * snapshots add, and its statistics files (D37, amended 2026-11-20). The plan keeps the steps before the first that
      * lacks one, takes no tip, and says which file is missing; a file that cannot be read stops it the same way.
+     *
+     * <p>When the table's pointer is above its DR watermark, the versions between them are checked first, the same way
+     * from the watermark's ({@link #sinceWatermark}); if one is not whole, the plan takes nothing and says why.
      */
     public Plan plan(CatalogObject table, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
-        Plan walked = walk(table, accept, archived);
+        Pointer from = store.readPointer(table.mainKey())
+                .orElseThrow(() -> new IllegalStateException("table " + table.id() + " has no pointer"));
+        Optional<String> broken = sinceWatermark(table, from);
+        if (broken.isPresent()) {
+            return stopped(table, from, List.of(), broken.get());
+        }
+        Plan walked = walk(table, from, accept, archived);
         if (walked.steps().isEmpty()) {
             return walked;
         }
@@ -191,9 +203,60 @@ public final class Reconcile {
                 Optional.of(problem), walked.contradicted());
     }
 
-    private Plan walk(CatalogObject table, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
-        Pointer from = store.readPointer(table.mainKey())
-                .orElseThrow(() -> new IllegalStateException("table " + table.id() + " has no pointer"));
+    /**
+     * Why the walk takes nothing for {@code table}, whose pointer is {@code from} (D37, amended again 2026-11-20: "Check
+     * from the watermark"): its pointer is above its DR watermark, and a version between them, the pointer's included,
+     * lacks a file it adds to the version before it (the watermark's, for the first), its own metadata file among them,
+     * or cannot be checked. The versions are the ones the DR database's journal records above the watermark, the commits
+     * a {@linkplain #rewind rewind} would give up, and they must run one by one to the pointer. Empty when the table has
+     * no watermark, its pointer is at it, or every version between them is whole in storage.
+     */
+    private Optional<String> sinceWatermark(CatalogObject table, Pointer from) {
+        Optional<DrWatermark> kept = store.readDrWatermark(table.id());
+        if (kept.isEmpty() || kept.get().version() >= from.version()) {
+            return Optional.empty();
+        }
+        DrWatermark watermark = kept.get();
+        String between = "between the DR watermark, version " + watermark.version() + ", and the pointer, version "
+                + from.version();
+        List<Lost> versions = lost(table, watermark.version());
+        if (!versions.stream().map(Lost::version).toList()
+                .equals(LongStream.rangeClosed(watermark.version() + 1, from.version()).boxed().toList())) {
+            return Optional.of("the journal does not hold every version " + between + ", one by one, so they cannot be"
+                    + " checked and the walk takes nothing for the table");
+        }
+        String rewind = ": not every version " + between + " is whole in this store, so the walk takes nothing for the"
+                + " table; rewind it to its watermark";
+        String at = watermark.metadataLocation();
+        try {
+            if (!files.exists(at)) {
+                return Optional.of("storage does not hold the DR watermark's file " + at + ", so the versions above it"
+                        + " cannot be checked and the walk takes nothing for the table");
+            }
+            AddedFiles.TableVersion base = AddedFiles.parse(at, files.read(at, "").json());
+            for (Lost version : versions) {
+                at = version.metadataLocation();
+                if (!files.exists(at)) {
+                    return Optional.of("storage does not hold " + (version.version() == from.version()
+                            ? "the pointer's file " : "the metadata file of version " + version.version() + ", ")
+                            + at + rewind);
+                }
+                AddedFiles.TableVersion metadata = AddedFiles.parse(at, files.read(at, "").json());
+                Optional<String> missing = AddedFiles.firstMissing(base, metadata, files::bytes, files::exists);
+                if (missing.isPresent()) {
+                    return Optional.of("storage does not hold " + missing.get() + ", which version " + version.version()
+                            + " adds (" + at + ")" + rewind);
+                }
+                base = metadata;
+            }
+        } catch (RuntimeException e) {
+            return Optional.of("the files of " + at + ", " + between + ", cannot be checked, so the walk takes nothing"
+                    + " for the table: " + e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    private Plan walk(CatalogObject table, Pointer from, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
         List<String> listed = files.metadataFiles(table.locationRoot());
         if (!listed.contains(from.metadataLocation())) {
             return stopped(table, from, List.of(), "storage does not hold the pointer's file "
