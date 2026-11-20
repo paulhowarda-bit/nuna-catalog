@@ -47,7 +47,14 @@ final class DrStores implements SupportsPrefixOperations {
                     replica.region(), replica.pathStyleAccess(), replica.accessKeyId(), replica.secretAccessKey(),
                     replica.caBundle()));
         });
-        Map<String, String> trust = TrustedS3Clients.register(asProfiles);
+        Map<String, String> trust;
+        try {
+            trust = TrustedS3Clients.register(asProfiles);
+        } catch (IllegalArgumentException e) {
+            // Its message names the storage profile's setting; the bundle is the replica's.
+            throw new IllegalArgumentException(e.getMessage().replace("nuna.maintenance.storage.",
+                    "nuna.maintenance.dr.replicas."), e);
+        }
         Map<String, S3FileIO> byPrefix = new LinkedHashMap<>();
         List<S3FileIO> all = new ArrayList<>();
         asProfiles.forEach((name, profile) -> {
