@@ -262,9 +262,13 @@ lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes
    move says why (`apply-problem`); a pointer that moved since the plan means run step 3 again.
 5. **Walk forward** every table, with a watermark or without: `{}` reports, `{"apply": true}` moves each along its
    proven metadata files, taking a step only when the DR store holds every file it adds, data included, and stopping
-   before the first that lacks one (its `problem` names the file). Rewind before walking, never after: until the
-   verifier's next pass the walked versions are above the watermark, and a rewind would give them up. Table locations
-   no catalog holds are listed as `unknown-locations`.
+   before the first that lacks one (its `problem` names the file). A table whose pointer is still above its watermark
+   is checked from the watermark first: if a version between them lacks a file, the walk takes nothing for it, and its
+   `problem` names the file and says to rewind it. A table rewound in step 4 is reported so, with nothing taken, until
+   the verifier passes its rewind's version; run step 2 again before this step to clear them. Rewind before walking,
+   not after: the walk's check keeps a table that was not rewound from being walked from a version DR lacks, but until
+   the verifier's next pass the walked versions are above the watermark, and a rewind would give them up. Table
+   locations no catalog holds are listed as `unknown-locations`.
 6. **Thaw:** `DELETE /management/v1/catalogs/{catalog}/dr-freeze`. Then register the unknown locations by name, if
    wanted: a register is refused under a freeze.
 
