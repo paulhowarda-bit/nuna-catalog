@@ -1,0 +1,17 @@
+Breaks: a revive ignores the namespace the object is in now, so one undropped, renamed into another namespace and dropped again since the engine read it comes back in the namespace it first left.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$CatalogObjects#reviveComparesTheNamespace
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+index 21ec2d9..306bd9f 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+@@ -173,7 +173,7 @@ final class SqlObjects {
+                 return new WriteResult.VersionMismatch(conflict.get().actual().map(Pointer::version).orElse(0L));
+             }
+             Optional<Placed> locked = lock(connection, objectId, from);
+-            if (locked.isEmpty() || !locked.get().namespaceId().equals(namespaceId)) {
++            if (locked.isEmpty() || false && !locked.get().namespaceId().equals(namespaceId)) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+             WriteResult placed = place(connection, objectId, locked.get().catalogId(), namespaceId, name,

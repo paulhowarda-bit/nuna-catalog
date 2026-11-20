@@ -1,0 +1,17 @@
+Breaks: a revive ignores the namespace the object is in now, so one undropped, renamed into another namespace and dropped again since the engine read it comes back in the namespace it first left.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$CatalogObjects#reviveComparesTheNamespace
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
+index b49dc54..2c11813 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
+@@ -185,7 +185,7 @@ final class OracleObjects {
+                 return new WriteResult.VersionMismatch(conflict.get().actual().map(Pointer::version).orElse(0L));
+             }
+             Optional<Placed> locked = lock(connection, objectId, from);
+-            if (locked.isEmpty() || !locked.get().namespaceId().equals(namespaceId)) {
++            if (locked.isEmpty() || false && !locked.get().namespaceId().equals(namespaceId)) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+             WriteResult placed = place(connection, objectId, locked.get().catalogId(), namespaceId, name,

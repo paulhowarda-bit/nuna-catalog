@@ -1,0 +1,17 @@
+Breaks: a revive ignores the namespace the object is in now, so one undropped, renamed into another namespace and dropped again since the engine read it comes back in the namespace it first left.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$CatalogObjects#reviveComparesTheNamespace
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
+index 219c922..fcb5a64 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
+@@ -202,7 +202,7 @@ final class MongoObjects {
+     WriteResult revive(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch) {
+         return transactions.write(batch.commitId(), "object revive", tx -> {
+             Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(from.name())));
+-            if (object.isEmpty() || !uuid(object.get().get("namespaceId")).equals(namespaceId)) {
++            if (object.isEmpty() || false && !uuid(object.get().get("namespaceId")).equals(namespaceId)) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+             Pointers.see(tx, batch);
