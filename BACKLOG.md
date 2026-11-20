@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 4 S, 8 M, 3 L, 5 XL.
+**19 open:** 3 S, 8 M, 3 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,7 +16,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
-| [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
@@ -107,16 +106,6 @@ with the test in it on 2026-11-15. Still open: the flow against Entra ID and Pin
 IdP's session (Paul's call).
 
 **Decided 2026-11-19 (D16):** "Sign out" also ends the identity provider's session ("End the IdP session"). The checks against Entra ID and Ping still happen at work.
-
-### 19. Cap the audit-read route for scripted use
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, a per-caller limit on one route, answering 429, with a test
-
-`build-plan.md`, UI v1, Open: each `GET .../audit` read opens a short-lived Kafka consumer. That is fine at console
-rates; it needs a cap if scripts start using it.
-
-Done when the route limits how often one caller (or all callers) may read, answering 429 beyond it, with a test.
 
 ### 21. A CA bundle per storage profile
 
@@ -626,6 +615,7 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [15](backlog/15.md) | ETags do not survive a change of server (Paul decides) | done | 2026-11-20 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
+| [19](backlog/19.md) | Cap the audit-read route for scripted use | done | 2026-11-20 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
