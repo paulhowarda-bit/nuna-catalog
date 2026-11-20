@@ -2,14 +2,17 @@ package nuna.catalog.load;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import nuna.catalog.load.ConditionalLoads.Timed;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -64,20 +67,32 @@ class SloTest {
     void sloRun() throws Exception {
         warmUp();
         Latencies loads = read(READS_PER_READER);
-        List<Map<String, String>> etags = List.of(new java.util.HashMap<>(), new java.util.HashMap<>());
+        long etagsTaken = System.currentTimeMillis();
+        List<Map<String, Timed>> etags = List.of(new HashMap<>(), new HashMap<>());
         for (int s = 0; s < perServer.size(); s++) {
+            Catalog server = perServer.get(s);
             for (int t = 0; t < TABLES; t++) {
-                etags.get(s).put("t" + t, perServer.get(s).load(NAMESPACE, "t" + t, Map.of()).etag());
+                String table = "t" + t;
+                etags.get(s).put(table, Timed.of(() -> server.load(NAMESPACE, table, Map.of())));
             }
         }
-        Latencies notModified = readConditional(etags);
+        // Right after the ETags are taken, so that a window boundary seldom falls in between (item 76).
         int crossServer304 = 0;
+        int crossServerBoundary = 0;
         for (int t = 0; t < TABLES; t++) {
             String table = "t" + t;
-            if (perServer.get(1).load(NAMESPACE, table, Map.of("If-None-Match", etags.get(0).get(table))).status() == 304) {
+            Timed taken = etags.get(0).get(table);
+            Timed cross = Timed.of(() -> perServer.get(1).load(NAMESPACE, table,
+                    Map.of("If-None-Match", taken.answer().etag())));
+            if (cross.answer().status() == 304) {
                 crossServer304++;
+            } else if (ConditionalLoads.boundaries(ConditionalLoads.WINDOW, taken.sent(), cross.answered()) > 0) {
+                crossServerBoundary++;
             }
         }
+        AtomicInteger boundaryLoads = new AtomicInteger();
+        Latencies notModified = readConditional(etags, boundaryLoads);
+        long boundaries = ConditionalLoads.boundaries(ConditionalLoads.WINDOW, etagsTaken, System.currentTimeMillis());
 
         Appender.Ledger ledger = new Appender.Ledger();
         long started = System.nanoTime();
@@ -105,8 +120,11 @@ class SloTest {
                 loads.summary()));
         Latencies.report(file, "304 (%d readers, ETag sent back to the server that gave it): %s   target p99 < 10 ms"
                 .formatted(READERS, notModified.summary()));
-        Latencies.report(file, "304 across servers: %d of %d conditional loads with the other server's ETag"
-                .formatted(crossServer304, TABLES));
+        Latencies.report(file, ("304 run: %d full loads across a credential-epoch window boundary, not timed;"
+                + " %d boundaries passed since the ETags were taken (windows of %.1f min)").formatted(
+                boundaryLoads.get(), boundaries, ConditionalLoads.WINDOW.toMillis() / 60_000.0));
+        Latencies.report(file, ("304 across servers: %d of %d conditional loads with the other server's ETag;"
+                + " %d full loads across a window boundary").formatted(crossServer304, TABLES, crossServerBoundary));
         Latencies.report(file, "commit (%d writers, own table): %s   target p99 < 300 ms".formatted(TABLES,
                 ledger.commitLatency.summary()));
         Latencies.report(file, "commit rate: %d commits in %.1fs = %.0f/s   target >= 500/s; conflicts=%d"
@@ -144,21 +162,32 @@ class SloTest {
         return latencies;
     }
 
-    /** Conditional loads, each reader keeping to one server as a client behind a sticky balancer does. */
-    private Latencies readConditional(List<Map<String, String>> etags) throws Exception {
+    /**
+     * Conditional loads, each reader keeping to one server as a client behind a sticky balancer does. Each reader
+     * holds its own ETags, from the ones taken from its server: every load is a 304, except that the first load of a
+     * table after a window boundary may be a full load with a new ETag, which the reader keeps (item 76). Only the
+     * 304s are timed; the full loads are counted into {@code boundaryLoads}.
+     */
+    private Latencies readConditional(List<Map<String, Timed>> etags, AtomicInteger boundaryLoads) throws Exception {
         Latencies latencies = new Latencies();
         try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Future<?>> done = new ArrayList<>();
             for (int r = 0; r < READERS; r++) {
                 int server = r % perServer.size();
                 done.add(pool.submit(() -> {
+                    Map<String, ConditionalLoads> held = new HashMap<>();
+                    etags.get(server).forEach((table, taken) ->
+                            held.put(table, new ConditionalLoads(ConditionalLoads.WINDOW, taken)));
                     for (int i = 0; i < READS_PER_READER; i++) {
                         String table = "t" + ThreadLocalRandom.current().nextInt(TABLES);
-                        Catalog.Answer answer = perServer.get(server).load(NAMESPACE, table,
-                                Map.of("If-None-Match", etags.get(server).get(table)));
-                        assertThat(answer.status()).isEqualTo(304);
-                        latencies.record(answer.nanos());
+                        ConditionalLoads loads = held.get(table);
+                        Timed answer = Timed.of(() -> perServer.get(server).load(NAMESPACE, table,
+                                Map.of("If-None-Match", loads.etag())));
+                        if (loads.judge(answer)) {
+                            latencies.record(answer.answer().nanos());
+                        }
                     }
+                    held.values().forEach(loads -> boundaryLoads.addAndGet(loads.boundaryLoads()));
                 }));
             }
             for (Future<?> f : done) {
