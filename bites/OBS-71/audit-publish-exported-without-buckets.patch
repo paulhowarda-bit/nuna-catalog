@@ -1,0 +1,17 @@
+Breaks: the audit publish timer is exported with no histogram buckets, so Prometheus has no p99 to take.
+Module: catalog-server
+Test: AuditPublishBucketsTest#theAuditPublishTimerArrivesWithTheHealthPagesBuckets
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java b/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java
+index 4d50d59..ec583ff 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java
+@@ -29,7 +29,7 @@ public class TracingWiring {
+         return new MeterFilter() {
+             @Override
+             public DistributionStatisticConfig configure(Meter.Id id, DistributionStatisticConfig config) {
+-                return id.getName().equals(ObservedPublisher.NAME) ? config.merge(buckets) : config;
++                return config;
+             }
+         };
+     }

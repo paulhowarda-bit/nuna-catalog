@@ -36,9 +36,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
-| [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
+| [74](backlog/74.md) | S | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | one constant and a javadoc in one class, one test's name; no wait | 2026-11-19 |
 
 ## Open items in full
 
@@ -512,24 +512,6 @@ their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
 
-### 71. Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99
-
-- Added: 2026-11-19 by agent on item 44
-- Touches: catalog-server/src/main/java/nuna/catalog/server/tracing/ catalog-server/src/test/java/nuna/catalog/server/telemetry/ deploy/grafana/ docs/observability/
-- Effort: S, one meter filter on the exported registry, a test, and the dashboard panel; no wait
-
-Item 44's catalog dashboard (`deploy/grafana/dashboards/nuna-catalog.json`, "Audit: Kafka acknowledgement") can
-show only the mean acknowledgement time: the exported `nuna.audit.publish` timer has no histogram buckets, so
-Prometheus gets `nuna_audit_publish_milliseconds_count` and `_sum` and nothing to take a p99 from. The console's
-health page does show the p99, because `HealthMeters` (catalog-server, `health/HealthMeters.java`) adds buckets from
-5 ms to 5 s (`AUDIT_BUCKETS`) to its own registry only; docs/observability/health-page.md says "the exported timer
-is unchanged".
-
-Done when the exported `nuna.audit.publish` timer carries the same bucket bounds (a meter filter where the OTLP
-registry is configured, or `management.metrics.distribution.slo.nuna.audit.publish`), a telemetry test sees the
-buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogram_quantile` beside the mean, its docs
-(`docs/observability/dashboards-and-alerts.md`) saying so.
-
 ### 72. Oracle's self-check does not notice a journal-partition job that cannot run
 
 - Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
@@ -582,6 +564,30 @@ Done when Paul has decided, and the management routes answer as he decided, with
 
 **Decided 2026-11-19 (D18, amended again):** hide names on the management API too ("Hide there too"): a caller that holds nothing on a namespace, table or view gets the 404 a missing one gets, as on the Iceberg routes since item 14. Platform operators see no namespace, table or view name there unless granted ("Catalogs, not objects").
 
+### 74. HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none
+
+- Added: 2026-11-19 by agent on item 71
+- Touches: catalog-server/src/main/java/nuna/catalog/server/health/ catalog-server/src/test/java/nuna/catalog/server/health/ docs/observability/health-page.md
+- Effort: S, one constant and a javadoc in one class, one test's name; no wait
+
+Item 71 exported the audit publish timer (`nuna.audit.publish`) with histogram buckets at `ObservedPublisher.BUCKETS`
+(catalog-server, `tracing/`), 5 ms to 5 s, through a meter filter bean in `TracingWiring`. Its claim did not reach
+`health/`, so two things there are left as they were:
+
+- `HealthMeters.AUDIT_BUCKETS` holds the same ten bounds as `ObservedPublisher.BUCKETS`, in a list of its own. Today
+  they agree (`AuditPublishBucketsTest` checks the exported bounds against the health page's, written out); a change
+  to one alone would leave the dashboard's p99 and the health page's reading different buckets. `TracingWiring`'s
+  filter leaves a registry's own buckets alone, so the health page cannot be broken by it, only drift from it.
+- `HealthMeters`' javadoc says the timer gets buckets "here, and only here ... the exported timer is unchanged", and
+  `HealthWindowTest#theAuditPublishTimerHasBucketsHereOnly` is named for that. Its assertion (a plain
+  `SimpleMeterRegistry` gives the timer none) still holds; the name and the javadoc no longer describe the server.
+  health-page.md's test table repeats the name's claim ("has buckets there only").
+
+Done when `HealthMeters` takes its bounds from `ObservedPublisher.BUCKETS` (its own filter stays: `HealthWindowTest`
+builds it without Boot, so `TracingWiring`'s bean does not reach it there), its javadoc and the test's name say the
+exported timer has the same buckets, health-page.md's test row follows, and the fast build passes. The bite
+`bites/OBS-71/audit-publish-bound-moved.patch` then needs recording again if the constant moves.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -632,3 +638,4 @@ Done when Paul has decided, and the management routes answer as he decided, with
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
+| [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |

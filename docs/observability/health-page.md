@@ -52,7 +52,7 @@ Each server holds only its own meters, so the server the browser reaches asks th
    (Boot's own fallback registry steps aside for it). Whatever the exporting registry does, this one keeps every count,
    sum and histogram bucket since the server started and never rolls a histogram over. (Boot's fallback,
    `SimpleMeterRegistry`, forgets a histogram's buckets within minutes.) The audit publish timer gets histogram buckets
-   here only (5 ms to 5 s), for the page's p99; the exported timer is unchanged.
+   here (5 ms to 5 s), for the page's p99; since item 71 the exported timer has the same buckets (spans.md).
 2. **A reading each minute.** `HealthWindow` reads the registry every minute into flat counts that only grow, such as
    `load`, `load.le.50` or `alerts.metadata-integrity` (`Figures`). The last day's figures are now's reading less the
    newest reading a day old or older, so the window is one day and at most a minute more. About 1,440 readings are
