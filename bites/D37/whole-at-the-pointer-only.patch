@@ -1,0 +1,17 @@
+Breaks: the whole check of a table or view with no DR watermark tests only the pointer's version again, so a table that commits faster than the DR store replicates never gets a first watermark (D37, amended again 2026-11-20: "Newest whole version"; item 99).
+Module: catalog-maintenance
+Test: DrVerifyTest#aBusyTableGetsTheNewestWholeVersion+aViewWithNoWatermarkGetsTheNewestVersionThere
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java b/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
+index 8b11c2e..cbbf94f 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
+@@ -195,8 +195,6 @@ final class DrVerify {
+     private static List<Version> candidates(Item item) {
+         List<Version> candidates = new ArrayList<>();
+         candidates.add(item.pointer());
+-        item.versions().reversed().stream().filter(version -> version.version() < item.pointer().version())
+-                .forEach(candidates::add);
+         return candidates;
+     }
+
