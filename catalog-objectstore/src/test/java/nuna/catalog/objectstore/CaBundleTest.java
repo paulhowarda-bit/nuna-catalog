@@ -94,7 +94,7 @@ class CaBundleTest {
         CaBundle bundle = CaBundle.read(PrivateCa.shared().bundle);
 
         TrustManager[] managers = bundle.trustManagers();
-        assertThat(managers).hasSize(1).first().isInstanceOf(X509TrustManager.class);
+        assertThat(managers).hasSize(1).hasOnlyElementsOfType(X509TrustManager.class);
         List<X509Certificate> trusted = List.of(((X509TrustManager) managers[0]).getAcceptedIssuers());
         assertThat(trusted).containsAll(jvmCas()).contains(ca).hasSize(jvmCas().size() + 1);
     }
