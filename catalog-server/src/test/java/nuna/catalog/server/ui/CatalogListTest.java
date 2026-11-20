@@ -101,6 +101,15 @@ class CatalogListTest {
     }
 
     @Test
+    void aTrustedEngineActingAsItselfListsEveryCatalog() {
+        // Item 84 (D18, amended 2026-11-20), as platform operators do; an unregistered client is judged by its groups.
+        assertThat(list(new Caller(new Principal("trino", Set.of("engines")), "trino", true, Optional.empty())))
+                .containsExactly("archive", "Risk", "trading");
+        assertThat(list(new Caller(new Principal("app", Set.of("engines")), "app", false, Optional.empty())))
+                .isEmpty();
+    }
+
+    @Test
     void aCallerInNoGroupListsNoCatalogWithoutAskingTheStore() {
         assertThat(list(caller("solo"))).isEmpty();
         assertThat(asked).isEmpty();

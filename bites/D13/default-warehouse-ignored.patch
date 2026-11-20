@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ConfigRouteDefaultWarehouseTest
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
-index 6b31ca9..8744be9 100644
+index f626e5c..7eb4aae 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
-@@ -64,7 +64,7 @@ public class ConfigRoute {
-      * whether it is hidden from a caller that holds nothing there is not decided (item 82, Paul decides).
-      */
-     private CatalogRecord defaultCatalog() {
+@@ -53,7 +53,7 @@ public class ConfigRoute {
+ 
+     /** The deployment's default warehouse, for a client that names none; with none set, the client must name one. */
+     private String defaultWarehouse() {
 -        String warehouse = settings.defaultWarehouse();
 +        String warehouse = null;
          if (warehouse == null || warehouse.isBlank()) {

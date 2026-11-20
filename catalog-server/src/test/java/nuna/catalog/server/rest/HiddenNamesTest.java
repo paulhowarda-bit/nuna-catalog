@@ -94,6 +94,9 @@ class HiddenNamesTest {
     private static final Caller PAM = person("pam", "payroll");
     private static final Caller GINA = person("gina", "grant-admins");
     private static final Caller OLGA = person("olga", "platform-ops");
+    /** A registered trusted engine acting as itself, in a group that holds nothing. */
+    private static final Caller ENGINE = new Caller(new Principal("svc-trino", Set.of("newcomers")), "trino", true,
+            Optional.empty());
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), "gate", "gate");
     private final Map<UUID, NamespaceRecord> namespaces = new LinkedHashMap<>();
@@ -116,6 +119,8 @@ class HiddenNamesTest {
     private final NamespaceRecord lobby = namespace(null, "lobby");
 
     private final ConfigRoute config;
+    /** The config route of a deployment whose default warehouse is gate. */
+    private final ConfigRoute defaulted;
     private final NamespaceRoutes namespaceRoutes;
     private final TableRoutes tables;
     private final ViewRoutes views;
@@ -147,7 +152,10 @@ class HiddenNamesTest {
         Idempotency idempotency = new Idempotency(store, clock);
         AuditEvents events = new AuditEvents(settings);
         Callers callers = request -> caller;
-        config = new ConfigRoute(store, settings, callers, holdings);
+        config = new ConfigRoute(settings, callers, holdings);
+        defaulted = new ConfigRoute(new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
+                Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, "gate"), callers,
+                holdings);
         ObjectRoutes objectRoutes = new ObjectRoutes(store, lookup, idempotency, events, settings, guard, clock);
         // No engine, vending, metadata or meters: every case here is answered before any of them is reached.
         namespaceRoutes = new NamespaceRoutes(store, lookup, idempotency, events, callers, guard, clock);
@@ -463,6 +471,36 @@ class HiddenNamesTest {
             assertThat(answer(() -> namespaceRoutes.create("gate", null, "{\"namespace\":[\"fresh\"]}", http))
                     .status()).as("%s lacks create on the catalog", holder.principal().id()).isEqualTo(403);
         }
+    }
+
+    @Test
+    void theDefaultWarehouseAnswersAsAMissingOneToACallerThatHoldsNothingInIt() {
+        // Item 82 (D18, amended 2026-11-20): a client that names no warehouse is answered for the default as if
+        // it had named it.
+        caller = NED;
+        assertThat(alike(() -> ResponseEntity.ok(defaulted.config(null, http)), catalog))
+                .isEqualTo(new Answer(404, "NoSuchWarehouseException", "The given warehouse does not exist: gate"));
+        catalogGone = false;
+        assertThat(denials()).extracting(Denial::operation).as("the refusal, not the missing catalog")
+                .containsExactly("getConfig");
+        for (Caller seer : List.of(TOM, OLGA, GINA, ENGINE)) {
+            caller = seer;
+            assertThat(JsonPath.<String>read(defaulted.config("", http), "$.overrides.prefix"))
+                    .as("%s", seer.principal().id()).isEqualTo("gate");
+        }
+    }
+
+    @Test
+    void aTrustedEngineActingAsItselfSeesEveryCatalogButNoNameInIt() {
+        // Item 84 (D18, amended 2026-11-20): it reads the config with its own token, as operators may.
+        caller = ENGINE;
+        assertThat(JsonPath.<String>read(config.config("gate", http), "$.overrides.prefix")).isEqualTo("gate");
+        assertThat(answer(() -> namespaceRoutes.create("gate", null, "{\"namespace\":[\"fresh\"]}", http))
+                .status()).as("refused on the catalog it sees").isEqualTo(403);
+        assertThat(answer(() -> namespaceRoutes.load("gate", "sales", http)))
+                .isEqualTo(new Answer(404, "NoSuchNamespaceException", "Namespace does not exist: sales"));
+        assertThat(alike(() -> tables.load("gate", "hr", "staff", null, null, null, null, http), staff, hr))
+                .isEqualTo(new Answer(404, "NoSuchTableException", "Table does not exist: hr.staff"));
     }
 
     @Test

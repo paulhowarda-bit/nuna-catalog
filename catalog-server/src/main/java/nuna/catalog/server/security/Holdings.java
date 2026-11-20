@@ -76,9 +76,14 @@ public class Holdings {
      * subject's groups (the end user's, when a trusted engine acts for one) holds a grant, any privilege, on the
      * catalog or on anything in it, the grants its own list by principal there shows. A grant admin holds
      * {@code manage-grants} on every catalog; a platform operator holds no grant but runs the deployment, and sees
-     * every catalog ("Catalogs, not objects").
+     * every catalog ("Catalogs, not objects"). So does a registered trusted engine acting as itself, which reads a
+     * catalog's config with its own token and reaches what is in it with its users' (item 84); acting for an end
+     * user, it sees what that user holds.
      */
     public boolean inCatalog(Caller caller, UUID catalogId) {
+        if (caller.trustedEngine() && caller.endUser().isEmpty()) {
+            return true;
+        }
         Set<String> groups = caller.subject().groups();
         if (groups.stream().anyMatch(group -> separation.grantAdminGroups().contains(group)
                 || separation.platformOperatorGroups().contains(group))) {
