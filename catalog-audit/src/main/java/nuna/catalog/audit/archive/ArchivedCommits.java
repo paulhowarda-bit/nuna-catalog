@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /**
  * The pointer swaps the archive records, as the DR reconcile's proof that a tip was committed (D37, backlog 10). A
@@ -29,23 +30,10 @@ public final class ArchivedCommits {
     private ArchivedCommits() {
     }
 
-    /** The swaps of a main pointer that {@code events} record, by object id; a creation replaced nothing, so it is none. */
-    public static Map<UUID, List<Reconcile.ArchivedCommit>> of(List<CatalogEvent> events) {
-        Map<UUID, List<Reconcile.ArchivedCommit>> commits = new HashMap<>();
-        for (CatalogEvent event : events) {
-            if (event.data() instanceof Commit commit && commit.before() != null
-                    && PointerKey.MAIN.equals(commit.branch())) {
-                commits.computeIfAbsent(commit.object().id(), id -> new ArrayList<>()).add(new Reconcile.ArchivedCommit(
-                        commit.before().metadataLocation(), commit.after().metadataLocation(), commit.after().version(),
-                        commit.after().sha256()));
-            }
-        }
-        return commits;
-    }
-
     /**
-     * Every chain of {@code archive}, each read whole and checked from genesis to its last segment's recorded end
-     * ({@link ObjectLockArchive#events}) before any of its records counts.
+     * Every chain of {@code archive}, each read in one pass, segment by segment, and checked from genesis to its last
+     * segment's recorded end ({@link ObjectLockArchive#verify}) before any of its records counts. Of each chain only
+     * its commit records are kept, so the read holds the swaps, not the chain (backlog 86).
      *
      * @throws IllegalStateException if a chain does not verify
      */
@@ -54,11 +42,34 @@ public final class ArchivedCommits {
         int chains = 0;
         int records = 0;
         for (String chain : archive.chains()) {
-            List<CatalogEvent> events = archive.events(chain, Optional.empty());
+            ChainCommits held = new ChainCommits();
+            archive.forEachEvent(chain, Optional.empty(), held);
             chains++;
-            records += (int) events.stream().filter(event -> event.data() instanceof Commit).count();
-            of(events).forEach((id, swaps) -> commits.computeIfAbsent(id, k -> new ArrayList<>()).addAll(swaps));
+            records += held.records;
+            held.swaps.forEach((id, swaps) -> commits.computeIfAbsent(id, k -> new ArrayList<>()).addAll(swaps));
         }
         return new Read(commits, chains, records);
+    }
+
+    /**
+     * One chain's commit records, held aside until the chain verifies: its swaps of a main pointer, by object id, and
+     * how many there are on any branch. A creation replaced nothing, so it is no swap.
+     */
+    private static final class ChainCommits implements Consumer<CatalogEvent> {
+
+        private final Map<UUID, List<Reconcile.ArchivedCommit>> swaps = new HashMap<>();
+        private int records;
+
+        @Override
+        public void accept(CatalogEvent event) {
+            if (event.data() instanceof Commit commit) {
+                records++;
+                if (commit.before() != null && PointerKey.MAIN.equals(commit.branch())) {
+                    swaps.computeIfAbsent(commit.object().id(), id -> new ArrayList<>()).add(new Reconcile.ArchivedCommit(
+                            commit.before().metadataLocation(), commit.after().metadataLocation(),
+                            commit.after().version(), commit.after().sha256()));
+                }
+            }
+        }
     }
 }
