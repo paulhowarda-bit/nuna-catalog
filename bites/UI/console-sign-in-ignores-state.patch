@@ -3,10 +3,10 @@ Module: catalog-server
 Test: ConsoleSignInTest#aSignInAnswerThisTabDidNotStartIsRefused
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/auth.js b/catalog-server/src/main/resources/nuna/ui/auth.js
-index 1d1508a..46d11f4 100644
+index 6209238..5ac7ba4 100644
 --- a/catalog-server/src/main/resources/nuna/ui/auth.js
 +++ b/catalog-server/src/main/resources/nuna/ui/auth.js
-@@ -101,7 +101,7 @@ export async function finishSignIn(oidc) {
+@@ -103,7 +103,7 @@ export async function finishSignIn(oidc) {
    if (params.has('error')) {
      throw new Error(`The IdP refused the sign-in: ${params.get('error')} ${params.get('error_description') || ''}`);
    }
