@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -24,8 +25,11 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.iam.IamClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.sts.StsClient;
+import software.amazon.awssdk.services.sts.auth.StsAssumeRoleCredentialsProvider;
 import software.amazon.awssdk.services.sts.model.StsException;
 
 /**
@@ -41,8 +45,10 @@ import software.amazon.awssdk.services.sts.model.StsException;
  *       (D30).</li>
  *   <li><b>aws</b>: real AWS S3 and STS in us-east-1, signed in through the CLI profile named by
  *       {@code nuna.aws.profile} (short-lived credentials; nothing here reads, prints or stores them).
- *       Creates one role allowing every S3 action on this run's buckets, and on exit deletes every
- *       bucket it made and the role. Synthetic data only.</li>
+ *       Creates two roles: one allowing every S3 action on this run's buckets, which vended credentials
+ *       assume, and the maintenance worker's (D30), which may list and delete there and remove a bucket
+ *       policy. On exit it removes each bucket's policy as the worker, since a delete policy refuses
+ *       everyone else that, then deletes every bucket it made and both roles. Synthetic data only.</li>
  * </ul>
  */
 public final class TestS3 implements AutoCloseable {
@@ -79,20 +85,32 @@ public final class TestS3 implements AutoCloseable {
     public final Optional<String> roleArn;
     /** The static keys behind {@link #credentials} on Silo and Ceph; none on AWS. */
     private final Optional<AwsBasicCredentials> keys;
+    /** The maintenance worker's storage identity as a storage profile names it, and its credentials (none on Silo). */
+    private final String maintenancePrincipal;
+    private final Optional<AwsCredentialsProvider> maintenanceCredentials;
+    /** Silo's container, where {@link #siloUser} runs {@code mc}; none elsewhere. */
+    private final Optional<GenericContainer<?>> silo;
     /** On AWS, this run's bucket-name prefix; empty elsewhere. */
     private final String bucketPrefix;
     private final Optional<String> awsProfile;
     private final AutoCloseable stop;
     private final Set<String> buckets = new LinkedHashSet<>();
+    /** Those of {@link #buckets} made with Object Lock. */
+    private final Set<String> lockedBuckets = new LinkedHashSet<>();
     private boolean closed;
 
     private TestS3(Kind kind, URI endpoint, AwsCredentialsProvider credentials, Optional<AwsBasicCredentials> keys,
-                   Optional<String> roleArn, String bucketPrefix, Optional<String> awsProfile, AutoCloseable stop) {
+                   Optional<String> roleArn, String maintenancePrincipal,
+                   Optional<AwsCredentialsProvider> maintenanceCredentials, Optional<GenericContainer<?>> silo,
+                   String bucketPrefix, Optional<String> awsProfile, AutoCloseable stop) {
         this.kind = kind;
         this.endpoint = endpoint;
         this.credentials = credentials;
         this.keys = keys;
         this.roleArn = roleArn;
+        this.maintenancePrincipal = maintenancePrincipal;
+        this.maintenanceCredentials = maintenanceCredentials;
+        this.silo = silo;
         this.bucketPrefix = bucketPrefix;
         this.awsProfile = awsProfile;
         this.stop = stop;
@@ -140,12 +158,20 @@ public final class TestS3 implements AutoCloseable {
             try (S3Client s3 = client()) {
                 s3.createBucket(b -> b.bucket(bucket).objectLockEnabledForBucket(objectLock ? true : null));
             }
+            if (objectLock) {
+                lockedBuckets.add(bucket);
+            }
         }
         return bucket;
     }
 
     /** A client with full access, addressing buckets by path (AWS still accepts that in us-east-1). */
     public S3Client client() {
+        return client(credentials);
+    }
+
+    /** A client signing in with {@code credentials}, addressing buckets by path. */
+    public S3Client client(AwsCredentialsProvider credentials) {
         return S3Client.builder()
                 .endpointOverride(endpoint)
                 .region(Region.of(REGION))
@@ -165,15 +191,35 @@ public final class TestS3 implements AutoCloseable {
 
     /**
      * The maintenance worker's storage identity as a storage profile names it (D30): user {@value #MAINTENANCE_USER}
-     * on Silo and Ceph, a role of that name on AWS. Only Ceph's exists: Silo runs as its root user, whom no policy
-     * binds, and the AWS run makes no second role.
+     * on Silo and Ceph, this run's role {@code nuna-test-<run id>-maintenance} on AWS. Silo's user exists only once a
+     * test makes it ({@link #siloUser}): Silo's tests run as its root user, whom no policy binds.
      */
     public String maintenancePrincipal() {
-        return switch (kind) {
-            case SILO -> MAINTENANCE_USER;
-            case CEPH -> "arn:aws:iam:::user/" + MAINTENANCE_USER;
-            case AWS -> roleArn.orElseThrow().replaceFirst(":role/.*$", ":role/" + MAINTENANCE_USER);
-        };
+        return maintenancePrincipal;
+    }
+
+    /**
+     * The maintenance worker's own credentials: its user's keys on Ceph, sessions of its role on AWS.
+     *
+     * @throws IllegalStateException on Silo, which has no such user until a test makes it
+     */
+    public AwsCredentialsProvider maintenanceCredentials() {
+        return maintenanceCredentials.orElseThrow(() -> new IllegalStateException(
+                "the " + kind + " store has no maintenance user of its own"));
+    }
+
+    /**
+     * On Silo, makes user {@code user} with secret key {@code secret} if it is new, and attaches to it user policy
+     * {@code name}, created (or replaced) from {@code policy}: as Silo's root user, with the image's {@code mc}.
+     */
+    public void siloUser(String user, String secret, String name, String policy) {
+        GenericContainer<?> container = silo.orElseThrow(() -> new IllegalStateException(
+                "the " + kind + " store is not Silo"));
+        container.copyFileToContainer(Transferable.of(policy), "/tmp/" + name + ".json");
+        run(container, "mc", "alias", "set", "local", "http://localhost:9000", ACCESS_KEY, SECRET_KEY);
+        run(container, "mc", "admin", "user", "add", "local", user, secret);
+        run(container, "mc", "admin", "policy", "create", "local", name, "/tmp/" + name + ".json");
+        run(container, "mc", "admin", "policy", "attach", "local", name, "--user", user);
     }
 
     /** The static access key on Silo and Ceph, for clients that cannot take a credentials provider. */
@@ -235,7 +281,8 @@ public final class TestS3 implements AutoCloseable {
         container.start();
         AwsBasicCredentials keys = AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY);
         return new TestS3(Kind.SILO, endpoint(container, 9000), StaticCredentialsProvider.create(keys),
-                Optional.of(keys), Optional.empty(), "", Optional.empty(), container::stop);
+                Optional.of(keys), Optional.empty(), MAINTENANCE_USER, Optional.empty(), Optional.of(container), "",
+                Optional.empty(), container::stop);
     }
 
     /**
@@ -258,13 +305,16 @@ public final class TestS3 implements AutoCloseable {
                         .withStartupTimeout(Duration.ofMinutes(6)));
         container.start();
         for (List<String> command : cephRoleCommands()) {
-            admin(container, command.subList(1, command.size()).toArray(String[]::new));
+            run(container, command.toArray(String[]::new));
         }
-        admin(container, "user", "create", "--uid=" + MAINTENANCE_USER, "--display-name=nuna maintenance worker",
-                "--access-key=" + MAINTENANCE_ACCESS_KEY, "--secret-key=" + MAINTENANCE_SECRET_KEY);
+        run(container, "radosgw-admin", "user", "create", "--uid=" + MAINTENANCE_USER,
+                "--display-name=nuna maintenance worker", "--access-key=" + MAINTENANCE_ACCESS_KEY,
+                "--secret-key=" + MAINTENANCE_SECRET_KEY);
         AwsBasicCredentials keys = AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY);
         return new TestS3(Kind.CEPH, endpoint(container, 8080), StaticCredentialsProvider.create(keys),
-                Optional.of(keys), Optional.of(CEPH_ROLE_ARN), "", Optional.empty(), container::stop);
+                Optional.of(keys), Optional.of(CEPH_ROLE_ARN), "arn:aws:iam:::user/" + MAINTENANCE_USER,
+                Optional.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(MAINTENANCE_ACCESS_KEY,
+                        MAINTENANCE_SECRET_KEY))), Optional.empty(), "", Optional.empty(), container::stop);
     }
 
     /**
@@ -285,8 +335,15 @@ public final class TestS3 implements AutoCloseable {
 
     /**
      * Real AWS, signed in through {@code nuna.aws.profile}. Creates a role whose own policy allows every
-     * S3 action on {@code nuna-test-<run id>-*} and trusts the account to assume and tag it, and waits
-     * until STS accepts it. In-process servers find the profile through {@code aws.profile}.
+     * S3 action on {@code nuna-test-<run id>-*} and trusts the account to assume and tag it, and the
+     * maintenance worker's role {@code nuna-test-<run id>-maintenance}, whose own policy allows listing,
+     * deleting and removing a bucket policy there, and waits until STS accepts both. In-process servers
+     * find the profile through {@code aws.profile}.
+     *
+     * <p>A delete policy (D30) refuses every principal but the worker a change to the bucket policy, the
+     * profile's own user included, so on exit the worker removes each bucket's policy before the buckets
+     * are emptied, and the worker's role is deleted only once every removal succeeded. Otherwise the role is
+     * kept and the buckets and role are named on stderr: only that role can then free them.
      */
     private static TestS3 aws() {
         String profile = System.getProperty("nuna.aws.profile", "").trim();
@@ -309,26 +366,78 @@ public final class TestS3 implements AutoCloseable {
                 .assumeRolePolicyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
                         + "\"Principal\":{\"AWS\":\"arn:aws:iam::" + account + ":root\"},"
                         + "\"Action\":[\"sts:AssumeRole\",\"sts:TagSession\"]}]}")).role().arn();
+        String buckets = "[\"arn:aws:s3:::" + prefix + "*\",\"arn:aws:s3:::" + prefix + "*/*\"]";
         iam.putRolePolicy(r -> r.roleName(role).policyName("everything-in-this-run")
                 .policyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
-                        + "\"Action\":\"s3:*\",\"Resource\":[\"arn:aws:s3:::" + prefix + "*\",\"arn:aws:s3:::"
-                        + prefix + "*/*\"]}]}"));
+                        + "\"Action\":\"s3:*\",\"Resource\":" + buckets + "}]}"));
+        String worker = prefix + "maintenance";
+        String workerArn = iam.createRole(r -> r.roleName(worker).maxSessionDuration(3600)
+                .description("nuna test run " + run + ": the maintenance worker; deleted when the run ends")
+                .assumeRolePolicyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\","
+                        + "\"Principal\":{\"AWS\":\"arn:aws:iam::" + account + ":root\"},"
+                        + "\"Action\":\"sts:AssumeRole\"}]}")).role().arn();
+        iam.putRolePolicy(r -> r.roleName(worker).policyName("maintenance-in-this-run")
+                .policyDocument("{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":"
+                        + "[\"s3:ListBucket\",\"s3:DeleteObject\",\"s3:DeleteObjectVersion\",\"s3:GetBucketPolicy\","
+                        + "\"s3:DeleteBucketPolicy\"],\"Resource\":" + buckets + "}]}"));
+        StsClient workerSts = StsClient.builder().region(Region.US_EAST_1).credentialsProvider(credentials).build();
+        StsAssumeRoleCredentialsProvider workerCredentials = StsAssumeRoleCredentialsProvider.builder()
+                .stsClient(workerSts).refreshRequest(r -> r.roleArn(workerArn).roleSessionName("nuna-test-maintenance")
+                        .durationSeconds(900)).build();
         TestS3[] self = new TestS3[1];
         AutoCloseable cleanup = () -> {
-            try (S3Client s3 = self[0].client()) {
-                for (String bucket : self[0].buckets) {
-                    empty(s3, bucket);
+            List<String> kept = new ArrayList<>();
+            try {
+                try (S3Client asWorker = self[0].client(workerCredentials)) {
+                    for (String bucket : self[0].buckets) {
+                        try {
+                            asWorker.deleteBucketPolicy(r -> r.bucket(bucket));
+                        } catch (RuntimeException e) {
+                            kept.add(bucket);
+                            System.err.println("TestS3: the worker's role " + workerArn + " could not remove the"
+                                    + " policy of bucket " + bucket + ": " + e);
+                        }
+                    }
+                }
+                List<String> left = new ArrayList<>();
+                try (S3Client s3 = self[0].client()) {
+                    for (String bucket : self[0].buckets) {
+                        if (kept.contains(bucket)) {
+                            continue;
+                        }
+                        try {
+                            empty(s3, bucket, self[0].lockedBuckets.contains(bucket));
+                        } catch (RuntimeException e) {
+                            left.add(bucket);
+                            System.err.println("TestS3: bucket " + bucket + " was not deleted: " + e);
+                        }
+                    }
+                }
+                if (!left.isEmpty()) {
+                    throw new IllegalStateException("buckets " + left + " were not deleted");
                 }
             } finally {
                 iam.deleteRolePolicy(r -> r.roleName(role).policyName("everything-in-this-run"));
                 iam.deleteRole(r -> r.roleName(role));
+                if (kept.isEmpty()) {
+                    iam.deleteRolePolicy(r -> r.roleName(worker).policyName("maintenance-in-this-run"));
+                    iam.deleteRole(r -> r.roleName(worker));
+                } else {
+                    System.err.println("TestS3: kept role " + workerArn + ", the only principal that can remove the"
+                            + " delete policy of " + kept + "; remove each bucket's policy as it, then the buckets"
+                            + " and the role");
+                }
+                workerCredentials.close();
+                workerSts.close();
                 iam.close();
             }
         };
         self[0] = new TestS3(Kind.AWS, URI.create("https://s3.us-east-1.amazonaws.com"), credentials,
-                Optional.empty(), Optional.of(roleArn), prefix, Optional.of(profile), cleanup);
+                Optional.empty(), Optional.of(roleArn), workerArn, Optional.of(workerCredentials), Optional.empty(),
+                prefix, Optional.of(profile), cleanup);
         try {
             awaitAssumable(credentials, roleArn);
+            awaitAssumable(credentials, workerArn);
         } catch (RuntimeException e) {
             self[0].close();
             throw e;
@@ -358,10 +467,28 @@ public final class TestS3 implements AutoCloseable {
     }
 
     /**
-     * Deletes every object version and delete marker in the bucket, bypassing GOVERNANCE retention, aborts
-     * open uploads, then deletes the bucket; a bucket that was never created is skipped.
+     * Deletes every object version and delete marker in the bucket, bypassing GOVERNANCE retention where the
+     * bucket has Object Lock ({@code locked}; AWS refuses the bypass on any other bucket), aborts open uploads,
+     * then deletes the bucket; a bucket that was never created is skipped. A bucket policy removed just before
+     * may still refuse deletes for some seconds, so a refusal (403, or 409 for a bucket left not empty) is tried
+     * again for a minute.
      */
-    private static void empty(S3Client s3, String bucket) {
+    private static void empty(S3Client s3, String bucket, boolean locked) {
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(1));
+        while (true) {
+            try {
+                emptyOnce(s3, bucket, locked);
+                return;
+            } catch (S3Exception e) {
+                if ((e.statusCode() != 403 && e.statusCode() != 409) || Instant.now().isAfter(deadline)) {
+                    throw e;
+                }
+                sleep(Duration.ofSeconds(5));
+            }
+        }
+    }
+
+    private static void emptyOnce(S3Client s3, String bucket, boolean locked) {
         if (s3.listBuckets().buckets().stream().noneMatch(b -> b.name().equals(bucket))) {
             return;
         }
@@ -374,25 +501,38 @@ public final class TestS3 implements AutoCloseable {
         });
         for (int i = 0; i < versions.size(); i += 1000) {
             List<ObjectIdentifier> batch = versions.subList(i, Math.min(versions.size(), i + 1000));
-            s3.deleteObjects(r -> r.bucket(bucket).bypassGovernanceRetention(true).delete(d -> d.objects(batch)));
+            DeleteObjectsResponse deleted = s3.deleteObjects(r -> r.bucket(bucket)
+                    .bypassGovernanceRetention(locked ? true : null).delete(d -> d.objects(batch)));
+            if (deleted.hasErrors() && !deleted.errors().isEmpty()) {
+                throw S3Exception.builder().statusCode(403).message("bucket " + bucket + ": "
+                        + deleted.errors().getFirst().key() + " was not deleted: " + deleted.errors().getFirst().code())
+                        .build();
+            }
         }
         s3.listMultipartUploadsPaginator(r -> r.bucket(bucket)).uploads().forEach(upload ->
                 s3.abortMultipartUpload(r -> r.bucket(bucket).key(upload.key()).uploadId(upload.uploadId())));
         s3.deleteBucket(r -> r.bucket(bucket));
     }
 
-    /** Runs {@code radosgw-admin} in the container and fails on a non-zero exit. */
-    private static void admin(GenericContainer<?> container, String... args) {
-        String[] command = new String[args.length + 1];
-        command[0] = "radosgw-admin";
-        System.arraycopy(args, 0, command, 1, args.length);
+    /** Runs {@code command} in the container and fails on a non-zero exit. */
+    private static void run(GenericContainer<?> container, String... command) {
         try {
             var result = container.execInContainer(command);
             if (result.getExitCode() != 0) {
-                throw new IllegalStateException(String.join(" ", args) + " failed: " + result.getStderr());
+                throw new IllegalStateException(String.join(" ", command) + " failed: " + result.getStderr()
+                        + result.getStdout());
             }
         } catch (IOException e) {
             throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static void sleep(Duration duration) {
+        try {
+            Thread.sleep(duration);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
