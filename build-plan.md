@@ -760,7 +760,7 @@ here, and two branches adding at once collided. The entries below are the histor
     - Run by hand, each failing its named tests: the two D11 bites and the two new ones, one at a time; `delete-policy-allows-policy-change` alone; the other three together. All 200 apply.
   - Not verified:
     - `DeletePolicyCephTest` and the worker's tests on Ceph with the folded policy (the heavy pass's Ceph leg), including whether RGW honours the `s3:prefix` condition;
-    - the AWS bucket policy and the MinIO worker policy, which no test applies;
+    - the AWS bucket policy and the MinIO worker policy, which no test applies; applied 2026-11-20 (backlog 4): `DeletePolicyAwsTest` on real S3 (profile fidice-sandbox, us-east-1): only the run's maintenance role deletes and lists beneath the prefix; the admin user and a vending-role session are refused deletes, lifecycle rules and policy changes, and outside the prefix nothing changes. `DeletePolicyMinioTest` on Silo with non-root users: the `except` and `to` policies leave delete and listing to the worker alone. Ceph cannot refuse a bucket's owner a policy change (`DeletePolicyCephTest#theOwnerChangesThePolicyWhateverItSays`), so the owner rule stands. The worker's expiry, orphan scan, due deletions and purge ran on AWS as its role under the policy (5 of 6 tests; item 91);
     - the engine matrix's `replace.required` and `replace.retype` lines (the nightly);
     - the other bites.
 - **Nightly run 2026-11-13** (recorded here on 2026-11-14; until then only in the landing commit 5c76c2d and `docs/install-at-work.md`). `./gradlew build -Pnightly` on `main` after phases 1 and 2. It found five defects, fixed on `claude/nightly-2026-11-13`:
