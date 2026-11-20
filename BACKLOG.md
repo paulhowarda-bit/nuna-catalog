@@ -8,12 +8,12 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 6 S, 12 M, 2 L, 4 XL.
+**24 open:** 7 S, 11 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
-| [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
+| [17](backlog/17.md) | S | Console sign-in against Entra ID and Ping, with an automated test | signing in and out against Entra ID and Ping at work (waits on work) | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | the per-profile key is built (2026-11-20); mapping keys to domains waits on SEC-8 (work), and its size on the answer | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
@@ -66,7 +66,7 @@ recorded in `build-plan.md`'s Status. Anything that fails gets an item of its ow
 
 - Decided: 2026-11-19, D16
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, checks against Entra ID and Ping at work; ending the IdP session if Paul wants it
+- Effort: S, signing in and out against Entra ID and Ping at work (waits on work)
 
 `build-plan.md`, UI v1, Open: the PKCE flow works against Keycloak, checked by hand on 2026-11-12. It is not tested
 against Entra ID or Ping (work), no automated test covers it, the IdP's token endpoint must allow CORS from the
@@ -87,6 +87,26 @@ with the test in it on 2026-11-15. Still open: the flow against Entra ID and Pin
 IdP's session (Paul's call).
 
 **Decided 2026-11-19 (D16):** "Sign out" also ends the identity provider's session ("End the IdP session"). The checks against Entra ID and Ping still happen at work.
+
+Progress (2026-11-20, worktree-agent-a02d3e2e626c074d5): "Sign out" ends the IdP's session, by OpenID Connect
+RP-initiated logout (`auth.js` `signOut`). The console forgets its token, reads `end_session_endpoint` from the
+discovery document it already reads for signing in, and sends the browser there with `client_id` and
+`post_logout_redirect_uri`, its own page (the sign-in's redirect URI); back there it shows "Signed out.". The console
+keeps no ID token (it stores only the access token), so it sends no `id_token_hint`, which none of Keycloak, Entra
+ID, PingOne and PingFederate requires by its documentation: Keycloak (seen in its `LogoutEndpoint`) and PingFederate
+then ask the person to confirm on their own page, and Entra ID shows an account picker. If the discovery document names no `end_session_endpoint`, or cannot be read, the console forgets
+its token only and says the IdP's session was not ended. The console's Keycloak clients (the demo's realm, the test's)
+allow the page as a post-logout redirect URI; `deploy/local`'s Keycloak has no console client (its console uses the
+token box), so nothing changed there. `docs/install-at-work.md` lists what the console's client needs, Entra ID's and
+Ping's settings among it. `ConsoleSignInTest#signOutEndsTheIdpSessionSoTheNextSignInAsksForThePassword` (heavy) first
+shows Keycloak's session lets a new sign-in straight back in without a password, then signs out (Keycloak's
+confirmation, with `client_id` and the console's page in its URL and no `id_token_hint`), finds the console signed
+out with empty storage, and that the next sign-in lands on Keycloak's password page. Bite
+`bites/UI/console-sign-out-keeps-idp-session.patch` (Sign out never goes to the IdP), checked with `git apply
+--check`. The test and the bite have not run yet: they need Chrome and Keycloak in containers, so the overnight run
+is their first. Still open: signing in and out against Entra ID and Ping (work).
+
+**Paul, 2026-11-20 (D16, amended):** the console keeps no ID token, so the IdP's "log out?" page stays ("Keep the confirm page").
 
 ### 22. Administer storage profiles and catalogs at runtime (not now, D41)
 

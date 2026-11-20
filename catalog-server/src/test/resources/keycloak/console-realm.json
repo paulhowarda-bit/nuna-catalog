@@ -47,7 +47,8 @@
         "http://host.testcontainers.internal:8181"
       ],
       "attributes": {
-        "pkce.code.challenge.method": "S256"
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://host.testcontainers.internal:8181/ui/"
       },
       "fullScopeAllowed": false,
       "protocolMappers": [
