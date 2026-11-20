@@ -124,7 +124,7 @@ The console offers two ways in:
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
-| `trino` | token only | `demo-engines` | nothing: Trino's own sign-in, which reads the catalog's config; queries reach the catalog with the token of whoever runs them |
+| `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them |
 
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
@@ -245,6 +245,7 @@ vended credentials, as any engine would):
   load it for anyone (D27): the console shows that refusal.
 - View `markets.equities.eu.xetra_daily`, with two versions, in SingleStore's dialect.
 - Grants by SQL for the groups, plus two made through the API by `gary`.
+- Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`.
 
 Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the copy of `ops.orders`.
 
@@ -341,8 +342,9 @@ storage credentials the catalog vends them:
   ```
 
 - A query without a token fails: Trino then asks the catalog to exchange one, and the catalog answers that
-  it issues none (D13). Trino's own token, as user `trino`, which holds no grant, only reads the catalog's
-  config.
+  it issues none (D13). Trino's own token, as user `trino`, only reads the catalogs' config. It holds no
+  grant; `demo.sh up` registers its client, `trino-demo`, as a trusted engine (D17), which sees every catalog
+  and nothing in it (D18).
 - The user name in a connection names the query in Trino; Trino checks no password.
 - The first query after Trino starts takes about 10 seconds; after that, about 2.
 - CloudBeaver's administrator is `oscar`: Settings, then Administration. `oscar` sees every person's

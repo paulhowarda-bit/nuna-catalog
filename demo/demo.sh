@@ -349,6 +349,16 @@ ON CONFLICT DO NOTHING;
 SQL
 }
 
+# Trino's own client, trino-demo (Mint.java), registered as a trusted engine (D17) by oscar, a platform operator.
+# Its group holds no grant, so only as a registered engine does its own token see the catalogs and read their
+# config (D18, item 84); it still sees nothing in them. On every up, before Trino starts: the registry goes with
+# PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it could also name an end
+# user; the demo never has it do so, as each query carries the token of whoever runs it (trino.yaml).
+trusted_engines() {
+  say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
+  api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
+}
+
 # One run of the lake writer (seed or rate) as a Job: prints its output, deletes it, fails if it failed.
 lake() {
   local mode=$1 job succeeded= failed=
@@ -774,6 +784,7 @@ up() {
   apply ports.yaml
   wait_for_console
   grants
+  trusted_engines
 
   say "starting SingleStore ($SINGLESTORE_IMAGE)"
   apply singlestore.yaml
