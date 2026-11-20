@@ -1,0 +1,17 @@
+Breaks: the streamed archive read lets a chain's records count without checking that the chain verified, so a chain broken part way proves the swaps it holds (backlog 86).
+Module: catalog-audit
+Test: ArchivedCommitsTest#aTamperedSegmentInTheMiddleFailsTheRead
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+index 7578bba..1d390ad 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+@@ -221,7 +221,7 @@ public final class ObjectLockArchive {
+                 }
+             }
+         });
+-        if (!(verification instanceof Verification.Intact)) {
++        if (false) {
+             throw new IllegalStateException("archive chain " + chain + " is broken: " + verification);
+         }
+         if (!refused.isEmpty()) {
