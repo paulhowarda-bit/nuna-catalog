@@ -156,6 +156,6 @@ object's; the worker's `nuna.maintenance.dr.lag.max` gives the largest after eac
 The bites are in `bites/D37/`: data files left out of the check, a lower watermark accepted, a rewind without a
 freeze, a rewind past the watermark, the walk past a version whose files are not all in the DR store
 (`walk-past-the-watermark`, recorded again for the file check), a view not rewound, the walk's check starting at
-the pointer again rather than at the watermark (`check-from-the-pointer`), the walk counting a version built on given-up
-ones as whole (`walk-counts-given-up-versions`), and the rewind leaving the watermark where it was
+the pointer again rather than at the watermark (`check-from-the-pointer`), the walk counting a version built on
+given-up ones as whole (`walk-counts-given-up-versions`), and the rewind leaving the watermark where it was
 (`rewind-leaves-the-watermark`).
