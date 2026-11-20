@@ -1,0 +1,17 @@
+Breaks: a write's extension of the journal's partitions waits for its locks without limit, behind any reader of the default partition (backlog 9).
+Module: catalog-store-sql
+Test: JournalHorizonTest$TheStore#aWriteADayLaterExtendsThePartitionsBeforeItRuns
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
+index 1765bec..e19f9d0 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
+@@ -242,7 +242,7 @@ public final class SqlCatalogStore implements CatalogStore {
+     private void keepJournalHorizon() {
+         horizon.claim().ifPresent(through -> {
+             try {
+-                extendJournal(through, HORIZON_LOCK_WAIT);
++                extendJournal(through, Duration.ZERO);
+             } catch (StoreException e) {
+                 LOG.log(System.Logger.Level.WARNING, "Could not extend the journal's partitions through " + through
+                         + "; the first write after " + JournalHorizon.EVERY + " tries again", e);
