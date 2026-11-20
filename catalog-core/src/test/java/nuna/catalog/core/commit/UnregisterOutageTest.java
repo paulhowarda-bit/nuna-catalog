@@ -10,6 +10,7 @@ import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.Name;
+import nuna.catalog.store.OutboxEvent;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.StoreException;
 import nuna.catalog.store.StoreUnavailableException;
@@ -121,7 +122,7 @@ class UnregisterOutageTest {
 
     private CommitReply unregister() {
         CommitEngine engine = new CommitEngine(store(), files, new MetadataCache(1 << 20), List.of(),
-                commit -> List.of(), new Alerts() {
+                commit -> List.of(new OutboxEvent("test.commit", "{}")), new Alerts() {
                     @Override
                     public void metadataIntegrity(UUID objectId, String location, String expected, String actual) {
                         throw new AssertionError("the metadata file is intact");
