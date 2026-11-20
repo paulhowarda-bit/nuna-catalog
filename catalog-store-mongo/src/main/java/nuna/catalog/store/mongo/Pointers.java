@@ -18,6 +18,7 @@ import com.mongodb.client.model.UpdateOptions;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
+import nuna.catalog.store.DrWatermark;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerHold;
 import nuna.catalog.store.PointerKey;
@@ -201,6 +202,12 @@ final class Pointers {
                     .append("newVersion", new BsonInt64(swap.next().version())));
         }
         tx.collection(JOURNAL).insertMany(tx.session, journal);
+        for (PointerSwap swap : batch.swaps()) {
+            if (swap.drWatermark()) {
+                MongoDr.raise(tx, swap.key().objectId(), new DrWatermark(swap.next().version(),
+                        swap.next().metadataLocation(), batch.committedAt()));
+            }
+        }
         ChangeRecords.write(tx, entryIds, batch.commitId(), batch.committedAt(), batch.outbox(), batch.idempotency());
     }
 

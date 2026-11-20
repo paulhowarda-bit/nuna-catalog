@@ -4,6 +4,7 @@ import static nuna.catalog.store.oracle.Jdbc.update;
 
 import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
+import nuna.catalog.store.DrWatermark;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerHold;
 import nuna.catalog.store.PointerKey;
@@ -206,6 +207,12 @@ final class Pointers {
         Jdbc.batch(connection, "INSERT INTO journal (commit_id, object_id, branch, committed_at, principal, end_user,"
                 + " engine, requirements, updates, old_location, new_location, old_version, new_version)"
                 + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", journal);
+        for (PointerSwap swap : batch.swaps()) {
+            if (swap.drWatermark()) {
+                OracleDr.raise(connection, swap.key().objectId(), new DrWatermark(swap.next().version(),
+                        swap.next().metadataLocation(), batch.committedAt()));
+            }
+        }
     }
 
     private static void writePieces(Connection connection, PointerSwap swap, byte[][] pieces) throws SQLException {

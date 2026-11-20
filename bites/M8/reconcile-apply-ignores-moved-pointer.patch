@@ -3,15 +3,15 @@ Module: catalog-core
 Test: ReconcileTest#aPointerThatMovedSincePlanningStopsTheApply
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index a8867d9..d480ecc 100644
+index 7b654ca..f390e66 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -419,7 +419,7 @@ public final class Reconcile {
+@@ -533,7 +533,7 @@ public final class Reconcile {
          List<OutboxEvent> outbox = events.of(new CommitEvents.Commit(commitId, at, caller, table,
                  Optional.of(before), next, "[]", updates, false));
          CommitBatch batch = new CommitBatch(commitId, at,
--                List.of(new PointerSwap(table.mainKey(), Optional.of(before), next, entry)), outbox, Optional.empty());
-+                List.of(new PointerSwap(table.mainKey(), store.readPointer(table.mainKey()), next, entry)), outbox, Optional.empty());
+-                List.of(new PointerSwap(table.mainKey(), Optional.of(before), next, entry, drWatermark)), outbox,
++                List.of(new PointerSwap(table.mainKey(), store.readPointer(table.mainKey()), next, entry, drWatermark)), outbox,
+                 Optional.empty());
          boolean committed;
          try {
-             CommitResult result = store.commit(batch);

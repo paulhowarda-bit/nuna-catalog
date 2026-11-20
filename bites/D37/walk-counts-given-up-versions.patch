@@ -1,0 +1,17 @@
+Breaks: the walk counts a version built on versions not whole in the DR store as whole, though it adds files to the newest whole version, so a table whose pointer sits on such a version is walked on from it (D37, amended again 2026-11-20: "Judge like the verifier").
+Module: catalog-core
+Test: ReconcileFileCheckTest#theGivenUpVersionsNeverCount+aStretchMissingAFileTakesNothing
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 7b654ca..7aafefa 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -262,7 +262,7 @@ public final class Reconcile {
+                         // After a version not whole, one counts only when it adds nothing to the newest whole one:
+                         // the version a rewind writes, never one built on the versions it gave up (D37, amended again
+                         // 2026-11-20: "Judge like the verifier").
+-                        isWhole = AddedFiles.addsNothing(whole, metadata);
++                        isWhole = true;
+                     }
+                 }
+                 if (isWhole) {

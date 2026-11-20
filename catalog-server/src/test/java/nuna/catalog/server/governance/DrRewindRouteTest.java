@@ -12,6 +12,7 @@ import nuna.catalog.server.S3ForTests;
 import nuna.catalog.tests.s3.TestS3;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -27,7 +28,9 @@ import software.amazon.awssdk.services.s3.S3Client;
  * slowly than its database would be: the verifier found version 2 of a table whole, and version 3's metadata file
  * never arrived. The operators' readout shows the table behind; the walk takes no step, storage lacking the pointer's
  * own file; the rewind lists the commit it gives up and, only under a DR freeze, moves the table back to version 2's
- * metadata as version 4, published like any commit. A view is rewound the same way ("Rewind views too").
+ * metadata as version 4, published like any commit, and records version 4 as its watermark in that commit ("Rewind
+ * sets watermark", item 100), so the table is at its watermark and walks at once, however many versions it gave up.
+ * A view is rewound the same way ("Rewind views too").
  */
 @Tag("heavy")
 @GovernanceServer
@@ -128,14 +131,66 @@ class DrRewindRouteTest {
         Commit published = (Commit) api.awaitRecord(json -> json.contains(requestId) && json.contains(v4)
                 && json.contains("\"type\":\"" + EventType.COMMIT.typeName() + "\"")).data();
         assertThat(published.actor().principal()).isEqualTo("ops");
+        atItsWatermark(id, 4, v3);
         HttpResponse<String> again = expect(api.manage("POST", "/dr-reconcile", "{\"rewind\":true}", AUTH,
                 api.operator()), 200);
-        assertThat(JsonPath.<List<String>>read(again.body(), table + ".problem")).as("the watermark is still 2,"
-                + " until the verifier passes version 4").singleElement().asString()
-                .contains("already holds the DR watermark's metadata");
+        assertThat(JsonPath.<List<Object>>read(again.body(), table)).as("at its watermark, with no verifier pass:"
+                + " nothing to rewind").isEmpty();
+        HttpResponse<String> walk = expect(api.manage("POST", "/dr-reconcile", "{\"apply\":true}", AUTH,
+                api.operator()), 200);
+        assertThat(JsonPath.<List<Object>>read(walk.body(), table)).as("walked from version 4 at once, with nothing"
+                + " to take").isEmpty();
+        assertThat(location(ns)).isEqualTo(v4);
 
         expect(api.manage("DELETE", "/namespaces/" + ns(ns) + "/dr-freeze", null, AUTH, api.operator()), 204);
         assertThat(commit(ns, "c")).contains("/metadata/00005-");
+    }
+
+    @Test
+    void aRewindGivingUpMoreThanAHundredVersionsLeavesTheTableAtItsWatermark() {
+        String ns = api.namespace();
+        api.table(ns, "orders");
+        String id = api.id(ns, "tables", "orders");
+        String v2 = commit(ns, "a");
+        String last = v2;
+        for (int i = 0; i < 101; i++) {
+            last = commit(ns, "lost-" + i);
+        }
+        assertThat(last).contains("/metadata/00103-");
+        expect(api.manage("PUT", "/maintenance/tables/" + id + "/dr-watermark",
+                "{\"version\":2,\"metadata-location\":\"" + v2 + "\"}", AUTH, api.maintenance()), 204);
+        expect(api.manage("PUT", "/namespaces/" + ns(ns) + "/dr-freeze", "{\"reason\":\"DR drill\"}",
+                AUTH, api.operator()), 200);
+
+        HttpResponse<String> applied = expect(api.manage("POST", "/dr-reconcile", "{\"rewind\":true,\"apply\":true}",
+                AUTH, api.operator()), 200);
+
+        String table = "$.tables[?(@.id == '" + id + "')]";
+        assertThat(JsonPath.<List<Integer>>read(applied.body(), table + ".lost[*].version")).hasSize(101);
+        assertThat(JsonPath.<List<Integer>>read(applied.body(), table + ".rewound-to.version")).containsExactly(104);
+        assertThat(location(ns)).contains("/metadata/00104-");
+        atItsWatermark(id, 104, last);
+        expect(api.manage("DELETE", "/namespaces/" + ns(ns) + "/dr-freeze", null, AUTH, api.operator()), 204);
+    }
+
+    /**
+     * The rewind recorded the table's watermark at the version it wrote, {@code version} (item 100): the verifier's
+     * work list, which its next pass reads, leaves the table out, and a report of an earlier version, {@code
+     * version - 1} at {@code earlier}, is refused as behind the one kept.
+     */
+    private void atItsWatermark(String id, int version, String earlier) {
+        String token = null;
+        do {
+            String body = expect(api.send("GET", "/management/v1/maintenance/dr-work?pageSize=1000"
+                    + (token == null ? "" : "&pageToken=" + token), null, AUTH, api.maintenance()), 200).body();
+            assertThat(JsonPath.<List<Object>>read(body, "$.objects[?(@.id == '" + id + "')]"))
+                    .as("the DR work list after the rewind").isEmpty();
+            token = JsonPath.<Map<String, Object>>read(body, "$").containsKey("next-page-token")
+                    ? JsonPath.read(body, "$.next-page-token") : null;
+        } while (token != null);
+        expectError(api.manage("PUT", "/maintenance/tables/" + id + "/dr-watermark", "{\"version\":" + (version - 1)
+                + ",\"metadata-location\":\"" + earlier + "\"}", AUTH, api.maintenance()), 409,
+                "WatermarkBehindException");
     }
 
     @Test

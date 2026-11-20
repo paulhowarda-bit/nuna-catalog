@@ -69,20 +69,38 @@ final class MongoDr {
             if (watermark.version() > pointer.get().getInt64("version").getValue()) {
                 return AHEAD;
             }
-            Optional<Long> kept = tx.find(DR_WATERMARK, byId(uuid(objectId)))
-                    .map(doc -> doc.getInt64("version").getValue());
+            Optional<Long> kept = kept(tx, objectId);
             if (kept.isPresent() && kept.get() >= watermark.version()) {
                 return kept.get() == watermark.version() ? WriteResult.UNCHANGED : BEHIND;
             }
             tx.see(object.get());
             tx.mark(OBJECT, object.get());
-            tx.collection(DR_WATERMARK).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
-                    new BsonDocument("version", int64(watermark.version()))
-                            .append("metadataLocation", new BsonString(watermark.metadataLocation()))
-                            .append("recordedAt", time(watermark.recordedAt()))),
-                    new UpdateOptions().upsert(true));
+            write(tx, objectId, watermark);
             return WriteResult.APPLIED;
         }, WriteResult.APPLIED::equals);
+    }
+
+    /**
+     * Keeps {@code watermark} in place of a lower one, in {@code tx}: a DR rewind's write in its commit
+     * ({@link Pointers}), which has marked the object already.
+     */
+    static void raise(Tx tx, UUID objectId, DrWatermark watermark) {
+        Optional<Long> kept = kept(tx, objectId);
+        if (kept.isEmpty() || kept.get() < watermark.version()) {
+            write(tx, objectId, watermark);
+        }
+    }
+
+    private static Optional<Long> kept(Tx tx, UUID objectId) {
+        return tx.find(DR_WATERMARK, byId(uuid(objectId))).map(doc -> doc.getInt64("version").getValue());
+    }
+
+    private static void write(Tx tx, UUID objectId, DrWatermark watermark) {
+        tx.collection(DR_WATERMARK).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
+                new BsonDocument("version", int64(watermark.version()))
+                        .append("metadataLocation", new BsonString(watermark.metadataLocation()))
+                        .append("recordedAt", time(watermark.recordedAt()))),
+                new UpdateOptions().upsert(true));
     }
 
     Optional<DrWatermark> read(UUID objectId) {

@@ -1,0 +1,17 @@
+Breaks: a DR rewind's commit leaves the object's DR watermark where it was, so the object stays behind its pointer until the verifier passes the version the rewind wrote, and past 100 given-up versions the verifier's work list never reaches it (item 100: "Rewind sets watermark").
+Module: catalog-core
+Test: ReconcileWatermarkTest#theRewindMovesBackToTheWatermark+aRewindGivingUpMoreThanAHundredVersionsEndsAtItsWatermark
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 7b654ca..ae4870b 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -483,7 +483,7 @@ public final class Reconcile {
+         String updates = "[{\"action\":\"dr-rewind\",\"metadata-location\":" + quote(written.location())
+                 + ",\"watermark-version\":" + to.version() + ",\"watermark-location\":" + quote(to.metadataLocation())
+                 + ",\"versions-given-up\":" + (before.version() - to.version()) + "}]";
+-        Optional<String> refused = swap(object, before, next, true, updates, caller, events, "rewind");
++        Optional<String> refused = swap(object, before, next, false, updates, caller, events, "rewind");
+         return refused.isPresent() ? new Rewound(plan, Optional.empty(), refused)
+                 : new Rewound(plan, Optional.of(next), Optional.empty());
+     }
