@@ -201,7 +201,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
 
     private void open(String[] gapAfter) {
         try (Connection c = config.connect()) {
-            source = SourceTable.read(c, config.database(), config.table());
+            source = SourceTable.read(c, config.database(), config.table(), config.appendOnly());
             LoopGuard.check(c, config);
             lastGuard = System.currentTimeMillis();
         } catch (SQLException e) {
@@ -210,7 +210,7 @@ public final class ChangeFeed implements Function<Long, List<Map<String, Object>
         catalog = CatalogUtil.buildIcebergCatalog("changefeed", config.catalogProperties(), null);
         copy = IcebergCopy.open(catalog, config, source);
         String[] from = gapAfter != null ? new String[source.partitions()] : copy.offsets();
-        batch = new ChangeBatch(source, from);
+        batch = new ChangeBatch(source, from, config.appendOnly());
         snapshotting = Arrays.stream(from).allMatch(Objects::isNull)
                 ? new Snapshotting(copy.snapshotWriter(), source.partitions(), gapAfter)
                 : null;

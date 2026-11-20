@@ -1,0 +1,17 @@
+Breaks: an append-only feed takes in an UPDATE or DELETE like any other change instead of stopping before its transaction (backlog 95).
+Module: singlestore-change-feed
+Test: ChangeBatchTest#anAppendOnlyBatchStopsAtTheFirstUpdateOrDeleteBeforeItsTransactionIsTakenIn
+
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java
+index 61768fb..0e308e8 100644
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/ChangeBatch.java
+@@ -66,7 +66,7 @@ final class ChangeBatch {
+             case BEGIN_TRANSACTION -> pending.clear();
+             case INSERT -> pending.add(event);
+             case UPDATE, DELETE -> {
+-                if (appendOnly) {
++                if (false) {
+                     throw new IllegalStateException(source + " is append-only (singlestore.append-only), but "
+                             + "SingleStore sent " + event.type() + " on partition " + event.partition() + " after offset "
+                             + offsets[event.partition()] + ". The feed stops before that transaction, and stops there "

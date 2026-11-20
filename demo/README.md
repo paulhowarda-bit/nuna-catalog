@@ -51,8 +51,11 @@ demo/demo.sh up
     Kafka Connect, image `nuna-demo-connect:<hash>` (`connect.Dockerfile`).
 - Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
   (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
-  (CloudBeaver) and **8186** (Kafka Connect's REST API, while the CDC leg runs). `up` stops if something else
-  holds one of them, such as a `kubectl port-forward`.
+  (CloudBeaver), **8186** (Kafka Connect's REST API, while the CDC leg runs) and **8187** (Silo's S3 API, for
+  engines on other machines). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
+  An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
+  `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
+  `s3.endpoint` to `https://<host>:8187` (item 96 asks whether the catalog should vend it instead).
 - Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
@@ -69,7 +72,7 @@ At the end it prints the console URL, <https://localhost:8181/ui/>, the password
 
 ## HTTPS and the certificate
 
-Every page is HTTPS. The front door (`k8s/ports.yaml`), nginx, takes ports 8180 to 8186, ends TLS with one
+Every page is HTTPS. The front door (`k8s/ports.yaml`), nginx, takes ports 8180 to 8187, ends TLS with one
 certificate and passes each request on over plain HTTP inside the cluster, where the stack's pods reach each
 other by their Service names, as before. Studio alone is HTTPS behind it too, with the same certificate: it
 builds the address Keycloak returns its SAML sign-in to from the request it gets, and Keycloak refuses an
@@ -292,6 +295,12 @@ Then open the `orders` table in the console: each receipt is a snapshot there.
 - If SingleStore fails to write a batch of receipts (it ran out of memory, say), the commits are already in
   Iceberg. SingleStore starts the feed again from the last receipt it stored, and the feed sends the later
   ones again, read from the snapshots, so `ops.lake_commits` still lists every commit.
+- A table that is only ever inserted into may have a primary key that holds more than its shard key, which the
+  feed otherwise refuses (D35 rule (1)): set `"singlestore.append-only": "true"` in the pipeline's CONFIG. The
+  first `UPDATE` or `DELETE` on it then stops the pipeline in `Error` before that transaction reaches Iceberg, and
+  every start stops at the same change. To copy the table afresh: stop the pipeline, drop the Iceberg copy, run
+  `SNAPSHOT DATABASE` on the table's database, and start the pipeline. Dropping the copy alone is not enough: a
+  start with no offsets reads SingleStore's latest snapshot and the log after it, which still holds the change.
 
 ### Iceberg to SingleStore: Iceberg pipelines
 

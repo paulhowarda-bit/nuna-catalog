@@ -23,6 +23,9 @@ import org.apache.iceberg.catalog.TableIdentifier;
  *   <li>{@code iceberg.format-version} (default 2) and {@code iceberg.partition-by} (default none): used only
  *       when the connector creates the table.
  *   <li>{@code commit.interval.ms} (default 5000): how long changes collect before a commit.
+ *   <li>{@code singlestore.append-only} ({@code true} or {@code false}, default false): for a table that is only
+ *       ever inserted into. Its primary key need only contain its shard key, not equal it, and the first UPDATE or
+ *       DELETE stops the feed before that transaction is applied (D35, amended 2026-11-20).
  * </ul>
  */
 public record FeedConfig(
@@ -35,7 +38,8 @@ public record FeedConfig(
         TableIdentifier icebergTable,
         int formatVersion,
         String partitionBy,
-        long commitIntervalMs) {
+        long commitIntervalMs,
+        boolean appendOnly) {
 
     static final String CATALOG_PREFIX = "iceberg.catalog.";
 
@@ -63,7 +67,8 @@ public record FeedConfig(
                 TableIdentifier.of(Namespace.of(Arrays.copyOf(levels, levels.length)), required(props, "iceberg.table")),
                 Integer.parseInt(props.getOrDefault("iceberg.format-version", "2")),
                 props.getOrDefault("iceberg.partition-by", "").strip(),
-                Long.parseLong(props.getOrDefault("commit.interval.ms", "5000")));
+                Long.parseLong(props.getOrDefault("commit.interval.ms", "5000")),
+                flag(props, "singlestore.append-only"));
     }
 
     /** A connection to SingleStore. The driver is called directly: SingleStore's extractor has its own JDBC drivers. */
@@ -81,6 +86,15 @@ public record FeedConfig(
     /** {@code database.table} in SingleStore. */
     public String source() {
         return database + "." + table;
+    }
+
+    private static boolean flag(Map<String, String> props, String key) {
+        String value = props.getOrDefault(key, "false").strip();
+        return switch (value) {
+            case "true" -> true;
+            case "false" -> false;
+            default -> throw new IllegalArgumentException(key + " is " + value + "; it takes true or false");
+        };
     }
 
     private static String required(Map<String, String> props, String key) {
