@@ -183,8 +183,9 @@ class HealthRoutesTest {
                 .doesNotContainAnyElementsOf(mine);
         assertThat(neediest().stream().filter(mine::contains).toList()).containsExactly(c, b, a);
         expect(api.manage("GET", "/namespaces/" + readable + "/tables/a/health", null, reader), 200);
-        expectError(api.manage("GET", "/namespaces/" + hidden + "/tables/b/health", null, reader), 403,
-                "ForbiddenException");
+        // Rita holds nothing on the hidden namespace: its table is answered as if it did not exist (D18, backlog 73).
+        expectError(api.manage("GET", "/namespaces/" + hidden + "/tables/b/health", null, reader), 404,
+                "NoSuchTableException");
     }
 
     @Test

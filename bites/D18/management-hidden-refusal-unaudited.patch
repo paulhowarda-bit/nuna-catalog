@@ -1,0 +1,17 @@
+Breaks: a management refusal answered as a missing name is not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: ManagementHiddenNamesTest#aHiddenRefusalIsAuditedAsEveryRefusalIs
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
+index fc6be7f..62e80fc 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
+@@ -49,7 +49,7 @@ class ManagementGuard {
+         Authorizer.Target on = on(target);
+         if (authorizer.decide(request.caller(), on, new Operation(operation, privilege, false))
+                 instanceof Decision.Denied denied) {
+-            throw hidden(request, on, target, refuse(request, target.audit(), operation, denied));
++            throw holdings.something(request.caller(), on) ? refuse(request, target.audit(), operation, denied) : target.missing();
+         }
+     }
+ 

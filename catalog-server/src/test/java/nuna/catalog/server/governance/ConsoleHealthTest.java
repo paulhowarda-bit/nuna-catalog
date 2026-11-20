@@ -237,7 +237,10 @@ class ConsoleHealthTest {
         WebElement shown = loadedTab();
         assertThat(shown.findElements(By.id("table-health-verdict"))).as("the health of a table they may not read")
                 .isEmpty();
-        assertThat(shown.getText()).contains("Refused by the catalog", "403 ForbiddenException");
+        // Rita holds nothing on the hidden namespace, so the catalog answers as if the table did not exist (D18,
+        // backlog 73), and the page shows that answer as it came.
+        assertThat(shown.getText()).contains("The catalog answered with an error", "404 NoSuchTableException",
+                "Table does not exist: " + hidden + ".secret");
     }
 
     @Test

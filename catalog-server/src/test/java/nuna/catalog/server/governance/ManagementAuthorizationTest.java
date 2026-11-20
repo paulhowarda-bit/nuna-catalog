@@ -20,7 +20,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Who may call each M7 management route (build-plan.md, M7). Each test signs in first as a caller that holds
- * something, but not what the route needs, and expects 403; then as one that holds it, and expects success.
+ * something, but not what the route needs, and expects 403; then as one that holds it, and expects success. A route
+ * that needs only describe, which every privilege gives, is refused only to a caller that holds nothing on the
+ * name, which is answered as if the name did not exist (D18, backlog 73).
  * The callers: {@code tester} holds create and modify on the catalog, the steward manage-tags, the outsider
  * nothing; the operator is a platform operator and {@code maintenance} the maintenance principal.
  */
@@ -61,7 +63,7 @@ class ManagementAuthorizationTest {
 
     @Test
     void readingGovernanceNeedsDescribe() {
-        refused(api.manage("GET", table + "/governance", null, AUTH, api.outsider()));
+        hidden(api.manage("GET", table + "/governance", null, AUTH, api.outsider()), "NoSuchTableException");
         expect(api.manage("GET", table + "/governance", null), 200);
     }
 
@@ -96,7 +98,7 @@ class ManagementAuthorizationTest {
 
     @Test
     void readingTheMaintenancePolicyNeedsDescribe() {
-        refused(api.manage("GET", table + "/maintenance-policy", null, AUTH, api.outsider()));
+        hidden(api.manage("GET", table + "/maintenance-policy", null, AUTH, api.outsider()), "NoSuchTableException");
         expect(api.manage("GET", table + "/maintenance-policy", null, AUTH, api.steward()), 200);
     }
 
@@ -140,7 +142,8 @@ class ManagementAuthorizationTest {
 
     @Test
     void listingDroppedObjectsNeedsDescribe() {
-        refused(api.manage("GET", "/namespaces/" + ns + "/dropped", null, AUTH, api.outsider()));
+        hidden(api.manage("GET", "/namespaces/" + ns + "/dropped", null, AUTH, api.outsider()),
+                "NoSuchNamespaceException");
         expect(api.manage("GET", "/namespaces/" + ns + "/dropped", null, AUTH, api.steward()), 200);
     }
 
@@ -225,8 +228,26 @@ class ManagementAuthorizationTest {
         assertThat(denial.securable().path()).containsExactly(ns, "t");
     }
 
+    @Test
+    void aRefusalAnsweredAsAMissingNameIsAuditedToo() {
+        String requestId = "hidden-" + UUID.randomUUID();
+        hidden(api.manage("GET", table + "/governance", null, AUTH, api.outsider(), "X-Request-ID", requestId),
+                "NoSuchTableException");
+        var record = api.awaitRequest(requestId);
+        assertThat(record.data().type()).isEqualTo(EventType.DENIAL);
+        Denial denial = (Denial) record.data();
+        assertThat(denial.operation()).isEqualTo("loadGovernance");
+        assertThat(denial.privilege()).isEqualTo("describe");
+        assertThat(denial.securable().path()).containsExactly(ns, "t");
+    }
+
     private static void refused(HttpResponse<String> response) {
         expectError(response, 403, "ForbiddenException");
+    }
+
+    /** A refusal answered as if the name did not exist (D18, backlog 73). */
+    private static void hidden(HttpResponse<String> response, String type) {
+        expectError(response, 404, type);
     }
 
     /**

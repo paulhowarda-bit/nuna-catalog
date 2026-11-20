@@ -79,8 +79,9 @@ class GrantRaceTest {
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, null);
         Clock clock = Clock.fixed(Instant.parse("2026-11-19T00:00:00Z"), ZoneOffset.UTC);
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
-        routes = new GrantRoutes(store, new Authorizer(store, store, store, separation, false, Set.of()), separation,
-                request -> GINA, new Denials(audit::add, settings, clock), settings, clock);
+        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
+        routes = new GrantRoutes(store, authorizer, separation, request -> GINA, new Denials(audit::add, settings, clock),
+                new Holdings(authorizer, store, settings), settings, clock);
     }
 
     @AfterEach

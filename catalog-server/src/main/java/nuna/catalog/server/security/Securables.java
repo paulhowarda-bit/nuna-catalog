@@ -28,8 +28,12 @@ final class Securables {
     record Spec(String type, List<String> namespace, String name) {
     }
 
-    /** A named securable: its stored form, its authorization target and its audit form. */
-    record Resolved(Securable stored, Target target, nuna.catalog.audit.Securable named) {
+    /**
+     * A named securable: its stored form, its authorization target and its audit form; {@code missing} is the
+     * answer for a request that names nothing, which a refused caller that holds nothing on the namespace, table
+     * or view gets too (D18).
+     */
+    record Resolved(Securable stored, Target target, nuna.catalog.audit.Securable named, CatalogError missing) {
     }
 
     private final CatalogStore store;
@@ -49,9 +53,14 @@ final class Securables {
     Resolved catalogItself() {
         return new Resolved(new Securable(Securable.Kind.CATALOG, catalog.id()), new Target.Catalog(catalog.id()),
                 new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG, catalog.id(),
-                        catalog.name(), List.of()));
+                        catalog.name(), List.of()),
+                CatalogError.noSuchWarehouse("The given warehouse does not exist: " + catalog.name()));
     }
 
+    /**
+     * The securable a request names. A table or view whose namespace does not exist answers as one that does not
+     * exist itself, so the answer does not tell whether the namespace exists (D18).
+     */
     Resolved resolve(Spec spec) {
         if (spec == null || spec.type() == null) {
             throw CatalogError.badRequest("A securable needs a type: catalog, namespace, table or view");
@@ -60,10 +69,12 @@ final class Securables {
         return switch (spec.type().toLowerCase(Locale.ROOT)) {
             case "catalog" -> catalogItself();
             case "namespace" -> {
-                NamespaceRecord namespace = namespace(levels);
+                CatalogError missing = CatalogError.of(404, "NoSuchNamespaceException",
+                        "Namespace does not exist: " + dotted(levels));
+                NamespaceRecord namespace = namespace(levels).orElseThrow(() -> missing);
                 yield new Resolved(new Securable(Securable.Kind.NAMESPACE, namespace.id()), Target.of(namespace),
                         new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.NAMESPACE,
-                                namespace.id(), catalog.name(), levels));
+                                namespace.id(), catalog.name(), levels), missing);
             }
             case "table", "view" -> {
                 CatalogObject.Kind kind = spec.type().equalsIgnoreCase("table")
@@ -71,17 +82,19 @@ final class Securables {
                 if (spec.name() == null || spec.name().isEmpty()) {
                     throw CatalogError.badRequest("A " + spec.type() + " needs a name");
                 }
-                CatalogObject object = store.findObject(namespace(levels).id(), Names.normalize(spec.name()))
+                CatalogError missing = CatalogError.of(404, kind == CatalogObject.Kind.TABLE
+                        ? "NoSuchTableException" : "NoSuchViewException",
+                        spec.type() + " does not exist: " + dotted(levels) + "." + spec.name());
+                CatalogObject object = namespace(levels)
+                        .flatMap(namespace -> store.findObject(namespace.id(), Names.normalize(spec.name())))
                         .filter(o -> o.kind() == kind)
-                        .orElseThrow(() -> CatalogError.of(404, kind == CatalogObject.Kind.TABLE
-                                ? "NoSuchTableException" : "NoSuchViewException",
-                                spec.type() + " does not exist: " + dotted(levels) + "." + spec.name()));
+                        .orElseThrow(() -> missing);
                 List<String> path = new ArrayList<>(levels);
                 path.add(spec.name());
                 yield new Resolved(object.securable(), Target.of(object),
                         new nuna.catalog.audit.Securable(kind == CatalogObject.Kind.TABLE
                                 ? nuna.catalog.audit.Securable.Kind.TABLE : nuna.catalog.audit.Securable.Kind.VIEW,
-                                object.id(), catalog.name(), path));
+                                object.id(), catalog.name(), path), missing);
             }
             default -> throw CatalogError.badRequest("Unknown securable type '" + spec.type()
                     + "'; expected catalog, namespace, table or view");
@@ -106,12 +119,11 @@ final class Securables {
         return out;
     }
 
-    private NamespaceRecord namespace(List<String> levels) {
+    private Optional<NamespaceRecord> namespace(List<String> levels) {
         if (levels.isEmpty()) {
             throw CatalogError.badRequest("A namespace, table or view needs its namespace levels");
         }
-        return store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList()).orElseThrow(
-                () -> CatalogError.of(404, "NoSuchNamespaceException", "Namespace does not exist: " + dotted(levels)));
+        return store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList());
     }
 
     private Optional<List<String>> path(UUID namespaceId) {
