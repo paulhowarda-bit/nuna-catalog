@@ -255,8 +255,8 @@ lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes
 3. **Read the plan.** `POST /management/v1/catalogs/{catalog}/dr-reconcile` with `{"rewind": true}` lists each table
    and each view above its watermark (under `tables` and `views`), the watermark it would move back to, and its
    `lost` commits (version, commit id, time, principal): the commits DR does not hold whole. Hand the lost tail to the
-   owners for business reconciliation. One with no watermark (`"watermark": null`) has no version known whole in DR;
-   it is not moved, and its owner decides what to do with it.
+   owners for business reconciliation. One with no watermark (`"watermark": null`) has no version with data known whole in DR
+   (its empty creation version is never taken below its pointer); it is not moved, and its owner decides what to do with it.
 4. **Rewind.** The same with `{"rewind": true, "apply": true}`: each frozen table and view above its watermark moves
    back to it in one journaled commit, the watermark's metadata written again as the next version, and that commit
    records the new version as its watermark, so it is no longer behind, however many commits it gave up. One that did
