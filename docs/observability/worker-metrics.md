@@ -117,7 +117,8 @@ check both against work's Prometheus when they are written there (items 43 and 4
 
 ## Alerts
 
-`600` below is the worker's `scan-interval` in seconds; use the deployment's own.
+`600` below is the worker's `scan-interval` in seconds; use the deployment's own. These rules, named, are in
+`deploy/grafana/rules/nuna-maintenance.rules.yaml` (dashboards-and-alerts.md), a ticket there as `severity: warning`.
 
 **Worker not scanning** (page). No scan has succeeded for three intervals:
 

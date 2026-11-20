@@ -156,6 +156,11 @@ telemetry:
   a conditional load answered by another server is a 200, not a 304. `ClientIP` affinity keeps a client on
   one server, behind the Service only. An Ingress or external balancer needs its own stickiness. The choice
   between sticky routing and a shared credential epoch is still open (build-plan, M8 findings).
+- **Purge rate [D30].** `nuna.governance.purges-per-minute` (default 10) is counted by each server on its
+  own, so the replicas together accept that many purges a minute times the replica count: three servers set
+  to 10 accept 30. To hold the whole deployment to a rate, set it to that rate divided by the replica count.
+  A purge claim over the limit answers 429 with `Retry-After: 60`, and the maintenance worker tries again on
+  its next scan.
 - **Delete rights [D30].** No credentials the catalog vends can delete, a maintenance principal's
   included. The maintenance worker deletes with its own storage identity, which each profile names as
   `maintenance-principal`: an IAM role or user ARN on AWS, `arn:aws:iam::<tenant>:user/<uid>` on Ceph (the

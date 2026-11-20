@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 5 S, 14 M, 5 L, 4 XL.
+**28 open:** 5 S, 15 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -18,7 +18,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
@@ -34,12 +33,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [28](backlog/28.md) | L | DR replication-watermark verifier (v1.x) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
-| [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
+| [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
+| [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
 
 ## Open items in full
 
@@ -126,20 +126,6 @@ Done when every backend that partitions the journal keeps its horizon ahead with
 assembled by hand. The audit archive could prove which tips were acknowledged.
 
 Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
-
-### 11. The purge rate limit is per replica
-
-- Decided: 2026-11-19, D30
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, per replica is kept (D30); the docs say so
-
-`build-plan.md`, maintenance worker, catalog side (2026-11-13): `nuna.governance.purges-per-minute` is kept per
-replica, so three replicas accept three times the configured rate.
-
-Done when the limit holds across replicas (or Paul decides the per-replica reading is what he wants and the docs
-say so).
-
-**Decided 2026-11-19 (D30):** the limit stays per replica ("Per replica, documented"). What is left: the docs say so, so operators divide it by the replica count.
 
 ### 13. The separation-of-duties check and the grant write are not atomic
 
@@ -364,7 +350,7 @@ Done when a load from a work engine shows as a trace and as metrics in work's Gr
 - Decided: 2026-11-19, D43
 - Added: 2026-11-15 by Iceberg observability review, at Paul's request
 - Touches: deploy/grafana/ docs/observability/
-- Effort: L, dashboards and alert rules for six areas, each alert fired once in a test
+- Effort: M, at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43
 
 After 39, 40, 41 and 43, written against the series as they land in work's Prometheus (43 records the names).
 Dashboards go in `deploy/grafana/` as JSON, and alert rules in the form work uses (PrometheusRule or plain rule
@@ -381,6 +367,26 @@ files):
 Done when the dashboards show live data at work and each alert has fired once in a test.
 
 **Decided 2026-11-19 (D43):** drafted at home now ("Draft at home now"), against nuna's own metric names and Prometheus' usual OTLP mapping, instead of waiting for item 43; queries may need renaming at work.
+
+Progress (2026-11-19, worktree-agent-a393cd9f05a19bc08): drafted at home, as D43 says. Three dashboards in
+`deploy/grafana/dashboards/` (the catalog, 30 panels; the worker, 16; client reports by engine, 13), each with a
+`datasource` variable, and two plain rule files in `deploy/grafana/rules/` (17 alerts, each with `severity` `page` or
+`warning`), which a PrometheusRule's `spec.groups` takes as they are. docs/observability/dashboards-and-alerts.md says
+what each shows, the 55 series names they assume and what to rename if work's Prometheus differs. Every area above is
+covered except two:
+- At least 500 commits a second has a dashboard panel (the rate against a line at 500) but no burn-rate alert: it is
+  the M8 SLO run's target under a given load, production demand sets the rate, and nuna has no metric of offered
+  commits to burn against. Whether it gets an alert, and on what, is Paul's to decide.
+- The audit's Kafka acknowledgement time is shown as a mean only: the exported timer has no buckets, so there is no
+  p99 in Prometheus. Item 71.
+
+Checked at home: every JSON and YAML file parses (Python 3.12, PyYAML 6.0.3), brackets balance in all 99 expressions,
+and every series and label maps back to a meter and tag named in docs/observability/ and the main code (55 of 55, 17
+of 17). Not checked: no Grafana, Prometheus or promtool here, so no import, no rule load, no PromQL parse, and the
+OTLP translation itself is assumed.
+
+Still open, at work: item 43's names (rename the queries where they differ), the dashboards showing live data, and
+each alert fired once in a test. The item stays open for those, which are its done condition.
 
 ### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
 
@@ -525,6 +531,24 @@ their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
 
+### 71. Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99
+
+- Added: 2026-11-19 by agent on item 44
+- Touches: catalog-server/src/main/java/nuna/catalog/server/tracing/ catalog-server/src/test/java/nuna/catalog/server/telemetry/ deploy/grafana/ docs/observability/
+- Effort: S, one meter filter on the exported registry, a test, and the dashboard panel; no wait
+
+Item 44's catalog dashboard (`deploy/grafana/dashboards/nuna-catalog.json`, "Audit: Kafka acknowledgement") can
+show only the mean acknowledgement time: the exported `nuna.audit.publish` timer has no histogram buckets, so
+Prometheus gets `nuna_audit_publish_milliseconds_count` and `_sum` and nothing to take a p99 from. The console's
+health page does show the p99, because `HealthMeters` (catalog-server, `health/HealthMeters.java`) adds buckets from
+5 ms to 5 s (`AUDIT_BUCKETS`) to its own registry only; docs/observability/health-page.md says "the exported timer
+is unchanged".
+
+Done when the exported `nuna.audit.publish` timer carries the same bucket bounds (a meter filter where the OTLP
+registry is configured, or `management.metrics.distribution.slo.nuna.audit.publish`), a telemetry test sees the
+buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogram_quantile` beside the mean, its docs
+(`docs/observability/dashboards-and-alerts.md`) saying so.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -533,6 +557,7 @@ link is back.
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
