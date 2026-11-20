@@ -72,8 +72,11 @@ final class Stack implements AutoCloseable {
         return server(name, Path.of(System.getProperty("m8.server-jar")), postgres.serverUrl());
     }
 
-    /** A server from {@code jar} on {@code jdbcUrl}; the first one to start creates the catalog. */
-    ServerProcess server(String name, Path jar, String jdbcUrl) {
+    /**
+     * A server from {@code jar} on {@code jdbcUrl}; the first one to start creates the catalog. {@code more} are more
+     * of its settings, as {@code --name=value}.
+     */
+    ServerProcess server(String name, Path jar, String jdbcUrl, String... more) {
         List<String> properties = new ArrayList<>();
         s3.serverProperties(PROFILE, bucket).forEach((key, value) -> properties.add("--" + key + "=" + value));
         properties.addAll(List.of(
@@ -95,6 +98,7 @@ final class Stack implements AutoCloseable {
                 "--nuna.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers(),
                 "--logging.level.root=WARN",
                 "--logging.level.nuna.audit.fallback=ERROR"));
+        properties.addAll(List.of(more));
         boolean thisRelease = jar.equals(Path.of(System.getProperty("m8.server-jar")));
         ServerProcess server = ServerProcess.start(name, jar, s3.jvmOptions(),
                 thisRelease ? properties : PreviousRelease.settings(properties));

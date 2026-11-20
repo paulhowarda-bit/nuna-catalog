@@ -107,8 +107,11 @@ class DrDrillTest {
         p1.close();
         p2.close();
 
+        // The promoted DR database has no synchronous standby, so its self-check reports pg.no-sync-standby, and a
+        // server refuses to start there unless that finding is allowed (D8.2). The primary region's servers above
+        // ran with nothing allowed.
         ServerProcess dr = stack.server("dr-region-1", Path.of(System.getProperty("m8.server-jar")),
-                stack.postgres.drServerUrl());
+                stack.postgres.drServerUrl(), "--nuna.database.allow-unsafe=pg.no-sync-standby");
         Catalog writers = new Catalog(writerToken, dr.uri());
         Catalog operator = new Catalog(stack.token("m8-ops", Stack.OPERATORS), dr.uri());
         Map<String, String> behind = new HashMap<>();
