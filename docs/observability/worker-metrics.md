@@ -117,8 +117,9 @@ check both against work's Prometheus when they are written there (items 43 and 4
 
 ## Alerts
 
-`600` below is the worker's `scan-interval` in seconds; use the deployment's own. These rules, named, are in
-`deploy/grafana/rules/nuna-maintenance.rules.yaml` (dashboards-and-alerts.md), a ticket there as `severity: warning`.
+`600` below is the worker's `scan-interval` in seconds, and `20m` two of them; use the deployment's own. These rules,
+named, are in `deploy/grafana/rules/nuna-maintenance.rules.yaml` (dashboards-and-alerts.md), a ticket there as
+`severity: warning`.
 
 **Worker not scanning** (page). No scan has succeeded for three intervals:
 
@@ -140,7 +141,9 @@ telemetry does not reach the collector:
 absent_over_time(nuna_maintenance_scan_last_success_seconds[15m])
 ```
 
-**Purges failing** (ticket). Purges fail and none completes, so dropped objects' files stay in storage:
+**Purges failing** (ticket). Purges fail and none completes, so dropped objects' files stay in storage. The rule
+waits two scan intervals before it fires (its `for: 20m`; D43, item 80), so a failure the next scan's retry clears
+opens no ticket:
 
 ```
 sum by (job) (increase(nuna_maintenance_failures_total{kind="purge"}[1h])) > 0
@@ -148,7 +151,8 @@ sum by (job) (increase(nuna_maintenance_failures_total{kind="purge"}[1h])) > 0
 ```
 
 **Deletions failing** (ticket). Due deletions fail and nothing is deleted, often the worker's storage identity or the
-bucket's delete policy (`catalog-maintenance/README.md`, "The identity it needs"):
+bucket's delete policy (`catalog-maintenance/README.md`, "The identity it needs"). Like purges failing, it waits two
+scan intervals (`for: 20m`):
 
 ```
 sum by (job) (increase(nuna_maintenance_failures_total{kind="deletion"}[1h])) > 0

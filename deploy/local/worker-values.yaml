@@ -31,7 +31,7 @@ config:
         client-id: nuna-maintenance
         scope: nuna-catalog
         audience: nuna-catalog
-      # The worker's own Silo user, which run.sh worker makes; its secret key is in `secrets`.
+      # The worker's own Silo user, which run.sh up makes; its secret key is in `secrets`.
       storage:
         silo:
           prefixes: [s3://warehouse/tables]

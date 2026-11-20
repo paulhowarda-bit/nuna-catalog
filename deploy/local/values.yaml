@@ -37,8 +37,10 @@ config:
           region: us-east-1
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
-          access-key-id: nunademo
-          # The maintenance worker's own Silo user (run.sh worker), the only one its delete policy lets delete.
+          # The catalog's own Silo user (run.sh up), never Silo's root user, whom no policy binds: the delete policy
+          # with except must bind the catalog and every credential it vends (D21).
+          access-key-id: nuna-catalog
+          # The maintenance worker's own Silo user (run.sh up), the only one its delete policy lets delete.
           maintenance-principal: nuna-maintenance
       catalogs:
         lakehouse:
@@ -74,4 +76,4 @@ config:
 secrets:
   values:
     spring.datasource.password: catalog
-    nuna.storage.profiles.silo.secret-access-key: nunademo-secret-key
+    nuna.storage.profiles.silo.secret-access-key: nuna-catalog-secret-key

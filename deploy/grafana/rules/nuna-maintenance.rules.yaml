@@ -3,7 +3,7 @@
 # under `groups:` into a PrometheusRule's spec.groups as it is.
 #
 # Draft: the series names assume Prometheus' default OTLP translation (docs/observability/dashboards-and-alerts.md).
-# 600 is the worker's scan-interval in seconds (the default); use the deployment's own.
+# 600 is the worker's scan-interval in seconds (the default), and 20m two of its intervals; use the deployment's own.
 groups:
   - name: nuna-maintenance
     rules:
@@ -33,9 +33,11 @@ groups:
             nuna_maintenance_scan_last_success_seconds has had no sample for 15 minutes. worker-metrics.md,
             "Alerts".
       - alert: NunaPurgesFailing
+        # Waits two scan intervals (D43, item 80): a failure the next scan's retry clears does not fire.
         expr: |
           sum by (job) (increase(nuna_maintenance_failures_total{kind="purge"}[1h])) > 0
             and sum by (job) (increase(nuna_maintenance_purges_completed_total[1h])) == 0
+        for: 20m
         labels:
           severity: warning
         annotations:
@@ -44,9 +46,11 @@ groups:
             Dropped objects' files stay in storage. The worker's WARN lines name the objects. worker-metrics.md,
             "Alerts".
       - alert: NunaDeletionsFailing
+        # Waits two scan intervals (D43, item 80): a failure the next scan's retry clears does not fire.
         expr: |
           sum by (job) (increase(nuna_maintenance_failures_total{kind="deletion"}[1h])) > 0
             and sum by (job) (increase(nuna_maintenance_files_deleted_total[1h])) == 0
+        for: 20m
         labels:
           severity: warning
         annotations:

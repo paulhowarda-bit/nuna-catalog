@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**25 open:** 8 S, 9 M, 4 L, 4 XL.
+**23 open:** 5 S, 10 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,10 +33,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
-| [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
-| [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [80](backlog/80.md) | S | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | a `for` on two rules and their docs | 2026-11-20 |
+| [83](backlog/83.md) | M | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | a check of each step's manifest list, manifests and data files before the swap, with tests; or folded into item 28 | 2026-11-20 |
 
 ## Open items in full
 
@@ -210,6 +208,70 @@ Done when the milestone's scope is settled with Paul, built, and its gate is gre
 
 **Decided 2026-11-19 (D23):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
 
+**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
+
+**What it is for:** access reviewers (D19), grant admins and the platform team asking across objects, people and
+months: every table a principal read last quarter, every denial in a namespace, grants never used. Nothing answers
+that today. The console's trail (`AuditReadRoutes`, `RecentAudit`) shows one object's newest 200 records from at most
+the last 20,000 offsets of its partition, and a catalog's trail only records about the catalog itself. The SIEM (D23)
+is searched only by its users, never in SQL beside the data, and at home there is none. The archive
+(`ObjectLockArchive.events`) is read whole, chain by chain.
+
+**In:**
+- One Iceberg table, `events`, in a catalog of the deployment's own (say `nuna_audit`, declared in
+  `nuna.storage.catalogs.*`), format v2 so every reader in the matrix reads it (R5), partitioned by `day(time)`, and
+  queried by any engine through the catalog, as Tabular's system tables were (the plan report's v1.x list).
+- Columns: `event_id`, `time`, `type`, `source`; `principal`, `end_user`, `engine`, `request_id`; `catalog`,
+  `object_kind`, `object_id`, `object_path`; `operation`, `privilege`, `reason` where the type has them; `data`, the
+  whole payload as JSON, so a new payload version needs no new column; `topic_partition`, `topic_offset`, which tie a
+  row to its archive chain. The mapping from each `EventType` lives in `catalog-audit`, without Iceberg (D2).
+- A writer, `catalog-audit-tables`: a service with its own image, Helm chart and principal, an Iceberg Java client of
+  the catalog like the maintenance worker (D2 as amended). It reads the audit topic in its own consumer group and
+  commits every `commit-interval` (1 min by default) with the offsets it wrote in the same Iceberg commit, resuming
+  from them, so each offset is written once. The relay is at least once (D23), so an `event_id` can repeat. It leaves
+  out the records of its own requests, or each commit would make a record that makes the next commit; they stay in
+  the topic, the SIEM and the archive. An outage delays rows; no request waits for it. The worker's expiry and
+  nightly compaction keep the table tidy (D30).
+- Who reads: a group Paul names, granted `select` on the audit catalog (D19); the writer holds create and write there
+  only. D18's hiding works at the catalog: anyone else gets a missing catalog's 404, `/v1/config` included (item 68),
+  and platform operators see its name, not its table. Rows are not filtered: a reader sees every object and person in
+  the deployment's records, as a SIEM user does, so the group must be narrow.
+
+**Out:**
+- History older than the topic's retention: a backfill from the archive, sharing item 10's archive reader.
+- Rows filtered per reader: an engine reads the files, so the catalog cannot filter rows (D20); only per-catalog
+  tables could. Typed tables or views per event type: `data` holds the fields.
+- Deleting old rows: the archive is the five-year record, and no Iceberg table is a record's only copy (D24).
+- Records that went to the fallback log in a Kafka outage (reads and denials never wait, M7): not in the topic, so
+  not in the table.
+- The demo, whose stack already fills Docker's memory (`demo/README.md`); the console's trail reading the table.
+
+**The gate:**
+- Fast build: `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an
+  `EventType` with no mapping; the writer against a fake topic and catalog resumes after its last committed offset,
+  writes no offset twice and leaves out its own records.
+- Heavy (PostgreSQL, Silo, Kafka): `AuditTablesTest` finds a row for each kind of request within two intervals; a
+  writer killed mid-batch leaves no gap and no repeat; a caller without the grant gets 404, one with it reads it all.
+- Overnight: `EngineMatrixTest` reads `events` from Spark and PyIceberg.
+- Bites in `bites/D23/`: a type dropped from the mapping; offsets committed before their rows; the writer's own
+  records kept; the audit catalog readable without the grant.
+
+**Effort,** XL as the header says: a module, image and chart, the mapping, a heavy test and a matrix leg. It waits
+on nothing. It touches `catalog-audit`, `deploy/helm`, `settings.gradle.kts`, `IcebergImportBoundaryTest` (D2) and
+`catalog-tests-engines`.
+
+**Questions for Paul:**
+1. Where do the tables live? Recommended: Iceberg tables in an audit catalog, read by any engine. Or: tables in the
+   catalog's database behind a search route (a schema step on four stores; every read kept in the database).
+2. Who reads them? Recommended: one group you name, seeing every name. Or: a table per catalog for its grant admins
+   (a writer path per catalog; auth failures belong to none).
+3. Which records? Recommended: all, since a review needs reads. Or: changes and denials only, far smaller.
+4. What writes them? Recommended: a service with its own principal. Or: a job in the maintenance worker (no new
+   image, but the maintenance principal then writes audit data).
+5. Where do rows come from? Recommended: the audit topic, a minute behind, history from its retention on. Or: the
+   archive, hash-checked and five years back, but up to 5 minutes behind and only where one is configured (the demo
+   has none).
+
 ### 28. DR replication-watermark verifier (v1.x)
 
 - Decided: 2026-11-19, D37
@@ -221,6 +283,72 @@ Done when the milestone's scope is settled with Paul, built, and its gate is gre
 Done when the milestone's scope is settled with Paul, built, and its gate is green.
 
 **Decided 2026-11-19 (D37):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
+
+**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
+
+**What it is for:** platform operators running the DR runbook (D37; the DR routes are theirs, D18). Storage and the
+database both replicate to DR asynchronously (D37), so after losing the primary region the DR database can name files
+the DR store never got. Nothing says today how far behind DR storage is, or which tables DR could serve whole. The
+reconcile covers only a database behind its storage: when the pointer's own file is missing it stops ("storage is
+behind the database", `Reconcile.plan`), and nothing moves the table back. The research behind D37 recommended this
+verifier, the rewind being the minimum (`research_notes/Enterprise Iceberg REST catalog plan/persistence_scale_ha.md`).
+
+**In:**
+- A DR-safe watermark per table: the newest journaled version such that every file it and each earlier version
+  added is in the DR store. It lives in the catalog database (a new record, a schema step on all four stores, as
+  D38's table assessment was), because it must reach DR with the database. It is written after the version it names,
+  so a replica that keeps commit order never holds a watermark above its pointer.
+- The verifier, a job in the maintenance worker (D30), which already reads every manifest for its orphan scan and
+  holds a storage identity per store. Every `dr-verify-interval` (1 min by default) it reads a new work list,
+  `GET /management/v1/maintenance/dr-work` (each table's watermark and the journaled versions above it), and checks
+  in the DR store each version's metadata file, manifest list, new manifests, the data and delete files they add, and
+  statistics files; for a view, the metadata file. A table with no watermark is checked once, whole, by listing its
+  location. It reports with `PUT /management/v1/maintenance/tables/{id}/dr-watermark` as a maintenance principal
+  acting as itself; a version below the stored one or above the pointer is refused. As with D38's reports, only
+  refusals are audited. The DR store: each worker storage profile names a read-only replica (endpoint, region, keys),
+  bucket and paths unchanged, as on-prem site replication keeps them.
+- The readout, for platform operators by name (D18 as amended 2026-11-20, item 78):
+  `GET /management/v1/dr/watermarks`, the tables behind, each with pointer, watermark, versions behind and lag (time
+  since its oldest unverified commit); table-free worker meters (tables behind, largest lag), and an alert in
+  `deploy/grafana` past 15 minutes (S3 Replication Time Control's 99.9% bound) until PLT-4 gives the SLA.
+- The rewind, `dr-reconcile` with `"rewind": true`: a table under a DR freeze whose pointer is above its watermark
+  moves back to it in one journaled commit, published like the fast-forward. It writes the watermark's metadata again
+  as the next version, because the walk stops where a file's version is not the pointer's. The answer lists the lost
+  tail (versions, commit ids, times) for business reconciliation. The runbook runs one verifier pass in DR first, so
+  the watermark goes as far as the DR store allows; the runbook is written down in `deploy/README.md`, which has none.
+
+**Out:**
+- The forward walk on async storage: `Reconcile.plan` reads metadata files only, so it can step to a proven file
+  whose manifests or data never reached DR. Checking there needs files the journal lacks; worth an item of its own.
+- Serving DR-region readers the watermark before any failover (the research's full design).
+- Renamed buckets: S3 bucket names are global, so an AWS DR bucket has another name while every path in the metadata
+  names the primary's. Rewriting locations, or Multi-Region Access Points, waits on PLT-4 at work.
+- A console panel, and the demo, which has one store.
+
+**The gate:**
+- Fast build: `DrVerifyTest` (`catalog-maintenance`), two in-memory stores: the watermark stops before the first
+  version missing any file, never moves back, and passes a commit that adds no snapshot on its metadata file alone.
+- Heavy (PostgreSQL, two Silo stores, a replicator the test pauses): the store suite's watermark cases on all four
+  backends; the routes in `ManagementAuthorizationTest` and `MutatingRoutesAuditTest`; `DrRewindRouteTest`: frozen
+  tables only, the lost tail reported, every file of the new version present.
+- Overnight: `DrDrillTest` gains a leg with the DR store behind: region lost, DR promoted, verifier pass, freeze,
+  rewind, thaw; every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived.
+- Bites in `bites/D37/`: data files left out of the check; a lower watermark accepted; a rewind without a freeze; a
+  rewind past the watermark.
+
+**Effort,** XL as proposed, more than five days: a schema step on four stores, three routes, a worker job, the rewind
+and a drill leg; L without the rewind. It touches `Reconcile.java` and `ReconcileRoutes.java`, as items 69 and 10 do,
+so their claims overlap and they go one at a time, 69 (S) first.
+
+**Questions for Paul:**
+1. What must reach DR before a version is safe? Recommended: every file it adds, data included, so a table at its
+   watermark reads whole. Or: metadata and manifests only, data trusted to the SLA (fewer checks; a data file can
+   still be missing at failover).
+2. Build the rewind now? Recommended: yes. Or: verifier and readout now, rewind later (then L).
+3. Where does the verifier run? Recommended: in the maintenance worker. Or: in the catalog server, which reads no
+   manifests today and would need the DR store's keys.
+4. Model the DR store as the same bucket on another endpoint (on-prem site replication) and leave renamed AWS
+   buckets to PLT-4 at work? Recommended: yes.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -474,49 +602,6 @@ their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
 
-### 72. Oracle's self-check does not notice a journal-partition job that cannot run
-
-- Decided: 2026-11-20, D8
-- Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
-- Touches: catalog-store-oracle/
-- Effort: S, one more query in one store's self-check and a heavy test; waits on Paul's answer below
-
-Oracle keeps its journal's horizon with migration V5's Scheduler job, `JOURNAL_PARTITIONS_AHEAD`, which creates
-this month's partition and the next two every day (item 9 checked it; `OracleStoreSuiteTest#
-schedulerJobCreatesJournalPartitionsAhead`, heavy). The job runs only while `JOB_QUEUE_PROCESSES` is not 0, and
-only while it stays enabled and keeps succeeding (V5's own comment). When it does not run, nothing says so: the
-store's `selfCheck()` reads `V_$PARAMETER` for other findings but not `job_queue_processes`, nor the job's
-`enabled`, `state` or `failure_count` in `user_scheduler_jobs`. Interval partitioning still takes every commit, but
-each month's first commit then creates its partition inside the commit, which took 0.5 to 2.6 s on Free (M2b) and
-can run past the pool's read timeout, which fails that commit (docs/storage-design.md, M2b deviation 9).
-
-Done when the self-check reports a job that cannot run (`job_queue_processes` 0, the job missing, disabled or
-failing), with a heavy test that disables the job on a fresh schema and finds the report.
-
-Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
-job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
-
-**Decided 2026-11-20 (D8, amended):** a journal-partition job that cannot run is a finding like the others and refuses the start, unless the operator allows it by its code ("Refuse, like others").
-
-### 75. deploy/README.md and install-at-work.md still call the ETag routing choice open
-
-- Added: 2026-11-20 by agent on item 15
-- Touches: deploy/README.md docs/install-at-work.md
-- Effort: S, two paragraphs of Markdown; no wait
-
-Paul chose the shared epoch over sticky routing on 2026-11-19 (D14, amended for item 15), and item 15 built it: a
-table load's credential epoch is the issuance window it falls in, so every server gives the same ETag and a
-conditional load answered by another server is a 304. Two documents still say the choice is open, and item 15's
-claim reached neither:
-
-- `deploy/README.md`, "ETags and routing": "M8 found that ETags do not survive a change of server ... The choice
-  between sticky routing and a shared credential epoch is still open (build-plan, M8 findings)."
-- `docs/install-at-work.md`, section 5: "Decide with Paul before production: sticky routing for ETags
-  (`service.sessionAffinity: ClientIP`, or the Ingress's own) ..."
-
-Done when both say the epoch is shared (D14, item 15), so the chart's default `service.sessionAffinity: None` keeps
-304s across servers, and neither asks for sticky routing for ETags. The chart itself needs no change.
-
 ### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -531,19 +616,59 @@ Paul, 2026-11-20 (D21, amended): "Yes, non-root".
 
 Done when `deploy/local run.sh up` makes the catalog its own S3 user with the profile's policies, the `except` one included, the catalog runs as that user, and `run.sh smoke` plus a delete check show a delete refused to the catalog's vended credentials and allowed to the maintenance worker, run on Docker Desktop's Kubernetes. Uninstall what the check installs.
 
-### 80. NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing
+Built 2026-11-20 on worktree-agent-ac20c2b80fb2ae021, not yet run live, so the item stays open: what it is done
+when needs the run on Docker Desktop's Kubernetes.
+
+What changed in `deploy/local`:
+- `run.sh up` makes the catalog's own Silo user, `nuna-catalog` (secret `nuna-catalog-secret-key`), before the
+  chart, with policy `nuna-catalog`: get, put, the multipart actions and delete beneath `warehouse/tables/*`, list on
+  `warehouse`. Delete is in it on purpose, as another grant might give it at work, so that the `except` policy is
+  what refuses the catalog's delete. `values.yaml` signs the catalog in as `nuna-catalog`, no longer `nunademo`.
+- Once the catalog is up, `up` reads `GET /management/v1/maintenance/delete-policies` as `oscar` and applies the
+  MinIO pair: `except` as policy `nuna-no-delete` on `nuna-catalog`, `to` as policy `nuna-maintenance` on the worker's
+  user `nuna-maintenance`. `up` now makes that user; `run.sh worker` used to, and still uses it.
+- `run.sh smoke` adds a delete check. It loads the table as `lake` with vended credentials and puts
+  `<location>/data/smoke-probe` with them (200). It then expects the vended credentials' DELETE to be 403,
+  `nuna-catalog`'s DELETE 403, a vended GET 200 (the file is still there), and `nuna-maintenance`'s DELETE 204. curl
+  signs each request (`--aws-sigv4`) through a port-forward to Silo. `mc rm` would not do: it stats first (a HEAD,
+  which the worker's delete-only policy refuses) and exits 0 when a delete is refused.
+- `deploy/README.md` ("Delete rights", "Trying it locally") says so. `docs/install-at-work.md` says nothing about the
+  local install's S3 user, so it is unchanged.
+
+Checked without an install: `bash -n deploy/local/run.sh`; `helm template` of the catalog chart with `values.yaml`
+and of the worker chart with `run.sh worker`'s settings; a scratch harness with curl stubbed, over the new helpers
+(`user_policy` on a delete-policies answer shaped as the catalog writes it, `field` on a load answer, `s3`'s curl
+arguments and its failure on a wrong status). From the sources: MinIO's AssumeRole needs no `sts:` right of a
+non-root parent, only readable policies; re-adding a MinIO user keeps its policies; curl signs every `-H` header.
+
+Why not live: Docker Desktop's node had 1.5 GiB of memory requests free beside the nuna-demo stack (6 GiB of
+7.5 GiB). `run.sh up` asks 3 GiB, and even one server, PostgreSQL and Silo ask 1.6 GiB. Nothing was installed.
+
+Left, when Docker has room (the demo down, or 3 GiB of requests free):
+1. `NUNA_K8S_NAMESPACE=nuna-item79 NUNA_K8S_HOME=<scratch> deploy/local/run.sh up`, then `... run.sh smoke`: the
+   five new `ok` lines, and "smoke passed".
+2. That the `except` policy is what refuses the catalog: detach it (in the Silo pod, after
+   `mc alias set local http://localhost:9000 nunademo nunademo-secret-key`,
+   `mc admin policy detach local nuna-no-delete --user nuna-catalog`), run `smoke` again and see it fail on
+   "nuna-catalog DELETE ... answered 204, expected 403"; attach it again and see `smoke` pass.
+3. `run.sh down` with the same namespace, then `helm list -A` and `kubectl get ns`.
+4. Then the MinIO part of item 4 is done on Silo: both policies applied as the catalog gives them, on a store that
+   enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
+   then say so.
+
+### 83. The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Decided: 2026-11-20, D43
-- Touches: deploy/grafana/ docs/observability/
-- Effort: S, a `for` on two rules and their docs
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-core/src/test/
+- Effort: M, a check of each step's manifest list, manifests and data files before the swap, with tests; or folded into item 28
 
+`Reconcile.plan` (`catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java`) walks a table forward through its metadata files only: it lists the table's metadata files, reads each, and moves the pointer through every file a later file builds on (lines 81 to 130 on main at 8833233). It never checks that the manifest list, the manifests or the data files a step names exist in the store it runs against. When the DR region's storage is replicated asynchronously and not in write order (S3 Cross-Region Replication, MinIO and Ceph bucket replication), a metadata file can reach the DR store before the files it lists, so the reconcile can move a table to a version whose reads fail with a missing file.
 
-`NunaPurgesFailing` and `NunaDeletionsFailing` in `deploy/grafana/rules/nuna-maintenance.rules.yaml` fire on the first evaluation (item 74 named them in `docs/observability/dashboards-and-alerts.md`). One failed purge or deletion, in an hour when no other completed, opens a ticket that then resolves when the next scan's retry succeeds.
+Found on 2026-11-20 by the agent drafting item 28's scope (the DR replication-watermark verifier), which names it in its Out section as worth an item of its own. Item 28's verifier, as proposed, keeps a watermark of the newest version whose files all reached the DR store; the reconcile could stop at that watermark instead of checking files itself.
 
-Paul, 2026-11-20 (D43, amended): "Add for: 2 scans".
+Paul decides: fix it on its own (the reconcile checks each step's files before the swap and stops at the first missing one, reporting it), or fold it into item 28 (the reconcile stops at the watermark).
 
-Done when both rules carry a `for` of two scan intervals (the worker's default scan interval, as `docs/observability/worker-metrics.md` gives it), `dashboards-and-alerts.md` and `worker-metrics.md` say so, and the rule files still parse.
+Done when the reconcile never moves a table to a version whose manifest list, manifests or data files are missing from the store, with a test that removes one file of a later version and shows the walk stopping before it, and a bite.
 
 ## Done and dropped
 
@@ -599,8 +724,12 @@ Done when both rules carry a `for` of two scan intervals (the worker's default s
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
+| [72](backlog/72.md) | Oracle's self-check does not notice a journal-partition job that cannot run | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
+| [75](backlog/75.md) | deploy/README.md and install-at-work.md still call the ETag routing choice open | done | 2026-11-20 |
 | [76](backlog/76.md) | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | done | 2026-11-20 |
 | [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
+| [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
+| [81](backlog/81.md) | The chart's values.yaml still says only the minting server answers a 304 | done | 2026-11-20 |

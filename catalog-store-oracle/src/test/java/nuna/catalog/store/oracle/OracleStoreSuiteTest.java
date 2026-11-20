@@ -351,6 +351,61 @@ class OracleStoreSuiteTest extends CommitSuite {
                     .doesNotContain(month.plusMonths(3));
         }
 
+        @Test
+        @DisplayName("Oracle: self-check reports a journal-partition job that is disabled or missing, and not the job"
+                + " as V5 makes it")
+        void selfCheckReportsAJournalJobThatCannotRun() {
+            DataSource fresh = oracle.freshSchemaAfterTheJobsFirstRun();
+            CatalogStore schema = new OracleCatalogStore(fresh);
+            assertThat(journalJobFinding(schema)).as("the job as V5 makes it").isEmpty();
+
+            Sql.execute(fresh, "BEGIN DBMS_SCHEDULER.DISABLE('" + JournalJob.NAME + "', force => TRUE); END;");
+            assertThat(journalJobFinding(schema)).hasValueSatisfying(detail ->
+                    assertThat(detail).contains(JournalJob.NAME + " is disabled"));
+
+            Sql.execute(fresh, "BEGIN DBMS_SCHEDULER.ENABLE('" + JournalJob.NAME + "'); END;");
+            assertThat(journalJobFinding(schema)).as("enabled again").isEmpty();
+
+            Sql.execute(fresh, "BEGIN DBMS_SCHEDULER.DROP_JOB('" + JournalJob.NAME + "', force => TRUE); END;");
+            assertThat(journalJobFinding(schema)).hasValueSatisfying(detail ->
+                    assertThat(detail).contains(JournalJob.NAME + " is missing"));
+        }
+
+        @Test
+        @DisplayName("Oracle: self-check reports a journal-partition job whose last two runs failed, not one failed run,"
+                + " and no longer once a run succeeds")
+        void selfCheckReportsAJournalJobThatKeepsFailing() {
+            DataSource fresh = oracle.freshSchemaAfterTheJobsFirstRun();
+            OracleFree.awaitJobRunsLogged(fresh, 1);
+            CatalogStore schema = new OracleCatalogStore(fresh);
+            // Each run now fails, as a revoked privilege or a full tablespace would make it fail.
+            Sql.execute(fresh, "CREATE OR REPLACE PROCEDURE create_journal_partitions AS BEGIN"
+                    + " RAISE_APPLICATION_ERROR(-20072, 'staged failure'); END;");
+
+            runJournalJob(fresh, 2);
+            assertThat(journalJobFinding(schema)).as("one failed run after a success").isEmpty();
+
+            runJournalJob(fresh, 3);
+            assertThat(journalJobFinding(schema)).hasValueSatisfying(detail ->
+                    assertThat(detail).contains(JournalJob.NAME + "'s last 2 runs failed, the newest with ORA-20072"));
+
+            Sql.execute(fresh, "CREATE OR REPLACE PROCEDURE create_journal_partitions AS BEGIN NULL; END;");
+            runJournalJob(fresh, 4);
+            assertThat(journalJobFinding(schema)).as("a run succeeded after the failures").isEmpty();
+        }
+
+        /** Runs the job now as the Scheduler runs it, logged and counted, and waits until it has logged {@code runs}. */
+        private static void runJournalJob(DataSource schema, int runs) {
+            Sql.execute(schema, "BEGIN DBMS_SCHEDULER.RUN_JOB('" + JournalJob.NAME + "', use_current_session => FALSE);"
+                    + " END;");
+            OracleFree.awaitJobRunsLogged(schema, runs);
+        }
+
+        private static Optional<String> journalJobFinding(CatalogStore schema) {
+            return schema.selfCheck().stream().filter(finding -> finding.code().equals(JournalJob.FINDING))
+                    .map(SafetyFinding::detail).findFirst();
+        }
+
         /** The month of each journal partition, from its upper bound, the first instant of the month after it. */
         private static List<YearMonth> partitionMonths(DataSource schema) {
             return Sql.column(schema, "SELECT high_value FROM user_tab_partitions WHERE table_name = 'JOURNAL'").stream()

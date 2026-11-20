@@ -159,11 +159,13 @@ telemetry:
 
 - **Database safety settings.** The server refuses to start while the store's self-check reports a finding
   ("The database", above). Leave `config.nuna.database.allow-unsafe` empty.
-- **ETags and routing.** M8 found that ETags do not survive a change of server: each server mints its own
-  vended credentials, and the ETag includes a hash of them. With the default `service.sessionAffinity: None`,
-  a conditional load answered by another server is a 200, not a 304. `ClientIP` affinity keeps a client on
-  one server, behind the Service only. An Ingress or external balancer needs its own stickiness. The choice
-  between sticky routing and a shared credential epoch is still open (build-plan, M8 findings).
+- **ETags and routing [D14].** No sticky routing is needed. M8 found that ETags did not survive a change of
+  server, because the ETag hashed each server's own vended credentials; Paul chose a shared credential epoch
+  over sticky routing (D14, amended 2026-11-19), and item 15 built it. The epoch is the issuance window a load
+  falls in, a quarter of `nuna.storage.credential-lifetime` (7.5 minutes at the default 30; D14, amended
+  2026-11-20), so servers with the same lifetime, as one release's replicas are, give the same ETag. With the
+  default `service.sessionAffinity: None`, a conditional load answered by another server is a 304 too, and an
+  Ingress or external balancer needs no stickiness either. Each window's end costs a client one full load.
 - **Purge rate [D30].** `nuna.governance.purges-per-minute` (default 10) is counted by each server on its
   own, so the replicas together accept that many purges a minute times the replica count: three servers set
   to 10 accept 30. To hold the whole deployment to a rate, set it to that rate divided by the replica count.
@@ -200,7 +202,8 @@ telemetry:
   The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
   them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
   `unprotected`. Only the Ceph form has a test (`DeletePolicyCephTest`, heavy, `-Ps3=ceph`, in the heavy
-  pass's Ceph leg), and it has not run yet.
+  pass's Ceph leg), and it has not run yet. `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
+  tries a delete as each user ("Trying it locally").
 - **Compaction Jobs [D30].** With `config.nuna.maintenance.compaction.image` set, the maintenance worker
   launches its compaction Jobs in `config.nuna.maintenance.compaction.namespace`. Create that namespace
   first, for the Jobs alone: never the catalog's nor the worker's, since a pod there may run as any service
@@ -218,7 +221,7 @@ On Docker Desktop with Kubernetes switched on:
 
 ```bash
 deploy/local/run.sh up      # jar, image nuna-catalog:local, PostgreSQL, Kafka, Silo, the chart (2 servers)
-deploy/local/run.sh smoke   # through each server: 401, config, namespace, table, vended credentials, drops
+deploy/local/run.sh smoke   # through each server: 401, config, namespace, table, vended credentials, deletes, drops
 deploy/local/run.sh worker  # after up: Keycloak, the maintenance worker's chart, its own identity everywhere
 deploy/local/run.sh down    # uninstall and delete the namespaces
 ```
@@ -233,12 +236,19 @@ deploy/local/run.sh down    # uninstall and delete the namespaces
 - The catalog names Silo `silo.<namespace>.svc`, not `silo`: it vends that endpoint with each table's credentials,
   and the worker and its compaction Jobs read tables from other namespaces, where a short Service name does not
   resolve.
+- The catalog signs in to Silo as a user of its own, `nuna-catalog`, never as Silo's root user, whom no policy
+  binds [D21]. `up` makes it with a policy to read, write and list beneath `s3://warehouse/tables`. That policy
+  allows delete too, on purpose, as another grant might at work, so that the delete policy is what takes it away.
+  Once the catalog is up, `up` reads its delete policies as a platform operator (`oscar`) and applies the MinIO
+  pair: the one with `except` to `nuna-catalog`, the one with `to` to the worker's own user, `nuna-maintenance`,
+  which it makes too. `smoke` then puts a file beneath its table with the table's vended credentials (as `lake`)
+  and tries to delete it as each: the vended credentials and `nuna-catalog` must be refused (403), and
+  `nuna-maintenance` must delete it (204). Silo's root user only manages the users.
 - `worker` installs the maintenance worker's chart [D30] in `nuna-local-maintenance`, its compaction Jobs in
   `nuna-local-compaction`, with `local/worker-values.yaml`. The worker signs in with the client-credentials grant
   as `service-account-nuna-maintenance` (group `nuna-workers`, granted `write` on `lakehouse`) at Keycloak
-  (`local/keycloak.yaml`, in the catalog's namespace), lists and deletes with a Silo user of its own,
-  `nuna-maintenance`, to which it attaches the `to` delete policy the catalog gives, and launches Jobs as the
-  chart's service account. Its cleanup window is open all day, turning at 12:00 UTC, and it scans every minute. The
+  (`local/keycloak.yaml`, in the catalog's namespace), lists and deletes as `nuna-maintenance`, its Silo user, and
+  launches Jobs as the chart's service account. Its cleanup window is open all day, turning at 12:00 UTC, and it scans every minute. The
   Jobs run the engine matrix's Spark image, `nuna-engines/spark:4.1.4-iceberg-1.12.0`, which must be built first
   (`docker build -t <that name> catalog-tests-engines/images/spark`). It adds 3 GiB of limits: Keycloak 768 MiB,
   the worker 768 MiB, one Job at a time at 1.5 GiB.
