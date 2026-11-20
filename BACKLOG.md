@@ -106,6 +106,8 @@ out with empty storage, and that the next sign-in lands on Keycloak's password p
 --check`. The test and the bite have not run yet: they need Chrome and Keycloak in containers, so the overnight run
 is their first. Still open: signing in and out against Entra ID and Ping (work).
 
+**Paul, 2026-11-20 (D16, amended):** the console keeps no ID token, so the IdP's "log out?" page stays ("Keep the confirm page").
+
 ### 22. Administer storage profiles and catalogs at runtime (not now, D41)
 
 - Decided: 2026-11-19, D41
