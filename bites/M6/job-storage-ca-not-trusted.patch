@@ -1,0 +1,17 @@
+Breaks: a compaction Job's Spark is not pointed at a trust store holding its store's CA bundle: it gets the plain command (backlog 88).
+Module: catalog-maintenance
+Test: KubernetesJobsTest#aStorageCaBundleIsMountedIntoTheJobAndSparkTrustsIt
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
+index 002efc8..3fcf585 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
+@@ -208,7 +208,7 @@ final class KubernetesJobs implements Compactor {
+         ObjectNode container = pod.putArray("containers").addObject().put("name", "compaction")
+                 .put("image", settings.image()).put("imagePullPolicy", settings.imagePullPolicy());
+         Optional<CaBundle> storageCa = storageCa(table);
+-        container.putArray("command").add("sh").add("-c").add(storageCa.isPresent() ? TRUSTING_COMMAND : COMMAND);
++        container.putArray("command").add("sh").add("-c").add(COMMAND);
+         ArrayNode env = container.putArray("env");
+         env(env, "NUNA_SCRIPT", SCRIPT);
+         env(env, "NUNA_CONF", sparkConf(table).toString());

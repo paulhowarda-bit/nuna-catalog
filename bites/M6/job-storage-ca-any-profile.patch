@@ -1,0 +1,17 @@
+Breaks: a compaction Job gets a storage profile's CA bundle whichever profile its table lies in (backlog 88).
+Module: catalog-maintenance
+Test: KubernetesJobsTest#aStorageCaBundleIsMountedIntoTheJobAndSparkTrustsIt
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
+index 002efc8..30a7374 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
+@@ -239,7 +239,7 @@ final class KubernetesJobs implements Compactor {
+         String location = Storage.normalize(table.location());
+         for (Map.Entry<String, Optional<CaBundle>> prefix : storageCas.entrySet()) {
+             String under = prefix.getKey().endsWith("/") ? prefix.getKey() : prefix.getKey() + "/";
+-            if (location.startsWith(under) || location.equals(prefix.getKey())) {
++            if (prefix.getValue().isPresent()) {
+                 return prefix.getValue();
+             }
+         }

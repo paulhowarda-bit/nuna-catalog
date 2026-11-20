@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 4 S, 10 M, 2 L, 4 XL.
+**18 open:** 3 S, 9 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,8 +30,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [85](backlog/85.md) | M | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
-| [87](backlog/87.md) | S | The audit archive's S3 client does not trust its storage profile's CA bundle | one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite | 2026-11-20 |
-| [88](backlog/88.md) | M | Compaction Jobs do not trust a storage profile's CA bundle | mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides | 2026-11-20 |
 
 ## Open items in full
 
@@ -546,49 +544,6 @@ Done when the reconcile's read verifies and filters each chain in one streamed p
 (`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
 memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 
-### 87. The audit archive's S3 client does not trust its storage profile's CA bundle
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java catalog-server/src/test/java/nuna/catalog/server/governance/ bites/M7/
-- Effort: S, one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite
-
-Item 21 lets a storage profile name a CA bundle (`nuna.storage.profiles.<name>.ca-bundle`), which the profile's
-`MetadataFiles` and `CredentialVendor` clients trust beside the JVM's CAs. The audit archive builds a third S3
-client from a storage profile (`nuna.audit.archive.profile`) in `GovernanceWiring.archive`, and that one still trusts
-only the JVM's CAs: an archive bucket on an on-prem store with a private CA fails its startup `checkBucket` with a
-TLS handshake error. Item 21 left it alone because item 19 held `governance/` that night.
-
-Done when `GovernanceWiring.archive` reads the profile's bundle (`CaBundle.read`, refusing an unreadable one with
-the setting's name, as `CatalogStorage.caBundle` does) and applies it to its `S3ClientBuilder`
-(`CaBundle.applyTo`); a Java-only test against `PrivateCa.serve` (catalog-tests-s3) shows the archive's client
-refused without the bundle and accepted with it; and a bite is recorded.
-
-### 88. Compaction Jobs do not trust a storage profile's CA bundle
-
-- Decided: 2026-11-20, D21
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java catalog-maintenance/src/test/java/nuna/maintenance/ deploy/helm/nuna-maintenance/ docs/install-at-work.md
-- Effort: M, mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides
-
-Item 21 makes the worker's own S3 clients trust a profile's `ca-bundle`. A compaction Job (`KubernetesJobs`) is
-Spark in its own pod, reading and writing the table with the credentials the catalog vends it, and it gets no
-bundle: on an on-prem store whose certificate a private CA signed, it fails its first S3 call with a TLS
-handshake error. Item 21 treats the Job as an engine, which trusts the store through its own setup, and
-`docs/install-at-work.md` (section 6) says its image must trust the CA itself.
-
-The choices, Paul's:
-
-- Leave it to the image, as item 21's docs say: whoever builds the Spark image at work adds the CA to its JVM's
-  trust store.
-- Have the worker carry it: mount `storageCaConfigMap` into each Job's pod and point Spark's S3 clients at it, for
-  example with `s3.client-factory-impl` and item 21's `TrustedS3Clients` on the image's classpath, or a JVM trust
-  store built from the PEM at the pod's start.
-
-Done when Paul has chosen and a compaction Job on a store with a private CA can read and write its table, or the
-docs say plainly that the image must trust the CA.
-
-**Decided 2026-11-20 (D21, amended):** "Worker mounts the CA": the maintenance worker mounts the profile's CA ConfigMap into each compaction Job and points Spark's trust at it.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -661,3 +616,5 @@ docs say plainly that the image must trust the CA.
 | [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
 | [84](backlog/84.md) | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | done | 2026-11-20 |
+| [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
+| [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |

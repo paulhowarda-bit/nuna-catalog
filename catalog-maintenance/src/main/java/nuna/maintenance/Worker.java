@@ -113,7 +113,7 @@ final class Worker implements AutoCloseable {
         TokenSource tokens = TokenSource.of(settings.token(), clock, http);
         Management management = new Management(settings.catalogUri(), tokens, http, settings.pageSize());
         Compactor compactor = settings.compaction().enabled()
-                ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, clock)
+                ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, settings.storage(), clock)
                 : Compactor.NONE;
         Storage storage = Storage.of(settings.storage());
         return new Worker(management, new Catalogs(settings.catalogUri(), tokens, storage.clientProperties(), trace),
