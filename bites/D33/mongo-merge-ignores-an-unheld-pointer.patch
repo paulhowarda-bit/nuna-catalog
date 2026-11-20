@@ -1,0 +1,20 @@
+Breaks: a merge on MongoDB checks only the own pointers it holds, so it deletes a commit on the branch that landed after it read the branch.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$BranchCommits#aMergeThatDoesNotMatchWritesNothing
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
+index 6574b35..376d0f3 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
+@@ -210,11 +210,6 @@ public final class MongoCatalogStore implements CatalogStore {
+                     }
+                 } else {
+                     owned = MongoRefs.seeOwnPointers(tx, batch.ref().get().refId());
+-                    Optional<PointerKey> unheld = MongoRefs.unheld(batch, owned);
+-                    if (unheld.isPresent()) {
+-                        return new CommitResult.Conflict(unheld.get(),
+-                                Pointers.read(tx.database, tx.session, unheld.get()));
+-                    }
+                 }
+             }
+             Optional<CommitResult.Inactive> inactive = Pointers.markObjects(tx, batch);

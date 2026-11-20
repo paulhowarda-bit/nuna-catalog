@@ -1,0 +1,18 @@
+Breaks: a purge claim on the SQL stores reads no ref, so a dropped table a tag still names is claimed and its files deleted.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$BranchCommits#aRefKeepsADroppedTablesFiles
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+index 45da871..8e9bbc3 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+@@ -246,9 +246,6 @@ final class SqlObjects {
+             if (Guards.frozen(connection, objectId, claim.catalogId(), claim.path())) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }
+-            if (exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ?", objectId)) {
+-                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+-            }
+             update(connection, "UPDATE catalog_object SET state = 'PURGING', purge_claimant = ? WHERE id = ?",
+                     claimant, objectId);
+             return WriteResult.APPLIED;

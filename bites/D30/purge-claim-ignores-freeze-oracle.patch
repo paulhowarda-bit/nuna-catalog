@@ -2,16 +2,16 @@ Breaks: a purge claim reads no DR freeze, so a frozen object is claimed and its 
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#purgeIsClaimedThenCompleted
 diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
-index d6fd8fa..a023890 100644
+index c91a3d0..1bfa3e5 100644
 --- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
 +++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
-@@ -247,9 +247,6 @@ final class OracleObjects {
+@@ -253,9 +253,6 @@ final class OracleObjects {
              if (Guards.held(connection, objectId, claim.catalogId(), path)) {
                  return new WriteResult.Refused(WriteResult.Reason.HELD);
              }
 -            if (Guards.frozen(connection, objectId, claim.catalogId(), path)) {
 -                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
 -            }
-             update(connection, "UPDATE catalog_object SET state = 'PURGING', purge_claimant = ? WHERE id = ?",
-                     claimant, objectId);
-             return WriteResult.APPLIED;
+             if (exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ?", objectId)) {
+                 return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+             }

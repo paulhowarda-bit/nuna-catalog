@@ -1,0 +1,18 @@
+Breaks: a commit on a branch on MongoDB does not mark its ref, so a deletion beside it does not conflict and leaves the pointer it writes.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$BranchCommits#aDeletionWaitsForABranchCommitInFlight
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
+index 6574b35..596984d 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
+@@ -221,9 +221,6 @@ public final class MongoCatalogStore implements CatalogStore {
+             if (inactive.isPresent()) {
+                 return inactive.get();
+             }
+-            if (batch.ref().orElse(null) instanceof RefLock.Hold) {
+-                tx.mark(REF, branch.orElseThrow());
+-            }
+             Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
+             if (conflict.isPresent()) {
+                 return conflict.get();

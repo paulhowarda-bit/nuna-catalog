@@ -3,16 +3,16 @@ Module: catalog-store-sql
 Test: PostgresStoreSuiteTest$Refs#aDeletionLeavesNothing
 
 diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
-index b6bfa28..a76eb34 100644
+index 4fe54a3..35a4ff4 100644
 --- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
 +++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
-@@ -158,9 +158,6 @@ final class SqlRefs {
-                 return MISSING;
-             }
-             String branch = refId.toString();
--            update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
--            update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
--                    branch, refId);
-             update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
-             update(connection, "DELETE FROM ref WHERE id = ?", refId);
-             return WriteResult.APPLIED;
+@@ -175,9 +175,6 @@ final class SqlRefs {
+      */
+     static void end(Connection connection, UUID refId) throws SQLException {
+         String branch = refId.toString();
+-        update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
+-        update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+-                branch, refId);
+         update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+         update(connection, "DELETE FROM ref WHERE id = ?", refId);
+     }

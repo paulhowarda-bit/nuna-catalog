@@ -1,0 +1,18 @@
+Breaks: a merge on the SQL stores checks only the own pointers it holds, so it deletes a commit on the branch that landed after it read the branch.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$BranchCommits#aMergeThatDoesNotMatchWritesNothing
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 4fe54a3..8753161 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -215,8 +215,7 @@ final class SqlRefs {
+             case RefLock.End end -> {
+                 Set<UUID> held = batch.holds().stream().map(h -> h.key().objectId()).collect(Collectors.toSet());
+                 String branch = end.refId().toString();
+-                for (UUID objectId : query(connection, "SELECT object_id FROM pointer WHERE branch = ? AND object_id IN ("
+-                        + CUT_OBJECTS + ") ORDER BY object_id", row -> Jdbc.uuid(row, "object_id"), branch, end.refId())) {
++                for (UUID objectId : held) {
+                     if (!held.contains(objectId)) {
+                         PointerKey key = new PointerKey(objectId, branch);
+                         return Optional.of(new CommitResult.Conflict(key, Pointers.read(connection, key)));

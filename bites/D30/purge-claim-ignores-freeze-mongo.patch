@@ -2,10 +2,10 @@ Breaks: a purge claim reads no DR freeze, so a frozen object is claimed and its 
 Module: catalog-store-mongo
 Test: MongoStoreSuiteTest$CatalogObjects#purgeIsClaimedThenCompleted
 diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
-index 71e78ff..e788864 100644
+index de05ff3..053b167 100644
 --- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
 +++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
-@@ -310,10 +310,6 @@ final class MongoObjects {
+@@ -321,10 +321,6 @@ final class MongoObjects {
              if (held(tx, object.get())) {
                  return new WriteResult.Refused(WriteResult.Reason.HELD);
              }
@@ -13,6 +13,6 @@ index 71e78ff..e788864 100644
 -                    uuidList(object.get().get("namespacePath")))) {
 -                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
 -            }
-             tx.see(object.get());
-             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
-                     new BsonDocument("state", new BsonString(PURGING)).append("purgeClaimant", new BsonString(claimant))
+             if (!MongoRefs.referenced(tx.database, tx.session, List.of(uuid(objectId))).isEmpty()) {
+                 return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+             }
