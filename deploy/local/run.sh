@@ -119,6 +119,11 @@ JSON
   echo "to $WORKER: $to"
   silo_policy "$WORKER" "$WORKER_SECRET" "$WORKER" <<<"$to"
 
+  say "registering Trino's client, trino-demo, as a trusted engine (as oscar, as demo/demo.sh does)"
+  # Its token's group holds no grant, so only as a registered engine (D17) does it see lakehouse and read its
+  # config (D18, item 84), as smoke does. Registering it again leaves the registry as it was.
+  call "$port" oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
+
   say "granting the demo groups their privileges (by SQL, as demo/demo.sh does)"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
 INSERT INTO grant_record (catalog_id, securable_kind, securable_id, group_name, privilege, granted_by, granted_at)

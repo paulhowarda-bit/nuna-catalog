@@ -2,6 +2,8 @@ package nuna.catalog.server.governance;
 
 import static nuna.catalog.server.governance.Management.CATALOG;
 
+import nuna.catalog.core.commit.CommitEngine;
+import nuna.catalog.core.commit.CommitSettings;
 import nuna.catalog.core.commit.Reconcile;
 import nuna.catalog.core.commit.TableFiles;
 import nuna.catalog.server.governance.Management.Request;
@@ -67,8 +69,8 @@ class ReconcileRoutes {
     @PostMapping(path = RECONCILE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> reconcile(@PathVariable("catalog") String prefix, @RequestBody(required = false) String body,
                                      HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
         Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "reconcileFromStorage", null);
         guard.requireOperator(request, new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG,
                 catalog.id(), catalog.name(), List.of()), "reconcileFromStorage");
         JsonNode json = Management.body(body);
@@ -78,7 +80,8 @@ class ReconcileRoutes {
             json.get("accept").forEach(location -> accept.add(location.asString()));
         }
         TableFiles files = storage.forCatalog(catalog.id()).files();
-        Reconcile reconcile = new Reconcile(store, files, clock);
+        // The bounds the server's commit engines take (Engines): a step whose outcome was lost is decided as a commit.
+        Reconcile reconcile = new Reconcile(store, files, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
 
         ObjectNode answer = Management.JSON.createObjectNode();
         answer.put("apply", apply);

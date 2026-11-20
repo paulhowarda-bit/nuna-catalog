@@ -1,0 +1,17 @@
+Breaks: audit-trail reads are not limited: a caller over audit-reads-per-minute is still answered.
+Module: catalog-server
+Test: AuditReadLimitTest#aReadOverTheLimitIsAnswered429WithRetryAfterAndReadsNothing
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index ee68e03..62f4615 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -134,7 +134,7 @@ class AuditReadRoutes {
+         }
+         recentReads.values().removeIf(Deque::isEmpty);
+         Deque<Instant> reads = recentReads.computeIfAbsent(caller, c -> new ArrayDeque<>());
+-        if (reads.size() >= settings.auditReadsPerMinute()) {
++        if (false) {
+             return false;
+         }
+         reads.addLast(now);

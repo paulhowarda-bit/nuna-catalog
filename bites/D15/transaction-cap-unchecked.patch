@@ -3,17 +3,17 @@ Module: catalog-server
 Test: RestRoutesTest#transactionsCommitEveryTableOrNone
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-index d1e49f0..ae9da04 100644
+index 055e3db..4035aa5 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-@@ -55,10 +55,6 @@ class TransactionRoutes {
-         CatalogRecord catalog = lookup.catalog(prefix);
+@@ -60,10 +60,6 @@ class TransactionRoutes {
+         CatalogRecord catalog = lookup.catalog(prefix, request, Guard.COMMIT_TRANSACTION);
          String json = body == null ? "" : body;
          List<RestRequest.TableCommit> commits = RestRequest.commitTransaction(json);
 -        if (commits.size() > settings.maxTransactionTables()) {
 -            throw CatalogError.badRequest("A transaction may change at most " + settings.maxTransactionTables()
 -                    + " tables; this one names " + commits.size());
 -        }
-         RequestContext request = RequestContext.of(http, callers);
          // Keyed by the name the engine finds each table under again, so every event finds its path.
          Map<Named, List<String>> paths = new HashMap<>();
+         List<CommitEngine.TableChange> changes = new ArrayList<>();

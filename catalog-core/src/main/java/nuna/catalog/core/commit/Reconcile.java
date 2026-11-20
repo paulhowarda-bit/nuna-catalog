@@ -66,12 +66,21 @@ public final class Reconcile {
 
     private final CatalogStore store;
     private final TableFiles files;
+    private final CommitSettings settings;
     private final Clock clock;
+    private final CommitEngine.Sleeper sleeper;
 
-    public Reconcile(CatalogStore store, TableFiles files, Clock clock) {
+    /**
+     * {@code settings}, {@code clock} and {@code sleeper} are the commit engine's, so a step whose outcome was
+     * unknown is decided within the same bounds as a commit.
+     */
+    public Reconcile(CatalogStore store, TableFiles files, CommitSettings settings, Clock clock,
+                     CommitEngine.Sleeper sleeper) {
         this.store = store;
         this.files = files;
+        this.settings = settings;
         this.clock = clock;
+        this.sleeper = sleeper;
     }
 
     /** Walks {@code table}'s files forward from its pointer; {@code accept} names tips the operator takes. */
@@ -148,7 +157,9 @@ public final class Reconcile {
     /**
      * Swaps the pointer through the plan's steps, one version per commit, journaled for {@code caller} and
      * published through {@code events}. It stops at the first step whose file changed or whose swap is not
-     * against the pointer the plan started from.
+     * against the pointer the plan started from. A step whose outcome was unknown is decided as the commit
+     * engine decides a commit (D9): a store that cannot be reached is asked again within the retry bounds
+     * (P10), counted from the step's start, and its failure is thrown once they are spent.
      */
     public Applied apply(Plan plan, Caller caller, CommitEvents events) {
         CatalogObject table = plan.table();
@@ -182,7 +193,8 @@ public final class Reconcile {
                 }
                 committed = result instanceof CommitResult.Committed;
             } catch (CommitOutcomeUnknownException e) {
-                committed = store.findCommit(commitId, table.mainKey()) == CommitLookup.COMMITTED;
+                committed = CommitEngine.decide(settings, clock, sleeper, () -> store.findCommit(commitId,
+                        table.mainKey()), at, "reconcile step " + commitId) == CommitLookup.COMMITTED;
             }
             if (!committed) {
                 return new Applied(plan, applied, Optional.of("the pointer is no longer at version " + before.version()

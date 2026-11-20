@@ -171,6 +171,13 @@ telemetry:
   to 10 accept 30. To hold the whole deployment to a rate, set it to that rate divided by the replica count.
   A purge claim over the limit answers 429 with `Retry-After: 60`, and the maintenance worker tries again on
   its next scan.
+- **Audit-trail reads (item 19).** Each `GET .../audit` read opens a Kafka consumer, so one caller (the
+  principal its token names, or the end user a trusted engine acts for) may read at most
+  `nuna.governance.audit-reads-per-minute` (default 60) a minute. Like the purge rate it is counted by each
+  server on its own: a caller whose reads the balancer spreads over three servers set to 60 gets up to 180 a
+  minute. The console reads only when a person opens an object's Audit tab, changes how many to show or
+  presses Refresh, so the default never holds a person back; it holds a script to about one read a second per
+  server. A read over the limit answers 429 with `Retry-After: 60` and is not audited, as a purge claim's is not.
 - **Delete rights [D30].** No credentials the catalog vends can delete, a maintenance principal's
   included. The maintenance worker deletes with its own storage identity, which each profile names as
   `maintenance-principal`: an IAM role or user ARN on AWS, `arn:aws:iam::<tenant>:user/<uid>` on Ceph (the

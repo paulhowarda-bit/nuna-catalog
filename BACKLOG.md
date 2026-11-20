@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**22 open:** 5 S, 9 M, 3 L, 5 XL.
+**19 open:** 3 S, 8 M, 3 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,7 +16,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
-| [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
@@ -30,8 +29,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
-| [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 
@@ -109,16 +106,6 @@ with the test in it on 2026-11-15. Still open: the flow against Entra ID and Pin
 IdP's session (Paul's call).
 
 **Decided 2026-11-19 (D16):** "Sign out" also ends the identity provider's session ("End the IdP session"). The checks against Entra ID and Ping still happen at work.
-
-### 19. Cap the audit-read route for scripted use
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, a per-caller limit on one route, answering 429, with a test
-
-`build-plan.md`, UI v1, Open: each `GET .../audit` read opens a short-lived Kafka consumer. That is fine at console
-rates; it needs a cap if scripts start using it.
-
-Done when the route limits how often one caller (or all callers) may read, answering 429 beyond it, with a test.
 
 ### 21. A CA bundle per storage profile
 
@@ -536,55 +523,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
-
-- Decided: 2026-11-20, D18
-- Added: 2026-11-19 by agent working item 20
-- Touches: catalog-server/
-- Effort: M, four lookups answer before any guard, each with a test; after Paul decides
-
-Item 20 filtered `GET /management/v1/catalogs` to the catalogs the caller holds something on (D18 as amended
-2026-11-19). Other routes still tell any signed-in caller whether a catalog name exists, whatever it holds:
-
-- `GET /v1/config?warehouse=<name>` answers 200 with the prefix for a declared catalog and 404
-  NoSuchWarehouseException for any other name, with no authorization at all (`ConfigRoute.java`, `config`).
-- Every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/` resolves the catalog before its guard:
-  404 NoSuchWarehouseException for an unknown name, then 403 for a known one the caller holds nothing on
-  (`Lookup.catalog`, `governance/Management.java` line 81, `security/Securables.catalog`). For example
-  `GET /v1/<name>/namespaces` as a caller in no granted group.
-
-D18's amendment names HEAD, loads, the metrics route (item 14) and the catalog list (item 20); it does not say
-whether a catalog's existence is hidden too. Hiding it in `/v1/config` changes what an engine with no grant sees:
-it would fail at its first call, the config, rather than at the first listing or load.
-
-Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
-holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
-
-**Decided 2026-11-20 (D18, amended):** hide catalog names too ("Hide them"): a caller that holds nothing on a catalog gets the same 404 whether it exists or not, on `/v1/config` and on every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/`. Platform operators still see every catalog ("Catalogs, not objects").
-
-### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
-
-- Added: 2026-11-19 by the agent on item 67
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java, catalog-core/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
-- Effort: S, one call in Reconcile, its construction in one route, and a test with a store double
-
-Items 8 and 67 made the commit engine wait within the retry budget (P10: at most 4 asks, none starting more than 2 s
-after the request started, with the commit loop's backoff) when the store cannot be reached while it decides an
-unknown outcome. `Reconcile.apply` (the DR runbook's reconcile, D37) does not: when `store.commit` throws
-`CommitOutcomeUnknownException` it asks `findCommit` once (`catalog-core/src/main/java/nuna/catalog/core/commit/
-Reconcile.java`, about line 185), so a store outage there throws `StoreUnavailableException` out of the apply to the
-operator's route at once. Nothing is lost (a second run plans again from the pointer), but the count of steps already
-applied is not reported.
-
-Giving it the wait means passing the engine's `CommitSettings` and sleeper to `Reconcile`, which
-`catalog-server`'s `ReconcileRoutes` constructs (`new Reconcile(store, files, clock)`), and sharing the engine's
-asking loop (`CommitEngine.decide`, private today) rather than copying it. Item 67 left it, as its brief kept it out
-of scope (`catalog-server` was held by another agent).
-
-Done when a reconcile step whose outcome is unknown during a short outage is settled within the budget, shown by a
-test with a store double that needs no database (as `UnregisterOutageTest` does), and an outage longer than the
-budget answers as today.
-
 ### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
 
 - Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
@@ -677,6 +615,7 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [15](backlog/15.md) | ETags do not survive a change of server (Paul decides) | done | 2026-11-20 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
+| [19](backlog/19.md) | Cap the audit-read route for scripted use | done | 2026-11-20 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
@@ -712,6 +651,8 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
+| [68](backlog/68.md) | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | done | 2026-11-20 |
+| [69](backlog/69.md) | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | done | 2026-11-20 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [72](backlog/72.md) | Oracle's self-check does not notice a journal-partition job that cannot run | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
@@ -722,4 +663,6 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
 | [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
 | [81](backlog/81.md) | The chart's values.yaml still says only the minting server answers a 304 | done | 2026-11-20 |
+| [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
+| [84](backlog/84.md) | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | done | 2026-11-20 |

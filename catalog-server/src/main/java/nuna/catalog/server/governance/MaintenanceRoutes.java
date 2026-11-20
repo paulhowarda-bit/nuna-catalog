@@ -155,9 +155,9 @@ class MaintenanceRoutes {
     @PostMapping(path = DELETIONS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> record(@PathVariable("catalog") String prefix, @PathVariable String id,
                                   @RequestBody(required = false) String body, HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
-        CatalogObject object = existing(catalog, id);
         Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "recordPendingDeletions", null);
+        CatalogObject object = existing(catalog, id);
         nuna.catalog.audit.Securable audit = audit(catalog, object);
         guard.requireMaintenance(request, audit, "recordPendingDeletions");
         String root = object.locationRoot().endsWith("/") ? object.locationRoot() : object.locationRoot() + "/";
@@ -193,9 +193,9 @@ class MaintenanceRoutes {
     @PostMapping(path = DELETIONS_DONE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> complete(@PathVariable("catalog") String prefix, @PathVariable String id,
                                     @RequestBody(required = false) String body, HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
-        CatalogObject object = existing(catalog, id);
         Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "completePendingDeletions", null);
+        CatalogObject object = existing(catalog, id);
         nuna.catalog.audit.Securable audit = audit(catalog, object);
         guard.requireMaintenance(request, audit, "completePendingDeletions");
         List<UUID> ids = new ArrayList<>();

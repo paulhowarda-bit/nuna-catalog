@@ -287,7 +287,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
   - `accept` is assembled by hand; the audit archive could prove tips instead.
   - A register is refused under a DR freeze, so the runbook registers unknown tables after the thaw.
   - Oracle and MongoDB stores raise `StoreUnavailableException` for an outage since backlog 7; the route-level check of their 503 with Retry-After is backlog 70.
-  - `findCommit` (backlog 8) and an unregister's read-back (backlog 67) wait within the retry budget when the store is down; the DR reconcile's apply still asks once (backlog 69).
+  - `findCommit` (backlog 8), an unregister's read-back (backlog 67) and a DR reconcile step's `findCommit` (backlog 69, each step's budget its own) wait within the retry budget when the store is down.
 
 ### M9 — Carry to work
 
@@ -353,8 +353,8 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 - **D21 for people:** settled 2026-11-19: any caller may decline vending with `none`, the console among them, and gets no credentials, no STS call and no credential-issue audit record (D21 as amended; item 16).
 - **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12, and by `ConsoleSignInTest` since 2026-11-15. It is not yet tested against Entra ID or Ping. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
-- **Catalog names:** settled 2026-11-19: the list shows only the catalogs the caller holds something on (D18 as amended; item 20). `/v1/config` and the 404 for an unknown prefix still tell any signed-in caller whether a name exists: item 68.
-- **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
+- **Catalog names:** settled 2026-11-19: the list shows only the catalogs the caller holds something on (D18 as amended; item 20). Since item 68 (D18 as amended 2026-11-20), `/v1/config?warehouse=` and every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/` answer a caller that holds nothing in the catalog as for one that does not exist, and so does `/v1/config` with no warehouse for the default catalog (item 82). A registered trusted engine acting as itself sees every catalog name, as platform operators do, and no name in them it holds nothing on (item 84).
+- **Audit read scaling:** each read opens a short-lived Kafka consumer. Since item 19 one caller may read at most `nuna.governance.audit-reads-per-minute` (default 60) a minute on each server, counted per replica, and beyond it is answered 429 with `Retry-After`; the console, which reads only when a person asks, never comes near it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
 - **Browser end-to-end tests:** `ConsoleBrowserTest` since 2026-11-15 (see Status). The light and dark themes are still checked by hand only.
 
 ### v1.x milestones

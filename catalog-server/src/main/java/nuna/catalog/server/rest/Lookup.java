@@ -3,7 +3,9 @@ package nuna.catalog.server.rest;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
 import nuna.catalog.iceberg.RestRequest;
+import nuna.catalog.security.Authorizer.Operation;
 import nuna.catalog.server.metrics.RequestMetrics;
+import nuna.catalog.server.security.Holdings;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
@@ -23,16 +25,21 @@ class Lookup {
 
     private final CatalogStore store;
     private final RestSettings settings;
+    private final Holdings holdings;
 
-    Lookup(CatalogStore store, RestSettings settings) {
+    Lookup(CatalogStore store, RestSettings settings, Holdings holdings) {
         this.store = store;
         this.settings = settings;
+        this.holdings = holdings;
     }
 
-    /** The catalog the prefix names, which also labels the request's meters. */
-    CatalogRecord catalog(String prefix) {
-        CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow(
-                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+    /**
+     * The catalog the prefix names, which also labels the request's meters. A caller that holds nothing on it is
+     * answered as for a prefix no catalog has, its refusal of {@code operation} audited ({@link Holdings#catalog}).
+     */
+    CatalogRecord catalog(String prefix, RequestContext request, Operation operation) {
+        CatalogRecord catalog = holdings.catalog(prefix, request.caller(), request.actor(), operation.name(),
+                operation.privilege());
         RequestMetrics.catalog(catalog.name());
         return catalog;
     }

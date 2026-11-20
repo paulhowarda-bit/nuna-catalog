@@ -28,6 +28,7 @@ import nuna.catalog.security.Separation;
 import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.server.rest.AuditPublisher;
 import nuna.catalog.server.rest.RestSettings;
+import nuna.catalog.server.security.Denials;
 import nuna.catalog.server.security.DenialsForTests;
 import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.telemetry.RequestIds;
@@ -51,7 +52,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * does not exist: each case asks once with the name there, then again once the object is gone, then once its
  * namespace is gone too, and expects one answer. A caller that holds something on the name (any grant on it or
  * above it, a grant admin's {@code manage-grants} included, or for a namespace a grant on anything in it) is still
- * refused with 403; a platform operator, who holds no grant, sees no name. Every refusal is audited. The routes,
+ * refused with 403; a platform operator, who holds no grant, sees no name. A caller that holds nothing in the
+ * catalog at all gets what a catalog that does not exist gets, on every route under it (D18, amended 2026-11-20;
+ * backlog 68); a platform operator sees every catalog. Every refusal is audited. The routes,
  * guard and authorizer are the real ones over a store double, so this needs only Java; the grant routes are
  * {@code GrantHiddenNamesTest}'s, and {@code ManagementAuthorizationTest} checks the routes on the wire.
  */
@@ -61,7 +64,10 @@ class ManagementHiddenNamesTest {
     private static final String REASON = "{\"reason\":\"case 9\"}";
     private static final String POLICY = "{\"compaction.enabled\":true}";
 
+    /** Describe on the namespace lobby only, so he holds something in the catalog but nothing on hr or sales. */
     private static final Caller OTTO = person("otto", "outsiders");
+    /** Nothing anywhere in the catalog. */
+    private static final Caller NED = person("ned", "newcomers");
     /** Select on the table hr.staff only. */
     private static final Caller TOM = person("tom", "staff-readers");
     /** Select on the table hr.payroll.slips only. */
@@ -76,6 +82,7 @@ class ManagementHiddenNamesTest {
     private final Map<UUID, CatalogObject> objects = new LinkedHashMap<>();
     private final List<GrantRecord> grants = new ArrayList<>();
     private final List<CatalogEvent> audit = new ArrayList<>();
+    private boolean catalogGone;
 
     private final NamespaceRecord sales = namespace(null, "sales");
     private final NamespaceRecord hr = namespace(null, "hr");
@@ -84,6 +91,7 @@ class ManagementHiddenNamesTest {
     private final CatalogObject salaries = object(hr, "salaries", Kind.TABLE);
     private final CatalogObject roster = object(hr, "roster", Kind.VIEW);
     private final CatalogObject slips = object(payroll, "slips", Kind.TABLE);
+    private final NamespaceRecord lobby = namespace(null, "lobby");
 
     private final GovernanceRoutes governance;
     private final AuditReadRoutes trail;
@@ -98,6 +106,7 @@ class ManagementHiddenNamesTest {
         grant(staff.securable(), "staff-readers", Privilege.SELECT);
         grant(slips.securable(), "payroll", Privilege.SELECT);
         grant(new Securable(Securable.Kind.NAMESPACE, sales.id()), "stewards", Privilege.MANAGE_TAGS);
+        grant(new Securable(Securable.Kind.NAMESPACE, lobby.id()), "outsiders", Privilege.DESCRIBE);
 
         CatalogStore store = store();
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
@@ -106,13 +115,14 @@ class ManagementHiddenNamesTest {
         AuditPublisher publisher = audit::add;
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
-        Management management = new Management(store, request -> caller, settings);
+        Denials denials = DenialsForTests.denials(publisher, settings, clock);
+        Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
+        Management management = new Management(store, request -> caller, settings, holdings);
         // No security settings: they name only the maintenance principals, whose routes are not asked here.
-        ManagementGuard guard = new ManagementGuard(authorizer, separation, null,
-                DenialsForTests.denials(publisher, settings, clock), new Holdings(authorizer, store, settings));
+        ManagementGuard guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
         // No governance settings, audit topic, storage or catalog names: every case is answered before them.
         governance = new GovernanceRoutes(store, management, guard, null, clock);
-        trail = new AuditReadRoutes(management, guard, null, null);
+        trail = new AuditReadRoutes(management, guard, null, null, null, clock);
         health = new HealthRoutes(store, management, guard, authorizer, null);
         lifecycle = new LifecycleRoutes(store, management, guard, null, null, null, null, clock);
     }
@@ -219,6 +229,64 @@ class ManagementHiddenNamesTest {
     void aRefusalOnTheCatalogItselfIsStill403() {
         assertThat(answer(() -> governance.governance("gate", null, null, null, http)).status()).isEqualTo(403);
         assertThat(answer(() -> governance.freeze("gate", null, null, null, REASON, http)).status()).isEqualTo(403);
+    }
+
+    // ---- a catalog the caller holds nothing in (backlog 68) ----
+
+    @Test
+    void everyRouteOnACatalogTheCallerHoldsNothingInAnswersAsForOneThatDoesNotExist() {
+        caller = NED;
+        Answer missing = new Answer(404, "NoSuchWarehouseException", "The given warehouse does not exist: gate");
+        List<Callable<ResponseEntity<?>>> calls = new ArrayList<>();
+        calls.addAll(routes(null, null, null));
+        calls.addAll(routes("hr", null, null));
+        calls.addAll(routes("hr", "staff", null));
+        calls.addAll(routes("hr", null, "roster"));
+        calls.add(() -> health.table("gate", "hr", "staff", http));
+        calls.add(() -> lifecycle.dropped("gate", "hr", http));
+        for (Callable<ResponseEntity<?>> call : calls) {
+            assertThat(alike(call, catalog)).isEqualTo(missing);
+        }
+    }
+
+    @Test
+    void aPlatformOperatorSeesEveryCatalog() {
+        caller = OLGA;
+        assertThat(answer(() -> governance.governance("gate", null, null, null, http)).status())
+                .as("refused on the catalog it sees").isEqualTo(403);
+        assertThat(answer(() -> governance.setPolicy("gate", null, null, null, POLICY, http)).status())
+                .isEqualTo(403);
+    }
+
+    @Test
+    void aCallerThatHoldsAnythingInTheCatalogIsRefusedOnItWith403() {
+        for (Caller holder : List.of(OTTO, TOM, STU)) {
+            caller = holder;
+            assertThat(answer(() -> governance.setPolicy("gate", null, null, null, POLICY, http)).status())
+                    .as("%s lacks modify on the catalog", holder.principal().id()).isEqualTo(403);
+        }
+    }
+
+    @Test
+    void aHiddenCatalogRefusalIsAudited() {
+        caller = NED;
+        answer(() -> governance.setPolicy("gate", "hr", "staff", null, POLICY, http));
+        answer(() -> governance.freeze("gate", null, null, null, REASON, http));
+
+        assertThat(denials()).extracting(Denial::operation).containsExactly("setMaintenancePolicy", "setDrFreeze");
+        Denial set = denials().getFirst();
+        assertThat(set.privilege()).isEqualTo("modify");
+        assertThat(set.reason()).startsWith("no_privilege");
+        assertThat(set.securable().kind()).isEqualTo(nuna.catalog.audit.Securable.Kind.CATALOG);
+        assertThat(set.securable().id()).isEqualTo(catalog.id());
+        assertThat(set.securable().path()).isEmpty();
+        assertThat(set.actor().principal()).isEqualTo("ned");
+        assertThat(set.actor().requestId()).isEqualTo("request-1");
+        assertThat(denials().get(1).privilege()).isNull();
+
+        forget(catalog);
+        answer(() -> governance.setPolicy("gate", "hr", "staff", null, POLICY, http));
+        assertThat(denials()).as("nothing was there to refuse").hasSize(2);
     }
 
     // ---- the record ----
@@ -333,6 +401,7 @@ class ManagementHiddenNamesTest {
         switch (record) {
             case NamespaceRecord namespace -> namespaces.remove(namespace.id());
             case CatalogObject object -> objects.remove(object.id());
+            case CatalogRecord ignored -> catalogGone = true;
             default -> throw new IllegalArgumentException(String.valueOf(record));
         }
     }
@@ -341,6 +410,7 @@ class ManagementHiddenNamesTest {
         switch (record) {
             case NamespaceRecord namespace -> namespaces.put(namespace.id(), namespace);
             case CatalogObject object -> objects.put(object.id(), object);
+            case CatalogRecord ignored -> catalogGone = false;
             default -> throw new IllegalArgumentException(String.valueOf(record));
         }
     }
@@ -366,7 +436,8 @@ class ManagementHiddenNamesTest {
     private CatalogStore store() {
         return (CatalogStore) Proxy.newProxyInstance(CatalogStore.class.getClassLoader(),
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
-                    case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
+                    case "findCatalog" -> Optional.of(catalog)
+                            .filter(c -> !catalogGone && c.normalizedName().equals(args[0]));
                     case "findNamespace" -> findNamespace((List<String>) args[1]);
                     case "readNamespace" -> Optional.ofNullable(namespaces.get((UUID) args[0]));
                     case "findObject" -> objects.values().stream()

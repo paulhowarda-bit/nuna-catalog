@@ -56,14 +56,14 @@ class TransactionRoutes {
                                   @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.COMMIT_TRANSACTION);
         String json = body == null ? "" : body;
         List<RestRequest.TableCommit> commits = RestRequest.commitTransaction(json);
         if (commits.size() > settings.maxTransactionTables()) {
             throw CatalogError.badRequest("A transaction may change at most " + settings.maxTransactionTables()
                     + " tables; this one names " + commits.size());
         }
-        RequestContext request = RequestContext.of(http, callers);
         // Keyed by the name the engine finds each table under again, so every event finds its path.
         Map<Named, List<String>> paths = new HashMap<>();
         List<CommitEngine.TableChange> changes = new ArrayList<>();

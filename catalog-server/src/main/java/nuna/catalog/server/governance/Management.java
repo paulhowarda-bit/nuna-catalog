@@ -10,8 +10,10 @@ import nuna.catalog.core.commit.GovernanceChain;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.iceberg.RestRequest;
+import nuna.catalog.security.Privilege;
 import nuna.catalog.server.rest.Callers;
 import nuna.catalog.server.rest.RestSettings;
+import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.telemetry.RequestIds;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
@@ -72,16 +74,23 @@ class Management {
     private final CatalogStore store;
     private final Callers callers;
     private final RestSettings settings;
+    private final Holdings holdings;
 
-    Management(CatalogStore store, Callers callers, RestSettings settings) {
+    Management(CatalogStore store, Callers callers, RestSettings settings, Holdings holdings) {
         this.store = store;
         this.callers = callers;
         this.settings = settings;
+        this.holdings = holdings;
     }
 
-    CatalogRecord catalog(String prefix) {
-        return store.findCatalog(Names.normalize(prefix)).orElseThrow(
-                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+    /**
+     * The catalog {@code prefix} names. A caller that holds nothing on it is answered as for a name no catalog has,
+     * its refusal of {@code operation} audited (D18, amended 2026-11-20; {@link Holdings#catalog}).
+     *
+     * @param privilege what the operation needs, or null when it needs no one privilege
+     */
+    CatalogRecord catalog(String prefix, Request request, String operation, Privilege privilege) {
+        return holdings.catalog(prefix, request.caller(), request.actor(), operation, privilege);
     }
 
     NamespaceRecord namespace(CatalogRecord catalog, List<String> levels) {
@@ -94,12 +103,14 @@ class Management {
     }
 
     /**
-     * The target a path names: a catalog, or a namespace, or a table or view in it. A table or view path whose
-     * namespace does not exist answers as one whose table or view does not, as the Iceberg routes do, so it does
-     * not tell whether the namespace exists (D18).
+     * The target a path names: a catalog, or a namespace, or a table or view in it. Its catalog is found as
+     * {@link #catalog} finds it, for {@code operation}. A table or view path whose namespace does not exist answers as
+     * one whose table or view does not, as the Iceberg routes do, so it does not tell whether the namespace exists
+     * (D18).
      */
-    Target target(String prefix, String namespace, String table, String view) {
-        CatalogRecord catalog = catalog(prefix);
+    Target target(Request request, String operation, Privilege privilege, String prefix, String namespace,
+                  String table, String view) {
+        CatalogRecord catalog = catalog(prefix, request, operation, privilege);
         if (namespace == null) {
             return new Target(catalog, new Securable(Securable.Kind.CATALOG, catalog.id()),
                     new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG, catalog.id(),

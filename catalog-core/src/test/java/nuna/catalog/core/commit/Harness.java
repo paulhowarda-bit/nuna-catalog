@@ -58,6 +58,11 @@ final class Harness {
     final MemoryFiles files = new MemoryFiles();
     final TestClock clock = new TestClock();
     final List<Duration> waits = Collections.synchronizedList(new ArrayList<>());
+    /** Records each wait and moves the clock past it. */
+    final CommitEngine.Sleeper sleeper = wait -> {
+        waits.add(wait);
+        clock.advance(wait);
+    };
     final List<CommitEvents.Commit> events = Collections.synchronizedList(new ArrayList<>());
     final List<String> alerts = Collections.synchronizedList(new ArrayList<>());
     final UUID catalogId = UUID.randomUUID();
@@ -113,10 +118,7 @@ final class Harness {
             public void regulatedSchemaChange(UUID objectId, UUID commitId) {
                 alerts.add("regulated " + objectId + " " + commitId);
             }
-        }, settings, clock, wait -> {
-            waits.add(wait);
-            clock.advance(wait);
-        });
+        }, settings, clock, sleeper);
     }
 
     ObjectName name(String display) {

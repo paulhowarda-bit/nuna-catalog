@@ -54,7 +54,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Grant administration (D18, D19): grant and revoke to groups, list by principal (its groups), list by object,
  * the batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
- * or view the caller holds nothing on is answered as if it did not exist (D18, item 73). Every grant change goes
+ * or view the caller holds nothing on is answered as if it did not exist (D18, item 73), as is every route on a
+ * catalog the caller holds nothing on ({@link Holdings#catalog}, item 68). Every grant change goes
  * through the outbox in the same transaction (D23). The separation-of-duties check runs inside the store's write
  * of the grant, so two grants made at once cannot together break it (backlog 13).
  */
@@ -127,8 +128,8 @@ class GrantRoutes {
                                         @RequestParam(required = false) String pageToken,
                                         @RequestParam(required = false) String pageSize,
                                         HttpServletRequest http) {
-        CatalogRecord record = Securables.catalog(store, catalog);
         RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), LIST.name(), null);
         Securables securables = new Securables(store, record);
         Set<String> own = request.caller().subject().groups();
         Set<String> asked = groups == null || groups.isEmpty() ? own : Set.copyOf(groups);
@@ -151,8 +152,9 @@ class GrantRoutes {
                                   @RequestParam(required = false) String pageToken,
                                   @RequestParam(required = false) String pageSize,
                                   HttpServletRequest http) {
-        CatalogRecord record = Securables.catalog(store, catalog);
         RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), LIST.name(),
+                LIST.privilege());
         Securables securables = new Securables(store, record);
         Securables.Resolved on = securables.resolve(new Securables.Spec(type, namespace, name));
         require(request, on, LIST);
@@ -164,13 +166,15 @@ class GrantRoutes {
      * The batch check: may the caller do each of these? Answers for the caller's own subject, with every
      * governance rule applied. A check is a question, not a refused request, so its answers are not audited. A
      * no on a namespace, table or view the caller holds nothing on reads as the answer for one that does not
-     * exist (D18, amended 2026-11-19).
+     * exist (D18, amended 2026-11-19). A catalog the caller holds nothing on is refused as every route refuses it,
+     * audited.
      */
     @PostMapping(GRANTS + "/check")
     ResponseEntity<String> check(@PathVariable String catalog, @RequestBody(required = false) String body,
                                  HttpServletRequest http) {
-        CatalogRecord record = Securables.catalog(store, catalog);
-        Caller caller = callers.caller(http);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), "check", null);
+        Caller caller = request.caller();
         Checks checks = read(body, Checks.class);
         if (checks.checks() == null || checks.checks().isEmpty()) {
             throw CatalogError.badRequest("Nothing to check: send {\"checks\":[{\"securable\":...,\"privilege\":...}]}");
@@ -222,8 +226,9 @@ class GrantRoutes {
      */
     @GetMapping(GRANTS + "/export")
     ResponseEntity<String> export(@PathVariable String catalog, HttpServletRequest http) {
-        CatalogRecord record = Securables.catalog(store, catalog);
         RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), EXPORT.name(),
+                EXPORT.privilege());
         Securables securables = new Securables(store, record);
         require(request, securables.catalogItself(), EXPORT);
         List<Map<String, Object>> grants = new ArrayList<>();
@@ -238,8 +243,10 @@ class GrantRoutes {
     }
 
     private ResponseEntity<String> change(String catalog, String body, HttpServletRequest http, boolean grant) {
-        CatalogRecord record = Securables.catalog(store, catalog);
         RequestContext request = RequestContext.of(http, callers);
+        Operation operation = grant ? GRANT : REVOKE;
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), operation.name(),
+                operation.privilege());
         GrantSpec spec = read(body, GrantSpec.class);
         if (spec.group() == null || spec.group().isBlank()) {
             throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");
@@ -247,7 +254,6 @@ class GrantRoutes {
         Privilege privilege = privilege(spec.privilege());
         Securables securables = new Securables(store, record);
         Securables.Resolved on = securables.resolve(spec.securable());
-        Operation operation = grant ? GRANT : REVOKE;
         require(request, on, operation);
         if (grant) {
             if (request.caller().subject().groups().contains(spec.group())) {

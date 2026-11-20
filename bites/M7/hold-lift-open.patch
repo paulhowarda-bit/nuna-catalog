@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ManagementAuthorizationTest#liftingAHoldNeedsManageTags
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 501b568..27be2dc 100644
+index 274a8ec..1e7260f 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -182,7 +182,6 @@ class GovernanceRoutes {
-                                        HttpServletRequest http) {
-         Target target = management.target(prefix, namespace, table, view);
+@@ -190,7 +190,6 @@ class GovernanceRoutes {
          Request request = management.request(http);
+         Target target = management.target(request, "releaseHold", Privilege.MANAGE_TAGS,
+                 prefix, namespace, table, view);
 -        guard.require(request, target, "releaseHold", Privilege.MANAGE_TAGS);
          UUID id = uuid(holdId);
          LegalHold hold = store.holdsOn(java.util.Set.of(target.securable())).stream()
