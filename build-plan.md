@@ -79,7 +79,7 @@ Narrow by design [D7, D8.8]. Every operation is one atomic unit on every backend
 - Outbox: claim the next ordered batch, mark relayed.
 - Governance records: retention classes, legal holds, classifications with provenance, trusted engines, storage profiles and allowed locations.
 - Journal: range read by object and time.
-- Refs: make (from main or another ref, with its cut), read, list, renew and delete branches and tags, and read a ref's cut; in the store since 2026-11-20 (backlog 102), routes in v1.x [D33].
+- Refs: make (from main or another ref, with its cut), read, list, renew and delete branches and tags, and read a ref's cut; in the store since 2026-11-20 (backlog 102), management routes since 2026-11-20 (backlog 106) [D33].
 - `selfCheck()` — refuses to start on unsafe durability settings [D8.2]. `schemaVersion()` and migrate [D8.7].
 
 ### 2.4 Logical data model

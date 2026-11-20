@@ -1,0 +1,16 @@
+Breaks: the change stream leaves out ref events, so no one hears a branch is about to expire.
+Module: catalog-audit
+Test: ChangeStreamTest#fansOut
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
+index 396cc4d..9e0df85 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
+@@ -23,7 +23,7 @@ public final class ChangeStream {
+      */
+     public static final Set<EventType> TYPES = EnumSet.of(EventType.COMMIT, EventType.DROP, EventType.UNDROP,
+             EventType.PURGE, EventType.RENAME, EventType.NAMESPACE_CHANGE, EventType.UNREGISTER,
+-            EventType.LABEL_CHANGE, EventType.REF);
++            EventType.LABEL_CHANGE);
+ 
+     private ChangeStream() {
+     }

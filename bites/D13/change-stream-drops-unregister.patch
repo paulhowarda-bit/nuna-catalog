@@ -1,17 +1,16 @@
 Breaks: the change stream leaves out UNREGISTER events.
 Module: catalog-audit
 Test: ChangeStreamTest#fansOut
-
 diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
-index 5d318d0..e8dbcde 100644
+index 396cc4d..70b2a49 100644
 --- a/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
 +++ b/catalog-audit/src/main/java/nuna/catalog/audit/relay/ChangeStream.java
-@@ -19,7 +19,7 @@ public final class ChangeStream {
- 
-     /** The event types the change stream carries: what happened to namespaces, tables and views, and their labels. */
+@@ -22,7 +22,7 @@ public final class ChangeStream {
+      * catalog's branches and tags (D33, choice 11: a branch about to expire is announced here).
+      */
      public static final Set<EventType> TYPES = EnumSet.of(EventType.COMMIT, EventType.DROP, EventType.UNDROP,
 -            EventType.PURGE, EventType.RENAME, EventType.NAMESPACE_CHANGE, EventType.UNREGISTER,
 +            EventType.PURGE, EventType.RENAME, EventType.NAMESPACE_CHANGE,
-             EventType.LABEL_CHANGE);
+             EventType.LABEL_CHANGE, EventType.REF);
  
      private ChangeStream() {

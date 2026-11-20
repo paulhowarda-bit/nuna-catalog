@@ -1,0 +1,17 @@
+Breaks: the warning of a branch's expiry goes out at every call, not once.
+Module: catalog-server
+Test: RefRoutesTest#aBranchIsWarnedOfOnceForEachExpiry
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index ff2347e..7b46731 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -304,8 +304,7 @@ class RefRoutes {
+         Instant expiry = ref.expiresAt().orElseThrow();
+         String marker = warned(ref.id(), expiry);
+         UUID claim = UUID.randomUUID();
+-        KeyState state = store.claimKey(new IdempotencyClaim(marker, WARNINGS, hash(marker), claim, now,
+-                now.plus(WARNING_LEASE), expiry));
++        KeyState state = new KeyState.Claimed();
+         boolean sent = switch (state) {
+             case KeyState.Claimed claimed -> {
+                 send(ref, expiry, request, marker, claim, now);
