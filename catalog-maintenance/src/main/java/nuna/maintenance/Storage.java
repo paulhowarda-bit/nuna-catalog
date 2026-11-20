@@ -25,6 +25,15 @@ interface Storage extends AutoCloseable {
     @Override
     void close();
 
+    /**
+     * The client properties that make the worker's other S3 clients, those reading table files with the credentials
+     * the catalog vends it ({@link Catalogs}), trust the profiles' CA bundles as these do (backlog 21); none when no
+     * profile names one.
+     */
+    default Map<String, String> clientProperties() {
+        return Map.of();
+    }
+
     /** Whether one location names the same object as another, whatever S3 scheme each was written with. */
     static String normalize(String location) {
         if (location.startsWith("s3a://") || location.startsWith("s3n://")) {
@@ -33,8 +42,14 @@ interface Storage extends AutoCloseable {
         return location;
     }
 
-    /** One S3FileIO per profile of the settings, each serving the locations under its prefixes. */
+    /**
+     * One S3FileIO per profile of the settings, each serving the locations under its prefixes and trusting the CA
+     * bundle of its endpoint, if a profile names one.
+     *
+     * @throws IllegalArgumentException when a profile's CA bundle cannot be read ({@link TrustedS3Clients#register})
+     */
     static Storage of(Map<String, WorkerSettings.StorageProfile> profiles) {
+        Map<String, String> trust = TrustedS3Clients.register(profiles);
         Map<String, S3FileIO> byPrefix = new LinkedHashMap<>();
         List<S3FileIO> all = new java.util.ArrayList<>();
         profiles.forEach((name, profile) -> {
@@ -50,6 +65,7 @@ interface Storage extends AutoCloseable {
                 properties.put("s3.access-key-id", profile.accessKeyId());
                 properties.put("s3.secret-access-key", profile.secretAccessKey());
             }
+            properties.putAll(trust);
             io.initialize(properties);
             all.add(io);
             profile.prefixes().forEach(prefix -> byPrefix.put(normalize(prefix), io));
@@ -73,6 +89,11 @@ interface Storage extends AutoCloseable {
             @Override
             public void close() {
                 all.forEach(S3FileIO::close);
+            }
+
+            @Override
+            public Map<String, String> clientProperties() {
+                return trust;
             }
 
             private S3FileIO io(String location) {

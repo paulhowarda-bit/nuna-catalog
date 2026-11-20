@@ -10,6 +10,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
@@ -48,7 +49,7 @@ class MetadataFilesTest {
         direct = store.client();
         profile = StorageProfile.of(StoreKind.valueOf(store.profileKind()), store.endpoint.toString(), REGION,
                 "s3://" + lake + "/warehouse", List.of("s3://" + lake + "/warehouse"));
-        files = new MetadataFiles(profile, store.credentials);
+        files = new MetadataFiles(profile, store.credentials, Optional.empty());
     }
 
     /** The store itself is shared by the run and removed when the JVM exits. */

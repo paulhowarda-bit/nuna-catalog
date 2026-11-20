@@ -152,6 +152,7 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `storage.<profile>.region` | `us-east-1` | The region. |
 | `storage.<profile>.path-style-access` | `false` | Address buckets by path (MinIO, Ceph). |
 | `storage.<profile>.access-key-id`, `secret-access-key` | none | The worker's keys. With neither, the AWS SDK's default chain is used (IRSA, Pod Identity). |
+| `storage.<profile>.ca-bundle` | none | A PEM file of the CA that signed an on-prem store's certificate (backlog 21). It needs the `endpoint`, written as the catalog's profile writes it: the worker's S3 clients to that endpoint, its own and those reading tables with the credentials the catalog vends, trust the bundle beside the JVM's CAs. The worker refuses to start if it cannot read the file or finds no certificate in it. |
 | `compaction.image` | none | The Spark image. Compaction is off without one. |
 | `compaction.image-pull-policy` | `IfNotPresent` | Its pull policy. |
 | `compaction.namespace` | required with an image | Where Jobs run: a namespace for them alone, never the worker's (refused at startup) nor the catalog's. A pod may run as any service account and mount any Secret of its namespace. |

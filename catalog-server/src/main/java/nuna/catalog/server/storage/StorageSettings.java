@@ -1,6 +1,7 @@
 package nuna.catalog.server.storage;
 
 import nuna.catalog.objectstore.StoreKind;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,10 @@ public record StorageSettings(
      *                        delete policy lets delete (D30): an IAM role or user ARN on AWS S3, a user ARN on
      *                        Ceph ({@code arn:aws:iam::<tenant>:user/<uid>}), a user name on MinIO; without it the
      *                        profile has no delete policy
+     * @param caBundle        a PEM file of one or more CA certificates, for a store whose certificate a private CA signed:
+     *                        this profile's S3 and STS clients trust them beside the JVM's CAs, and no other client does.
+     *                        The server refuses to start if it cannot read the file or finds no certificate in it. Vended
+     *                        credentials carry no trust: an engine trusts the store through its own setup
      */
     public record Profile(
             StoreKind kind,
@@ -50,7 +55,8 @@ public record StorageSettings(
             String stsRole,
             String accessKeyId,
             String secretAccessKey,
-            String maintenancePrincipal) {
+            String maintenancePrincipal,
+            Path caBundle) {
     }
 
     /** A catalog's boundary: its storage profile, the KMS key set its data is encrypted under, its legal entity. */

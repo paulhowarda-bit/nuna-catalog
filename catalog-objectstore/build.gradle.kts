@@ -14,6 +14,8 @@ dependencies {
     api("software.amazon.awssdk:sts") {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
+    // Named, so a profile's CA bundle can be given to it (CaBundle); the SDK otherwise picks it at runtime.
+    implementation("software.amazon.awssdk:apache5-client")
 
     // The run's S3 store: -Ps3=silo (default), ceph or aws.
     testImplementation(project(":catalog-tests-s3"))

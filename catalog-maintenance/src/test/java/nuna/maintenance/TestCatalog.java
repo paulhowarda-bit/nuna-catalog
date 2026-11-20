@@ -312,7 +312,7 @@ final class TestCatalog {
             secret = TestS3.SECRET_KEY;
         }
         return Map.of("test", new WorkerSettings.StorageProfile(List.of("s3://" + bucket + "/tables"), endpoint,
-                TestS3.REGION, s3.kind != TestS3.Kind.AWS, key, secret));
+                TestS3.REGION, s3.kind != TestS3.Kind.AWS, key, secret, null));
     }
 
     /** The worker, with its own clock, deciding nothing by the server's. */

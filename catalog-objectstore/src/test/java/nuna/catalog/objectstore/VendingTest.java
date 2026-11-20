@@ -89,7 +89,8 @@ class VendingTest {
         directPut(bucket, SEED, "seed");
         StorageProfile profile = StorageProfile.of(StoreKind.valueOf(store.profileKind()), store.endpoint.toString(),
                 REGION, "s3://" + bucket + "/t", List.of("s3://" + bucket + "/t"));
-        vendor = new CredentialVendor(profile, store.roleArn, store.credentials, CredentialVendor.MIN_LIFETIME);
+        vendor = new CredentialVendor(profile, store.roleArn, store.credentials, CredentialVendor.MIN_LIFETIME,
+                Optional.empty());
     }
 
     /** The store itself is shared by the run and removed when the JVM exits. */

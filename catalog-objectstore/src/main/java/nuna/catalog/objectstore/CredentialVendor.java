@@ -34,9 +34,10 @@ public final class CredentialVendor implements AutoCloseable {
      *                    calling user and needs none
      * @param credentials the catalog's own credentials, which call STS
      * @param lifetime    how long each credential lives, within 15 to 60 minutes
+     * @param caBundle    CAs the STS client trusts beside the JVM's: the profile's, for an on-prem store
      */
     public CredentialVendor(StorageProfile profile, Optional<String> roleArn, AwsCredentialsProvider credentials,
-                            Duration lifetime) {
+                            Duration lifetime, Optional<CaBundle> caBundle) {
         this.profile = Objects.requireNonNull(profile, "profile");
         this.roleArn = Objects.requireNonNull(roleArn, "roleArn");
         this.lifetime = Objects.requireNonNull(lifetime, "lifetime");
@@ -55,6 +56,7 @@ public final class CredentialVendor implements AutoCloseable {
         if (profile.kind() != StoreKind.S3) {
             builder.endpointOverride(profile.endpoint());
         }
+        caBundle.ifPresent(bundle -> bundle.applyTo(builder));
         this.sts = builder.build();
     }
 

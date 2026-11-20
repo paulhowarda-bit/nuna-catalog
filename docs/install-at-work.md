@@ -157,7 +157,9 @@ The charts run the catalog servers and the worker only. Everything else runs els
     allow the catalog both `sts:AssumeRole` and `sts:TagSession`: every vend tags its session with whom it is
     for (`nuna-principal`, `nuna-table` and others), and AWS refuses a tagged AssumeRole without the second;
   - the worker's own identity, which alone may delete (D21, D30). On MinIO the catalog must not run as the
-    root user, which ignores every policy.
+    root user, which ignores every policy;
+  - for a store whose certificate a private CA signed, that CA's certificate (and any between it and the store's)
+    as a PEM file: the profile's `ca-bundle`, below.
 - **Identity providers** (SEC-1): for each issuer its `iss`, its JWKS URL, the audience and the claims for the
   user id, groups and client id; a group for platform operators and one for grant admins; a client for the
   worker with the client-credentials grant and a scope.
@@ -190,6 +192,7 @@ config:
           allowed-prefixes: [s3://<bucket>/tables]
           sts-role: <role ARN>                # AWS S3 and Ceph; MinIO takes keys instead
           maintenance-principal: <the worker's storage identity>
+          ca-bundle: /etc/nuna/storage-ca/lake.crt   # only if a private CA signed the store's certificate
       catalogs:
         <catalog>:
           profile: lake
@@ -219,6 +222,18 @@ config:
 - Every `nuna.*` setting is documented on its settings class in `catalog-server`: `StorageSettings`,
   `SecuritySettings`, `AuditSettings`, `GovernanceSettings`, `RestSettings`, `UiSettings`.
 - Leave `nuna.storage.require-tls` at its default (true) and `nuna.ui.dev-token-login` off.
+- A store whose certificate a private CA signed (backlog 21): put the CA's PEM file in a ConfigMap, one key per
+  store, and name it in the chart's `storageCaConfigMap.name`; the chart mounts it at `/etc/nuna/storage-ca`, and
+  the profile's `ca-bundle` names the file there. That profile's S3 and STS clients then trust the bundle beside
+  the JVM's CAs; no other client does, and the JVM's trust store is left alone. The server refuses to start, naming
+  the profile and the file, if it cannot read the file or finds no certificate in it. Vended credentials carry the
+  endpoint, not the CA: engines (Spark, Trino, PyIceberg and the rest) must trust the store through their own
+  setup, as they would without the catalog.
+
+```bash
+kubectl -n <namespace> create configmap nuna-storage-ca --from-file=lake.crt=<CA PEM file>
+```
+
 - Passwords and keys go in a Secret read as a config tree, one key per property, never in the values file:
 
 ```bash
@@ -247,6 +262,11 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
   Ceph store. The worker needs the client-credentials grant with a scope (`token.endpoint`, `client-id`,
   `client-secret`, `scope`, `audience`) whenever compaction is on.
 - `storage.<profile>.prefixes` must cover every table location, and the keys there are the worker's own.
+- A store with a private CA: give the worker's chart the same `storageCaConfigMap.name` and the profile the same
+  `ca-bundle`, and write its `endpoint` as the catalog's profile writes it (scheme, host and port). The worker's
+  S3 clients to that endpoint trust the bundle: its own, and those reading tables with the credentials the catalog
+  vends it, which name the catalog's endpoint. A compaction Job is Spark, an engine: its image must trust the CA
+  itself.
 - Compaction is off until `compaction.image` names the Spark image and `compaction.namespace` the Jobs'
   namespace.
 - The Jobs run in their own namespace and sign in themselves, so the catalog (`compaction.catalog-uri`, by default

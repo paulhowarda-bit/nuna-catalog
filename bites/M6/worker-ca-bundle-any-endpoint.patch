@@ -1,0 +1,17 @@
+Breaks: the worker's S3 clients trust a CA bundle whatever endpoint they reach (backlog 21).
+Module: catalog-maintenance
+Test: TrustedS3ClientsTest#vendedClientsTrustTheirEndpointsBundle
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java b/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java
+index 317d2b6..cce7455 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/TrustedS3Clients.java
+@@ -86,7 +86,7 @@ public final class TrustedS3Clients implements S3FileIOAwsClientFactory {
+      */
+     @Override
+     public S3Client s3() {
+-        CaBundle bundle = s3.endpoint() == null ? null : registered().get(endpoint(s3.endpoint()));
++        CaBundle bundle = registered().values().stream().findFirst().orElse(null);
+         return S3Client.builder()
+                 .applyMutation(aws::applyClientRegionConfiguration)
+                 .applyMutation(aws::applyLegacyMd5Plugin)

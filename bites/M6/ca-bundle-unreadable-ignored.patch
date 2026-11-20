@@ -1,0 +1,17 @@
+Breaks: the server starts without a profile's CA bundle when it cannot read it (backlog 21).
+Module: catalog-server
+Test: CaBundleProfileTest#unreadableBundleStopsStartup
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+index c590e38..de78c46 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+@@ -151,7 +151,7 @@ public final class CatalogStorage implements AutoCloseable {
+         try {
+             return Optional.of(CaBundle.read(config.caBundle()));
+         } catch (IllegalArgumentException e) {
+-            throw new IllegalStateException("nuna.storage.profiles." + name + ".ca-bundle: " + e.getMessage(), e);
++            return Optional.empty();
+         }
+     }
+ 

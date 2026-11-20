@@ -1,0 +1,17 @@
+Breaks: a CA bundle whose last certificate is cut short is read as the certificates before it (backlog 21).
+Module: catalog-objectstore
+Test: CaBundleTest#brokenFile
+
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java
+index 2451d62..7c1117e 100644
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java
+@@ -61,7 +61,7 @@ public final class CaBundle {
+         }
+         // The JDK's parser stops quietly at a certificate cut short, so count what the file says it holds.
+         long headers = HEADER.matcher(new String(pem, StandardCharsets.ISO_8859_1)).results().count();
+-        if (certificates.size() < headers) {
++        if (certificates.size() < 0) {
+             throw new IllegalArgumentException("the CA bundle " + path + " is not PEM certificates: only "
+                     + certificates.size() + " of its " + headers + " certificates parse");
+         }

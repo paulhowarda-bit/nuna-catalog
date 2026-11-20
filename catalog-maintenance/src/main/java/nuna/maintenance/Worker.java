@@ -115,8 +115,9 @@ final class Worker implements AutoCloseable {
         Compactor compactor = settings.compaction().enabled()
                 ? new KubernetesJobs(settings.compaction(), settings.catalogUri(), tokens, clock)
                 : Compactor.NONE;
-        return new Worker(management, new Catalogs(settings.catalogUri(), tokens, Map.of(), trace),
-                Storage.of(settings.storage()), compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
+        Storage storage = Storage.of(settings.storage());
+        return new Worker(management, new Catalogs(settings.catalogUri(), tokens, storage.clientProperties(), trace),
+                storage, compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
                 settings.compaction().maxJobs(), meters, observations);
     }
 

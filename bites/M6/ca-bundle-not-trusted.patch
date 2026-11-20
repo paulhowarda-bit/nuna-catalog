@@ -1,0 +1,17 @@
+Breaks: a client built for a profile with a CA bundle trusts only the JVM's CAs (backlog 21).
+Module: catalog-objectstore
+Test: CaBundleHandshakeTest#s3TrustsTheBundle+stsTrustsTheBundle
+
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java
+index 2451d62..8b33987 100644
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/CaBundle.java
+@@ -81,7 +81,7 @@ public final class CaBundle {
+      * (Apache HttpClient 5), with SDK defaults, and these trust managers.
+      */
+     public void applyTo(SdkSyncClientBuilder<?, ?> builder) {
+-        builder.httpClientBuilder(Apache5HttpClient.builder().tlsTrustManagersProvider(() -> trustManagers));
++        builder.httpClientBuilder(Apache5HttpClient.builder());
+     }
+ 
+     /** Trust managers accepting a chain that the JVM's default trust store anchors, or that this bundle does. */

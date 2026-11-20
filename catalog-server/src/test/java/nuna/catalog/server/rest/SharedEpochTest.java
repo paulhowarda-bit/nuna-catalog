@@ -231,7 +231,7 @@ class SharedEpochTest {
         Clock clock = new OffsetClock(now, clockOffset);
         StorageSettings settings = new StorageSettings(Map.of("warehouse", new StorageSettings.Profile(StoreKind.MINIO,
                 sts.endpoint(), "us-east-1", "s3://warehouse/tables", List.of("s3://warehouse/tables"), null, "catalog",
-                "catalog-secret", null)), Map.of(), lifetime, 100, false);
+                "catalog-secret", null, null)), Map.of(), lifetime, 100, false);
         RestSettings rest = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30), margin,
                 "the test's identity provider", URI.create("urn:nuna:test"), 100, null);
         AtomicReference<UUID> profile = new AtomicReference<>();
