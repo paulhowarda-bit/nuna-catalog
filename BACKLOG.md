@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**30 open:** 6 S, 14 M, 6 L, 4 XL.
+**29 open:** 6 S, 13 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -17,7 +17,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [7](backlog/7.md) | L | Oracle and MongoDB stores answer an outage with 503, not 500 | two store modules, each with its own driver errors and a heavy fault test | 2026-11-14 |
-| [8](backlog/8.md) | M | findCommit waits within the retry budget when the store is down | one path in the commit engine and a fault test | 2026-11-14 |
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
@@ -25,7 +24,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
-| [16](backlog/16.md) | S | May the console decline vended credentials? (Paul decides, D21) | the console declines as a trusted engine does, with a test and a bite; after Paul decides | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
 | [20](backlog/20.md) | S | Catalog names are listed to every signed-in caller (a question for work) | filter one route by the caller's grants, with a test; after work answers | 2026-11-14 |
@@ -42,6 +40,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
+| [67](backlog/67.md) | S | An unregister whose outcome is unknown waits within the retry budget when the store is down | one path in the commit engine and a fault test, as item 8 | 2026-11-19 |
 
 ## Open items in full
 
@@ -119,17 +118,6 @@ store module's main code names the exception.
 
 Done when both stores raise it for a database that cannot be reached, is failing over or is out of connections,
 when nothing was applied, and a heavy test on each shows a 503 with Retry-After.
-
-### 8. findCommit waits within the retry budget when the store is down
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, one path in the commit engine and a fault test
-
-`build-plan.md`, M8 follow-ups: `findCommit` answers "unknown" at once when the store is down, where it could wait
-within the retry budget (P10: at most 4 attempts or 2 s) and often settle the outcome.
-
-Done when a commit whose outcome is unknown during a short outage is settled within the budget, shown by a fault
-test, and an outage longer than the budget still answers as today.
 
 ### 9. Extend the journal horizon with a job, not only at migration
 
@@ -221,21 +209,6 @@ Done when Paul has chosen, and two servers answer one client's conditional loads
 stickily), with a test.
 
 **Decided 2026-11-19 (D14):** a shared epoch ("Shared epoch"): servers derive the credential epoch from a shared issuance window, so they agree on the ETag; not sticky routing.
-
-### 16. May the console decline vended credentials? (Paul decides, D21)
-
-- Decided: 2026-11-19, D21
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, the console declines as a trusted engine does, with a test and a bite; after Paul decides
-
-`build-plan.md`, UI v1, Open: D21 vends to every caller who loads a table; only a trusted engine may decline. The
-console is vended to and throws the credentials away in the browser. Should a non-engine caller be allowed to
-decline, or get no credentials at all?
-
-Done when Paul has decided, and the console's loads carry no credentials if that is his choice, with a test and a
-bite.
-
-**Decided 2026-11-19 (D21):** any caller that asks for no credentials gets none ("Honour none from anyone"), not only trusted engines; the console already asks with `X-Iceberg-Access-Delegation: none`.
 
 ### 17. Console sign-in against Entra ID and Ping, with an automated test
 
@@ -524,12 +497,37 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
+### 67. An unregister whose outcome is unknown waits within the retry budget when the store is down
+
+- Added: 2026-11-19 by the agent on item 8
+- Touches: catalog-core/
+- Effort: S, one path in the commit engine and a fault test, as item 8
+
+Item 8 made `findCommit` wait within the retry budget (P10: at most 4 attempts or 2 s) when the store cannot be
+reached, so a commit, create, register or transaction whose outcome is unknown during a short outage is settled. An
+unregister does not settle through `findCommit`: when `unregisterObject` throws `CommitOutcomeUnknownException`, the
+engine reads the object back with `readObject`, and when that read fails it answers 500 CommitStateUnknownException
+at once (`CommitEngine.unregister`, `catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java` about
+line 650), whatever the failure. Item 8 left it alone, as its title names `findCommit`.
+
+`Reconcile.apply` (the DR runbook's reconcile, D37) also asks `findCommit` after an unknown outcome, with no wait: a
+store outage there throws out of the apply to the operator's route at once. Nothing is lost (a second run plans
+again from the pointer), but the count of steps already applied is not reported. Giving it the wait means passing
+the engine's `CommitSettings` and sleeper to `Reconcile`, which `catalog-server`'s `ReconcileRoutes` constructs;
+it is noted here, not part of this item.
+
+Done when an unregister whose outcome is unknown during a short outage is settled within the budget, shown by a fault
+test in `catalog-core` as item 8's are (`CommitEngineTest$UnknownOutcomes`), and an outage longer than the budget
+still answers 500 CommitStateUnknownException.
+
 ## Done and dropped
 
 | # | Item | Status | On |
 |--:|:--|:--|:--|
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
+| [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |

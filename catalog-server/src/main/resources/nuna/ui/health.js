@@ -106,7 +106,7 @@ function vends(v) {
   return h('div', null, facts([
     ['Issued', String(v.issued)],
     ['From the cache', String(v.cached)],
-    ['Declined by a trusted engine', String(v.none)],
+    ['Declined by the caller', String(v.none)],
     ['Failed', v.failed ? badge(String(v.failed), 'refused') : '0'],
   ]), failures.length ? table(['Failure', 'Vends'], failures.map(([type, n]) => h('tr', null,
     h('td', null, mono(type)), h('td', {class: 'num'}, String(n)))), {class: 'grid', id: 'health-vend-failures'}) : null);

@@ -973,18 +973,26 @@ public final class CommitEngine {
     }
 
     /**
-     * Decides a commit whose outcome was unknown (D9), by any one key it swapped. Empty means it did not
-     * commit and another attempt may run.
+     * Decides a commit whose outcome was unknown (D9), by any one key it swapped. A store that cannot be
+     * reached is asked again within the retry bounds (P10): at most {@code maxAttempts} times, and never after
+     * the request's retry budget. Empty means it did not commit and another attempt may run.
      */
     private Optional<CommitReply> settle(Request request, PointerKey anyKey, Supplier<CommitReply> landed,
                                          int attempt, Instant started) {
         CommitLookup lookup;
-        try {
-            lookup = store.findCommit(request.commitId(), anyKey);
-        } catch (StoreException e) {
-            LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
-            return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()
-                    + " may or may not have been applied: " + e.getMessage()));
+        for (int asked = 1; ; asked++) {
+            try {
+                lookup = store.findCommit(request.commitId(), anyKey);
+                break;
+            } catch (StoreException e) {
+                if (e instanceof StoreUnavailableException && backOff(asked, started)) {
+                    LOG.log(System.Logger.Level.DEBUG, "store unavailable deciding commit " + request.commitId(), e);
+                    continue;
+                }
+                LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
+                return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()
+                        + " may or may not have been applied: " + e.getMessage()));
+            }
         }
         if (lookup == CommitLookup.COMMITTED) {
             return Optional.of(landed.get());

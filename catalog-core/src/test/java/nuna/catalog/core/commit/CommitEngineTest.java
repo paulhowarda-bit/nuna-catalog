@@ -31,6 +31,7 @@ import nuna.catalog.store.StoreUnavailableException;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,9 +44,11 @@ import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.view.ViewMetadataParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** The commit loop on PostgreSQL, through the storage interface only. */
+@Tag("heavy")
 class CommitEngineTest {
 
     private final Harness h = new Harness();
@@ -211,6 +214,27 @@ class CommitEngineTest {
 
             assertThat(reply).isInstanceOf(Success.class);
             assertThat(h.faults.calls("createObject")).isEqualTo(2);
+            assertThat(h.journal("orders")).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("a create whose outcome was lost during a short outage is decided once the store answers")
+        void unknownDuringAShortOutage() {
+            h.faults.once("createObject", (args, proceed) -> {
+                proceed.call();
+                throw new CommitOutcomeUnknownException(((ObjectCreation) args[0]).firstCommit().commitId(), null);
+            });
+            h.faults.once("findCommit", (args, proceed) -> {
+                throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+            });
+
+            CommitReply reply = h.engine().createTable(h.name("Orders"), Requests.createTable("Orders", Map.of()),
+                    ALICE, Optional.empty());
+
+            assertThat(reply).isInstanceOfSatisfying(Success.class, s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
+            assertThat(h.faults.calls("createObject")).isEqualTo(1);
+            assertThat(h.faults.calls("findCommit")).isEqualTo(2);
+            assertThat(h.waits).hasSize(1);
             assertThat(h.journal("orders")).hasSize(1);
         }
     }
@@ -559,6 +583,137 @@ class CommitEngineTest {
 
             assertThat(commit("Orders", setA("Orders", "1"))).isInstanceOfSatisfying(ServerError.class,
                     e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
+            // A store that answers but cannot decide is not asked again: only an outage is waited out.
+            assertThat(h.faults.calls("findCommit")).isEqualTo(1);
+            assertThat(h.waits).isEmpty();
+        }
+
+        /** findCommit fails as a store that cannot be reached does, for its next {@code asks} calls. */
+        private void unreachableFor(int asks) {
+            for (int i = 0; i < asks; i++) {
+                h.faults.once("findCommit", (args, proceed) -> {
+                    throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+                });
+            }
+        }
+
+        private void assertBackoffs(List<Duration> waits, long... bases) {
+            assertThat(waits).hasSize(bases.length);
+            for (int i = 0; i < bases.length; i++) {
+                assertThat(waits.get(i)).isBetween(Duration.ofMillis(bases[i]), Duration.ofMillis(bases[i] + bases[i] / 10));
+            }
+        }
+
+        @Test
+        @DisplayName("a commit whose outcome was lost during a short outage is decided once the store answers,"
+                + " within the retry budget")
+        void shortOutageIsWaitedOut() {
+            h.createTable("Orders");
+            h.faults.once("commit", (args, proceed) -> {
+                proceed.call();
+                throw unknown(args);
+            });
+            unreachableFor(2);
+
+            CommitReply reply = commit("Orders", setA("Orders", "1"));
+
+            assertThat(reply).isInstanceOfSatisfying(Success.class, s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
+            assertThat(metadata(reply).properties()).containsEntry("a", "1");
+            assertThat(h.faults.calls("commit")).isEqualTo(1);
+            assertThat(h.faults.calls("findCommit")).isEqualTo(3);
+            assertBackoffs(h.waits, 100, 200);
+            assertThat(h.pointer("orders").version()).isEqualTo(2);
+            assertThat(h.journal("orders")).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("a commit lost at the start of a 600 ms outage, which did not land, is decided when the store"
+                + " is back and sent again, landing once")
+        void timedOutageThenSentAgain() {
+            h.createTable("Orders");
+            Instant back = h.clock.instant().plusMillis(600);
+            h.faults.once("commit", (args, proceed) -> {
+                throw unknown(args);
+            });
+            h.faults.always("findCommit", (args, proceed) -> {
+                if (h.clock.instant().isBefore(back)) {
+                    throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+                }
+                return proceed.call();
+            });
+
+            CommitReply reply = commit("Orders", setA("Orders", "1"));
+
+            assertThat(reply).isInstanceOfSatisfying(Success.class, s -> assertThat(s.how()).isEqualTo(How.COMMITTED));
+            // Asked at 0, ~100 and ~300 ms while the store was away, and at ~700 ms once it was back.
+            assertThat(h.faults.calls("findCommit")).isEqualTo(4);
+            assertThat(h.faults.calls("commit")).isEqualTo(2);
+            // Three waits for the store, then the commit loop's own wait before its second attempt.
+            assertBackoffs(h.waits, 100, 200, 400, 100);
+            assertThat(h.waits.stream().reduce(Duration.ZERO, Duration::plus))
+                    .isLessThanOrEqualTo(CommitSettings.DEFAULTS.retryBudget());
+            assertThat(h.pointer("orders").version()).isEqualTo(2);
+            assertThat(h.journal("orders")).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("an outage that outlasts the retry budget answers as it did before the store was asked"
+                + " again: 500 CommitStateUnknown, after 4 asks")
+        void outageLongerThanTheBudget() {
+            h.createTable("Orders");
+            List<UUID> commitIds = new ArrayList<>();
+            h.faults.once("commit", (args, proceed) -> {
+                commitIds.add(((CommitBatch) args[0]).commitId());
+                throw unknown(args);
+            });
+            h.faults.always("findCommit", (args, proceed) -> {
+                throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+            });
+
+            CommitReply reply = commit("Orders", setA("Orders", "1"));
+
+            assertThat(reply).isEqualTo(new ServerError("CommitStateUnknownException", "Commit "
+                    + commitIds.getFirst() + " may or may not have been applied: primary lost, standby not yet promoted"));
+            assertThat(h.faults.calls("commit")).isEqualTo(1);
+            assertThat(h.faults.calls("findCommit")).isEqualTo(CommitSettings.DEFAULTS.maxAttempts());
+            assertBackoffs(h.waits, 100, 200, 400);
+            assertThat(h.pointer("orders").version()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("however many asks are allowed, none starts after the retry budget")
+        void asksStopAtTheTimeBudget() {
+            h.settings = new CommitSettings(10, Duration.ofSeconds(2), Duration.ofMillis(100), Duration.ofHours(24),
+                    Duration.ofSeconds(30));
+            h.createTable("Orders");
+            h.faults.once("commit", (args, proceed) -> {
+                throw unknown(args);
+            });
+            h.faults.always("findCommit", (args, proceed) -> {
+                throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+            });
+
+            assertThat(commit("Orders", setA("Orders", "1"))).isInstanceOfSatisfying(ServerError.class,
+                    e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
+            // Asks at 0, ~100, ~300, ~700 and ~1500 ms; the next wait, 1.6 s, would end past 2 s.
+            assertThat(h.faults.calls("findCommit")).isEqualTo(5);
+            assertBackoffs(h.waits, 100, 200, 400, 800);
+        }
+
+        @Test
+        @DisplayName("the budget is the request's: a COMMIT that hung for most of it leaves no time to ask again")
+        void budgetCountsFromTheRequestsStart() {
+            h.createTable("Orders");
+            h.faults.once("commit", (args, proceed) -> {
+                h.clock.advance(Duration.ofMillis(1950));
+                throw unknown(args);
+            });
+            unreachableFor(1);
+
+            assertThat(commit("Orders", setA("Orders", "1"))).isInstanceOfSatisfying(ServerError.class,
+                    e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
+            assertThat(h.faults.calls("findCommit")).isEqualTo(1);
+            assertThat(h.waits).isEmpty();
         }
 
         @Test
@@ -695,7 +850,8 @@ class CommitEngineTest {
         }
 
         @Test
-        @DisplayName("a store outage while deciding a lost COMMIT stays CommitStateUnknown, never a 503")
+        @DisplayName("a store outage that outlasts the retry budget while deciding a lost COMMIT stays"
+                + " CommitStateUnknown, never a 503")
         void outageWhileSettlingStaysUnknown() {
             h.createTable("Orders");
             String key = key();
@@ -703,7 +859,7 @@ class CommitEngineTest {
                 proceed.call();
                 throw new CommitOutcomeUnknownException(((CommitBatch) args[0]).commitId(), null);
             });
-            h.faults.once("findCommit", (args, proceed) -> {
+            h.faults.always("findCommit", (args, proceed) -> {
                 throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
             });
             assertThat(commit("Orders", setA("Orders", "1"), key)).isInstanceOfSatisfying(ServerError.class,

@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * snapshot is kept for the deployment's minimum age, and a retention class's longer one (D30); a DR freeze
  * refuses writes (D37).
  */
+@Tag("heavy")
 @GovernanceServer
 class HeldTablesTest {
 

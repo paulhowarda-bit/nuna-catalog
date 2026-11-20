@@ -76,6 +76,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "nuna.rest.alert-metadata-chars=1")
+@org.junit.jupiter.api.Tag("heavy")
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, CatalogMetricsRoutesTest.Audit.class})
 class CatalogMetricsRoutesTest {

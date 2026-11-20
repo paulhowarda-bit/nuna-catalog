@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Set;
 import java.util.TreeSet;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /** The endpoints list in /v1/config must name exactly the routes this server serves (D13). */
+@Tag("heavy")
 @SpringBootTest
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class})

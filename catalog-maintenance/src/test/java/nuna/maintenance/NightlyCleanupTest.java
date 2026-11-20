@@ -26,6 +26,7 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -45,6 +46,7 @@ import org.junit.jupiter.api.Test;
  *       the orphan interval is two.</li>
  * </ul>
  */
+@Tag("heavy")
 class NightlyCleanupTest {
 
     private static final ZoneId LONDON = ZoneId.of("Europe/London");

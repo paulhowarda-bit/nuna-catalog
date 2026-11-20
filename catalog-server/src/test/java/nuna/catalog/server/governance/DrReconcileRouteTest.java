@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,7 @@ import software.amazon.awssdk.services.s3.S3Client;
  * The DR reconcile route (D37). The database loses a table's last commits, as a DR replica behind its
  * storage would: the pointer row is put back to its first version while the files stay.
  */
+@Tag("heavy")
 @GovernanceServer
 class DrReconcileRouteTest {
 

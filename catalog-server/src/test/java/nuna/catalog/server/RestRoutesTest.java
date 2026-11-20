@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +34,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
 // Pages of two, so a listing without a pageToken reads several pages from the store.
+@Tag("heavy")
 @TestPropertySource(properties = {"nuna.rest.default-page-size=2", "nuna.rest.max-page-size=2"})
 class RestRoutesTest {
 

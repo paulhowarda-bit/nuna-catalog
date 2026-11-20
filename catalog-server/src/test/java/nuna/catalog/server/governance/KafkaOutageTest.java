@@ -10,6 +10,7 @@ import java.time.Duration;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * their records wait in the outbox and reach the audit topic once the broker is back. A commit's or
  * create's own load response then carries no credentials (M6).
  */
+@Tag("heavy")
 @GovernanceServer
 class KafkaOutageTest {
 

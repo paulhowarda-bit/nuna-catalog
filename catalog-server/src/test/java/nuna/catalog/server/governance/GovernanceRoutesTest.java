@@ -11,12 +11,14 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /** The classification push API with provenance (D27) and the maintenance policy's inheritance and guardrails (D30). */
+@Tag("heavy")
 @GovernanceServer
 class GovernanceRoutesTest {
 
