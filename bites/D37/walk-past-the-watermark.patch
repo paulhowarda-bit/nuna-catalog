@@ -1,17 +1,17 @@
-Breaks: the reconcile walks a table past its DR watermark, to files whose manifests and data may not be in the DR store (item 83).
+Breaks: the reconcile walks a table through a version whose added files are not all in the store it runs against, the DR store, to manifests and data that never arrived (item 83; D37, amended 2026-11-20: the walk with a file check).
 Module: catalog-core
-Test: ReconcileWatermarkTest#theWalkStopsAtTheWatermark+noProofMovesItPastTheWatermark
+Test: ReconcileFileCheckTest#theWalkStopsBeforeTheFirstVersionMissingAFile+onlyTheCheckedStepsAreApplied
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index a8867d9..5496d9b 100644
+index 39dbc30..1256d8e 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -159,7 +159,7 @@ public final class Reconcile {
-         }
-         long safe = watermark.get().version();
-         Pointer from = walked.from();
--        List<Step> kept = walked.steps().stream().takeWhile(step -> step.version() <= safe).toList();
-+        List<Step> kept = walked.steps().stream().takeWhile(step -> true).toList();
-         List<Step> beyond = walked.steps().subList(kept.size(), walked.steps().size());
-         if (from.version() > safe) {
-             return new Plan(table, from, List.of(), List.of(), Optional.of("the pointer, version " + from.version()
+@@ -176,7 +176,7 @@ public final class Reconcile {
+                 return cut(walked, taken, "the files version " + step.version() + " adds (" + step.location()
+                         + ") cannot be checked: " + e.getMessage());
+             }
+-            if (missing.isPresent()) {
++            if (false && missing.isPresent()) {
+                 return cut(walked, taken, "storage does not hold " + missing.get() + ", which version "
+                         + step.version() + " adds (" + step.location() + "): its files have not all reached this"
+                         + " store, so the walk stops before it");

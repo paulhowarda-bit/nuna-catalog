@@ -3,15 +3,15 @@ Module: catalog-core
 Test: ReconcileWatermarkTest#onlyAFrozenTableIsRewound
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index a8867d9..db774de 100644
+index 39dbc30..3f7bbd4 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -363,7 +363,7 @@ public final class Reconcile {
+@@ -381,7 +381,7 @@ public final class Reconcile {
              return new Rewound(plan, Optional.empty(), plan.problem());
          }
-         CatalogObject table = plan.table();
--        if (!frozen(table)) {
-+        if (false && !frozen(table)) {
+         CatalogObject object = plan.object();
+-        if (!frozen(object)) {
++        if (false && !frozen(object)) {
              return new Rewound(plan, Optional.empty(), Optional.of("not frozen for DR reconcile; place a DR freeze on"
                      + " it or above it"));
          }

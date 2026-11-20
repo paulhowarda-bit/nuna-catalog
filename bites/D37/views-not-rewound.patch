@@ -1,0 +1,17 @@
+Breaks: the rewind reads a view's metadata as a table's, so no view is moved back to its DR watermark (D37, amended 2026-11-20: views too).
+Module: catalog-core
+Test: ReconcileWatermarkTest#aFrozenViewIsRewoundToItsWatermark
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 39dbc30..698396f 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -405,7 +405,7 @@ public final class Reconcile {
+ 
+     /** A table's or a view's metadata facts, read as its kind's metadata; throws on a file that is not. */
+     private static Facts facts(CatalogObject object, String json, String location) {
+-        return object.kind() == CatalogObject.Kind.VIEW ? Metadata.viewFacts(json, location)
++        return false ? Metadata.viewFacts(json, location)
+                 : Metadata.tableLink(json, location).facts();
+     }
+ 

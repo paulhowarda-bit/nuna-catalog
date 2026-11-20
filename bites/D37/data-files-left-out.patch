@@ -1,17 +1,17 @@
-Breaks: the DR check leaves data files out, so a version whose data files never reached the DR store passes.
+Breaks: the DR check leaves data files out, so a version whose data files never reached the DR store passes the verifier, and the reconcile walks through it.
 Module: catalog-maintenance
 Test: DrVerifyTest#theWatermarkStopsBeforeTheFirstVersionMissingAFile+aTableWithNoWatermarkIsCheckedWholeInOneListing
 
-diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java b/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
-index fa891b4..b94ecc2 100644
---- a/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
-+++ b/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
-@@ -223,7 +223,7 @@ final class DrVerify {
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/AddedFiles.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/AddedFiles.java
+index 17e0442..3ca0f3a 100644
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/AddedFiles.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/AddedFiles.java
+@@ -122,7 +122,7 @@ public final class AddedFiles {
          try {
              if (manifest.content() == ManifestContent.DATA) {
-                 try (ManifestReader<org.apache.iceberg.DataFile> reader = ManifestFiles.read(manifest, dr, specs)) {
+                 try (ManifestReader<DataFile> reader = ManifestFiles.read(manifest, io, specs)) {
 -                    reader.forEach(file -> keep(file, baseSequences, files));
 +                    reader.forEach(file -> { });
                  }
              } else {
-                 try (ManifestReader<org.apache.iceberg.DeleteFile> reader = ManifestFiles.readDeleteManifest(manifest,
+                 try (ManifestReader<DeleteFile> reader = ManifestFiles.readDeleteManifest(manifest, io, specs)) {
