@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.openqa.selenium.By;
@@ -41,6 +42,7 @@ import org.testcontainers.utility.MountableFile;
  * inside its cluster. The browser sees the console at {@code host.testcontainers.internal:}{@value #CONSOLE_PORT},
  * the redirect URI and web origin the realm's client allows ({@code keycloak/console-realm.json}).
  */
+@Tag("heavy")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = ConsoleSignInTest.Idp.class)
 @Import({PostgresForTests.class, S3ForTests.class})

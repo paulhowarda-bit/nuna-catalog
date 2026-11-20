@@ -19,6 +19,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.WebApplicationType;
@@ -33,6 +34,7 @@ import org.springframework.context.ConfigurableApplicationContext;
  * load through Iceberg's REST client. No attribute of the worker's spans names the table, its namespace, location or
  * catalog, or the worker's principal.
  */
+@Tag("heavy")
 class WorkerTraceTest {
 
     private static final Duration ARRIVAL = Duration.ofSeconds(30);

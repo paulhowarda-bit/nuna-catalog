@@ -11,6 +11,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
  * does what it says. Lifting the hold and the freeze lets the same scan go ahead. Nor does it touch a table that is
  * no longer the one the work list named.
  */
+@Tag("heavy")
 class GuardrailsTest {
 
     private static final Map<String, String> POLICY = Map.of("snapshot-expiry.enabled", "true",

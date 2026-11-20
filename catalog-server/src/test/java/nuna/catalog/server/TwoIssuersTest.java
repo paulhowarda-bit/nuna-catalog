@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -37,6 +38,7 @@ import org.testcontainers.utility.MountableFile;
  * mapping, and both name the same directory user, who must come out as one principal. A third realm the catalog
  * does not trust issues otherwise acceptable tokens. Real Entra and Ping tenants are out of scope (work hardware).
  */
+@Tag("heavy")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = TwoIssuersTest.Realms.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})

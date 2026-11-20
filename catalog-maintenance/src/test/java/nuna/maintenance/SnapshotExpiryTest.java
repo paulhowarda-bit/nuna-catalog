@@ -14,6 +14,7 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.Test;
  * unreferenced goes to the catalog's pending-deletion list instead of being deleted. A file any branch or tag still
  * reaches stays, in expiry and in the orphan scan that follows it.
  */
+@Tag("heavy")
 class SnapshotExpiryTest {
 
     private final TestCatalog catalog = TestCatalog.get();

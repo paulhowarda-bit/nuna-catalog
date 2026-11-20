@@ -8,12 +8,14 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * A file on the pending-deletion list is deleted, with the worker's own storage identity, only once the catalog lists
  * it as due: after the database's PITR window (7 days) has passed since it was recorded (D30 (5)).
  */
+@Tag("heavy")
 class PendingDeletionTest {
 
     private final TestCatalog catalog = TestCatalog.get();

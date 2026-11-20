@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.TreeSet;
 import java.util.UUID;
 import org.apache.iceberg.rest.ReferenceServer;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
  * and timestamps differ by nature and are not compared. Every difference must be one the ledger decided,
  * listed in {@link #DEVIATIONS}; a deviation that disappears must be removed from the list.
  */
+@Tag("heavy")
 class FixtureDiffTest {
 
     private static final String NS = "fixture_diff";
