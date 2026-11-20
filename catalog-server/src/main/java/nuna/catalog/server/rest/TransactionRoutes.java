@@ -76,12 +76,11 @@ class TransactionRoutes {
             CatalogObject object = lookup.object(namespace, table, Kind.TABLE)
                     .orElseThrow(() -> Http.noSuchTable(qualified));
             List<String> path = AuditEvents.path(levels, table);
-            // Asked before the name is checked for repeats, so a caller that may not see the table learns nothing.
-            guard.onObject(request, catalog, object, path, guard.commit(request, commit.json()),
-                    Http.noSuchTable(qualified));
             if (paths.put(Named.of(object), path) != null) {
                 throw CatalogError.badRequest("Table " + qualified + " is named more than once in the transaction");
             }
+            guard.onObject(request, catalog, object, path, guard.commit(request, commit.json()),
+                    Http.noSuchTable(qualified));
             changes.add(new CommitEngine.TableChange(ObjectRoutes.name(catalog, namespace, levels, table),
                     commit.json()));
         }

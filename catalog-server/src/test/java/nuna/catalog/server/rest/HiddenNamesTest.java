@@ -274,7 +274,8 @@ class HiddenNamesTest {
     }
 
     @Test
-    void aTransactionAsksAboutEachTableBeforeLookingForRepeats() {
+    void aTransactionNamingAHiddenTableTwiceIsAnsweredAsIfItDidNotExist() {
+        // The first mention is refused before the repeat check reaches the second, so the 400 never tells.
         assertThat(alike(() -> transactions.commit("gate", null, transaction("staff", "staff"), http), staff))
                 .isEqualTo(new Answer(404, "NoSuchTableException", "Table does not exist: hr.staff"));
     }
