@@ -63,6 +63,8 @@ public sealed interface WriteResult {
         /** The catalog holds as many open refs of the kind as P11 allows ({@link RefStore#createRef}, D33). */
         REF_LIMIT,
         /** The ref is a tag, and only a branch can be renewed ({@link RefStore#renewRef}, D33). */
-        NOT_A_BRANCH
+        NOT_A_BRANCH,
+        /** A ref's cut names the object, so its files stay ({@link CatalogObjectStore#claimPurge}, D33, P11). */
+        REFERENCED
     }
 }

@@ -1,5 +1,6 @@
 package nuna.catalog.store.sql;
 
+import static nuna.catalog.store.sql.Jdbc.exists;
 import static nuna.catalog.store.sql.Jdbc.first;
 import static nuna.catalog.store.sql.Jdbc.instant;
 import static nuna.catalog.store.sql.Jdbc.query;
@@ -47,6 +48,8 @@ final class SqlObjects {
     private static final String ACTIVE_HOLDER = "SELECT id FROM catalog_object WHERE namespace_id = ? AND name_norm = ?"
             + " AND state = 'ACTIVE'";
     private static final String UNIQUE_VIOLATION = "23505";
+    /** No ref's cut names the object (D33): a ref keeps a dropped table's files (P11). */
+    static final String UNREFERENCED = "NOT EXISTS (SELECT 1 FROM ref_entry e WHERE e.object_id = o.id)";
 
     private final Transactions transactions;
 
@@ -209,7 +212,8 @@ final class SqlObjects {
             parameters.add(page.size() + 1);
             List<CatalogObject> objects = query(connection, "SELECT " + COLUMNS + " FROM catalog_object o"
                     + " WHERE state IN ('DROPPED', 'PURGING') AND purge_after <= ?" + keyset
-                    + " AND (state = 'PURGING' OR (" + UNCOVERED + ")) ORDER BY purge_after, id LIMIT ?",
+                    + " AND (state = 'PURGING' OR (" + UNCOVERED + " AND " + UNREFERENCED + "))"
+                    + " ORDER BY purge_after, id LIMIT ?",
                     SqlObjects::object, parameters.toArray());
             return Jdbc.page(objects, page,
                     object -> PageToken.encode(object.purgeAfter().orElseThrow().toString(), object.id().toString()));
@@ -218,7 +222,9 @@ final class SqlObjects {
 
     /**
      * Locks the dropped or claimed object, then judges the claim under the lock: the holds and DR freezes
-     * are read as a drop reads holds, so one placed before the claim refuses it.
+     * are read as a drop reads holds, so one placed before the claim refuses it. So are the refs whose cut
+     * names it: a ref made from another copies its source's cut under a share lock on the source, so a
+     * ref that comes to name the object committed before its source's deletion, and this read sees it.
      */
     WriteResult claimPurge(UUID objectId, String claimant, Change change) {
         return transactions.change(change, "purge claim", connection -> {
@@ -239,6 +245,9 @@ final class SqlObjects {
             }
             if (Guards.frozen(connection, objectId, claim.catalogId(), claim.path())) {
                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            if (exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ?", objectId)) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
             }
             update(connection, "UPDATE catalog_object SET state = 'PURGING', purge_claimant = ? WHERE id = ?",
                     claimant, objectId);

@@ -20,6 +20,7 @@ import nuna.catalog.store.KeyState;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.suite.CatalogObjectSuite;
+import nuna.catalog.store.suite.BranchCommitSuite;
 import nuna.catalog.store.suite.CatalogStoreUnderTest;
 import nuna.catalog.store.suite.Changes;
 import nuna.catalog.store.suite.CommitSuite;
@@ -132,6 +133,14 @@ class PostgresStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Refs extends RefSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class BranchCommits extends BranchCommitSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return postgres;

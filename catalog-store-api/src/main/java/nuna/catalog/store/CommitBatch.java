@@ -16,13 +16,20 @@ import java.util.stream.Stream;
  * swapped and the held pointers together in ascending key order ({@link #locks}), so multi-table
  * commits cannot deadlock (D15). {@code swaps} and {@code holds} are each held in that order whatever
  * order they were given in, and no pointer is in the batch twice.
+ *
+ * <p>{@code ref} is the branch the commit lands on or ends (D33, {@link RefLock}), locked before any pointer. A commit
+ * on a branch ({@link RefLock.Hold}) swaps and holds only the branch's own pointers; a merge ({@link RefLock.End})
+ * swaps main's pointers and holds only the branch's. A batch with no ref is a commit on main, or on keys no ref
+ * guards. A merge that moves no table ends the branch with {@link RefStore#deleteRef} instead, since a batch swaps at
+ * least one pointer.
  */
 public record CommitBatch(UUID commitId, Instant committedAt, List<PointerSwap> swaps, List<PointerHold> holds,
-                          List<OutboxEvent> outbox, Optional<IdempotencyResult> idempotency) {
+                          Optional<RefLock> ref, List<OutboxEvent> outbox, Optional<IdempotencyResult> idempotency) {
 
     public CommitBatch {
         Objects.requireNonNull(commitId, "commitId");
         Objects.requireNonNull(committedAt, "committedAt");
+        Objects.requireNonNull(ref, "ref");
         Objects.requireNonNull(idempotency, "idempotency");
         swaps = swaps.stream().sorted(Comparator.comparing(PointerSwap::key)).toList();
         holds = holds.stream().sorted(Comparator.comparing(PointerHold::key)).toList();
@@ -37,6 +44,25 @@ public record CommitBatch(UUID commitId, Instant committedAt, List<PointerSwap> 
                 throw new IllegalArgumentException("pointer " + keys.get(i) + " is in the batch twice");
             }
         }
+        if (ref.isPresent()) {
+            RefLock lock = ref.get();
+            boolean fits = switch (lock) {
+                case RefLock.Hold hold -> keys.stream().allMatch(hold::owns);
+                case RefLock.End end -> swaps.stream().allMatch(swap -> swap.key().branch().equals(PointerKey.MAIN))
+                        && holds.stream().allMatch(held -> end.owns(held.key()));
+            };
+            if (!fits) {
+                throw new IllegalArgumentException(lock instanceof RefLock.Hold
+                        ? "a commit on branch " + lock.refId() + " swaps and holds only that branch's pointers"
+                        : "a merge of branch " + lock.refId() + " swaps main's pointers and holds only the branch's");
+            }
+        }
+    }
+
+    /** A batch on no ref: a commit on main, or a transaction across tables on main. */
+    public CommitBatch(UUID commitId, Instant committedAt, List<PointerSwap> swaps, List<PointerHold> holds,
+                       List<OutboxEvent> outbox, Optional<IdempotencyResult> idempotency) {
+        this(commitId, committedAt, swaps, holds, Optional.empty(), outbox, idempotency);
     }
 
     /** A batch that holds nothing: every pointer it locks, it swaps. */
@@ -49,5 +75,14 @@ public record CommitBatch(UUID commitId, Instant committedAt, List<PointerSwap> 
     public List<PointerLock> locks() {
         return Stream.<PointerLock>concat(swaps.stream(), holds.stream())
                 .sorted(Comparator.comparing(PointerLock::key)).toList();
+    }
+
+    /**
+     * The key on the ref's branch of the first object the batch swaps: what {@link CommitResult.Inactive} names when
+     * the ref is gone. For a commit on a branch it is the first swap's key.
+     */
+    public PointerKey refKey() {
+        RefLock lock = ref.orElseThrow(() -> new IllegalStateException("the batch holds no ref"));
+        return new PointerKey(swaps.getFirst().key().objectId(), lock.refId().toString());
     }
 }

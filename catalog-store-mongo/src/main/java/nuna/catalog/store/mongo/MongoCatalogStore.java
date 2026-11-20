@@ -45,6 +45,7 @@ import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
 import nuna.catalog.store.Securable;
@@ -186,19 +187,51 @@ public final class MongoCatalogStore implements CatalogStore {
         return transactions.snapshot("pointer read for " + key, session -> Pointers.read(database, session, key));
     }
 
+    /**
+     * The batch's ref, if any, is read and checked first: a commit on the branch marks it once the stamp is fixed, and
+     * a merge, which must hold every own pointer of the branch, deletes it, with its cut and its own pointers, after
+     * the swaps (D33, backlog 103).
+     */
     @Override
     public CommitResult commit(CommitBatch batch) {
         return transactions.write(batch.commitId(), "commit " + batch.commitId(), tx -> {
             Pointers.see(tx, batch);
+            Optional<BsonDocument> branch = Optional.empty();
+            MongoRefs.Owned owned = new MongoRefs.Owned(List.of(), Set.of());
+            if (batch.ref().isPresent()) {
+                branch = MongoRefs.openBranch(tx, batch);
+                if (branch.isEmpty()) {
+                    return new CommitResult.Inactive(batch.refKey(), CommitResult.Subject.REF);
+                }
+                if (batch.ref().get() instanceof RefLock.Hold) {
+                    Optional<PointerKey> outside = MongoRefs.outsideCut(tx, batch);
+                    if (outside.isPresent()) {
+                        return new CommitResult.Inactive(outside.get());
+                    }
+                } else {
+                    owned = MongoRefs.seeOwnPointers(tx, batch.ref().get().refId());
+                    Optional<PointerKey> unheld = MongoRefs.unheld(batch, owned);
+                    if (unheld.isPresent()) {
+                        return new CommitResult.Conflict(unheld.get(),
+                                Pointers.read(tx.database, tx.session, unheld.get()));
+                    }
+                }
+            }
             Optional<CommitResult.Inactive> inactive = Pointers.markObjects(tx, batch);
             if (inactive.isPresent()) {
                 return inactive.get();
+            }
+            if (batch.ref().orElse(null) instanceof RefLock.Hold) {
+                tx.mark(REF, branch.orElseThrow());
             }
             Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
             if (conflict.isPresent()) {
                 return conflict.get();
             }
             Pointers.records(tx, batch, transactions.entryIds());
+            if (batch.ref().orElse(null) instanceof RefLock.End end) {
+                MongoRefs.end(tx, end.refId(), owned.cut());
+            }
             return new CommitResult.Committed(batch.commitId());
         }, result -> result instanceof CommitResult.Committed);
     }

@@ -19,13 +19,16 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.REF_ENTRY;
 import com.mongodb.MongoException;
 import com.mongodb.client.ClientSession;
 import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.Change;
+import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
@@ -34,9 +37,11 @@ import nuna.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
@@ -53,6 +58,7 @@ import org.bson.BsonValue;
  * its ref exists. That transaction marks the catalog, the lock on the catalog's refs, so of two creates counting
  * P11's limit one conflicts and counts again; and it marks the ref it is made from, so a deletion of that ref
  * conflicts with it. A create that ends otherwise than applied deletes the entries it wrote, unless its ref exists.
+ * A commit on a branch marks the ref, and a merge deletes it, in the commit's transaction ({@link #openBranch}).
  */
 final class MongoRefs {
 
@@ -309,27 +315,114 @@ final class MongoRefs {
                 return MISSING;
             }
             tx.see(found.get());
-            List<BsonValue> objectIds = tx.collection(REF_ENTRY).find(tx.session, new BsonDocument("refId", uuid(refId))
-                            .append("kind", new BsonDocument("$ne", new BsonString(NAMESPACE_KIND))))
-                    .projection(new BsonDocument("objectId", new BsonInt32(1)))
-                    .map(entry -> entry.get("objectId")).into(new ArrayList<>());
-            BsonString branch = new BsonString(refId.toString());
-            for (int from = 0; from < objectIds.size(); from += BATCH) {
-                BsonDocument own = new BsonDocument("objectId", Docs.in(objectIds.subList(from,
-                        Math.min(objectIds.size(), from + BATCH)))).append("branch", branch);
-                tx.collection(POINTER).find(tx.session, own).projection(new BsonDocument("clock", new BsonInt32(1)))
-                        .forEach(tx::see);
-            }
-            for (int from = 0; from < objectIds.size(); from += BATCH) {
-                BsonDocument own = new BsonDocument("objectId", Docs.in(objectIds.subList(from,
-                        Math.min(objectIds.size(), from + BATCH)))).append("branch", branch);
-                tx.collection(POINTER).deleteMany(tx.session, own);
-                tx.collection(PROJECTION_PIECE).deleteMany(tx.session, own);
-            }
-            tx.collection(REF_ENTRY).deleteMany(tx.session, new BsonDocument("refId", uuid(refId)));
-            tx.collection(REF).deleteOne(tx.session, byId(uuid(refId)));
+            end(tx, refId, seeOwnPointers(tx, refId).cut());
             return WriteResult.APPLIED;
         });
+    }
+
+    /** A ref's tables and views, and those of them its own pointers name. */
+    record Owned(List<BsonValue> cut, Set<UUID> pointed) {
+    }
+
+    /**
+     * The tables and views of a ref's cut, the only objects its own pointers can name (D33, question 1), after seeing
+     * each own pointer: what {@link #end} deletes. Call before the change's stamp is fixed.
+     */
+    static Owned seeOwnPointers(Tx tx, UUID refId) {
+        List<BsonValue> objectIds = tx.collection(REF_ENTRY).find(tx.session, new BsonDocument("refId", uuid(refId))
+                        .append("kind", new BsonDocument("$ne", new BsonString(NAMESPACE_KIND))))
+                .projection(new BsonDocument("objectId", new BsonInt32(1)))
+                .map(entry -> entry.get("objectId")).into(new ArrayList<>());
+        BsonString branch = new BsonString(refId.toString());
+        Set<UUID> pointed = new HashSet<>();
+        for (int from = 0; from < objectIds.size(); from += BATCH) {
+            BsonDocument own = new BsonDocument("objectId", Docs.in(objectIds.subList(from,
+                    Math.min(objectIds.size(), from + BATCH)))).append("branch", branch);
+            tx.collection(POINTER).find(tx.session, own)
+                    .projection(new BsonDocument("clock", new BsonInt32(1)).append("objectId", new BsonInt32(1)))
+                    .forEach(pointer -> pointed.add(uuid(tx.see(pointer).get("objectId"))));
+        }
+        return new Owned(objectIds, pointed);
+    }
+
+    /**
+     * The first own pointer of the branch, in key order, that a merge does not hold: a commit on the branch landed
+     * after the merge read it, and ending the branch would lose it, so the merge answers a conflict on it.
+     */
+    static Optional<PointerKey> unheld(CommitBatch batch, Owned owned) {
+        Set<UUID> held = new HashSet<>();
+        batch.holds().forEach(hold -> held.add(hold.key().objectId()));
+        String branch = batch.ref().orElseThrow().refId().toString();
+        return owned.pointed().stream().filter(objectId -> !held.contains(objectId))
+                .map(objectId -> new PointerKey(objectId, branch)).sorted().findFirst();
+    }
+
+    /**
+     * Deletes a ref seen in the transaction: its own pointers of {@code objectIds} ({@link #seeOwnPointers}) and their
+     * pieces, its cut and its document. Its journal entries stay. A deletion and a merge both end a ref this way.
+     */
+    static void end(Tx tx, UUID refId, List<BsonValue> objectIds) {
+        BsonString branch = new BsonString(refId.toString());
+        for (int from = 0; from < objectIds.size(); from += BATCH) {
+            BsonDocument own = new BsonDocument("objectId", Docs.in(objectIds.subList(from,
+                    Math.min(objectIds.size(), from + BATCH)))).append("branch", branch);
+            tx.collection(POINTER).deleteMany(tx.session, own);
+            tx.collection(PROJECTION_PIECE).deleteMany(tx.session, own);
+        }
+        tx.collection(REF_ENTRY).deleteMany(tx.session, new BsonDocument("refId", uuid(refId)));
+        tx.collection(REF).deleteOne(tx.session, byId(uuid(refId)));
+    }
+
+    /**
+     * The branch a commit lands on or ends (D33, backlog 103), read in the commit's transaction and seen; empty when it
+     * is gone, a tag, or past its expiry at the batch's time. Call before the change's stamp is fixed. MongoDB has no
+     * shared locks, so a commit on the branch then marks it, as a commit marks its objects, and a merge deletes it:
+     * either write conflicts with a merge, a deletion or a renewal at the same moment, and with another commit on the
+     * branch, so commits on one branch take turns.
+     */
+    static Optional<BsonDocument> openBranch(Tx tx, CommitBatch batch) {
+        Optional<BsonDocument> found = tx.find(REF, byId(uuid(batch.ref().orElseThrow().refId())));
+        if (found.isEmpty() || !found.get().getString("kind").getValue().equals(Ref.Kind.BRANCH.name())
+                || expired(found.get(), batch.committedAt())) {
+            return Optional.empty();
+        }
+        return Optional.of(tx.see(found.get()));
+    }
+
+    /**
+     * The key of the first swap of a commit on a branch whose object is not a table or view of the branch's cut. The
+     * cut counts, since the transaction read its ref; it never changes while the ref lives.
+     */
+    static Optional<PointerKey> outsideCut(Tx tx, CommitBatch batch) {
+        BsonValue refId = uuid(batch.ref().orElseThrow().refId());
+        for (PointerSwap swap : batch.swaps()) {
+            if (!tx.exists(REF_ENTRY, new BsonDocument("refId", refId).append("objectId", uuid(swap.key().objectId()))
+                    .append("kind", new BsonDocument("$ne", new BsonString(NAMESPACE_KIND))))) {
+                return Optional.of(swap.key());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Those of {@code objectIds} that a ref's cut names (D33): an entry counts only while its ref exists, so a cut
+     * left by a create that never inserted its ref names nothing. Read in {@code session}.
+     */
+    static Set<BsonValue> referenced(MongoDatabase database, ClientSession session, List<BsonValue> objectIds) {
+        Map<BsonValue, List<BsonValue>> refsOf = new HashMap<>();
+        database.getCollection(REF_ENTRY, BsonDocument.class).find(session, new BsonDocument("objectId",
+                        Docs.in(objectIds)).append("kind", new BsonDocument("$ne", new BsonString(NAMESPACE_KIND))))
+                .projection(new BsonDocument("objectId", new BsonInt32(1)).append("refId", new BsonInt32(1)))
+                .forEach(entry -> refsOf.computeIfAbsent(entry.get("refId"), ref -> new ArrayList<>())
+                        .add(entry.get("objectId")));
+        Set<BsonValue> referenced = new HashSet<>();
+        if (!refsOf.isEmpty()) {
+            database.getCollection(REF, BsonDocument.class)
+                    .find(session, new BsonDocument("_id", Docs.in(new ArrayList<>(refsOf.keySet()))))
+                    .projection(new BsonDocument("_id", new BsonInt32(1)))
+                    .forEach(ref -> referenced.addAll(refsOf.get(ref.get("_id"))));
+        }
+        return referenced;
     }
 
     Optional<RefEntry> findNamespace(UUID refId, List<String> normalizedPath) {
