@@ -8,14 +8,13 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 5 S, 9 M, 2 L, 4 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [17](backlog/17.md) | S | Console sign-in against Entra ID and Ping, with an automated test | signing in and out against Entra ID and Ping at work (waits on work) | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
-| [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | the per-profile key is built (2026-11-20); mapping keys to domains waits on SEC-8 (work), and its size on the answer | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
@@ -117,53 +116,6 @@ Done when Paul has said whether runtime administration is wanted. If it is: a ma
 operators, audited, with the same overlap and TLS checks as startup.
 
 **Decided 2026-11-19 (D41):** left open and not to be built now ("lets leave it open and document it as a backlog item we will not do right now"). What it would change: storage profiles (store kind, endpoint, region, table root, allowed prefixes, STS role or static keys, the maintenance worker's identity), new catalogs (profile, KMS key set and legal entity, fixed once a catalog exists) and the vending settings are read at startup, so adding a catalog or a store, or rotating a MinIO or Ceph static key, takes a config change and a rolling restart. Nessie works the same way by default; its hidden stored mode, which only its tests can update, is described in D41.
-
-### 23. Per-request SSE-KMS keys (waits on SEC-8)
-
-- Decided: 2026-11-19, D26
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, the per-profile key is built (2026-11-20); mapping keys to domains waits on SEC-8 (work), and its size on the answer
-
-`build-plan.md`, M6, Open: per-request SSE-KMS keys and a KMS condition in the session policy. Today encryption at
-rest is the bucket's default key and the catalog records only the key set's name (D26). Waits on SEC-8 (KMS
-key-policy owners per domain), a work question in section 6.
-
-Done when SEC-8 is answered and, if keys are per domain, vended sessions write with the catalog's key and the session
-policy refuses any other.
-
-**Decided 2026-11-19 (D26):** one KMS key per storage profile now ("Per-profile key now"): vended sessions must write with it and are refused any other. How keys map to domains still waits on SEC-8.
-
-**Built 2026-11-20 (worktree-agent-a48507f072a64c9bf): the per-profile key, on AWS S3 profiles; open until SEC-8
-is answered.**
-
-- `nuna.storage.profiles.<name>.kms-key` names one key ARN (`StorageProfile.kmsKey`). The server refuses to start,
-  naming the profile, on an alias, a bare key id, a key in another region or partition, or a key on a MinIO or Ceph
-  profile. A profile with no key behaves as before, its session policy text unchanged.
-- The vended session's policy moves PutObject (which covers CreateMultipartUpload) to a statement whose condition
-  requires `s3:x-amz-server-side-encryption` = `aws:kms` and `s3:x-amz-server-side-encryption-aws-kms-key-id` = the
-  key ARN, and allows the key's use: `kms:GenerateDataKey` and `kms:Decrypt` for writers, `kms:Decrypt` for readers.
-- The server's metadata files are written with SSE-KMS under the key; the load response's config carries
-  `s3.sse.type: kms` and `s3.sse.key: <ARN>` (Iceberg's S3FileIO; the worker and its Jobs ask for vended credentials,
-  so they get it). A caller that declines delegation gets no config, so it is not told the key.
-- Java-only tests: `SessionPolicyTest`, `StorageProfileTest`, `KmsKeyProfileTest` (new), `NoKmsBoundaryTest` (now
-  lets `MetadataFiles` and `SessionPolicy` alone name the encryption headers). Bites `kms-condition-dropped`,
-  `kms-key-unchecked`, `metadata-write-without-kms-key` and `kms-key-not-in-config` (bites/M6), each seen to bite.
-- On AWS (`KmsKeyAwsTest`, heavy, AWS only, Paul's allowance of 2026-11-20 with the account's `aws/s3` key; no key
-  created): vended credentials write with the key in one request and in parts, and read it back; they are refused
-  (AccessDenied) a write with no encryption header and with SSE-S3, and read credentials any write; the server's
-  metadata write is encrypted with the key. Two things S3 does that the first runs showed: a write naming SSE-KMS
-  but no key is let through, because S3 checks the condition against the key it will use (here `aws/s3`, the
-  profile's key); and S3 looks a named key up before it asks the policy, so a key ARN that does not exist is refused
-  by S3 (400), not the policy.
-
-Not shown, for want of a second key (Paul allowed none): that a write naming another existing key is refused by the
-policy (the condition's text is checked in `SessionPolicyTest`), and that the policy's KMS statement suffices for a
-customer-managed key whose key policy defers to IAM (`aws/s3`'s policy lets every principal in the account use it
-through S3). Left to items 97 (a key on MinIO and Ceph profiles) and 98 (the key is not recorded with the profile,
-so a change of key is not audited). SEC-8 (keys per domain) is a work question.
-
-**Paul, 2026-11-20 (D26, amended):** no customer-managed test key for now ("Not now"); the refusal of another
-real key and the KMS grant for a customer-managed key are checked at work.
 
 ### 24. Kubernetes deployment: what was not checked (at work)
 
@@ -961,6 +913,7 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 | [19](backlog/19.md) | Cap the audit-read route for scripted use | done | 2026-11-20 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [21](backlog/21.md) | A CA bundle per storage profile | done | 2026-11-20 |
+| [23](backlog/23.md) | Per-request SSE-KMS keys | done | 2026-11-20 |
 | [27](backlog/27.md) | Queryable audit tables (v1.x, D23) | done | 2026-11-20 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
