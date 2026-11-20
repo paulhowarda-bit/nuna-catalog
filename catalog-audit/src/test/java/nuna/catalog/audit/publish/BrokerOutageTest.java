@@ -13,9 +13,11 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** D23 and the M7 gate: while audit is unavailable, credentials are not handed out. */
+@Tag("heavy")
 class BrokerOutageTest {
 
     private static final Duration DELIVERY = Duration.ofSeconds(4);

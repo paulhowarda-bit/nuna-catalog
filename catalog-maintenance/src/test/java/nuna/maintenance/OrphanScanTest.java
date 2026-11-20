@@ -9,12 +9,14 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
  * Orphan removal (D30 (8)): a file beneath the table's location that no metadata reaches goes to the pending-deletion
  * list once it is older than the policy's orphan age, and not before; a reachable file never does.
  */
+@Tag("heavy")
 class OrphanScanTest {
 
     private final TestCatalog catalog = TestCatalog.get();

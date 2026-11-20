@@ -24,6 +24,7 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +58,7 @@ import tools.jackson.databind.json.JsonMapper;
         "management.opentelemetry.logging.export.otlp.endpoint=${telemetry-test.otlp}/v1/logs",
         "management.opentelemetry.logging.export.schedule-delay=100ms",
         "management.tracing.sampling.probability=1.0"})
+@Tag("heavy")
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class, TelemetryTest.FailingRoute.class})
 @ExtendWith(OutputCaptureExtension.class)

@@ -11,6 +11,7 @@ import java.net.http.HttpResponse;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * The callers: {@code tester} holds create and modify on the catalog, the steward manage-tags, the outsider
  * nothing; the operator is a platform operator and {@code maintenance} the maintenance principal.
  */
+@Tag("heavy")
 @GovernanceServer
 class ManagementAuthorizationTest {
 

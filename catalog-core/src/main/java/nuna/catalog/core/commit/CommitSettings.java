@@ -6,8 +6,10 @@ import java.util.Objects;
 /**
  * The commit engine's bounds (build-plan P10).
  *
- * @param maxAttempts  attempts of one request, the first included, before a lost swap is a 409 (D9)
- * @param retryBudget  wall-clock bound on those attempts; no retry starts after it
+ * @param maxAttempts  attempts of one request, the first included, before a lost swap is a 409 (D9); also
+ *                     how often findCommit is asked to decide an unknown outcome while the store is down
+ * @param retryBudget  wall-clock bound on those attempts and asks, from the request's start; no retry starts
+ *                     after it
  * @param firstBackoff the wait before the second attempt; it doubles per attempt, as iceberg-core's
  *                     CatalogHandlers does, with up to 10% jitter
  * @param keyLifetime  how long an idempotency key's answer is replayed (D10)

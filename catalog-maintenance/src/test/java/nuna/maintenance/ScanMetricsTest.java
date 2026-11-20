@@ -22,6 +22,7 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -41,6 +42,7 @@ import org.junit.jupiter.api.Test;
  * No meter is labelled with anything but a failure's kind, a scan's outcome or a reason for compaction, save the needy
  * tables' gauge.
  */
+@Tag("heavy")
 class ScanMetricsTest {
 
     /** The soft-drop window the server keeps a dropped table for (nuna.rest.drop-retention, 30 days by default). */

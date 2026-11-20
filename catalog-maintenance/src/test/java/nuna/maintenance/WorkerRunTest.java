@@ -19,6 +19,7 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.Test;
  * a night; what expiry and the orphan scan leave unreferenced is deleted seven days after it was recorded, and not
  * before, whether the window is open or not.
  */
+@Tag("heavy")
 class WorkerRunTest {
 
     private final TestCatalog catalog = TestCatalog.get();

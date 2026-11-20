@@ -53,6 +53,7 @@ import org.junit.jupiter.api.Test;
  * The shared suite against PostgreSQL 18 with a synchronous standby: the commit suite, every group
  * suite as a nested class on the same backend, and PostgreSQL-only hazards.
  */
+@Tag("heavy")
 class PostgresStoreSuiteTest extends CommitSuite {
 
     private ReplicatedPostgres postgres;

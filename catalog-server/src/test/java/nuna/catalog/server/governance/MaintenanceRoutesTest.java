@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * the due pending deletions, and the pending deletions it records and completes, which wait out the database's
  * PITR window (7 days here); and the delete policies an operator applies so that the worker alone deletes.
  */
+@Tag("heavy")
 @GovernanceServer
 class MaintenanceRoutesTest {
 

@@ -20,8 +20,10 @@ import org.apache.kafka.common.header.Header;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+@Tag("heavy")
 class KafkaPublishingTest {
 
     private static KafkaBroker broker;

@@ -18,6 +18,7 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.openqa.selenium.By;
@@ -41,6 +42,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * putting a token in the tab's storage, where the console's token box or its PKCE sign-in would put it
  * ({@code ConsoleSignInTest} drives the real sign-in).
  */
+@Tag("heavy")
 @GovernanceServer
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConsoleBrowserTest {

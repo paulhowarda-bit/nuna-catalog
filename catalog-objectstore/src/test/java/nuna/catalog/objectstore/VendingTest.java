@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.function.Executable;
@@ -54,6 +55,7 @@ import software.amazon.awssdk.services.s3.model.S3Object;
  * with read access, and raw requests whose paths use dot segments, percent-encoded dots, slashes and
  * backslashes, double encoding, overlong UTF-8 and NUL, each signed exactly as sent.
  */
+@Tag("heavy")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class VendingTest {
 
