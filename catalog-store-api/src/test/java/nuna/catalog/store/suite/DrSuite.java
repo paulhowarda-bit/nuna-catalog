@@ -5,6 +5,7 @@ import static nuna.catalog.store.suite.Changes.now;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.store.CatalogObject;
+import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.DrState;
 import nuna.catalog.store.DrWatermark;
@@ -13,6 +14,7 @@ import nuna.catalog.store.JournalStore;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.WriteResult;
 import java.util.List;
 import java.util.Optional;
@@ -22,8 +24,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The DR replication watermark (D37, amended 2026-11-20): kept per active table and view, it only rises and never
- * passes the main pointer, and the objects behind it are listed by id. The listing is shared by every test on the
- * backend, so each test looks only at its own objects.
+ * passes the main pointer, a DR rewind's commit records it at the version it writes (item 100), and the objects behind
+ * it are listed by id. The listing is shared by every test on the backend, so each test looks only at its own objects.
  */
 public abstract class DrSuite extends GroupSuite {
 
@@ -76,6 +78,41 @@ public abstract class DrSuite extends GroupSuite {
         assertThat(store.recordDrWatermark(table.id(), new DrWatermark(4, "s3://suite-warehouse/ahead.json", recorded)))
                 .as("one above the pointer").isEqualTo(AHEAD);
         assertThat(store.readDrWatermark(table.id())).contains(high);
+    }
+
+    @Test
+    @DisplayName("DR: a swap that records the watermark, a DR rewind's, records it at the version it writes in its own"
+            + " commit, however many versions it gives up, so the object is no longer behind; one that conflicts"
+            + " records nothing, and a later commit leaves it")
+    void aRewindsCommitRecordsTheWatermark() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        PointerKey key = new PointerKey(table.id(), PointerKey.MAIN);
+        Pointer v1 = commit(table, 1);
+        Pointer v102 = commit(table, 101);
+        assertApplied(store.recordDrWatermark(table.id(), at(v1)));
+        PointerSwap stale = recording(Commits.advance(key, Optional.of(v1), table.id() + "-stale"));
+        PointerSwap rewind = recording(Commits.advance(key, Optional.of(v102), table.id() + "-rewind"));
+
+        assertThat(store.commit(new CommitBatch(UUID.randomUUID(), recorded, List.of(stale), List.of(),
+                Optional.empty()))).isInstanceOf(CommitResult.Conflict.class);
+        assertThat(store.readDrWatermark(table.id())).as("after a conflict").contains(at(v1));
+        assertThat(store.commit(new CommitBatch(UUID.randomUUID(), recorded, List.of(rewind), List.of(),
+                Optional.empty()))).isInstanceOf(CommitResult.Committed.class);
+
+        DrWatermark rewound = at(rewind.next());
+        assertThat(rewound.version()).isEqualTo(103);
+        assertThat(store.readDrWatermark(table.id())).contains(rewound);
+        assertThat(behind(table)).as("not behind, so the verifier's work list leaves it out").isEmpty();
+        Pointer v104 = commit(table, 1);
+        assertThat(store.readDrWatermark(table.id())).as("after a plain commit").contains(rewound);
+        assertThat(behind(table)).containsExactly(new DrState(table, 104, v104.metadataLocation(),
+                Optional.of(rewound)));
+    }
+
+    /** {@code swap}, recording its next pointer as the object's DR watermark, as a DR rewind's does. */
+    private static PointerSwap recording(PointerSwap swap) {
+        return new PointerSwap(swap.key(), swap.expected(), swap.next(), swap.journal(), true);
     }
 
     @Test

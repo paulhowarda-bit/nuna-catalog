@@ -19,7 +19,8 @@ public interface CommitStore {
 
     /**
      * Swaps every pointer in the batch and writes its journal, outbox and idempotency records,
-     * all or nothing.
+     * and the DR watermark of each swap that records one ({@link PointerSwap#drWatermark}), all or
+     * nothing.
      *
      * @return {@code Committed}; {@code Conflict} when an expected pointer did not match; or
      * {@code Inactive} when a swapped pointer's object exists and is not active (an object the store

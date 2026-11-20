@@ -8,7 +8,8 @@ import java.util.Objects;
  * data included, the maintenance worker's verifier found in the DR store, so the table reads whole there at that
  * version. The catalog keeps the newest it was told of; it never moves back, and never above the pointer. It lives in
  * the catalog database so it reaches the DR region with the database, and it is written after the version it names,
- * so a replica that keeps commit order never holds a watermark above its pointer.
+ * so a replica that keeps commit order never holds a watermark above its pointer. A DR rewind records it in the same
+ * commit as the version it writes, the watermark's metadata again ({@link PointerSwap#drWatermark}; item 100).
  *
  * @param version          the pointer version
  * @param metadataLocation that version's metadata file

@@ -393,6 +393,27 @@ the walk judges the versions between the watermark and the pointer as the verifi
 adds nothing beyond the newest whole one (the version a rewind writes) counts as whole and the table walks at once,
 with no second verifier pass; the runbook drops that pass. Left for item 28, with item 100.
 
+**Built, 2026-11-20 (worktree-agent-a5f1bf763c08126f3): "Judge like the verifier", with item 100; open until the
+heavy and overnight tests pass.**
+- `Reconcile.plan`'s check from the watermark judges the journaled versions above it as `DrVerify` does, with the
+  same `AddedFiles.firstMissing` and `addsNothing`: a version is whole when the one before it is and it adds no
+  missing file, and after one that is not, only when it adds nothing to the newest whole version. The table is walked
+  only when the pointer's version is whole that way; otherwise `problem` names the first file missing since the newest
+  whole version. So a rewound table walks at once, its watermark at the rewind's version (item 100) or still below it.
+  `planRewind` no longer refuses a pointer that holds the watermark's metadata "until the verifier passes it": after
+  item 100 that pointer is the watermark, and "the pointer is at the DR watermark" answers it.
+- Tests, Java only, in `ReconcileFileCheckTest`: `aRewoundTableWalksAtOnce` (rewound through `planRewind` and
+  `rewind`, then walked to the next version, with the watermark at the rewind's version and at the old one) and
+  `theGivenUpVersionsNeverCount` (a version built on one missing a file never counts, whether it adds files or only
+  a property). The earlier stretch tests are unchanged.
+- Bite `bites/D37/walk-counts-given-up-versions` (a version after one not whole counts as whole).
+- The runbook (`deploy/README.md`, steps 4 and 5) and `docs/observability/dr-watermark.md` drop the second verifier
+  pass. `DrDrillTest` (overnight) checks the rewinds' watermarks at once instead of waiting for a verifier pass, and
+  no longer asserts that its lost tails stay under 100 versions.
+
+Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `catalog-maintenance/README.md`
+(not this branch's) still says the drill's verifier "passes the rewound versions (backlog 92)" after the rewind.
+
 ### 29. M9: carry nuna to work (at work)
 
 - Decided: 2026-11-20, D8
@@ -1050,6 +1071,26 @@ in `deploy/README.md` says nothing about a limit.
 
 **Decided 2026-11-20 (D37, amended again):** "Rewind sets watermark": the rewind records the watermark at the
 version it writes, in the same transaction.
+
+**Built, 2026-11-20 (worktree-agent-a5f1bf763c08126f3): "Rewind sets watermark"; open until its heavy tests run.**
+- `PointerSwap` gains `drWatermark`: a swap that sets it records its next pointer as the object's DR watermark in the
+  commit's transaction, by `recordDrWatermark`'s rule (it only rises). `Reconcile.rewind`'s swap sets it, for tables
+  and views; every other commit leaves it unset. The stores raise the watermark after writing the journal:
+  PostgreSQL and CockroachDB (`SqlDr.raise`, the upsert `recordDrWatermark` runs), Oracle (`OracleDr.raise`, its
+  MERGE), MongoDB (`MongoDr.raise`). No schema step.
+- Tests: `ReconcileWatermarkTest` (Java only; its store double records the watermark as the stores do): the rewind's
+  swap records it at the version it writes, after which the plan has nothing to rewind and the walk nothing to report;
+  a rewind giving up 150 versions ends at its watermark; the view's rewind records it too. Heavy, compiled, not run:
+  `DrSuite#aRewindsCommitRecordsTheWatermark` on all four stores (a rewind past 101 versions records it and the object
+  is not behind; a conflicting swap records nothing; a later commit leaves it) and `DrRewindRouteTest` (after the
+  rewind the table is out of the work list and its watermark refuses a lower report; a rewind giving up 101 versions).
+- Bite `bites/D37/rewind-leaves-the-watermark`. `lower-watermark-accepted` and the M8
+  `reconcile-apply-ignores-moved-pointer` recorded again at their moved lines, same breaks.
+- The runbook and `docs/observability/dr-watermark.md` say the rewind records the watermark; neither mentions a
+  limit. `dr-watermark.md`'s "(at most 100 a pass)" describes the verifier's work-list page and stays.
+
+Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only (the governance server's harness), so
+"a route test on each store" is `DrSuite`'s store-level test on all four plus the route test on PostgreSQL.
 
 ## Done and dropped
 

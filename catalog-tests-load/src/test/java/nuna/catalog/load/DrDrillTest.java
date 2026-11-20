@@ -76,10 +76,8 @@ class DrDrillTest {
     /** In the leg with the DR store behind: a table whose commits all reach the DR store before it falls behind. */
     private static final String QUIET = "quiet";
     private static final int QUIET_COMMITS = 10;
-    /** The time between one writer's commits in that leg, so a lost tail stays well inside the DR work list. */
+    /** The time between one writer's commits in that leg. */
     private static final Duration PACE = Duration.ofMillis(150);
-    /** The versions above its watermark a DR work item lists at most (DrRoutes.MAX_VERSIONS). */
-    private static final int WORK_LIST_VERSIONS = 100;
     private static final Duration PATIENCE = Duration.ofMinutes(3);
     private static final Pattern DR_PASS = Pattern.compile("DR pass done: (Pass\\[[^]]*])");
 
@@ -273,14 +271,15 @@ class DrDrillTest {
      * store and reaches DR with the database. Then the replicator pauses: the writers' later commits never reach the DR
      * store, and the watermark stops at the last version whose files did. The region is lost and the DR database
      * promoted, ahead of its store. In DR: servers on the DR store, freeze, a verifier pass, the rewind (plan, then
-     * apply), a verifier pass over the rewound versions, the walk, thaw. Each table that lost commits is back at its
-     * last version the DR store holds whole, the commits it gave up are exactly those whose files never arrived, the
-     * quiet table, whole in DR, is not touched, and every table reads whole in DR.
+     * apply), the walk, thaw. Each table that lost commits is back at its last version the DR store holds whole, the
+     * commits it gave up are exactly those whose files never arrived, the quiet table, whole in DR, is not touched, and
+     * every table reads whole in DR.
      *
-     * <p>The walk checks from the watermark (D37, amended again 2026-11-20: "Check from the watermark"; backlog 28). It
-     * runs after the verifier has passed the rewound versions, so each table's watermark is at its pointer and the walk
-     * has nothing to check or take. Run before that pass, it would find the lost versions, still journaled between the
-     * watermark and the rewound pointer, not whole in the DR store and take nothing for the table.
+     * <p>The rewind records each table's watermark at the version it writes, in its commit (D37, amended again
+     * 2026-11-20: "Rewind sets watermark"; backlog 100), so no table is behind once it answers, whatever its lost tail,
+     * and the walk runs right after it with no second verifier pass, as the runbook says. The walk would take each
+     * table from its rewound version even with the watermark below it, judging the versions between them as the
+     * verifier does ("Judge like the verifier"; backlog 28): the version a rewind writes adds nothing to the watermark.
      */
     @Test
     void aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore() throws Exception {
@@ -359,9 +358,7 @@ class DrDrillTest {
                 assertThat(whole).as("commits of the quiet table whose files arrived").isEqualTo(ops.size());
             } else {
                 assertThat(whole).as("commits of " + table + " whose files arrived").isPositive();
-                assertThat(ops.size() - whole).as("commits of " + table + " whose files never arrived").isPositive()
-                        .as("a lost tail the DR work list holds whole, so the verifier can pass the rewound version")
-                        .isLessThan(WORK_LIST_VERSIONS);
+                assertThat(ops.size() - whole).as("commits of " + table + " whose files never arrived").isPositive();
                 watermarks.put(table, version(metadataFile(ledger, ops.get(whole - 1))));
             }
             kept.put(table, whole);
@@ -432,9 +429,9 @@ class DrDrillTest {
                     .isEqualTo(ledger.acknowledged.get(ops.get(kept.get(table) - 1)));
         }
 
-        // The verifier passes each rewound version (the watermark's metadata again: it adds nothing), so no table is
-        // behind; the walk, from the watermark or the pointer, then has nothing to check or take.
-        awaitWatermarks(operator, Map.of(), "the verifier to pass the rewound versions");
+        // Each rewind recorded its table's watermark at the version it wrote (item 100), so no table is behind, with
+        // no verifier pass; the walk, right after, from each pointer, has nothing to check or take.
+        awaitWatermarks(operator, Map.of(), "the rewinds' watermarks", Duration.ZERO);
         Map<String, String> pointers = new HashMap<>();
         for (String table : all) {
             pointers.put(table, location(writers, table));
@@ -488,9 +485,14 @@ class DrDrillTest {
      * the version expected, which would name a version the DR store does not hold whole.
      */
     private static void awaitWatermarks(Catalog operator, Map<String, Long> expected, String what) {
-        long deadline = System.nanoTime() + PATIENCE.toNanos();
+        awaitWatermarks(operator, expected, what, PATIENCE);
+    }
+
+    /** As {@link #awaitWatermarks(Catalog, Map, String)}, reading at least once and waiting at most {@code patience}. */
+    private static void awaitWatermarks(Catalog operator, Map<String, Long> expected, String what, Duration patience) {
+        long deadline = System.nanoTime() + patience.toNanos();
         JsonNode readout = null;
-        while (System.nanoTime() < deadline) {
+        do {
             readout = expect(operator.send("GET", "/management/v1/dr/watermarks?pageSize=200", null, Map.of()), 200)
                     .json();
             Map<String, Long> listed = new HashMap<>();
@@ -510,8 +512,10 @@ class DrDrillTest {
             if (listed.equals(expected)) {
                 return;
             }
-            ServerProcess.pause(Duration.ofMillis(500));
-        }
+            if (System.nanoTime() < deadline) {
+                ServerProcess.pause(Duration.ofMillis(500));
+            }
+        } while (System.nanoTime() < deadline);
         throw new AssertionError("timed out waiting for " + what + ": expected " + expected + ", last readout "
                 + readout);
     }

@@ -12,6 +12,7 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.WriteResult;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -51,11 +52,7 @@ final class SqlDr {
             if (watermark.version() > pointer.get()) {
                 return AHEAD;
             }
-            int written = update(connection, "INSERT INTO dr_watermark AS w (object_id, version, metadata_location,"
-                            + " recorded_at) VALUES (?, ?, ?, ?) ON CONFLICT (object_id) DO UPDATE"
-                            + " SET version = excluded.version, metadata_location = excluded.metadata_location,"
-                            + " recorded_at = excluded.recorded_at WHERE w.version < excluded.version",
-                    objectId, watermark.version(), watermark.metadataLocation(), watermark.recordedAt());
+            int written = raise(connection, objectId, watermark);
             if (written == 1) {
                 return WriteResult.APPLIED;
             }
@@ -63,6 +60,18 @@ final class SqlDr {
                     objectId).orElseThrow(() -> new SQLException("the dr_watermark row the upsert kept is gone"));
             return kept == watermark.version() ? WriteResult.UNCHANGED : BEHIND;
         }, WriteResult.APPLIED::equals);
+    }
+
+    /**
+     * Keeps {@code watermark} in place of a lower one, in the caller's transaction: the report's write, and a DR
+     * rewind's in its commit ({@link Pointers}). Returns the rows written, 0 when the same or a higher one is kept.
+     */
+    static int raise(Connection connection, UUID objectId, DrWatermark watermark) throws SQLException {
+        return update(connection, "INSERT INTO dr_watermark AS w (object_id, version, metadata_location,"
+                        + " recorded_at) VALUES (?, ?, ?, ?) ON CONFLICT (object_id) DO UPDATE"
+                        + " SET version = excluded.version, metadata_location = excluded.metadata_location,"
+                        + " recorded_at = excluded.recorded_at WHERE w.version < excluded.version",
+                objectId, watermark.version(), watermark.metadataLocation(), watermark.recordedAt());
     }
 
     Optional<DrWatermark> read(UUID objectId) {

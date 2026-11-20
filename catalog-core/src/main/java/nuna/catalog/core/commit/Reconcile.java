@@ -55,11 +55,12 @@ import java.util.stream.LongStream;
  * included, checked as it plans, and stops at the first step that lacks one (D37, amended 2026-11-20: "Walk with a
  * file check"; item 83, folded into item 28). It counts a version's files as the maintenance worker's verifier does
  * ({@link AddedFiles}). The verifier keeps each table's and view's DR watermark, the newest version whose every file
- * it found in the DR store; since the watermark is written after the version it names, it is never above the pointer.
- * A table whose pointer is above its watermark is checked from the watermark (D37, amended again 2026-11-20: "Check
- * from the watermark"): every version between them, the pointer's included, must be whole in storage too, or the walk
- * takes nothing for it and reports it for the {@linkplain #rewind rewind}, which moves it back to its watermark and
- * gives up the commits in between. A table with no watermark is walked from its pointer.
+ * it found in the DR store; since the watermark is written after the version it names, or with it by a rewind, it is
+ * never above the pointer. A table whose pointer is above its watermark is checked from the watermark (D37, amended again 2026-11-20: "Check
+ * from the watermark", "Judge like the verifier"): the pointer's version must be whole in storage as the verifier
+ * judges the versions between them, or the walk takes nothing for it and reports it for the {@linkplain #rewind
+ * rewind}, which moves it back to its watermark, gives up the commits in between and records the watermark at the
+ * version it writes, in the same commit (item 100). A table with no watermark is walked from its pointer.
  */
 public final class Reconcile {
 
@@ -160,8 +161,9 @@ public final class Reconcile {
      * snapshots add, and its statistics files (D37, amended 2026-11-20). The plan keeps the steps before the first that
      * lacks one, takes no tip, and says which file is missing; a file that cannot be read stops it the same way.
      *
-     * <p>When the table's pointer is above its DR watermark, the versions between them are checked first, the same way
-     * from the watermark's ({@link #sinceWatermark}); if one is not whole, the plan takes nothing and says why.
+     * <p>When the table's pointer is above its DR watermark, the versions between them are judged first, from the
+     * watermark's, as the verifier judges them ({@link #sinceWatermark}); if the pointer's is not whole, the plan takes
+     * nothing and says why.
      */
     public Plan plan(CatalogObject table, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
         Pointer from = store.readPointer(table.mainKey())
@@ -205,11 +207,14 @@ public final class Reconcile {
 
     /**
      * Why the walk takes nothing for {@code table}, whose pointer is {@code from} (D37, amended again 2026-11-20: "Check
-     * from the watermark"): its pointer is above its DR watermark, and a version between them, the pointer's included,
-     * lacks a file it adds to the version before it (the watermark's, for the first), its own metadata file among them,
-     * or cannot be checked. The versions are the ones the DR database's journal records above the watermark, the commits
-     * a {@linkplain #rewind rewind} would give up, and they must run one by one to the pointer. Empty when the table has
-     * no watermark, its pointer is at it, or every version between them is whole in storage.
+     * from the watermark"): its pointer is above its DR watermark, and judging the versions between them as the
+     * maintenance worker's verifier does ("Judge like the verifier"), the pointer's is not whole in storage, or they
+     * cannot be checked. Each version, from the watermark's, is whole when the version before it is and storage holds
+     * every file it adds to it, its own metadata file among them; after one that is not, a version is whole only when it
+     * adds nothing to the newest whole one ({@link AddedFiles#addsNothing}), as the version a rewind writes adds nothing
+     * to the watermark. So the commits a rewind gave up never count, and the version it wrote does. The versions are the
+     * ones the DR database's journal records above the watermark and must run one by one to the pointer. Empty when the
+     * table has no watermark, its pointer is at it, or the pointer's version is whole.
      */
     private Optional<String> sinceWatermark(CatalogObject table, Pointer from) {
         Optional<DrWatermark> kept = store.readDrWatermark(table.id());
@@ -225,29 +230,51 @@ public final class Reconcile {
             return Optional.of("the journal does not hold every version " + between + ", one by one, so they cannot be"
                     + " checked and the walk takes nothing for the table");
         }
-        String rewind = ": not every version " + between + " is whole in this store, so the walk takes nothing for the"
-                + " table; rewind it to its watermark";
+        String rewind = ", so the pointer's version is not whole in this store, judging the versions " + between
+                + " as the verifier does, and the walk takes nothing for the table; rewind it to its watermark";
         String at = watermark.metadataLocation();
         try {
             if (!files.exists(at)) {
                 return Optional.of("storage does not hold the DR watermark's file " + at + ", so the versions above it"
                         + " cannot be checked and the walk takes nothing for the table");
             }
-            AddedFiles.TableVersion base = AddedFiles.parse(at, files.read(at, "").json());
+            // The newest whole version, the first file missing since it, and whether the version before is whole.
+            AddedFiles.TableVersion whole = AddedFiles.parse(at, files.read(at, "").json());
+            Optional<String> missing = Optional.empty();
+            boolean previousWhole = true;
             for (Lost version : versions) {
                 at = version.metadataLocation();
-                if (!files.exists(at)) {
-                    return Optional.of("storage does not hold " + (version.version() == from.version()
-                            ? "the pointer's file " : "the metadata file of version " + version.version() + ", ")
-                            + at + rewind);
+                String location = at;
+                boolean isWhole;
+                Optional<String> gap = Optional.empty();
+                AddedFiles.TableVersion metadata = null;
+                if (!files.exists(location)) {
+                    isWhole = false;
+                    gap = Optional.of((version.version() == from.version() ? "the pointer's file "
+                            : "the metadata file of version " + version.version() + ", ") + location);
+                } else {
+                    metadata = AddedFiles.parse(location, files.read(location, "").json());
+                    if (previousWhole) {
+                        gap = AddedFiles.firstMissing(whole, metadata, files::bytes, files::exists)
+                                .map(file -> file + ", which version " + version.version() + " adds (" + location + ")");
+                        isWhole = gap.isEmpty();
+                    } else {
+                        // After a version not whole, one counts only when it adds nothing to the newest whole one:
+                        // the version a rewind writes, never one built on the versions it gave up (D37, amended again
+                        // 2026-11-20: "Judge like the verifier").
+                        isWhole = AddedFiles.addsNothing(whole, metadata);
+                    }
                 }
-                AddedFiles.TableVersion metadata = AddedFiles.parse(at, files.read(at, "").json());
-                Optional<String> missing = AddedFiles.firstMissing(base, metadata, files::bytes, files::exists);
-                if (missing.isPresent()) {
-                    return Optional.of("storage does not hold " + missing.get() + ", which version " + version.version()
-                            + " adds (" + at + ")" + rewind);
+                if (isWhole) {
+                    whole = metadata;
+                    missing = Optional.empty();
+                } else if (missing.isEmpty()) {
+                    missing = gap;
                 }
-                base = metadata;
+                previousWhole = isWhole;
+            }
+            if (missing.isPresent()) {
+                return Optional.of("storage does not hold " + missing.get() + rewind);
             }
         } catch (RuntimeException e) {
             return Optional.of("the files of " + at + ", " + between + ", cannot be checked, so the walk takes nothing"
@@ -373,7 +400,7 @@ public final class Reconcile {
                     Projection.of(Metadata.tableLink(read.json(), step.location()).facts()));
             String updates = "[{\"action\":\"dr-fast-forward\",\"metadata-location\":" + quote(step.location())
                     + ",\"proof\":\"" + step.proof().name().toLowerCase(java.util.Locale.ROOT) + "\"}]";
-            Optional<String> refused = swap(table, before, next, updates, caller, events, "reconcile step");
+            Optional<String> refused = swap(table, before, next, false, updates, caller, events, "reconcile step");
             if (refused.isPresent()) {
                 return new Applied(plan, applied, refused);
             }
@@ -386,9 +413,9 @@ public final class Reconcile {
     /**
      * Plans moving a table's or view's main pointer back to its DR watermark (D37, amended 2026-11-20: views too):
      * the newest version whose every file the verifier found in the DR store. It lists the journaled commits above the
-     * watermark, which the rewind gives up. There is nothing to rewind when the object has no watermark, its pointer is
-     * at it, or its pointer already holds the watermark's metadata (a rewind the verifier has not passed yet), and it
-     * cannot rewind when storage does not hold the watermark's metadata file as metadata of this object.
+     * watermark, which the rewind gives up. There is nothing to rewind when the object has no watermark or its pointer
+     * is at it, as it is after a rewind, and it cannot rewind when storage does not hold the watermark's metadata file
+     * as metadata of this object.
      */
     public Rewind planRewind(CatalogObject object) {
         String kind = kind(object);
@@ -411,11 +438,6 @@ public final class Reconcile {
                     + " checked"));
         }
         TableFiles.Read read = files.read(to.metadataLocation(), "");
-        if (read.sha256().equals(from.sha256())) {
-            return new Rewind(object, from, watermark, "", List.of(), Optional.of("the pointer, version "
-                    + from.version() + ", already holds the DR watermark's metadata, version " + to.version()
-                    + "; there is nothing to rewind until the verifier passes it"));
-        }
         List<Lost> lost = lost(object, to.version());
         try {
             String uuid = facts(object, read.json(), to.metadataLocation()).uuid();
@@ -434,8 +456,10 @@ public final class Reconcile {
      * Moves the pointer back to the watermark in one journaled commit, published through {@code events} as the
      * fast-forward's steps are: it writes the watermark's metadata again as the next version, since a pointer only
      * moves forward and the walk stops where a file's version is not the pointer's. Only a table or view under a DR
-     * freeze is rewound. It does not move the watermark, which the verifier keeps. A swap whose outcome was unknown is
-     * decided as {@link #apply} decides a step's.
+     * freeze is rewound. The same commit records that version as the DR watermark (D37, amended again 2026-11-20:
+     * "Rewind sets watermark"; item 100): it is the watermark's own metadata, whole by construction, so the object is
+     * at its watermark however many versions it gave up, and the walk takes it from there at once. A swap whose outcome
+     * was unknown is decided as {@link #apply} decides a step's.
      */
     public Rewound rewind(Rewind plan, Caller caller, CommitEvents events) {
         if (plan.problem().isPresent()) {
@@ -459,7 +483,7 @@ public final class Reconcile {
         String updates = "[{\"action\":\"dr-rewind\",\"metadata-location\":" + quote(written.location())
                 + ",\"watermark-version\":" + to.version() + ",\"watermark-location\":" + quote(to.metadataLocation())
                 + ",\"versions-given-up\":" + (before.version() - to.version()) + "}]";
-        Optional<String> refused = swap(object, before, next, updates, caller, events, "rewind");
+        Optional<String> refused = swap(object, before, next, true, updates, caller, events, "rewind");
         return refused.isPresent() ? new Rewound(plan, Optional.empty(), refused)
                 : new Rewound(plan, Optional.of(next), Optional.empty());
     }
@@ -496,11 +520,12 @@ public final class Reconcile {
 
     /**
      * Swaps the table's main pointer from {@code before} to {@code next} in one commit, journaled for {@code caller}
-     * with {@code updates} and published through {@code events}; empty when it committed, else why not. An unknown
-     * outcome is decided as the commit engine decides a commit (D9).
+     * with {@code updates} and published through {@code events}, and with {@code drWatermark} records {@code next} as
+     * its DR watermark in that commit; empty when it committed, else why not. An unknown outcome is decided as the
+     * commit engine decides a commit (D9).
      */
-    private Optional<String> swap(CatalogObject table, Pointer before, Pointer next, String updates, Caller caller,
-                                  CommitEvents events, String what) {
+    private Optional<String> swap(CatalogObject table, Pointer before, Pointer next, boolean drWatermark,
+                                  String updates, Caller caller, CommitEvents events, String what) {
         UUID commitId = UUID.randomUUID();
         Instant at = clock.instant();
         JournalEntry entry = new JournalEntry(caller.principal().id(),
@@ -508,7 +533,8 @@ public final class Reconcile {
         List<OutboxEvent> outbox = events.of(new CommitEvents.Commit(commitId, at, caller, table,
                 Optional.of(before), next, "[]", updates, false));
         CommitBatch batch = new CommitBatch(commitId, at,
-                List.of(new PointerSwap(table.mainKey(), Optional.of(before), next, entry)), outbox, Optional.empty());
+                List.of(new PointerSwap(table.mainKey(), Optional.of(before), next, entry, drWatermark)), outbox,
+                Optional.empty());
         boolean committed;
         try {
             CommitResult result = store.commit(batch);
