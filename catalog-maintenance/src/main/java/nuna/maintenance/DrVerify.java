@@ -1,6 +1,9 @@
 package nuna.maintenance;
 
 import nuna.catalog.iceberg.AddedFiles;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
@@ -8,8 +11,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
-import org.apache.iceberg.TableMetadata;
-import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.io.SupportsPrefixOperations;
 
@@ -85,18 +86,18 @@ final class DrVerify {
             // The watermark's own file is gone from the DR store: nothing builds on it, so check the pointer whole.
             return whole(item);
         }
-        TableMetadata safeMetadata = TableMetadataParser.read(dr, watermark.metadataLocation());
+        AddedFiles.TableVersion safeMetadata = AddedFiles.read(watermark.metadataLocation(), this::bytes);
         boolean previousSafe = true;
         Optional<Version> safe = Optional.empty();
         Optional<String> missing = Optional.empty();
         for (Version version : item.versions()) {
             Optional<String> gap;
-            TableMetadata metadata = null;
+            AddedFiles.TableVersion metadata = null;
             if (!exists(version.metadataLocation())) {
                 gap = Optional.of(version.metadataLocation());
             } else {
-                metadata = TableMetadataParser.read(dr, version.metadataLocation());
-                gap = previousSafe ? AddedFiles.firstMissing(safeMetadata, metadata, dr, this::exists)
+                metadata = AddedFiles.read(version.metadataLocation(), this::bytes);
+                gap = previousSafe ? AddedFiles.firstMissing(safeMetadata, metadata, this::bytes, this::exists)
                         : AddedFiles.addsNothing(safeMetadata, metadata) ? Optional.empty()
                         : Optional.of("version " + version.version() + " adds files to version "
                                 + safe.map(Version::version).orElse(watermark.version()) + " after a version not"
@@ -148,12 +149,20 @@ final class DrVerify {
         if (!present.test(pointer.metadataLocation())) {
             return new Result(Optional.empty(), Optional.of(pointer.metadataLocation()));
         }
-        TableMetadata metadata = TableMetadataParser.read(dr, pointer.metadataLocation());
-        Optional<String> gap = AddedFiles.firstMissing(null, metadata, dr, present);
+        AddedFiles.TableVersion metadata = AddedFiles.read(pointer.metadataLocation(), this::bytes);
+        Optional<String> gap = AddedFiles.firstMissing(null, metadata, this::bytes, present);
         return gap.isPresent() ? new Result(Optional.empty(), gap) : new Result(Optional.of(pointer), Optional.empty());
     }
 
     private boolean exists(String location) {
         return dr.newInputFile(location).exists();
+    }
+
+    private byte[] bytes(String location) {
+        try (InputStream in = dr.newInputFile(location).newStream()) {
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot read " + location + " in the DR store", e);
+        }
     }
 }

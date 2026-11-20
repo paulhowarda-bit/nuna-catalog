@@ -3,10 +3,10 @@ Module: catalog-core
 Test: ReconcileWatermarkTest#aFrozenViewIsRewoundToItsWatermark
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index 39dbc30..698396f 100644
+index 08c5025..d34fab5 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -405,7 +405,7 @@ public final class Reconcile {
+@@ -403,7 +403,7 @@ public final class Reconcile {
  
      /** A table's or a view's metadata facts, read as its kind's metadata; throws on a file that is not. */
      private static Facts facts(CatalogObject object, String json, String location) {

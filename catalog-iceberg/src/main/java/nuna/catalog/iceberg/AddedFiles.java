@@ -36,7 +36,8 @@ import org.apache.iceberg.util.ThreadPools;
  * it adds, the manifest list, the manifests that snapshot adds and the data and delete files those add, and the
  * statistics and partition statistics files the version adds. Its metadata file is the caller's to find. The
  * maintenance worker's verifier counts a version's files here, and so does the reconcile's walk, so the two agree on
- * what a version adds. Files are only read, never written.
+ * what a version adds. Files are only read, never written, each read whole through the caller's {@link Reader}, so
+ * no iceberg-core type is part of this class's surface (D2).
  */
 public final class AddedFiles {
 
@@ -46,26 +47,46 @@ public final class AddedFiles {
         byte[] read(String location);
     }
 
+    /** One version of a table's metadata, parsed once. */
+    public static final class TableVersion {
+
+        private final TableMetadata metadata;
+
+        private TableVersion(TableMetadata metadata) {
+            this.metadata = metadata;
+        }
+    }
+
     private AddedFiles() {
     }
 
-    /**
-     * The first file the table metadata {@code json} adds to {@code baseJson} that {@code present} does not find; none
-     * when every one is there. For a caller that holds metadata as JSON and reads files through {@code reader}.
-     */
-    public static Optional<String> firstMissing(String baseLocation, String baseJson, String location, String json,
-                                                Reader reader, Predicate<String> present) {
-        return firstMissing(TableMetadataParser.fromJson(baseLocation, baseJson),
-                TableMetadataParser.fromJson(location, json), io(reader), present);
+    /** Table metadata the caller holds as JSON; throws on anything that is not table metadata. */
+    public static TableVersion parse(String location, String json) {
+        return new TableVersion(TableMetadataParser.fromJson(location, json));
+    }
+
+    /** A table metadata file read through {@code reader}, compressed or not, as Iceberg's client reads one. */
+    public static TableVersion read(String location, Reader reader) {
+        return new TableVersion(TableMetadataParser.read(io(reader), location));
     }
 
     /**
-     * The first file {@code metadata} adds to {@code base} (everything it reaches, when {@code base} is null) that
+     * The first file {@code version} adds to {@code base} (everything it reaches, when {@code base} is null) that
      * {@code present} does not find; none when every one is there. A manifest a snapshot of the base added, and a file
-     * a snapshot of the base added, belong to the base. Manifest lists and manifests are read through {@code io}.
+     * a snapshot of the base added, belong to the base. Manifest lists and manifests are read through {@code reader}.
      */
-    public static Optional<String> firstMissing(TableMetadata base, TableMetadata metadata, FileIO io,
+    public static Optional<String> firstMissing(TableVersion base, TableVersion version, Reader reader,
                                                 Predicate<String> present) {
+        return firstMissing(base == null ? null : base.metadata, version.metadata, io(reader), present);
+    }
+
+    /** Whether a version adds nothing to the base: no snapshot and no statistics file the base lacks. */
+    public static boolean addsNothing(TableVersion base, TableVersion version) {
+        return addsNothing(base.metadata, version.metadata);
+    }
+
+    private static Optional<String> firstMissing(TableMetadata base, TableMetadata metadata, FileIO io,
+                                                 Predicate<String> present) {
         Set<Long> baseSnapshots = base == null ? Set.of()
                 : base.snapshots().stream().map(Snapshot::snapshotId).collect(Collectors.toSet());
         // Sequence numbers tell which snapshot added a file only from format version 2: in version 1 they are all 0.
@@ -109,8 +130,7 @@ public final class AddedFiles {
         return absent.stream().sorted().findFirst();
     }
 
-    /** Whether a version adds nothing to the base: no snapshot and no statistics file the base lacks. */
-    public static boolean addsNothing(TableMetadata base, TableMetadata metadata) {
+    private static boolean addsNothing(TableMetadata base, TableMetadata metadata) {
         Set<Long> snapshots = base.snapshots().stream().map(Snapshot::snapshotId).collect(Collectors.toSet());
         return metadata.snapshots().stream().allMatch(snapshot -> snapshots.contains(snapshot.snapshotId()))
                 && statistics(base).containsAll(statistics(metadata));

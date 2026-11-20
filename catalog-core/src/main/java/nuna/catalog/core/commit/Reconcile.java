@@ -162,16 +162,15 @@ public final class Reconcile {
         if (walked.steps().isEmpty()) {
             return walked;
         }
-        String baseLocation = walked.from().metadataLocation();
-        String baseJson = files.read(baseLocation, walked.from().sha256()).json();
+        AddedFiles.TableVersion base = AddedFiles.parse(walked.from().metadataLocation(),
+                files.read(walked.from().metadataLocation(), walked.from().sha256()).json());
         for (int taken = 0; taken < walked.steps().size(); taken++) {
             Step step = walked.steps().get(taken);
-            String json;
+            AddedFiles.TableVersion version;
             Optional<String> missing;
             try {
-                json = files.read(step.location(), step.sha256()).json();
-                missing = AddedFiles.firstMissing(baseLocation, baseJson, step.location(), json, files::bytes,
-                        files::exists);
+                version = AddedFiles.parse(step.location(), files.read(step.location(), step.sha256()).json());
+                missing = AddedFiles.firstMissing(base, version, files::bytes, files::exists);
             } catch (RuntimeException e) {
                 return cut(walked, taken, "the files version " + step.version() + " adds (" + step.location()
                         + ") cannot be checked: " + e.getMessage());
@@ -181,8 +180,7 @@ public final class Reconcile {
                         + step.version() + " adds (" + step.location() + "): its files have not all reached this"
                         + " store, so the walk stops before it");
             }
-            baseLocation = step.location();
-            baseJson = json;
+            base = version;
         }
         return walked;
     }

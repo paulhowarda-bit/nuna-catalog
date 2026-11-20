@@ -3,10 +3,10 @@ Module: catalog-core
 Test: ReconcileWatermarkTest#onlyAFrozenTableIsRewound
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index 39dbc30..3f7bbd4 100644
+index 08c5025..4cfab2b 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -381,7 +381,7 @@ public final class Reconcile {
+@@ -379,7 +379,7 @@ public final class Reconcile {
              return new Rewound(plan, Optional.empty(), plan.problem());
          }
          CatalogObject object = plan.object();

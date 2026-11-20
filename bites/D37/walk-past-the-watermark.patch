@@ -3,10 +3,10 @@ Module: catalog-core
 Test: ReconcileFileCheckTest#theWalkStopsBeforeTheFirstVersionMissingAFile+onlyTheCheckedStepsAreApplied
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index 39dbc30..1256d8e 100644
+index 08c5025..524a412 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -176,7 +176,7 @@ public final class Reconcile {
+@@ -175,7 +175,7 @@ public final class Reconcile {
                  return cut(walked, taken, "the files version " + step.version() + " adds (" + step.location()
                          + ") cannot be checked: " + e.getMessage());
              }
