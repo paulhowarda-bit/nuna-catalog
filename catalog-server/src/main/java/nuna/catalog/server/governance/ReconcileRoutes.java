@@ -2,6 +2,8 @@ package nuna.catalog.server.governance;
 
 import static nuna.catalog.server.governance.Management.CATALOG;
 
+import nuna.catalog.core.commit.CommitEngine;
+import nuna.catalog.core.commit.CommitSettings;
 import nuna.catalog.core.commit.Reconcile;
 import nuna.catalog.core.commit.TableFiles;
 import nuna.catalog.server.governance.Management.Request;
@@ -78,7 +80,8 @@ class ReconcileRoutes {
             json.get("accept").forEach(location -> accept.add(location.asString()));
         }
         TableFiles files = storage.forCatalog(catalog.id()).files();
-        Reconcile reconcile = new Reconcile(store, files, clock);
+        // The bounds the server's commit engines take (Engines): a step whose outcome was lost is decided as a commit.
+        Reconcile reconcile = new Reconcile(store, files, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
 
         ObjectNode answer = Management.JSON.createObjectNode();
         answer.put("apply", apply);
