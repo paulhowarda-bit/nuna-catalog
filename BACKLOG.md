@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**26 open:** 9 S, 9 M, 4 L, 4 XL.
+**25 open:** 8 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -36,7 +36,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
 | [76](backlog/76.md) | S | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | two loops in two overnight tests; no wait. Before the first overnight run after item 15 lands, or that run may fail on it | 2026-11-20 |
-| [77](backlog/77.md) | S | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | two prepared patches to apply and a fast build; waits on items 15 and 71 releasing `rest/` and `telemetry/` | 2026-11-20 |
 | [78](backlog/78.md) | S | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | a guard change on six routes with tests, once Paul decides; waits on Paul | 2026-11-20 |
 
 ## Open items in full
@@ -540,42 +539,6 @@ each loop only when the current window has longer left than the loop takes. `Slo
 should then read 32 of 32. The tests are `overnight`, so only the overnight run (or `./nightly.sh` on Paul's word)
 shows it.
 
-### 77. rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java catalog-server/src/test/java/nuna/catalog/server/rest/HiddenNamesTest.java bites/D18/namespace-blind-to-grants-inside.patch catalog-server/src/test/java/nuna/catalog/server/telemetry/TelemetryTest.java docs/observability/table-health.md
-- Effort: S, two prepared patches to apply and a fast build; waits on items 15 and 71 releasing `rest/` and `telemetry/`
-
-Item 73 hid names on the management API with item 14's rule (a caller that holds nothing on a namespace, table or
-view, above it or, for a namespace, inside it, is answered as for one that does not exist). The rule lived in
-`rest/Guard.java` as private methods, and `rest/` was held by item 15's agent, so item 73 moved a copy into a public
-`security/Holdings` (`something`, `onOrAbove`, `onAboveOrIn`) for the governance and grant routes and left `Guard`
-alone. Until `Guard` asks `Holdings`, the rule is written twice and the two can drift.
-
-Item 73 also changed what two files held by item 71's agent say:
-
-- `TelemetryTest#withoutAClientIdTheRequestIdIsTheTraceId` (heavy) sends otto, who holds nothing, to
-  `.../tables/t/governance` and expects 403; it now gets 404 `NoSuchTableException`, with the denial still audited
-  under its request id. It fails in the heavy build until changed.
-- `docs/observability/table-health.md`, under the routes table: "A caller without the privilege gets 403" is true
-  now only for a caller that holds something on the table.
-
-Two patches were prepared on 2026-11-20 against `main` with item 73 merged, in that session's scratchpad (handed to
-the coordinator; what each does is below, should the files be gone). Each passed `git apply --check`; neither was
-built:
-
-- `guard-uses-holdings.patch`: `Guard` takes `Holdings` in place of `CatalogStore` and calls
-  `holdings.onOrAbove(request.caller(), target)` and `holdings.onAboveOrIn(request.caller(), catalog.id(), id)`; its
-  `holdsOnOrAbove`, `holdsOnAboveOrIn`, `below` and `parent` go, with their imports. `HiddenNamesTest` builds `Guard`
-  with `new Holdings(authorizer, store, settings)`. `bites/D18/namespace-blind-to-grants-inside.patch` is recorded
-  again with the same break (`if (true || groups.isEmpty())`) in `Holdings`, still naming
-  `HiddenNamesTest#aGrantOnAnythingInANamespaceLetsTheCallerSeeTheNamespace`.
-- `telemetry-and-docs.patch`: the test expects 404; the doc says a refusal is 403 except on a table's health to a
-  caller that holds nothing on the table, which is 404 `NoSuchTableException`, and that every refusal is audited.
-
-Done when `Guard` asks `Holdings` and keeps no copy of the rule, `HiddenNamesTest` and the fast build pass, and the
-test and the doc say 404 for a caller that holds nothing.
-
 ### 78. Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -663,3 +626,4 @@ tests.
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
+| [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |

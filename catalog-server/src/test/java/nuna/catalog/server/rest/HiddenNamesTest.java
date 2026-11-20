@@ -27,6 +27,7 @@ import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
 import nuna.catalog.server.security.DenialsForTests;
+import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.telemetry.RequestIds;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogObject.Kind;
@@ -129,7 +130,7 @@ class HiddenNamesTest {
         Authorizer authorizer = new Authorizer(store, store, store,
                 new Separation(Set.of("grant-admins"), Set.of("platform-ops")), false, Set.of());
         Guard guard = new Guard(authorizer, DenialsForTests.denials(publisher, settings, clock), publisher, settings,
-                clock, store);
+                clock, new Holdings(authorizer, store, settings));
         Lookup lookup = new Lookup(store, settings);
         Idempotency idempotency = new Idempotency(store, clock);
         AuditEvents events = new AuditEvents(settings);
