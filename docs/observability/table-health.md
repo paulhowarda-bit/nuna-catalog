@@ -19,8 +19,9 @@ Three routes, all answering JSON. Times are ISO-8601 instants, kept to the milli
 | `GET /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health` | `select` on the table | One table's health |
 | `GET /management/v1/maintenance/scans` | Platform operators (`nuna.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
 
-A caller without the privilege gets 403 `ForbiddenException`, audited like every refusal on a management route; a
-table that does not exist, 404 `NoSuchTableException`.
+A refusal is 403 `ForbiddenException`, except on a table's health to a caller that holds nothing on the table: that is
+404 `NoSuchTableException`, the answer for a table that does not exist (D18, backlog 73). Every refusal is audited, as on
+every management route.
 
 ### The neediest tables
 

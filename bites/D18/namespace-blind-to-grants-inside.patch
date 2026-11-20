@@ -2,14 +2,14 @@ Breaks: a grant on something inside a namespace no longer lets the caller learn 
 Module: catalog-server
 Test: HiddenNamesTest#aGrantOnAnythingInANamespaceLetsTheCallerSeeTheNamespace
 
-diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-index 1ea81dc..8cd3d1b 100644
---- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-+++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
-@@ -319,7 +319,7 @@ class Guard {
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+index e4beada..d08c053 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+@@ -67,7 +67,7 @@ public class Holdings {
              return true;
          }
-         Set<String> groups = request.caller().subject().groups();
+         Set<String> groups = caller.subject().groups();
 -        if (groups.isEmpty()) {
 +        if (true || groups.isEmpty()) {
              return false;
