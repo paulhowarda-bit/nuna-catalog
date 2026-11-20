@@ -35,6 +35,8 @@ import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.StoreException;
 import nuna.catalog.store.TableAssessment;
 import nuna.catalog.store.TableHealth;
+import nuna.catalog.store.DrState;
+import nuna.catalog.store.DrWatermark;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
@@ -75,6 +77,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlGovernance governance;
     private final SqlDeletions deletions;
     private final SqlHealth health;
+    private final SqlDr dr;
     private final JournalHorizon horizon;
 
     public SqlCatalogStore(DataSource dataSource) {
@@ -101,6 +104,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.governance = new SqlGovernance(transactions);
         this.deletions = new SqlDeletions(transactions);
         this.health = new SqlHealth(transactions);
+        this.dr = new SqlDr(transactions);
     }
 
     // ---- commit core (sections 4 and 5.1) ----
@@ -417,6 +421,23 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public List<MaintenanceScan> listScans() {
         return health.listScans();
+    }
+
+    // ---- the DR watermark (D37) ----
+
+    @Override
+    public WriteResult recordDrWatermark(UUID objectId, DrWatermark watermark) {
+        return dr.record(objectId, watermark);
+    }
+
+    @Override
+    public Optional<DrWatermark> readDrWatermark(UUID objectId) {
+        return dr.read(objectId);
+    }
+
+    @Override
+    public Page<DrState> listDrBehind(PageRequest page) {
+        return dr.listBehind(page);
     }
 
     // ---- grants ----

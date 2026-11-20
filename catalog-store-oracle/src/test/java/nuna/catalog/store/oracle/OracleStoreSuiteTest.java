@@ -48,6 +48,7 @@ import nuna.catalog.store.suite.CatalogStoreUnderTest;
 import nuna.catalog.store.suite.Changes;
 import nuna.catalog.store.suite.CommitSuite;
 import nuna.catalog.store.suite.GovernanceSuite;
+import nuna.catalog.store.suite.DrSuite;
 import nuna.catalog.store.suite.HealthSuite;
 import nuna.catalog.store.suite.GrantSuite;
 import nuna.catalog.store.suite.GroupSuite;
@@ -147,6 +148,14 @@ class OracleStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Health extends HealthSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return oracle;
+        }
+    }
+
+    @Nested
+    class Dr extends DrSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return oracle;

@@ -20,9 +20,9 @@ import org.junit.jupiter.api.Test;
 /**
  * A rolling upgrade across schema changes (M8). Two servers of the previous release, whose PostgreSQL schema
  * stops at V4 (the journal partitioned), take traffic; servers of this release replace them one at a time, the
- * first of them migrating to V8 (V5: objects can be unregistered; V6: purges are claimed and expired files wait
- * in pending_deletion; V7: a file is pending once; V8: the worker's reports of table health and scans are kept)
- * while previous-release servers still commit. Each server
+ * first of them migrating to V9 (V5: objects can be unregistered; V6: purges are claimed and expired files wait
+ * in pending_deletion; V7: a file is pending once; V8: the worker's reports of table health and scans are kept;
+ * V9: each table's DR watermark is kept) while previous-release servers still commit. Each server
  * leaves only after the balancer has drained it. No request fails and no commit is lost or doubled.
  */
 @Tag("overnight")
@@ -49,7 +49,7 @@ class RollingUpgradeTest {
     }
 
     @Test
-    void upgradingOneServerAtATimeAcrossV5ToV8LosesNothing() throws Exception {
+    void upgradingOneServerAtATimeAcrossV5ToV9LosesNothing() throws Exception {
         String url = stack.postgres.serverUrl();
         ServerProcess old1 = stack.server("upgrade-old-1", previous, url);
         stack.grantWriters();
@@ -88,7 +88,7 @@ class RollingUpgradeTest {
                 beforeUpgrade = ledger.acknowledged.size();
 
                 new1 = stack.server("upgrade-new-1");
-                assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("8");
+                assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("9");
                 catalog.add(new1.uri());
                 ServerProcess.pause(Duration.ofSeconds(5));
                 catalog.drain(old1.uri());
