@@ -17,6 +17,9 @@ import java.util.Map;
  * partition's transaction. A transaction that spans partitions arrives on each partition separately (with the same
  * transaction id) and SingleStore does not say how many partitions it touched, so its parts can land in two
  * consecutive Iceberg commits.
+ *
+ * <p>For an append-only table the first update or delete stops the feed, before its transaction is taken in: no
+ * commit holds it and no recorded offset passes it, so the feed stops at the same change each time it starts.
  */
 final class ChangeBatch {
 
@@ -28,13 +31,19 @@ final class ChangeBatch {
      */
     record Change(Object[] values, boolean deleted, boolean replacesEarlier) {}
 
+    private final String database;
+    private final String source;
+    private final boolean appendOnly;
     private final int[] keyPositions;
     private final List<List<Event>> open;
     private final String[] offsets;
     private final Map<List<Object>, Change> changes = new LinkedHashMap<>();
 
     /** A batch starting after the given offsets, one per partition. */
-    ChangeBatch(SourceTable table, String[] after) {
+    ChangeBatch(SourceTable table, String[] after, boolean appendOnly) {
+        database = table.database();
+        source = database + "." + table.table();
+        this.appendOnly = appendOnly;
         keyPositions = table.primaryKey().stream().mapToInt(name -> {
             for (int i = 0; i < table.columns().size(); i++) {
                 if (table.columns().get(i).name().equals(name)) {
@@ -55,7 +64,17 @@ final class ChangeBatch {
         List<Event> pending = open.get(event.partition());
         switch (event.type()) {
             case BEGIN_TRANSACTION -> pending.clear();
-            case INSERT, UPDATE, DELETE -> pending.add(event);
+            case INSERT -> pending.add(event);
+            case UPDATE, DELETE -> {
+                if (appendOnly) {
+                    throw new IllegalStateException(source + " is append-only (singlestore.append-only), but "
+                            + "SingleStore sent " + event.type() + " on partition " + event.partition() + " after offset "
+                            + offsets[event.partition()] + ". The feed stops before that transaction, and stops there "
+                            + "again each time it starts. To copy the table afresh: stop the pipeline, drop the Iceberg "
+                            + "copy, run SNAPSHOT DATABASE " + database + ", and start the pipeline");
+                }
+                pending.add(event);
+            }
             case COMMIT_TRANSACTION -> {
                 pending.forEach(this::apply);
                 pending.clear();

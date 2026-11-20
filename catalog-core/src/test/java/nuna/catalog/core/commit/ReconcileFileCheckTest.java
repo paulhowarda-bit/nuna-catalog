@@ -10,8 +10,13 @@ import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.DrWatermark;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.JournalEntry;
+import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.OutboxEvent;
+import nuna.catalog.store.Page;
+import nuna.catalog.store.PageRequest;
+import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Securable;
@@ -20,6 +25,7 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -59,8 +65,10 @@ import org.junit.jupiter.api.Test;
  * Iceberg client committed a table's versions on the primary; the store the reconcile runs against, the DR store,
  * holds what the test replicates to it, and the DR database's pointer names version 1. The walk moves the table forward
  * only through versions whose every added file, data included, is in that store, and stops at the first that lacks
- * one, saying which, whether the table has a DR watermark or not. Against a store double holding the table's pointer,
- * so it needs no database.
+ * one, saying which. A table whose pointer is above its DR watermark is checked from the watermark (D37, amended again
+ * 2026-11-20: "Check from the watermark"): if a version between them lacks a file, the walk takes nothing for it and
+ * reports it for the rewind. Against a store double holding the table's pointer, watermark and journal, so it needs no
+ * database.
  */
 class ReconcileFileCheckTest {
 
@@ -79,6 +87,8 @@ class ReconcileFileCheckTest {
     private final List<PointerSwap> swapped = new ArrayList<>();
     private Pointer pointer;
     private Optional<DrWatermark> watermark = Optional.empty();
+    /** Versions the DR database's journal lacks. */
+    private final Set<Long> unjournaled = new HashSet<>();
     private final Reconcile reconcile;
 
     ReconcileFileCheckTest() {
@@ -179,27 +189,6 @@ class ReconcileFileCheckTest {
     }
 
     @Test
-    @DisplayName("a table walks so with a DR watermark at its pointer, below it, or none")
-    void theWatermarkDoesNotChangeTheCheck() {
-        append("a");
-        append("b");
-        DataFile c = append("c");
-        replicateAll();
-        remove(c.location());
-        at(2);
-
-        for (Optional<DrWatermark> kept : List.of(Optional.of(new DrWatermark(2, versions.get(2), Instant.now())),
-                Optional.of(new DrWatermark(1, versions.get(1), Instant.now())), Optional.<DrWatermark>empty())) {
-            watermark = kept;
-
-            Reconcile.Plan plan = reconcile.plan(object, Set.of(versions.get(3)));
-
-            assertThat(plan.steps()).as("watermark %s", kept).isEmpty();
-            assertThat(plan.problem()).as("watermark %s", kept).get().asString().contains(c.location());
-        }
-    }
-
-    @Test
     @DisplayName("a manifest that cannot be read stops the walk before the version that adds it")
     void anUnreadableManifestStopsTheWalk() {
         append("a");
@@ -216,6 +205,134 @@ class ReconcileFileCheckTest {
         assertThat(plan.steps()).isEmpty();
         assertThat(plan.problem()).get().asString().contains("the files version 2 adds")
                 .contains("cannot be checked");
+    }
+
+    // ---- the check from the watermark ----
+
+    @Test
+    @DisplayName("a pointer above its watermark walks on from the pointer when every version between them is whole")
+    void aWholeStretchWalksOn() {
+        append("a");
+        append("b");
+        append("c");
+        append("d");
+        replicateAll();
+        at(3);
+        watermark = Optional.of(new DrWatermark(1, versions.get(1), Instant.now()));
+
+        Reconcile.Plan plan = reconcile.plan(object, Set.of(versions.get(4)));
+
+        assertThat(plan.problem()).isEmpty();
+        assertThat(plan.steps()).extracting(Reconcile.Step::version).containsExactly(4L);
+        Reconcile.Applied applied = reconcile.apply(plan, OPERATOR,
+                commit -> List.of(new OutboxEvent("test.commit", "{}")));
+        assertThat(applied.stepsApplied()).isEqualTo(1);
+        assertThat(pointer.metadataLocation()).isEqualTo(versions.get(4));
+    }
+
+    @Test
+    @DisplayName("a version between the watermark and the pointer missing a file it adds, even one a later version"
+            + " deletes, or its own metadata file, takes nothing for the table and reports it for the rewind")
+    void aStretchMissingAFileTakesNothing() {
+        DataFile b = deletedBeforeThePointer();
+        watermark = Optional.of(new DrWatermark(1, versions.get(1), Instant.now()));
+        assertThat(reconcile.plan(object, Set.of(versions.get(4))).steps()).as("with every file there")
+                .extracting(Reconcile.Step::version).containsExactly(4L);
+        String manifestList = metadata(2).currentSnapshot().manifestListLocation();
+
+        for (String location : List.of(b.location(), manifestList, versions.get(2), versions.get(3))) {
+            byte[] held = remove(location);
+
+            Reconcile.Plan plan = reconcile.plan(object, Set.of(versions.get(4)));
+
+            assertThat(plan.steps()).as("without %s", location).isEmpty();
+            assertThat(plan.tips()).as("without %s", location).isEmpty();
+            assertThat(plan.problem()).as("without %s", location).get().asString()
+                    .contains("storage does not hold").contains(location)
+                    .contains("between the DR watermark, version 1, and the pointer, version 3")
+                    .contains("the walk takes nothing for the table; rewind it to its watermark");
+            dr.put(location, held);
+        }
+        byte[] held = remove(b.location());
+        assertThat(reconcile.plan(object, Set.of(versions.get(4))).problem()).get().asString()
+                .contains("which version 2 adds (" + versions.get(2) + ")");
+        dr.put(b.location(), held);
+        remove(versions.get(3));
+        assertThat(reconcile.plan(object, Set.of(versions.get(4))).problem()).get().asString()
+                .contains("storage does not hold the pointer's file " + versions.get(3));
+        assertThat(swapped).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a pointer at its watermark walks from the pointer as before: a file missing below it changes nothing,"
+            + " and each step past it is checked")
+    void aPointerAtItsWatermarkIsUnchanged() {
+        DataFile b = deletedBeforeThePointer();
+        watermark = Optional.of(new DrWatermark(3, versions.get(3), Instant.now()));
+
+        walksFromThePointer(b);
+    }
+
+    @Test
+    @DisplayName("a table with no watermark walks from its pointer as before: a file missing below it changes nothing,"
+            + " and each step past it is checked")
+    void noWatermarkIsUnchanged() {
+        DataFile b = deletedBeforeThePointer();
+        watermark = Optional.empty();
+
+        walksFromThePointer(b);
+    }
+
+    @Test
+    @DisplayName("versions between the watermark and the pointer that the journal does not hold one by one, or a"
+            + " watermark whose file the store lacks, cannot be checked, and the walk takes nothing for the table")
+    void aStretchThatCannotBeCheckedTakesNothing() {
+        deletedBeforeThePointer();
+        watermark = Optional.of(new DrWatermark(1, versions.get(1), Instant.now()));
+        unjournaled.add(2L);
+
+        Reconcile.Plan gap = reconcile.plan(object, Set.of(versions.get(4)));
+
+        assertThat(gap.steps()).isEmpty();
+        assertThat(gap.problem()).get().asString().contains("the journal does not hold every version between the DR"
+                + " watermark, version 1, and the pointer, version 3, one by one");
+        unjournaled.clear();
+        remove(versions.get(1));
+
+        Reconcile.Plan gone = reconcile.plan(object, Set.of(versions.get(4)));
+
+        assertThat(gone.steps()).isEmpty();
+        assertThat(gone.problem()).get().asString().contains("storage does not hold the DR watermark's file "
+                + versions.get(1));
+    }
+
+    /**
+     * Version 2 adds data file b and version 3 deletes it, so the pointer's version 3 and version 4 past it are whole
+     * without b, but version 2 is not; the DR database's pointer names version 3, and the DR store holds every file.
+     */
+    private DataFile deletedBeforeThePointer() {
+        append("a");
+        DataFile b = append("b");
+        table.newDelete().deleteFile(b).commit();
+        committed();
+        append("d");
+        replicateAll();
+        at(3);
+        return b;
+    }
+
+    /** The walk from the pointer: b, which only version 2 adds, is not needed; d, which version 4 adds, is. */
+    private void walksFromThePointer(DataFile b) {
+        remove(b.location());
+
+        assertThat(reconcile.plan(object, Set.of(versions.get(4))).steps()).extracting(Reconcile.Step::version)
+                .containsExactly(4L);
+        DataFile d = metadata(4).currentSnapshot().addedDataFiles(primary).iterator().next();
+        remove(d.location());
+        Reconcile.Plan plan = reconcile.plan(object, Set.of(versions.get(4)));
+        assertThat(plan.steps()).isEmpty();
+        assertThat(plan.problem()).get().asString().contains("storage does not hold " + d.location())
+                .contains("which version 4 adds").contains("the walk stops before it");
     }
 
     // ---- the primary and the replication ----
@@ -302,6 +419,7 @@ class ReconcileFileCheckTest {
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "readPointer" -> Optional.of(pointer);
                     case "readDrWatermark" -> watermark;
+                    case "readJournal" -> journal((PageRequest) args[3]);
                     case "readNamespace" -> Optional.empty();
                     case "attributesOf" -> List.of(new GovernanceAttribute(
                             new Securable(Securable.Kind.NAMESPACE, NAMESPACE), GovernanceAttribute.Kind.DR_FREEZE,
@@ -318,5 +436,22 @@ class ReconcileFileCheckTest {
                     }
                     default -> throw new UnsupportedOperationException("a reconcile does not call " + method.getName());
                 });
+    }
+
+    /**
+     * The DR database's journal of the main pointer, in one page: a record for each version after the page's token up
+     * to the pointer's, but those in {@link #unjournaled}.
+     */
+    private Page<JournalRecord> journal(PageRequest page) {
+        long after = page.token().map(token -> Long.parseLong(PageToken.decode(token, 1).getFirst())).orElse(0L);
+        List<JournalRecord> records = new ArrayList<>();
+        for (long version = after + 1; version <= pointer.version(); version++) {
+            if (!unjournaled.contains(version)) {
+                records.add(new JournalRecord(UUID.randomUUID(), object.mainKey(), Instant.now(),
+                        new JournalEntry("writer", null, "spark", "[]", "[]"),
+                        Optional.of(versions.get((int) version - 1)), versions.get((int) version), version));
+            }
+        }
+        return new Page<>(records, Optional.empty());
     }
 }

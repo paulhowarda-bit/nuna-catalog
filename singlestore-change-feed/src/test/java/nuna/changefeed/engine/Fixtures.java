@@ -35,7 +35,7 @@ final class Fixtures {
     }
 
     static FeedConfig config(String table, String partitionBy) {
-        return new FeedConfig("jdbc:mariadb://unused", "root", "", "ops", table, Map.of(), ORDERS, 2, partitionBy, 0);
+        return new FeedConfig("jdbc:mariadb://unused", "root", "", "ops", table, Map.of(), ORDERS, 2, partitionBy, 0, false);
     }
 
     static Object[] row(long id, String symbol, int qty, String price, String status) {

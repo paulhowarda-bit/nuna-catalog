@@ -1,9 +1,13 @@
 package nuna.changefeed.engine;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.iceberg.types.Types;
 import org.junit.jupiter.api.Test;
 
@@ -48,7 +52,38 @@ class SourceTableTest {
         assertThat(config.commitIntervalMs()).isEqualTo(5000);
         assertThat(config.formatVersion()).isEqualTo(2);
         assertThat(config.source()).isEqualTo("ops.orders");
+        assertThat(config.appendOnly()).isFalse();
         assertThatThrownBy(() -> FeedConfig.from(Map.of("singlestore.url", "u"))).hasMessageContaining("missing iceberg.catalog.uri");
+    }
+
+    @Test
+    void appendOnlyTakesTrueOrFalse() {
+        Map<String, String> props = new HashMap<>(Map.of(
+                "singlestore.url", "jdbc:mariadb://localhost:3306/ops", "singlestore.user", "root",
+                "singlestore.database", "ledger", "singlestore.table", "fills",
+                "iceberg.catalog.uri", "http://catalog:8181", "iceberg.namespace", "ledger", "iceberg.table", "fills"));
+        props.put("singlestore.append-only", " true ");
+        assertThat(FeedConfig.from(props).appendOnly()).isTrue();
+        props.put("singlestore.append-only", "false");
+        assertThat(FeedConfig.from(props).appendOnly()).isFalse();
+        props.put("singlestore.append-only", "yes");
+        assertThatThrownBy(() -> FeedConfig.from(props)).hasMessage("singlestore.append-only is yes; it takes true or false");
+    }
+
+    @Test
+    void thePrimaryKeyMustEqualTheShardKeyUnlessTheTableIsAppendOnly() {
+        List<String> primaryKey = List.of("sequencer", "sequence_number");
+        Set<String> shardKey = Set.of("sequence_number");
+
+        assertThatCode(() -> SourceTable.checkKeys("ops.orders", List.of("order_id"), Set.of("order_id"), false))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> SourceTable.checkKeys("ledger.fills", primaryKey, shardKey, false))
+                .hasMessageContaining("must equal the shard key").hasMessageContaining("singlestore.append-only");
+        assertThatCode(() -> SourceTable.checkKeys("ledger.fills", primaryKey, shardKey, true)).doesNotThrowAnyException();
+        assertThatThrownBy(() -> SourceTable.checkKeys("ledger.fills", List.of("sequencer"), shardKey, true))
+                .hasMessageContaining("must contain the shard key");
+        assertThatThrownBy(() -> SourceTable.checkKeys("ledger.fills", List.of(), shardKey, true))
+                .hasMessageContaining("has no primary key");
     }
 
     @Test
