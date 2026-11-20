@@ -3,15 +3,15 @@ Module: catalog-core
 Test: ReconcileTest#movesThroughProvenFilesAndLeavesTheTipToTheOperator
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index 2771cfa..d2d7f98 100644
+index d6f8d5b..7e45507 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -126,7 +126,7 @@ public final class Reconcile {
+@@ -163,7 +163,7 @@ public final class Reconcile {
                  chosen = proven.getFirst();
                  proof = Proof.SUCCESSOR;
              } else {
 -                List<Node> accepted = next.stream().filter(n -> accept.contains(n.location())).toList();
 +                List<Node> accepted = next.stream().limit(1).toList();
-                 if (accepted.size() != 1) {
-                     return new Plan(table, from, steps, next.stream().map(Node::location).toList(),
-                             accepted.isEmpty() ? Optional.empty()
+                 String at = current;
+                 List<ArchivedCommit> recorded = archived.orElse(List.of()).stream()
+                         .filter(commit -> commit.before().equals(at)).distinct().toList();

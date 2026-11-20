@@ -140,8 +140,8 @@ class ReconcileRoutes {
 
     /**
      * Every swap the archive records, each chain checked before any of its records counts (D23). With no archive, or
-     * one that cannot be read whole, the request fails: a tip is never taken on the archive's word unless the archive
-     * was read.
+     * one that cannot be read whole, the request fails rather than walk as though the archive recorded nothing, which
+     * would take every {@code accept} entry unchecked.
      */
     static ArchivedCommits.Read archived(Optional<ObjectLockArchive> archive) {
         ObjectLockArchive configured = archive.orElseThrow(() -> CatalogError.of(409, "ArchiveNotConfiguredException",

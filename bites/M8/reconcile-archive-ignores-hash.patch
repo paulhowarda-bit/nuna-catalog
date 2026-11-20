@@ -1,0 +1,17 @@
+Breaks: an archived swap proves a tip whatever its content: the SHA-256 the archive records is not compared with the file storage holds (backlog 10).
+Module: catalog-core
+Test: ReconcileArchiveTest#aRecordOfOtherContentProvesNothing
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index d6f8d5b..9785fa3 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -174,7 +174,7 @@ public final class Reconcile {
+                 } else if (recorded.size() == 1) {
+                     ArchivedCommit commit = recorded.getFirst();
+                     Optional<Node> match = next.stream().filter(n -> n.location().equals(commit.after())
+-                            && n.version() == commit.version() && n.sha256().equals(commit.sha256())).findFirst();
++                            && n.version() == commit.version()).findFirst();
+                     List<String> contradicted = accepted.stream().map(Node::location)
+                             .filter(location -> match.isEmpty() || !location.equals(match.get().location())).toList();
+                     if (match.isEmpty()) {
