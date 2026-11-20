@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**23 open:** 7 S, 10 M, 2 L, 4 XL.
+**22 open:** 7 S, 9 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,7 +30,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 | [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
-| [96](backlog/96.md) | M | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | M | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | one more field on the stored profile in all four stores, with its migration, and the startup audit naming it | 2026-11-20 |
 | [99](backlog/99.md) | S | A table that commits faster than the DR store replicates never gets a first DR watermark | what is left: dr-watermark.md's paragraphs below, once item 28 has released it; the code is built (M) | 2026-11-20 |
@@ -413,6 +412,8 @@ heavy and overnight tests pass.**
 
 Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `catalog-maintenance/README.md`
 (not this branch's) still says the drill's verifier "passes the rewound versions (backlog 92)" after the rewind.
+
+**Decided 2026-11-20 (D37, amended):** both DR alerts stay severity `page`. Paul: "Both page".
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -893,22 +894,6 @@ it adds no manifest and no data file), and `DrDrillTest` passes in the overnight
 - Not run: the drill is `overnight`. Left: an overnight run in which `DrDrillTest`'s dry run walks, with the
   item 28 walk.
 
-### 96. A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides)
-
-- Added: 2026-11-20 by Paul (from the install at work)
-- Touches: catalog-server/src/main/java/nuna/catalog/server/storage/, catalog-objectstore/, decision-ledger.md
-- Effort: M, a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul
-
-Raised by the same report from work as item 94 (`for-paul/pending/002-the-demo-s-object-store-on-its-own-port-for-engine.md`):
-the catalog vends one `s3.endpoint` per storage profile, the demo's `http://s3:9000`, which resolves only inside the
-cluster. An engine on another machine has to set `s3.endpoint` to the public address itself, after item 94 publishes
-it on 8187. The report suggests a per-client endpoint in the storage profile, one address for clients in the cluster
-and one for the rest, and calls it "worth a thought for the work install".
-
-Paul decides whether the catalog should vend a second address, and if so how it tells the two kinds of client apart
-(the listener a request came in on, a header the front door sets, or the client's network). Until he does, nothing
-changes: outside engines set their own `s3.endpoint`.
-
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
 - Decided: 2026-11-20, D26
@@ -1092,6 +1077,8 @@ version it writes, in the same transaction.
 Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only (the governance server's harness), so
 "a route test on each store" is `DrSuite`'s store-level test on all four plus the route test on PostgreSQL.
 
+**Decided 2026-11-20 (D37, amended):** "a route test on each store" is met by `DrSuite` on all four stores plus `DrRewindRouteTest` on PostgreSQL; the item closes when the heavy build passes them. Paul: "Yes, that's enough".
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1173,4 +1160,5 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
 | [94](backlog/94.md) | The demo's object store on its own port, 8187, for engines on other machines | done | 2026-11-20 |
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
+| [96](backlog/96.md) | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | dropped | 2026-11-20 |
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |
