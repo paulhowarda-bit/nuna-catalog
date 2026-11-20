@@ -1,0 +1,17 @@
+Breaks: a conditional grant reads the group's grants without locking the catalog's row first, so on Oracle two grants made at once each pass on a read that misses the other.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Grants#racingConditionalPutsSeeEachOther
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleGrants.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleGrants.java
+index 2ff4b72..467b884 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleGrants.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleGrants.java
+@@ -51,7 +51,7 @@ final class OracleGrants {
+      */
+     WriteResult putIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
+         return transactions.change(change, "grant", connection -> {
+-            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", grant.catalogId())) {
++            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ?", grant.catalogId())) {
+                 return new WriteResult.Missing(WriteResult.Subject.CATALOG);
+             }
+             List<String> held = query(connection, "SELECT privilege FROM grant_record WHERE catalog_id = ?"

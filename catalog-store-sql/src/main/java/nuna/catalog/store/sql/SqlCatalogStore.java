@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
@@ -423,6 +424,11 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public WriteResult putGrant(Grant grant, String grantedBy, Change change) {
         return grants.put(grant, grantedBy, change);
+    }
+
+    @Override
+    public WriteResult putGrantIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
+        return grants.putIf(grant, grantedBy, change, admits);
     }
 
     @Override

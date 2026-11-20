@@ -1,5 +1,6 @@
 package nuna.catalog.store.sql;
 
+import static nuna.catalog.store.sql.Jdbc.exists;
 import static nuna.catalog.store.sql.Jdbc.instant;
 import static nuna.catalog.store.sql.Jdbc.query;
 import static nuna.catalog.store.sql.Jdbc.update;
@@ -12,6 +13,7 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -19,8 +21,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
-/** Grants to groups (D18, D19). A put share-locks its securable, so a drop or purge that deletes grants waits for it. */
+/**
+ * Grants to groups (D18, D19). A put share-locks its securable, so a drop or purge that deletes grants waits for it.
+ * A conditional put locks its catalog's row first, so conditional puts in one catalog run one at a time.
+ */
 final class SqlGrants {
 
     private static final String COLUMNS = "catalog_id, securable_kind, securable_id, group_name, privilege, granted_by,"
@@ -33,17 +39,36 @@ final class SqlGrants {
     }
 
     WriteResult put(Grant grant, String grantedBy, Change change) {
+        return transactions.change(change, "grant", connection -> insert(connection, grant, grantedBy, change));
+    }
+
+    /**
+     * The group's grants in the catalog are read only once the catalog's row is locked, and READ COMMITTED reads
+     * from that moment, so each conditional put sees every grant the one before it committed.
+     */
+    WriteResult putIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
         return transactions.change(change, "grant", connection -> {
-            Optional<WriteResult> missing = Guards.missing(connection, grant.securable(), Optional.of(grant.catalogId()));
-            if (missing.isPresent()) {
-                return missing.get();
+            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", grant.catalogId())) {
+                return new WriteResult.Missing(WriteResult.Subject.CATALOG);
             }
-            int inserted = update(connection, "INSERT INTO grant_record (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)"
-                            + " ON CONFLICT (securable_id, group_name, privilege) DO NOTHING",
-                    grant.catalogId(), grant.securable().kind().name(), grant.securable().id(), grant.group(),
-                    grant.privilege(), grantedBy, change.at());
-            return inserted == 1 ? WriteResult.APPLIED : WriteResult.UNCHANGED;
+            List<String> held = query(connection, "SELECT privilege FROM grant_record WHERE catalog_id = ?"
+                    + " AND group_name = ?", row -> row.getString("privilege"), grant.catalogId(), grant.group());
+            return admits.test(held) ? insert(connection, grant, grantedBy, change)
+                    : new WriteResult.Refused(WriteResult.Reason.NOT_ADMITTED);
         });
+    }
+
+    private static WriteResult insert(Connection connection, Grant grant, String grantedBy, Change change)
+            throws SQLException {
+        Optional<WriteResult> missing = Guards.missing(connection, grant.securable(), Optional.of(grant.catalogId()));
+        if (missing.isPresent()) {
+            return missing.get();
+        }
+        int inserted = update(connection, "INSERT INTO grant_record (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)"
+                        + " ON CONFLICT (securable_id, group_name, privilege) DO NOTHING",
+                grant.catalogId(), grant.securable().kind().name(), grant.securable().id(), grant.group(),
+                grant.privilege(), grantedBy, change.at());
+        return inserted == 1 ? WriteResult.APPLIED : WriteResult.UNCHANGED;
     }
 
     WriteResult revoke(Grant grant, Change change) {

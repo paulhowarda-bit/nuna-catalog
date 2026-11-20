@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 6 S, 14 M, 4 L, 4 XL.
+**27 open:** 6 S, 13 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -17,7 +17,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
@@ -115,16 +114,6 @@ of the four backends, with a test and a bite.
 assembled by hand. The audit archive could prove which tips were acknowledged.
 
 Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
-
-### 13. The separation-of-duties check and the grant write are not atomic
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, confirm it still holds, then one transaction and a race test
-
-`build-plan.md`, M5 (2026-11-08), Open: the SoD check and the grant write are not atomic, so two grants made at once
-can together break separation of duties. Not settled in the ledger since; confirm it still holds first.
-
-Done when two concurrent grants cannot together break SoD, shown by a test that races them.
 
 ### 15. ETags do not survive a change of server (Paul decides)
 
@@ -604,6 +593,7 @@ Done when Paul has decided, and the management routes answer as he decided, with
 | [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
 | [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
+| [13](backlog/13.md) | The separation-of-duties check and the grant write are not atomic | done | 2026-11-20 |
 | [14](backlog/14.md) | HEAD and loads answer 404 before 403, so names leak to signed-in callers | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |

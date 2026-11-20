@@ -1,0 +1,16 @@
+Breaks: a conditional grant does not mark its catalog's document, so on MongoDB two grants made at once write nothing in common, never conflict, and each passes on a snapshot that misses the other.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Grants#racingConditionalPutsSeeEachOther
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoGrants.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoGrants.java
+index b5753a3..54a3dc1 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoGrants.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoGrants.java
+@@ -78,7 +78,6 @@ final class MongoGrants {
+         tx.see(securable.get());
+         catalog.ifPresent(tx::see);
+         tx.mark(Guards.collection(grant.securable().kind()), securable.get());
+-        catalog.ifPresent(doc -> tx.mark(CATALOG, doc));
+         tx.collection(GRANT).insertOne(tx.session, new BsonDocument("catalogId", uuid(grant.catalogId()))
+                 .append("securableKind", new BsonString(grant.securable().kind().name()))
+                 .append("securableId", uuid(grant.securable().id()))
