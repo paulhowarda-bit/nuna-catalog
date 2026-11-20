@@ -1,0 +1,16 @@
+Breaks: the self-check never looks at the journal-partition job, so a job that cannot run goes unreported and the server starts; each month's first commit then creates its own partition (backlog 72).
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$OracleOnly#selfCheckReportsAJournalJobThatCannotRun+selfCheckReportsAJournalJobThatKeepsFailing
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java
+index abf99e7..7f2628b 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java
+@@ -297,7 +297,6 @@ public final class OracleCatalogStore implements CatalogStore {
+                         "NLS_SORT is " + sort + "; names must sort and compare as bytes, so sessions need"
+                                 + " NLS_SORT = BINARY (the driver sets NLS_LANGUAGE from the JVM locale, and NLS_SORT follows it)"));
+             }
+-            JournalJob.check(connection, jobQueueProcesses, schemaVersion).ifPresent(findings::add);
+             return findings;
+         } catch (SQLException e) {
+             throw new StoreException("self-check failed (the catalog role needs SELECT on V_$DATABASE, V_$SERVICES"

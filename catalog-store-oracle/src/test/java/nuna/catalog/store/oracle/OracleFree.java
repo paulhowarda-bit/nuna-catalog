@@ -324,6 +324,31 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
         return direct;
     }
 
+    /**
+     * A fresh schema at the current version, once the first run of its journal-partition job is over: V5 creates the
+     * job enabled with no start date, so it runs at once.
+     */
+    DataSource freshSchemaAfterTheJobsFirstRun() {
+        DataSource fresh = freshSchema();
+        await(Duration.ofSeconds(120), () -> "1".equals(value(fresh, "SELECT CASE WHEN run_count > 0 AND state <> 'RUNNING'"
+                + " THEN 1 ELSE 0 END FROM user_scheduler_jobs WHERE job_name = ?", JournalJob.NAME)),
+                "the first run of " + JournalJob.NAME);
+        return fresh;
+    }
+
+    /** Waits until the schema's journal-partition job has logged {@code runs} runs and none is under way. */
+    static void awaitJobRunsLogged(DataSource schema, int runs) {
+        await(Duration.ofSeconds(120), () -> jobRunsLogged(schema) >= runs && !"RUNNING".equals(value(schema,
+                "SELECT state FROM user_scheduler_jobs WHERE job_name = ?", JournalJob.NAME)),
+                runs + " logged runs of " + JournalJob.NAME);
+    }
+
+    /** How many runs the schema's journal-partition job has logged. */
+    static int jobRunsLogged(DataSource schema) {
+        return Integer.parseInt(value(schema, "SELECT count(*) FROM user_scheduler_job_run_details WHERE job_name = ?",
+                JournalJob.NAME));
+    }
+
     /** A new Oracle user with the catalog role; returns its name. */
     private String newCatalogUser(String prefix) {
         String user = prefix + (upgradePools.size() + 1);
@@ -360,7 +385,7 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
     @Override
     public Set<String> findingCodes() {
         return Set.of("ora.no-data-guard", "ora.no-transaction-guard", "ora.commit-replay", "ora.commit-nowait",
-                "ora.linguistic-sort");
+                "ora.linguistic-sort", JournalJob.FINDING);
     }
 
     @Override
@@ -377,7 +402,12 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
                 new UnsafeSetting("sessions with COMMIT_WAIT = NOWAIT", "ora.commit-nowait",
                         () -> storeWithSession("ALTER SESSION SET COMMIT_WAIT = 'NOWAIT'").selfCheck()),
                 new UnsafeSetting("sessions with NLS_SORT = GERMAN (a JVM in a German locale)", "ora.linguistic-sort",
-                        () -> storeWithSession("ALTER SESSION SET NLS_SORT = GERMAN").selfCheck()));
+                        () -> storeWithSession("ALTER SESSION SET NLS_SORT = GERMAN").selfCheck()),
+                new UnsafeSetting("a fresh schema whose journal-partition job is disabled", JournalJob.FINDING, () -> {
+                    DataSource fresh = freshSchemaAfterTheJobsFirstRun();
+                    execute(fresh, "BEGIN DBMS_SCHEDULER.DISABLE('" + JournalJob.NAME + "', force => TRUE); END;");
+                    return new OracleCatalogStore(fresh).selfCheck();
+                }));
     }
 
     // ---- Faults ----

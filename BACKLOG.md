@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 7 S, 9 M, 4 L, 4 XL.
+**23 open:** 6 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,7 +33,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
-| [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [81](backlog/81.md) | S | The chart's values.yaml still says only the minting server answers a 304 | one comment in one values file; no wait | 2026-11-20 |
 
@@ -473,30 +472,6 @@ their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
 
-### 72. Oracle's self-check does not notice a journal-partition job that cannot run
-
-- Decided: 2026-11-20, D8
-- Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
-- Touches: catalog-store-oracle/
-- Effort: S, one more query in one store's self-check and a heavy test; waits on Paul's answer below
-
-Oracle keeps its journal's horizon with migration V5's Scheduler job, `JOURNAL_PARTITIONS_AHEAD`, which creates
-this month's partition and the next two every day (item 9 checked it; `OracleStoreSuiteTest#
-schedulerJobCreatesJournalPartitionsAhead`, heavy). The job runs only while `JOB_QUEUE_PROCESSES` is not 0, and
-only while it stays enabled and keeps succeeding (V5's own comment). When it does not run, nothing says so: the
-store's `selfCheck()` reads `V_$PARAMETER` for other findings but not `job_queue_processes`, nor the job's
-`enabled`, `state` or `failure_count` in `user_scheduler_jobs`. Interval partitioning still takes every commit, but
-each month's first commit then creates its partition inside the commit, which took 0.5 to 2.6 s on Free (M2b) and
-can run past the pool's read timeout, which fails that commit (docs/storage-design.md, M2b deviation 9).
-
-Done when the self-check reports a job that cannot run (`job_queue_processes` 0, the job missing, disabled or
-failing), with a heavy test that disables the job on a fresh schema and finds the report.
-
-Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
-job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
-
-**Decided 2026-11-20 (D8, amended):** a journal-partition job that cannot run is a finding like the others and refuses the start, unless the operator allows it by its code ("Refuse, like others").
-
 ### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -587,6 +562,7 @@ ClientIP is needed for ETags. The value itself stays `None`.
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
+| [72](backlog/72.md) | Oracle's self-check does not notice a journal-partition job that cannot run | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
 | [75](backlog/75.md) | deploy/README.md and install-at-work.md still call the ETag routing choice open | done | 2026-11-20 |

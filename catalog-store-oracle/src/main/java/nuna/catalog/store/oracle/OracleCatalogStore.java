@@ -245,15 +245,18 @@ public final class OracleCatalogStore implements CatalogStore {
     /**
      * Reads the settings that decide whether a COMMIT can be trusted: Data Guard protection, the
      * service's Transaction Guard and replay settings, whether COMMIT waits for its redo, and the
-     * session's sort, which must be binary for names to compare as bytes.
+     * session's sort, which must be binary for names to compare as bytes. Then whether the job that
+     * creates the journal's partitions ahead can run ({@link JournalJob}).
      */
     @Override
     public List<SafetyFinding> selfCheck() {
+        int schemaVersion = schemaVersion().version();
         String sql = "SELECT d.protection_mode, d.protection_level, SYS_CONTEXT('USERENV', 'SERVICE_NAME'),"
                 + " s.commit_outcome, s.failover_type,"
                 + " (SELECT LISTAGG(p.name || ' = ' || p.value, ', ') WITHIN GROUP (ORDER BY p.name) FROM v$parameter p"
                 + " WHERE p.name IN ('commit_wait', 'commit_write') AND UPPER(p.value) LIKE '%NOWAIT%'),"
-                + " (SELECT n.value FROM nls_session_parameters n WHERE n.parameter = 'NLS_SORT')"
+                + " (SELECT n.value FROM nls_session_parameters n WHERE n.parameter = 'NLS_SORT'),"
+                + " (SELECT p.value FROM v$parameter p WHERE p.name = 'job_queue_processes')"
                 + " FROM v$database d LEFT JOIN v$services s ON s.name = SYS_CONTEXT('USERENV', 'SERVICE_NAME')";
         try (Connection connection = dataSource.getConnection();
              Statement statement = connection.createStatement();
@@ -266,6 +269,7 @@ public final class OracleCatalogStore implements CatalogStore {
             String failoverType = row.getString(5);
             String noWait = row.getString(6);
             String sort = row.getString(7);
+            String jobQueueProcesses = row.getString(8);
             List<SafetyFinding> findings = new ArrayList<>();
             // The level, not the mode: a MAXIMUM AVAILABILITY primary whose standby is not
             // synchronized keeps its mode and drops its level (to RESYNCHRONIZATION).
@@ -293,6 +297,7 @@ public final class OracleCatalogStore implements CatalogStore {
                         "NLS_SORT is " + sort + "; names must sort and compare as bytes, so sessions need"
                                 + " NLS_SORT = BINARY (the driver sets NLS_LANGUAGE from the JVM locale, and NLS_SORT follows it)"));
             }
+            JournalJob.check(connection, jobQueueProcesses, schemaVersion).ifPresent(findings::add);
             return findings;
         } catch (SQLException e) {
             throw new StoreException("self-check failed (the catalog role needs SELECT on V_$DATABASE, V_$SERVICES"
