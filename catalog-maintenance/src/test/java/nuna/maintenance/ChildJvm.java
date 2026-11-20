@@ -10,6 +10,9 @@ import java.util.List;
 /** A test main started in a JVM of its own, on this JVM's class path, with its output and errors together. */
 final class ChildJvm {
 
+    /** On AWS, the worker's role, which {@link #storage} signs in as: a child's default chain is the run's sign-in. */
+    private static final String WORKER_ROLE = "nuna.test.worker-role";
+
     private ChildJvm() {
     }
 
@@ -23,7 +26,11 @@ final class ChildJvm {
         Files.writeString(classPath, "-cp \"" + System.getProperty("java.class.path").replace('\\', '/') + "\"");
         List<String> command = new ArrayList<>(List.of(ProcessHandle.current().info().command().orElseThrow(),
                 "@" + classPath));
-        command.addAll(TestS3.get().jvmOptions());
+        TestS3 s3 = TestS3.get();
+        command.addAll(s3.jvmOptions());
+        if (s3.kind == TestS3.Kind.AWS) {
+            command.add("-D" + WORKER_ROLE + "=" + s3.maintenancePrincipal());
+        }
         command.addAll(jvmOptions);
         command.add(main.getName());
         command.addAll(arguments);
@@ -41,8 +48,15 @@ final class ChildJvm {
                 profile.secretAccessKey() == null ? "-" : profile.secretAccessKey());
     }
 
-    /** The worker's storage, from the arguments {@link #workerArguments} made, starting at {@code from}. */
+    /**
+     * The worker's storage, from the arguments {@link #workerArguments} made, starting at {@code from}; on AWS, as the
+     * worker's role {@link #start} names ({@link TestCatalog#asRole}).
+     */
     static Storage storage(String[] args, int from) {
+        String role = System.getProperty(WORKER_ROLE);
+        if (role != null) {
+            return TestCatalog.asRole(role);
+        }
         java.net.URI endpoint = args[from].equals("-") ? null : java.net.URI.create(args[from]);
         String key = args[from + 2].equals("-") ? null : args[from + 2];
         String secret = args[from + 3].equals("-") ? null : args[from + 3];

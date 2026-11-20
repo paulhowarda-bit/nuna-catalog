@@ -64,7 +64,7 @@ class ScanMetricsTest {
         StubCompactor compactor = new StubCompactor();
         List<ScanReport> reports = new ArrayList<>();
         try (RESTCatalog writer = catalog.writer();
-             Worker worker = catalog.worker(clock, compactor, failing(Storage.of(catalog.storageProfiles()), storeDown),
+             Worker worker = catalog.worker(clock, compactor, failing(catalog.workerStorage(), storeDown),
                      failing(catalog.workerTokens(), signedOut), meters)) {
             TableIdentifier id = TestCatalog.table(writer, "metered");
             Table table = writer.loadTable(id);

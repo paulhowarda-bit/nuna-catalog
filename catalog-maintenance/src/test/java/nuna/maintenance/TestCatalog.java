@@ -305,7 +305,11 @@ final class TestCatalog {
         return tokens("operator", OPERATORS);
     }
 
-    /** The worker's own storage identity on the run's store (D30): the only one a delete policy lets delete. */
+    /**
+     * The worker's own storage identity on the run's store (D30) as its settings give it: the only one a delete policy
+     * lets delete. On AWS it names no keys, so it is the SDK's default chain, in a test JVM the run's sign-in: storage
+     * as the worker is {@link #workerStorage}.
+     */
     Map<String, WorkerSettings.StorageProfile> storageProfiles() {
         URI endpoint = s3.kind == TestS3.Kind.AWS ? null
                 : URI.create(s3.endpoint.getScheme() + "://" + uri.getHost() + ":" + s3.endpoint.getPort());
@@ -324,22 +328,31 @@ final class TestCatalog {
 
     /** The worker, with its own clock, deciding nothing by the server's. */
     Worker worker(Clock clock, Compactor compactor) {
-        return worker(clock, compactor,
-                s3.kind == TestS3.Kind.AWS ? awsWorkerStorage() : Storage.of(storageProfiles()));
+        return worker(clock, compactor, workerStorage());
     }
 
     /**
-     * On AWS, the worker's storage as its own role, the run's maintenance role. A deployed worker reaches AWS as its
-     * role through the SDK's default chain (its pod's identity), which is all {@link Storage#of} uses there; in this
-     * JVM that chain is the run's sign-in, the catalog's own identity, which the delete policy refuses. So the same
-     * S3FileIO is opened here with Iceberg's AssumeRoleAwsClientFactory, which assumes the role from that sign-in, and
-     * the worker lists and deletes through it as {@link Storage#of}'s does: listPrefix and deleteFiles.
+     * The worker's storage as its own identity (D30), the only one the delete policy lets delete beneath
+     * {@code tables/}: {@link Storage#of} on {@link #storageProfiles} on Silo and Ceph, the run's maintenance role on
+     * AWS ({@link #asRole}). Every test that lists or deletes as the worker uses this, never {@link Storage#of} itself.
      */
-    private Storage awsWorkerStorage() {
+    Storage workerStorage() {
+        return s3.kind == TestS3.Kind.AWS ? asRole(s3.maintenancePrincipal()) : Storage.of(storageProfiles());
+    }
+
+    /**
+     * On AWS, the worker's storage as its own role {@code role}. A deployed worker reaches AWS as its role through the
+     * SDK's default chain (its pod's identity), which is all {@link Storage#of} uses there; in a test JVM that chain is
+     * the run's sign-in, the catalog's own identity, which the delete policy refuses. So the same S3FileIO is opened
+     * here with Iceberg's AssumeRoleAwsClientFactory, which assumes the role from that sign-in, and the worker lists
+     * and deletes through it as {@link Storage#of}'s does: listPrefix and deleteFiles. A child JVM's worker
+     * ({@link ChildJvm#storage}) opens it too.
+     */
+    static Storage asRole(String role) {
         S3FileIO io = new S3FileIO();
         io.initialize(Map.of("client.region", TestS3.REGION, "http-client.type", "apache",
                 "client.factory", AssumeRoleAwsClientFactory.class.getName(),
-                "client.assume-role.arn", s3.maintenancePrincipal(), "client.assume-role.region", TestS3.REGION));
+                "client.assume-role.arn", role, "client.assume-role.region", TestS3.REGION));
         return new Storage() {
             @Override
             public Iterable<FileInfo> list(String prefix) {
