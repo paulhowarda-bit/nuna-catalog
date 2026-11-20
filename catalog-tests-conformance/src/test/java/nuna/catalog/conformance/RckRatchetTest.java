@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.platform.engine.discovery.DiscoverySelectors;
 import org.junit.platform.launcher.LauncherDiscoveryRequest;
@@ -17,6 +18,7 @@ import org.junit.platform.launcher.core.LauncherFactory;
  * passes, or if a test that does not pass has no stated reason in rck-reasons.txt (or one that
  * passes still has one). Re-record the baseline deliberately with {@code -Prck.record=true}.
  */
+@Tag("heavy")
 class RckRatchetTest {
 
     private static final List<String> RCK_CLASSES = List.of(

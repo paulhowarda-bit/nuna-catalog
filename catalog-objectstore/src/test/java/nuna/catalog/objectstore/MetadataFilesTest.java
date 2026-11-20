@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -24,6 +25,7 @@ import software.amazon.awssdk.services.s3.S3Client;
  * Metadata file I/O against the run's S3 store ({@link TestS3}: Silo, Ceph or AWS). A second client with
  * the same full-access credentials stands in for anyone who can reach the bucket directly.
  */
+@Tag("heavy")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MetadataFilesTest {
 

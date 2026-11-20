@@ -22,6 +22,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -40,6 +41,7 @@ import tools.jackson.databind.node.ObjectNode;
  * records a Denial (D18). The routes are read from the server's own mappings, so a new mutating route
  * without a case here fails the test until it gets one.
  */
+@Tag("heavy")
 @GovernanceServer
 class MutatingRoutesAuditTest {
 

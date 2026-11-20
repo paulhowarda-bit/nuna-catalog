@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * Soft drop, undrop within the window, purge after it by a maintenance principal only, as a claim then its
  * completion (D25, D30), and export.
  */
+@Tag("heavy")
 @GovernanceServer
 class LifecycleTest {
 

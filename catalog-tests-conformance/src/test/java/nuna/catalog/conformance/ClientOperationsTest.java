@@ -65,6 +65,7 @@ import org.apache.iceberg.util.JsonUtil;
 import org.apache.iceberg.util.SnapshotUtil;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -81,6 +82,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  * come from the Iceberg spec or from what the client is documented to send. Each test makes a handful of commits,
  * so it stays in the fast build.
  */
+@Tag("heavy")
 class ClientOperationsTest {
 
     private static final Schema SCHEMA = new Schema(

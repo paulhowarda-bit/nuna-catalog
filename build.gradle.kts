@@ -3,8 +3,9 @@ import org.springframework.boot.gradle.plugin.SpringBootPlugin
 
 // nuna catalog: Iceberg REST catalog server. Author: Paul Howard.
 //
-//   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas
-//                              (PostgreSQL only), and a check that every recorded bite still applies
+//   ./gradlew build            the fast build: every test not tagged heavy, overnight or cas, and a check
+//                              that every recorded bite still applies; it needs no Docker, since every
+//                              test that starts a container is tagged heavy (D44)
 //   ./gradlew build -Pheavy    every test but those tagged overnight or cas, each run afresh: the build
 //                              half of the heavy pass, which ./heavy.sh runs before every bite
 //   ./gradlew build -Pnightly  the overnight run, never part of a build: the tests tagged overnight
@@ -113,7 +114,7 @@ subprojects {
     }
 
     tasks.withType<Test>().configureEach {
-        // Tests tagged heavy (multi-node clusters, fault injection) run only with -Pheavy. Tests
+        // Tests tagged heavy (every test that starts a container, D44) run only with -Pheavy. Tests
         // tagged overnight (load, engine matrix, per-mutation fault sweeps) and the CAS test (tagged
         // cas) run in no build: only overnight, with -Pnightly (Paul, 2026-11-11).
         useJUnitPlatform {

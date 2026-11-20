@@ -23,9 +23,11 @@ import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.view.BaseView;
 import org.apache.iceberg.view.View;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** The stock Iceberg Java client works against our /v1/config response, prefix and routes. */
+@Tag("heavy")
 class IcebergClientConfigTest {
 
     private static final HttpClient HTTP = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();

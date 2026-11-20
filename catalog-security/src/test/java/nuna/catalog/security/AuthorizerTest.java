@@ -17,9 +17,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** RBAC (D18, D19) and the governance rules (D17, D20, D27), decided against grants stored in PostgreSQL. */
+@Tag("heavy")
 class AuthorizerTest {
 
     private static final Operation LIST = new Operation("listTables", Privilege.DESCRIBE, false);
