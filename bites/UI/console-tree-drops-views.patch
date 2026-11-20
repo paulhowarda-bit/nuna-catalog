@@ -3,10 +3,10 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theTreeOpensDownToTablesAndViews
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index 5e7d162..c4e5b7f 100644
+index f63ff72..e819e7f 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -226,7 +226,6 @@ function children(levels) {
+@@ -243,7 +243,6 @@ function children(levels) {
    const items = [
      ...c.namespaces.map(n => namespaceItem([...levels, n])),
      ...c.tables.map(t => leaf('table', levels, t)),

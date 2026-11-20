@@ -1,7 +1,8 @@
 // The console: sign-in, the catalog tree on the left, the selected object on the right.
 
 import * as api from './api.js';
-import {claims, finishSignIn, signedIn, signedOut, startSignIn, useToken, whenSignedOut} from './auth.js';
+import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startSignIn, useToken, whenSignedOut}
+  from './auth.js';
 import {fill, h, failure} from './dom.js';
 import {detail} from './detail.js';
 import {healthPage} from './health.js';
@@ -90,10 +91,13 @@ export function rememberTab(tab) {
 
 whenSignedOut(reason => signInScreen(reason));
 
-signOutButton.addEventListener('click', () => {
-  sessionStorage.clear();
+// Forgets the token at once, then ends the IdP's session: the IdP sends the browser back here, to boot().
+signOutButton.addEventListener('click', async () => {
   location.hash = '';
-  signInScreen('Signed out.');
+  signOutButton.hidden = true;
+  fill(main, h('p', {class: 'loading'}, 'Signing out…'));
+  const message = await signOut(config.oidc);
+  if (message) signInScreen(message);
 });
 
 function signInScreen(message) {
@@ -351,6 +355,7 @@ async function start() {
 }
 
 async function boot() {
+  const signingOut = backFromSignOut();
   try {
     const response = await fetch('/ui/config.json', {cache: 'no-store', credentials: 'omit'});
     config = await response.json();
@@ -367,7 +372,7 @@ async function boot() {
     }
   }
   if (signedIn()) await start();
-  else signedOut(claims() ? 'The token has expired. Sign in again.' : null);
+  else signedOut(signingOut ? 'Signed out.' : claims() ? 'The token has expired. Sign in again.' : null);
 }
 
 boot();

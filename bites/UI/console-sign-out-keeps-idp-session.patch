@@ -1,0 +1,17 @@
+Breaks: The console's Sign out forgets its token but never sends the browser to the IdP's end-session endpoint, so the IdP's session lives on.
+Module: catalog-server
+Test: ConsoleSignInTest#signOutEndsTheIdpSessionSoTheNextSignInAsksForThePassword
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index f63ff72..c6ed20a 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -96,7 +96,7 @@ signOutButton.addEventListener('click', async () => {
+   location.hash = '';
+   signOutButton.hidden = true;
+   fill(main, h('p', {class: 'loading'}, 'Signing out…'));
+-  const message = await signOut(config.oidc);
++  const message = await signOut(null);
+   if (message) signInScreen(message);
+ });
+

@@ -24,7 +24,9 @@ public record UiSettings(@DefaultValue("false") boolean devTokenLogin, Oidc oidc
      *                    is the only one besides the server the console may call
      * @param clientId    the console's client id at the IdP
      * @param scopes      what to ask for; the access token must be one the catalog accepts (its audience)
-     * @param redirectUri where the IdP sends the browser back; empty means the console's own {@code /ui/} URL
+     * @param redirectUri where the IdP sends the browser back, after signing in and after signing out (so its client
+     *                    must allow it as a redirect URI and as a post-logout redirect URI); empty means the
+     *                    console's own {@code /ui/} URL
      */
     public record Oidc(URI issuer, String clientId, @DefaultValue("openid") List<String> scopes, URI redirectUri) {
 

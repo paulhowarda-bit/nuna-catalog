@@ -2,9 +2,11 @@
 //  - production: OIDC authorization code with PKCE (a public client, no secret) against nuna.ui.oidc;
 //  - development: a pasted token, offered only when the server sets nuna.ui.dev-token-login=true.
 // The token lives in sessionStorage (this tab only, gone when it closes); never localStorage, never a cookie.
+// "Sign out" forgets the token and ends the person's session at the IdP too (D16, amended 2026-11-19).
 
 const TOKEN = 'nuna.token';
 const PENDING = 'nuna.oidc.pending';
+const SIGNING_OUT = 'nuna.oidc.signing-out';
 
 let onSignedOut = () => {};
 
@@ -118,4 +120,53 @@ export async function finishSignIn(oidc) {
   }
   sessionStorage.setItem(TOKEN, body.access_token);
   return true;
+}
+
+// ---- signing out, here and at the IdP (OpenID Connect RP-initiated logout) ----
+
+/**
+ * The IdP's end-session URL from its discovery document, or null if it names no end_session_endpoint. The IdP sends
+ * the browser back to the console's page, the sign-in's redirect URI, which its client must also allow after a
+ * logout. The console keeps no ID token, so it names its client instead of sending id_token_hint: Keycloak and
+ * PingFederate then ask the person to confirm the sign-out on their own page.
+ */
+export function endSessionUrl(meta, oidc) {
+  if (!meta.end_session_endpoint) return null;
+  const url = new URL(meta.end_session_endpoint);
+  url.searchParams.set('client_id', oidc['client-id']);
+  url.searchParams.set('post_logout_redirect_uri', redirectUri(oidc));
+  return url.toString();
+}
+
+/**
+ * Signs out: forgets the token, then sends the browser to the IdP to end the person's session there, so the next
+ * sign-in asks for a password again; resolves to null as the browser leaves. Resolves to a message, and stays,
+ * when no IdP is configured or its session cannot be ended: its discovery document names no end_session_endpoint,
+ * or cannot be read.
+ */
+export async function signOut(oidc) {
+  sessionStorage.clear();
+  if (!oidc) return 'Signed out.';
+  const host = new URL(oidc.issuer).host;
+  let url;
+  try {
+    url = endSessionUrl(await discovery(oidc), oidc);
+  } catch (error) {
+    return `Signed out here, but your session at ${host} was not ended: ${error.message}. `
+      + 'Signing in again may not ask for a password.';
+  }
+  if (!url) {
+    return `Signed out here, but your session at ${host} was not ended: its discovery document names no `
+      + 'end_session_endpoint. Signing in again may not ask for a password.';
+  }
+  sessionStorage.setItem(SIGNING_OUT, 'true');
+  location.assign(url);
+  return null;
+}
+
+/** Whether this page is the IdP sending the browser back after signOut; true once only. */
+export function backFromSignOut() {
+  const back = sessionStorage.getItem(SIGNING_OUT) !== null;
+  sessionStorage.removeItem(SIGNING_OUT);
+  return back;
 }
