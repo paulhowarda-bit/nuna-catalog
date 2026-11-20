@@ -1,0 +1,17 @@
+Breaks: the append-only key check (the primary key need only contain the shard key) is used for every table, so a table whose updates can move a row's key is copied (backlog 95).
+Module: singlestore-change-feed
+Test: SourceTableTest#thePrimaryKeyMustEqualTheShardKeyUnlessTheTableIsAppendOnly
+
+diff --git a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/SourceTable.java b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/SourceTable.java
+index 5bd738b..25dd593 100644
+--- a/singlestore-change-feed/src/main/java/nuna/changefeed/engine/SourceTable.java
++++ b/singlestore-change-feed/src/main/java/nuna/changefeed/engine/SourceTable.java
+@@ -79,7 +79,7 @@ public record SourceTable(String database, String table, List<Column> columns, L
+             throw new IllegalArgumentException(where + " has no primary key; the change feed names deleted rows by "
+                     + "their key, so it needs one");
+         }
+-        if (appendOnly) {
++        if (true) {
+             if (!primaryKey.containsAll(shardKey)) {
+                 throw new IllegalArgumentException(where + ": the primary key " + primaryKey + " must contain the "
+                         + "shard key " + shardKey);

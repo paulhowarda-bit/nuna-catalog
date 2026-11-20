@@ -295,6 +295,12 @@ Then open the `orders` table in the console: each receipt is a snapshot there.
 - If SingleStore fails to write a batch of receipts (it ran out of memory, say), the commits are already in
   Iceberg. SingleStore starts the feed again from the last receipt it stored, and the feed sends the later
   ones again, read from the snapshots, so `ops.lake_commits` still lists every commit.
+- A table that is only ever inserted into may have a primary key that holds more than its shard key, which the
+  feed otherwise refuses (D35 rule (1)): set `"singlestore.append-only": "true"` in the pipeline's CONFIG. The
+  first `UPDATE` or `DELETE` on it then stops the pipeline in `Error` before that transaction reaches Iceberg, and
+  every start stops at the same change. To copy the table afresh: stop the pipeline, drop the Iceberg copy, run
+  `SNAPSHOT DATABASE` on the table's database, and start the pipeline. Dropping the copy alone is not enough: a
+  start with no offsets reads SingleStore's latest snapshot and the log after it, which still holds the change.
 
 ### Iceberg to SingleStore: Iceberg pipelines
 
