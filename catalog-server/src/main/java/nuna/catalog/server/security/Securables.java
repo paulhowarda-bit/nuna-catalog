@@ -45,11 +45,6 @@ final class Securables {
         this.catalog = catalog;
     }
 
-    static CatalogRecord catalog(CatalogStore store, String name) {
-        return store.findCatalog(Names.normalize(name)).orElseThrow(
-                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + name));
-    }
-
     Resolved catalogItself() {
         return new Resolved(new Securable(Securable.Kind.CATALOG, catalog.id()), new Target.Catalog(catalog.id()),
                 new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG, catalog.id(),

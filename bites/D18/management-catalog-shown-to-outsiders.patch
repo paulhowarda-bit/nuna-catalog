@@ -1,0 +1,18 @@
+Breaks: the management routes under /management/v1/catalogs/{catalog} find any catalog the path names, for a caller that holds nothing in it.
+Module: catalog-server
+Test: ManagementHiddenNamesTest#everyRouteOnACatalogTheCallerHoldsNothingInAnswersAsForOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java b/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java
+index 2da8020..b3f6c25 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java
+@@ -90,7 +90,8 @@ class Management {
+      * @param privilege what the operation needs, or null when it needs no one privilege
+      */
+     CatalogRecord catalog(String prefix, Request request, String operation, Privilege privilege) {
+-        return holdings.catalog(prefix, request.caller(), request.actor(), operation, privilege);
++        return store.findCatalog(Names.normalize(prefix)).orElseThrow(
++                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+     }
+ 
+     NamespaceRecord namespace(CatalogRecord catalog, List<String> levels) {

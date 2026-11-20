@@ -2,19 +2,19 @@ Breaks: any caller may claim and complete a purge, not only a maintenance princi
 Module: catalog-server
 Test: LifecycleTest#onlyAMaintenancePrincipalPurgesAndOnlyAfterTheWindow
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-index 06457d9..3b57ecd 100644
+index eb12d6e..4fc8938 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-@@ -177,7 +177,6 @@ class LifecycleRoutes {
-         Request request = management.request(http);
+@@ -175,7 +175,6 @@ class LifecycleRoutes {
+         CatalogObject object = existing(catalog, id);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
          nuna.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
 -        guard.requireMaintenance(request, audit, "claimPurge");
          String claimant = request.caller().principal().id();
          if (object.state() == CatalogObject.State.PURGING) {
              if (object.purgeClaimant().orElseThrow().equals(claimant)) {
-@@ -231,7 +230,6 @@ class LifecycleRoutes {
-         Request request = management.request(http);
+@@ -229,7 +228,6 @@ class LifecycleRoutes {
+         CatalogObject object = existing(catalog, id);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
          nuna.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
 -        guard.requireMaintenance(request, audit, "purge");

@@ -133,7 +133,7 @@ class HealthRoutes {
         Request request = management.request(http);
         guard.requireMaintenance(request, audit(id), "reportTableAssessment");
         JsonNode json = Management.body(body);
-        CatalogObject table = reported(uuid(id, "table"), json);
+        CatalogObject table = reported(uuid(id, "table"), json, request, "reportTableAssessment");
         TableAssessment assessment;
         try {
             assessment = new TableAssessment(instant(json, "assessed-at"), count(json, "data-files"),
@@ -157,7 +157,7 @@ class HealthRoutes {
         Request request = management.request(http);
         guard.requireMaintenance(request, audit(id), "reportTableCompaction");
         JsonNode json = Management.body(body);
-        CatalogObject table = reported(uuid(id, "table"), json);
+        CatalogObject table = reported(uuid(id, "table"), json, request, "reportTableCompaction");
         CompactionRun compaction;
         try {
             compaction = new CompactionRun(instant(json, "started-at"), optionalInstant(json, "ended-at"),
@@ -221,8 +221,9 @@ class HealthRoutes {
     @GetMapping(path = HEALTH, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> table(@PathVariable("catalog") String prefix, @PathVariable String namespace,
                                  @PathVariable String table, HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, null);
-        guard.require(management.request(http), target, "loadTableHealth", Privilege.SELECT);
+        Request request = management.request(http);
+        Target target = management.target(request, "loadTableHealth", Privilege.SELECT, prefix, namespace, table, null);
+        guard.require(request, target, "loadTableHealth", Privilege.SELECT);
         CatalogObject object = target.object().orElseThrow();
         TableHealth health = store.readTableHealth(object.id())
                 .orElse(new TableHealth(object, Optional.empty(), Optional.empty()));
@@ -247,9 +248,10 @@ class HealthRoutes {
 
     /**
      * The active table a report names, by id: refused when there is none (404), or when its catalog, namespace and
-     * name now name another table (409) or nothing (404).
+     * name now name another table (409) or nothing (404). Its catalog is found as every route finds one, for
+     * {@code operation}.
      */
-    private CatalogObject reported(UUID id, JsonNode json) {
+    private CatalogObject reported(UUID id, JsonNode json, Request request, String operation) {
         String catalogName = Management.text(json, "catalog", MAX_NAME);
         List<String> levels = levels(json);
         String name = Management.text(json, "name", MAX_NAME);
@@ -257,7 +259,7 @@ class HealthRoutes {
         CatalogObject table = store.readObject(id).filter(found -> found.kind() == CatalogObject.Kind.TABLE
                 && found.state() == CatalogObject.State.ACTIVE).orElseThrow(() -> CatalogError.of(404,
                 "NoSuchTableException", "Table " + id + " no longer exists"));
-        CatalogRecord catalog = management.catalog(catalogName);
+        CatalogRecord catalog = management.catalog(catalogName, request, operation, null);
         Optional<CatalogObject> named = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
                 .flatMap(namespace -> store.findObject(namespace.id(), Names.normalize(name)))
                 .filter(found -> found.kind() == CatalogObject.Kind.TABLE);

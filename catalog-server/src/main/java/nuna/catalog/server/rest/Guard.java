@@ -39,8 +39,8 @@ import tools.jackson.databind.json.JsonMapper;
  * holds nothing on ({@link Holdings}, which the management routes ask too) gets the route's own answer for one
  * that does not exist, {@code missing}, so it cannot tell whether the name exists; a caller that holds something on
  * it gets 403. That answer is a {@link CatalogError}, so an idempotency key records it as it records a missing
- * name's. A refusal on the catalog itself is still 403: whether catalog names are hidden there is item 68's
- * question. Storage access given by the maintenance exemption (D20, D30) is audited before it is given; if the
+ * name's. A caller that holds nothing on the catalog never gets here: the route's {@link Lookup#catalog} answers it
+ * as for a catalog that does not exist (item 68), so a refusal on the catalog itself is 403. Storage access given by the maintenance exemption (D20, D30) is audited before it is given; if the
  * audit fails it is refused (503). Operation names are the REST spec's operation ids.
  */
 @Component
@@ -80,6 +80,8 @@ class Guard {
     static final Operation UNDROP = new Operation("undropObject", CREATE, false);
     /** The least a table commit needs: a caller allowed it gets read-write credentials, any other read-only (D21). */
     static final Operation WRITE_DATA = new Operation("updateTable", WRITE, true);
+    /** A transaction, as a refusal on its catalog names it; each table in it is asked as a commit to it would be. */
+    static final Operation COMMIT_TRANSACTION = new Operation("commitTransaction", WRITE, true);
 
     /** Updates that change only data and its bookkeeping: {@code write}. Anything else changes the definition. */
     private static final Set<String> DATA_UPDATES = Set.of("add-snapshot", "remove-snapshots", "set-snapshot-ref",
@@ -133,7 +135,7 @@ class Guard {
         return new Operation("updateTable", needed, true);
     }
 
-    /** On the catalog itself: a refusal is 403 for every caller (item 68 asks whether catalog names are hidden). */
+    /** On the catalog itself: a refusal is 403, since the caller holds something on the catalog (item 68). */
     void onCatalog(RequestContext request, CatalogRecord catalog, Operation operation) {
         allows(request, new Target.Catalog(catalog.id()),
                 new Securable(Securable.Kind.CATALOG, catalog.id(), catalog.name(), List.of()), operation, () -> true);

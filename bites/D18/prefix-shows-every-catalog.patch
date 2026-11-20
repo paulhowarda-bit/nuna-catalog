@@ -1,0 +1,19 @@
+Breaks: the Iceberg routes under /v1/{prefix} find any catalog the prefix names, for a caller that holds nothing in it.
+Module: catalog-server
+Test: HiddenNamesTest#aCatalogTheCallerHoldsNothingInAnswersAsOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index 4c6e151..abcabe6 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -38,8 +38,8 @@ class Lookup {
+      * answered as for a prefix no catalog has, its refusal of {@code operation} audited ({@link Holdings#catalog}).
+      */
+     CatalogRecord catalog(String prefix, RequestContext request, Operation operation) {
+-        CatalogRecord catalog = holdings.catalog(prefix, request.caller(), request.actor(), operation.name(),
+-                operation.privilege());
++        CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow(
++                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+         RequestMetrics.catalog(catalog.name());
+         return catalog;
+     }

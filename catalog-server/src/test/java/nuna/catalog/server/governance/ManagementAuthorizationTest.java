@@ -63,7 +63,9 @@ class ManagementAuthorizationTest {
 
     @Test
     void readingGovernanceNeedsDescribe() {
-        hidden(api.manage("GET", table + "/governance", null, AUTH, api.outsider()), "NoSuchTableException");
+        hidden(api.manage("GET", table + "/governance", null, AUTH, api.bystander()), "NoSuchTableException");
+        // Holding nothing in the catalog at all, the outsider is answered as for a missing catalog (item 68).
+        hidden(api.manage("GET", table + "/governance", null, AUTH, api.outsider()), "NoSuchWarehouseException");
         expect(api.manage("GET", table + "/governance", null), 200);
     }
 
@@ -98,7 +100,7 @@ class ManagementAuthorizationTest {
 
     @Test
     void readingTheMaintenancePolicyNeedsDescribe() {
-        hidden(api.manage("GET", table + "/maintenance-policy", null, AUTH, api.outsider()), "NoSuchTableException");
+        hidden(api.manage("GET", table + "/maintenance-policy", null, AUTH, api.bystander()), "NoSuchTableException");
         expect(api.manage("GET", table + "/maintenance-policy", null, AUTH, api.steward()), 200);
     }
 
@@ -142,7 +144,7 @@ class ManagementAuthorizationTest {
 
     @Test
     void listingDroppedObjectsNeedsDescribe() {
-        hidden(api.manage("GET", "/namespaces/" + ns + "/dropped", null, AUTH, api.outsider()),
+        hidden(api.manage("GET", "/namespaces/" + ns + "/dropped", null, AUTH, api.bystander()),
                 "NoSuchNamespaceException");
         expect(api.manage("GET", "/namespaces/" + ns + "/dropped", null, AUTH, api.steward()), 200);
     }
@@ -231,7 +233,7 @@ class ManagementAuthorizationTest {
     @Test
     void aRefusalAnsweredAsAMissingNameIsAuditedToo() {
         String requestId = "hidden-" + UUID.randomUUID();
-        hidden(api.manage("GET", table + "/governance", null, AUTH, api.outsider(), "X-Request-ID", requestId),
+        hidden(api.manage("GET", table + "/governance", null, AUTH, api.bystander(), "X-Request-ID", requestId),
                 "NoSuchTableException");
         var record = api.awaitRequest(requestId);
         assertThat(record.data().type()).isEqualTo(EventType.DENIAL);

@@ -67,8 +67,8 @@ class ReconcileRoutes {
     @PostMapping(path = RECONCILE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> reconcile(@PathVariable("catalog") String prefix, @RequestBody(required = false) String body,
                                      HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
         Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "reconcileFromStorage", null);
         guard.requireOperator(request, new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG,
                 catalog.id(), catalog.name(), List.of()), "reconcileFromStorage");
         JsonNode json = Management.body(body);

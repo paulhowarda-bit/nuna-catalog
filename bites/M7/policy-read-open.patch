@@ -2,14 +2,14 @@ Breaks: anyone signed in may read a maintenance policy, without describe on its 
 Module: catalog-server
 Test: ManagementAuthorizationTest#readingTheMaintenancePolicyNeedsDescribe
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 58e0044..1d5baa8 100644
+index 274a8ec..935e7bf 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -216,7 +216,6 @@ class GovernanceRoutes {
-                                   @PathVariable(required = false) String view,
-                                   HttpServletRequest http) {
-         Target target = management.target(prefix, namespace, table, view);
--        guard.require(management.request(http), target, "loadMaintenancePolicy", Privilege.DESCRIBE);
+@@ -223,7 +223,6 @@ class GovernanceRoutes {
+         Request request = management.request(http);
+         Target target = management.target(request, "loadMaintenancePolicy", Privilege.DESCRIBE,
+                 prefix, namespace, table, view);
+-        guard.require(request, target, "loadMaintenancePolicy", Privilege.DESCRIBE);
          Map<String, String> own = Map.of();
          for (GovernanceAttribute attribute : target.chain().attributes()) {
              if (attribute.kind() == GovernanceAttribute.Kind.MAINTENANCE_POLICY
