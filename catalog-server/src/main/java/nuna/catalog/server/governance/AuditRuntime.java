@@ -72,6 +72,11 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
         return audit;
     }
 
+    /** The archive, where one is configured; the DR reconcile reads it (D37). */
+    Optional<ObjectLockArchive> archive() {
+        return archive;
+    }
+
     @Override
     public void start() {
         if (!running.compareAndSet(false, true)) {

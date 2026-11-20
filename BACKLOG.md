@@ -8,13 +8,12 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 3 S, 8 M, 3 L, 5 XL.
+**19 open:** 3 S, 9 M, 2 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
-| [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
@@ -31,6 +30,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
+| [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 
 ## Open items in full
 
@@ -70,16 +70,6 @@ its owner a policy change.
 Done when each policy has been applied as the catalog gives it (AWS: the `nuna-sandbox` account; MinIO: a store
 that enforces user policies), the worker deletes and lists beneath its prefixes and nobody else can, and the Ceph
 question has an answer, each recorded in `build-plan.md`.
-
-### 10. DR reconcile: prove the accepted tips from the audit archive
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, read the audit archive, a new reconcile option, and the DR drill updated
-
-`build-plan.md`, M8 follow-ups: the `accept` list of `POST /management/v1/catalogs/{catalog}/dr-reconcile` is
-assembled by hand. The audit archive could prove which tips were acknowledged.
-
-Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
 
 ### 17. Console sign-in against Entra ID and Ping, with an automated test
 
@@ -597,6 +587,22 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
+### 86. The DR reconcile's archive proof reads each audit-archive chain whole into memory
+
+- Added: 2026-11-20 by the agent on item 10
+- Touches: catalog-audit/src/main/java/nuna/catalog/audit/archive/, catalog-audit/src/test/java/nuna/catalog/audit/archive/
+- Effort: M, a streamed verify-and-filter pass in the archive package and a test over a large chain in memory
+
+Item 10 gave `dr-reconcile` the option `accept-archived`, which reads every chain of the audit archive through
+`ArchivedCommits.read`. That calls `ObjectLockArchive.events(chain, anchor)`, which joins every segment of the chain
+into one byte array (`concatenate`) and decodes every record into one list before it returns. The audit topic carries
+every record, reads, denials and credential issues included, and the archive keeps them at least five years (D23), so
+a production chain will not fit in a server's heap. The drill and the tests read archives of a few thousand records.
+
+Done when the reconcile's read verifies and filters each chain in one streamed pass, segment by segment
+(`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
+memory (`MemoryS3`) whose chain is larger than the reader holds at once.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -608,6 +614,7 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
 | [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
+| [10](backlog/10.md) | DR reconcile: prove the accepted tips from the audit archive | done | 2026-11-20 |
 | [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [13](backlog/13.md) | The separation-of-duties check and the grant write are not atomic | done | 2026-11-20 |

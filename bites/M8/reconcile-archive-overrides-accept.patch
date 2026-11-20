@@ -1,0 +1,17 @@
+Breaks: an accept the archive contradicts is overridden: the walk takes the file the archive records instead of stopping (backlog 10).
+Module: catalog-core
+Test: ReconcileArchiveTest#aContradictedAcceptStopsTheWalk
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index d6f8d5b..c2429f3 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -182,7 +182,7 @@ public final class Reconcile {
+                                 + current + " to " + commit.after() + " (version " + commit.version() + ", SHA-256 "
+                                 + commit.sha256() + "), but storage holds no such file after it"), contradicted);
+                     }
+-                    if (!contradicted.isEmpty()) {
++                    if (false && !contradicted.isEmpty()) {
+                         return new Plan(table, from, steps, tips, Optional.of("accept names " + contradicted
+                                 + ", but the audit archive records the swap from " + current + " to " + commit.after()),
+                                 contradicted);
