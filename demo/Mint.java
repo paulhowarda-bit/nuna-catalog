@@ -48,7 +48,8 @@ public final class Mint {
         // The engine matrix's engines, run against the demo's stack by demo.sh engines.
         USERS.put("engine-matrix", new String[] {"engine-matrix", "engine-clients"});
         // Trino's own sign-in (demo/k8s/trino.yaml), for the catalog's config. Its group holds no grant: queries
-        // reach the catalog with the token of whoever runs them.
+        // reach the catalog with the token of whoever runs them. demo.sh and deploy/local/run.sh register its
+        // client as a trusted engine (D17), which sees every catalog, and so reads its config, but nothing in it.
         USERS.put("trino", new String[] {"trino-demo", "demo-engines"});
     }
 
