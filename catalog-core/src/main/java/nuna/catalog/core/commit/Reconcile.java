@@ -83,6 +83,14 @@ public final class Reconcile {
         this.sleeper = sleeper;
     }
 
+    /**
+     * With the bounds the server gives its commit engines ({@link CommitSettings#DEFAULTS}, a sleeping thread).
+     * Only for {@code ReconcileRoutes}, until it passes them itself (backlog 69); then this goes.
+     */
+    public Reconcile(CatalogStore store, TableFiles files, Clock clock) {
+        this(store, files, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
+    }
+
     /** Walks {@code table}'s files forward from its pointer; {@code accept} names tips the operator takes. */
     public Plan plan(CatalogObject table, Set<String> accept) {
         Pointer from = store.readPointer(table.mainKey())
