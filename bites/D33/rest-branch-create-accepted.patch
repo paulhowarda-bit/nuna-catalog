@@ -1,0 +1,17 @@
+Breaks: a create, drop, rename, registration or namespace change through a branch is let through, to main (D33, as amended 2026-11-20).
+Module: catalog-server
+Test: RefReadsTest#writesOnABranchAre400
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java b/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java
+index a18b74f..9a40b7d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java
+@@ -77,7 +77,7 @@ public record OnRef(CatalogRecord catalog, Optional<Ref> ref) {
+      * @param operation the refused operation, as the REST spec names it
+      */
+     CatalogRecord mainOnly(String operation) {
+-        if (ref.isPresent()) {
++        if (tag()) {
+             throw refused(ref.get(), operation, "creates, drops, renames, registrations and namespace changes happen"
+                     + " on main only");
+         }

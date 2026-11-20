@@ -1,0 +1,17 @@
+Breaks: a read through a branch or tag is audited as a read of main, so the audit does not say which version was read through what (D33, item 26 choice 13).
+Module: catalog-server
+Test: RefReadsTest#readsNameTheRef
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadAudit.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadAudit.java
+index 80a5a9b..d06b887 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReadAudit.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReadAudit.java
+@@ -37,7 +37,7 @@ public class ReadAudit {
+     public void read(HttpServletRequest http, CatalogRecord catalog, List<String> path, CatalogObject object,
+                      Pointer served, String branch) {
+         trail.record(new ObjectRead(securable(catalog, path, object.kind() == CatalogObject.Kind.TABLE
+-                ? Securable.Kind.TABLE : Securable.Kind.VIEW, object.id()), branch, state(served),
++                ? Securable.Kind.TABLE : Securable.Kind.VIEW, object.id()), PointerKey.MAIN, state(served),
+                 management.request(http).actor()));
+     }
+ 

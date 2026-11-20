@@ -1,0 +1,17 @@
+Breaks: a branch's own pointer is not read, so a branch serves its cut's version after it has committed (D33).
+Module: catalog-server
+Test: RefReadsTest#aBranchLoadsItsOwnPointerElseItsCut
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index b75ebcf..147fc0d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -139,7 +139,7 @@ class Lookup {
+             return store.readPointer(seen.object().mainKey());
+         }
+         Ref ref = on.ref().get();
+-        Optional<Pointer> own = ref.kind() == Ref.Kind.BRANCH
++        Optional<Pointer> own = ref.kind() == Ref.Kind.TAG
+                 ? store.readPointer(ref.key(seen.object().id())) : Optional.empty();
+         return own.or(() -> seen.cut().map(at -> new Pointer(at.metadataLocation(), at.version(), at.sha256(),
+                 new byte[0])));

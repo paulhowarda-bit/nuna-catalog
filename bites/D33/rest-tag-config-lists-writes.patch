@@ -1,0 +1,16 @@
+Breaks: a tag's /v1/config lists every endpoint, so a stock engine sends writes to a tag instead of failing them at its endpoint check (D33, item 26 choice 5).
+Module: catalog-server
+Test: RefReadsTest#configNamesTheRefAndWhatItServes
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/AdvertisedEndpoints.java b/catalog-server/src/main/java/nuna/catalog/server/AdvertisedEndpoints.java
+index 6734d38..dcd398e 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/AdvertisedEndpoints.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/AdvertisedEndpoints.java
+@@ -77,6 +77,6 @@ final class AdvertisedEndpoints {
+ 
+     /** The list for what a prefix names: main, a branch or a tag. */
+     static List<String> of(OnRef on) {
+-        return on.ref().map(ref -> ref.kind() == Ref.Kind.TAG ? READ : BRANCH).orElse(ALL);
++        return on.ref().map(ref -> ref.kind() == Ref.Kind.TAG ? ALL : BRANCH).orElse(ALL);
+     }
+ }
