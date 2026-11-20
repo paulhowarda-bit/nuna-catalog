@@ -1,0 +1,17 @@
+Breaks: the reconcile walks a table past its DR watermark, to files whose manifests and data may not be in the DR store (item 83).
+Module: catalog-core
+Test: ReconcileWatermarkTest#theWalkStopsAtTheWatermark+noProofMovesItPastTheWatermark
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index a8867d9..5496d9b 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -159,7 +159,7 @@ public final class Reconcile {
+         }
+         long safe = watermark.get().version();
+         Pointer from = walked.from();
+-        List<Step> kept = walked.steps().stream().takeWhile(step -> step.version() <= safe).toList();
++        List<Step> kept = walked.steps().stream().takeWhile(step -> true).toList();
+         List<Step> beyond = walked.steps().subList(kept.size(), walked.steps().size());
+         if (from.version() > safe) {
+             return new Plan(table, from, List.of(), List.of(), Optional.of("the pointer, version " + from.version()

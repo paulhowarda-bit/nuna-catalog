@@ -1,0 +1,17 @@
+Breaks: the rewind moves a table back without a DR freeze on it or above it, so a commit can race it.
+Module: catalog-core
+Test: ReconcileWatermarkTest#onlyAFrozenTableIsRewound
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index a8867d9..db774de 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -363,7 +363,7 @@ public final class Reconcile {
+             return new Rewound(plan, Optional.empty(), plan.problem());
+         }
+         CatalogObject table = plan.table();
+-        if (!frozen(table)) {
++        if (false && !frozen(table)) {
+             return new Rewound(plan, Optional.empty(), Optional.of("not frozen for DR reconcile; place a DR freeze on"
+                     + " it or above it"));
+         }
