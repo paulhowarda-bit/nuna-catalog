@@ -1,0 +1,16 @@
+Breaks: the 503 for an issuer whose keys cannot be fetched carries no Retry-After, so Iceberg's client does not repeat a non-idempotent request (backlog 90).
+Module: catalog-server
+Test: IdpOutageTest#keysThatCannotBeFetchedAnswer503WithRetryAfter
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
+index 72ea6c7..6c2cffd 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
+@@ -163,7 +163,6 @@ final class Authentication extends OncePerRequestFilter {
+             // The issuer's keys could not be fetched: the token is not known to be bad, so the client sends it
+             // again, after the wait a store outage asks for (D16, amended 2026-11-20).
+             LOG.warn("{} (request {})", reason, requestId);
+-            response.setHeader("Retry-After", StoreOutage.RETRY_AFTER_SECONDS);
+         }
+         response.setContentType("application/json");
+         response.setCharacterEncoding(StandardCharsets.UTF_8.name());

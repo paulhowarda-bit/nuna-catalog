@@ -1,0 +1,19 @@
+Breaks: a refetch the rate limit refuses is an outage even after a good fetch, so a token with a made-up key id gets 503, not 401 (backlog 90).
+Module: catalog-security
+Test: JwksRefreshTest#unknownKeyIdsCannotForceAFetchEachTime
+
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
+index 5fe5b29..59c8205 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
+@@ -207,8 +207,8 @@ public final class TokenAuthenticator {
+             if (refusal.getCause() instanceof JWKSetUnavailableException unavailable) {
+                 return Optional.of(unavailable.getMessage());
+             }
+-            if (refusal.getCause() instanceof RateLimitReachedException && failure != null) {
+-                return Optional.of("no refetch allowed yet after the last one failed: " + failure.getMessage());
++            if (refusal.getCause() instanceof RateLimitReachedException) {
++                return Optional.of("no refetch allowed yet after the last one failed: " + failure);
+             }
+             return Optional.empty();
+         }
