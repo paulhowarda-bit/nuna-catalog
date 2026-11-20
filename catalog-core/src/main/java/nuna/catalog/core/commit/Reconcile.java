@@ -36,25 +36,41 @@ import java.util.UUID;
  * version leave two files there, and only one can be proven. The pointer moves only through proven files,
  * one version per swap, each journaled and published as a commit. The newest files have no successor yet;
  * they are reported as tips, never taken, unless the operator names one in {@code accept} (an attempt that
- * lost its swap left its file behind, and its client may have deleted the manifests that file lists).
- * Only a table under a DR freeze moves, so no commit races the walk.
+ * lost its swap left its file behind, and its client may have deleted the manifests that file lists), or
+ * the audit archive records its swap (backlog 10): a swap's commit record goes to the outbox in the swap's
+ * own transaction (D23), so the archive holds one only for a swap that committed on the primary, the same
+ * standard a successor proves. Only a table under a DR freeze moves, so no commit races the walk.
  */
 public final class Reconcile {
 
-    /** Why a step was taken: a later file builds on it, or the operator accepted it. */
-    public enum Proof { SUCCESSOR, ACCEPTED }
+    /** Why a step was taken: a later file builds on it, the archive records its swap, or the operator accepted it. */
+    public enum Proof { SUCCESSOR, ARCHIVED, ACCEPTED }
 
     public record Step(String location, long version, String sha256, Proof proof) {
     }
 
     /**
-     * @param from    the pointer the walk starts from
-     * @param steps   the files the pointer moves through, oldest first
-     * @param tips    files that follow the last step but that no later file proves committed
-     * @param problem why the walk stopped where it did, when it was not for want of proof
+     * A swap of a table's main pointer as the audit archive records it (D23): the file it replaced, and the file it
+     * wrote with that file's pointer version and SHA-256.
+     */
+    public record ArchivedCommit(String before, String after, long version, String sha256) {
+    }
+
+    /**
+     * @param from         the pointer the walk starts from
+     * @param steps        the files the pointer moves through, oldest first
+     * @param tips         files that follow the last step but that no later file, archive record or accept proves
+     * @param problem      why the walk stopped where it did, when it was not for want of proof
+     * @param contradicted files named in {@code accept} that the archive contradicts: it records another file, or
+     *                     this one with other content, as the swap from the file they follow
      */
     public record Plan(CatalogObject table, Pointer from, List<Step> steps, List<String> tips,
-                       Optional<String> problem) {
+                       Optional<String> problem, List<String> contradicted) {
+
+        /** A plan the archive contradicts nothing in. */
+        Plan(CatalogObject table, Pointer from, List<Step> steps, List<String> tips, Optional<String> problem) {
+            this(table, from, steps, tips, problem, List.of());
+        }
     }
 
     /** How many steps of a plan were swapped, and what stopped the rest. */
@@ -85,6 +101,18 @@ public final class Reconcile {
 
     /** Walks {@code table}'s files forward from its pointer; {@code accept} names tips the operator takes. */
     public Plan plan(CatalogObject table, Set<String> accept) {
+        return plan(table, accept, Optional.empty());
+    }
+
+    /**
+     * As {@link #plan(CatalogObject, Set)}, with {@code archived}, when present, every swap of the table the audit
+     * archive records. Where no later file proves which file follows the one the walk has reached, a swap the archive
+     * records from it decides: the file it wrote is taken when storage holds it at the recorded version and SHA-256.
+     * The walk stops instead where the archive records two swaps from one file, or one whose file storage does not
+     * hold as recorded, or where {@code accept} names a file other than the one it records. Where the archive records
+     * none, {@code accept} decides, as without the archive.
+     */
+    public Plan plan(CatalogObject table, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
         Pointer from = store.readPointer(table.mainKey())
                 .orElseThrow(() -> new IllegalStateException("table " + table.id() + " has no pointer"));
         List<String> listed = files.metadataFiles(table.locationRoot());
@@ -136,13 +164,39 @@ public final class Reconcile {
                 proof = Proof.SUCCESSOR;
             } else {
                 List<Node> accepted = next.stream().filter(n -> accept.contains(n.location())).toList();
-                if (accepted.size() != 1) {
-                    return new Plan(table, from, steps, next.stream().map(Node::location).toList(),
-                            accepted.isEmpty() ? Optional.empty()
-                                    : Optional.of("accept names more than one file that follows " + current));
+                String at = current;
+                List<ArchivedCommit> recorded = archived.orElse(List.of()).stream()
+                        .filter(commit -> commit.before().equals(at)).distinct().toList();
+                List<String> tips = next.stream().map(Node::location).toList();
+                if (recorded.size() > 1) {
+                    return new Plan(table, from, steps, tips, Optional.of("the audit archive records " + recorded.size()
+                            + " swaps from " + current + ": " + recorded.stream().map(ArchivedCommit::after).toList()));
+                } else if (recorded.size() == 1) {
+                    ArchivedCommit commit = recorded.getFirst();
+                    Optional<Node> match = next.stream().filter(n -> n.location().equals(commit.after())
+                            && n.version() == commit.version() && n.sha256().equals(commit.sha256())).findFirst();
+                    List<String> contradicted = accepted.stream().map(Node::location)
+                            .filter(location -> match.isEmpty() || !location.equals(match.get().location())).toList();
+                    if (match.isEmpty()) {
+                        return new Plan(table, from, steps, tips, Optional.of("the audit archive records the swap from "
+                                + current + " to " + commit.after() + " (version " + commit.version() + ", SHA-256 "
+                                + commit.sha256() + "), but storage holds no such file after it"), contradicted);
+                    }
+                    if (!contradicted.isEmpty()) {
+                        return new Plan(table, from, steps, tips, Optional.of("accept names " + contradicted
+                                + ", but the audit archive records the swap from " + current + " to " + commit.after()),
+                                contradicted);
+                    }
+                    chosen = match.get();
+                    proof = Proof.ARCHIVED;
+                } else {
+                    if (accepted.size() != 1) {
+                        return new Plan(table, from, steps, tips, accepted.isEmpty() ? Optional.empty()
+                                : Optional.of("accept names more than one file that follows " + current));
+                    }
+                    chosen = accepted.getFirst();
+                    proof = Proof.ACCEPTED;
                 }
-                chosen = accepted.getFirst();
-                proof = Proof.ACCEPTED;
             }
             if (chosen.version() != version + 1) {
                 return stopped(table, from, steps, "file " + chosen.location() + " follows " + current

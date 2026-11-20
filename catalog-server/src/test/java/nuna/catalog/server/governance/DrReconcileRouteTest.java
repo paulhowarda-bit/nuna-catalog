@@ -124,6 +124,34 @@ class DrReconcileRouteTest {
         assertThat(v4).contains("/metadata/00004-");
     }
 
+    /** Backlog 10: this server has no archive, so the option fails the request before any table moves. */
+    @Test
+    void theArchiveOptionWithoutAnArchiveMovesNothing() {
+        String ns = api.namespace();
+        String v1 = api.table(ns, "orders");
+        String id = api.id(ns, "tables", "orders");
+        Map<String, Object> first = jdbc.queryForMap("SELECT metadata_location, version, sha256, projection,"
+                + " last_commit_id FROM pointer WHERE object_id = ?::uuid AND branch = 'main'", id);
+        String v2 = commit(ns, "a");
+        commit(ns, "b");
+        jdbc.update("UPDATE pointer SET metadata_location = ?, version = ?, sha256 = ?, projection = ?,"
+                + " last_commit_id = ? WHERE object_id = ?::uuid AND branch = 'main'", first.get("metadata_location"),
+                first.get("version"), first.get("sha256"), first.get("projection"), first.get("last_commit_id"), id);
+        expect(api.manage("PUT", "/namespaces/" + ns(ns) + "/dr-freeze", "{\"reason\":\"DR drill\"}",
+                AUTH, api.operator()), 200);
+
+        expectError(api.manage("POST", "/dr-reconcile", "{\"apply\":true,\"accept-archived\":true}",
+                AUTH, api.operator()), 409, "ArchiveNotConfiguredException");
+        assertThat(location(ns)).isEqualTo(v1);
+
+        HttpResponse<String> without = expect(api.manage("POST", "/dr-reconcile", "{\"apply\":true}",
+                AUTH, api.operator()), 200);
+        assertThat(JsonPath.<Boolean>read(without.body(), "$.accept-archived")).isFalse();
+        assertThat(JsonPath.<List<String>>read(without.body(), "$.contradicted-accepts")).isEmpty();
+        assertThat(location(ns)).isEqualTo(v2);
+        expect(api.manage("DELETE", "/namespaces/" + ns(ns) + "/dr-freeze", null, AUTH, api.operator()), 204);
+    }
+
     @Test
     void onlyAPlatformOperatorReconciles() {
         expectError(api.manage("POST", "/dr-reconcile", null), 403, "ForbiddenException");

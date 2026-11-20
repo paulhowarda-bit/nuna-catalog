@@ -1,0 +1,18 @@
+Breaks: a swap of another branch counts as a swap of the main pointer the reconcile walks (backlog 10).
+Module: catalog-audit
+Test: ArchivedCommitsTest#readsEachTablesSwapsFromEveryChain
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchivedCommits.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchivedCommits.java
+index 990d526..9fd81fd 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchivedCommits.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ArchivedCommits.java
+@@ -33,8 +33,7 @@ public final class ArchivedCommits {
+     public static Map<UUID, List<Reconcile.ArchivedCommit>> of(List<CatalogEvent> events) {
+         Map<UUID, List<Reconcile.ArchivedCommit>> commits = new HashMap<>();
+         for (CatalogEvent event : events) {
+-            if (event.data() instanceof Commit commit && commit.before() != null
+-                    && PointerKey.MAIN.equals(commit.branch())) {
++            if (event.data() instanceof Commit commit && commit.before() != null) {
+                 commits.computeIfAbsent(commit.object().id(), id -> new ArrayList<>()).add(new Reconcile.ArchivedCommit(
+                         commit.before().metadataLocation(), commit.after().metadataLocation(), commit.after().version(),
+                         commit.after().sha256()));

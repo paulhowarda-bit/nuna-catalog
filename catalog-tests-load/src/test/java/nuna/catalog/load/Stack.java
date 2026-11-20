@@ -17,7 +17,9 @@ import org.testcontainers.kafka.KafkaContainer;
 /**
  * Everything a catalog server needs besides its database: Kafka for audit (a load that vends credentials
  * waits for Kafka's ack), the run's S3 store ({@link TestS3}) for metadata files, and a token issuer. Servers run as separate processes
- * ({@link ServerProcess}) from the runnable jar, as they are deployed.
+ * ({@link ServerProcess}) from the runnable jar, as they are deployed. A stack with a DR standby also archives audit
+ * (D23) in an Object Lock bucket of that store, which its servers lock in COMPLIANCE mode, as they always do: the DR
+ * runbook's reconcile reads it (backlog 10).
  */
 final class Stack implements AutoCloseable {
 
@@ -34,6 +36,8 @@ final class Stack implements AutoCloseable {
     private final KafkaContainer kafka;
     private final TestS3 s3;
     private final String bucket;
+    /** The audit archive's Object Lock bucket, in a stack with a DR standby; null otherwise. */
+    private final String archiveBucket;
     private final TestIdp idp;
     private final RSAKey key;
     private final List<ServerProcess> servers = new ArrayList<>();
@@ -43,7 +47,9 @@ final class Stack implements AutoCloseable {
         kafka = TestKafka.container("384m");
         kafka.start();
         s3 = TestS3.get();
-        bucket = s3.bucket("warehouse-" + STACKS.incrementAndGet());
+        int stack = STACKS.incrementAndGet();
+        bucket = s3.bucket("warehouse-" + stack);
+        archiveBucket = withDr ? s3.bucket("audit-archive-" + stack, true) : null;
         try {
             idp = new TestIdp(ISSUER, AUDIENCE);
             key = TestIdp.rsaKey("m8");
@@ -98,6 +104,11 @@ final class Stack implements AutoCloseable {
                 "--nuna.audit.kafka-bootstrap-servers=" + kafka.getBootstrapServers(),
                 "--logging.level.root=WARN",
                 "--logging.level.nuna.audit.fallback=ERROR"));
+        if (archiveBucket != null) {
+            // Segments written within a second of their first record, so the archive is current when the drill reads it.
+            properties.addAll(List.of("--nuna.audit.archive.bucket=" + archiveBucket,
+                    "--nuna.audit.archive.profile=" + PROFILE, "--nuna.audit.archive.segment-age=1s"));
+        }
         properties.addAll(List.of(more));
         boolean thisRelease = jar.equals(Path.of(System.getProperty("m8.server-jar")));
         ServerProcess server = ServerProcess.start(name, jar, s3.jvmOptions(),
