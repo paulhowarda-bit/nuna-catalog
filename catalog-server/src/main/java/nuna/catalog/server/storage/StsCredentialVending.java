@@ -26,6 +26,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -43,11 +44,12 @@ import org.slf4j.LoggerFactory;
 /**
  * Vends STS credentials scoped to one table's prefix (D21): read-write to a caller who may write the table's data,
  * read-only to anyone else. None of them deletes, a maintenance principal's included: the maintenance worker deletes
- * with its own storage identity (D30). Each caller's credentials are cached for most
- * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
+ * with its own storage identity (D30). Each caller's credentials are cached until they come within an issuance window
+ * and the refresh margin of expiring; each new set is audited before it is first handed out, and if the audit fails it is
  * thrown away (D23). Any caller that asks for no delegation gets none, trusted engine or not (D21, amended
  * 2026-11-19): no AssumeRole and no credential issue to audit. Each AssumeRole is observed as
  * {@value #ASSUME_ROLE} (docs/observability/spans.md); a cached set calls nothing, and its vend says it was cached.
+ * A vend's credential epoch is the issuance window it falls in, so every server gives the same ETag (D14, item 15).
  */
 public final class StsCredentialVending implements CredentialVending {
 
@@ -59,12 +61,17 @@ public final class StsCredentialVending implements CredentialVending {
     private final AuditPublisher audit;
     private final URI source;
     private final Clock clock;
+    private final Duration window;
+    private final Duration refreshMargin;
     private final CredentialCache cache;
     private final ObservationRegistry observations;
 
     /**
-     * @param refreshMargin no 304 when credentials expire within this (D14); cached credentials are renewed
-     *                      a minute before that, so a load normally carries credentials a client may cache
+     * The issuance window is a quarter of the credential lifetime, so servers with the same lifetime share it.
+     *
+     * @param refreshMargin no 304 when credentials expire within this (D14). Cached credentials are renewed when they
+     *                      have less than a window, this margin and a minute left, so every set handed out in a window
+     *                      lasts through the window's end and the margin after it, with a minute to spare for clocks
      */
     public StsCredentialVending(CatalogStorage storage, AuditPublisher audit, URI source, StorageSettings settings,
                                 Duration refreshMargin, Clock clock, ObservationRegistry observations) {
@@ -73,9 +80,9 @@ public final class StsCredentialVending implements CredentialVending {
         this.observations = observations;
         this.source = source;
         this.clock = clock;
-        Duration quarter = settings.credentialLifetime().dividedBy(4);
-        Duration margin = refreshMargin.plusMinutes(1);
-        this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,
+        this.window = settings.credentialLifetime().dividedBy(4);
+        this.refreshMargin = refreshMargin;
+        this.cache = new CredentialCache(window.plus(refreshMargin).plusMinutes(1),
                 settings.credentialCacheEntries(), clock);
     }
 
@@ -105,7 +112,7 @@ public final class StsCredentialVending implements CredentialVending {
             throw CatalogError.of(503, "ServiceUnavailableException",
                     "Storage credentials cannot be issued now; retry later");
         }
-        return vended(bound, credentials, request.refreshPath(), !minted.get());
+        return vended(bound, credentials, epoch(key, credentials), request.refreshPath(), !minted.get());
     }
 
     private VendedCredentials mint(CatalogStorage.Bound bound, Request request, Access access) {
@@ -129,8 +136,8 @@ public final class StsCredentialVending implements CredentialVending {
         return credentials;
     }
 
-    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String refreshPath,
-                                 boolean cached) {
+    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String epoch,
+                                 String refreshPath, boolean cached) {
         Map<String, String> secrets = new LinkedHashMap<>();
         secrets.put("s3.access-key-id", credentials.accessKeyId());
         secrets.put("s3.secret-access-key", credentials.secretAccessKey());
@@ -145,7 +152,7 @@ public final class StsCredentialVending implements CredentialVending {
         config.put("client.refresh-credentials-endpoint", refreshPath);
         config.put("client.refresh-credentials-enabled", "true");
         return new Vended(config, List.of(new StorageCredential(credentials.location(), secrets)),
-                epoch(credentials.accessKeyId()), Optional.of(credentials.expiresAt()), cached);
+                epoch, Optional.of(credentials.expiresAt()), cached);
     }
 
     /** Only a header that lists nothing but {@code none} declines delegation. */
@@ -156,10 +163,34 @@ public final class StsCredentialVending implements CredentialVending {
                 .equals(Set.of("none"))).orElse(false);
     }
 
-    /** Changes with the credentials, and reveals nothing of them. */
-    private static String epoch(String accessKeyId) {
+    /**
+     * The credential epoch in the ETag (D14, amended 2026-11-19, item 15): the issuance window this vend falls in,
+     * {@code floor(now / window)} on this server's clock, with whose credentials they are, for what. Every server
+     * vending one caller the same access to one table in one window gives the same epoch, so the same ETag for the same
+     * table state, and a client that switches servers still gets its 304. Credentials that do not last through the
+     * window's end and the refresh margin after it (a margin close to the lifetime, or STS's clock far behind this
+     * one) get an epoch of their own instead, as before item 15: another server would otherwise answer 304 for them
+     * until the window ends, inside their margin.
+     */
+    private String epoch(CredentialCache.Key key, VendedCredentials credentials) {
+        long index = Math.floorDiv(clock.millis(), window.toMillis());
+        Instant ends = Instant.ofEpochMilli(Math.multiplyExact(index + 1, window.toMillis()));
+        if (credentials.expiresAt().isBefore(ends.plus(refreshMargin))) {
+            return hash("credentials", credentials.accessKeyId());
+        }
+        return hash("window", Long.toString(index), key.profile(), key.location(), key.access().name(),
+                key.principal(), key.subject(), key.engine());
+    }
+
+    /** Hashes the fields, each prefixed by its length so no two lists give the same input; reveals nothing of them. */
+    private static String hash(String... fields) {
+        StringBuilder canonical = new StringBuilder();
+        for (String field : fields) {
+            canonical.append(field.length()).append(':').append(field);
+        }
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(accessKeyId.getBytes(StandardCharsets.UTF_8));
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.toString().getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest, 0, 8);
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);

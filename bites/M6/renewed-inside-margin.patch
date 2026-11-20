@@ -2,15 +2,15 @@ Breaks: cached credentials are reused inside the refresh margin, so loads keep h
 Module: catalog-server
 Test: VendingNearExpiryTest
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-index e82ee84..13f7c54 100644
+index 47cf27c..9ddb0d5 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-@@ -65,7 +65,7 @@ public final class StsCredentialVending implements CredentialVending {
+@@ -82,7 +82,7 @@ public final class StsCredentialVending implements CredentialVending {
          this.clock = clock;
-         Duration quarter = settings.credentialLifetime().dividedBy(4);
-         Duration margin = refreshMargin.plusMinutes(1);
--        this.cache = new CredentialCache(quarter.compareTo(margin) > 0 ? quarter : margin,
-+        this.cache = new CredentialCache(quarter,
+         this.window = settings.credentialLifetime().dividedBy(4);
+         this.refreshMargin = refreshMargin;
+-        this.cache = new CredentialCache(window.plus(refreshMargin).plusMinutes(1),
++        this.cache = new CredentialCache(window,
                  settings.credentialCacheEntries(), clock);
      }
  

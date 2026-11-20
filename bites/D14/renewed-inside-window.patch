@@ -1,0 +1,16 @@
+Breaks: cached credentials are renewed only a minute before the refresh margin, not an issuance window before it, so a set handed out late in its life ends inside its window's margin and loses the shared epoch.
+Module: catalog-server
+Test: SharedEpochTest#everyVendLastsThroughItsWindowAndTheMargin+aClientGoingRoundTheServersKeepsItsNotModified
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
+index 47cf27c..4a3963c 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
+@@ -82,7 +82,7 @@ public final class StsCredentialVending implements CredentialVending {
+         this.clock = clock;
+         this.window = settings.credentialLifetime().dividedBy(4);
+         this.refreshMargin = refreshMargin;
+-        this.cache = new CredentialCache(window.plus(refreshMargin).plusMinutes(1),
++        this.cache = new CredentialCache(refreshMargin.plusMinutes(1),
+                 settings.credentialCacheEntries(), clock);
+     }
+ 

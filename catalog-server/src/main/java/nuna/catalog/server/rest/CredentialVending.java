@@ -48,7 +48,9 @@ public interface CredentialVending {
 
     /**
      * @param config      FileIO properties for the load response's {@code config}
-     * @param epoch       changes whenever the credentials would; part of the ETag (D14)
+     * @param epoch       part of the ETag (D14): the same on every server for one caller's access to one table in one
+     *                    issuance window, so a client that switches servers keeps its 304; it changes with any of them.
+     *                    Credentials that would not last through the window and the refresh margin get one of their own
      * @param expiresAt   when the credentials expire, if they do
      * @param cached      whether the credentials came from the credential cache, so none were issued for this vend
      */
