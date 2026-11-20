@@ -283,7 +283,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
   - **One hot table manages about 4–5 commits a second under contention on the laptop.** Fairness is poor: at 32 writers, p99 time to acknowledgement passes 2 minutes. The server's own retries (P10) each write a metadata file before losing the swap. This is not a correctness problem, but work hardware should measure it.
 - **Follow-ups:**
   - The server does not run the store's `selfCheck()` at startup (D8.2).
-  - The journal horizon is extended only when migrations run, not by a job.
+  - The journal horizon is kept without a migration since backlog 9: PostgreSQL's store extends it twelve months ahead once a day before a write, Oracle's V5 job daily; CockroachDB and MongoDB have none to keep.
   - `accept` is assembled by hand; the audit archive could prove tips instead.
   - A register is refused under a DR freeze, so the runbook registers unknown tables after the thaw.
   - Oracle and MongoDB stores raise `StoreUnavailableException` for an outage since backlog 7; the route-level check of their 503 with Retry-After is backlog 70.

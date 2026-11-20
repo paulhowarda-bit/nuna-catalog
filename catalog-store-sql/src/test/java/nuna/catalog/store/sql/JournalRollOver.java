@@ -110,7 +110,7 @@ final class JournalRollOver {
                 + " WHERE i.inhparent = 'journal'::regclass AND c.relname LIKE 'journal\\_p%' ORDER BY c.relname");
     }
 
-    private static List<String> monthsFrom(Instant cutover, Instant through) {
+    static List<String> monthsFrom(Instant cutover, Instant through) {
         List<String> names = new ArrayList<>();
         for (OffsetDateTime month = cutover.atOffset(ZoneOffset.UTC); !month.toInstant().isAfter(through);
              month = month.plusMonths(1)) {
@@ -119,7 +119,7 @@ final class JournalRollOver {
         return names;
     }
 
-    private static String partitionName(Instant at) {
+    static String partitionName(Instant at) {
         OffsetDateTime utc = at.atOffset(ZoneOffset.UTC);
         return "journal_p%04d%02d".formatted(utc.getYear(), utc.getMonthValue());
     }
