@@ -1,0 +1,17 @@
+Breaks: a storage profile is recorded without its KMS key, so a change of key alone is neither written nor audited (backlog 98).
+Module: catalog-server
+Test: KmsKeyProfileTest#keyChangeIsRecordedAndAudited+unchangedKeyAuditsNothing
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+index 57bb456..a7ccf20 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+@@ -177,7 +177,7 @@ public final class CatalogStorage implements AutoCloseable {
+                     case CEPH -> nuna.catalog.store.StorageProfile.Kind.CEPH;
+                 },
+                 config.kind() == StoreKind.S3 ? Optional.empty() : Optional.of(config.endpoint()),
+-                config.stsRole() == null ? "" : config.stsRole(), config.allowedPrefixes(), bound.profile().kmsKey());
++                config.stsRole() == null ? "" : config.stsRole(), config.allowedPrefixes(), Optional.empty());
+         if (store.readStorageProfile(bound.id()).equals(Optional.of(wanted))) {
+             return;
+         }
