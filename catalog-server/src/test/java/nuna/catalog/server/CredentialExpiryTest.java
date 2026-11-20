@@ -64,27 +64,42 @@ class CredentialExpiryTest {
         IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
         EXPIRES.set(Instant.now().plus(Duration.ofHours(1)));
         String namespace = "expiry_" + UUID.randomUUID().toString().replace("-", "");
-        assertThat(send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", null).statusCode())
-                .isEqualTo(200);
+        HttpResponse<String> namespaced = send("POST", "/namespaces", "{\"namespace\":[\"" + namespace + "\"]}", null);
+        assertThat(namespaced.statusCode()).as("%s", answer(namespaced)).isEqualTo(200);
         String table = "/namespaces/" + namespace + "/tables/t";
         HttpResponse<String> created = send("POST", "/namespaces/" + namespace + "/tables", """
                 {"name":"t","schema":{"type":"struct","schema-id":0,"fields":[
                   {"id":1,"name":"id","required":true,"type":"long"}]}}""", null);
-        assertThat(created.statusCode()).isEqualTo(200);
+        assertThat(created.statusCode()).as("%s", answer(created)).isEqualTo(200);
         String etag = created.headers().firstValue("ETag").orElseThrow();
 
-        assertThat(send("GET", table, null, etag).statusCode()).as("an hour left").isEqualTo(304);
+        HttpResponse<String> hourLeft = send("GET", table, null, etag);
+        assertThat(hourLeft.statusCode()).as("an hour left: %s", answer(hourLeft)).isEqualTo(304);
 
         EXPIRES.set(Instant.now().plus(Duration.ofMinutes(1)));
         HttpResponse<String> nearExpiry = send("GET", table, null, etag);
-        assertThat(nearExpiry.statusCode()).as("a minute left, inside the refresh margin").isEqualTo(200);
+        assertThat(nearExpiry.statusCode()).as("a minute left, inside the refresh margin: %s", answer(nearExpiry))
+                .isEqualTo(200);
         assertThat(nearExpiry.headers().firstValue("ETag")).as("no ETag a client could reuse").isEmpty();
 
         EXPIRES.set(Instant.now().plus(Duration.ofHours(1)));
         EPOCH.set("2");
         HttpResponse<String> newEpoch = send("GET", table, null, etag);
-        assertThat(newEpoch.statusCode()).as("new credentials").isEqualTo(200);
+        assertThat(newEpoch.statusCode()).as("new credentials: %s", answer(newEpoch)).isEqualTo(200);
         assertThat(newEpoch.headers().firstValue("ETag")).isPresent().get().isNotEqualTo(etag);
+    }
+
+    /**
+     * What a response said, for an assertion's message. A 401's body never names the reason (the client learns
+     * only what it must fix); the reason is in the auth-failure audit record, which this test, with no Kafka,
+     * finds in its output as the {@code nuna.audit.fallback} line (backlog 60).
+     */
+    private static String answer(HttpResponse<String> response) {
+        return "answered " + response.statusCode()
+                + ", WWW-Authenticate " + response.headers().firstValue("WWW-Authenticate").orElse("(none)")
+                + ", body " + response.body()
+                + (response.statusCode() == 401
+                        ? "; the reason is in the nuna.audit.fallback line of this test's output" : "");
     }
 
     private HttpResponse<String> send(String method, String path, String body, String ifNoneMatch) throws Exception {

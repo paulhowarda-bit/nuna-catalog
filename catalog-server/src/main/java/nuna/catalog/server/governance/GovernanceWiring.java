@@ -5,6 +5,7 @@ import nuna.catalog.audit.archive.ObjectLockArchive;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.core.commit.CommitRule;
 import nuna.catalog.core.commit.Rules;
+import nuna.catalog.objectstore.CaBundle;
 import nuna.catalog.server.rest.AuditPublisher;
 import nuna.catalog.server.rest.RestSettings;
 import nuna.catalog.server.storage.StorageSettings;
@@ -36,7 +37,11 @@ import software.amazon.awssdk.services.s3.S3ClientBuilder;
 @EnableConfigurationProperties({AuditSettings.class, GovernanceSettings.class})
 class GovernanceWiring {
 
-    /** The archive where {@code nuna.audit.archive.bucket} is set; its bucket must have Object Lock. */
+    /**
+     * The archive where {@code nuna.audit.archive.bucket} is set; its bucket must have Object Lock. Its S3 client trusts
+     * the profile's CA bundle beside the JVM's CAs, as the profile's other clients do (backlog 87), and a bundle it
+     * cannot read stops startup, naming the setting and the file.
+     */
     static Optional<ObjectLockArchive> archive(AuditSettings audit, StorageSettings storage, Clock clock) {
         String bucket = audit.archive().bucket();
         if (bucket == null || bucket.isBlank()) {
@@ -56,6 +61,16 @@ class GovernanceWiring {
                 .credentialsProvider(credentials);
         if (profile.endpoint() != null && !profile.endpoint().isBlank()) {
             s3.endpointOverride(URI.create(profile.endpoint())).forcePathStyle(true);
+        }
+        if (profile.caBundle() != null) {
+            CaBundle bundle;
+            try {
+                bundle = CaBundle.read(profile.caBundle());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException("nuna.storage.profiles." + audit.archive().profile() + ".ca-bundle: "
+                        + e.getMessage(), e);
+            }
+            bundle.applyTo(s3);
         }
         ObjectLockArchive archive = new ObjectLockArchive(s3.build(), bucket, audit.archive().prefix(),
                 audit.archive().retention(), clock);

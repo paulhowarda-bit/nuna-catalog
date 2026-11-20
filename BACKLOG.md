@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 4 S, 9 M, 2 L, 5 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -20,18 +20,17 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
-| [27](backlog/27.md) | XL | Queryable audit tables (v1.x, D23) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
 | [28](backlog/28.md) | XL | DR replication-watermark verifier (v1.x) | the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
-| [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
+| [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
-| [87](backlog/87.md) | S | The audit archive's S3 client does not trust its storage profile's CA bundle | one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite | 2026-11-20 |
-| [88](backlog/88.md) | M | Compaction Jobs do not trust a storage profile's CA bundle | mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides | 2026-11-20 |
+| [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
+| [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
 
 ## Open items in full
 
@@ -161,85 +160,6 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 Done when the milestone's scope is built and its gate is green, as for the other v1.x phases.
 
 **Decided 2026-11-19 (D33):** built next ("Build it next"), after the items the backlog review of 2026-11-19 chose to fix, not left for v1.x.
-
-### 27. Queryable audit tables (v1.x, D23)
-
-- Decided: 2026-11-19, D23
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: XL, a v1.x milestone; scope to settle with Paul
-
-`build-plan.md`, v1.x milestones: queryable audit tables (D23). Not started. The console's audit trail and the SIEM
-cover the audit until then (UI v1).
-
-Done when the milestone's scope is settled with Paul, built, and its gate is green.
-
-**Decided 2026-11-19 (D23):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
-
-**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
-
-**What it is for:** access reviewers (D19), grant admins and the platform team asking across objects, people and
-months: every table a principal read last quarter, every denial in a namespace, grants never used. Nothing answers
-that today. The console's trail (`AuditReadRoutes`, `RecentAudit`) shows one object's newest 200 records from at most
-the last 20,000 offsets of its partition, and a catalog's trail only records about the catalog itself. The SIEM (D23)
-is searched only by its users, never in SQL beside the data, and at home there is none. The archive
-(`ObjectLockArchive.events`) is read whole, chain by chain.
-
-**In:**
-- One Iceberg table, `events`, in a catalog of the deployment's own (say `nuna_audit`, declared in
-  `nuna.storage.catalogs.*`), format v2 so every reader in the matrix reads it (R5), partitioned by `day(time)`, and
-  queried by any engine through the catalog, as Tabular's system tables were (the plan report's v1.x list).
-- Columns: `event_id`, `time`, `type`, `source`; `principal`, `end_user`, `engine`, `request_id`; `catalog`,
-  `object_kind`, `object_id`, `object_path`; `operation`, `privilege`, `reason` where the type has them; `data`, the
-  whole payload as JSON, so a new payload version needs no new column; `topic_partition`, `topic_offset`, which tie a
-  row to its archive chain. The mapping from each `EventType` lives in `catalog-audit`, without Iceberg (D2).
-- A writer, `catalog-audit-tables`: a service with its own image, Helm chart and principal, an Iceberg Java client of
-  the catalog like the maintenance worker (D2 as amended). It reads the audit topic in its own consumer group and
-  commits every `commit-interval` (1 min by default) with the offsets it wrote in the same Iceberg commit, resuming
-  from them, so each offset is written once. The relay is at least once (D23), so an `event_id` can repeat. It leaves
-  out the records of its own requests, or each commit would make a record that makes the next commit; they stay in
-  the topic, the SIEM and the archive. An outage delays rows; no request waits for it. The worker's expiry and
-  nightly compaction keep the table tidy (D30).
-- Who reads: a group Paul names, granted `select` on the audit catalog (D19); the writer holds create and write there
-  only. D18's hiding works at the catalog: anyone else gets a missing catalog's 404, `/v1/config` included (item 68),
-  and platform operators see its name, not its table. Rows are not filtered: a reader sees every object and person in
-  the deployment's records, as a SIEM user does, so the group must be narrow.
-
-**Out:**
-- History older than the topic's retention: a backfill from the archive, sharing item 10's archive reader.
-- Rows filtered per reader: an engine reads the files, so the catalog cannot filter rows (D20); only per-catalog
-  tables could. Typed tables or views per event type: `data` holds the fields.
-- Deleting old rows: the archive is the five-year record, and no Iceberg table is a record's only copy (D24).
-- Records that went to the fallback log in a Kafka outage (reads and denials never wait, M7): not in the topic, so
-  not in the table.
-- The demo, whose stack already fills Docker's memory (`demo/README.md`); the console's trail reading the table.
-
-**The gate:**
-- Fast build: `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an
-  `EventType` with no mapping; the writer against a fake topic and catalog resumes after its last committed offset,
-  writes no offset twice and leaves out its own records.
-- Heavy (PostgreSQL, Silo, Kafka): `AuditTablesTest` finds a row for each kind of request within two intervals; a
-  writer killed mid-batch leaves no gap and no repeat; a caller without the grant gets 404, one with it reads it all.
-- Overnight: `EngineMatrixTest` reads `events` from Spark and PyIceberg.
-- Bites in `bites/D23/`: a type dropped from the mapping; offsets committed before their rows; the writer's own
-  records kept; the audit catalog readable without the grant.
-
-**Effort,** XL as the header says: a module, image and chart, the mapping, a heavy test and a matrix leg. It waits
-on nothing. It touches `catalog-audit`, `deploy/helm`, `settings.gradle.kts`, `IcebergImportBoundaryTest` (D2) and
-`catalog-tests-engines`.
-
-**Questions for Paul:**
-1. Where do the tables live? Recommended: Iceberg tables in an audit catalog, read by any engine. Or: tables in the
-   catalog's database behind a search route (a schema step on four stores; every read kept in the database).
-2. Who reads them? Recommended: one group you name, seeing every name. Or: a table per catalog for its grant admins
-   (a writer path per catalog; auth failures belong to none).
-3. Which records? Recommended: all, since a review needs reads. Or: changes and denials only, far smaller.
-4. What writes them? Recommended: a service with its own principal. Or: a job in the maintenance worker (no new
-   image, but the maintenance principal then writes audit data).
-5. Where do rows come from? Recommended: the audit topic, a minute behind, history from its retention on. Or: the
-   archive, hash-checked and five years back, but up to 5 minutes behind and only where one is configured (the demo
-   has none).
-
-**Paul's answers on the proposed scope, 2026-11-20 (D23, amended):** all five as recommended: Iceberg tables in an audit catalog ("Iceberg audit catalog"); one group Paul names reads them ("One named group"); every record, reads included ("All, reads included"); a service with its own principal writes them ("Own service"); rows from the audit topic ("The audit topic"). The proposed scope above is settled; build it.
 
 ### 28. DR replication-watermark verifier (v1.x)
 
@@ -485,8 +405,8 @@ fast build compiled both.
 ### 60. CredentialExpiryTest's first request answered 401
 
 - Added: 2026-11-18 by overnight run 2026-11-18
-- Touches: catalog-server/
-- Effort: M, the cause is unknown: the test records no reason for the 401
+- Touches: catalog-security/, catalog-server/src/test/java/nuna/catalog/server/CredentialExpiryTest.java, bites/D16/
+- Effort: S, the reason was in the test's output; one timeout and a Java-only test
 
 The heavy build of the overnight run of 2026-11-18 (testing 2dee958, the demo taken down for the run) failed
 `nuna.catalog.server.CredentialExpiryTest#noNotModifiedNearExpiryAndANewEpochIsANewETag` at 05:11:22 UTC:
@@ -503,6 +423,36 @@ before the rename to nuna).
 
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
+
+Fixed 2026-11-20 on worktree-agent-a919c80972fe867d3: the cause was a JWKS fetch that Nimbus gave up on after its default 500 ms read timeout, in a test JVM slowed
+by the build beside it. The test's output did say why: its one `audit.fallback` line is the auth-failure event, whose
+reason is "token from https://idp.test/keel rejected: An error occurred while attempting to decode the Jwt: Couldn't
+retrieve JWK set from URL: Read timed out".
+- The first request of a fresh Spring context fetches the test issuer's keys from `TestIdp`, a JDK `HttpServer` in
+  the same JVM (`IssuerForTests`). `TokenAuthenticator` built its JWKS source with `JWKSourceBuilder.create(url)`,
+  whose retriever waits 500 ms to connect and 500 ms to read, with no retry. A fetch that times out refuses the token
+  as invalid: 401, `Bearer error="invalid_token"`.
+- The JVM was slow: that night `CredentialExpiryTest`'s context took 30.8 s to start (12.7 s for the web context),
+  against 5.3 s (1.1 s) on 2026-11-16, and the request reached Tomcat 3.3 s after the context started. Beside it,
+  `catalog-maintenance`'s `KubernetesCompactionTest` ran Spark Jobs in Docker Desktop's Kubernetes from 05:09:19 to
+  05:15:09 UTC (350 s, failed), and `TelemetryTest` there missed a 20 s wait. On 2026-11-19 the two overlapped again:
+  the test's context took 25.3 s and it passed. The same refusal, "Couldn't retrieve JWK set from URL: Read timed
+  out", is in the nightly `LargeExpiryTest` of 2026-11-19 (catalog-maintenance's `TestCatalog`, also a `TestIdp`),
+  which passed regardless.
+- Fixed in `TokenAuthenticator`: a JWKS fetch waits up to 5 s for the IdP's answer (`JWKS_READ_TIMEOUT`); connecting
+  keeps Nimbus's 500 ms, and the cache, refresh-ahead and rate limit are unchanged. A slow IdP at work would have had
+  the same effect on the first request to each node, and on each key rotation.
+- `JwksRefreshTest#aSlowJwksIsWaitedForNotTakenForAnInvalidToken` (Java only): `TestIdp.slowFetches` answers after
+  1 s; the token is accepted after one fetch. Without the fix it failed with the overnight's message (fast build of
+  2026-11-20, 47 tests in catalog-security, 1 failed). Bite: `bites/D16/jwks-read-timeout-500ms.patch`.
+- `CredentialExpiryTest`'s status assertions now carry the response: status, `WWW-Authenticate` and body, and on a
+  401 a pointer to the `nuna.audit.fallback` line, since the body never names the reason by design.
+  `IssuerForTests` sends no requests, so it has nothing to report.
+
+Left: `CredentialExpiryTest` is tagged heavy since D44, so it did not run here; the overnight run's heavy build
+shows whether it passes.
+
+The item stays open until an overnight run's heavy build passes `CredentialExpiryTest`, as its done-when asks (the test is heavy since D44 and did not run on 2026-11-20).
 
 ### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
 
@@ -594,48 +544,48 @@ Done when the reconcile's read verifies and filters each chain in one streamed p
 (`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
 memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 
-### 87. The audit archive's S3 client does not trust its storage profile's CA bundle
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java catalog-server/src/test/java/nuna/catalog/server/governance/ bites/M7/
-- Effort: S, one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite
-
-Item 21 lets a storage profile name a CA bundle (`nuna.storage.profiles.<name>.ca-bundle`), which the profile's
-`MetadataFiles` and `CredentialVendor` clients trust beside the JVM's CAs. The audit archive builds a third S3
-client from a storage profile (`nuna.audit.archive.profile`) in `GovernanceWiring.archive`, and that one still trusts
-only the JVM's CAs: an archive bucket on an on-prem store with a private CA fails its startup `checkBucket` with a
-TLS handshake error. Item 21 left it alone because item 19 held `governance/` that night.
-
-Done when `GovernanceWiring.archive` reads the profile's bundle (`CaBundle.read`, refusing an unreadable one with
-the setting's name, as `CatalogStorage.caBundle` does) and applies it to its `S3ClientBuilder`
-(`CaBundle.applyTo`); a Java-only test against `PrivateCa.serve` (catalog-tests-s3) shows the archive's client
-refused without the bundle and accepted with it; and a bite is recorded.
-
-### 88. Compaction Jobs do not trust a storage profile's CA bundle
+### 89. A compaction Job against a store behind a private CA, end to end
 
 - Decided: 2026-11-20, D21
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java catalog-maintenance/src/test/java/nuna/maintenance/ deploy/helm/nuna-maintenance/ docs/install-at-work.md
-- Effort: M, mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides
+- Touches: catalog-maintenance/src/test/ catalog-tests-s3/ bites/M6/
+- Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
 
-Item 21 makes the worker's own S3 clients trust a profile's `ca-bundle`. A compaction Job (`KubernetesJobs`) is
-Spark in its own pod, reading and writing the table with the credentials the catalog vends it, and it gets no
-bundle: on an on-prem store whose certificate a private CA signed, it fails its first S3 call with a TLS
-handshake error. Item 21 treats the Job as an engine, which trusts the store through its own setup, and
-`docs/install-at-work.md` (section 6) says its image must trust the CA itself.
+Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
+compaction Jobs: the worker copies the bundle into a ConfigMap owned by each Job, and the Job's command builds a JVM
+trust store from the image's JDK CAs and the bundle and points Spark's driver at it. No test runs a compaction Job
+against a store behind a private CA. `KubernetesJobsTest` checks the Job's spec only; `KubernetesCompactionTest`
+(heavy) and the engine matrix's compaction leg (overnight) use stores with public or no TLS; the trust-store
+command was run by hand once, on a Windows JDK, not in the Spark image (item 88's done note).
 
-The choices, Paul's:
+Paul, 2026-11-20, asked whether to add this: "Add it, here", on Docker Desktop with a TLS store, as an overnight
+test.
 
-- Leave it to the image, as item 21's docs say: whoever builds the Spark image at work adds the CA to its JVM's
-  trust store.
-- Have the worker carry it: mount `storageCaConfigMap` into each Job's pod and point Spark's S3 clients at it, for
-  example with `s3.client-factory-impl` and item 21's `TrustedS3Clients` on the image's classpath, or a JVM trust
-  store built from the PEM at the pod's start.
+Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS from a private CA (`PrivateCa` makes
+one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
+real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
+fail on an assertion, not on fixture start-up.
 
-Done when Paul has chosen and a compaction Job on a store with a private CA can read and write its table, or the
-docs say plainly that the image must trust the CA.
+### 90. An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401
 
-**Decided 2026-11-20 (D21, amended):** "Worker mounts the CA": the maintenance worker mounts the profile's CA ConfigMap into each compaction Job and points Spark's trust at it.
+- Decided: 2026-11-20, D16
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-security/ catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java bites/D16/
+- Effort: S, one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite
+
+When the catalog cannot fetch an issuer's signing keys (the IdP is down, or slower than the 5 s read timeout item 60
+gave the JWKS fetch), `TokenAuthenticator` refuses the token as invalid: 401 with `Bearer error="invalid_token"`. That
+tells the client its good token is bad, so it throws the token away or sends its user to sign in again, when the
+fault is the IdP's and passes. `JwksRefreshTest#anUnreachableJwksMeansNoTokenIsAccepted` asserts the 401 today.
+Found by item 60's agent, 2026-11-20.
+
+Paul, 2026-11-20: "503, Retry-After".
+
+Done when a request whose token cannot be checked because the issuer's keys cannot be fetched answers 503 with a
+`Retry-After` header in the Iceberg error shape, and no token is accepted unchecked; a token that is bad on its own
+(wrong signature against keys the catalog holds, expired, wrong audience or issuer) still answers 401; the audit
+record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
+fetch failure mapped back to 401) makes that test fail.
 
 ## Done and dropped
 
@@ -659,6 +609,7 @@ docs say plainly that the image must trust the CA.
 | [19](backlog/19.md) | Cap the audit-read route for scripted use | done | 2026-11-20 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [21](backlog/21.md) | A CA bundle per storage profile | done | 2026-11-20 |
+| [27](backlog/27.md) | Queryable audit tables (v1.x, D23) | done | 2026-11-20 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |
@@ -708,3 +659,6 @@ docs say plainly that the image must trust the CA.
 | [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
 | [84](backlog/84.md) | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | done | 2026-11-20 |
+| [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
+| [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
+| [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |

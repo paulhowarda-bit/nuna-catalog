@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import nuna.catalog.objectstore.CaBundle;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -17,14 +18,20 @@ import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
@@ -45,13 +52,45 @@ import javax.net.ssl.TrustManagerFactory;
  * account and mount any Secret of its namespace. Their pods run as {@code job-service-account}, which needs no
  * rights. Talks to the API server with the worker's service account: it needs {@code get} and {@code create} on Jobs
  * and {@code create} on Secrets in the Jobs' namespace, and nothing else (the Helm chart's Role).
+ *
+ * <p>A table on a store whose certificate a private CA signed (its storage profile names a {@code ca-bundle}, backlog
+ * 21) gets that CA too (D21, amended 2026-11-20 for backlog 88): a pod mounts only ConfigMaps of its own namespace, so
+ * the worker copies the bundle it trusts into a ConfigMap of the Secret's name, one certificate per key, owned by the
+ * Job like the Secret, and mounts it at {@value #STORAGE_CA}. Before Spark starts, the pod builds a trust store of the
+ * image's JDK CAs ({@code $JAVA_HOME/lib/security/cacerts}) and the bundle's with the JDK's keytool, and Spark's driver
+ * trusts that store ({@code javax.net.ssl.trustStore} in {@code spark.driver.extraJavaOptions}): its S3 clients, on
+ * the credentials the catalog vends, and its catalog client with them. That needs {@code create} on ConfigMaps too.
+ * A table on a profile without a bundle gets a Job as before.
  */
 final class KubernetesJobs implements Compactor {
+
+    /** Where a Job's pod finds its storage profile's CA bundle: one certificate per file, {@code ca-<n>.pem}. */
+    static final String STORAGE_CA = "/etc/nuna/storage-ca";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String SCRIPT = script();
     private static final String COMMAND = "printf '%s' \"$NUNA_SCRIPT\" > /tmp/compact.py && exec /opt/spark/bin/"
             + "spark-submit --master 'local[2]' --driver-memory \"$NUNA_DRIVER_MEMORY\" /tmp/compact.py";
+    /**
+     * The trust store Spark's driver uses with a storage CA bundle, and its password: it holds only public certificates,
+     * but keytool needs one.
+     */
+    private static final String TRUST_STORE = "/tmp/storage-trust.p12";
+    private static final String TRUST_PASSWORD = "nuna-storage-trust";
+    /**
+     * {@link #COMMAND} with a storage CA bundle: keytool, quiet unless it fails, copies the image's JDK CAs into
+     * {@link #TRUST_STORE} and adds each certificate of the bundle; then Spark's driver JVM trusts that store. The JVM
+     * options go on spark-submit's command line: the driver is already running when the script builds its session.
+     */
+    private static final String TRUSTING_COMMAND = "keytool_quiet() { \"$JAVA_HOME/bin/keytool\" \"$@\" -noprompt"
+            + " > /tmp/keytool.log 2>&1 || { cat /tmp/keytool.log >&2; exit 1; }; };"
+            + " keytool_quiet -importkeystore -srckeystore \"$JAVA_HOME/lib/security/cacerts\" -srcstorepass changeit"
+            + " -destkeystore " + TRUST_STORE + " -deststoretype PKCS12 -deststorepass " + TRUST_PASSWORD + ";"
+            + " for ca in " + STORAGE_CA + "/*.pem; do keytool_quiet -importcert -alias \"nuna-storage-$(basename \"$ca\""
+            + " .pem)\" -file \"$ca\" -keystore " + TRUST_STORE + " -storepass " + TRUST_PASSWORD + "; done;"
+            + " printf '%s' \"$NUNA_SCRIPT\" > /tmp/compact.py && exec /opt/spark/bin/spark-submit --master 'local[2]'"
+            + " --driver-memory \"$NUNA_DRIVER_MEMORY\" --conf 'spark.driver.extraJavaOptions=-Djavax.net.ssl.trustStore="
+            + TRUST_STORE + " -Djavax.net.ssl.trustStorePassword=" + TRUST_PASSWORD + "' /tmp/compact.py";
 
     /** How long a finished Job is kept: a day, for its log. It schedules nothing. */
     static final Duration KEPT = Duration.ofDays(1);
@@ -62,11 +101,17 @@ final class KubernetesJobs implements Compactor {
     private final TokenSource tokens;
     private final String namespace;
     private final HttpClient http;
+    /** Every storage profile's prefixes, longest first, each with its profile's CA bundle, if it names one. */
+    private final Map<String, Optional<CaBundle>> storageCas;
 
     /**
-     * @param clock the worker's clock, which times each Job's deadline to the window's end
+     * @param storage the worker's storage profiles; a Job for a table under one with a {@code ca-bundle} trusts it.
+     *                Each bundle is read now, so one that cannot be read stops the worker starting
+     *                ({@link CaBundle#read} names the file)
+     * @param clock   the worker's clock, which times each Job's deadline to the window's end
      */
-    KubernetesJobs(WorkerSettings.Compaction settings, URI workerCatalogUri, TokenSource tokens, Clock clock) {
+    KubernetesJobs(WorkerSettings.Compaction settings, URI workerCatalogUri, TokenSource tokens,
+                   Map<String, WorkerSettings.StorageProfile> storage, Clock clock) {
         this.settings = settings;
         this.clock = clock;
         this.catalogUri = settings.catalogUri() != null ? settings.catalogUri() : workerCatalogUri;
@@ -79,6 +124,7 @@ final class KubernetesJobs implements Compactor {
         }
         this.http = HttpClient.newBuilder().sslContext(trust(settings.serviceAccount().resolve("ca.crt")))
                 .connectTimeout(Duration.ofSeconds(10)).build();
+        this.storageCas = storageCas(storage);
     }
 
     /** The Job that compacts this table on this night: {@code nuna-compact-<table id>-<the night's date>}. */
@@ -105,6 +151,11 @@ final class KubernetesJobs implements Compactor {
         String uid = read(expect("creating Job " + name, created, 201).body()).path("metadata").path("uid").asText();
         expect("creating Secret " + secretName, send("POST", "/api/v1/namespaces/" + namespace + "/secrets",
                 secret(secretName, name, uid)), 201);
+        Optional<CaBundle> storageCa = storageCa(table);
+        if (storageCa.isPresent()) {
+            expect("creating ConfigMap " + secretName, send("POST", "/api/v1/namespaces/" + namespace + "/configmaps",
+                    storageCaConfigMap(secretName, name, uid, storageCa.get())), 201);
+        }
         return Launch.STARTED;
     }
 
@@ -156,7 +207,8 @@ final class KubernetesJobs implements Compactor {
         pod.putObject("securityContext").put("runAsUser", settings.runAsUser()).put("runAsNonRoot", true);
         ObjectNode container = pod.putArray("containers").addObject().put("name", "compaction")
                 .put("image", settings.image()).put("imagePullPolicy", settings.imagePullPolicy());
-        container.putArray("command").add("sh").add("-c").add(COMMAND);
+        Optional<CaBundle> storageCa = storageCa(table);
+        container.putArray("command").add("sh").add("-c").add(storageCa.isPresent() ? TRUSTING_COMMAND : COMMAND);
         ArrayNode env = container.putArray("env");
         env(env, "NUNA_SCRIPT", SCRIPT);
         env(env, "NUNA_CONF", sparkConf(table).toString());
@@ -169,7 +221,63 @@ final class KubernetesJobs implements Compactor {
         ObjectNode resources = container.putObject("resources");
         resources.putObject("limits").put("memory", settings.memory());
         resources.putObject("requests").put("memory", settings.memory());
+        if (storageCa.isPresent()) {
+            // The ConfigMap the worker creates after the Job, of the Secret's name; the pod waits for it to appear.
+            container.putArray("volumeMounts").addObject().put("name", "storage-ca").put("mountPath", STORAGE_CA)
+                    .put("readOnly", true);
+            pod.putArray("volumes").addObject().put("name", "storage-ca").putObject("configMap")
+                    .put("name", secretName);
+        }
         return job;
+    }
+
+    /**
+     * The CA bundle of the storage profile the table lies in, found as the worker's own storage finds a location's
+     * profile ({@link Storage#of}): by its longest prefix.
+     */
+    private Optional<CaBundle> storageCa(Management.TableWork table) {
+        String location = Storage.normalize(table.location());
+        for (Map.Entry<String, Optional<CaBundle>> prefix : storageCas.entrySet()) {
+            String under = prefix.getKey().endsWith("/") ? prefix.getKey() : prefix.getKey() + "/";
+            if (location.startsWith(under) || location.equals(prefix.getKey())) {
+                return prefix.getValue();
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Map<String, Optional<CaBundle>> storageCas(Map<String, WorkerSettings.StorageProfile> storage) {
+        Map<String, Optional<CaBundle>> byPrefix = new HashMap<>();
+        storage.values().forEach(profile -> {
+            Optional<CaBundle> bundle = Optional.ofNullable(profile.caBundle()).map(CaBundle::read);
+            profile.prefixes().forEach(prefix -> byPrefix.put(Storage.normalize(prefix), bundle));
+        });
+        Map<String, Optional<CaBundle>> longestFirst = new LinkedHashMap<>();
+        byPrefix.keySet().stream().sorted(Comparator.comparingInt(String::length).reversed())
+                .forEach(prefix -> longestFirst.put(prefix, byPrefix.get(prefix)));
+        return longestFirst;
+    }
+
+    /** The storage profile's CA bundle for one Job, one PEM certificate per key, owned by the Job. */
+    private static ObjectNode storageCaConfigMap(String name, String job, String jobUid, CaBundle bundle) {
+        ObjectNode configMap = JSON.createObjectNode().put("apiVersion", "v1").put("kind", "ConfigMap");
+        ownedBy(configMap.putObject("metadata").put("name", name), job, jobUid);
+        ObjectNode data = configMap.putObject("data");
+        List<X509Certificate> certificates = bundle.certificates();
+        for (int i = 0; i < certificates.size(); i++) {
+            data.put("ca-" + i + ".pem", pem(certificates.get(i)));
+        }
+        return configMap;
+    }
+
+    private static String pem(X509Certificate certificate) {
+        try {
+            return "-----BEGIN CERTIFICATE-----\n" + Base64.getMimeEncoder(64, new byte[] {'\n'})
+                    .encodeToString(certificate.getEncoded()) + "\n-----END CERTIFICATE-----\n";
+        } catch (CertificateEncodingException e) {
+            throw new IllegalStateException("cannot encode the CA certificate " + certificate.getSubjectX500Principal(),
+                    e);
+        }
     }
 
     /** Seconds from now to the window's end, rounded up: at least one, which Kubernetes requires. */
@@ -193,13 +301,17 @@ final class KubernetesJobs implements Compactor {
 
     private ObjectNode secret(String name, String job, String jobUid) {
         ObjectNode secret = JSON.createObjectNode().put("apiVersion", "v1").put("kind", "Secret").put("type", "Opaque");
-        ObjectNode metadata = secret.putObject("metadata").put("name", name);
+        ownedBy(secret.putObject("metadata").put("name", name), job, jobUid);
+        secret.putObject("stringData").put("auth", JSON.valueToTree(tokens.clientProperties()).toString());
+        return secret;
+    }
+
+    /** Labels an object the worker makes for a Job, and has the Job own it, so Kubernetes deletes it with the Job. */
+    private static void ownedBy(ObjectNode metadata, String job, String jobUid) {
         metadata.putObject("labels").put("app.kubernetes.io/name", "nuna-compaction")
                 .put("app.kubernetes.io/managed-by", "nuna-maintenance");
         metadata.putArray("ownerReferences").addObject().put("apiVersion", "batch/v1").put("kind", "Job")
                 .put("name", job).put("uid", jobUid);
-        secret.putObject("stringData").put("auth", JSON.valueToTree(tokens.clientProperties()).toString());
-        return secret;
     }
 
     private static List<String> levels(Management.TableWork table) {

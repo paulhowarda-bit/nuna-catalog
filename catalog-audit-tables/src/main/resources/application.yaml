@@ -1,0 +1,22 @@
+# The audit table writer (D23). Everything else is set per deployment: see catalog-audit-tables/README.md and the
+# Helm chart deploy/helm/nuna-audit-tables.
+spring:
+  application:
+    name: nuna-audit-tables
+  main:
+    banner-mode: off
+
+nuna:
+  audit-tables:
+    catalog: nuna_audit
+    namespace: audit
+    commit-interval: PT1M
+
+# Log lines go to stdout as JSON, in Elastic Common Schema.
+logging:
+  structured:
+    format:
+      console: ecs
+  level:
+    # Iceberg logs every commit, manifest read and file IO at INFO.
+    org.apache.iceberg: WARN

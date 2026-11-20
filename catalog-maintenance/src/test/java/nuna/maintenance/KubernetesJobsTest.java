@@ -7,23 +7,34 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import nuna.catalog.tests.s3.PrivateCa;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.X509TrustManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,7 +47,9 @@ import org.junit.jupiter.api.io.TempDir;
  * account of its own, with the table's levels, id and rewrite_data_files' options, partial progress among them, and
  * signed in through a Secret of a fresh name that the Job owns, created after it. A Job already there for the night
  * means tonight's is running or ran. A Job's state comes from its conditions: one Kubernetes stopped at its deadline
- * was cut off by the window's end. The worker's own namespace is refused for the Jobs.
+ * was cut off by the window's end. The worker's own namespace is refused for the Jobs. A table on a storage profile
+ * with a CA bundle gets it in a ConfigMap the Job owns, mounted, and Spark's driver trusts it beside the image's JDK
+ * CAs (backlog 88); a table on a profile without one gets the Job as before.
  */
 class KubernetesJobsTest {
 
@@ -55,12 +68,15 @@ class KubernetesJobsTest {
 
     private final Map<String, String> jobs = new ConcurrentHashMap<>();
     private final List<JsonNode> secrets = new CopyOnWriteArrayList<>();
+    private final List<JsonNode> configMaps = new CopyOnWriteArrayList<>();
     private final List<String> authorizations = new CopyOnWriteArrayList<>();
     private final List<String> requests = new CopyOnWriteArrayList<>();
     private HttpServer api;
 
     @TempDir
     Path serviceAccount;
+    @TempDir
+    Path bundles;
 
     @BeforeEach
     void start() throws IOException {
@@ -79,13 +95,16 @@ class KubernetesJobsTest {
     private static final CleanupWindow WINDOW = new CleanupWindow(LocalTime.of(1, 0), LocalTime.of(5, 0),
             ZoneId.of("Europe/London"));
     private static final CompactionNeed SMALL_FILES = new CompactionNeed(10, 10, 0, 0, 5, 0.3, 134217728);
+    /** The Job's command for a table whose storage profile names no CA bundle. */
+    private static final String PLAIN_COMMAND = "printf '%s' \"$NUNA_SCRIPT\" > /tmp/compact.py && exec"
+            + " /opt/spark/bin/spark-submit --master 'local[2]' --driver-memory \"$NUNA_DRIVER_MEMORY\" /tmp/compact.py";
 
     @Test
     void oneJobPerTableSignedInThroughASecretItOwns() throws Exception {
         Files.writeString(serviceAccount.resolve("token"), "sa-token\n");
         Files.writeString(serviceAccount.resolve("namespace"), "lakehouse");
         WorkerSettings.Compaction settings = settings("lakehouse-compaction");
-        KubernetesJobs compactor = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS,
+        KubernetesJobs compactor = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS, Map.of(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
         UUID id = UUID.randomUUID();
         Management.TableWork table = new Management.TableWork("lake", id, List.of("sales", "eu"), "orders",
@@ -120,6 +139,10 @@ class KubernetesJobsTest {
         assertThat(container.at("/image").asText()).isEqualTo("nuna/spark:test");
         assertThat(container.at("/imagePullPolicy").asText()).isEqualTo("Never");
         assertThat(container.at("/resources/limits/memory").asText()).isEqualTo("3Gi");
+        assertThat(container.at("/command/2").asText()).as("no storage CA bundle: the command as it always was")
+                .isEqualTo(PLAIN_COMMAND);
+        assertThat(container.has("volumeMounts")).isFalse();
+        assertThat(pod.has("volumes")).isFalse();
         Map<String, JsonNode> env = env(job);
         assertThat(JSON.readTree(env.get("NUNA_TABLE").path("value").asText()))
                 .isEqualTo(JSON.readTree("[\"sales\",\"eu\",\"orders\"]"));
@@ -148,7 +171,7 @@ class KubernetesJobsTest {
 
         // The next night, a minute after it opens: a Job of its own, whatever is kept of tonight's, to the next end.
         CleanupWindow.Night next = WINDOW.on(night.date().plusDays(1));
-        KubernetesJobs tomorrow = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS,
+        KubernetesJobs tomorrow = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS, Map.of(),
                 Clock.fixed(next.opens().plusSeconds(60), ZoneOffset.UTC));
         CompactionNeed deletes = new CompactionNeed(10, 0, 4, 1, 5, 0.3, 536870912);
         assertThat(tomorrow.launch(table, deletes, next)).isEqualTo(Compactor.Launch.STARTED);
@@ -163,10 +186,78 @@ class KubernetesJobsTest {
     }
 
     @Test
+    void aStorageCaBundleIsMountedIntoTheJobAndSparkTrustsIt() throws Exception {
+        Files.writeString(serviceAccount.resolve("token"), "sa-token\n");
+        X509Certificate privateCa = PrivateCa.shared().certificate;
+        X509Certificate jvmCa = jvmCa();
+        Path bundle = Files.writeString(bundles.resolve("ceph.crt"), PrivateCa.pem(privateCa) + "a label between\n"
+                + PrivateCa.pem(jvmCa), StandardCharsets.US_ASCII);
+        Map<String, WorkerSettings.StorageProfile> storage = Map.of(
+                "ceph", new WorkerSettings.StorageProfile(List.of("s3://warehouse/tables"),
+                        URI.create("https://ceph.example.internal"), "us-east-1", true, null, null, bundle),
+                "aws", new WorkerSettings.StorageProfile(List.of("s3://aws-lake/tables"), null, "eu-west-2", false,
+                        null, null, null));
+        KubernetesJobs compactor = new KubernetesJobs(settings("lakehouse-compaction"), URI.create("http://ignored/"),
+                TOKENS, storage, Clock.fixed(NOW, ZoneOffset.UTC));
+        CleanupWindow.Night night = WINDOW.night(NOW).orElseThrow();
+        Management.TableWork onPrem = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "orders",
+                "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true"));
+        Management.TableWork onAws = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "returns",
+                "s3://aws-lake/tables/returns", Map.of("compaction.enabled", "true"));
+
+        assertThat(compactor.launch(onPrem, SMALL_FILES, night)).isEqualTo(Compactor.Launch.STARTED);
+        String name = KubernetesJobs.jobName(onPrem, night);
+        assertThat(requests).as("the bundle's ConfigMap after the Job and its Secret").containsExactly(
+                "GET /apis/batch/v1/namespaces/lakehouse-compaction/jobs/" + name,
+                "POST /apis/batch/v1/namespaces/lakehouse-compaction/jobs",
+                "POST /api/v1/namespaces/lakehouse-compaction/secrets",
+                "POST /api/v1/namespaces/lakehouse-compaction/configmaps");
+        String own = secrets.getFirst().at("/metadata/name").asText();
+        JsonNode configMap = configMaps.getFirst();
+        assertThat(configMap.at("/metadata/name").asText()).as("the Secret's fresh name").isEqualTo(own);
+        assertThat(configMap.at("/metadata/ownerReferences/0/kind").asText()).isEqualTo("Job");
+        assertThat(configMap.at("/metadata/ownerReferences/0/name").asText()).isEqualTo(name);
+        assertThat(configMap.at("/metadata/ownerReferences/0/uid").asText()).isEqualTo("uid-" + name);
+        List<String> keys = new ArrayList<>();
+        configMap.path("data").fieldNames().forEachRemaining(keys::add);
+        assertThat(keys).as("one certificate per key, in the bundle's order").containsExactly("ca-0.pem", "ca-1.pem");
+        assertThat(certificates(configMap.at("/data/ca-0.pem").asText())).containsExactly(privateCa);
+        assertThat(certificates(configMap.at("/data/ca-1.pem").asText())).containsExactly(jvmCa);
+
+        JsonNode pod = JSON.readTree(jobs.get(name)).at("/spec/template/spec");
+        JsonNode container = pod.at("/containers/0");
+        assertThat(pod.at("/volumes")).isEqualTo(JSON.readTree(
+                "[{\"name\":\"storage-ca\",\"configMap\":{\"name\":\"" + own + "\"}}]"));
+        assertThat(container.at("/volumeMounts")).isEqualTo(JSON.readTree(
+                "[{\"name\":\"storage-ca\",\"mountPath\":\"/etc/nuna/storage-ca\",\"readOnly\":true}]"));
+        assertThat(container.at("/command/0").asText()).isEqualTo("sh");
+        assertThat(container.at("/command/2").asText())
+                .as("a trust store of the image's JDK CAs and the bundle's, built before Spark's driver starts on it")
+                .containsSubsequence(
+                        "-importkeystore -srckeystore \"$JAVA_HOME/lib/security/cacerts\"",
+                        "-destkeystore /tmp/storage-trust.p12",
+                        "for ca in /etc/nuna/storage-ca/*.pem; do",
+                        "-importcert", "-file \"$ca\" -keystore /tmp/storage-trust.p12",
+                        "printf '%s' \"$NUNA_SCRIPT\" > /tmp/compact.py",
+                        "exec /opt/spark/bin/spark-submit --master 'local[2]' --driver-memory \"$NUNA_DRIVER_MEMORY\"",
+                        "--conf 'spark.driver.extraJavaOptions=-Djavax.net.ssl.trustStore=/tmp/storage-trust.p12"
+                                + " -Djavax.net.ssl.trustStorePassword=",
+                        "/tmp/compact.py");
+
+        // A table on a profile with no bundle: its Job as it always was, and no ConfigMap.
+        assertThat(compactor.launch(onAws, SMALL_FILES, night)).isEqualTo(Compactor.Launch.STARTED);
+        JsonNode plain = JSON.readTree(jobs.get(KubernetesJobs.jobName(onAws, night))).at("/spec/template/spec");
+        assertThat(plain.has("volumes")).isFalse();
+        assertThat(plain.at("/containers/0").has("volumeMounts")).isFalse();
+        assertThat(plain.at("/containers/0/command/2").asText()).isEqualTo(PLAIN_COMMAND);
+        assertThat(configMaps).hasSize(1);
+    }
+
+    @Test
     void aJobsStateComesFromItsConditions() throws Exception {
         Files.writeString(serviceAccount.resolve("token"), "sa-token\n");
         KubernetesJobs compactor = new KubernetesJobs(settings("lakehouse-compaction"), URI.create("http://ignored/"),
-                TOKENS, Clock.fixed(NOW, ZoneOffset.UTC));
+                TOKENS, Map.of(), Clock.fixed(NOW, ZoneOffset.UTC));
         Management.TableWork table = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "orders",
                 "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true"));
         CleanupWindow.Night night = WINDOW.night(NOW).orElseThrow();
@@ -197,7 +288,7 @@ class KubernetesJobsTest {
         Files.writeString(serviceAccount.resolve("namespace"), "lakehouse");
 
         assertThatThrownBy(() -> new KubernetesJobs(settings("lakehouse"), URI.create("http://ignored/"), TOKENS,
-                Clock.systemUTC())).hasMessageContaining("the worker's own namespace");
+                Map.of(), Clock.systemUTC())).hasMessageContaining("the worker's own namespace");
     }
 
     private WorkerSettings.Compaction settings(String namespace) {
@@ -205,6 +296,19 @@ class KubernetesJobsTest {
                 URI.create("http://127.0.0.1:" + api.getAddress().getPort()), serviceAccount,
                 URI.create("http://nuna-catalog:8181/"), "3Gi", "2g", 2, 185,
                 Map.of("spark.sql.shuffle.partitions", "4"));
+    }
+
+    /** A CA the JVM trusts, for a bundle of more than one certificate. */
+    private static X509Certificate jvmCa() throws GeneralSecurityException {
+        TrustManagerFactory jvm = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        jvm.init((KeyStore) null);
+        return Arrays.stream(jvm.getTrustManagers()).filter(X509TrustManager.class::isInstance)
+                .map(X509TrustManager.class::cast).findFirst().orElseThrow().getAcceptedIssuers()[0];
+    }
+
+    private static List<Certificate> certificates(String pem) throws GeneralSecurityException {
+        return List.copyOf(CertificateFactory.getInstance("X.509")
+                .generateCertificates(new ByteArrayInputStream(pem.getBytes(StandardCharsets.US_ASCII))));
     }
 
     /** The Job container's environment, by variable name. */
@@ -230,6 +334,10 @@ class KubernetesJobsTest {
             answer(exchange, 201, "{\"metadata\":{\"name\":\"" + name + "\",\"uid\":\"uid-" + name + "\"}}");
         } else if (exchange.getRequestMethod().equals("POST") && path.equals("/api/v1/namespaces/lakehouse-compaction/secrets")) {
             secrets.add(JSON.readTree(body));
+            answer(exchange, 201, body);
+        } else if (exchange.getRequestMethod().equals("POST")
+                && path.equals("/api/v1/namespaces/lakehouse-compaction/configmaps")) {
+            configMaps.add(JSON.readTree(body));
             answer(exchange, 201, body);
         } else {
             answer(exchange, 404, "{}");

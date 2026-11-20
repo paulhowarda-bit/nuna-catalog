@@ -1,0 +1,14 @@
+{{- $_ := required "config.nuna.audit-tables.catalog-uri is required: the catalog the writer writes to" (dig "nuna" "audit-tables" "catalog-uri" "" .Values.config) -}}
+{{- $_ := required "config.nuna.audit-tables.principal is required: the writer's own principal id, whose records it leaves out" (dig "nuna" "audit-tables" "principal" "" .Values.config) -}}
+{{- $_ := required "config.nuna.audit-tables.token.endpoint is required: the identity provider's token endpoint" (dig "nuna" "audit-tables" "token" "endpoint" "" .Values.config) -}}
+{{- $_ := required "config.nuna.audit-tables.token.client-id is required: the writer's client id there" (dig "nuna" "audit-tables" "token" "client-id" "" .Values.config) -}}
+{{- $_ := required "config.nuna.audit-tables.kafka.bootstrap-servers is required: the Kafka cluster holding the audit topic" (dig "nuna" "audit-tables" "kafka" "bootstrap-servers" "" .Values.config) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nuna-audit-tables.fullname" . }}
+  labels:
+    {{- include "nuna-audit-tables.labels" . | nindent 4 }}
+data:
+  application.yaml: |
+    {{- toYaml .Values.config | nindent 4 }}
