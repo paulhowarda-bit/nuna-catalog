@@ -48,7 +48,7 @@ class WorkerRunTest {
         CleanupWindow window = new CleanupWindow(time(start.minus(Duration.ofHours(1))),
                 time(start.plus(Duration.ofHours(3))), ZoneOffset.UTC);
         try (RESTCatalog writer = catalog.writer(); Worker worker = catalog.worker(clock, compactor,
-                Storage.of(catalog.storageProfiles()), catalog.workerTokens(), new SimpleMeterRegistry(), window, 2)) {
+                catalog.workerStorage(), catalog.workerTokens(), new SimpleMeterRegistry(), window, 2)) {
             TableIdentifier id = TestCatalog.table(writer, "maintained");
             Table table = writer.loadTable(id);
             DataFile a = TestCatalog.dataFile(table, "a");
