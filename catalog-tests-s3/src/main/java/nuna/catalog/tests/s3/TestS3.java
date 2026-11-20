@@ -2,6 +2,9 @@ package nuna.catalog.tests.s3;
 
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.KeyStore;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -13,18 +16,23 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.utility.DockerImageName;
+import org.testcontainers.utility.MountableFile;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.http.apache5.Apache5HttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.iam.IamClient;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -50,6 +58,8 @@ import software.amazon.awssdk.services.sts.model.StsException;
  *       policy. On exit it removes each bucket's policy as the worker, since a delete policy refuses
  *       everyone else that, then deletes every bucket it made and both roles. Synthetic data only.</li>
  * </ul>
+ *
+ * <p>A test of a store behind a private CA starts one more, of its own: Silo serving TLS ({@link #siloBehindTls}).
  */
 public final class TestS3 implements AutoCloseable {
 
@@ -90,6 +100,8 @@ public final class TestS3 implements AutoCloseable {
     private final Optional<AwsCredentialsProvider> maintenanceCredentials;
     /** Silo's container, where {@link #siloUser} runs {@code mc}; none elsewhere. */
     private final Optional<GenericContainer<?>> silo;
+    /** The CA that signed the store's certificate, when it serves TLS ({@link #siloBehindTls}); none elsewhere. */
+    private final Optional<PrivateCa> ca;
     /** On AWS, this run's bucket-name prefix; empty elsewhere. */
     private final String bucketPrefix;
     private final Optional<String> awsProfile;
@@ -102,7 +114,7 @@ public final class TestS3 implements AutoCloseable {
     private TestS3(Kind kind, URI endpoint, AwsCredentialsProvider credentials, Optional<AwsBasicCredentials> keys,
                    Optional<String> roleArn, String maintenancePrincipal,
                    Optional<AwsCredentialsProvider> maintenanceCredentials, Optional<GenericContainer<?>> silo,
-                   String bucketPrefix, Optional<String> awsProfile, AutoCloseable stop) {
+                   Optional<PrivateCa> ca, String bucketPrefix, Optional<String> awsProfile, AutoCloseable stop) {
         this.kind = kind;
         this.endpoint = endpoint;
         this.credentials = credentials;
@@ -111,6 +123,7 @@ public final class TestS3 implements AutoCloseable {
         this.maintenancePrincipal = maintenancePrincipal;
         this.maintenanceCredentials = maintenanceCredentials;
         this.silo = silo;
+        this.ca = ca;
         this.bucketPrefix = bucketPrefix;
         this.awsProfile = awsProfile;
         this.stop = stop;
@@ -170,14 +183,27 @@ public final class TestS3 implements AutoCloseable {
         return client(credentials);
     }
 
-    /** A client signing in with {@code credentials}, addressing buckets by path. */
+    /**
+     * A client signing in with {@code credentials}, addressing buckets by path; when the store serves TLS
+     * ({@link #siloBehindTls}), trusting its CA alone.
+     */
     public S3Client client(AwsCredentialsProvider credentials) {
-        return S3Client.builder()
+        S3ClientBuilder builder = S3Client.builder()
                 .endpointOverride(endpoint)
                 .region(Region.of(REGION))
                 .forcePathStyle(true)
-                .credentialsProvider(credentials)
-                .build();
+                .credentialsProvider(credentials);
+        ca.ifPresent(authority -> builder.httpClientBuilder(Apache5HttpClient.builder()
+                .tlsTrustManagersProvider(() -> trusting(authority))));
+        return builder.build();
+    }
+
+    /**
+     * The PEM file of the CA that signed the store's certificate, when it serves TLS ({@link #siloBehindTls}), as a
+     * storage profile's {@code ca-bundle} names one; none elsewhere.
+     */
+    public Optional<Path> caBundle() {
+        return ca.map(authority -> authority.bundle);
     }
 
     /** What a server's storage profile calls this store ({@code StoreKind}): MINIO, CEPH or S3. */
@@ -232,12 +258,15 @@ public final class TestS3 implements AutoCloseable {
      * under {@code s3://<bucket>/tables}: kind, endpoint, region, table root, allowed prefixes, and the
      * catalog's keys (Silo, Ceph) or the AWS SDK's default chain (AWS), plus the STS role where there is one
      * and the maintenance worker's {@link #maintenancePrincipal()}.
-     * Plain http is allowed, since the containers serve no TLS.
+     * Plain http is allowed, since the containers serve no TLS. A store that does ({@link #siloBehindTls}) is held to
+     * it, as a deployment's are, and the profile names its CA's bundle ({@code ca-bundle}).
      */
     public Map<String, String> serverProperties(String profile, String bucket) {
         String p = "nuna.storage.profiles." + profile + ".";
         Map<String, String> properties = new LinkedHashMap<>();
-        properties.put("nuna.storage.require-tls", "false");
+        if (ca.isEmpty()) {
+            properties.put("nuna.storage.require-tls", "false");
+        }
         properties.put(p + "kind", profileKind());
         properties.put(p + "endpoint", endpoint.toString());
         properties.put(p + "region", REGION);
@@ -249,6 +278,7 @@ public final class TestS3 implements AutoCloseable {
         });
         roleArn.ifPresent(role -> properties.put(p + "sts-role", role));
         properties.put(p + "maintenance-principal", maintenancePrincipal());
+        caBundle().ifPresent(bundle -> properties.put(p + "ca-bundle", bundle.toString()));
         return properties;
     }
 
@@ -272,17 +302,67 @@ public final class TestS3 implements AutoCloseable {
     }
 
     private static TestS3 silo() {
-        GenericContainer<?> container = new GenericContainer<>(DockerImageName.parse(image("silo.image")))
-                .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
-                .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
+        GenericContainer<?> container = siloContainer()
                 .withCommand("server", "/data")
-                .withExposedPorts(9000)
                 .waitingFor(Wait.forHttp("/minio/health/live").forPort(9000).withStartupTimeout(Duration.ofMinutes(2)));
         container.start();
         AwsBasicCredentials keys = AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY);
         return new TestS3(Kind.SILO, endpoint(container, 9000), StaticCredentialsProvider.create(keys),
-                Optional.of(keys), Optional.empty(), MAINTENANCE_USER, Optional.empty(), Optional.of(container), "",
+                Optional.of(keys), Optional.empty(), MAINTENANCE_USER, Optional.empty(), Optional.of(container),
+                Optional.empty(), "", Optional.empty(), container::stop);
+    }
+
+    /**
+     * Silo serving TLS, as an on-prem store whose certificate a private CA signed does (backlog 89): a store of its
+     * own, apart from the run's ({@link #get}) and whatever {@code -Ps3} names, started on each call and stopped when
+     * the JVM exits. Its certificate, which {@code ca} signs ({@link PrivateCa#issue}), names this machine as tests
+     * reach it ({@code localhost}, {@code 127.0.0.1}, the Docker host's address) and as pods of Docker Desktop's
+     * Kubernetes do, {@code host.docker.internal}: a catalog serving those pods names the store by that name (the
+     * maintenance worker's {@code TestCatalog}), and a pod's TLS client checks that name against the certificate.
+     * Silo reads the certificate and its key from {@code --certs-dir}, as {@code public.crt} and {@code private.key}.
+     * Its clients trust {@code ca} ({@link #client}); a server's storage profile for it requires TLS and names
+     * {@code ca}'s bundle ({@link #serverProperties}). It has no user but its root user ({@link #siloUser} is for the
+     * run's Silo).
+     */
+    public static TestS3 siloBehindTls(PrivateCa ca) {
+        PrivateCa.Issued certificate = ca.issue(List.of("localhost", "127.0.0.1",
+                DockerClientFactory.instance().dockerHostIpAddress(), "host.docker.internal"));
+        GenericContainer<?> container = siloContainer()
+                .withCopyFileToContainer(MountableFile.forHostPath(certificate.certificate()), "/certs/public.crt")
+                .withCopyFileToContainer(MountableFile.forHostPath(certificate.key()), "/certs/private.key")
+                .withCommand("server", "--certs-dir", "/certs", "/data")
+                .waitingFor(Wait.forHttp("/minio/health/live").forPort(9000).usingTls().allowInsecure()
+                        .withStartupTimeout(Duration.ofMinutes(2)));
+        container.start();
+        AwsBasicCredentials keys = AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY);
+        TestS3 store = new TestS3(Kind.SILO, URI.create("https://" + container.getHost() + ":"
+                + container.getMappedPort(9000)), StaticCredentialsProvider.create(keys), Optional.of(keys),
+                Optional.empty(), MAINTENANCE_USER, Optional.empty(), Optional.empty(), Optional.of(ca), "",
                 Optional.empty(), container::stop);
+        Runtime.getRuntime().addShutdownHook(new Thread(store::close, "test-s3-tls-stop"));
+        return store;
+    }
+
+    /** Silo, its root user's keys {@link #ACCESS_KEY} and {@link #SECRET_KEY}, serving on port 9000. */
+    private static GenericContainer<?> siloContainer() {
+        return new GenericContainer<>(DockerImageName.parse(image("silo.image")))
+                .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
+                .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
+                .withExposedPorts(9000);
+    }
+
+    /** Trust managers trusting {@code ca} alone: for a client of the store it signed for, and of nothing else. */
+    private static TrustManager[] trusting(PrivateCa ca) {
+        try {
+            KeyStore anchors = KeyStore.getInstance(KeyStore.getDefaultType());
+            anchors.load(null, null);
+            anchors.setCertificateEntry("ca", ca.certificate);
+            TrustManagerFactory trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trust.init(anchors);
+            return trust.getTrustManagers();
+        } catch (GeneralSecurityException | IOException e) {
+            throw new IllegalStateException("cannot trust the private CA", e);
+        }
     }
 
     /**
@@ -314,7 +394,8 @@ public final class TestS3 implements AutoCloseable {
         return new TestS3(Kind.CEPH, endpoint(container, 8080), StaticCredentialsProvider.create(keys),
                 Optional.of(keys), Optional.of(CEPH_ROLE_ARN), "arn:aws:iam:::user/" + MAINTENANCE_USER,
                 Optional.of(StaticCredentialsProvider.create(AwsBasicCredentials.create(MAINTENANCE_ACCESS_KEY,
-                        MAINTENANCE_SECRET_KEY))), Optional.empty(), "", Optional.empty(), container::stop);
+                        MAINTENANCE_SECRET_KEY))), Optional.empty(), Optional.empty(), "", Optional.empty(),
+                container::stop);
     }
 
     /**
@@ -434,7 +515,7 @@ public final class TestS3 implements AutoCloseable {
         };
         self[0] = new TestS3(Kind.AWS, URI.create("https://s3.us-east-1.amazonaws.com"), credentials,
                 Optional.empty(), Optional.of(roleArn), workerArn, Optional.of(workerCredentials), Optional.empty(),
-                prefix, Optional.of(profile), cleanup);
+                Optional.empty(), prefix, Optional.of(profile), cleanup);
         try {
             awaitAssumable(credentials, roleArn);
             awaitAssumable(credentials, workerArn);
