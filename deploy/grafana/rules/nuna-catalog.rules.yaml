@@ -1,0 +1,199 @@
+# Prometheus alert rules for the nuna catalog servers (backlog 44, D43). A plain rule file: load it with
+# rule_files, or put the list under `groups:` into a PrometheusRule's spec.groups as it is.
+#
+# Draft: the series names assume Prometheus' default OTLP translation of nuna's Micrometer meters (dots to
+# underscores, unit and _total suffixes); docs/observability/dashboards-and-alerts.md lists them and what to rename
+# if work's Prometheus differs. Severity: page or warning.
+groups:
+  - name: nuna-catalog-slos
+    # Multiwindow burn-rate alerts (Google SRE workbook, a 30-day budget) on the build plan's latency SLOs (R7, M8):
+    # 99% of loads answered 200 within 50 ms, of loads answered 304 within 10 ms, and of commits (updateTable,
+    # commitTransaction) answered 200 within 300 ms, from the bucket bounds of nuna.catalog.requests' histogram.
+    # The fourth, at least 500 commits a second, has no rule: see dashboards-and-alerts.md.
+    rules:
+      - alert: NunaLoadSloBurnFast
+        expr: |
+          (
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[1h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[1h]))
+            )) > 14.4 * 0.01
+            and
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[5m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[5m]))
+            )) > 14.4 * 0.01
+          )
+          or
+          (
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[6h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[6h]))
+            )) > 6 * 0.01
+            and
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[30m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[30m]))
+            )) > 6 * 0.01
+          )
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Loads answered 200 miss 50 ms fast enough to spend the SLO's error budget in days ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of loads answered 200 took longer than 50 ms; the SLO allows 1%
+            (p99 under 50 ms, build plan R7). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
+            over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaLoadSloBurnSlow
+        expr: |
+          (1 - (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[3d]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[3d]))
+          )) > 1 * 0.01
+          and
+          (1 - (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="2xx", le=~"50([.]0)?"}[6h]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="2xx"}[6h]))
+          )) > 1 * 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loads answered 200 miss 50 ms more often than the SLO allows ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of loads answered 200 took longer than 50 ms over the last 3 days and
+            6 h; the SLO allows 1% (p99 under 50 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+      - alert: NunaNotModifiedSloBurnFast
+        expr: |
+          (
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[1h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[1h]))
+            )) > 14.4 * 0.01
+            and
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[5m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[5m]))
+            )) > 14.4 * 0.01
+          )
+          or
+          (
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[6h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[6h]))
+            )) > 6 * 0.01
+            and
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[30m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[30m]))
+            )) > 6 * 0.01
+          )
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Loads answered 304 miss 10 ms fast enough to spend the SLO's error budget in days ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of loads answered 304 took longer than 10 ms; the SLO allows 1%
+            (p99 under 10 ms, build plan R7). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
+            over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaNotModifiedSloBurnSlow
+        expr: |
+          (1 - (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[3d]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[3d]))
+          )) > 1 * 0.01
+          and
+          (1 - (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id="loadTable", outcome="3xx", le=~"10([.]0)?"}[6h]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id="loadTable", outcome="3xx"}[6h]))
+          )) > 1 * 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Loads answered 304 miss 10 ms more often than the SLO allows ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of loads answered 304 took longer than 10 ms over the last 3 days and
+            6 h; the SLO allows 1% (p99 under 10 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+      - alert: NunaCommitSloBurnFast
+        expr: |
+          (
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[1h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[1h]))
+            )) > 14.4 * 0.01
+            and
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[5m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[5m]))
+            )) > 14.4 * 0.01
+          )
+          or
+          (
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[6h]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[6h]))
+            )) > 6 * 0.01
+            and
+            (1 - (
+              sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[30m]))
+              / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[30m]))
+            )) > 6 * 0.01
+          )
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Commits answered 200 miss 300 ms fast enough to spend the SLO's error budget in days ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of commits answered 200 (updateTable and commitTransaction) took longer than 300 ms; the SLO allows 1%
+            (p99 under 300 ms, build plan R7). Burning at 14.4 times the budget over 1 h and 5 min, or 6 times
+            over 6 h and 30 min. docs/observability/dashboards-and-alerts.md.
+      - alert: NunaCommitSloBurnSlow
+        expr: |
+          (1 - (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[3d]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[3d]))
+          )) > 1 * 0.01
+          and
+          (1 - (
+            sum by (job) (rate(nuna_catalog_requests_milliseconds_bucket{operation_id=~"updateTable|commitTransaction", outcome="2xx", le=~"300([.]0)?"}[6h]))
+            / sum by (job) (rate(nuna_catalog_requests_milliseconds_count{operation_id=~"updateTable|commitTransaction", outcome="2xx"}[6h]))
+          )) > 1 * 0.01
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Commits answered 200 miss 300 ms more often than the SLO allows ({{ $labels.job }})"
+          description: >-
+            {{ $value | humanizePercentage }} of commits answered 200 (updateTable and commitTransaction) took longer than 300 ms over the last 3 days and
+            6 h; the SLO allows 1% (p99 under 300 ms, build plan R7). docs/observability/dashboards-and-alerts.md.
+  - name: nuna-catalog-alerts
+    # nuna's own alert kinds (catalog-metrics.md, "The alerts"): metadata integrity pages, the others warn.
+    rules:
+      - alert: NunaMetadataIntegrity
+        expr: sum by (job) (increase(nuna_catalog_alerts_metadata_integrity_total[15m])) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: "A metadata file no longer hashes to what its pointer recorded ({{ $labels.job }})"
+          description: >-
+            The nuna.alerts log line (metadata-integrity) names the table, the file and both hashes. catalog-metrics.md, "The alerts".
+      - alert: NunaRegulatedSchemaChange
+        expr: sum by (job) (increase(nuna_catalog_alerts_regulated_schema_change_total[15m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A commit changed a regulated table's schema or partition spec ({{ $labels.job }})"
+          description: >-
+            The nuna.alerts log line (regulated-schema-change) names the table and the commit. catalog-metrics.md, "The alerts".
+      - alert: NunaLargeMetadata
+        expr: sum by (job) (increase(nuna_catalog_alerts_large_metadata_total[15m])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A loaded table's metadata is over the size or snapshot limit ({{ $labels.job }})"
+          description: >-
+            The limits are D14's. The nuna.alerts log line (large-metadata) names the table, its size and snapshot count; each file is alerted once per server. catalog-metrics.md, "The alerts".

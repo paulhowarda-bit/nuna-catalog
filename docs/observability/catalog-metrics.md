@@ -2,8 +2,8 @@
 
 The catalog server's own meters (backlog 39), beside Spring Boot's standard ones. They go out with every other
 metric (README.md, "What is exported"). The code is in `catalog-server`, package `nuna.catalog.server.metrics`, with
-the alert counters in `rest/ServerAlerts.java`. The dashboards and alert rules at work (item 44) and the console's
-health page (item 48) read these names; item 43 records how they land in work's Prometheus.
+the alert counters in `rest/ServerAlerts.java`. The dashboards and alert rules (item 44, dashboards-and-alerts.md)
+and the console's health page (item 48) read these names; item 43 records how they land in work's Prometheus.
 
 Names are Micrometer's, with dots. Over OTLP Micrometer sends timers in milliseconds by default. A Prometheus backend
 turns the dots into underscores and adds unit and type suffixes, so `nuna.catalog.requests` arrives as a family such
@@ -110,6 +110,8 @@ the table and file; the counter does not.
 - `nuna.catalog.alerts.metadata.integrity` should page.
 - `nuna.catalog.alerts.regulated.schema.change` and `nuna.catalog.alerts.large.metadata` should warn.
 - Large metadata is alerted once per file a server loads, not on every load.
+
+The rules that do so are in `deploy/grafana/rules/nuna-catalog.rules.yaml` (dashboards-and-alerts.md).
 
 ### `nuna.catalog.report.*`: client reports
 
