@@ -1,0 +1,17 @@
+Breaks: a MongoDB database that cannot be reached or is changing primary is a plain store failure, so the routes answer 500 instead of 503 with Retry-After.
+Module: catalog-store-mongo
+Test: UnavailableFailuresTest
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Transactions.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Transactions.java
+index c3e4d30..3033282 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Transactions.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/Transactions.java
+@@ -225,7 +225,7 @@ final class Transactions {
+      * not be reached or is changing primary, so the caller may repeat once it is back.
+      */
+     static StoreException failed(String message, MongoException e) {
+-        return unavailable(e) ? new StoreUnavailableException(message, e) : new StoreException(message, e);
++        return false ? new StoreUnavailableException(message, e) : new StoreException(message, e);
+     }
+
+     /**
