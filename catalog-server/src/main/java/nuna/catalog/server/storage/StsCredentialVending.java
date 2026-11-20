@@ -136,8 +136,13 @@ public final class StsCredentialVending implements CredentialVending {
         return credentials;
     }
 
-    private static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String epoch,
-                                 String refreshPath, boolean cached) {
+    /**
+     * The load response's FileIO config and storage credential. With the profile's KMS key, the config tells
+     * Iceberg's S3FileIO to write with it ({@code s3.sse.type} {@code kms}, {@code s3.sse.key} the key ARN), as the
+     * session policy demands (D26); an engine whose client reads neither must be set up to name the key itself.
+     */
+    static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String epoch,
+                         String refreshPath, boolean cached) {
         Map<String, String> secrets = new LinkedHashMap<>();
         secrets.put("s3.access-key-id", credentials.accessKeyId());
         secrets.put("s3.secret-access-key", credentials.secretAccessKey());
@@ -149,6 +154,10 @@ public final class StsCredentialVending implements CredentialVending {
             config.put("s3.endpoint", bound.profile().endpoint().toString());
         }
         config.put("s3.path-style-access", Boolean.toString(bound.profile().kind().pathStyle()));
+        bound.profile().kmsKey().ifPresent(key -> {
+            config.put("s3.sse.type", "kms");
+            config.put("s3.sse.key", key);
+        });
         config.put("client.refresh-credentials-endpoint", refreshPath);
         config.put("client.refresh-credentials-enabled", "true");
         return new Vended(config, List.of(new StorageCredential(credentials.location(), secrets)),

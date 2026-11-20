@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.net.URI;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -160,7 +161,7 @@ class StorageProfileTest {
     @DisplayName("a profile needs at least one allowed prefix, and each must be canonical")
     void allowedPrefixesAreRequiredAndCanonical() {
         assertThatThrownBy(() -> new StorageProfile(StoreKind.S3, URI.create("https://s3.amazonaws.com"),
-                "us-east-1", ObjectLocation.parse("s3://lake/warehouse"), List.of()))
+                "us-east-1", ObjectLocation.parse("s3://lake/warehouse"), List.of(), Optional.empty()))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("is not within an allowed prefix");
         assertThatThrownBy(() -> StorageProfile.of(StoreKind.S3, "https://s3.amazonaws.com", "us-east-1",
@@ -199,5 +200,57 @@ class StorageProfileTest {
                 "s3://lake/warehouse", List.of("s3://lake/warehouse")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("region");
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @DisplayName("an AWS S3 profile may name a KMS key ARN in its region and partition (D26)")
+    @CsvSource({
+            "us-east-1, arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            "eu-west-2, arn:aws:kms:eu-west-2:111122223333:key/mrk-1234abcd12ab34cd56ef1234567890ab",
+            "cn-north-1, arn:aws-cn:kms:cn-north-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            "us-gov-west-1, arn:aws-us-gov:kms:us-gov-west-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+    })
+    void kmsKeyAccepted(String region, String key) {
+        assertThat(StorageProfile.of(StoreKind.S3, "https://s3.amazonaws.com", region, "s3://lake/warehouse",
+                List.of("s3://lake/warehouse"), Optional.of(key)).kmsKey()).contains(key);
+        assertThat(PROFILE.kmsKey()).isEmpty();
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @DisplayName("anything but a key ARN in the profile's region is refused: aliases, bare ids, other regions,"
+            + " other partitions, and whatever a policy would read specially")
+    @ValueSource(strings = {
+            "arn:aws:kms:us-east-1:111122223333:alias/aws/s3",
+            "alias/lake",
+            "1234abcd-12ab-34cd-56ef-1234567890ab",
+            "arn:aws:kms:eu-west-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            "arn:aws-cn:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            "arn:aws:kms:us-east-1:11112222333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            "arn:aws:kms:us-east-1:111122223333:key/1234ABCD-12AB-34CD-56EF-1234567890AB",
+            "arn:aws:kms:us-east-1:111122223333:key/*",
+            "arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab\"},{\"Effect\":\"Allow",
+            "arn:aws:kms:us-east-1:111122223333:key/${aws:username}",
+            "arn:aws:s3:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            " arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab",
+            "",
+    })
+    void kmsKeyChecked(String key) {
+        assertThatThrownBy(() -> StorageProfile.of(StoreKind.S3, "https://s3.amazonaws.com", "us-east-1",
+                "s3://lake/warehouse", List.of("s3://lake/warehouse"), Optional.of(key)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining(key);
+    }
+
+    @Test
+    @DisplayName("on-prem profiles name no KMS key: the ARN and the policy condition are AWS's")
+    void kmsKeyOnlyOnAwsS3() {
+        String key = "arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+        for (StoreKind kind : List.of(StoreKind.CEPH, StoreKind.MINIO)) {
+            assertThatThrownBy(() -> StorageProfile.of(kind, "https://rgw.internal:8443", "us-east-1",
+                    "s3://lake/warehouse", List.of("s3://lake/warehouse"), Optional.of(key)))
+                    .as(kind.name())
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("only an AWS S3 profile names a KMS key, not a " + kind + " profile");
+        }
     }
 }

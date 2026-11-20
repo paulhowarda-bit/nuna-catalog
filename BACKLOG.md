@@ -8,14 +8,14 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 5 S, 8 M, 2 L, 4 XL.
+**21 open:** 5 S, 10 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
-| [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
+| [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | the per-profile key is built (2026-11-20); mapping keys to domains waits on SEC-8 (work), and its size on the answer | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
@@ -31,6 +31,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 | [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
 | [96](backlog/96.md) | M | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul | 2026-11-20 |
+| [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
+| [98](backlog/98.md) | M | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | one more field on the stored profile in all four stores, with its migration, and the startup audit naming it | 2026-11-20 |
 
 ## Open items in full
 
@@ -101,7 +103,7 @@ operators, audited, with the same overlap and TLS checks as startup.
 
 - Decided: 2026-11-19, D26
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8
+- Effort: M, the per-profile key is built (2026-11-20); mapping keys to domains waits on SEC-8 (work), and its size on the answer
 
 `build-plan.md`, M6, Open: per-request SSE-KMS keys and a KMS condition in the session policy. Today encryption at
 rest is the bucket's default key and the catalog records only the key set's name (D26). Waits on SEC-8 (KMS
@@ -111,6 +113,35 @@ Done when SEC-8 is answered and, if keys are per domain, vended sessions write w
 policy refuses any other.
 
 **Decided 2026-11-19 (D26):** one KMS key per storage profile now ("Per-profile key now"): vended sessions must write with it and are refused any other. How keys map to domains still waits on SEC-8.
+
+**Built 2026-11-20 (worktree-agent-a48507f072a64c9bf): the per-profile key, on AWS S3 profiles; open until SEC-8
+is answered.**
+
+- `nuna.storage.profiles.<name>.kms-key` names one key ARN (`StorageProfile.kmsKey`). The server refuses to start,
+  naming the profile, on an alias, a bare key id, a key in another region or partition, or a key on a MinIO or Ceph
+  profile. A profile with no key behaves as before, its session policy text unchanged.
+- The vended session's policy moves PutObject (which covers CreateMultipartUpload) to a statement whose condition
+  requires `s3:x-amz-server-side-encryption` = `aws:kms` and `s3:x-amz-server-side-encryption-aws-kms-key-id` = the
+  key ARN, and allows the key's use: `kms:GenerateDataKey` and `kms:Decrypt` for writers, `kms:Decrypt` for readers.
+- The server's metadata files are written with SSE-KMS under the key; the load response's config carries
+  `s3.sse.type: kms` and `s3.sse.key: <ARN>` (Iceberg's S3FileIO; the worker and its Jobs ask for vended credentials,
+  so they get it). A caller that declines delegation gets no config, so it is not told the key.
+- Java-only tests: `SessionPolicyTest`, `StorageProfileTest`, `KmsKeyProfileTest` (new), `NoKmsBoundaryTest` (now
+  lets `MetadataFiles` and `SessionPolicy` alone name the encryption headers). Bites `kms-condition-dropped`,
+  `kms-key-unchecked`, `metadata-write-without-kms-key` and `kms-key-not-in-config` (bites/M6), each seen to bite.
+- On AWS (`KmsKeyAwsTest`, heavy, AWS only, Paul's allowance of 2026-11-20 with the account's `aws/s3` key; no key
+  created): vended credentials write with the key in one request and in parts, and read it back; they are refused
+  (AccessDenied) a write with no encryption header and with SSE-S3, and read credentials any write; the server's
+  metadata write is encrypted with the key. Two things S3 does that the first runs showed: a write naming SSE-KMS
+  but no key is let through, because S3 checks the condition against the key it will use (here `aws/s3`, the
+  profile's key); and S3 looks a named key up before it asks the policy, so a key ARN that does not exist is refused
+  by S3 (400), not the policy.
+
+Not shown, for want of a second key (Paul allowed none): that a write naming another existing key is refused by the
+policy (the condition's text is checked in `SessionPolicyTest`), and that the policy's KMS statement suffices for a
+customer-managed key whose key policy defers to IAM (`aws/s3`'s policy lets every principal in the account use it
+through S3). Left to items 97 (a key on MinIO and Ceph profiles) and 98 (the key is not recorded with the profile,
+so a change of key is not audited). SEC-8 (keys per domain) is a work question.
 
 ### 24. Kubernetes deployment: what was not checked (at work)
 
@@ -762,6 +793,39 @@ and one for the rest, and calls it "worth a thought for the work install".
 Paul decides whether the catalog should vend a second address, and if so how it tells the two kinds of client apart
 (the listener a request came in on, a header the front door sets, or the client's network). Until he does, nothing
 changes: outside engines set their own `s3.endpoint`.
+
+### 97. A KMS key for MinIO and Ceph storage profiles (D26)
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java catalog-objectstore/src/test/ catalog-tests-s3/ docs/install-at-work.md
+- Effort: M, a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet
+
+D26, amended 2026-11-19 (item 23): "each storage profile names one KMS key now". Item 23 built it for AWS S3
+profiles only: `kms-key` is a key ARN, checked against the profile's region, and the server refuses to start when a
+MinIO or Ceph profile names one (`StorageProfile.requireKmsKey`: "only an AWS S3 profile names a KMS key"). On-prem,
+SSE-KMS goes through the store's own KMS (MinIO's KES or a static key, Ceph RGW with Vault, Barbican or KMIP), whose
+key ids are names, not ARNs, and it is not known whether MinIO's or Ceph's STS session policies honour
+`s3:x-amz-server-side-encryption` and `s3:x-amz-server-side-encryption-aws-kms-key-id`, which the vended session's
+condition relies on.
+
+Done when a MinIO and a Ceph profile can name a key in the form its store takes, vended credentials for their tables
+are refused a write with no key or another key on each store (a heavy test per store, as `KmsKeyAwsTest` on AWS),
+and the server's metadata files are written with it; or Paul decides on-prem profiles name no key for now.
+
+### 98. A storage profile's KMS key is not recorded with the profile, so a change of key is not audited
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-audit/src/main/java/nuna/catalog/audit/StorageSetup.java
+- Effort: M, one more field on the stored profile in all four stores, with its migration, and the startup audit naming it
+
+At startup `CatalogStorage.record` writes each configured profile to the store and audits a `storage-setup`
+PROFILE_SET event when the stored profile differs: kind, endpoint, STS role and allowed prefixes. Item 23 added a
+profile's `kms-key` (D26), which decides the key every write to the profile's tables uses, but the stored profile
+(`nuna.catalog.store.StorageProfile`) has no field for it. So a server started with a new key, or none, records and
+audits nothing, and the store cannot say which key a profile used when.
+
+Done when the stored profile carries the key, a change of key alone is written and audited as PROFILE_SET (with the
+key in the event's settings), and a test on each store shows it.
 
 ## Done and dropped
 

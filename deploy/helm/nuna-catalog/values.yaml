@@ -42,7 +42,8 @@ config:
       # Each: kind, endpoint, region, table-root, allowed-prefixes, sts-role, access-key-id, and
       # maintenance-principal, the maintenance worker's own storage identity (deploy/README.md, delete rights).
       # For a store whose certificate a private CA signed, ca-bundle: a PEM file of that CA, mounted from
-      # storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph.crt.
+      # storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph.crt. On AWS S3, kms-key: the key ARN every write must use
+      # (docs/install-at-work.md).
       profiles: {}
       catalogs: {}
     audit:

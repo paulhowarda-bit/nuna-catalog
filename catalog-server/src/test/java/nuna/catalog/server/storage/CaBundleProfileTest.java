@@ -134,7 +134,7 @@ class CaBundleProfileTest {
     private CatalogStorage start(Path caBundle) {
         StorageSettings settings = new StorageSettings(Map.of("onprem", new StorageSettings.Profile(StoreKind.CEPH,
                 objectStore.endpoint.toString(), "us-east-1", ROOT, List.of(ROOT), "arn:aws:iam:::role/nuna-vending",
-                "catalog", "catalog-secret", null, caBundle)), Map.of(), Duration.ofMinutes(30), 100, true);
+                "catalog", "catalog-secret", null, caBundle, null)), Map.of(), Duration.ofMinutes(30), 100, true);
         CatalogStorage storage = new CatalogStorage(settings, store(), REST, Clock.systemUTC(),
                 ObservationRegistry.NOOP);
         closing.add(storage);

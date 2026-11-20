@@ -193,6 +193,7 @@ config:
           sts-role: <role ARN>                # AWS S3 and Ceph; MinIO takes keys instead
           maintenance-principal: <the worker's storage identity>
           ca-bundle: /etc/nuna/storage-ca/lake.crt   # only if a private CA signed the store's certificate
+          # kms-key: arn:aws:kms:<region>:<account>:key/<key id>   # AWS S3 only: the key every write must use
       catalogs:
         <catalog>:
           profile: lake
@@ -234,6 +235,17 @@ config:
 ```bash
 kubectl -n <namespace> create configmap nuna-storage-ca --from-file=lake.crt=<CA PEM file>
 ```
+
+- An AWS S3 profile's KMS key (D26, backlog 23): `kms-key` names one key ARN, in the profile's region (not an alias or a
+  bare key id). The server's metadata files are written with it;
+  credentials vended for the profile's tables may write only with SSE-KMS under exactly that key, so a write with no
+  encryption header, with SSE-S3 or with another key is refused; and the load response tells engines to use it
+  (`s3.sse.type: kms`, `s3.sse.key: <ARN>`), which Iceberg's Java S3FileIO (Spark, Flink, the worker's Jobs) reads.
+  An engine whose client reads neither (check Trino, PyIceberg and DuckDB) must name the key in its own setup, or its
+  writes are refused. The key's policy must let the catalog's own identity and the STS role use it
+  (`kms:GenerateDataKey`, `kms:Decrypt`), and every identity that reads the files decrypt with it. A caller that
+  declines delegation is not told the key. Which key each domain gets waits on SEC-8; MinIO and Ceph profiles name
+  none (the server refuses to start).
 
 - Passwords and keys go in a Secret read as a config tree, one key per property, never in the values file:
 

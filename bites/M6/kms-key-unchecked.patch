@@ -1,0 +1,18 @@
+Breaks: a profile's KMS key is never checked, so any string, on any kind of profile, is taken as the key (backlog 23).
+Module: catalog-objectstore
+Test: StorageProfileTest#kmsKeyChecked+kmsKeyOnlyOnAwsS3
+
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java
+index f2e7c4e..9fd4f06 100644
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java
+@@ -77,6 +77,9 @@ public record StorageProfile(
+      * @throws IllegalArgumentException saying what is wrong
+      */
+     public static void requireKmsKey(StoreKind kind, String region, String key) {
++        if (key != null) {
++            return;
++        }
+         if (kind != StoreKind.S3) {
+             throw new IllegalArgumentException("only an AWS S3 profile names a KMS key, not a " + kind + " profile");
+         }

@@ -112,7 +112,7 @@ class StoreOutageRoutesTest {
         // One MinIO profile whose endpoint nothing contacts: every case is answered before a metadata file is read.
         storage = new CatalogStorage(new StorageSettings(Map.of("warehouse", new StorageSettings.Profile(
                 StoreKind.MINIO, "http://127.0.0.1:9", "us-east-1", "s3://warehouse/tables",
-                List.of("s3://warehouse/tables"), null, "catalog", "catalog-secret", null, null)), Map.of(),
+                List.of("s3://warehouse/tables"), null, "catalog", "catalog-secret", null, null, null)), Map.of(),
                 Duration.ofMinutes(30), 100, false), store, settings, clock, ObservationRegistry.NOOP);
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ServerAlerts alerts = new ServerAlerts(1_000_000, 100, registry);
