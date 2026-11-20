@@ -85,7 +85,7 @@ registration response, or from the `loadCredentials` route.
 |---|---|
 | `issued` | New credentials were minted for this vend, audited and handed out. |
 | `cached` | Credentials were handed out from the credential cache: the same caller had been given them for this table and access, and they were not yet near expiry. No credentials were minted, so no credential issue was audited. |
-| `none` | No credentials, because a trusted engine declined them (`X-Iceberg-Access-Delegation`). |
+| `none` | No credentials, because the caller declined them (`X-Iceberg-Access-Delegation: none`), as any caller may (D21, amended 2026-11-19): the web console always does, and an engine using its own storage identity may. No STS call was made and no credential issue was audited. |
 | `failed` | None could be issued. `error.type` is the error, such as `ServiceUnavailableException` when STS or the audit is down, or `ForbiddenException` when the location is outside the storage profile. |
 
 An `issued` vend made one STS AssumeRole, the `sts assume-role` span and `nuna.sts` timer beneath its request

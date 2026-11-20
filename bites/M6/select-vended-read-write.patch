@@ -2,12 +2,12 @@ Breaks: every caller who may load a table gets read-write credentials, select-on
 Module: catalog-server
 Test: VendingRouteTest#selectOnlyCallersGetReadOnlyCredentials
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-index e82ee84..bc08f50 100644
+index 72e1691..c5f5ce1 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
-@@ -76,7 +76,7 @@ public final class StsCredentialVending implements CredentialVending {
-             return Vended.NONE;
+@@ -86,7 +86,7 @@ public final class StsCredentialVending implements CredentialVending {
          }
+         Caller caller = request.caller();
          CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
 -        Access access = request.write() ? Access.READ_WRITE : Access.READ;
 +        Access access = Access.READ_WRITE;

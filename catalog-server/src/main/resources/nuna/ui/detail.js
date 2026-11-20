@@ -137,8 +137,6 @@ function tableOverview(loaded) {
       ['Default sort order', 'id ' + m['default-sort-order-id']],
       ['Snapshots', String((m.snapshots || []).length)],
     ]),
-    loaded.credentialsDiscarded ? h('p', {class: 'notice'}, 'The catalog vended storage credentials with this load '
-      + '(it vends by default, D21). The console does not use them and discarded them unread.') : null,
     section('Properties', properties(m.properties)));
 }
 
