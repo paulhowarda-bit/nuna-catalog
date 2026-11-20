@@ -1,0 +1,17 @@
+Breaks: the credential epoch is a hash of the server's own access key again, so an ETag from one server never matches on another and a client that switches servers loses its 304s.
+Module: catalog-server
+Test: SharedEpochTest#twoServersGiveOneETagWithinAWindow+aClientGoingRoundTheServersKeepsItsNotModified
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
+index 47cf27c..aebb6ba 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
+@@ -178,8 +178,7 @@ public final class StsCredentialVending implements CredentialVending {
+         if (credentials.expiresAt().isBefore(ends.plus(refreshMargin))) {
+             return hash("credentials", credentials.accessKeyId());
+         }
+-        return hash("window", Long.toString(index), key.profile(), key.location(), key.access().name(),
+-                key.principal(), key.subject(), key.engine());
++        return hash("credentials", credentials.accessKeyId());
+     }
+ 
+     /** Hashes the fields, each prefixed by its length so no two lists give the same input; reveals nothing of them. */
