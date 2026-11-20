@@ -613,6 +613,7 @@ refused without the bundle and accepted with it; and a bite is recorded.
 
 ### 88. Compaction Jobs do not trust a storage profile's CA bundle
 
+- Decided: 2026-11-20, D21
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
 - Touches: catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java catalog-maintenance/src/test/java/nuna/maintenance/ deploy/helm/nuna-maintenance/ docs/install-at-work.md
 - Effort: M, mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides
@@ -633,6 +634,8 @@ The choices, Paul's:
 
 Done when Paul has chosen and a compaction Job on a store with a private CA can read and write its table, or the
 docs say plainly that the image must trust the CA.
+
+**Decided 2026-11-20 (D21, amended):** "Worker mounts the CA": the maintenance worker mounts the profile's CA ConfigMap into each compaction Job and points Spark's trust at it.
 
 ## Done and dropped
 
