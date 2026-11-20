@@ -242,7 +242,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
 
 - **What M8 changed in the server.**
   - The server migrates through the store (`SqlCatalogStore.migrate()`), so PostgreSQL reaches V4 (journal partitions) on every start; Spring's Flyway starter is gone.
-  - Reconcile from storage [D37]: `POST /management/v1/catalogs/{catalog}/dr-reconcile` `{"apply", "accept"}`, platform operators only. A file counts as committed when a later file names it as predecessor. The pointer moves one version per swap, only through proven files and the tips the operator names in `accept`, and only under a DR freeze. Two proven files at one version, a gap, a foreign UUID, or storage missing the pointer's file stop the walk. Table directories the database does not know are reported as `unknown-locations`.
+  - Reconcile from storage [D37]: `POST /management/v1/catalogs/{catalog}/dr-reconcile` `{"apply", "accept", "accept-archived"}`, platform operators only. A file counts as committed when a later file names it as predecessor. The pointer moves one version per swap, only through proven files, the tips the operator names in `accept` and, with `accept-archived`, the tips the audit archive records as committed (backlog 10), and only under a DR freeze. Two proven files at one version, a gap, a foreign UUID, or storage missing the pointer's file stop the walk. Table directories the database does not know are reported as `unknown-locations`.
   - A store outage answers 503 with Retry-After, in the Iceberg error shape. The routes, the idempotency paths and the authentication filter all do this; before, the filter fell through to Spring's error page. It covers a database that cannot be reached, is failing over or is out of connections, when nothing was applied. A commit whose COMMIT was sent and whose outcome the store cannot tell stays `CommitStateUnknownException` (500).
 - **Engine matrix** (`catalog-tests-engines`, docker compose, about 11 min; versions, timings and settings in its README). All six pass. Every engine got vended credentials and no storage keys.
 
@@ -284,7 +284,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
 - **Follow-ups:**
   - The server runs the store's `selfCheck()` at startup and refuses to start on any finding not named in `nuna.database.allow-unsafe` since backlog 6 (D8.2, decided 2026-11-19).
   - The journal horizon is kept without a migration since backlog 9: PostgreSQL's store extends it twelve months ahead once a day before a write, Oracle's V5 job daily; CockroachDB and MongoDB have none to keep.
-  - `accept` is assembled by hand; the audit archive could prove tips instead.
+  - Since backlog 10, `accept-archived` takes the tips the audit archive records as committed; the DR drill uses it instead of a hand-made `accept` list.
   - A register is refused under a DR freeze, so the runbook registers unknown tables after the thaw.
   - Oracle and MongoDB stores raise `StoreUnavailableException` for an outage since backlog 7; the route-level check of their 503 with Retry-After is backlog 70.
   - `findCommit` (backlog 8), an unregister's read-back (backlog 67) and a DR reconcile step's `findCommit` (backlog 69, each step's budget its own) wait within the retry budget when the store is down.
