@@ -130,6 +130,21 @@ left over, and give each needy table a series of its own (`docs/observability/wo
 each table's latest assessment and how its last Job stands or ended, as the worker reports them, and lists the
 neediest tables in the worker's order (`docs/observability/table-health.md`).
 
+## The DR verifier
+
+The worker also keeps each table's and view's DR watermark (D37, amended 2026-11-20): the newest version whose every
+file, data included, the DR region's store holds. It is off unless a replica is named. Each storage profile whose
+tables replicate gets one, under its own name in `dr.replicas`: the same buckets and paths on the DR store's endpoint,
+read with keys that may only read there. Every `dr.verify-interval` (1 minute by default), on a thread of its own and
+round the clock, it reads the catalog's DR work list (`GET /management/v1/maintenance/dr-work`), checks the versions
+above each watermark in the DR store and reports the newest whole one to the catalog, which keeps it in its database,
+so it reaches the DR region with the database. It only lists and reads the DR store. Run it in the primary region
+before a disaster, and in the DR region, its replicas naming the DR store itself, before the rewind
+(`deploy/README.md`, "Recovering in the DR region"). How it checks, its routes and the readout are in
+`docs/observability/dr-watermark.md`; its meters (`nuna.maintenance.dr.*`) and alerts in
+`docs/observability/worker-metrics.md`. It logs a check that failed at WARN, and each pass's tally
+(`DR pass done`) only at DEBUG.
+
 ## Running it
 
 ```
@@ -174,6 +189,12 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `compaction.max-jobs` | `2` | How many Jobs run at once; the neediest tables go first. Each runs to the window's end at the latest. |
 | `compaction.run-as-user` | `185` | The Spark image's user id. |
 | `compaction.spark-conf` | none | More Spark settings for every Job. |
+| `dr.verify-interval` | `PT1M` | How often the DR verifier reads the DR work list. |
+| `dr.replicas.<profile>.endpoint` | none (AWS S3) | The DR store's S3 endpoint for the storage profile `<profile>` (a name under `storage`; the worker refuses to start on a replica naming none). Without any replica the DR verifier is off. |
+| `dr.replicas.<profile>.region` | `us-east-1` | The DR store's region. |
+| `dr.replicas.<profile>.path-style-access` | `false` | Address its buckets by path (MinIO, Ceph). |
+| `dr.replicas.<profile>.access-key-id`, `secret-access-key` | none | Keys that may only read the DR store ("The identity it needs"). With neither, the AWS SDK's default chain is used. |
+| `dr.replicas.<profile>.ca-bundle` | none | A PEM file of the CA that signed the DR store's certificate, as for a storage profile. The worker refuses to start if it cannot read the file or finds no certificate in it. |
 
 An example, for one Ceph store:
 
@@ -217,6 +238,9 @@ nuna:
     in the bucket's own account; a role in another account also needs them in its own IAM policy. Give the
     chart's service account the role through `serviceAccount.annotations` (IRSA).
   - On MinIO the second user policy, the one to attach to the worker, allows them.
+- **In the DR store, for the DR verifier only.** Keys of their own that may only read it: `s3:ListBucket` on each
+  replicated bucket and `s3:GetObject` beneath the profile's prefixes, nothing else. The verifier lists a table's
+  location to check it whole, and reads and `HEAD`s its files; it never writes or deletes there.
 - **In Kubernetes, for compaction only.** The Jobs run in a namespace of their own, created beforehand: never
   the worker's or the catalog's, since a pod there could run as their service accounts or mount their Secrets.
   In it the worker needs `get` and `create` on Jobs (it reads a Job's conditions to see it finish, or stop at
@@ -245,7 +269,10 @@ docker build -f deploy/image/maintenance.Dockerfile -t nuna-maintenance:<version
   `config.nuna.maintenance.cleanup-window.start`, `end` and `zone` (for instance
   `--set config.nuna.maintenance.cleanup-window.start=22:30`), and quotes the times in the worker's YAML;
 - secrets under `secrets` (or `secrets.existingSecret`), read as a Spring Boot config tree, each key a
-  property name such as `nuna.maintenance.token.client-secret`;
+  property name such as `nuna.maintenance.token.client-secret` or
+  `nuna.maintenance.dr.replicas.<profile>.secret-access-key`;
+- the DR verifier's settings under `config.nuna.maintenance.dr`, off until a replica is named, and a DR store's CA
+  bundle in `storageCaConfigMap` beside the storage profiles';
 - with `config.nuna.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
   Jobs' namespace (`config.nuna.maintenance.compaction.namespace`, which must exist).
 
@@ -278,6 +305,7 @@ day (`TestCatalog.allDay`).
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock, in a window of four hours a day: compaction and orphan scans once a night in the window and never outside it, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
 | `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say, and kept by the catalog as the worker reports them. |
+| `DrVerifyTest`, `DrVerifierTest` | | The DR check on two in-memory stores: the watermark stops before the first version missing any file, a version that adds nothing passes on its metadata file, a table with no watermark is checked whole; a pass reports only above the kept watermark, keeps going past a failed check, and sets its meters (`docs/observability/dr-watermark.md`). |
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan changes nothing; the next one catches up. |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |
@@ -285,6 +313,7 @@ day (`TestCatalog.allDay`).
 | `LargeExpiryTest` | `overnight` | One scan expires 9,999 of 10,000 snapshots. |
 | `LargeOrphanScanTest` | `overnight` | The orphan scan's heap per reachable file, at 250,000 to 1,000,000 files. |
 | `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails on the store's certificate and leaves the table alone; the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
+| `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (in `catalog-tests-load`) | `overnight` | The worker's runnable jar as the DR verifier, on two Silo stores, the DR one fed by a replicator the test pauses: in the primary region the watermarks stop at the DR store's edge; in DR, a pass under the freeze leaves them there, and after the rewind it passes the rewound versions (backlog 92). |
 | `EngineMatrixTest#compaction` (in `catalog-tests-engines`) | `overnight` | The worker's own Job in the engine matrix's cluster: 32 small files compacted into 4, the same rows, the replaced files left in place, no pending deletion. |
 
 ## Limits

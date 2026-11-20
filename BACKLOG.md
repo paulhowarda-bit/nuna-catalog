@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**21 open:** 5 S, 10 M, 2 L, 4 XL.
+**24 open:** 6 S, 12 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,6 +33,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [96](backlog/96.md) | M | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | M | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | one more field on the stored profile in all four stores, with its migration, and the startup audit naming it | 2026-11-20 |
+| [99](backlog/99.md) | M | A table that commits faster than the DR store replicates never gets a first DR watermark | the whole check finds the newest whole version from its one listing instead of testing only the pointer's, with tests; the choice of version is D37's, so Paul may want to see it first | 2026-11-20 |
+| [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
+| [101](backlog/101.md) | S | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | one log level or one runbook sentence, and a check that the line is there | 2026-11-20 |
 
 ## Open items in full
 
@@ -756,6 +759,56 @@ the watermark. Three parts were left:
   every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived. Done when the
   leg is in and an overnight run has passed it.
 
+## Progress, 2026-11-20 (worktree-agent-abb88ef3bcbfecca6), still open
+
+- **The chart's values.** `deploy/helm/nuna-maintenance/values.yaml` comments `config.nuna.maintenance.dr` as it
+  does `storage`: `verify-interval` (PT1M), and a commented `replicas.<profile>` example (endpoint, region,
+  path-style-access, the read-only `access-key-id`, `ca-bundle`), the verifier off without a replica, the secret key
+  in `secrets.values` as `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a DR store's CA in
+  `storageCaConfigMap`. `replicas` stays commented rather than `{}`, so a release with no replica renders no empty
+  map. `helm template` (helm 3 from winget) rendered the chart with and without a replica, exit 0 both; with one, the
+  ConfigMap holds `dr.replicas.ceph.*` and the Secret the replica's key; `helm lint` passed.
+- **The worker README.** `catalog-maintenance/README.md` has a section "The DR verifier", the `dr.*` settings in its
+  table, the DR store's read-only keys under "The identity it needs" (`s3:ListBucket` on each replicated bucket,
+  `s3:GetObject` beneath the prefixes), the chart's DR values and secret key, and the DR tests.
+- **install-at-work.** Not changed: `docs/install-at-work.md` is held by item 23. The bullet for its section 6, for
+  the session that lands this to add:
+
+  > - The DR verifier (D37, amended 2026-11-20) is off until `dr.replicas.<profile>` names, for a storage profile,
+  >   its DR store: the same buckets and paths on the DR region's endpoint (`endpoint`, `region`,
+  >   `path-style-access`, `access-key-id`, `ca-bundle`; the secret key in `secrets.values` as
+  >   `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a private CA's bundle in `storageCaConfigMap`). Give
+  >   it keys of its own that may only read the DR store: `s3:ListBucket` on each replicated bucket and
+  >   `s3:GetObject` beneath the profile's prefixes. `dr.verify-interval` sets how often it passes (1 minute by
+  >   default). An AWS DR bucket under another name waits on PLT-4. `deploy/README.md` ("Recovering in the DR
+  >   region") says when to run it in each region.
+
+- **The drill's leg.** `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (overnight,
+  Silo only): a stack with a second Silo of its own as the DR store (`Stack.withDrStore`, `TestS3.siloOfItsOwn`),
+  the primary bucket copied there by `Replicator`, a thread the test pauses, and a DR user that may only read. The
+  maintenance worker runs from its runnable jar (`catalog-maintenance`'s new `execJar` configuration). Tables a, b,
+  c (c format 3) and a quiet one; one paced writer each, appending through `Appender` with the store client, so each
+  snapshot's manifest list exists (item 93). The verifier runs in the primary region; the test waits for each
+  table's first watermark before the writers start (item 99), pauses the replicator, lets the writers run on, and
+  computes from what was copied which commits reached the DR store whole. It then waits until the primary's
+  watermarks stop exactly at the last whole version (failing at once on one above it), loses the region, promotes
+  DR, and in DR: servers on the DR store, freeze, the worker on the DR store (two passes, none failed, watermarks
+  unchanged), the rewind's plan (exactly a, b, c; each `lost` tail exactly the commits whose files never arrived, in
+  order, by `m8-writer`), the rewind (each table at the version after its pointer, main at the last kept commit),
+  the verifier passing the rewound versions, the walk (`{"apply":false}` and `{"apply":true}`: nothing listed,
+  nothing unknown, no pointer moved), thaw. Then every table reads whole from the DR store as an engine reads it
+  (metadata, every manifest list, manifest, data and delete file), its history is exactly the kept commits, and a
+  commit to each succeeds. Its lost tails stay under the work list's 100 versions (item 100). The expectations
+  follow D37 "Check from the watermark" as landed by item 28 (5df8b5d): the walk runs after the verifier's pass
+  over the rewound versions, as the runbook's step 5 says.
+- **Not run.** The leg is tagged `overnight` and has not run anywhere: it compiles in the fast build, which starts
+  no container. The first leg changed only to give its appenders the store client and its stack per test.
+
+Left: an overnight run passing both legs of `DrDrillTest`, and the install-at-work bullet above. For
+`deploy/README.md` (not this branch's), once this lands: "the chart's values do not describe them yet (item 92)"
+becomes "`values.yaml` comments them", and the drill sentence at the runbook's end can say the leg with the DR
+store behind runs the verifier in both regions, the rewind and the walk.
+
 ### 93. The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit
 
 - Added: 2026-11-20 by agent on item 28
@@ -777,6 +830,20 @@ call the reconcile, so they are unaffected either way.
 
 Done when the drill's appended snapshots name manifest lists that exist and parse (an empty manifest list is enough:
 it adds no manifest and no data file), and `DrDrillTest` passes in the overnight run with the item 28 walk.
+
+## Progress, 2026-11-20 (worktree-agent-abb88ef3bcbfecca6), still open
+
+- `Appender` takes the table's store client (a fifth constructor argument). Given one, before a commit's first
+  attempt it writes each snapshot's manifest list, an empty Avro manifest list (`ManifestFile.schema()`, named
+  `manifest_file`, with the `snapshot-id` and `format-version` metadata Iceberg writes), at the location the
+  snapshot names, `<table>/metadata/snap-<id>.avro` (`Appender.manifestList`). The snapshots add no manifest and no
+  data file, so nothing else is named. Its ledger also records the metadata file each acknowledged commit made
+  (`Ledger.locations`), which item 92's leg uses.
+- Only `DrDrillTest` passes the client. The other users (`ConcurrentWritersTest`, `KillPrimaryTest`, `SloTest`,
+  `RollingUpgradeTest`, `TenThousandSnapshotsTest`) construct it as before and write no file, so what they time and
+  how fast they commit is unchanged; their only change is a map insert per acknowledged commit.
+- Not run: the drill is `overnight`. Left: an overnight run in which `DrDrillTest`'s dry run walks, with the
+  item 28 walk.
 
 ### 96. A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides)
 
@@ -826,6 +893,87 @@ audits nothing, and the store cannot say which key a profile used when.
 
 Done when the stored profile carries the key, a change of key alone is written and audited as PROFILE_SET (with the
 key in the event's settings), and a test on each store shows it.
+
+### 99. A table that commits faster than the DR store replicates never gets a first DR watermark
+
+- Added: 2026-11-20 by agent on item 92
+- Touches: catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java catalog-maintenance/src/test/java/nuna/maintenance/DrVerifyTest.java docs/observability/dr-watermark.md
+- Effort: M, the whole check finds the newest whole version from its one listing instead of testing only the pointer's, with tests; the choice of version is D37's, so Paul may want to see it first
+
+The DR verifier (D37, amended 2026-11-20; item 28) checks a table **whole** when it has no watermark, when its
+journaled versions above the watermark do not follow it one by one, or when the watermark's metadata file is gone
+from the DR store. The whole check (`DrVerify.whole`, catalog-maintenance) lists the table's location in the DR
+store once and passes only if every file the **pointer's** version reaches is there. If not, the table's whole
+check is deferred for `nuna.maintenance.scan-interval` (10 minutes by default; `DrVerifier.verify`, `wholeFailed`),
+and the next one tests the pointer of that moment.
+
+A table that commits more often than its newest files reach the DR store (a streaming table: the SingleStore change
+feed commits every 5 seconds by default, `commit.interval.ms`) has, at each whole check, a pointer whose newest manifest list or metadata file is
+still in flight, so the check fails every time and the table never gets a first watermark. It stays in the readout
+with `watermark-version: null`, `NunaDrLagging` pages for it 15 minutes after its first commit, and after a disaster
+the rewind cannot move it ("the table has no DR watermark"). The same holds for a busy table whose journal has a gap
+above its watermark or whose watermark's file is gone, which are also checked whole.
+
+Read from the code on 2026-11-20 while writing item 92's drill leg, which waits for each table's first watermark
+before its writers start so that it does not meet this; not seen in a run.
+
+Done when a whole check reports the newest version its one listing shows whole, not only the pointer's: for
+instance the pointer's version, then each older version in its metadata log, newest first, until one is whole
+(each a parse of a metadata file, the listing reused), so a table whose last few commits are in flight gets the
+watermark of the newest that arrived. `DrVerifyTest` shows a table with no watermark whose pointer lacks a file
+getting the version before it, and dr-watermark.md says so.
+
+### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
+
+- Added: 2026-11-20 by agent on item 92
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/DrRoutes.java catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java docs/observability/dr-watermark.md deploy/README.md
+- Effort: M, one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first
+
+The DR rewind (D37, amended 2026-11-20; `Reconcile.rewind`) moves a table back to its watermark in one commit: the
+next version, `pointer + 1`, holding the watermark's metadata again. The commits it gives up stay in the journal. The
+verifier's work list (`GET /management/v1/maintenance/dr-work`, `DrRoutes`) names at most 100 journaled versions
+above the watermark, oldest first (`DrRoutes.MAX_VERSIONS`). So when a rewind gives up 100 versions or more, every
+version the work list names is a lost one, none of them whole in the DR store, and the rewound version is never
+named. The table is not checked whole either, since its versions follow the watermark one by one (`DrVerify.Item.whole`).
+Each pass checks the same lost versions, and the table stays behind its watermark for good:
+
+- the readout lists it and `NunaDrLagging` pages for it from 15 minutes after its oldest lost commit, which is
+  already older than that;
+- the walk (D37 "Check from the watermark", item 28) finds the lost versions between its watermark and its pointer
+  not whole and takes nothing for it, saying to rewind it;
+- the rewind refuses: "the pointer ... already holds the DR watermark's metadata ...; there is nothing to rewind until
+  the verifier passes it" (`Reconcile.planRewind`).
+
+A table that lost fewer than 100 versions is fine: the verifier's next pass reaches the rewound version, which adds
+nothing beyond the watermark and passes on its metadata file. Item 92's drill leg keeps its lost tails under 100 for
+this reason.
+
+Read from the code on 2026-11-20 while writing item 92's drill leg; not seen in a run. A region lost behind a
+store that is minutes behind a busy table loses more than 100 commits easily.
+
+Ways out, each Paul's to choose since each touches D37: the rewind records the watermark at the version it writes,
+in the same transaction (the version is the watermark's metadata, whole by construction); or the work list names
+the versions after the last rewind only, or always the pointer's too; or the verifier checks a version with no
+journaled commit of its own after a rewind against the watermark directly. Done when a table that gave up more than
+100 versions is at its watermark after the rewind and the next pass, in a route test on each store, and the runbook
+in `deploy/README.md` says nothing about a limit.
+
+### 101. The DR runbook waits on the worker's log, which records a DR pass only at DEBUG
+
+- Added: 2026-11-20 by agent on item 92
+- Touches: catalog-maintenance/src/main/java/nuna/maintenance/DrVerifier.java deploy/README.md
+- Effort: S, one log level or one runbook sentence, and a check that the line is there
+
+Step 2 of the runbook in `deploy/README.md` ("Recovering in the DR region", "Verify") says to start the maintenance
+worker in DR and "wait for one DR pass to end after the start (`nuna.maintenance.dr.pass.last.success`, or the
+worker's log)". At the worker's default level, INFO, its log records no DR pass: `DrVerifier` logs its tally,
+`DR pass done: Pass[objects=.., reported=.., verified=.., behind=.., maxLag=.., failed=.., deferred=..]`, at DEBUG,
+and a failed check at WARN. In DR, where the operator may not have a metrics backend yet, the log is the easy thing
+to watch. Item 92's drill leg reads that line, so its worker runs with `logging.level.nuna.maintenance=DEBUG`.
+
+Done when either the worker logs each pass's tally at INFO (one line a minute by default, or only when the pass
+reported or failed something), or the runbook names the meter alone, or the DEBUG level to set; whichever, the
+runbook and what the worker logs agree.
 
 ## Done and dropped
 

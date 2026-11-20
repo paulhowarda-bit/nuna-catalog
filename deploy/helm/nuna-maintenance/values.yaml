@@ -41,6 +41,26 @@ config:
       # signed, ca-bundle: a PEM file of that CA, mounted from storageCaConfigMap, e.g.
       # /etc/nuna/storage-ca/ceph.crt; it needs the endpoint, written as the catalog's profile writes it.
       storage: {}
+      # The DR verifier (D37, amended 2026-11-20; docs/observability/dr-watermark.md), off unless a replica is
+      # named. Every verify-interval it reads the catalog's DR work list, checks each table's and view's newer
+      # versions in the DR store and reports each one's DR watermark: the newest version whose every file, data
+      # included, the DR store holds. Run it in the primary region before a disaster, and in the DR region with its
+      # replicas naming the DR store itself (deploy/README.md, "Recovering in the DR region").
+      dr:
+        verify-interval: PT1M
+        # A replica per storage profile, under the profile's name in storage: the same buckets and paths on the DR
+        # region's endpoint. Each: endpoint (none for AWS S3), region, path-style-access, access-key-id of keys that
+        # may only read the DR store (its secret-access-key in `secrets`, as
+        # nuna.maintenance.dr.replicas.<profile>.secret-access-key); no keys means the AWS SDK's default chain. For a
+        # DR store whose certificate a private CA signed, ca-bundle: a PEM file of that CA, mounted from
+        # storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph-dr.crt.
+        # replicas:
+        #   ceph:
+        #     endpoint: https://ceph-dr.example.internal:7480
+        #     region: us-east-1
+        #     path-style-access: true
+        #     access-key-id: nuna-dr-reader
+        #     ca-bundle: /etc/nuna/storage-ca/ceph-dr.crt
       # Compaction as Kubernetes Jobs (D30 (3), amended 2026-11-15): in the cleanup window, one Job per table that
       # needs it and night, the neediest first, max-jobs at once. Which tables need it is maintenance policy
       # (compaction.min-input-files, compaction.delete-file-ratio), set in the catalog. Off unless an image is
@@ -62,8 +82,8 @@ config:
         max-jobs: 2
 
 # Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
-# the property's value, e.g. nuna.maintenance.token.client-secret or
-# nuna.maintenance.storage.<profile>.secret-access-key.
+# the property's value, e.g. nuna.maintenance.token.client-secret,
+# nuna.maintenance.storage.<profile>.secret-access-key or nuna.maintenance.dr.replicas.<profile>.secret-access-key.
 secrets:
   # A Secret you manage in the release's namespace. Takes precedence over `values`.
   existingSecret: ""
@@ -71,8 +91,8 @@ secrets:
   values: {}
 
 # A ConfigMap in the release's namespace holding the CA bundles of on-prem stores whose certificates a private CA
-# signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile names its file as ca-bundle; the
-# worker's S3 clients to that profile's endpoint trust it, beside the JVM's CAs. A compaction Job for a table in that
+# signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile or DR replica names its file as
+# ca-bundle; the worker's S3 clients to that endpoint trust it, beside the JVM's CAs. A compaction Job for a table in that
 # profile gets a copy, in a ConfigMap of its own in the Jobs' namespace, and its Spark trusts it beside the image's
 # JDK CAs (backlog 88). The catalog's chart takes the same ConfigMap (docs/install-at-work.md).
 storageCaConfigMap:
