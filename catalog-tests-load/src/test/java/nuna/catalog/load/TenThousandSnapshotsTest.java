@@ -2,6 +2,7 @@ package nuna.catalog.load;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import nuna.catalog.load.ConditionalLoads.Timed;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -71,13 +72,13 @@ class TenThousandSnapshotsTest {
         Latencies refs = new Latencies();
         Latencies notModified = new Latencies();
         Latencies single = new Latencies();
-        Catalog.Answer loaded = null;
+        Timed loaded = null;
         for (int i = 0; i < 20; i++) {
-            loaded = catalog.load(namespace, "long", Map.of());
-            assertThat(loaded.status()).isEqualTo(200);
-            full.record(loaded.nanos());
+            loaded = Timed.of(() -> catalog.load(namespace, "long", Map.of()));
+            assertThat(loaded.answer().status()).isEqualTo(200);
+            full.record(loaded.answer().nanos());
         }
-        int bytes = loaded.body().length();
+        int bytes = loaded.answer().body().length();
         Catalog.Answer byRefs = null;
         for (int i = 0; i < 50; i++) {
             byRefs = catalog.load(namespace, "long", "?snapshots=refs", Map.of());
@@ -85,10 +86,13 @@ class TenThousandSnapshotsTest {
             refs.record(byRefs.nanos());
         }
         assertThat(byRefs.json().get("metadata").get("snapshots").size()).as("snapshots loaded by refs").isLessThan(10);
+        // The ETag of the last full load; a window boundary since then allows one full load with a new one (item 76).
+        ConditionalLoads conditional = new ConditionalLoads(ConditionalLoads.WINDOW, loaded);
         for (int i = 0; i < 200; i++) {
-            Catalog.Answer answer = catalog.load(namespace, "long", Map.of("If-None-Match", loaded.etag()));
-            assertThat(answer.status()).isEqualTo(304);
-            notModified.record(answer.nanos());
+            Timed answer = Timed.of(() -> catalog.load(namespace, "long", Map.of("If-None-Match", conditional.etag())));
+            if (conditional.judge(answer)) {
+                notModified.record(answer.answer().nanos());
+            }
         }
         for (int i = 0; i < 20; i++) {
             long started = System.nanoTime();
@@ -103,6 +107,8 @@ class TenThousandSnapshotsTest {
         Latencies.report(file, "v%d load in full:                       %s".formatted(formatVersion, full.summary()));
         Latencies.report(file, "v%d load ?snapshots=refs:               %s".formatted(formatVersion, refs.summary()));
         Latencies.report(file, "v%d load answered 304:                  %s".formatted(formatVersion, notModified.summary()));
+        Latencies.report(file, "v%d conditional loads in full across a credential-epoch window boundary, not timed: %d"
+                .formatted(formatVersion, conditional.boundaryLoads()));
         Latencies.report(file, "v%d commit of 1 snapshot on top:        %s".formatted(formatVersion, single.summary()));
         assertThat(catalog.serverErrors).as("5xx answers").isEmpty();
     }

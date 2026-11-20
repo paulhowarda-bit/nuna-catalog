@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**25 open:** 8 S, 9 M, 4 L, 4 XL.
+**24 open:** 7 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -35,7 +35,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
-| [76](backlog/76.md) | S | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | two loops in two overnight tests; no wait. Before the first overnight run after item 15 lands, or that run may fail on it | 2026-11-20 |
 | [78](backlog/78.md) | S | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | a guard change on six routes with tests, once Paul decides; waits on Paul | 2026-11-20 |
 
 ## Open items in full
@@ -506,39 +505,6 @@ claim reached neither:
 Done when both say the epoch is shared (D14, item 15), so the chart's default `service.sessionAffinity: None` keeps
 304s across servers, and neither asks for sticky routing for ETags. The chart itself needs no change.
 
-### 76. The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window
-
-- Added: 2026-11-20 by agent on item 15
-- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/SloTest.java catalog-tests-load/src/test/java/nuna/catalog/load/TenThousandSnapshotsTest.java
-- Effort: S, two loops in two overnight tests; no wait. Before the first overnight run after item 15 lands, or that run may fail on it
-
-Item 15 (D14, amended 2026-11-19) made a table load's credential epoch the issuance window the load falls in: a
-quarter of `nuna.storage.credential-lifetime`, 7.5 minutes by default, counted from the Unix epoch. Every server now
-gives the same ETag within a window, and the ETag changes at each window's end, whenever that falls. Before, the
-epoch was a hash of the server's own cached access key, which a fresh server kept for 22.5 minutes after its first
-vend, so a test that ran its conditional loads soon after warming up never saw it change.
-
-Two overnight tests (catalog-tests-load, tagged `overnight`) take an ETag, then assert that every conditional load
-over the next tens of seconds is a 304:
-
-- `SloTest#sloRun`: the ETags of 32 tables from each server, then `readConditional`, 16 readers x 300 loads, each
-  `assertThat(answer.status()).isEqualTo(304)` (about 23 s at the M8 laptop's 77 ms p50).
-- `TenThousandSnapshotsTest`: an ETag from the last full load, then 50 loads by refs and 200 conditional loads, each
-  asserted 304 (about 25 s at the M8 timings), for v2 and for v3.
-
-A window boundary inside such a stretch turns the next conditional load into a 200 with the new ETag, as D14 now
-allows ("a client may lose a 304 near a boundary"), and the assertion fails. At those durations that is roughly one
-night in 15 for `SloTest` and one in 18 for each format version of `TenThousandSnapshotsTest`: one night in 6
-together. The heavy tests that
-expect one 304 right after an ETag (`RestRoutesTest#tableLoadsAnswer304WhileThePointerHolds`,
-`CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType`) take milliseconds, about one run in 10,000.
-
-Done when both loops accept a 200 that carries a new ETag at most once per window boundary they cross, and carry on
-with that ETag (a client does the same), still failing on any other 200 or on a second one inside a window; or start
-each loop only when the current window has longer left than the loop takes. `SloTest`'s "304 across servers" line
-should then read 32 of 32. The tests are `overnight`, so only the overnight run (or `./nightly.sh` on Paul's word)
-shows it.
-
 ### 78. Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -626,4 +592,5 @@ tests.
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
+| [76](backlog/76.md) | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | done | 2026-11-20 |
 | [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |
