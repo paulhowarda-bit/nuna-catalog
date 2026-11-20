@@ -22,6 +22,10 @@ config:
       url: jdbc:postgresql://postgres:5432/catalog
       username: catalog
   nuna:
+    database:
+      # backing.yaml's PostgreSQL is one node, so the self-check reports no synchronous standby, which would refuse
+      # to start the server (D8.2).
+      allow-unsafe: [pg.no-sync-standby]
     storage:
       require-tls: false
       profiles:

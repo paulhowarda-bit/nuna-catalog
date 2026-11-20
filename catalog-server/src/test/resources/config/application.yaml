@@ -1,0 +1,9 @@
+# Settings for every catalog server the tests start in a JVM with this module's tests on the classpath: this
+# module's, and catalog-maintenance's through the tests jar (TestCatalog). Spring Boot reads classpath:/config/
+# after the server's own application.yaml, so these add to it.
+nuna:
+  database:
+    # The test databases run on one node, so the self-check (D8.2) reports each of these, and the server would
+    # refuse to start: PostgreSQL containers have no synchronous standby and run with fsync off (Testcontainers'
+    # default), Oracle Free has no Data Guard, and MongoDB is a one-member replica set.
+    allow-unsafe: [pg.no-sync-standby, pg.fsync-off, ora.no-data-guard, mongo.too-few-voters]

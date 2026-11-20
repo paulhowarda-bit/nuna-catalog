@@ -29,6 +29,10 @@ config:
       # postgresql (PostgreSQL or CockroachDB), oracle or mongodb; deploy/README.md, "The database". MongoDB's
       # connection string goes in `secrets`, as nuna.database.mongodb.uri.
       backend: postgresql
+      # The server refuses to start while the database's self-check reports a finding (D8.2), such as no
+      # synchronous standby. A test or demo database on one node may name each finding's code here, e.g.
+      # [pg.no-sync-standby], and the server then starts and logs it as a warning. Leave it empty in production.
+      allow-unsafe: []
     security:
       # Each: issuer, jwks-uri, audiences, algorithms, user-id-claim, groups-claim, client-id-claim.
       issuers: []

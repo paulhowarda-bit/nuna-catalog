@@ -2,6 +2,7 @@ package nuna.catalog.server;
 
 import com.mongodb.ConnectionString;
 import java.util.Objects;
+import java.util.Set;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
@@ -19,11 +20,19 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * What each database needs of its catalog role is on the store's class: SqlCatalogStore, OracleCatalogStore and
  * MongoCatalogStore.
  *
- * @param backend which database holds the catalog
- * @param mongodb the MongoDB connection; required for {@code mongodb}, unused otherwise
+ * <p>The server runs the store's self-check before anything else and refuses to start while it reports a finding
+ * (D8.2): a durability setting that is unsafe for the catalog, such as no synchronous standby. The codes are in
+ * docs/storage-design.md section 7.
+ *
+ * @param backend     which database holds the catalog
+ * @param mongodb     the MongoDB connection; required for {@code mongodb}, unused otherwise
+ * @param allowUnsafe the findings the server starts despite, each by its code, as
+ *                    {@code [pg.no-sync-standby, pg.fsync-off]}; none by default. Only for a test or demo database
+ *                    on a single node, never in production. Each finding allowed is logged as a warning at
+ *                    startup; any other still refuses to start the server.
  */
 @ConfigurationProperties("nuna.database")
-public record DatabaseSettings(@DefaultValue("postgresql") Backend backend, Mongodb mongodb) {
+public record DatabaseSettings(@DefaultValue("postgresql") Backend backend, Mongodb mongodb, Set<String> allowUnsafe) {
 
     public enum Backend { POSTGRESQL, ORACLE, MONGODB }
 
@@ -32,6 +41,7 @@ public record DatabaseSettings(@DefaultValue("postgresql") Backend backend, Mong
             throw new IllegalArgumentException("nuna.database.mongodb.uri is required when nuna.database.backend"
                     + " is mongodb");
         }
+        allowUnsafe = allowUnsafe == null ? Set.of() : Set.copyOf(allowUnsafe);
     }
 
     /**
