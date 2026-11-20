@@ -95,8 +95,8 @@ resources:
 service:
   type: ClusterIP
   port: 8181
-  # None spreads requests over every server. A conditional load (304) is only answered by the server that
-  # minted the caller's credentials; see deploy/README.md before choosing ClientIP.
+  # None spreads requests over every server. Any server answers a conditional load with a 304, since the servers
+  # share the credential epoch the ETag hashes (D14), so ETags need no affinity; see deploy/README.md.
   sessionAffinity: None
 
 ingress:

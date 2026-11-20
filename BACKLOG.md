@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**23 open:** 6 S, 9 M, 4 L, 4 XL.
+**22 open:** 5 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -34,7 +34,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [81](backlog/81.md) | S | The chart's values.yaml still says only the minting server answers a 304 | one comment in one values file; no wait | 2026-11-20 |
 
 ## Open items in full
 
@@ -486,27 +485,45 @@ Paul, 2026-11-20 (D21, amended): "Yes, non-root".
 
 Done when `deploy/local run.sh up` makes the catalog its own S3 user with the profile's policies, the `except` one included, the catalog runs as that user, and `run.sh smoke` plus a delete check show a delete refused to the catalog's vended credentials and allowed to the maintenance worker, run on Docker Desktop's Kubernetes. Uninstall what the check installs.
 
-### 81. The chart's values.yaml still says only the minting server answers a 304
+Built 2026-11-20 on worktree-agent-ac20c2b80fb2ae021, not yet run live, so the item stays open: what it is done
+when needs the run on Docker Desktop's Kubernetes.
 
-- Added: 2026-11-20 by agent on item 75
-- Touches: deploy/helm/nuna-catalog/values.yaml
-- Effort: S, one comment in one values file; no wait
+What changed in `deploy/local`:
+- `run.sh up` makes the catalog's own Silo user, `nuna-catalog` (secret `nuna-catalog-secret-key`), before the
+  chart, with policy `nuna-catalog`: get, put, the multipart actions and delete beneath `warehouse/tables/*`, list on
+  `warehouse`. Delete is in it on purpose, as another grant might give it at work, so that the `except` policy is
+  what refuses the catalog's delete. `values.yaml` signs the catalog in as `nuna-catalog`, no longer `nunademo`.
+- Once the catalog is up, `up` reads `GET /management/v1/maintenance/delete-policies` as `oscar` and applies the
+  MinIO pair: `except` as policy `nuna-no-delete` on `nuna-catalog`, `to` as policy `nuna-maintenance` on the worker's
+  user `nuna-maintenance`. `up` now makes that user; `run.sh worker` used to, and still uses it.
+- `run.sh smoke` adds a delete check. It loads the table as `lake` with vended credentials and puts
+  `<location>/data/smoke-probe` with them (200). It then expects the vended credentials' DELETE to be 403,
+  `nuna-catalog`'s DELETE 403, a vended GET 200 (the file is still there), and `nuna-maintenance`'s DELETE 204. curl
+  signs each request (`--aws-sigv4`) through a port-forward to Silo. `mc rm` would not do: it stats first (a HEAD,
+  which the worker's delete-only policy refuses) and exits 0 when a delete is refused.
+- `deploy/README.md` ("Delete rights", "Trying it locally") says so. `docs/install-at-work.md` says nothing about the
+  local install's S3 user, so it is unchanged.
 
-The comment above `service.sessionAffinity` in `deploy/helm/nuna-catalog/values.yaml` (lines 98 and 99) still
-describes the ETags before item 15:
+Checked without an install: `bash -n deploy/local/run.sh`; `helm template` of the catalog chart with `values.yaml`
+and of the worker chart with `run.sh worker`'s settings; a scratch harness with curl stubbed, over the new helpers
+(`user_policy` on a delete-policies answer shaped as the catalog writes it, `field` on a load answer, `s3`'s curl
+arguments and its failure on a wrong status). From the sources: MinIO's AssumeRole needs no `sts:` right of a
+non-root parent, only readable policies; re-adding a MinIO user keeps its policies; curl signs every `-H` header.
 
-```yaml
-  # None spreads requests over every server. A conditional load (304) is only answered by the server that
-  # minted the caller's credentials; see deploy/README.md before choosing ClientIP.
-  sessionAffinity: None
-```
+Why not live: Docker Desktop's node had 1.5 GiB of memory requests free beside the nuna-demo stack (6 GiB of
+7.5 GiB). `run.sh up` asks 3 GiB, and even one server, PostgreSQL and Silo ask 1.6 GiB. Nothing was installed.
 
-Since item 15 the credential epoch is a shared issuance window, a quarter of the credential lifetime (D14, amended
-2026-11-19 and 2026-11-20), so any server answers a conditional load with a 304. Item 75 corrected
-`deploy/README.md` ("ETags and routing") and `docs/install-at-work.md` to say so; its claim did not reach the chart.
-
-Done when the comment says `None` keeps 304s across servers because they share the epoch (D14), with no hint that
-ClientIP is needed for ETags. The value itself stays `None`.
+Left, when Docker has room (the demo down, or 3 GiB of requests free):
+1. `NUNA_K8S_NAMESPACE=nuna-item79 NUNA_K8S_HOME=<scratch> deploy/local/run.sh up`, then `... run.sh smoke`: the
+   five new `ok` lines, and "smoke passed".
+2. That the `except` policy is what refuses the catalog: detach it (in the Silo pod, after
+   `mc alias set local http://localhost:9000 nunademo nunademo-secret-key`,
+   `mc admin policy detach local nuna-no-delete --user nuna-catalog`), run `smoke` again and see it fail on
+   "nuna-catalog DELETE ... answered 204, expected 403"; attach it again and see `smoke` pass.
+3. `run.sh down` with the same namespace, then `helm list -A` and `kubectl get ns`.
+4. Then the MinIO part of item 4 is done on Silo: both policies applied as the catalog gives them, on a store that
+   enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
+   then say so.
 
 ## Done and dropped
 
@@ -570,3 +587,4 @@ ClientIP is needed for ETags. The value itself stays `None`.
 | [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
 | [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
+| [81](backlog/81.md) | The chart's values.yaml still says only the minting server answers a 304 | done | 2026-11-20 |
