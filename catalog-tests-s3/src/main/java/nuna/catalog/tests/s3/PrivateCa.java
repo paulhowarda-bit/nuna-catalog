@@ -30,7 +30,8 @@ import javax.net.ssl.SSLContext;
  * present a certificate it signed for {@code 127.0.0.1} and {@code localhost}. Made once per test JVM with the JDK's
  * own {@code keytool}, valid for two days, in a temporary folder removed when the JVM exits: no key is committed and
  * nothing but the JDK is needed. The CA's certificate is {@link #bundle}, a PEM file, as a storage profile's
- * {@code ca-bundle} names one.
+ * {@code ca-bundle} names one. It also signs certificates for servers outside the JVM ({@link #issue}), such as a
+ * store in a container (backlog 89).
  */
 public final class PrivateCa {
 
@@ -42,11 +43,15 @@ public final class PrivateCa {
     /** The CA's certificate. */
     public final X509Certificate certificate;
     private final SSLContext serverTls;
+    /** The temporary folder holding the CA's key store, {@code ca.p12}, which {@link #issue} signs with. */
+    private final Path dir;
+    private int issued;
 
-    private PrivateCa(Path bundle, X509Certificate certificate, SSLContext serverTls) {
+    private PrivateCa(Path bundle, X509Certificate certificate, SSLContext serverTls, Path dir) {
         this.bundle = bundle;
         this.certificate = certificate;
         this.serverTls = serverTls;
+        this.dir = dir;
     }
 
     /** The test JVM's CA, made on first use. */
@@ -94,6 +99,38 @@ public final class PrivateCa {
         }
     }
 
+    /** A certificate this CA signed and its private key, as PEM files. */
+    public record Issued(Path certificate, Path key) {
+    }
+
+    /**
+     * A certificate this CA signs for a server known by {@code hosts}, each a DNS name or an IP address, valid for two
+     * days, with a new key: what a server outside the test JVM presents, such as a store in a container. Both are PEM
+     * files in the CA's temporary folder: {@link Issued#certificate} holds the certificate, then the CA's;
+     * {@link Issued#key} the private key, unencrypted PKCS #8.
+     */
+    public synchronized Issued issue(List<String> hosts) {
+        String alias = "issued-" + issued++;
+        try {
+            X509Certificate signed = sign(dir, alias, hosts);
+            Key key = load(dir.resolve(alias + ".p12")).getKey(alias, PASSWORD.toCharArray());
+            Path chain = dir.resolve(alias + "-chain.pem");
+            Files.writeString(chain, pem(signed) + pem(certificate), StandardCharsets.US_ASCII);
+            Path keyFile = dir.resolve(alias + "-key.pem");
+            Files.writeString(keyFile, "-----BEGIN PRIVATE KEY-----\n" + Base64.getMimeEncoder(64,
+                    "\n".getBytes(StandardCharsets.US_ASCII)).encodeToString(key.getEncoded())
+                    + "\n-----END PRIVATE KEY-----\n", StandardCharsets.US_ASCII);
+            for (String made : List.of(".p12", ".csr", ".crt", "-chain.pem", "-key.pem")) {
+                dir.resolve(alias + made).toFile().deleteOnExit();
+            }
+            return new Issued(chain, keyFile);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** A running HTTPS server. */
     public static final class Server implements AutoCloseable {
 
@@ -122,17 +159,9 @@ public final class PrivateCa {
             // Two days: a test run never outlasts it, and nothing made here is worth keeping.
             keytool(dir, "-genkeypair", "-alias", "ca", "-keyalg", "EC", "-groupname", "secp256r1",
                     "-dname", "CN=nuna test CA", "-ext", "bc:c", "-validity", "2", "-keystore", "ca.p12");
-            keytool(dir, "-genkeypair", "-alias", "server", "-keyalg", "EC", "-groupname", "secp256r1",
-                    "-dname", "CN=localhost", "-validity", "2", "-keystore", "server.p12");
-            keytool(dir, "-certreq", "-alias", "server", "-keystore", "server.p12", "-file", "server.csr");
-            keytool(dir, "-gencert", "-alias", "ca", "-keystore", "ca.p12", "-infile", "server.csr",
-                    "-outfile", "server.crt", "-ext", "san=dns:localhost,ip:127.0.0.1", "-validity", "2");
+            X509Certificate signed = sign(dir, "server", List.of("localhost", "127.0.0.1"));
 
             X509Certificate ca = (X509Certificate) load(dir.resolve("ca.p12")).getCertificate("ca");
-            X509Certificate signed;
-            try (InputStream in = Files.newInputStream(dir.resolve("server.crt"))) {
-                signed = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
-            }
             KeyStore server = load(dir.resolve("server.p12"));
             Key key = server.getKey("server", PASSWORD.toCharArray());
             server.setKeyEntry("server", key, PASSWORD.toCharArray(), new Certificate[] {signed, ca});
@@ -146,11 +175,31 @@ public final class PrivateCa {
             for (String made : List.of("ca.p12", "server.p12", "server.csr", "server.crt", "ca.pem")) {
                 dir.resolve(made).toFile().deleteOnExit();
             }
-            return new PrivateCa(bundle, ca, tls);
+            return new PrivateCa(bundle, ca, tls, dir);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /**
+     * Has the CA in {@code dir} sign a new key pair, kept in {@code <alias>.p12}, for {@code hosts}: the first is its
+     * common name, and every one is a subject alternative name, an IP address as {@code ip:}, any other as
+     * {@code dns:}.
+     */
+    private static X509Certificate sign(Path dir, String alias, List<String> hosts)
+            throws IOException, GeneralSecurityException {
+        StringBuilder names = new StringBuilder("san=");
+        hosts.stream().distinct().forEach(host -> names.append(names.length() > 4 ? "," : "")
+                .append(host.matches("[0-9.]+") || host.contains(":") ? "ip:" : "dns:").append(host));
+        keytool(dir, "-genkeypair", "-alias", alias, "-keyalg", "EC", "-groupname", "secp256r1",
+                "-dname", "CN=" + hosts.getFirst(), "-validity", "2", "-keystore", alias + ".p12");
+        keytool(dir, "-certreq", "-alias", alias, "-keystore", alias + ".p12", "-file", alias + ".csr");
+        keytool(dir, "-gencert", "-alias", "ca", "-keystore", "ca.p12", "-infile", alias + ".csr",
+                "-outfile", alias + ".crt", "-ext", names.toString(), "-validity", "2");
+        try (InputStream in = Files.newInputStream(dir.resolve(alias + ".crt"))) {
+            return (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
         }
     }
 

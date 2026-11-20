@@ -1,0 +1,17 @@
+Breaks: a compaction Job for a table on a store behind a private CA gets no CA bundle: no ConfigMap, no mount, no trust store, so its Spark cannot reach the store (backlog 89).
+Module: catalog-maintenance
+Test: PrivateCaCompactionTest#aJobTrustsItsStoresPrivateCaAndCompacts
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
+index 002efc8..4d888a3 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
+@@ -240,7 +240,7 @@ final class KubernetesJobs implements Compactor {
+         for (Map.Entry<String, Optional<CaBundle>> prefix : storageCas.entrySet()) {
+             String under = prefix.getKey().endsWith("/") ? prefix.getKey() : prefix.getKey() + "/";
+             if (location.startsWith(under) || location.equals(prefix.getKey())) {
+-                return prefix.getValue();
++                return Optional.empty();
+             }
+         }
+         return Optional.empty();
