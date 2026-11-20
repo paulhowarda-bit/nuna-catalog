@@ -180,7 +180,8 @@ The charts run the catalog servers and the worker only. Everything else runs els
     - PingFederate: register the page with the client as a post-logout redirect URI (its logout ignores any
       other), and check that its discovery document names an `end_session_endpoint`. Like Keycloak, it asks
       the person to confirm the sign-out, since the console sends no `id_token_hint`.
-- **KMS key sets** and **legal entities** for each catalog (SEC-8, CMP-1).
+- **KMS key sets** and **legal entities** for each catalog (SEC-8, CMP-1). Each data domain is its own catalog, with
+  its own storage profile and KMS key (D26, D28, amended 2026-11-20); SEC-8 asks who owns each key's policy.
 - The database's real **point-in-time-recovery window** (from the DBAs, PLT-2).
 - A **namespace for the compaction Jobs** alone, if compaction is wanted (never the catalog's or the worker's).
 
@@ -265,8 +266,10 @@ kubectl -n <namespace> create configmap nuna-storage-ca --from-file=lake.crt=<CA
   An engine whose client reads neither (check Trino, PyIceberg and DuckDB) must name the key in its own setup, or its
   writes are refused. The key's policy must let the catalog's own identity and the STS role use it
   (`kms:GenerateDataKey`, `kms:Decrypt`), and every identity that reads the files decrypt with it. A caller that
-  declines delegation is not told the key. Which key each domain gets waits on SEC-8; MinIO and Ceph profiles name
-  none (the server refuses to start).
+  declines delegation is not told the key. Each domain is its own catalog, so its profile's key is the domain's key
+  (D26, amended 2026-11-20). With the first customer-managed key, check two things the home runs could not, having
+  no second key: a vended write naming another key is refused, and the key's policy lets the STS role use it. MinIO
+  and Ceph profiles name none (the server refuses to start; item 97).
 
 - Passwords and keys go in a Secret read as a config tree, one key per property, never in the values file:
 
