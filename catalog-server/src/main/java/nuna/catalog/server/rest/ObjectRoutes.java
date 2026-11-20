@@ -85,7 +85,8 @@ class ObjectRoutes {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
-        guard.onNamespace(request, catalog, record, levels, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS);
+        guard.onNamespace(request, catalog, record, levels, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS,
+                Http.noSuchNamespace(levels));
         Page<CatalogObject> page = lookup.listing(pageToken, pageSize,
                 pageRequest -> store.listObjects(record.id(), kind, CatalogObject.State.ACTIVE, pageRequest));
         List<Identifier> identifiers = page.items().stream()
@@ -94,15 +95,15 @@ class ObjectRoutes {
         return Http.json(200, RestResponse.identifiers(identifiers, page.nextToken().orElse(null)));
     }
 
+    /** 404 for an object that does not exist, and for one the caller may not learn exists (D18). */
     ResponseEntity<Void> exists(String prefix, String namespace, String name, Kind kind, RequestContext request) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
         Optional<CatalogObject> found = lookup.namespace(catalog, levels).flatMap(ns -> lookup.object(ns, name, kind));
-        if (found.isEmpty()) {
+        if (found.isEmpty() || !guard.allowsOnObject(request, catalog, found.get(), AuditEvents.path(levels, name),
+                kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS)) {
             return ResponseEntity.notFound().build();
         }
-        guard.onObject(request, catalog, found.get(), AuditEvents.path(levels, name),
-                kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS);
         return ResponseEntity.noContent().build();
     }
 
@@ -115,7 +116,7 @@ class ObjectRoutes {
         return idempotency.run(key, request.caller(), "DROP_" + kind, scope(catalog, levels, name), "", ticket -> {
             CatalogObject object = existing(catalog, levels, name, kind);
             guard.onObject(request, catalog, object, AuditEvents.path(levels, name),
-                    kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW);
+                    kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW, noSuch(kind, qualified));
             requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + qualified);
             Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
             Instant purgeAfter = now.plus(settings.dropRetention());
@@ -142,7 +143,10 @@ class ObjectRoutes {
         });
     }
 
-    /** A rename keeps the object's id, so its grants, journal and history go with it (D25). */
+    /**
+     * A rename keeps the object's id, so its grants, journal and history go with it (D25). The source is checked
+     * before the destination is looked up, so a caller that may not see the source learns nothing of either (D18).
+     */
     ResponseEntity<String> rename(String prefix, String body, Kind kind, Optional<String> key, RequestContext request) {
         CatalogRecord catalog = lookup.catalog(prefix);
         return idempotency.run(key, request.caller(), "RENAME_" + kind, catalog.id().toString(), body, ticket -> {
@@ -152,11 +156,12 @@ class ObjectRoutes {
             String fromName = Http.qualified(from.namespace(), from.name());
             String toName = Http.qualified(to.namespace(), to.name());
             CatalogObject object = existing(catalog, from.namespace(), from.name(), kind);
-            NamespaceRecord target = lookup.existingNamespace(catalog, to.namespace());
             guard.onObject(request, catalog, object, AuditEvents.path(from.namespace(), from.name()),
-                    kind == Kind.TABLE ? Guard.RENAME_TABLE : Guard.RENAME_VIEW);
+                    kind == Kind.TABLE ? Guard.RENAME_TABLE : Guard.RENAME_VIEW, noSuch(kind, fromName));
+            NamespaceRecord target = lookup.existingNamespace(catalog, to.namespace());
             guard.onNamespace(request, catalog, target, to.namespace(),
-                    kind == Kind.TABLE ? Guard.RENAME_TABLE_INTO : Guard.RENAME_VIEW_INTO);
+                    kind == Kind.TABLE ? Guard.RENAME_TABLE_INTO : Guard.RENAME_VIEW_INTO,
+                    Http.noSuchNamespace(to.namespace()));
             requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + fromName);
             requireUnfrozen(GovernanceChain.of(store, target), "Namespace " + Http.dotted(to.namespace()));
             Optional<CatalogObject> holder = store.findObject(target.id(), Names.normalize(to.name()))

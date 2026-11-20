@@ -18,12 +18,19 @@ import nuna.catalog.security.Privilege;
 import nuna.catalog.server.security.Denials;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
+import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.NamespaceRecord;
+import nuna.catalog.store.Page;
+import nuna.catalog.store.PageRequest;
 import java.time.Clock;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -32,9 +39,14 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Authorization for the Iceberg routes (plan 2.2 step 3; D18). Each route asks before its work, after the
- * idempotency replay; a refusal is audited and answers 403 through {@link Denials} (D18). Storage access given
- * by the maintenance exemption (D20, D30) is audited before it is given; if the audit fails it is refused (503).
- * Operation names are the REST spec's operation ids.
+ * idempotency replay; every refusal is audited through {@link Denials}, naming what was refused (D18). Names are
+ * hidden from callers without access (D18, amended 2026-11-19): a caller refused on a namespace, table or view it
+ * holds nothing on gets the route's own answer for one that does not exist, {@code missing}, so it cannot tell
+ * whether the name exists; a caller that holds something on it gets 403. That answer is a {@link CatalogError}, so
+ * an idempotency key records it as it records a missing name's. A refusal on the catalog itself is still 403:
+ * whether catalog names are hidden there is item 68's question. Storage access given by the maintenance exemption
+ * (D20, D30) is audited before it is given; if the audit fails it is refused (503). Operation names are the REST
+ * spec's operation ids.
  */
 @Component
 class Guard {
@@ -91,13 +103,16 @@ class Guard {
     private final AuditPublisher audit;
     private final RestSettings settings;
     private final Clock clock;
+    private final CatalogStore store;
 
-    Guard(Authorizer authorizer, Denials denials, AuditPublisher audit, RestSettings settings, Clock clock) {
+    Guard(Authorizer authorizer, Denials denials, AuditPublisher audit, RestSettings settings, Clock clock,
+          CatalogStore store) {
         this.authorizer = authorizer;
         this.denials = denials;
         this.audit = audit;
         this.settings = settings;
         this.clock = clock;
+        this.store = store;
     }
 
     /**
@@ -123,37 +138,96 @@ class Guard {
         return new Operation("updateTable", needed, true);
     }
 
+    /** On the catalog itself: a refusal is 403 for every caller (item 68 asks whether catalog names are hidden). */
     void onCatalog(RequestContext request, CatalogRecord catalog, Operation operation) {
-        require(request, new Target.Catalog(catalog.id()),
-                new Securable(Securable.Kind.CATALOG, catalog.id(), catalog.name(), List.of()), operation);
+        allows(request, new Target.Catalog(catalog.id()),
+                new Securable(Securable.Kind.CATALOG, catalog.id(), catalog.name(), List.of()), operation, () -> true);
     }
 
+    /**
+     * On a namespace. {@code missing} is the route's answer for a namespace that does not exist, which a refused
+     * caller gets when it holds nothing on the namespace, above it or in it.
+     */
     void onNamespace(RequestContext request, CatalogRecord catalog, NamespaceRecord namespace, List<String> levels,
-                     Operation operation) {
-        require(request, new Target.Namespace(catalog.id(), namespace.id()),
-                AuditEvents.namespace(namespace.id(), catalog.name(), levels), operation);
-    }
-
-    /** On the parent of something new: the catalog for a top-level namespace, otherwise that namespace. */
-    void onParent(RequestContext request, CatalogRecord catalog, UUID parentId, List<String> parentLevels,
-                  Operation operation) {
-        if (parentLevels.isEmpty()) {
-            onCatalog(request, catalog, operation);
-        } else {
-            require(request, new Target.Namespace(catalog.id(), parentId),
-                    AuditEvents.namespace(parentId, catalog.name(), parentLevels), operation);
+                     Operation operation, CatalogError missing) {
+        if (!allowsOnNamespace(request, catalog, namespace, levels, operation)) {
+            throw missing;
         }
     }
 
-    /** {@link #UNDROP} for a dropped object, on the namespace it was dropped from, named by {@code levels}. */
-    void onDropped(RequestContext request, CatalogRecord catalog, CatalogObject dropped, List<String> levels) {
-        require(request, new Target.Namespace(catalog.id(), dropped.namespaceId()),
-                AuditEvents.namespace(dropped.namespaceId(), catalog.name(), levels), UNDROP);
+    /**
+     * {@link #onNamespace} answering instead of throwing, for HEAD, whose answer for a missing namespace is no
+     * error: true when allowed; false when refused to a caller that may not learn the namespace exists, which the
+     * route then answers as a missing one. A refusal to any other caller is 403.
+     */
+    boolean allowsOnNamespace(RequestContext request, CatalogRecord catalog, NamespaceRecord namespace,
+                              List<String> levels, Operation operation) {
+        return allows(request, new Target.Namespace(catalog.id(), namespace.id()),
+                AuditEvents.namespace(namespace.id(), catalog.name(), levels), operation,
+                () -> holdsOnAboveOrIn(request, catalog, namespace.id()));
     }
 
+    /**
+     * On the parent of something new: the catalog for a top-level namespace, otherwise that namespace, as
+     * {@link #onNamespace}, with {@code missing} the route's answer for a parent that does not exist.
+     */
+    void onParent(RequestContext request, CatalogRecord catalog, UUID parentId, List<String> parentLevels,
+                  Operation operation, CatalogError missing) {
+        if (parentLevels.isEmpty()) {
+            onCatalog(request, catalog, operation);
+        } else if (!allows(request, new Target.Namespace(catalog.id(), parentId),
+                AuditEvents.namespace(parentId, catalog.name(), parentLevels), operation,
+                () -> holdsOnAboveOrIn(request, catalog, parentId))) {
+            throw missing;
+        }
+    }
+
+    /**
+     * On the namespace of a commit or replace whose name no object holds, which would create one. The name is
+     * what is hidden, so the caller is judged as for an object of that name there: one that holds nothing on the
+     * namespace or above it gets {@code missing}, whatever it holds on other objects in the namespace, as it would
+     * if an object it may not see held the name.
+     */
+    void onNewObject(RequestContext request, CatalogRecord catalog, NamespaceRecord namespace, List<String> levels,
+                     Operation operation, CatalogError missing) {
+        Target target = new Target.Namespace(catalog.id(), namespace.id());
+        if (!allows(request, target, AuditEvents.namespace(namespace.id(), catalog.name(), levels), operation,
+                () -> holdsOnOrAbove(request, target))) {
+            throw missing;
+        }
+    }
+
+    /**
+     * {@link #UNDROP} for a dropped object, on the namespace it was dropped from, named by {@code levels}. A refusal
+     * is 403: the caller named the object's own file and holds create on the namespace it registers into, which a
+     * dropped object comes back only in (D13).
+     */
+    void onDropped(RequestContext request, CatalogRecord catalog, CatalogObject dropped, List<String> levels) {
+        allows(request, new Target.Namespace(catalog.id(), dropped.namespaceId()),
+                AuditEvents.namespace(dropped.namespaceId(), catalog.name(), levels), UNDROP, () -> true);
+    }
+
+    /**
+     * On a table or view. {@code missing} is the route's answer for one that does not exist, which a refused caller
+     * gets when it holds nothing on the object or above it.
+     */
     void onObject(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
-                  Operation operation) {
-        require(request, new Target.TableOrView(object), AuditEvents.securable(object, catalog.name(), path), operation);
+                  Operation operation, CatalogError missing) {
+        if (!allowsOnObject(request, catalog, object, path, operation)) {
+            throw missing;
+        }
+    }
+
+    /**
+     * {@link #onObject} answering instead of throwing, for HEAD, whose answer for a missing object is no error,
+     * and unregister, whose answer is the engine's: true when allowed; false when refused to a caller that may not
+     * learn the object exists, which the route then answers as a missing one. A refusal to any other caller is 403.
+     */
+    boolean allowsOnObject(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
+                           Operation operation) {
+        Target target = new Target.TableOrView(object);
+        return allows(request, target, AuditEvents.securable(object, catalog.name(), path), operation,
+                () -> holdsOnOrAbove(request, target));
     }
 
     /**
@@ -161,11 +235,14 @@ class Guard {
      * the table, decided as a commit would be, in the same batch; a no is not a refusal and is not audited.
      */
     boolean onObjectMayWrite(RequestContext request, CatalogRecord catalog, CatalogObject object, List<String> path,
-                             Operation operation) {
+                             Operation operation, CatalogError missing) {
         Target target = new Target.TableOrView(object);
         List<Decision> decisions = authorizer.decide(request.caller(),
                 List.of(new Authorizer.Request(target, operation), new Authorizer.Request(target, WRITE_DATA)));
-        decided(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst());
+        if (!decided(request, AuditEvents.securable(object, catalog.name(), path), operation, decisions.getFirst(),
+                () -> holdsOnOrAbove(request, target))) {
+            throw missing;
+        }
         return decisions.get(1).allowed();
     }
 
@@ -184,16 +261,29 @@ class Guard {
         return authorizer.decide(request.caller(), new Target.TableOrView(object), WRITE_DATA).allowed();
     }
 
-    private void require(RequestContext request, Target target, Securable named, Operation operation) {
-        decided(request, named, operation, authorizer.decide(request.caller(), target, operation));
+    private boolean allows(RequestContext request, Target target, Securable named, Operation operation,
+                           BooleanSupplier holdsSomething) {
+        return decided(request, named, operation, authorizer.decide(request.caller(), target, operation),
+                holdsSomething);
     }
 
-    /** Refuses a denial, audits a maintenance exemption before the access is given, and lets the rest through. */
-    private void decided(RequestContext request, Securable named, Operation operation, Decision decision) {
+    /**
+     * Audits a denial, then refuses it with 403 when the caller holds something on the target, or answers false
+     * when it holds nothing there; audits a maintenance exemption before the access is given; answers true for
+     * the rest.
+     */
+    private boolean decided(RequestContext request, Securable named, Operation operation, Decision decision,
+                            BooleanSupplier holdsSomething) {
         switch (decision) {
-            case Decision.Denied denied -> throw denials.refuse(request.actor(), operation.name(), named,
-                    denied.privilege() == null ? null : denied.privilege().wireName(),
-                    denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+            case Decision.Denied denied -> {
+                AccessDenied refused = denials.refuse(request.actor(), operation.name(), named,
+                        denied.privilege() == null ? null : denied.privilege().wireName(),
+                        denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+                if (holdsSomething.getAsBoolean()) {
+                    throw refused;
+                }
+                return false;
+            }
             case Decision.Exempted exempted -> {
                 try {
                     audit.publish(CatalogEvent.create(settings.auditSource(), clock.instant(),
@@ -207,5 +297,67 @@ class Guard {
             case Decision.Allowed allowed -> {
             }
         }
+        return true;
+    }
+
+    /**
+     * Whether one of the subject's groups (the end user's, when a trusted engine acts for one) holds a privilege
+     * on the target through a grant on it or above it, as the authorizer reads grants. A grant admin holds
+     * {@code manage-grants} on every catalog; a platform operator holds no grant.
+     */
+    private boolean holdsOnOrAbove(RequestContext request, Target target) {
+        return !authorizer.privileges(request.caller().subject().groups(), target).isEmpty();
+    }
+
+    /**
+     * {@link #holdsOnOrAbove} for a namespace, or a grant to one of the subject's groups on anything in it: a
+     * namespace below it, or a table or view in it or below. The catalog list counts a catalog the same way
+     * (item 20). Read only for a refusal, from the groups' own grants in the catalog.
+     */
+    private boolean holdsOnAboveOrIn(RequestContext request, CatalogRecord catalog, UUID namespaceId) {
+        if (holdsOnOrAbove(request, new Target.Namespace(catalog.id(), namespaceId))) {
+            return true;
+        }
+        Set<String> groups = request.caller().subject().groups();
+        if (groups.isEmpty()) {
+            return false;
+        }
+        Map<UUID, UUID> parents = new HashMap<>();
+        PageRequest page = PageRequest.first(settings.maxPageSize());
+        while (true) {
+            Page<GrantRecord> grants = store.listGrantsOfGroups(catalog.id(), groups, page);
+            for (GrantRecord grant : grants.items()) {
+                if (below(grant.grant().securable(), catalog.id(), namespaceId, parents)) {
+                    return true;
+                }
+            }
+            if (grants.nextToken().isEmpty()) {
+                return false;
+            }
+            page = page.after(grants);
+        }
+    }
+
+    /** Whether the securable lies below the namespace: in it, or in a namespace below it. */
+    private boolean below(nuna.catalog.store.Securable securable, UUID catalogId, UUID namespaceId,
+                          Map<UUID, UUID> parents) {
+        UUID next = switch (securable.kind()) {
+            case CATALOG -> catalogId;
+            case NAMESPACE -> parent(securable.id(), catalogId, parents);
+            case TABLE, VIEW -> store.readObject(securable.id()).map(CatalogObject::namespaceId).orElse(catalogId);
+        };
+        while (!next.equals(catalogId)) {
+            if (next.equals(namespaceId)) {
+                return true;
+            }
+            next = parent(next, catalogId, parents);
+        }
+        return false;
+    }
+
+    /** A namespace's parent; the catalog for one that is gone, whose chain stops there as the authorizer's does. */
+    private UUID parent(UUID namespaceId, UUID catalogId, Map<UUID, UUID> parents) {
+        return parents.computeIfAbsent(namespaceId,
+                id -> store.readNamespace(id).map(NamespaceRecord::parentId).orElse(catalogId));
     }
 }
