@@ -5,8 +5,9 @@
 # Each query reaches nuna as whoever runs it: the client sends its own catalog token as Trino's extra credential
 # "token" (session USER), and Trino hands it to nuna, which checks it as it checks any engine's. CloudBeaver's
 # connections send the signed-in person's. A query without one fails: Trino then asks nuna to exchange a token,
-# and nuna issues none (D13). Trino's own token, as user trino (Mint.java), which holds no grant, serves only
-# the catalog's config. jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit
+# and nuna issues none (D13). Trino's own token, as user trino (Mint.java), serves only the catalogs' config: it
+# holds no grant, but demo.sh registers its client, trino-demo, as a trusted engine (D17), which sees every
+# catalog and nothing in it (D18). jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit
 # beside the rest of the demo on an 8 GB Docker Desktop; demo.sh engines stops Trino for the run, as Spark needs
 # the room.
 apiVersion: v1
