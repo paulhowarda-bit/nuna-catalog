@@ -81,7 +81,7 @@ class IdpOutageTest {
                 .isEqualTo("The token could not be checked: its issuer's signing keys could not be fetched; retry later");
         assertThat(answer.reachedRoute()).isFalse();
         AuthFailure failure = onlyAuthFailure();
-        assertThat(failure.reason()).contains(ISSUER, "keys could not be fetched", "HTTP 503");
+        assertThat(failure.reason()).contains(ISSUER, "keys could not be fetched", "HTTP response code: 503");
         assertThat(failure.issuer()).isEqualTo(ISSUER);
         assertThat(failure.claimedSubject()).isEqualTo("alice@corp.example");
         assertThat(failure.requestId()).isEqualTo("request-1");

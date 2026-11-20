@@ -157,7 +157,7 @@ class JwksRefreshTest {
                 .isThrownBy(() -> authenticate(signedBy(key)))
                 .satisfies(failure -> assertThat(failure.status()).isEqualTo(503))
                 .withMessageContaining("could not be fetched")
-                .withMessageContaining("HTTP 503");
+                .withMessageContaining("HTTP response code: 503");
         assertThat(entra.fetches()).isEqualTo(1);
     }
 

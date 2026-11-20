@@ -1,0 +1,17 @@
+Breaks: a token whose issuer's keys cannot be fetched (the IdP down or slower than the read timeout) is refused as bad, 401, not answered 503 (backlog 90).
+Module: catalog-security
+Test: JwksRefreshTest#anUnreachableJwksMeansNoTokenIsAccepted+aJwksSlowerThanTheReadTimeoutIsAnOutage+anIdpThatStaysDownIsAnOutagePastTheRefetchLimit
+
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
+index 5fe5b29..62a4f64 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
+@@ -101,7 +101,7 @@ public final class TokenAuthenticator {
+         } catch (JwtException e) {
+             Optional<String> outage = issuer.fetches().outage(e);
+             if (outage.isPresent()) {
+-                throw AuthenticationFailure.keysUnavailable("token from " + iss + " not checked, as the issuer's keys"
++                throw AuthenticationFailure.invalidToken("token from " + iss + " not checked, as the issuer's keys"
+                         + " could not be fetched: " + outage.get(), e);
+             }
+             throw AuthenticationFailure.invalidToken("token from " + iss + " rejected: " + e.getMessage(), e);
