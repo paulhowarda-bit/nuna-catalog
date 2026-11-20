@@ -65,6 +65,11 @@ tasks.jar {
     archiveClassifier = ""
 }
 
+// The engine matrix builds the writer's image from the runnable jar (EngineMatrixTest#auditTables).
+configurations.consumable("execJar") {
+    outgoing.artifact(tasks.bootJar)
+}
+
 tasks.test {
     listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
 }
