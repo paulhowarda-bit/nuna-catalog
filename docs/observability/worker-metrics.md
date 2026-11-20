@@ -97,6 +97,31 @@ with `.`) and its name, with no cap. Everyone with access to the metrics, Grafan
 
 The log names each needy table too, at INFO, with its counts, and each Job started, finished, cut off or left over.
 
+## The DR verifier
+
+With a DR replica named (`nuna.maintenance.dr.replicas`), the worker also runs the DR replication-watermark verifier
+(D37, amended 2026-11-20; [dr-watermark.md](dr-watermark.md)), every `nuna.maintenance.dr.verify-interval` (1 minute
+by default) on a thread of its own. Its meters are registered when it starts, and are absent when no replica is
+named. Like the others, they name no table: the readout `GET /management/v1/dr/watermarks` names the tables behind.
+
+A pass **succeeds** when it has read the whole DR work list; a table or view whose check or report failed is counted
+under `nuna.maintenance.dr.failures` and checked again at the next pass. A pass **fails** when a page of the work list
+cannot be read.
+
+| Meter | Type | Labels | What it records | Supports |
+|---|---|---|---|---|
+| `nuna.maintenance.dr.pass` | timer | `outcome`: `success`, `failure` | Each pass's duration. | Panel |
+| `nuna.maintenance.dr.pass.last.success` | gauge, seconds since the epoch | none | When the last successful pass ended. `0` until the first. | DR verifier not passing |
+| `nuna.maintenance.dr.tables.behind` | gauge | none | Tables and views whose DR watermark is below their pointer after the last successful pass. | Panel |
+| `nuna.maintenance.dr.lag.max` | gauge, seconds | none | The largest DR lag after the last successful pass: the time since the oldest commit the DR store does not yet hold whole. `0` when every table is at its watermark. | DR lagging |
+| `nuna.maintenance.dr.versions.verified` | counter | none | Versions the watermarks moved past. | Panel |
+| `nuna.maintenance.dr.failures` | counter | none | Tables and views whose check (the DR store unreachable, a metadata file unreadable) or report failed. | Panel; the WARN lines name each one |
+
+In Prometheus they are `nuna_maintenance_dr_pass_milliseconds_count` and `_sum` by `outcome`,
+`nuna_maintenance_dr_pass_last_success_seconds`, `nuna_maintenance_dr_tables_behind`,
+`nuna_maintenance_dr_lag_max_seconds`, `nuna_maintenance_dr_versions_verified_total` and
+`nuna_maintenance_dr_failures_total`. Its two alerts are under Alerts below.
+
 ## Names in Prometheus
 
 The names above are Micrometer's. Through the OpenTelemetry collector's Prometheus exporter, or Prometheus's own OTLP
@@ -190,6 +215,21 @@ which the worker never records or deletes, so they stay in storage:
 sum by (job) (increase(nuna_maintenance_files_outside_total[1d])) > 0
 ```
 
+**DR lagging** (page; D37, amended 2026-11-20). Some commit has not been whole in the DR store for more than 15
+minutes (the rule's `for: 5m` rides out one slow pass). Replication is behind or stopped, or the verifier cannot read
+the DR store; the readout `GET /management/v1/dr/watermarks` names the tables, dr-watermark.md says what to do:
+
+```
+max by (job) (nuna_maintenance_dr_lag_max_seconds) > 900
+```
+
+**DR verifier not passing** (page). No DR pass has succeeded for 15 minutes, so the lag above is stale. Only a worker
+with a DR replica named has the series:
+
+```
+time() - max by (job) (max_over_time(nuna_maintenance_dr_pass_last_success_seconds[1d])) > 900
+```
+
 ## Adding a meter
 
 Items 46 (compaction on need), 47 (the reports the catalog keeps, table-health.md) and 49 (the worker's spans,
@@ -216,5 +256,7 @@ worker-spans.md) built on these.
 | `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, finds a table needing compaction for its small files and starts its Job, purges and skips a purge is counted as its report says and dated by the worker's clock, and the needy table has its gauge; one whose token source fails is a failure of kind `work-list`, cannot report itself to the catalog either (`report`), and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
 | `NightlyCleanupTest` | Scans across a cleanup window: tables assessed once a night, needs by reason, one Job at a time, the neediest first, the Job cut off and the table left over at the window's end, the needy tables' gauges; the catalog keeps each assessment, Job and scan the worker reports. |
 | `TelemetryTest` | The worker's meters, from Boot's registry, arrive over OTLP: the failed first scan's `work-list` failures, its timer in milliseconds, the last success at `0`. |
+| `DrVerifierTest` | The DR verifier's meters read zero before the first pass; a pass sets the tables behind, the largest lag and the last success, counts versions verified and failed checks, and a pass that cannot read the work list leaves the gauges; this page lists every DR meter. |
 
-Each guarded rule's bite is in `bites/OBS-40/`; those of compaction on need are in `bites/D30/`.
+Each guarded rule's bite is in `bites/OBS-40/`; those of compaction on need are in `bites/D30/`; the DR verifier's
+are in `bites/D37/`.
