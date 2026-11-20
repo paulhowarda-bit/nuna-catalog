@@ -85,12 +85,18 @@ It has no HTTP port. It logs a line per commit, as JSON on stdout.
 
 1. Declare the audit catalog on the catalog server, in `nuna.storage.catalogs.nuna_audit` (profile, KMS key set,
    legal entity), as any catalog.
-2. Give the writer a principal of its own at the identity provider, in a group that holds `create` and `write` on the
-   audit catalog and nothing else.
-3. Grant the readers' group `select` on the audit catalog. Rows are not filtered: a reader sees every object and
-   person in the deployment's records, as a SIEM user does, so the group must be narrow. Everyone else finds no such
-   table (D18). Until the server takes the group as a setting (backlog 85), both grants are made through the grants
-   API, `POST /management/v1/catalogs/nuna_audit/grants`.
+2. Give the writer a principal of its own at the identity provider, in a group of its own that holds nothing anywhere
+   else.
+3. Name the audit catalog and its two groups on the catalog server: `nuna.audit.tables.catalog` (e.g. `nuna_audit`),
+   `nuna.audit.tables.readers` (the readers' group) and `nuna.audit.tables.writers` (the writer's group); in the
+   catalog's chart, under `config.nuna.audit.tables`. At startup the server grants the readers `select` on the audit
+   catalog and the writer's group `create` and `write` there, as the grants API grants (separation of duties checked,
+   D18), each recorded in the audit trail as granted by `nuna-configuration`; a grant that already exists is left as
+   it is. It refuses to start if the catalog is not declared or a grant would break the separation of duties. Rows
+   are not filtered: a reader sees every object and person in the deployment's records, as a SIEM user does, so the
+   readers' group must be narrow. Everyone else finds no such catalog (D18). Grant admins may grant other groups there
+   through the grants API, `POST /management/v1/catalogs/nuna_audit/grants`; the server neither refuses nor revokes
+   them.
 4. Give the maintenance worker's group `write` on the audit catalog too, so its expiry and compaction keep the table
    tidy (D30), within the expiry caveat above.
 5. Build the image, `deploy/image/audit-tables.Dockerfile`, and install the chart `deploy/helm/nuna-audit-tables`:
@@ -108,5 +114,12 @@ It has no HTTP port. It logs a line per commit, as JSON on stdout.
   its own records left out. `AuditTablesSettingsTest` checks the settings and the clients made of them.
 - `AuditTablesTest` (tagged `heavy`: PostgreSQL, Kafka and the run's S3 store) runs it against a real catalog server:
   a row for each kind of request about two intervals behind, no gap and no repeat after a writer dies mid-batch, and
-  the table found only by the auditors.
+  the table found only by the auditors. The server grants the auditors and the writer's group from
+  `nuna.audit.tables.*`, as a deployment's does.
+- `AuditCatalogGrantsTest` (`catalog-server`) checks the startup grants against a store double: both groups' grants
+  made and recorded, a grant already there left as it is, none when unset, none twice after a restart, and the
+  server stopped by an undeclared catalog or a grant the separation of duties forbids.
+- The engine matrix (`EngineMatrixTest#auditTables`, overnight, `catalog-tests-engines`) runs the writer from its
+  image and chart beside the matrix's catalog and reads `nuna_audit.audit.events` from Spark and PyIceberg as the
+  readers' group.
 - Bites: `bites/D23/`.

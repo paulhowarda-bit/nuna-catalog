@@ -28,8 +28,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [85](backlog/85.md) | M | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
+| [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 
 ## Open items in full
 
@@ -497,37 +497,6 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
-### 85. Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest)
-
-- Decided: 2026-11-20, D23
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/ catalog-audit-tables/ bites/D23/ catalog-tests-engines/ deploy/README.md
-- Effort: M, a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing
-
-Item 27 (D23, amended 2026-11-20) built the scope's "In" on branch `worktree-agent-a7d8e407a7bbd4032`: the row mapping
-(`AuditRows`, `catalog-audit`), the writer `catalog-audit-tables` with its Java-only tests, the heavy
-`AuditTablesTest` (which checks D18's hiding of the audit catalog at `/v1/config` and for platform operators, item 68),
-three of the scope's four bites in `bites/D23/`, the image `deploy/image/audit-tables.Dockerfile`, the chart
-`deploy/helm/nuna-audit-tables`, and `IcebergImportBoundaryTest`'s exemption for the new module with D2's matching
-amendment. Every piece of the settled scope it left is here:
-
-1. **The readers' group as a setting.** Paul, 2026-11-20 (D23, amended): "Make the group a setting"; then "Seed;
-   admins may add": the catalog server's setting grants the readers' group `select` on the audit catalog at startup,
-   and grant admins may grant other groups there through the normal, audited grants API (the server refuses nothing
-   extra); and "Yes, seed both": the same setting names the writer service's group, granted `create` and `write` on
-   the audit catalog at startup. The setting names the audit catalog too (for instance `nuna.audit.tables.catalog`,
-   `.readers`, `.writers`), and a startup grant that already exists is left as it is. Until it lands the grants are
-   made by hand (`catalog-audit-tables/README.md`, "Deploying it", which then names the setting instead).
-2. **The fourth bite**, "the audit catalog readable without the grant", in `bites/D23/`, against the code of 1:
-   `AuditTablesTest#onlyTheAuditorsFindTheAuditTable` fails when it bites. The test's fixture then takes the two
-   groups from the setting instead of writing `grant_record` rows.
-3. **The overnight leg:** `EngineMatrixTest` (`catalog-tests-engines`) reads `nuna_audit.audit.events` from Spark and
-   PyIceberg, as the scope's gate says.
-4. **`deploy/README.md`** names the new image and chart beside the maintenance worker's.
-
-Done when the setting grants the readers' group and the writer's at startup, with tests; the fourth bite bites;
-`AuditTablesTest` passes in the heavy build; and `EngineMatrixTest` reads `events` overnight.
-
 ### 86. The DR reconcile's archive proof reads each audit-archive chain whole into memory
 
 - Added: 2026-11-20 by the agent on item 10
@@ -543,6 +512,28 @@ a production chain will not fit in a server's heap. The drill and the tests read
 Done when the reconcile's read verifies and filters each chain in one streamed pass, segment by segment
 (`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
 memory (`MemoryS3`) whose chain is larger than the reader holds at once.
+
+### 89. A compaction Job against a store behind a private CA, end to end
+
+- Decided: 2026-11-20, D21
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-maintenance/src/test/ catalog-tests-s3/ bites/M6/
+- Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
+
+Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
+compaction Jobs: the worker copies the bundle into a ConfigMap owned by each Job, and the Job's command builds a JVM
+trust store from the image's JDK CAs and the bundle and points Spark's driver at it. No test runs a compaction Job
+against a store behind a private CA. `KubernetesJobsTest` checks the Job's spec only; `KubernetesCompactionTest`
+(heavy) and the engine matrix's compaction leg (overnight) use stores with public or no TLS; the trust-store
+command was run by hand once, on a Windows JDK, not in the Spark image (item 88's done note).
+
+Paul, 2026-11-20, asked whether to add this: "Add it, here", on Docker Desktop with a TLS store, as an overnight
+test.
+
+Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS from a private CA (`PrivateCa` makes
+one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
+real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
+fail on an assertion, not on fixture start-up.
 
 ## Done and dropped
 
@@ -616,5 +607,6 @@ memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 | [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
 | [84](backlog/84.md) | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | done | 2026-11-20 |
+| [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |

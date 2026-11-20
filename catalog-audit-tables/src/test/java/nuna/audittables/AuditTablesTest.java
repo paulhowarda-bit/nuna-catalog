@@ -73,9 +73,9 @@ import org.testcontainers.utility.DockerImageName;
  * after a writer dies mid-batch, and the audit catalog hidden from everyone but its readers' group.
  *
  * <p>The server declares two catalogs, {@value #LAKE} for data and {@value #AUDIT} for the audit table, both on one
- * storage profile. Grants: data writers create and modify on {@value #LAKE}, data readers select there; the writer's
- * group create and write on {@value #AUDIT}, the auditors select there. The grants are written straight to the
- * database here; a deployment makes them through the grants API.
+ * storage profile. Grants: data writers create and modify on {@value #LAKE}, data readers select there, written
+ * straight to the database; on {@value #AUDIT}, the writer's group create and write and the auditors select, which
+ * the server grants at startup as {@code nuna.audit.tables.*} names the two groups (D23, amended 2026-11-20).
  */
 @Tag("heavy")
 class AuditTablesTest {
@@ -138,14 +138,15 @@ class AuditTablesTest {
         properties.put("nuna.security.platform-operator-groups", OPERATORS);
         properties.put("nuna.audit.kafka-bootstrap-servers", kafka.getBootstrapServers());
         properties.put("nuna.audit.relay-interval", "100ms");
+        properties.put("nuna.audit.tables.catalog", AUDIT);
+        properties.put("nuna.audit.tables.readers", AUDITORS);
+        properties.put("nuna.audit.tables.writers", WRITERS);
         // A free port, as an argument: application.yaml's 8181 would win over a builder property.
         server = new SpringApplicationBuilder(CatalogServer.class).properties(properties).run("--server.port=0");
         uri = URI.create("http://localhost:" + server.getEnvironment().getRequiredProperty("local.server.port") + "/");
         JdbcTemplate jdbc = server.getBean(JdbcTemplate.class);
         grant(jdbc, LAKE, DATA_WRITERS, "create", "modify");
         grant(jdbc, LAKE, DATA_READERS, "select");
-        grant(jdbc, AUDIT, WRITERS, "create", "write");
-        grant(jdbc, AUDIT, AUDITORS, "select");
     }
 
     private static void grant(JdbcTemplate jdbc, String catalog, String group, String... privileges) {
