@@ -1,0 +1,106 @@
+package nuna.audittables;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+
+/** The writer's settings as Spring binds them, and the Iceberg and Kafka client settings it makes of them. */
+class AuditTablesSettingsTest {
+
+    private static Map<String, String> required() {
+        Map<String, String> properties = new HashMap<>();
+        properties.put("nuna.audit-tables.catalog-uri", "http://nuna-catalog:8181/");
+        properties.put("nuna.audit-tables.principal", "svc-audit-tables");
+        properties.put("nuna.audit-tables.token.endpoint", "https://idp.example/oauth2/token");
+        properties.put("nuna.audit-tables.token.client-id", "audit-tables");
+        properties.put("nuna.audit-tables.token.client-secret", "s3cret");
+        properties.put("nuna.audit-tables.kafka.bootstrap-servers", "kafka:9092");
+        return properties;
+    }
+
+    private static AuditTablesSettings bind(Map<String, String> properties) {
+        return new Binder(new MapConfigurationPropertySource(properties)).bind("nuna.audit-tables",
+                AuditTablesSettings.class).get();
+    }
+
+    private static Throwable rootCause(Map<String, String> properties) {
+        Throwable thrown = Assertions.catchThrowable(() -> bind(properties));
+        assertThat(thrown).isNotNull();
+        while (thrown.getCause() != null) {
+            thrown = thrown.getCause();
+        }
+        return thrown;
+    }
+
+    @Test
+    void defaultsToTheAuditCatalogAndTheAuditTopic() {
+        AuditTablesSettings settings = bind(required());
+
+        assertThat(settings.catalog()).isEqualTo("nuna_audit");
+        assertThat(settings.namespace()).isEqualTo("audit");
+        assertThat(settings.commitInterval()).isEqualTo(Duration.ofMinutes(1));
+        assertThat(settings.maxRows()).isEqualTo(100_000);
+        assertThat(settings.kafka().topic()).isEqualTo("nuna.catalog.audit");
+        assertThat(settings.kafka().group()).isEqualTo("nuna-audit-tables");
+    }
+
+    @Test
+    void signsInWithClientCredentialsAndWritesWithVendedCredentials() {
+        Map<String, String> properties = required();
+        properties.put("nuna.audit-tables.token.audience", "nuna-catalog");
+        properties.put("nuna.audit-tables.client-properties.[s3.endpoint]", "http://silo:8333");
+
+        Map<String, String> client = AuditTablesApplication.clientProperties(bind(properties));
+
+        assertThat(client).containsEntry("uri", "http://nuna-catalog:8181/")
+                .containsEntry("warehouse", "nuna_audit")
+                .containsEntry("credential", "audit-tables:s3cret")
+                .containsEntry("oauth2-server-uri", "https://idp.example/oauth2/token")
+                .containsEntry("token-exchange-enabled", "false")
+                .containsEntry("audience", "nuna-catalog")
+                .containsEntry("header.X-Iceberg-Access-Delegation", "vended-credentials")
+                .containsEntry("s3.endpoint", "http://silo:8333")
+                .doesNotContainKey("scope");
+    }
+
+    @Test
+    void ownsTheConsumerSettingsThatKeepItsOffsetsInTheTable() {
+        Map<String, String> properties = required();
+        properties.put("nuna.audit-tables.kafka.properties.[security.protocol]", "SSL");
+
+        Map<String, Object> consumer = AuditTablesApplication.consumerConfig(bind(properties).kafka());
+
+        assertThat(consumer).containsEntry(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false")
+                .containsEntry(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
+                .containsEntry(ConsumerConfig.ISOLATION_LEVEL_CONFIG, "read_committed")
+                .containsEntry(ConsumerConfig.GROUP_ID_CONFIG, "nuna-audit-tables")
+                .containsEntry("security.protocol", "SSL");
+
+        properties.put("nuna.audit-tables.kafka.properties.[enable.auto.commit]", "true");
+        assertThat(rootCause(properties)).hasMessageContaining("may not set [enable.auto.commit]");
+    }
+
+    @Test
+    void needsItsOwnPrincipalToLeaveItsRecordsOut() {
+        Map<String, String> properties = required();
+        properties.remove("nuna.audit-tables.principal");
+
+        assertThat(rootCause(properties)).hasMessageContaining("nuna.audit-tables.principal");
+    }
+
+    @Test
+    void needsAClientSecretToSignIn() {
+        Map<String, String> properties = required();
+        properties.remove("nuna.audit-tables.token.client-secret");
+
+        assertThatThrownBy(() -> bind(properties)).rootCause().hasMessageContaining("client-credentials");
+    }
+}

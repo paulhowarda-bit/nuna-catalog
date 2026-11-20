@@ -34,4 +34,5 @@ include(
     "catalog-tests-engines",
     "singlestore-change-feed",
     "catalog-maintenance",
+    "catalog-audit-tables",
 )

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 4 S, 9 M, 2 L, 5 XL.
+**20 open:** 4 S, 10 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -20,7 +20,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
-| [27](backlog/27.md) | XL | Queryable audit tables (v1.x, D23) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
 | [28](backlog/28.md) | XL | DR replication-watermark verifier (v1.x) | the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
@@ -29,6 +28,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
+| [85](backlog/85.md) | M | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [87](backlog/87.md) | S | The audit archive's S3 client does not trust its storage profile's CA bundle | one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite | 2026-11-20 |
 | [88](backlog/88.md) | M | Compaction Jobs do not trust a storage profile's CA bundle | mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides | 2026-11-20 |
@@ -161,85 +161,6 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 Done when the milestone's scope is built and its gate is green, as for the other v1.x phases.
 
 **Decided 2026-11-19 (D33):** built next ("Build it next"), after the items the backlog review of 2026-11-19 chose to fix, not left for v1.x.
-
-### 27. Queryable audit tables (v1.x, D23)
-
-- Decided: 2026-11-19, D23
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: XL, a v1.x milestone; scope to settle with Paul
-
-`build-plan.md`, v1.x milestones: queryable audit tables (D23). Not started. The console's audit trail and the SIEM
-cover the audit until then (UI v1).
-
-Done when the milestone's scope is settled with Paul, built, and its gate is green.
-
-**Decided 2026-11-19 (D23):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
-
-**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
-
-**What it is for:** access reviewers (D19), grant admins and the platform team asking across objects, people and
-months: every table a principal read last quarter, every denial in a namespace, grants never used. Nothing answers
-that today. The console's trail (`AuditReadRoutes`, `RecentAudit`) shows one object's newest 200 records from at most
-the last 20,000 offsets of its partition, and a catalog's trail only records about the catalog itself. The SIEM (D23)
-is searched only by its users, never in SQL beside the data, and at home there is none. The archive
-(`ObjectLockArchive.events`) is read whole, chain by chain.
-
-**In:**
-- One Iceberg table, `events`, in a catalog of the deployment's own (say `nuna_audit`, declared in
-  `nuna.storage.catalogs.*`), format v2 so every reader in the matrix reads it (R5), partitioned by `day(time)`, and
-  queried by any engine through the catalog, as Tabular's system tables were (the plan report's v1.x list).
-- Columns: `event_id`, `time`, `type`, `source`; `principal`, `end_user`, `engine`, `request_id`; `catalog`,
-  `object_kind`, `object_id`, `object_path`; `operation`, `privilege`, `reason` where the type has them; `data`, the
-  whole payload as JSON, so a new payload version needs no new column; `topic_partition`, `topic_offset`, which tie a
-  row to its archive chain. The mapping from each `EventType` lives in `catalog-audit`, without Iceberg (D2).
-- A writer, `catalog-audit-tables`: a service with its own image, Helm chart and principal, an Iceberg Java client of
-  the catalog like the maintenance worker (D2 as amended). It reads the audit topic in its own consumer group and
-  commits every `commit-interval` (1 min by default) with the offsets it wrote in the same Iceberg commit, resuming
-  from them, so each offset is written once. The relay is at least once (D23), so an `event_id` can repeat. It leaves
-  out the records of its own requests, or each commit would make a record that makes the next commit; they stay in
-  the topic, the SIEM and the archive. An outage delays rows; no request waits for it. The worker's expiry and
-  nightly compaction keep the table tidy (D30).
-- Who reads: a group Paul names, granted `select` on the audit catalog (D19); the writer holds create and write there
-  only. D18's hiding works at the catalog: anyone else gets a missing catalog's 404, `/v1/config` included (item 68),
-  and platform operators see its name, not its table. Rows are not filtered: a reader sees every object and person in
-  the deployment's records, as a SIEM user does, so the group must be narrow.
-
-**Out:**
-- History older than the topic's retention: a backfill from the archive, sharing item 10's archive reader.
-- Rows filtered per reader: an engine reads the files, so the catalog cannot filter rows (D20); only per-catalog
-  tables could. Typed tables or views per event type: `data` holds the fields.
-- Deleting old rows: the archive is the five-year record, and no Iceberg table is a record's only copy (D24).
-- Records that went to the fallback log in a Kafka outage (reads and denials never wait, M7): not in the topic, so
-  not in the table.
-- The demo, whose stack already fills Docker's memory (`demo/README.md`); the console's trail reading the table.
-
-**The gate:**
-- Fast build: `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an
-  `EventType` with no mapping; the writer against a fake topic and catalog resumes after its last committed offset,
-  writes no offset twice and leaves out its own records.
-- Heavy (PostgreSQL, Silo, Kafka): `AuditTablesTest` finds a row for each kind of request within two intervals; a
-  writer killed mid-batch leaves no gap and no repeat; a caller without the grant gets 404, one with it reads it all.
-- Overnight: `EngineMatrixTest` reads `events` from Spark and PyIceberg.
-- Bites in `bites/D23/`: a type dropped from the mapping; offsets committed before their rows; the writer's own
-  records kept; the audit catalog readable without the grant.
-
-**Effort,** XL as the header says: a module, image and chart, the mapping, a heavy test and a matrix leg. It waits
-on nothing. It touches `catalog-audit`, `deploy/helm`, `settings.gradle.kts`, `IcebergImportBoundaryTest` (D2) and
-`catalog-tests-engines`.
-
-**Questions for Paul:**
-1. Where do the tables live? Recommended: Iceberg tables in an audit catalog, read by any engine. Or: tables in the
-   catalog's database behind a search route (a schema step on four stores; every read kept in the database).
-2. Who reads them? Recommended: one group you name, seeing every name. Or: a table per catalog for its grant admins
-   (a writer path per catalog; auth failures belong to none).
-3. Which records? Recommended: all, since a review needs reads. Or: changes and denials only, far smaller.
-4. What writes them? Recommended: a service with its own principal. Or: a job in the maintenance worker (no new
-   image, but the maintenance principal then writes audit data).
-5. Where do rows come from? Recommended: the audit topic, a minute behind, history from its retention on. Or: the
-   archive, hash-checked and five years back, but up to 5 minutes behind and only where one is configured (the demo
-   has none).
-
-**Paul's answers on the proposed scope, 2026-11-20 (D23, amended):** all five as recommended: Iceberg tables in an audit catalog ("Iceberg audit catalog"); one group Paul names reads them ("One named group"); every record, reads included ("All, reads included"); a service with its own principal writes them ("Own service"); rows from the audit topic ("The audit topic"). The proposed scope above is settled; build it.
 
 ### 28. DR replication-watermark verifier (v1.x)
 
@@ -578,6 +499,37 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
+### 85. Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest)
+
+- Decided: 2026-11-20, D23
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-server/ catalog-audit-tables/ bites/D23/ catalog-tests-engines/ deploy/README.md
+- Effort: M, a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing
+
+Item 27 (D23, amended 2026-11-20) built the scope's "In" on branch `worktree-agent-a7d8e407a7bbd4032`: the row mapping
+(`AuditRows`, `catalog-audit`), the writer `catalog-audit-tables` with its Java-only tests, the heavy
+`AuditTablesTest` (which checks D18's hiding of the audit catalog at `/v1/config` and for platform operators, item 68),
+three of the scope's four bites in `bites/D23/`, the image `deploy/image/audit-tables.Dockerfile`, the chart
+`deploy/helm/nuna-audit-tables`, and `IcebergImportBoundaryTest`'s exemption for the new module with D2's matching
+amendment. Every piece of the settled scope it left is here:
+
+1. **The readers' group as a setting.** Paul, 2026-11-20 (D23, amended): "Make the group a setting"; then "Seed;
+   admins may add": the catalog server's setting grants the readers' group `select` on the audit catalog at startup,
+   and grant admins may grant other groups there through the normal, audited grants API (the server refuses nothing
+   extra); and "Yes, seed both": the same setting names the writer service's group, granted `create` and `write` on
+   the audit catalog at startup. The setting names the audit catalog too (for instance `nuna.audit.tables.catalog`,
+   `.readers`, `.writers`), and a startup grant that already exists is left as it is. Until it lands the grants are
+   made by hand (`catalog-audit-tables/README.md`, "Deploying it", which then names the setting instead).
+2. **The fourth bite**, "the audit catalog readable without the grant", in `bites/D23/`, against the code of 1:
+   `AuditTablesTest#onlyTheAuditorsFindTheAuditTable` fails when it bites. The test's fixture then takes the two
+   groups from the setting instead of writing `grant_record` rows.
+3. **The overnight leg:** `EngineMatrixTest` (`catalog-tests-engines`) reads `nuna_audit.audit.events` from Spark and
+   PyIceberg, as the scope's gate says.
+4. **`deploy/README.md`** names the new image and chart beside the maintenance worker's.
+
+Done when the setting grants the readers' group and the writer's at startup, with tests; the fourth bite bites;
+`AuditTablesTest` passes in the heavy build; and `EngineMatrixTest` reads `events` overnight.
+
 ### 86. The DR reconcile's archive proof reads each audit-archive chain whole into memory
 
 - Added: 2026-11-20 by the agent on item 10
@@ -659,6 +611,7 @@ docs say plainly that the image must trust the CA.
 | [19](backlog/19.md) | Cap the audit-read route for scripted use | done | 2026-11-20 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [21](backlog/21.md) | A CA bundle per storage profile | done | 2026-11-20 |
+| [27](backlog/27.md) | Queryable audit tables (v1.x, D23) | done | 2026-11-20 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |

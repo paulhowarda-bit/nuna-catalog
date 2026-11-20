@@ -1,0 +1,94 @@
+{{- $secret := include "nuna-audit-tables.secretName" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nuna-audit-tables.fullname" . }}
+  labels:
+    {{- include "nuna-audit-tables.labels" . | nindent 4 }}
+spec:
+  # One writer: a second would only fail the first's commits and its own in turn, which the table's offsets
+  # settle. Recreate, so an upgrade never runs two.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "nuna-audit-tables.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nuna-audit-tables.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "nuna-audit-tables.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Rows waiting on stop are not written; the next writer reads them again from the table's offsets. The
+      # writer waits up to a minute for a commit in flight.
+      terminationGracePeriodSeconds: 70
+      containers:
+        - name: writer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SPRING_CONFIG_ADDITIONAL_LOCATION
+              value: file:/etc/nuna/config/
+            - name: SPRING_CONFIG_IMPORT
+              value: optional:configtree:/etc/nuna/secrets/
+            - name: JAVA_TOOL_OPTIONS
+              value: {{ .Values.javaToolOptions | quote }}
+            {{- with .Values.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nuna/config
+              readOnly: true
+            {{- if $secret }}
+            - name: secrets
+              mountPath: /etc/nuna/secrets
+              readOnly: true
+            {{- end }}
+            # Iceberg's S3 client stages uploads here.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "nuna-audit-tables.fullname" . }}
+        {{- if $secret }}
+        - name: secrets
+          secret:
+            secretName: {{ $secret }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

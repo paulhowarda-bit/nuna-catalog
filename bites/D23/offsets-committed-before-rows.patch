@@ -1,0 +1,15 @@
+Breaks: the offsets go to the table in a commit of their own before their rows, so a rows commit that never lands leaves the offsets past rows never written.
+Module: catalog-audit-tables
+Test: TableWriterTest#aCommitThatNeverLandsLeavesNoGapAndNoRepeat
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+index 2bcf9b8..d1476a1 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java
+@@ -167,6 +167,7 @@ final class EventsTable {
+         } catch (IOException e) {
+             throw new UncheckedIOException(e);
+         }
++        table.newAppend().set(offsetsKey, format(offsets)).commit();
+         RowDelta delta = table.newRowDelta();
+         writer.result().dataFiles().forEach(delta::addRows);
+         // Without a starting snapshot Iceberg checks the table's whole history: an empty table must still be empty.
