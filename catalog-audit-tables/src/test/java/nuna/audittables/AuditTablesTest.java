@@ -470,14 +470,23 @@ class AuditTablesTest {
         }
     }
 
+    /**
+     * D18 (amended 2026-11-20, item 68) hides the audit catalog from a caller that holds nothing in it, as if it did
+     * not exist; a platform operator sees its name but not its table; the auditors read the table.
+     */
     @Test
     void onlyTheAuditorsFindTheAuditTable() {
         Writer writer = new Writer(INTERVAL);
         writer.catchUp();
-        String path = "v1/" + AUDIT + "/namespaces/" + namespace().level(0) + "/tables/" + EventsTable.NAME;
+        String config = "v1/config?warehouse=" + AUDIT;
+        String table = "v1/" + AUDIT + "/namespaces/" + namespace().level(0) + "/tables/" + EventsTable.NAME;
 
-        assertThat(get(path, token("dana", DATA_WRITERS), run + "-dana").statusCode()).isEqualTo(404);
-        assertThat(get(path, token("olive", OPERATORS), run + "-olive").statusCode()).isEqualTo(404);
-        assertThat(get(path, token("avery", AUDITORS), run + "-avery").statusCode()).isEqualTo(200);
+        String dana = token("dana", DATA_WRITERS);
+        assertThat(get(config, dana, run + "-dana").statusCode()).isEqualTo(404);
+        assertThat(get(table, dana, run + "-dana").statusCode()).isEqualTo(404);
+        String olive = token("olive", OPERATORS);
+        assertThat(get(config, olive, run + "-olive").statusCode()).isEqualTo(200);
+        assertThat(get(table, olive, run + "-olive").statusCode()).isEqualTo(404);
+        assertThat(get(table, token("avery", AUDITORS), run + "-avery").statusCode()).isEqualTo(200);
     }
 }
