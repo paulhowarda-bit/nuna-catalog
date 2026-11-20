@@ -1,0 +1,17 @@
+Breaks: a ref's name may hold @, so the prefix catalog@ref parses two ways (D33, item 26's choice 4).
+Module: catalog-store-api
+Test: RefTypesTest#aNameHoldsNoAtSignAndNoSlash
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java b/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
+index 715eec0..b752521 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
+@@ -52,7 +52,7 @@ public record Ref(UUID catalogId, UUID id, Name name, Kind kind, Instant created
+      */
+     public static void checkName(Name name) {
+         for (String form : new String[] {name.normalized(), name.display()}) {
+-            if (form.indexOf('@') >= 0 || form.indexOf('/') >= 0) {
++            if (form.indexOf('/') >= 0) {
+                 throw new IllegalArgumentException("a ref's name holds no @ and no /: " + name.display());
+             }
+         }

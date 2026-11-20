@@ -1,0 +1,17 @@
+Breaks: deleting a ref on Oracle leaves the projection pieces of the pointers keyed by its id.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Refs#aDeletionLeavesNothing
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
+index 0d6c32b..a86a54b 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java
+@@ -162,8 +162,6 @@ final class OracleRefs {
+             }
+             String branch = refId.toString();
+             update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
+-            update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+-                    branch, refId);
+             update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+             update(connection, "DELETE FROM ref WHERE id = ?", refId);
+             return WriteResult.APPLIED;

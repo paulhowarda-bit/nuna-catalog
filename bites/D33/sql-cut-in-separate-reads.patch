@@ -1,0 +1,23 @@
+Breaks: the SQL stores read a ref's cut in three statements (namespaces, tables, views), each its own snapshot, so a cut can hold half of a multi-table commit, or a table without its namespace (D33, backlog 102).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Refs#aCutHoldsEveryMultiTableCommitWhole+everyTableInACutHasItsNamespace
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index b6bfa28..9102d2c 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -87,7 +87,13 @@ final class SqlRefs {
+                 return new WriteResult.Refused(WriteResult.Reason.REF_LIMIT);
+             }
+             if (ref.fromRef().isEmpty()) {
+-                update(connection, CUT_OF_MAIN, ref.id(), ref.catalogId(), ref.id(), PointerKey.MAIN, ref.catalogId());
++                String insert = "INSERT INTO ref_entry (" + ENTRY_COLUMNS + ")";
++                String[] parts = CUT_OF_MAIN.substring(insert.length()).split(" UNION ALL ");
++                update(connection, insert + " " + parts[0].trim(), ref.id(), ref.catalogId());
++                for (String kind : List.of("TABLE", "VIEW")) {
++                    update(connection, insert + " " + parts[1].trim() + " AND o.kind = '" + kind + "'", ref.id(),
++                            PointerKey.MAIN, ref.catalogId());
++                }
+             } else {
+                 update(connection, CUT_OF_REF, ref.id(), ref.fromRef().get().toString(), ref.fromRef().get());
+             }
