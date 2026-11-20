@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**25 open:** 5 S, 12 M, 4 L, 4 XL.
+**26 open:** 7 S, 11 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,7 +16,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
@@ -37,6 +36,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
+| [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
+| [76](backlog/76.md) | S | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | two loops in two overnight tests; no wait. Before the first overnight run after item 15 lands, or that run may fail on it | 2026-11-20 |
 
 ## Open items in full
 
@@ -101,24 +102,6 @@ of the four backends, with a test and a bite.
 assembled by hand. The audit archive could prove which tips were acknowledged.
 
 Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
-
-### 15. ETags do not survive a change of server (Paul decides)
-
-- Decided: 2026-11-19, D14
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses
-
-`build-plan.md`, M8 finding for decision: the ETag includes the credential epoch, a hash of the vended access key.
-Each server mints and caches its own credentials, so a conditional load answered by another server is a 200: 0 of
-32 in the SLO run. Behind the Kubernetes Service, which is not sticky, the 304 path (D14) mostly misses. The
-deployment entry of 2026-11-11 says it needs deciding before production.
-
-Two ways, for Paul: derive the epoch from a shared issuance window so servers agree, or accept sticky routing.
-
-Done when Paul has chosen, and two servers answer one client's conditional loads with 304s (or the chart routes
-stickily), with a test.
-
-**Decided 2026-11-19 (D14):** a shared epoch ("Shared epoch"): servers derive the credential epoch from a shared issuance window, so they agree on the ETag; not sticky routing.
 
 ### 17. Console sign-in against Entra ID and Ping, with an automated test
 
@@ -551,6 +534,58 @@ Done when Paul has decided, and the management routes answer as he decided, with
 
 **Decided 2026-11-19 (D18, amended again):** hide names on the management API too ("Hide there too"): a caller that holds nothing on a namespace, table or view gets the 404 a missing one gets, as on the Iceberg routes since item 14. Platform operators see no namespace, table or view name there unless granted ("Catalogs, not objects").
 
+### 75. deploy/README.md and install-at-work.md still call the ETag routing choice open
+
+- Added: 2026-11-20 by agent on item 15
+- Touches: deploy/README.md docs/install-at-work.md
+- Effort: S, two paragraphs of Markdown; no wait
+
+Paul chose the shared epoch over sticky routing on 2026-11-19 (D14, amended for item 15), and item 15 built it: a
+table load's credential epoch is the issuance window it falls in, so every server gives the same ETag and a
+conditional load answered by another server is a 304. Two documents still say the choice is open, and item 15's
+claim reached neither:
+
+- `deploy/README.md`, "ETags and routing": "M8 found that ETags do not survive a change of server ... The choice
+  between sticky routing and a shared credential epoch is still open (build-plan, M8 findings)."
+- `docs/install-at-work.md`, section 5: "Decide with Paul before production: sticky routing for ETags
+  (`service.sessionAffinity: ClientIP`, or the Ingress's own) ..."
+
+Done when both say the epoch is shared (D14, item 15), so the chart's default `service.sessionAffinity: None` keeps
+304s across servers, and neither asks for sticky routing for ETags. The chart itself needs no change.
+
+### 76. The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window
+
+- Added: 2026-11-20 by agent on item 15
+- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/SloTest.java catalog-tests-load/src/test/java/nuna/catalog/load/TenThousandSnapshotsTest.java
+- Effort: S, two loops in two overnight tests; no wait. Before the first overnight run after item 15 lands, or that run may fail on it
+
+Item 15 (D14, amended 2026-11-19) made a table load's credential epoch the issuance window the load falls in: a
+quarter of `nuna.storage.credential-lifetime`, 7.5 minutes by default, counted from the Unix epoch. Every server now
+gives the same ETag within a window, and the ETag changes at each window's end, whenever that falls. Before, the
+epoch was a hash of the server's own cached access key, which a fresh server kept for 22.5 minutes after its first
+vend, so a test that ran its conditional loads soon after warming up never saw it change.
+
+Two overnight tests (catalog-tests-load, tagged `overnight`) take an ETag, then assert that every conditional load
+over the next tens of seconds is a 304:
+
+- `SloTest#sloRun`: the ETags of 32 tables from each server, then `readConditional`, 16 readers x 300 loads, each
+  `assertThat(answer.status()).isEqualTo(304)` (about 23 s at the M8 laptop's 77 ms p50).
+- `TenThousandSnapshotsTest`: an ETag from the last full load, then 50 loads by refs and 200 conditional loads, each
+  asserted 304 (about 25 s at the M8 timings), for v2 and for v3.
+
+A window boundary inside such a stretch turns the next conditional load into a 200 with the new ETag, as D14 now
+allows ("a client may lose a 304 near a boundary"), and the assertion fails. At those durations that is roughly one
+night in 15 for `SloTest` and one in 18 for each format version of `TenThousandSnapshotsTest`: one night in 6
+together. The heavy tests that
+expect one 304 right after an ETag (`RestRoutesTest#tableLoadsAnswer304WhileThePointerHolds`,
+`CatalogMetricsRoutesTest#callsAreTimedByOperationOutcomeAndErrorType`) take milliseconds, about one run in 10,000.
+
+Done when both loops accept a 200 that carries a new ETag at most once per window boundary they cross, and carry on
+with that ETag (a client does the same), still failing on any other 200 or on a second one inside a window; or start
+each loop only when the current window has longer left than the loop takes. `SloTest`'s "304 across servers" line
+should then read 32 of 32. The tests are `overnight`, so only the overnight run (or `./nightly.sh` on Paul's word)
+shows it.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -565,6 +600,7 @@ Done when Paul has decided, and the management routes answer as he decided, with
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [13](backlog/13.md) | The separation-of-duties check and the grant write are not atomic | done | 2026-11-20 |
 | [14](backlog/14.md) | HEAD and loads answer 404 before 403, so names leak to signed-in callers | done | 2026-11-19 |
+| [15](backlog/15.md) | ETags do not survive a change of server (Paul decides) | done | 2026-11-20 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
