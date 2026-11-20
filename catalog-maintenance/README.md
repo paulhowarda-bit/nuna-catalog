@@ -284,6 +284,7 @@ day (`TestCatalog.allDay`).
 | `KubernetesCompactionTest` | `heavy` | Compaction as a Job in Docker Desktop's cluster, the worker and its Jobs each in a namespace of their own that it deletes; the Job's deadline no later than the window's end; the next night the compacted table needs none; a Job naming the table by an id it no longer has stops without compacting; a Job whose window closes at once is stopped by Kubernetes and read as cut off. Needs `kubectl`, `helm` and the `docker-desktop` context. |
 | `LargeExpiryTest` | `overnight` | One scan expires 9,999 of 10,000 snapshots. |
 | `LargeOrphanScanTest` | `overnight` | The orphan scan's heap per reachable file, at 250,000 to 1,000,000 files. |
+| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails on the store's certificate and leaves the table alone; the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
 | `EngineMatrixTest#compaction` (in `catalog-tests-engines`) | `overnight` | The worker's own Job in the engine matrix's cluster: 32 small files compacted into 4, the same rows, the replaced files left in place, no pending deletion. |
 
 ## Limits

@@ -22,6 +22,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -43,10 +46,14 @@ import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.avro.Avro;
 import org.apache.iceberg.aws.AssumeRoleAwsClientFactory;
 import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.data.GenericRecord;
+import org.apache.iceberg.data.Record;
+import org.apache.iceberg.io.DataWriter;
 import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.io.PositionOutputStream;
 import org.apache.iceberg.rest.RESTCatalog;
@@ -78,6 +85,9 @@ import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
  * and moves it with {@link #advance}, which moves the server's clock as far, so the server never finds a snapshot
  * younger than the worker does. Snapshot times and S3 modification times are wall-clock times. Its cleanup window is
  * open all day unless a test gives it another ({@link #allDay}).
+ *
+ * <p>A test that needs a store of its own (backlog 89: Silo behind TLS) gets a catalog of its own on it
+ * ({@link #onStore}), on a database of its own in the same PostgreSQL.
  */
 final class TestCatalog {
 
@@ -105,9 +115,11 @@ final class TestCatalog {
 
     final URI uri;
     final FakeClock serverClock = SERVER_CLOCK;
-    final TestS3 s3 = TestS3.get();
-    final String bucket = s3.bucket("warehouse");
+    final TestS3 s3;
+    final String bucket;
     final JdbcTemplate jdbc;
+    /** The server's database, as its JDBC URL. */
+    private final String database;
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
 
     /** The containers and the issuer every server here shares. */
@@ -125,10 +137,19 @@ final class TestCatalog {
         }
     }
 
+    /** A server on the run's store ({@link TestS3#get}) and the shared PostgreSQL's own database. */
+    private TestCatalog(String host, String... arguments) {
+        this(TestS3.get(), backing().postgres().getJdbcUrl(), host, arguments);
+    }
+
     /**
+     * @param database  the server's database, as its JDBC URL
      * @param arguments more of the server's settings, as command-line arguments, which win over its application.yaml
      */
-    private TestCatalog(String host, String... arguments) {
+    private TestCatalog(TestS3 s3, String database, String host, String... arguments) {
+        this.s3 = s3;
+        this.bucket = s3.bucket("warehouse");
+        this.database = database;
         Backing shared = backing();
         Map<String, Object> properties = new LinkedHashMap<>(s3.serverProperties(PROFILE, bucket));
         if (!host.equals("localhost") && s3.kind != TestS3.Kind.AWS) {
@@ -136,7 +157,7 @@ final class TestCatalog {
             properties.put("nuna.storage.profiles." + PROFILE + ".endpoint", URI.create(endpoint.getScheme() + "://"
                     + host + ":" + endpoint.getPort()).toString());
         }
-        properties.put("spring.datasource.url", shared.postgres().getJdbcUrl());
+        properties.put("spring.datasource.url", database);
         properties.put("spring.datasource.username", shared.postgres().getUsername());
         properties.put("spring.datasource.password", shared.postgres().getPassword());
         properties.put("nuna.storage.catalogs." + CATALOG + ".profile", PROFILE);
@@ -192,6 +213,38 @@ final class TestCatalog {
             forPods = new TestCatalog("host.docker.internal");
         }
         return forPods.uri;
+    }
+
+    /**
+     * A catalog of its own on {@code s3}, a store apart from the run's (backlog 89: Silo behind TLS,
+     * {@link TestS3#siloBehindTls}), on a new database in the shared PostgreSQL, so the work list its worker reads
+     * holds its own tables alone. Where the store serves TLS, the server's storage profile names its CA's bundle, and
+     * so do the worker's ({@link #storageProfiles}) and the writer's S3 clients ({@link #writer}). Pods reach it
+     * through {@link #twinForPods}.
+     */
+    static TestCatalog onStore(TestS3 s3) {
+        String name = "catalog_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        PostgreSQLContainer postgres = backing().postgres();
+        try (Connection connection = postgres.createConnection("");
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE DATABASE " + name);
+        } catch (SQLException e) {
+            throw new IllegalStateException("cannot create the database " + name, e);
+        }
+        TestCatalog catalog = new TestCatalog(s3, "jdbc:postgresql://" + postgres.getHost() + ":"
+                + postgres.getMappedPort(PostgreSQLContainer.POSTGRESQL_PORT) + "/" + name, "localhost");
+        catalog.grant();
+        catalog.protectDeletes();
+        return catalog;
+    }
+
+    /**
+     * This catalog's address for pods of Docker Desktop's Kubernetes, as {@link #forPods()} is the JVM's catalog's: a
+     * second server, started on each call, on this one's database and store, which it and its storage profile's S3
+     * endpoint name by {@code host.docker.internal}.
+     */
+    URI twinForPods() {
+        return new TestCatalog(s3, database, "host.docker.internal").uri;
     }
 
     /**
@@ -308,7 +361,8 @@ final class TestCatalog {
     /**
      * The worker's own storage identity on the run's store (D30) as its settings give it: the only one a delete policy
      * lets delete. On AWS it names no keys, so it is the SDK's default chain, in a test JVM the run's sign-in: storage
-     * as the worker is {@link #workerStorage}.
+     * as the worker is {@link #workerStorage}. On a store serving TLS ({@link #onStore}) it names the store's CA
+     * bundle.
      */
     Map<String, WorkerSettings.StorageProfile> storageProfiles() {
         URI endpoint = s3.kind == TestS3.Kind.AWS ? null
@@ -323,7 +377,7 @@ final class TestCatalog {
             secret = TestS3.SECRET_KEY;
         }
         return Map.of("test", new WorkerSettings.StorageProfile(List.of("s3://" + bucket + "/tables"), endpoint,
-                TestS3.REGION, s3.kind != TestS3.Kind.AWS, key, secret, null));
+                TestS3.REGION, s3.kind != TestS3.Kind.AWS, key, secret, s3.caBundle().orElse(null)));
     }
 
     /** The worker, with its own clock, deciding nothing by the server's. */
@@ -386,12 +440,15 @@ final class TestCatalog {
         return worker(clock, compactor, storage, tokens, meters, window, Duration.ofDays(1), maxJobs);
     }
 
-    /** The same, scanning a table for orphans at most once per {@code orphanInterval}. */
+    /**
+     * The same, scanning a table for orphans at most once per {@code orphanInterval}. It reads tables with S3 clients
+     * trusting what {@code storage}'s do, as a deployed worker's do ({@link Storage#clientProperties}).
+     */
     Worker worker(Clock clock, Compactor compactor, Storage storage, TokenSource tokens, MeterRegistry meters,
                   CleanupWindow window, Duration orphanInterval, int maxJobs) {
-        return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens, Map.of(),
-                TraceHeaders.NONE), storage, compactor, clock, window, orphanInterval, maxJobs, meters,
-                ObservationRegistry.NOOP);
+        return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens,
+                storage.clientProperties(), TraceHeaders.NONE), storage, compactor, clock, window, orphanInterval,
+                maxJobs, meters, ObservationRegistry.NOOP);
     }
 
     /**
@@ -415,7 +472,10 @@ final class TestCatalog {
         worker.advance(duration);
     }
 
-    /** An Iceberg client as the writers' group, on vended credentials. */
+    /**
+     * An Iceberg client as the writers' group, on vended credentials; its S3 clients trust the store's CA when it has
+     * one, as the worker's do.
+     */
     RESTCatalog writer() {
         Map<String, String> properties = new HashMap<>();
         properties.put(CatalogProperties.URI, uri.toString());
@@ -425,6 +485,7 @@ final class TestCatalog {
         properties.put(CatalogProperties.FILE_IO_IMPL, "org.apache.iceberg.aws.s3.S3FileIO");
         properties.put("http-client.type", "apache");
         properties.put("header.X-Iceberg-Access-Delegation", "vended-credentials");
+        properties.putAll(TrustedS3Clients.register(storageProfiles()));
         RESTCatalog client = new RESTCatalog();
         client.initialize("writer", properties);
         return client;
@@ -509,6 +570,24 @@ final class TestCatalog {
         }
         return DataFiles.builder(table.spec()).withPath(location).withFormat(FileFormat.PARQUET)
                 .withFileSizeInBytes(name.length()).withRecordCount(1).build();
+    }
+
+    /**
+     * Ten rows in an Avro data file of the table, ids {@code index * 10} on, written with the table's vended
+     * credentials (not yet committed): a file Spark can read and compact.
+     */
+    static DataFile avro(Table table, int index) throws IOException {
+        DataWriter<Record> writer = Avro.writeData(table.io().newOutputFile(
+                        table.locationProvider().newDataLocation("part-" + index + ".avro")))
+                .schema(table.schema()).withSpec(table.spec())
+                .createWriterFunc(org.apache.iceberg.data.avro.DataWriter::create).overwrite().build();
+        try (writer) {
+            for (long row = 0; row < 10; row++) {
+                writer.write(GenericRecord.create(table.schema()).copy(Map.of("id", index * 10L + row,
+                        "name", "row " + row)));
+            }
+        }
+        return writer.toDataFile();
     }
 
     // ---- management API ----

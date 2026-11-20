@@ -603,7 +603,7 @@ memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 
 - Decided: 2026-11-20, D21
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/test/ catalog-tests-s3/ bites/M6/
+- Touches: catalog-maintenance/src/test/ catalog-maintenance/README.md catalog-tests-s3/ bites/M6/
 - Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
 
 Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
@@ -620,6 +620,38 @@ Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS f
 one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
 real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
 fail on an assertion, not on fixture start-up.
+
+Worked on 2026-11-20 (worktree-agent-a0c19fa4b1e97ee01); open until the test passes in an overnight run and its bite
+bites. **Nothing of it has run**: the test is tagged overnight, Docker Desktop's Kubernetes has no room for its Jobs
+beside the nuna-demo stack, and no container was started. The fast build compiles it and passes.
+
+- `PrivateCaCompactionTest` (catalog-maintenance, `@Tag("overnight")`): Silo serving TLS from a private CA, a catalog
+  of its own on it whose storage profile names the CA's bundle, the worker's profile naming it too, and the chart's
+  Role as the chart renders it for a profile with a `ca-bundle` (create on ConfigMaps). First a control: the Job
+  launched without the bundle must fail with `PKIX path building failed` in its log and leave the table's snapshot.
+  Then the worker's own scan launches the Job with the bundle, which must succeed (`COMPACTED`, no PKIX error), with
+  the bundle's ConfigMap owned by that Job, and the table must end with one data file of 60 rows in a `replace`
+  snapshot.
+- How the pods reach the store's TLS name: the catalog's twin for pods (`TestCatalog.twinForPods`) names the store
+  `https://host.docker.internal:<port>`, which Docker's DNS resolves for pods and `HostDockerInternal` resolves to
+  loopback in the test JVM. The store's certificate (`PrivateCa.issue`) holds `localhost`, `127.0.0.1`, the Docker
+  host's address and `host.docker.internal` as subject alternative names, so the pod's TLS client, the twin's own STS
+  and S3 clients and the test's all find their host in it.
+- `TestS3.siloBehindTls(ca)`: a second Silo, for this test alone, apart from the run's store and whatever `-Ps3`
+  names, with the issued certificate and key in `--certs-dir /certs` and a TLS health check. Its own S3 clients trust
+  the CA; `serverProperties` leaves `require-tls` on and names the `ca-bundle`. The run's store is unchanged.
+- `TestCatalog.onStore(s3)`: a catalog server on that store and on a new database in the shared PostgreSQL, so its
+  work list holds this test's table alone. The writer's S3 clients and the worker's `Catalogs` now trust what the
+  worker's storage trusts (`TrustedS3Clients.register`, `Storage.clientProperties`): nothing changes without a bundle.
+- `KubernetesCompactionTest`'s harness (the image build, the two namespaces, the chart's service account and Role, the
+  worker's service-account folder, kubectl and helm) moved unchanged into `CompactionCluster`, which both tests use;
+  its `avro` moved to `TestCatalog`. `KubernetesCompactionTest` checks what it did before.
+- Bite, recorded and checked with `git apply --check`, not run: `bites/M6/job-storage-ca-left-out` (`storageCa`
+  finds no bundle, so the Job gets no ConfigMap, mount or trust store). The control is unaffected, and the worker's
+  Job then fails as the control does, on the assertion of its status.
+- Unchecked until it runs: that Silo serves TLS from `--certs-dir` with this EC key in PKCS #8 (read in Silo's
+  source, `cmd/common-main.go`, not run); that the Spark image's `$JAVA_HOME/bin/keytool` and its cacerts work as item
+  88's command expects; the wording of the TLS error in the Spark log.
 
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
