@@ -65,9 +65,17 @@ Each pass:
 2. For an object with a watermark, checks each journaled version above it, oldest first (at most 100 a pass), from
    the watermark's own metadata: each version's added files, found with one `HEAD` each.
 3. Checks **whole** an object with no watermark, one whose journaled versions do not follow its watermark one by one,
-   or one whose watermark's metadata file is gone from the DR store: every file every snapshot of the pointer's
-   version reaches, found in one listing of its location (files outside it with one `HEAD` each). A whole check that
-   fails is not repeated sooner than `nuna.maintenance.scan-interval`.
+   or one whose watermark's metadata file is gone from the DR store: the newest of the pointer's version and the
+   versions the work list names below it whose every file every snapshot reaches is found in one listing of its
+   location (files outside it with one `HEAD` each), newest first (item 99; Paul, 2026-11-20: "Newest whole
+   version"). A version whose metadata file the listing lacks is not read; each other is read once and passed over
+   without a walk of the whole table when a file it adds to the next older one is missing, or when it reaches a file
+   a newer one lacks, so one walk of the whole table finds it in the cases seen. A view's: the newest whose metadata
+   file is there. A table's is never its empty creation version below its pointer (Paul, 2026-11-20: "Never the empty
+   version"): when the newest whole version is below the pointer and no snapshot of it reaches a data or delete file
+   (no snapshot, or an empty one), the check gives none, so a table that lost an old file gets no first watermark and
+   stays with its owner, as before item 99; a new table, at that version, gets it. A whole check that fails is not
+   repeated sooner than `nuna.maintenance.scan-interval`.
 4. Reports the newest safe version, `PUT /management/v1/maintenance/tables/{id}/dr-watermark` with
    `{"version": n, "metadata-location": "..."}`, when it is above the kept watermark.
 
@@ -78,7 +86,7 @@ at the next pass. The verifier's meters and its two alerts are in worker-metrics
 
 | Route | Who | What |
 |---|---|---|
-| `GET /management/v1/maintenance/dr-work` | a maintenance principal acting as itself | The work list, by id, `pageSize` at a time (default 100, at most 1,000). Each object: `id`, `kind`, `location`, `pointer` and, when it has one, `watermark` (each `version`, `metadata-location`), `versions` (the journaled versions above the watermark, each with `version`, `metadata-location`, `commit-id`, `committed-at`; none without a watermark) and `oldest-unverified-at`. |
+| `GET /management/v1/maintenance/dr-work` | a maintenance principal acting as itself | The work list, by id, `pageSize` at a time (default 100, at most 1,000). Each object: `id`, `kind`, `location`, `pointer` and, when it has one, `watermark` (each `version`, `metadata-location`), `versions` (the journaled versions above the watermark, oldest first, at most 100, each with `version`, `metadata-location`, `commit-id`, `committed-at`; without a watermark, the newest 100 up to the pointer's, for the whole check) and `oldest-unverified-at`. |
 | `PUT /management/v1/maintenance/tables/{id}/dr-watermark` | a maintenance principal acting as itself | The verifier's report. `204`, also when that version is already kept; `400` without a version from 1 or a location; `404` when the object is no active table or view; `409` `WatermarkBehindException` when a higher watermark is kept, `WatermarkAheadException` when the version is above the pointer, `WatermarkMismatchException` or `UnknownVersionException` when the location is not that version's. A report is the worker's bookkeeping and writes no audit record; a refusal by the guard is audited. |
 | `GET /management/v1/dr/watermarks` | a platform operator | The readout: the tables and views behind, by name (D18, amended 2026-11-20), `pageSize` at a time (default 50, at most 200). Each: `id`, `kind`, `catalog`, `namespace`, `name`, `pointer-version`, `watermark-version` (null when none of its versions has passed), `watermark-recorded-at`, `versions-behind`, `oldest-unverified-at` and `lag-seconds`. |
 
@@ -143,9 +151,10 @@ object's; the worker's `nuna.maintenance.dr.lag.max` gives the largest after eac
 
 | Test | Shows | Runs |
 |---|---|---|
-| `DrVerifyTest` (`catalog-maintenance`) | Two in-memory stores: the watermark stops before the first version missing any file (a data file, a manifest, a manifest list, a metadata file), delete and statistics files are checked, nothing above the watermark passes while its next version lacks a file, a commit that adds no snapshot passes on its metadata file, a rewind's version passes, a table with no watermark or a gap is checked whole in one listing, a view's version passes on its metadata file. | fast build |
-| `DrVerifierTest` (`catalog-maintenance`) | A pass reads every page, reports only above the kept watermark, keeps going past a failed check, retries a failed whole check no sooner than its interval, sets its meters; worker-metrics.md lists them. | fast build |
-| `DrRoutesTest` (`catalog-server`) | The routes and guard over a store double: who may call each, and a report taken only for a version the journal or the pointer holds, with its own location. | fast build |
+| `DrVerifyTest` (`catalog-maintenance`) | Two in-memory stores: the watermark stops before the first version missing any file (a data file, a manifest, a manifest list, a metadata file), delete and statistics files are checked, nothing above the watermark passes while its next version lacks a file, a commit that adds no snapshot passes on its metadata file, a rewind's version passes, a table with no watermark or a gap is checked whole in one listing, a view's version passes on its metadata file. A busy table with no watermark gets the newest version whole in one listing, a file lost long ago costs one walk, a view with no watermark gets its newest version there. A table that lost an old file gets no first watermark when only its empty creation version is whole, nor when that version has an empty snapshot, and gets an older version with data that is whole; a new table gets its creation version. | fast build |
+| `DrVerifierTest` (`catalog-maintenance`) | A pass reads every page, reports only above the kept watermark, keeps going past a failed check, retries a failed whole check no sooner than its interval, sets its meters; worker-metrics.md lists them. A first watermark below the pointer lags from the version after it. | fast build |
+| `DrPassesTest` (`catalog-maintenance`) | Each pass's tally logged at INFO, one line a pass (item 101). | fast build |
+| `DrRoutesTest` (`catalog-server`) | The routes and guard over a store double: who may call each, and a report taken only for a version the journal or the pointer holds, with its own location. An object with no watermark lists its newest versions. | fast build |
 | `ReconcileFileCheckTest` (`catalog-core`) | An Iceberg client's table in memory and a DR store holding what the test replicates: the walk stops before the first version missing a data file, a manifest it adds or its manifest list, a delete file or a statistics file, and names it; only the checked steps are swapped; a manifest that cannot be read stops the walk. From the watermark: a pointer above it walks on when every version between them is whole, and takes nothing, reported for the rewind, when one lacks a file it adds (even one a later version deletes), its manifest list, its metadata file or the pointer's; a pointer at its watermark, or a table with none, walks from its pointer as before; versions the journal does not hold one by one, or a watermark file the store lacks, take nothing. Judged as the verifier judges them: a rewound table walks at once, with its watermark at the rewind's version or still below it, while the versions a rewind gives up, and a version built on them, never count. | fast build |
 | `ReconcileWatermarkTest` (`catalog-core`) | A table at its watermark walks forward past it, and a watermark below the pointer whose versions since are whole, or none, leaves the walk as it is; the rewind moves back to the watermark and records its version as the watermark in the same commit, also after giving up more than 100 versions, only for a frozen table, not when there is nothing to rewind or the pointer moved; a view is rewound as a table is. | fast build |
 | `DrSuite`, in each store suite | The watermark on all four backends: it only rises, only active tables and views keep one, a rewind's commit records it at the version it writes (also past more than 100 versions) and a conflicting one records nothing, the objects behind are listed, a purge deletes it, the journal reads after a version. | heavy |
@@ -157,5 +166,6 @@ The bites are in `bites/D37/`: data files left out of the check, a lower waterma
 freeze, a rewind past the watermark, the walk past a version whose files are not all in the DR store
 (`walk-past-the-watermark`, recorded again for the file check), a view not rewound, the walk's check starting at
 the pointer again rather than at the watermark (`check-from-the-pointer`), the walk counting a version built on
-given-up ones as whole (`walk-counts-given-up-versions`), and the rewind leaving the watermark where it was
-(`rewind-leaves-the-watermark`).
+given-up ones as whole (`walk-counts-given-up-versions`), the rewind leaving the watermark where it was
+(`rewind-leaves-the-watermark`), the whole check testing only the pointer again (`whole-at-the-pointer-only`), and
+the empty creation version taken as a first watermark again (`empty-creation-version-accepted`).
