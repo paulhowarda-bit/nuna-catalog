@@ -7,6 +7,7 @@ import nuna.catalog.audit.StorageSetup;
 import nuna.catalog.core.Names;
 import nuna.catalog.core.commit.CommitRule;
 import nuna.catalog.core.commit.TableFiles;
+import nuna.catalog.objectstore.CaBundle;
 import nuna.catalog.objectstore.CredentialVendor;
 import nuna.catalog.objectstore.DeletePolicy;
 import nuna.catalog.objectstore.MetadataFiles;
@@ -39,8 +40,9 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 
 /**
  * Each catalog's storage (D21, D28): the profiles configured on this server, written to the store, and
- * the catalogs bound to them. At startup it refuses overlapping profiles and plain-http endpoints, records
- * changed profiles, creates declared catalogs, and refuses a declared catalog the store binds differently.
+ * the catalogs bound to them. At startup it refuses overlapping profiles, plain-http endpoints and CA bundles it
+ * cannot read (backlog 21), records changed profiles, creates declared catalogs, and refuses a declared catalog the
+ * store binds differently.
  * The catalog never calls KMS: encryption at rest is the bucket's default key, and the key set is recorded.
  * Each profile's requests to its object store are observed (docs/observability/spans.md).
  */
@@ -62,7 +64,11 @@ public final class CatalogStorage implements AutoCloseable {
                           ObservationRegistry observations) {
         this.store = store;
         Map<String, StorageProfile> parsed = new LinkedHashMap<>();
-        settings.profiles().forEach((name, profile) -> parsed.put(name, parse(name, profile, settings.requireTls())));
+        Map<String, Optional<CaBundle>> caBundles = new LinkedHashMap<>();
+        settings.profiles().forEach((name, profile) -> {
+            parsed.put(name, parse(name, profile, settings.requireTls()));
+            caBundles.put(name, caBundle(name, profile));
+        });
         ProfileOverlap.requireDisjoint(parsed);
         settings.profiles().forEach((name, config) -> {
             StorageProfile profile = parsed.get(name);
@@ -70,9 +76,9 @@ public final class CatalogStorage implements AutoCloseable {
                     ? DefaultCredentialsProvider.builder().build()
                     : StaticCredentialsProvider.create(
                             AwsBasicCredentials.create(config.accessKeyId(), config.secretAccessKey()));
-            MetadataFiles files = new MetadataFiles(profile, credentials);
+            MetadataFiles files = new MetadataFiles(profile, credentials, caBundles.get(name));
             CredentialVendor vendor = new CredentialVendor(profile, Optional.ofNullable(config.stsRole()), credentials,
-                    settings.credentialLifetime());
+                    settings.credentialLifetime(), caBundles.get(name));
             resources.add(files);
             resources.add(vendor);
             TableFiles tableFiles = new ObservedTableFiles(new ProfileTableFiles(profile, files), name, observations);
@@ -135,6 +141,18 @@ public final class CatalogStorage implements AutoCloseable {
         }
         return StorageProfile.of(config.kind(), config.endpoint(), config.region(), config.tableRoot(),
                 config.allowedPrefixes());
+    }
+
+    /** The profile's CA bundle, read now so that one the server cannot use stops it starting. */
+    private static Optional<CaBundle> caBundle(String name, StorageSettings.Profile config) {
+        if (config.caBundle() == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(CaBundle.read(config.caBundle()));
+        } catch (IllegalArgumentException e) {
+            throw new IllegalStateException("nuna.storage.profiles." + name + ".ca-bundle: " + e.getMessage(), e);
+        }
     }
 
     private void record(Bound bound, StorageSettings.Profile config, RestSettings rest, Clock clock) {
