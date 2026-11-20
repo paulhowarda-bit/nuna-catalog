@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**30 open:** 6 S, 11 M, 9 L, 4 XL.
+**31 open:** 6 S, 11 M, 10 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -40,8 +40,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [108](backlog/108.md) | L | Cleanup protects every ref, and the worker warns of and ends expired branches (item 26) | the orphan scan and expiry across several metadata files per table, the recheck of files recorded before a ref was made, and the expiry section, with heavy tests on Silo; waits on items 105 and 106 | 2026-11-20 |
 | [109](backlog/109.md) | M | Console: the catalog's refs, the merge preview and a ref selector (item 26) | one panel and a selector over routes that exist, four actions, one browser test case; waits on items 104, 106 and 107 | 2026-11-20 |
 | [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109 | 2026-11-20 |
-| [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on Paul's answer to item 26's question 3, on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
+| [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
+| [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
 
 ## Open items in full
 
@@ -152,7 +153,7 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 
 ### 26. Branches, tags and merge (v1.x, D33)
 
-- Decided: 2026-11-19, D33
+- Decided: 2026-11-20, D33
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, the milestone over build items 102 to 112 (seven L, four M; see the design below)
 
@@ -320,6 +321,8 @@ either kind.
    - (b) **Yes, whole:** the walk with its file check and the rewind (item 28) cover branch heads too, and a tag naming
      a version the rewind gave up is reported. Item 111 becomes L.
    - (c) **No:** nothing for refs in DR; the runbook says refs may name missing files. Item 111 is dropped.
+
+**Decided 2026-11-20 (D33, amended):** 1 (b), names too (Paul: "Names too"); 2 (a), no branch grants in this milestone, item 113 holds them for later (Paul: "No, later"); 3 (a), a report only, item 111 (Paul: "A report only").
 
 ### Build items, in order
 
@@ -1112,6 +1115,7 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 
 ### 102. Refs in the store: the ref record and its cut on four stores (item 26)
 
+- Decided: 2026-11-20, D33
 - Added: 2026-11-20 by agent on item 26
 - Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/ docs/storage-design.md build-plan.md
 - Effort: L, a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them
@@ -1149,6 +1153,8 @@ Build:
 Done when `RefSuite` passes on all four stores in the heavy build, the fast build is green, and the guards' bites are
 recorded in `bites/D33/`. Items 103, 104, 106 and 111 wait on this one.
 
+**Decided 2026-11-20 (D33, amended):** a ref's cut keeps each table's and view's name as well as its pointer (question 1 (b), "Names too").
+
 ### 103. Branch commits and the merge transaction in the store (item 26)
 
 - Added: 2026-11-20 by agent on item 26
@@ -1181,6 +1187,7 @@ in `bites/D33/`. Waits on item 102. Items 105 and 107 wait on this one.
 
 ### 104. Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26)
 
+- Decided: 2026-11-20, D33
 - Added: 2026-11-20 by agent on item 26
 - Touches: catalog-server/src/main/java/nuna/catalog/server/rest/ catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java catalog-server/src/main/java/nuna/catalog/server/AdvertisedEndpoints.java catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-server/src/test/java/nuna/catalog/server/RestRoutesTest.java catalog-tests-conformance/src/test/java/nuna/catalog/conformance/IcebergClientConfigTest.java
 - Effort: L, every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102
@@ -1211,6 +1218,8 @@ Done when route tests cover a load, HEAD, listing and credentials on a tag and o
 write on a tag (400), and a catalog name holding `@` (refused at startup); and a stock `RESTCatalog` with
 `warehouse=<catalog>@<tag>` reads a table as of the tag and fails a commit at Iceberg's endpoint check (heavy). Fast
 build green; bites recorded in `bites/D33/`. Waits on item 102. Items 105 and 109 wait on this one.
+
+**Decided 2026-11-20 (D33, amended):** reads on a ref resolve names as of its cut; creates, drops, renames and namespace changes on a branch are refused; namespace properties are live (question 1 (b), "Names too").
 
 ### 105. Commits on a branch write its own pointer (item 26)
 
@@ -1373,9 +1382,10 @@ the README's walk works as written; checked by hand and recorded in `status/`. W
 
 ### 111. After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3)
 
+- Decided: 2026-11-20, D33
 - Added: 2026-11-20 by agent on item 26
 - Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java deploy/README.md
-- Effort: M, one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on Paul's answer to item 26's question 3, on items 102 and 105, and on item 100, which holds `Reconcile.java`
+- Effort: M, one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java`
 
 Part of item 26 (D33, D37). Written for question 3's recommended answer (a), report only; another answer changes it,
 and only Paul decides that.
@@ -1390,6 +1400,8 @@ primary's return. Branches are not walked or rewound.
 Done when a route test (heavy) with a DR store missing one branch head's metadata file reports that branch and no
 other ref. Fast build green; bite recorded in `bites/D33/`. Waits on Paul's answer to question 3, then on items 102,
 105 and 100.
+
+**Decided 2026-11-20 (D33, amended):** a report only, as this item says (question 3 (a), "A report only"); it no longer waits on that answer.
 
 ### 112. Branches, tags and merge: engines on refs, the docs and the gate (item 26)
 
@@ -1411,6 +1423,23 @@ Build:
 
 Done, and item 26 with it, the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh` (the engine
 matrix included) and bites are all green with items 102 to 111 landed. Waits on items 102 to 111.
+
+### 113. Grants that name a branch (later, D33)
+
+- Decided: 2026-11-20, D33
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-security/ catalog-server/src/main/java/nuna/catalog/server/governance/
+- Effort: L, a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites
+
+Item 26's design (2026-11-20) builds branches with a table's grants holding on every ref (its choice 12), so whoever
+may write a table on a branch may also write it on main. A grant that names a branch would let a group write on `dev`
+without writing main, which changes D18's model (grants to groups on catalog objects) on all four stores.
+
+Paul put it off on 2026-11-20 (D33, amended: "No, later"): it is not part of the branches milestone. Start it only
+when Paul asks.
+
+Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
+every ref, the governance routes and the console show the branch, and a test on each store shows it.
 
 ## Done and dropped
 
