@@ -63,7 +63,7 @@ public final class MatrixCompaction {
                 now.plus(Duration.ofMinutes(30)));
         // rewrite_data_files' own thresholds, as the worker passes them for a table whose policy sets none.
         CompactionNeed need = new CompactionNeed(0, 0, 0, 0, 5, 0.3, TARGET_FILE_SIZE);
-        Compactor.Launch launch = new KubernetesJobs(settings, catalogUri, tokens, Clock.systemUTC())
+        Compactor.Launch launch = new KubernetesJobs(settings, catalogUri, tokens, Map.of(), Clock.systemUTC())
                 .launch(table, need, night);
         if (launch != Compactor.Launch.STARTED) {
             throw new IllegalStateException("compaction of " + id + " did not start: " + launch);

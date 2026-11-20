@@ -47,8 +47,9 @@ config:
       # named: the repo's Spark image, catalog-tests-engines/images/spark. It needs the client-credentials grant
       # and token.scope (the Job signs in itself), and a namespace for the Jobs alone, created beforehand: never the
       # release's nor the catalog's. The chart grants the worker's service account get and create on Jobs and
-      # create on Secrets there, and makes job-service-account there, an account with no rights that the Jobs' pods
-      # run as.
+      # create on Secrets there, and create on ConfigMaps when a storage profile names a ca-bundle (each Job's copy
+      # of its store's CA), and makes job-service-account there, an account with no rights that the Jobs' pods run
+      # as.
       compaction:
         image: ""
         image-pull-policy: IfNotPresent
@@ -71,8 +72,9 @@ secrets:
 
 # A ConfigMap in the release's namespace holding the CA bundles of on-prem stores whose certificates a private CA
 # signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile names its file as ca-bundle; the
-# worker's S3 clients to that profile's endpoint trust it, beside the JVM's CAs. The catalog's chart takes the same
-# ConfigMap (docs/install-at-work.md).
+# worker's S3 clients to that profile's endpoint trust it, beside the JVM's CAs. A compaction Job for a table in that
+# profile gets a copy, in a ConfigMap of its own in the Jobs' namespace, and its Spark trusts it beside the image's
+# JDK CAs (backlog 88). The catalog's chart takes the same ConfigMap (docs/install-at-work.md).
 storageCaConfigMap:
   name: ""
 
