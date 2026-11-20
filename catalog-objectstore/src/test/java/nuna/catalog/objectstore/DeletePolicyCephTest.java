@@ -83,6 +83,32 @@ class DeletePolicyCephTest {
         }
     }
 
+    /**
+     * Whether a bucket policy can refuse the bucket's owner a policy change (backlog 4; D21 leaves it out of the Ceph
+     * policy as unchecked): a policy denying every principal a lifecycle rule and a policy change is in force for
+     * the lifecycle rule, yet the owner still replaces the policy and removes it. So on Ceph the delete policy cannot
+     * protect itself from the bucket's owner, and the catalog's user must not own the bucket (deploy/README.md).
+     */
+    @Test
+    @DisplayName("a bucket policy cannot refuse the bucket's owner a change to the policy itself")
+    void theOwnerChangesThePolicyWhateverItSays() {
+        assumeTrue(TestS3.kindFromSystemProperty() == TestS3.Kind.CEPH, "bucket policies are checked on Ceph");
+        TestS3 store = TestS3.get();
+        String bucket = store.bucket("owner-policy");
+        String denyAll = "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"NobodyChangesTheBucket\","
+                + "\"Effect\":\"Deny\",\"Principal\":\"*\",\"Action\":[\"s3:PutLifecycleConfiguration\","
+                + "\"s3:PutBucketPolicy\",\"s3:DeleteBucketPolicy\"],\"Resource\":[\"arn:aws:s3:::" + bucket + "\"]}]}";
+        try (S3Client owner = store.client()) {
+            owner.putBucketPolicy(r -> r.bucket(bucket).policy(denyAll));
+            assertDenied(() -> owner.putBucketLifecycleConfiguration(r -> r.bucket(bucket)
+                    .lifecycleConfiguration(expireTables())));
+
+            owner.putBucketPolicy(r -> r.bucket(bucket).policy(denyAll));
+            owner.deleteBucketPolicy(r -> r.bucket(bucket));
+            owner.putBucketLifecycleConfiguration(r -> r.bucket(bucket).lifecycleConfiguration(expireTables()));
+        }
+    }
+
     /** A rule that would delete every table file a day after it was written, with no DeleteObject call. */
     private static BucketLifecycleConfiguration expireTables() {
         return BucketLifecycleConfiguration.builder().rules(LifecycleRule.builder().id("expire-tables")
