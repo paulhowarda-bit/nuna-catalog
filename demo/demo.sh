@@ -478,8 +478,8 @@ EOF
 
 The demo's people sign in once, through Keycloak ($DEMO_HOST:8180), and the console, kafbat, CloudBeaver and
 Studio ask no password after that: ana / ana-demo, gary / gary-demo, stella / stella-demo, oscar / oscar-demo.
-Studio asks only the username, then "Sign in with SAML". To change user, use CloudBeaver's Logout (it ends
-Keycloak's session too), or sign out of each UI and of Keycloak
+Studio asks only the username, then "Sign in with SAML". To change user, use the console's Sign out or
+CloudBeaver's Logout (both end Keycloak's session too), or sign out of each UI and of Keycloak
 ($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
 To show everything in one sign-in, use presenter / presenter-demo in the console and kafbat: all four people's
 groups at once. CloudBeaver and Studio have no presenter.

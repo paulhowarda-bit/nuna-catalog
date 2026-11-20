@@ -162,7 +162,24 @@ The charts run the catalog servers and the worker only. Everything else runs els
     as a PEM file: the profile's `ca-bundle`, below.
 - **Identity providers** (SEC-1): for each issuer its `iss`, its JWKS URL, the audience and the claims for the
   user id, groups and client id; a group for platform operators and one for grant admins; a client for the
-  worker with the client-credentials grant and a scope.
+  worker with the client-credentials grant and a scope; and a client for the console (`nuna.ui.oidc`, below,
+  backlog 17), which needs:
+  - no secret (a public client): the authorization code flow with PKCE (S256);
+  - the console's page, `https://<console host>/ui/`, as a redirect URI, and the token endpoint open to the
+    console's origin (CORS);
+  - the same page as a post-logout redirect URI: "Sign out" ends the person's session at the IdP too (D16),
+    sending the browser to the `end_session_endpoint` the IdP's discovery document names, with `client_id` and
+    `post_logout_redirect_uri` (the console keeps no ID token, so it sends no `id_token_hint`). If the document
+    names no such endpoint, "Sign out" forgets the console's token only and says the IdP's session was not ended.
+    - Entra ID: register the page as a single-page application's redirect URI, which also opens the token
+      endpoint to the console. A post-logout redirect must be one of the registered redirect URIs, so that is
+      all; the front-channel logout URL, where Entra ID tells an app of a sign-out made elsewhere, is not needed.
+      Entra ID shows an account picker on the way out; on a Windows PC signed in to Entra ID, the next sign-in
+      may go through on the PC's own sign-in.
+    - PingOne: add the page to the application's Signoff URLs (`postLogoutRedirectUris`).
+    - PingFederate: register the page with the client as a post-logout redirect URI (its logout ignores any
+      other), and check that its discovery document names an `end_session_endpoint`. Like Keycloak, it asks
+      the person to confirm the sign-out, since the console sends no `id_token_hint`.
 - **KMS key sets** and **legal entities** for each catalog (SEC-8, CMP-1).
 - The database's real **point-in-time-recovery window** (from the DBAs, PLT-2).
 - A **namespace for the compaction Jobs** alone, if compaction is wanted (never the catalog's or the worker's).
@@ -218,6 +235,10 @@ config:
       # default-warehouse: <catalog>          # optional: the catalog for clients that name no warehouse
     audit:
       kafka-bootstrap-servers: <brokers>
+    ui:
+      oidc:
+        issuer: <the console's IdP's iss>    # its discovery document gives the console every endpoint
+        client-id: <the console's client>
 ```
 
 - Every `nuna.*` setting is documented on its settings class in `catalog-server`: `StorageSettings`,

@@ -3,6 +3,7 @@ package nuna.catalog.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Base64;
@@ -40,7 +41,8 @@ import org.testcontainers.utility.MountableFile;
  * names {@value #ISSUER} whichever way it is reached. The browser reaches it by that name, on a Docker network the
  * two share; the catalog, on the host, fetches the realm's keys through the mapped port instead, as the demo's does
  * inside its cluster. The browser sees the console at {@code host.testcontainers.internal:}{@value #CONSOLE_PORT},
- * the redirect URI and web origin the realm's client allows ({@code keycloak/console-realm.json}).
+ * the redirect URI, post-logout redirect URI and web origin the realm's client allows
+ * ({@code keycloak/console-realm.json}).
  */
 @Tag("heavy")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -140,10 +142,53 @@ class ConsoleSignInTest {
         assertThat(JsonPath.<String>read(claims, "$.iss")).isEqualTo(ISSUER);
         assertThat(JsonPath.<String>read(claims, "$.azp")).isEqualTo("nuna-console");
         assertThat(JsonPath.<Object>read(claims, "$.aud").toString()).contains("nuna-catalog");
+    }
 
+    /**
+     * "Sign out" ends the person's session at the IdP too (D16, amended 2026-11-19), by OpenID Connect RP-initiated
+     * logout: the console forgets its token and sends the browser to Keycloak's end-session endpoint, which sends it
+     * back to the console's page. The next "Sign in" then lands on Keycloak's password page again. Forgetting the
+     * token alone, as "Sign out" did before, goes straight back in on Keycloak's session, as the test shows first.
+     */
+    @Test
+    void signOutEndsTheIdpSessionSoTheNextSignInAsksForThePassword() {
+        RemoteWebDriver driver = browser.session();
+        browser.open("/ui/");
+        toTheIdp();
+        driver.findElement(By.id("username")).sendKeys("ana");
+        driver.findElement(By.id("password")).sendKeys("pw-ana");
+        driver.findElement(By.id("kc-login")).click();
+        browser.awaitText(By.id("who"), "ana");
+
+        // Keycloak's session is there: with the console's token forgotten, "Sign in" goes straight back in.
+        driver.executeScript("sessionStorage.clear()");
+        browser.open("/ui/");
+        signIn();
+        assertThat(driver.findElements(By.cssSelector("#who strong"))).as(
+                "straight back in on Keycloak's session, without a password; the page shows:%n%s",
+                browser.visibleText()).isNotEmpty();
+        browser.awaitText(By.id("who"), "ana");
+
+        // "Sign out": to Keycloak's end-session endpoint, for the console's client, back to the console's page. The
+        // console holds no ID token to send as id_token_hint, so Keycloak, holding a session in this browser, asks
+        // the person to confirm (its LogoutEndpoint).
         driver.findElement(By.id("sign-out")).click();
+        browser.await("neither Keycloak's sign-out page nor anything shown instead", d -> !d.findElements(
+                By.cssSelector("#kc-logout, main .notice, main .alert, #kc-error-message")).isEmpty());
+        assertThat(driver.findElements(By.id("kc-logout"))).as(
+                "Keycloak asks to confirm the sign-out; the page shows:%n%s", browser.visibleText()).isNotEmpty();
+        String back = URLEncoder.encode(browser.origin() + "/ui/", StandardCharsets.UTF_8);
+        assertThat(driver.getCurrentUrl()).startsWith(ISSUER + "/protocol/openid-connect/logout?")
+                .contains("client_id=nuna-console", "post_logout_redirect_uri=" + back).doesNotContain("id_token_hint");
+        driver.findElement(By.id("kc-logout")).click();
         browser.awaitText(By.cssSelector("main .notice"), "Signed out.");
+        assertThat(driver.getCurrentUrl()).isEqualTo(browser.origin() + "/ui/");
         assertThat(storageKeys("sessionStorage")).isEmpty();
+        assertThat(driver.findElement(By.id("who")).getText()).isEmpty();
+
+        // Keycloak's session is gone: "Sign in" asks for the password again.
+        browser.open("/ui/");
+        toTheIdp();
     }
 
     @Test
@@ -168,15 +213,20 @@ class ConsoleSignInTest {
     /**
      * Starts a sign-in from the console's sign-in screen and expects Keycloak's sign-in page. Whatever comes first
      * decides: the page, or anything the console or Keycloak shows instead (a refusal sent back to the console, a
-     * failure on the way, Keycloak's own error page). So a refused request fails here with what was shown, and only
-     * a slow IdP runs out the wait.
+     * failure on the way, Keycloak's own error page, the console signed in on a session Keycloak still holds). So a
+     * refused request fails here with what was shown, and only a slow IdP runs out the wait.
      */
     private void toTheIdp() {
-        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080").click();
-        browser.await("neither Keycloak's sign-in page nor a refusal", d -> !d.findElements(By.cssSelector(
-                "#username, main .notice, main .alert, #kc-error-message")).isEmpty());
+        signIn();
         assertThat(browser.driver().findElements(By.id("username"))).as("Keycloak's sign-in page; the page shows:%n%s",
                 browser.visibleText()).isNotEmpty();
+    }
+
+    /** Clicks "Sign in" on the console's sign-in screen and waits for what comes of it, as {@link #toTheIdp} says. */
+    private void signIn() {
+        browser.awaitText(By.cssSelector("main button.primary"), "Sign in with keycloak:8080").click();
+        browser.await("neither Keycloak's sign-in page, the console signed in, nor a refusal", d -> !d.findElements(
+                By.cssSelector("#username, #who strong, main .notice, main .alert, #kc-error-message")).isEmpty());
     }
 
     @SuppressWarnings("unchecked")

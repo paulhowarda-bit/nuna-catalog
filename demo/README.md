@@ -132,10 +132,11 @@ The console offers two ways in:
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
 data in the catalog, and of the four people only `ana` changes it. Try the console as `ana` and as `gary`.
-Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token but not
-Keycloak's session, so signing in again goes straight back in as the same person: to change user, also
-sign out of Keycloak at <https://localhost:8180/realms/nuna/protocol/openid-connect/logout> (click Logout),
-or use a private window. Keycloak's own page, <https://localhost:8180/realms/nuna/account>, shows who is
+Every refusal is the server's, shown as it answered. The console's "Sign out" forgets its token and ends
+Keycloak's session too (D16): Keycloak asks "Do you want to log out?" (the console keeps no ID token to skip
+that), then sends you back to the console, and the next sign-in asks for a password, so it changes user.
+kafbat and CloudBeaver keep their own sign-in until you sign out of them, but sign in again only with a
+password. Keycloak's own page, <https://localhost:8180/realms/nuna/account>, shows who is
 signed in there; its users hold the realm's default roles (`default-roles-nuna` in
 `k8s/keycloak-realm.json`), without which that page fails with "Something went wrong". Keycloak's users and
 sessions go with its pod.
@@ -165,7 +166,7 @@ read: the catalog's audit and change topics (`nuna.*`), the Connect worker's `cd
 starting with `_`. The CDC leg's change, control and schema-history topics stay theirs to administer. kafbat
 records every change made through it, refused ones included, with who made it, in topic `__kui-audit-log`, which
 only `demo-operators` read in kafbat, and in its log (`kubectl -n nuna-demo logs deployment/kafka-ui | grep -w
-audit`). Like the console, kafbat's sign-out leaves Keycloak's session.
+audit`). Unlike the console's, kafbat's sign-out leaves Keycloak's session.
 
 How CloudBeaver and Studio sign in through Keycloak, neither of which CloudBeaver Community or Studio does on
 its own terms:

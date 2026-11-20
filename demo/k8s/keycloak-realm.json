@@ -90,7 +90,10 @@
       "implicitFlowEnabled": false,
       "redirectUris": ["https://${DEMO_HOST}:8181/ui/*"],
       "webOrigins": ["https://${DEMO_HOST}:8181"],
-      "attributes": {"pkce.code.challenge.method": "S256"},
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "https://${DEMO_HOST}:8181/ui/*"
+      },
       "fullScopeAllowed": false,
       "protocolMappers": [
         {
