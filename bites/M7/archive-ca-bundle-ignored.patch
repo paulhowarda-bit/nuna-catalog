@@ -1,0 +1,16 @@
+Breaks: the audit archive's S3 client does not trust its storage profile's CA bundle (backlog 87).
+Module: catalog-server
+Test: ArchiveCaBundleTest#bundleTrusted
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
+index e64da84..497650a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
+@@ -70,7 +70,6 @@ class GovernanceWiring {
+                 throw new IllegalStateException("nuna.storage.profiles." + audit.archive().profile() + ".ca-bundle: "
+                         + e.getMessage(), e);
+             }
+-            bundle.applyTo(s3);
+         }
+         ObjectLockArchive archive = new ObjectLockArchive(s3.build(), bucket, audit.archive().prefix(),
+                 audit.archive().retention(), clock);
