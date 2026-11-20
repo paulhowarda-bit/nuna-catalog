@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 5 S, 8 M, 2 L, 4 XL.
+**18 open:** 5 S, 7 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -27,7 +27,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 | [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
@@ -292,6 +291,12 @@ Left: the heavy tests (`DrRewindRouteTest`, `MetadataFilesTest`, `DrSuite`, `Man
 `MutatingRoutesAuditTest`, `DrReconcileRouteTest`) and the overnight `DrDrillTest` have not run; the overnight run takes them once this is on
 `main`. `DrDrillTest` will fail its dry run until item 93 makes its appender write the manifest lists its snapshots
 name; item 92 still holds the drill's leg with the DR store behind.
+
+**Paul, 2026-11-20, on the walk's start (D37, amended again):** "Check from the watermark". The file check landed at
+9d801ee starts at the DR database's pointer, which may sit above the watermark on a version whose own files never
+reached DR. Left: the walk checks every version from the table's watermark up, those at or below the pointer
+included; if any between the watermark and the pointer is missing a file, it takes nothing for that table and
+reports it for the rewind. A table with no watermark walks from its pointer, as built. Java-only tests and a bite (the check starting at the pointer).
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -609,22 +614,6 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
-### 86. The DR reconcile's archive proof reads each audit-archive chain whole into memory
-
-- Added: 2026-11-20 by the agent on item 10
-- Touches: catalog-audit/src/main/java/nuna/catalog/audit/archive/, catalog-audit/src/test/java/nuna/catalog/audit/archive/
-- Effort: M, a streamed verify-and-filter pass in the archive package and a test over a large chain in memory
-
-Item 10 gave `dr-reconcile` the option `accept-archived`, which reads every chain of the audit archive through
-`ArchivedCommits.read`. That calls `ObjectLockArchive.events(chain, anchor)`, which joins every segment of the chain
-into one byte array (`concatenate`) and decodes every record into one list before it returns. The audit topic carries
-every record, reads, denials and credential issues included, and the archive keeps them at least five years (D23), so
-a production chain will not fit in a server's heap. The drill and the tests read archives of a few thousand records.
-
-Done when the reconcile's read verifies and filters each chain in one streamed pass, segment by segment
-(`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
-memory (`MemoryS3`) whose chain is larger than the reader holds at once.
-
 ### 89. A compaction Job against a store behind a private CA, end to end
 
 - Decided: 2026-11-20, D21
@@ -798,6 +787,7 @@ it adds no manifest and no data file), and `DrDrillTest` passes in the overnight
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
 | [84](backlog/84.md) | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | done | 2026-11-20 |
 | [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
+| [86](backlog/86.md) | The DR reconcile's archive proof reads each audit-archive chain whole into memory | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
 | [90](backlog/90.md) | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | done | 2026-11-20 |

@@ -335,7 +335,8 @@ the Ceph leg, then every bite), about 3 to 3.5 hours if it is green. Report anyt
 running there, but start it only when he asks. Two things to check:
 
 - Docker memory: the pass runs a three-node cluster beside one other stack.
-- `KubernetesCompactionTest` names the `docker-desktop` context in its code (`CONTEXT`), so it needs a cluster
+- `KubernetesCompactionTest` and `PrivateCaCompactionTest` name the `docker-desktop` context in their shared
+  harness (`CompactionCluster.CONTEXT`), so they need a cluster
   of that name or a change in a branch.
 
 ## 10. The demo
