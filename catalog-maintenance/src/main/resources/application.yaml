@@ -11,6 +11,9 @@ nuna:
     scan-interval: PT10M
     orphan-interval: P1D
     # cleanup-window (start, end, zone) has no default: each deployment names its own night.
+    # The DR verifier (D37) is off until dr.replicas names a read-only replica for a storage profile.
+    dr:
+      verify-interval: PT1M
 
 # Telemetry (docs/observability/README.md). Metrics, traces and logs go over OTLP only when an endpoint is set: the
 # standard OTEL_* variables, or Boot's management.* properties. Log lines go to stdout as JSON, in Elastic Common

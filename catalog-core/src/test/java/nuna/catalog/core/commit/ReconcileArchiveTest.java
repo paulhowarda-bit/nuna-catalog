@@ -93,6 +93,7 @@ class ReconcileArchiveTest {
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
                     case "readPointer" -> Optional.of(pointer);
                     case "readNamespace" -> Optional.empty();
+                    case "readDrWatermark" -> Optional.empty();
                     case "attributesOf" -> List.of(new GovernanceAttribute(
                             new Securable(Securable.Kind.NAMESPACE, NAMESPACE), GovernanceAttribute.Kind.DR_FREEZE,
                             "DR drill", "operator", "operator", CLOCK.instant()));

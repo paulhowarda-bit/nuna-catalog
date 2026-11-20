@@ -101,6 +101,7 @@ class ReconcileOutageTest {
                     return switch (method.getName()) {
                         case "readPointer" -> Optional.of(pointer);
                         case "readNamespace" -> Optional.empty();
+                        case "readDrWatermark" -> Optional.empty();
                         case "attributesOf" -> List.of(new GovernanceAttribute(
                                 new Securable(Securable.Kind.NAMESPACE, NAMESPACE), GovernanceAttribute.Kind.DR_FREEZE,
                                 "DR drill", "operator", "operator", clock.instant()));

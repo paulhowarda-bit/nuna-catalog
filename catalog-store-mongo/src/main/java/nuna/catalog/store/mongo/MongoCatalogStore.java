@@ -49,6 +49,8 @@ import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.StoreException;
 import nuna.catalog.store.TableAssessment;
 import nuna.catalog.store.TableHealth;
+import nuna.catalog.store.DrState;
+import nuna.catalog.store.DrWatermark;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
@@ -100,6 +102,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String PENDING_DELETION = "pending_deletion";
     static final String TABLE_HEALTH = "table_health";
     static final String MAINTENANCE_SCAN = "maintenance_scan";
+    static final String DR_WATERMARK = "dr_watermark";
 
     /** Projections longer than this are stored in pieces (section 7). */
     public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
@@ -126,6 +129,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoGovernance governance;
     private final MongoDeletions deletions;
     private final MongoHealth health;
+    private final MongoDr dr;
 
     public MongoCatalogStore(MongoClient client, String databaseName) {
         this(client, databaseName, CommitHook.NONE);
@@ -156,6 +160,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.governance = new MongoGovernance(transactions);
         this.deletions = new MongoDeletions(transactions);
         this.health = new MongoHealth(transactions);
+        this.dr = new MongoDr(transactions);
     }
 
     // ---- commit core (sections 4, 5.3 and 7) ----
@@ -457,6 +462,23 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public List<MaintenanceScan> listScans() {
         return health.listScans();
+    }
+
+    // ---- the DR watermark (D37) ----
+
+    @Override
+    public WriteResult recordDrWatermark(UUID objectId, DrWatermark watermark) {
+        return dr.record(objectId, watermark);
+    }
+
+    @Override
+    public Optional<DrWatermark> readDrWatermark(UUID objectId) {
+        return dr.read(objectId);
+    }
+
+    @Override
+    public Page<DrState> listDrBehind(PageRequest page) {
+        return dr.listBehind(page);
     }
 
     // ---- grants ----

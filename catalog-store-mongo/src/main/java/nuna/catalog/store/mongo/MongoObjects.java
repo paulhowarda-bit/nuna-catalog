@@ -18,6 +18,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static nuna.catalog.store.mongo.MongoCatalogStore.POINTER;
+import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
 import static nuna.catalog.store.mongo.MongoCatalogStore.TABLE_HEALTH;
 
 import com.mongodb.client.ClientSession;
@@ -344,6 +345,7 @@ final class MongoObjects {
             tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
             tx.collection(PENDING_DELETION).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId)));
             tx.collection(TABLE_HEALTH).deleteOne(tx.session, byId(uuid(objectId)));
+            tx.collection(DR_WATERMARK).deleteOne(tx.session, byId(uuid(objectId)));
             return WriteResult.APPLIED;
         });
     }

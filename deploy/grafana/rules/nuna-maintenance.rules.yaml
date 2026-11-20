@@ -101,3 +101,28 @@ groups:
           summary: "A table writes files outside its own location ({{ $labels.job }})"
           description: >-
             The worker never records or deletes them, so they stay in storage. worker-metrics.md, "Alerts".
+      - alert: NunaDrLagging
+        # D37, amended 2026-11-20 (item 28): some commit has not been whole in the DR store for more than 15 minutes,
+        # S3 Replication Time Control's 99.9% bound, until PLT-4 gives the replication SLA. Only a worker with a DR
+        # replica named (nuna.maintenance.dr.replicas) has the series.
+        expr: |
+          max by (job) (nuna_maintenance_dr_lag_max_seconds) > 900
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "A commit has not reached the DR store whole for {{ $value | humanizeDuration }} ({{ $labels.job }})"
+          description: >-
+            Replication is behind or stopped, or the verifier cannot read the DR store. GET
+            /management/v1/dr/watermarks names the tables behind. dr-watermark.md; worker-metrics.md, "Alerts".
+      - alert: NunaDrVerifierNotPassing
+        # No DR verifier pass has succeeded for 15 minutes, so the lag above is stale.
+        expr: |
+          time() - max by (job) (max_over_time(nuna_maintenance_dr_pass_last_success_seconds[1d])) > 900
+        labels:
+          severity: page
+        annotations:
+          summary: "The DR verifier has not finished a pass for 15 minutes ({{ $labels.job }})"
+          description: >-
+            The catalog or the worker's identity provider may be unreachable. Until a pass succeeds, the DR lag is
+            not known. dr-watermark.md; worker-metrics.md, "Alerts".
