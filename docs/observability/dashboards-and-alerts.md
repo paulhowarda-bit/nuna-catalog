@@ -8,7 +8,7 @@ read and what to rename if work's Prometheus names them otherwise.
 
 | File | Holds |
 |---|---|
-| `dashboards/nuna-catalog.json` | 30 panels: the SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement, nuna's alerts |
+| `dashboards/nuna-catalog.json` | 31 panels: the SLOs, loads, commits, credential vending, the audit's Kafka acknowledgement, nuna's alerts |
 | `dashboards/nuna-maintenance.json` | 16 panels: the worker's scans, failures, work done and compaction |
 | `dashboards/nuna-client-reports.json` | 13 panels: engines' scan and commit reports, by engine |
 | `rules/nuna-catalog.rules.yaml` | 9 alerts: two burn-rate alerts for each latency SLO, one for each alert kind |
@@ -29,8 +29,9 @@ exporters (`add_metric_suffixes`) share:
 
 - Dots become underscores, in names and in labels: `operation.id` is `operation_id`, and so are `error.type`,
   `requirement.type`, `report.type` and `engine.name`.
-- A timer becomes `<name>_milliseconds_count`, `_sum` and `_bucket`, with `le` in milliseconds. Only
-  `nuna.catalog.requests` has buckets other than `+Inf`: 10, 50 and 300 ms, the SLOs.
+- A timer becomes `<name>_milliseconds_count`, `_sum` and `_bucket`, with `le` in milliseconds. Two timers have
+  buckets other than `+Inf`: `nuna.catalog.requests` at 10, 50 and 300 ms, the SLOs, and `nuna.audit.publish` at 5,
+  10, 25, 50, 100, 250 and 500 ms, 1, 2.5 and 5 s, the console health page's (item 71).
 - A counter becomes `<name>_total`.
 - A client report's count result (a distribution summary with no unit) becomes `<name>_count` and `_sum`. A bytes
   result keeps its name, which already ends in bytes: `nuna_catalog_report_added_files_size_bytes_sum`.
@@ -39,7 +40,7 @@ exporters (`add_metric_suffixes`) share:
   `<namespace>/nuna-catalog` and `<namespace>/nuna-maintenance`. `instance` comes from `service.instance.id`, the
   pod, so each server's series stand apart and the queries sum them.
 
-The series the files read, 55 in all from 44 meters:
+The series the files read, 56 in all from 44 meters:
 
 | Meter | Series |
 |---|---|
@@ -48,7 +49,7 @@ The series the files read, 55 in all from 44 meters:
 | `nuna.catalog.credential.vends` | `nuna_catalog_credential_vends_milliseconds_count`, `_sum` |
 | `nuna.catalog.metadata.cache.lookups` | `nuna_catalog_metadata_cache_lookups_total` |
 | `nuna.catalog.alerts.metadata.integrity`, `.regulated.schema.change`, `.large.metadata` | `nuna_catalog_alerts_metadata_integrity_total`, `nuna_catalog_alerts_regulated_schema_change_total`, `nuna_catalog_alerts_large_metadata_total` |
-| `nuna.sts`, `nuna.audit.publish` | `nuna_sts_milliseconds_count`, `_sum`; `nuna_audit_publish_milliseconds_count`, `_sum` |
+| `nuna.sts`, `nuna.audit.publish` | `nuna_sts_milliseconds_count`, `_sum`; `nuna_audit_publish_milliseconds_bucket`, `_count`, `_sum` |
 | `nuna.catalog.report.*` timers: `total.planning.duration`, `total.duration` | `nuna_catalog_report_total_planning_duration_milliseconds_count`, `_sum`, and the same for `total_duration` |
 | `nuna.catalog.report.*` counts: `result.data.files`, `result.delete.files`, `scanned.data.manifests`, `skipped.data.manifests`, `total.file.size.in.bytes`, `attempts`, `added.records`, `removed.records`, `added.files.size.bytes`, `added.positional.delete.files`, `added.equality.delete.files`, `added.dvs` | `nuna_catalog_report_<result>_sum`, and `_count` for `result_data_files`, `result_delete_files` and `attempts` |
 | `nuna.maintenance.scan`, `nuna.maintenance.part` | `nuna_maintenance_scan_milliseconds_count`, `_sum`; `nuna_maintenance_part_milliseconds_sum` |
@@ -61,12 +62,13 @@ The series the files read, 55 in all from 44 meters:
 
 - **Prometheus scrapes Actuator's `prometheus` endpoint** instead of receiving OTLP (item 43's fallback): Micrometer's
   own Prometheus names put timers in seconds, so `_milliseconds_` becomes `_seconds_`, the SLO bounds `le` 0.01,
-  0.05 and 0.3, and the mean-time panels read seconds (unit `s`, not `ms`; the worker's scan rule compares with
+  0.05 and 0.3, and the mean-time and p99 panels read seconds (unit `s`, not `ms`; the worker's scan rule compares with
   `600`, not `600 * 1000`). Counters keep `_total`.
 - **Names keep their dots** (a Prometheus 3 translation strategy without underscore escaping): every name and dotted
   label changes.
-- **Native histograms** in place of classic ones: there are no `_bucket` series, and the SLO queries become
-  `histogram_fraction`.
+- **Native histograms** in place of classic ones: there are no `_bucket` series, the SLO queries become
+  `histogram_fraction`, and the audit's p99 takes `histogram_quantile` over the histogram itself, summed by `event`
+  without `le`.
 - **`le` written as `50.0`** rather than `50`: already matched; the queries use `le=~"50([.]0)?"`.
 - **A collector scraped through a ServiceMonitor** without `honorLabels: true`: the series' own `job` and `instance`
   arrive as `exported_job` and `exported_instance`, and the needy-table gauge's `namespace` as `exported_namespace`.
@@ -80,7 +82,7 @@ The series the files read, 55 in all from 44 meters:
 | Commits: the outcome split, and requirement failures by type | nuna catalog, "Commits": replies by outcome, requirement failures by `requirement.type`, refusals and failures by error type, commits by route, mean commit time | `nuna.catalog.commits`, `nuna.catalog.requests` |
 | Loads and the share answered 304 | nuna catalog, "Loads": loads by outcome, the 304 share (3xx over 2xx and 3xx, D14), mean load time, failures by error type, the metadata cache's hit share | `nuna.catalog.requests`, `nuna.catalog.metadata.cache.lookups` |
 | Credential vending | nuna catalog, "Credential vending": vends by outcome, the cache's share, mean vend time, failures by error type, STS calls and their mean time by storage profile | `nuna.catalog.credential.vends`, `nuna.sts` |
-| The audit's Kafka acknowledgement time | nuna catalog, "Audit: Kafka acknowledgement": mean time and records by event, failed publishes by exception | `nuna.audit.publish` |
+| The audit's Kafka acknowledgement time | nuna catalog, "Audit: Kafka acknowledgement": mean and p99 time and records by event, failed publishes by exception | `nuna.audit.publish` |
 | Each nuna alert kind | nuna catalog, "nuna's alerts": each kind fired in the time range, and when | the three `nuna.catalog.alerts.*` counters |
 | The worker: its last successful scan, failures by kind | nuna maintenance worker: time since the last success, scans by outcome and their mean time, failures by kind, where scan time goes, the worker's calls; work done; compaction and the neediest tables | worker-metrics.md's meters |
 | Client reports by engine | nuna client reports: reports by engine, planning and commit time, files, pruning, bytes, records, attempts and delete files, by engine | `nuna.catalog.report.*`, by `engine.name` |
@@ -88,9 +90,11 @@ The series the files read, 55 in all from 44 meters:
 - **The SLOs are read as shares, not quantiles.** The request histogram's only buckets are the SLO bounds, so
   `histogram_quantile` would interpolate between them and invent a p99. "p99 within 50 ms" is the same statement as
   "at least 99% within 50 ms", which the buckets give exactly, as the console's health page does (health-page.md).
-- **Mean times elsewhere.** The other timers have no buckets in Prometheus, so their panels show means. The audit's
-  acknowledgement p99, which the console shows from buckets of its own, needs the exported timer to carry buckets:
-  item 71.
+- **The audit's acknowledgement p99 is an estimate.** Its timer is exported with the console health page's ten
+  buckets, 5 ms to 5 s (item 71), and the p99 panel takes `histogram_quantile(0.99, ...)` over them, beside the mean.
+  Prometheus interpolates within the bucket the p99 falls in, so it can be off by that bucket's width (25 to 50 ms,
+  say), and a p99 past 5 s reads 5 s. The health page names the bucket instead.
+- **Mean times elsewhere.** The other timers have no buckets in Prometheus, so their panels show means.
 - **Reports by engine.** Each report records one sample of each result it carries, so the count of a result that
   every report of its type carries counts the reports: `result-data-files` for scans, `attempts` for commits. A
   report lacking it is not counted there; the `reportMetrics` panel counts every report, without the engine.
@@ -130,19 +134,19 @@ The series the files read, 55 in all from 44 meters:
   asks for burn-rate alerts on each SLO; whether this one gets an alert, and on what, is Paul's to decide.
 - **No alert on errors.** The R7 SLOs are latencies of successful answers: a 5xx is neither inside nor outside them,
   so a catalog answering every call 500 fires none of these rules. The dashboards show failures by error type.
-- **The audit's acknowledgement p99**: item 71.
 
 ## How they were checked
 
-At home, with no Grafana, Prometheus or promtool (2026-11-19, item 44's status entry):
+At home, with no Grafana, Prometheus or promtool (2026-11-19, item 44's status entry; the counts are as of item 71's
+p99 panel, checked the same way):
 
 - Every JSON file parses, every panel and variable query uses the `datasource` variable, and panel ids are unique.
 - Every YAML file parses (PyYAML) as a rule file: a `groups:` list of rules with `alert`, `expr`, `for`, `labels`
   and `annotations`, each with `severity` `page` or `warning`.
-- Brackets balance in every one of the 99 expressions; PromQL itself was not parsed.
+- Brackets balance in every one of the 100 expressions; PromQL itself was not parsed.
 - Every series name in an expression maps back, by the translation above, to a meter named in these docs and in the
   main code, with the unit its type gives (a timer `_milliseconds`, a counter `_total`); every label maps back to a
-  documented tag. All 55 series and 17 labels did. A misspelt name and a wrong label put in by hand were both caught.
+  documented tag. All 56 series and 17 labels did. A misspelt name and a wrong label put in by hand were both caught.
 
 Not checked: that the translation above is what work's Prometheus does (item 43), that Grafana imports the files,
 and that Prometheus loads the rules. Item 44 is done at work when the dashboards show live data and each alert has

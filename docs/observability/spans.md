@@ -90,17 +90,23 @@ Micrometer's Prometheus naming they become `nuna_store_seconds` (`_count`, `_sum
 That naming is for a Prometheus that scrapes Micrometer. Pushed over OTLP, as nuna does today, they arrive in
 milliseconds, `nuna_store_milliseconds_count` and `_sum` and so on, as the dashboards assume (dashboards-and-alerts.md).
 
+`nuna.audit.publish` also has histogram buckets, `nuna_audit_publish_milliseconds_bucket`, at the console health
+page's bounds: 5, 10, 25, 50, 100, 250 and 500 ms, 1, 2.5 and 5 s (`ObservedPublisher.BUCKETS`, item 71). The catalog
+dashboard's p99 of the Kafka acknowledgement is read from them. The other three timers have no buckets.
+
 ## Code, tests and bites
 
 The decorators are in `catalog-server`, `nuna.catalog.server.tracing`, and are applied where the collaborators are
 wired: `ObservedStore` wraps the store in `StoreWiring`, `ObservedTableFiles` each profile's files in
 `CatalogStorage`, and `ObservedPublisher` the audit topic's publisher in `GovernanceWiring`; `StsCredentialVending`
-observes AssumeRole. `Observed` makes the observation. The stores, `catalog-audit` and `catalog-objectstore` are
-unchanged.
+observes AssumeRole. `Observed` makes the observation. `TracingWiring` gives the audit publish timer its buckets, a
+meter filter Boot adds to every registry; a registry that already gives the timer buckets of its own, as the health
+page's does, keeps them. The stores, `catalog-audit` and `catalog-objectstore` are unchanged.
 
 | Test | Shows |
 |---|---|
 | `SpanTreeTest` | Through an in-memory span exporter on a running server: a commit's tree (server span, then the object store's write before the store's pointer move, STS, and the credential issue's publish to Kafka) and a load's (server span, the store's reads and the read audit's publish); no attribute names a person, table, namespace, location or credential, and each span carries only its own tags. |
 | `ObservedTest` | On Micrometer's OpenTelemetry bridge: a call inside an observation is one child span and one timer with its outcome; outside any, neither; a failure's span is an error naming the exception's type, never its message; a store call's span and outcome. |
+| `AuditPublishBucketsTest` | At a small OTLP receiver, through a composite as in the server: the audit publish timer arrives with the health page's buckets and its records in the right ones, another timer with none; a registry with buckets of its own for the timer keeps them. |
 
-Each guarded rule's bite is in `bites/OBS-41/`.
+Each guarded rule's bite is in `bites/OBS-41/`, and the audit publish buckets' in `bites/OBS-71/`.
