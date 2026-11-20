@@ -1008,6 +1008,10 @@ Left: `docs/observability/dr-watermark.md`, for whoever holds it next:
   line a pass".
 - The bites paragraph adds "the whole check testing only the pointer again (`whole-at-the-pointer-only`)".
 
+**Paul, 2026-11-20 (D37, amended again):** "Never the empty version": a table whose only whole version is its empty
+creation version gets no first watermark and stays with its owner; left to build, with a Java-only test and a bite.
+"Keep for views": views keep the first-watermark rule as built.
+
 ### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
 
 - Decided: 2026-11-20, D37
