@@ -1,0 +1,17 @@
+Breaks: the catalog keeps a lower DR watermark reported after a higher one, so the watermark moves back.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Dr#aWatermarkOnlyRises
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDr.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDr.java
+index c2016f7..64b940e 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDr.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlDr.java
+@@ -54,7 +54,7 @@ final class SqlDr {
+             int written = update(connection, "INSERT INTO dr_watermark AS w (object_id, version, metadata_location,"
+                             + " recorded_at) VALUES (?, ?, ?, ?) ON CONFLICT (object_id) DO UPDATE"
+                             + " SET version = excluded.version, metadata_location = excluded.metadata_location,"
+-                            + " recorded_at = excluded.recorded_at WHERE w.version < excluded.version",
++                            + " recorded_at = excluded.recorded_at WHERE w.version <> excluded.version",
+                     objectId, watermark.version(), watermark.metadataLocation(), watermark.recordedAt());
+             if (written == 1) {
+                 return WriteResult.APPLIED;

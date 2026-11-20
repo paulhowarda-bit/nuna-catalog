@@ -222,6 +222,51 @@ telemetry:
   Each metadata cache may hold up to `nuna.rest.metadata-cache-chars` (256 M characters by default).
   Size the limit on work hardware.
 
+## Recovering in the DR region
+
+The catalog database and object storage each replicate to the DR region asynchronously (D37), and neither waits for the
+other. After the primary region is lost, the DR database may name files the DR store never got, or the DR store may
+hold commits the DR database never saw. This runbook brings each table back to a version DR holds whole, as a
+platform operator. Its routes, the DR watermark and the verifier are in `docs/observability/dr-watermark.md`. The
+bucket naming per region and the replication SLA come from PLT-4 at work; until then the DR store is the same buckets
+and paths on another endpoint (Paul, 2026-11-20).
+
+**Before a disaster.** Run the maintenance worker's DR verifier in the primary region: name each storage profile's
+DR replica, read-only keys on the DR store, under `nuna.maintenance.dr.replicas.<profile>` (endpoint, region,
+path-style access, keys, CA bundle); `nuna.maintenance.dr.verify-interval` sets how often it passes (1 minute by
+default). In the worker chart they go under `config.nuna.maintenance.dr`, the secret key under `secrets.values` as
+`nuna.maintenance.dr.replicas.<profile>.secret-access-key` and a CA bundle in `storageCaConfigMap`, as a storage
+profile's do; the chart's values do not describe them yet (item 92).
+The verifier keeps each table's DR watermark, the newest version whose every file the DR store holds, in the catalog
+database, so it reaches DR with the database. `GET /management/v1/dr/watermarks` lists the tables behind and their
+lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes.
+
+**In the DR region,** with the DR database promoted and the catalog servers started on it and on the DR store:
+
+1. **Freeze** every catalog, before anything writes or cleans up: `PUT /management/v1/catalogs/{catalog}/dr-freeze`
+   with `{"reason": "DR recovery"}`. Commits, creates, drops, renames, undrops and purges are refused, and the
+   maintenance worker's scans pass the frozen tables by.
+2. **Verify.** Start the maintenance worker in DR with its replicas naming the DR store itself, and wait for one DR
+   pass to end after the start (`nuna.maintenance.dr.pass.last.success`, or the worker's log). The DR work list
+   includes frozen tables, so the pass moves each watermark as far as the DR store allows.
+3. **Read the plan.** `POST /management/v1/catalogs/{catalog}/dr-reconcile` with `{"rewind": true}` lists each table
+   above its watermark, the watermark it would move back to, and its `lost` commits (version, commit id, time,
+   principal): the commits DR does not hold whole. Hand the lost tail to the tables' owners for business
+   reconciliation. A table with no watermark (`"watermark": null`) has no version known whole in DR; it is not moved,
+   and its owner decides what to do with it.
+4. **Rewind.** The same with `{"rewind": true, "apply": true}`: each frozen table above its watermark moves back to
+   it in one journaled commit, the watermark's metadata written again as the next version. A table that did not move
+   says why (`apply-problem`); a pointer that moved since the plan means run step 3 again.
+5. **Walk forward** tables with no watermark, as before the watermark: `{}` reports, `{"apply": true}` moves each
+   along its proven metadata files. A table with a watermark is never walked past it. Table locations no catalog holds
+   are listed as `unknown-locations`.
+6. **Thaw:** `DELETE /management/v1/catalogs/{catalog}/dr-freeze`. Then register the unknown locations by name, if
+   wanted: a register is refused under a freeze.
+
+Each step is a platform operator's (D18, amended 2026-11-20); the rewind's commits reach the audit trail as the
+fast-forward's do. The overnight
+DR drill (`DrDrillTest`) runs the freeze, reconcile and thaw; its leg with the DR store behind is item 92's.
+
 ## Trying it locally
 
 On Docker Desktop with Kubernetes switched on:

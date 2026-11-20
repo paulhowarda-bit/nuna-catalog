@@ -25,8 +25,8 @@ import java.util.regex.Pattern;
 
 /**
  * The catalog's management routes the worker uses (D30), as a maintenance principal acting as itself: the work list,
- * the purge claim and its completion, the pending deletions it records and completes, and its reports of its own work
- * (D38).
+ * the purge claim and its completion, the pending deletions it records and completes, its reports of its own work
+ * (D38), and the DR verifier's work list and watermark reports (D37).
  */
 final class Management {
 
@@ -220,6 +220,44 @@ final class Management {
         body.put("outcome", outcome);
         return reported("the compaction report of " + table.id(), send("PUT", "management/v1/maintenance/tables/"
                 + table.id() + "/compaction", body));
+    }
+
+    // ---- the DR watermark (D37, amended 2026-11-20; docs/observability/dr-watermark.md) ----
+
+    /** One page of the DR work list: the tables and views behind their DR watermark, by id. */
+    Page<DrVerify.Item> drWork(Optional<String> token) {
+        StringBuilder path = new StringBuilder("management/v1/maintenance/dr-work?pageSize=").append(pageSize);
+        token.ifPresent(t -> path.append("&pageToken=").append(encode(t)));
+        JsonNode body = read(expect("the DR work list", send("GET", path.toString(), null), 200).body());
+        List<DrVerify.Item> items = new ArrayList<>();
+        body.path("objects").forEach(node -> {
+            List<DrVerify.Version> versions = new ArrayList<>();
+            node.path("versions").forEach(version -> versions.add(version(version)));
+            items.add(new DrVerify.Item(UUID.fromString(node.path("id").asText()), node.path("kind").asText(),
+                    node.path("location").asText(), version(node.path("pointer")),
+                    node.has("watermark") ? Optional.of(version(node.path("watermark"))) : Optional.empty(),
+                    List.copyOf(versions), Optional.ofNullable(node.path("oldest-unverified-at").asText(null))
+                            .map(Instant::parse)));
+        });
+        return new Page<>(items, Optional.ofNullable(body.path("next-page-token").asText(null)));
+    }
+
+    /**
+     * Reports a version of the object's main pointer whose every file the verifier found in the DR store. False when
+     * the catalog refused it: the object gone (404), or a higher watermark kept, or the version no longer the
+     * journal's (409).
+     */
+    boolean reportDrWatermark(UUID id, DrVerify.Version version) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("version", version.version());
+        body.put("metadata-location", version.metadataLocation());
+        return reported("the DR watermark of " + id, send("PUT", "management/v1/maintenance/tables/" + id
+                + "/dr-watermark", body));
+    }
+
+    private static DrVerify.Version version(JsonNode node) {
+        return new DrVerify.Version(node.path("version").asLong(), node.path("metadata-location").asText(),
+                Optional.ofNullable(node.path("committed-at").asText(null)).map(Instant::parse));
     }
 
     /** A report's body, naming the table as the work list did, so the catalog refuses it for another table. */

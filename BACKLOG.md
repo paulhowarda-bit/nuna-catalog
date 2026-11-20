@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 6 S, 7 M, 2 L, 4 XL.
+**20 open:** 6 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -31,6 +31,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
 | [91](backlog/91.md) | S | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | one-line changes in six tests and a system property for the child JVMs; WorkerTraceTest's in-process worker service may need more (below) | 2026-11-20 |
+| [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 
 ## Open items in full
 
@@ -226,6 +227,35 @@ so their claims overlap and they go one at a time, 69 (S) first.
    buckets to PLT-4 at work? Recommended: yes.
 
 **Paul's answers on the proposed scope, 2026-11-20 (D37, amended):** all four as recommended: every file, data included, must reach DR ("Every file, data too"); the rewind is built now ("Yes, now"), so the item is XL; the verifier runs in the maintenance worker ("Maintenance worker"); the DR store is the same bucket on another endpoint, renamed AWS buckets wait on PLT-4 ("Yes"). Item 83 is folded in ("Fold into 28"): the reconcile stops at the watermark, so it never moves a table to a version whose files are not all in the DR store. The proposed scope above is settled; build it after items 69 and 10, which edit the same reconcile code.
+
+**Built, 2026-11-20 (worktree-agent-a84494e1252023a8f); open until item 92 lands, which holds what is left.** The
+scope's "In", but the worker chart and the overnight drill leg:
+- The watermark on all four stores: `recordDrWatermark` (only rises, never above the pointer, active objects only),
+  `listDrBehind`, purged with its object; PostgreSQL V9, CockroachDB V8, Oracle V10, MongoDB step 8; `DrSuite` in each
+  store suite (heavy).
+- The routes: `GET /management/v1/maintenance/dr-work` and `PUT .../maintenance/tables/{id}/dr-watermark` for the
+  maintenance principal, `GET /management/v1/dr/watermarks` for platform operators (`DrRoutes`, `DrRoutesTest`).
+- The verifier in the worker (`DrVerify`, `DrVerifier`, `DrStores`): every `nuna.maintenance.dr.verify-interval`
+  when `nuna.maintenance.dr.replicas.<profile>` names a DR store; every file a version adds, data included; a whole
+  check in one listing for a table with no watermark (`DrVerifyTest`, `DrVerifierTest`, `DrStoresTest`).
+- Meters `nuna.maintenance.dr.*`, alerts `NunaDrLagging` (past 15 minutes) and `NunaDrVerifierNotPassing`.
+- The rewind (`dr-reconcile` with `"rewind": true`) and the walk stopping at the watermark (item 83):
+  `ReconcileWatermarkTest`, `DrRewindRouteTest` (heavy).
+- Docs: `docs/observability/dr-watermark.md`, worker-metrics.md, dashboards-and-alerts.md, the DR runbook in
+  `deploy/README.md`. Bites in `bites/D37/`: data files left out, a lower watermark accepted, a rewind without a
+  freeze, a rewind past the watermark, the walk past the watermark.
+
+Left (item 92): the worker chart's values comments, the settings in `catalog-maintenance/README.md` and
+`docs/install-at-work.md` (items 87 and 88 held those files), and `DrDrillTest`'s leg with the DR store behind.
+
+Two choices made in building it, for Paul to confirm:
+1. A version that adds nothing to the newest safe version (no snapshot or statistics file it lacks) is safe on its
+   metadata file alone, even after a version that is not. Without it the version a rewind writes could never pass,
+   since it follows the versions it gave up.
+2. The walk stops at the watermark literally: a table with a watermark never walks forward (its watermark is never
+   above its pointer), so commits the DR store holds whole beyond the DR database's pointer are not recovered; a
+   table with no watermark walks as before. The rewind is for tables; views are neither walked nor rewound, as
+   before.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -601,6 +631,29 @@ Done when every in-JVM call uses the worker's storage from `TestCatalog` (make `
 `catalog.workerStorage()`), the child JVMs get the role (a system property `ChildJvm.start` sets on AWS, read by
 `ChildJvm.storage`), `WorkerTraceTest` either gets the role or assumes it is not on AWS, and those tests pass with
 `-Ps3=aws` (heavy: PostgreSQL and Kafka containers, and the AWS sign-in).
+
+### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: deploy/helm/nuna-maintenance/, catalog-maintenance/README.md, docs/install-at-work.md, catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java, deploy/README.md, docs/observability/dr-watermark.md
+- Effort: M, the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight.
+
+Item 28 built the DR replication watermark (D37, amended 2026-11-20): the watermark on all four stores, the
+verifier in the maintenance worker, its routes, readout, meters and alerts, the rewind, and the reconcile stopping at
+the watermark. Three parts were left:
+
+- **The worker chart's values** (`deploy/helm/nuna-maintenance/values.yaml`) do not describe
+  `nuna.maintenance.dr.replicas.<profile>` (endpoint, region, path-style access, keys, CA bundle) or
+  `nuna.maintenance.dr.verify-interval`. The chart already renders them, as any setting under `config`, with the
+  secret key in `secrets.values` and a CA bundle in `storageCaConfigMap`, as `deploy/README.md`'s runbook says; items
+  87 and 88 held the chart while item 28 ran. Done when the values file comments them as it does `storage`.
+- **The worker's settings in `catalog-maintenance/README.md` and `docs/install-at-work.md`** (held by item 88 then):
+  the DR replicas and the verify interval, the DR store's read-only keys, and that the verifier is off without a
+  replica. Done when both list them.
+- **The overnight drill's leg with the DR store behind** (item 28's gate): `DrDrillTest` gains a leg on two Silo
+  stores and a replicator the test pauses: region lost, DR promoted, a verifier pass in DR, freeze, rewind, thaw;
+  every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived. Done when the
+  leg is in and an overnight run has passed it.
 
 ## Done and dropped
 

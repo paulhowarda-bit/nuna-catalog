@@ -131,6 +131,48 @@ public record WorkerSettings(
     }
 
     /**
+     * The DR replication-watermark verifier ({@code nuna.maintenance.dr.*}; D37, amended 2026-11-20;
+     * docs/observability/dr-watermark.md): off unless a replica is named. Every {@code verify-interval} it reads the
+     * catalog's DR work list and checks each table's and view's newer versions in the DR store, the read-only replica
+     * of a storage profile: the same buckets and paths on another endpoint, as on-prem site replication keeps them.
+     *
+     * @param verifyInterval how often the verifier reads the DR work list
+     * @param replicas       a read-only replica per storage profile, by the profile's name in
+     *                       {@code nuna.maintenance.storage}
+     */
+    @ConfigurationProperties("nuna.maintenance.dr")
+    public record Dr(@DefaultValue("PT1M") Duration verifyInterval, @DefaultValue Map<String, Replica> replicas) {
+
+        public Dr {
+            if (verifyInterval.isNegative() || verifyInterval.isZero()) {
+                throw new IllegalArgumentException("nuna.maintenance.dr.verify-interval must be positive");
+            }
+            replicas = Map.copyOf(replicas);
+        }
+
+        /** Whether the verifier runs at all. */
+        public boolean enabled() {
+            return !replicas.isEmpty();
+        }
+    }
+
+    /**
+     * A storage profile's read-only replica in the DR region: its prefixes, on another endpoint, read with keys that
+     * may only read there.
+     *
+     * @param endpoint        the replica's S3 endpoint; none for AWS S3 (renamed buckets wait on PLT-4)
+     * @param region          its region
+     * @param pathStyleAccess address buckets by path (MinIO, Ceph)
+     * @param accessKeyId     its access key; none for the AWS SDK's default chain
+     * @param secretAccessKey its secret key
+     * @param caBundle        a PEM file of CA certificates the replica's endpoint is trusted with, as for a profile
+     */
+    public record Replica(URI endpoint, @DefaultValue("us-east-1") String region,
+                          @DefaultValue("false") boolean pathStyleAccess, String accessKeyId, String secretAccessKey,
+                          Path caBundle) {
+    }
+
+    /**
      * Compaction (D30 (3), amended 2026-11-15): in the cleanup window, one Kubernetes Job per table that needs it,
      * running the repo's Spark image ({@code catalog-tests-engines/images/spark}) with rewrite_data_files, signed in as
      * the worker, and stopped at the window's end.

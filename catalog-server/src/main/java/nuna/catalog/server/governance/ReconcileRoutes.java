@@ -48,6 +48,12 @@ import tools.jackson.databind.node.ObjectNode;
  * is taken too; an {@code accept} entry it contradicts stops its table and is reported (backlog 10).
  * The answer lists the tables with something to report, and table locations in storage that no table or
  * view of any catalog holds (written after the database's last change; the operator registers them by name).
+ *
+ * <p>A table with a DR watermark is walked no further than it (D37, amended 2026-11-20; item 83). With
+ * {@code {"rewind": true}} (and neither {@code accept} nor {@code accept-archived}) the step moves the other way: each
+ * table whose pointer is above its DR watermark, or that has none, is reported with the journaled commits a rewind
+ * gives up; with {@code apply}, each such table under a DR freeze moves back to its watermark in one commit
+ * ({@link Reconcile#rewind}).
  */
 @RestController
 class ReconcileRoutes {
@@ -89,11 +95,19 @@ class ReconcileRoutes {
             json.get("accept").forEach(location -> accept.add(location.asString()));
         }
         boolean fromArchive = json.has("accept-archived") && json.get("accept-archived").asBoolean();
+        boolean rewind = json.has("rewind") && json.get("rewind").asBoolean();
+        if (rewind && (json.has("accept") || fromArchive)) {
+            throw CatalogError.badRequest("rewind takes neither accept nor accept-archived: it moves each table back"
+                    + " to its DR watermark, never forward");
+        }
         // Read before any table is walked, so an archive that cannot be read fails the request with nothing applied.
         Optional<ArchivedCommits.Read> archived = fromArchive ? Optional.of(archived(runtime.archive())) : Optional.empty();
         TableFiles files = storage.forCatalog(catalog.id()).files();
         // The bounds the server's commit engines take (Engines): a step whose outcome was lost is decided as a commit.
         Reconcile reconcile = new Reconcile(store, files, CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
+        if (rewind) {
+            return GovernanceRoutes.json(200, rewind(catalog, request, reconcile, apply));
+        }
 
         ObjectNode answer = Management.JSON.createObjectNode();
         answer.put("apply", apply);
@@ -136,6 +150,71 @@ class ReconcileRoutes {
         ArrayNode refuted = answer.putArray("contradicted-accepts");
         contradicted.forEach(refuted::add);
         return GovernanceRoutes.json(200, answer);
+    }
+
+    /**
+     * The rewind (D37, amended 2026-11-20): every active table whose pointer is not at its DR watermark, with the
+     * commits a rewind gives up; with {@code apply}, those under a DR freeze are moved back. A table with no watermark
+     * is reported, since none of its versions is known whole in the DR store, and is not moved.
+     */
+    private ObjectNode rewind(CatalogRecord catalog, Request request, Reconcile reconcile, boolean apply) {
+        ObjectNode answer = Management.JSON.createObjectNode();
+        answer.put("rewind", true);
+        answer.put("apply", apply);
+        ArrayNode reported = answer.putArray("tables");
+        int[] checked = {0};
+        forEachTable(catalog.id(), new ArrayList<>(), (table, levels) -> {
+            checked[0]++;
+            Reconcile.Rewind plan = reconcile.planRewind(table);
+            if (plan.to().filter(to -> to.version() >= plan.from().version()).isPresent()) {
+                return;
+            }
+            Reconcile.Rewound rewound = null;
+            if (apply && plan.problem().isEmpty()) {
+                List<String> path = new ArrayList<>(levels);
+                path.add(table.name().display());
+                rewound = reconcile.rewind(plan, request.caller(), audit.commits(catalog.name(), path,
+                        request.actor()));
+            }
+            reported.add(rewound(plan, levels, rewound));
+        });
+        answer.put("tables-checked", checked[0]);
+        return answer;
+    }
+
+    private static ObjectNode rewound(Reconcile.Rewind plan, List<String> levels, Reconcile.Rewound rewound) {
+        ObjectNode node = Management.JSON.createObjectNode();
+        node.put("id", plan.table().id().toString());
+        ArrayNode path = node.putArray("path");
+        levels.forEach(path::add);
+        path.add(plan.table().name().display());
+        ObjectNode from = node.putObject("from");
+        from.put("metadata-location", plan.from().metadataLocation());
+        from.put("version", plan.from().version());
+        plan.to().ifPresentOrElse(to -> {
+            ObjectNode watermark = node.putObject("watermark");
+            watermark.put("metadata-location", to.metadataLocation());
+            watermark.put("version", to.version());
+        }, () -> node.putNull("watermark"));
+        ArrayNode lost = node.putArray("lost");
+        for (Reconcile.Lost commit : plan.lost()) {
+            ObjectNode l = lost.addObject();
+            l.put("version", commit.version());
+            l.put("metadata-location", commit.metadataLocation());
+            l.put("commit-id", commit.commitId().toString());
+            l.put("committed-at", commit.committedAt().toString());
+            l.put("principal", commit.principal());
+        }
+        plan.problem().ifPresent(problem -> node.put("problem", problem));
+        if (rewound != null) {
+            rewound.to().ifPresent(to -> {
+                ObjectNode moved = node.putObject("rewound-to");
+                moved.put("metadata-location", to.metadataLocation());
+                moved.put("version", to.version());
+            });
+            rewound.problem().ifPresent(problem -> node.put("apply-problem", problem));
+        }
+        return node;
     }
 
     /**

@@ -20,10 +20,12 @@ import org.springframework.context.annotation.Bean;
 /**
  * The maintenance worker as a service (D30 (1)): no web server, one scan of the work list every
  * {@code nuna.maintenance.scan-interval}, the first at start. One replica: two would only race each other for
- * the same commits and claims, which the catalog settles, at twice the cost.
+ * the same commits and claims, which the catalog settles, at twice the cost. With a DR replica named
+ * ({@code nuna.maintenance.dr.replicas}), the DR verifier runs too, every {@code nuna.maintenance.dr.verify-interval}
+ * on a thread of its own (D37, amended 2026-11-20).
  */
 @SpringBootApplication
-@EnableConfigurationProperties(WorkerSettings.class)
+@EnableConfigurationProperties({WorkerSettings.class, WorkerSettings.Dr.class})
 public class WorkerApplication {
 
     public static void main(String[] args) {
@@ -45,6 +47,77 @@ public class WorkerApplication {
     @Bean
     Scans scans(Worker worker, WorkerSettings settings) {
         return new Scans(worker, settings);
+    }
+
+    /** The DR verifier's passes; none when no replica is named. */
+    @Bean
+    DrPasses drPasses(WorkerSettings settings, WorkerSettings.Dr dr, Clock clock, MeterRegistry meters,
+                      ObservationRegistry observations) {
+        return new DrPasses(dr.enabled() ? DrVerifier.of(settings, dr, clock, meters, observations) : null, dr);
+    }
+
+    /**
+     * Runs the DR verifier's passes on one daemon thread of their own, so a long scan never delays them; a pass never
+     * overlaps the next.
+     */
+    static final class DrPasses implements SmartLifecycle {
+
+        private static final Logger LOG = LoggerFactory.getLogger(DrPasses.class);
+
+        private final DrVerifier verifier;
+        private final WorkerSettings.Dr settings;
+        private ScheduledExecutorService scheduler;
+
+        /** @param verifier none when no replica is named */
+        DrPasses(DrVerifier verifier, WorkerSettings.Dr settings) {
+            this.verifier = verifier;
+            this.settings = settings;
+        }
+
+        @Override
+        public synchronized void start() {
+            if (verifier == null) {
+                LOG.info("No DR replica named (nuna.maintenance.dr.replicas): the DR verifier is off");
+                return;
+            }
+            scheduler = Executors.newSingleThreadScheduledExecutor(Thread.ofPlatform().name("nuna-dr-verify")
+                    .daemon(true).factory());
+            scheduler.scheduleWithFixedDelay(this::pass, 0, settings.verifyInterval().toMillis(),
+                    TimeUnit.MILLISECONDS);
+            LOG.info("Verifying the DR store every {}", settings.verifyInterval());
+        }
+
+        private void pass() {
+            try {
+                DrVerifier.Pass pass = verifier.runOnce();
+                LOG.debug("DR pass done: {}", pass);
+            } catch (RuntimeException e) {
+                // A scheduled task that throws is never run again.
+                LOG.error("DR pass failed", e);
+            }
+        }
+
+        @Override
+        public synchronized void stop() {
+            if (scheduler == null) {
+                return;
+            }
+            scheduler.shutdownNow();
+            try {
+                scheduler.awaitTermination(1, TimeUnit.MINUTES);
+                verifier.close();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (Exception e) {
+                LOG.warn("Closing the DR store failed", e);
+            }
+            scheduler = null;
+        }
+
+        @Override
+        public synchronized boolean isRunning() {
+            return scheduler != null && !scheduler.isShutdown();
+        }
     }
 
     /** Runs the scans on one non-daemon thread, which keeps the service alive; a scan never overlaps the next. */

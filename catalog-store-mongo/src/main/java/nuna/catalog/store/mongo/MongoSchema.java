@@ -8,6 +8,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
+import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_SCAN;
 import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
@@ -53,6 +54,7 @@ final class MongoSchema {
             new BsonArray(List.of(new BsonString("DROPPED"), new BsonString("PURGING")))));
     /** The server's code for dropping an index that does not exist. */
     private static final int INDEX_NOT_FOUND = 27;
+    private static final int NAMESPACE_EXISTS = 48;
 
     static final List<Step> STEPS = List.of(
             new Step(1, "catalogs", database -> index(database, CATALOG, "catalog_name", true, null, "nameNorm")),
@@ -138,6 +140,18 @@ final class MongoSchema {
                         new IndexOptions().name("table_health_neediest")
                                 .partialFilterExpression(new BsonDocument("needed", BsonBoolean.TRUE)));
                 index(database, MAINTENANCE_SCAN, "maintenance_scan_started", false, null, "startedAt", "_id");
+            }),
+            // v1.x (D37, amended 2026-11-20): each table's and view's DR watermark, by the object's id. The
+            // collection is made here, outside any transaction, since a transaction's first write to a collection
+            // that does not exist fails on some deployments; no server of the previous release touches it.
+            new Step(8, "DR watermarks", database -> {
+                try {
+                    database.createCollection(DR_WATERMARK);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
             }));
 
     private MongoSchema() {
