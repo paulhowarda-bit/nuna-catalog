@@ -112,6 +112,11 @@ spec:
               mountPath: /etc/nuna/otlp-ca
               readOnly: true
             {{- end }}
+            {{- if .Values.storageCaConfigMap.name }}
+            - name: storage-ca
+              mountPath: /etc/nuna/storage-ca
+              readOnly: true
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -127,6 +132,11 @@ spec:
         - name: otlp-ca
           configMap:
             name: {{ .Values.telemetry.caConfigMap.name }}
+        {{- end }}
+        {{- if .Values.storageCaConfigMap.name }}
+        - name: storage-ca
+          configMap:
+            name: {{ .Values.storageCaConfigMap.name }}
         {{- end }}
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:

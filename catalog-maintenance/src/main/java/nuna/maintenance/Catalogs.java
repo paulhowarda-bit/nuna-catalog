@@ -25,7 +25,8 @@ final class Catalogs implements AutoCloseable {
     private final Map<String, RESTCatalog> clients = new ConcurrentHashMap<>();
 
     /**
-     * @param extra more client properties, over the worker's own (tests use it)
+     * @param extra more client properties, over the worker's own: those that make its S3 clients trust the storage
+     *              profiles' CA bundles ({@link Storage#clientProperties}), and tests' own
      * @param trace the current trace, sent with every request
      */
     Catalogs(URI uri, TokenSource tokens, Map<String, String> extra, TraceHeaders trace) {

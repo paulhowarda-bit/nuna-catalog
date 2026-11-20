@@ -106,10 +106,14 @@ public record WorkerSettings(
      * @param pathStyleAccess address buckets by path (MinIO, Ceph)
      * @param accessKeyId     its access key; none for the AWS SDK's default chain (IRSA, Pod Identity)
      * @param secretAccessKey its secret key
+     * @param caBundle        a PEM file of one or more CA certificates, for a store whose certificate a private CA
+     *                        signed: every S3 client the worker opens to this endpoint trusts them beside the JVM's CAs,
+     *                        its own and those reading with the credentials the catalog vends it, which name the
+     *                        catalog's endpoint for the store (backlog 21)
      */
     public record StorageProfile(List<String> prefixes, URI endpoint, @DefaultValue("us-east-1") String region,
                                  @DefaultValue("false") boolean pathStyleAccess, String accessKeyId,
-                                 String secretAccessKey) {
+                                 String secretAccessKey, Path caBundle) {
 
         public StorageProfile {
             if (prefixes == null || prefixes.isEmpty()) {
@@ -118,6 +122,10 @@ public record WorkerSettings(
             prefixes = List.copyOf(prefixes);
             if ((accessKeyId == null) != (secretAccessKey == null)) {
                 throw new IllegalArgumentException("a nuna.maintenance.storage profile needs both keys or neither");
+            }
+            if (caBundle != null && endpoint == null) {
+                throw new IllegalArgumentException("a nuna.maintenance.storage profile with a ca-bundle needs an"
+                        + " endpoint: the bundle is trusted for that endpoint alone");
             }
         }
     }

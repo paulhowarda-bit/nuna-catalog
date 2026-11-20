@@ -1,0 +1,16 @@
+Breaks: the worker's own S3 clients do not trust its profiles' CA bundles (backlog 21).
+Module: catalog-maintenance
+Test: TrustedS3ClientsTest#ownClientTrustsTheBundle
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Storage.java b/catalog-maintenance/src/main/java/nuna/maintenance/Storage.java
+index 7768e2e..24450db 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Storage.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Storage.java
+@@ -65,7 +65,6 @@ interface Storage extends AutoCloseable {
+                 properties.put("s3.access-key-id", profile.accessKeyId());
+                 properties.put("s3.secret-access-key", profile.secretAccessKey());
+             }
+-            properties.putAll(trust);
+             io.initialize(properties);
+             all.add(io);
+             profile.prefixes().forEach(prefix -> byPrefix.put(normalize(prefix), io));

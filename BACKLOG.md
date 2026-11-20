@@ -8,14 +8,13 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 3 S, 9 M, 2 L, 5 XL.
+**20 open:** 4 S, 9 M, 2 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
-| [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
@@ -31,6 +30,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
+| [87](backlog/87.md) | S | The audit archive's S3 client does not trust its storage profile's CA bundle | one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite | 2026-11-20 |
+| [88](backlog/88.md) | M | Compaction Jobs do not trust a storage profile's CA bundle | mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides | 2026-11-20 |
 
 ## Open items in full
 
@@ -96,16 +97,6 @@ with the test in it on 2026-11-15. Still open: the flow against Entra ID and Pin
 IdP's session (Paul's call).
 
 **Decided 2026-11-19 (D16):** "Sign out" also ends the identity provider's session ("End the IdP session"). The checks against Entra ID and Ping still happen at work.
-
-### 21. A CA bundle per storage profile
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, a trust store per profile, and a test store with a private CA
-
-`build-plan.md`, M6, Open: the JVM trust store serves every storage profile today. An on-prem store with its own CA
-needs it added to the JVM's.
-
-Done when a profile can name its own CA bundle, and a test against a store with a private CA passes.
 
 ### 22. Administer storage profiles and catalogs at runtime (not now, D41)
 
@@ -603,6 +594,46 @@ Done when the reconcile's read verifies and filters each chain in one streamed p
 (`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
 memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 
+### 87. The audit archive's S3 client does not trust its storage profile's CA bundle
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java catalog-server/src/test/java/nuna/catalog/server/governance/ bites/M7/
+- Effort: S, one builder call in GovernanceWiring.archive, a handshake test with PrivateCa, and a bite
+
+Item 21 lets a storage profile name a CA bundle (`nuna.storage.profiles.<name>.ca-bundle`), which the profile's
+`MetadataFiles` and `CredentialVendor` clients trust beside the JVM's CAs. The audit archive builds a third S3
+client from a storage profile (`nuna.audit.archive.profile`) in `GovernanceWiring.archive`, and that one still trusts
+only the JVM's CAs: an archive bucket on an on-prem store with a private CA fails its startup `checkBucket` with a
+TLS handshake error. Item 21 left it alone because item 19 held `governance/` that night.
+
+Done when `GovernanceWiring.archive` reads the profile's bundle (`CaBundle.read`, refusing an unreadable one with
+the setting's name, as `CatalogStorage.caBundle` does) and applies it to its `S3ClientBuilder`
+(`CaBundle.applyTo`); a Java-only test against `PrivateCa.serve` (catalog-tests-s3) shows the archive's client
+refused without the bundle and accepted with it; and a bite is recorded.
+
+### 88. Compaction Jobs do not trust a storage profile's CA bundle
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java catalog-maintenance/src/test/java/nuna/maintenance/ deploy/helm/nuna-maintenance/ docs/install-at-work.md
+- Effort: M, mount the bundle into each Job and make Spark's S3 clients trust it, with a test of the Job's spec; after Paul decides
+
+Item 21 makes the worker's own S3 clients trust a profile's `ca-bundle`. A compaction Job (`KubernetesJobs`) is
+Spark in its own pod, reading and writing the table with the credentials the catalog vends it, and it gets no
+bundle: on an on-prem store whose certificate a private CA signed, it fails its first S3 call with a TLS
+handshake error. Item 21 treats the Job as an engine, which trusts the store through its own setup, and
+`docs/install-at-work.md` (section 6) says its image must trust the CA itself.
+
+The choices, Paul's:
+
+- Leave it to the image, as item 21's docs say: whoever builds the Spark image at work adds the CA to its JVM's
+  trust store.
+- Have the worker carry it: mount `storageCaConfigMap` into each Job's pod and point Spark's S3 clients at it, for
+  example with `s3.client-factory-impl` and item 21's `TrustedS3Clients` on the image's classpath, or a JVM trust
+  store built from the PEM at the pod's start.
+
+Done when Paul has chosen and a compaction Job on a store with a private CA can read and write its table, or the
+docs say plainly that the image must trust the CA.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -624,6 +655,7 @@ memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [19](backlog/19.md) | Cap the audit-read route for scripted use | done | 2026-11-20 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
+| [21](backlog/21.md) | A CA bundle per storage profile | done | 2026-11-20 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |

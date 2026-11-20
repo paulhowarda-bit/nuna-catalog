@@ -9,6 +9,7 @@ import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
@@ -16,6 +17,7 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -31,15 +33,19 @@ public final class MetadataFiles implements AutoCloseable {
     private final StorageProfile profile;
     private final S3Client s3;
 
-    /** Opens an S3 client on the profile's endpoint, region and addressing style. */
-    public MetadataFiles(StorageProfile profile, AwsCredentialsProvider credentials) {
+    /**
+     * Opens an S3 client on the profile's endpoint, region and addressing style, trusting the profile's CA bundle, if
+     * it names one, beside the JVM's CAs.
+     */
+    public MetadataFiles(StorageProfile profile, AwsCredentialsProvider credentials, Optional<CaBundle> caBundle) {
         this.profile = profile;
-        this.s3 = S3Client.builder()
+        S3ClientBuilder builder = S3Client.builder()
                 .endpointOverride(profile.endpoint())
                 .region(Region.of(profile.region()))
                 .forcePathStyle(profile.kind().pathStyle())
-                .credentialsProvider(credentials)
-                .build();
+                .credentialsProvider(credentials);
+        caBundle.ifPresent(bundle -> bundle.applyTo(builder));
+        this.s3 = builder.build();
     }
 
     /**

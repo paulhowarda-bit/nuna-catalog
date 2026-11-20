@@ -1,0 +1,20 @@
+Breaks: the server reads a profile's CA bundle but its S3 and STS clients do not trust it (backlog 21).
+Module: catalog-server
+Test: CaBundleProfileTest#bundleTrusted
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+index c590e38..7aaf8e5 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+@@ -76,9 +76,9 @@ public final class CatalogStorage implements AutoCloseable {
+                     ? DefaultCredentialsProvider.builder().build()
+                     : StaticCredentialsProvider.create(
+                             AwsBasicCredentials.create(config.accessKeyId(), config.secretAccessKey()));
+-            MetadataFiles files = new MetadataFiles(profile, credentials, caBundles.get(name));
++            MetadataFiles files = new MetadataFiles(profile, credentials, Optional.empty());
+             CredentialVendor vendor = new CredentialVendor(profile, Optional.ofNullable(config.stsRole()), credentials,
+-                    settings.credentialLifetime(), caBundles.get(name));
++                    settings.credentialLifetime(), Optional.empty());
+             resources.add(files);
+             resources.add(vendor);
+             TableFiles tableFiles = new ObservedTableFiles(new ProfileTableFiles(profile, files), name, observations);

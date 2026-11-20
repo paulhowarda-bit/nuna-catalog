@@ -47,7 +47,7 @@ final class ChildJvm {
         String key = args[from + 2].equals("-") ? null : args[from + 2];
         String secret = args[from + 3].equals("-") ? null : args[from + 3];
         return Storage.of(java.util.Map.of("test", new WorkerSettings.StorageProfile(List.of(args[from + 1]), endpoint,
-                TestS3.REGION, endpoint != null, key, secret)));
+                TestS3.REGION, endpoint != null, key, secret, null)));
     }
 
     /** No Spring in a child to configure Logback, whose own default logs everything. */

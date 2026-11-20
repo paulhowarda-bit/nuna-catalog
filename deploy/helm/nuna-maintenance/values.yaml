@@ -37,7 +37,9 @@ config:
       # Its own storage identity, per store: the only identity the stores' delete policy lets delete (D21, D30).
       # Each: prefixes (every table location the catalog lists must lie under one), endpoint (none for AWS S3),
       # region, path-style-access, access-key-id (secret-access-key in `secrets`); no keys means the AWS SDK's
-      # default chain, e.g. IRSA through serviceAccount.annotations.
+      # default chain, e.g. IRSA through serviceAccount.annotations. For a store whose certificate a private CA
+      # signed, ca-bundle: a PEM file of that CA, mounted from storageCaConfigMap, e.g.
+      # /etc/nuna/storage-ca/ceph.crt; it needs the endpoint, written as the catalog's profile writes it.
       storage: {}
       # Compaction as Kubernetes Jobs (D30 (3), amended 2026-11-15): in the cleanup window, one Job per table that
       # needs it and night, the neediest first, max-jobs at once. Which tables need it is maintenance policy
@@ -66,6 +68,13 @@ secrets:
   existingSecret: ""
   # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
   values: {}
+
+# A ConfigMap in the release's namespace holding the CA bundles of on-prem stores whose certificates a private CA
+# signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile names its file as ca-bundle; the
+# worker's S3 clients to that profile's endpoint trust it, beside the JVM's CAs. The catalog's chart takes the same
+# ConfigMap (docs/install-at-work.md).
+storageCaConfigMap:
+  name: ""
 
 javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
 

@@ -41,6 +41,8 @@ config:
     storage:
       # Each: kind, endpoint, region, table-root, allowed-prefixes, sts-role, access-key-id, and
       # maintenance-principal, the maintenance worker's own storage identity (deploy/README.md, delete rights).
+      # For a store whose certificate a private CA signed, ca-bundle: a PEM file of that CA, mounted from
+      # storageCaConfigMap, e.g. /etc/nuna/storage-ca/ceph.crt.
       profiles: {}
       catalogs: {}
     audit:
@@ -53,6 +55,12 @@ secrets:
   existingSecret: ""
   # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
   values: {}
+
+# A ConfigMap in the release's namespace holding the CA bundles of on-prem stores whose certificates a private CA
+# signed, one PEM file per key, mounted at /etc/nuna/storage-ca. A storage profile names its file as ca-bundle; only
+# that profile's S3 and STS clients trust it, beside the JVM's CAs (docs/install-at-work.md).
+storageCaConfigMap:
+  name: ""
 
 # The JVM sizes its heap from the container's memory limit.
 javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"

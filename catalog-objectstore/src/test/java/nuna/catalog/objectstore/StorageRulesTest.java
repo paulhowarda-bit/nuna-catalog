@@ -26,7 +26,7 @@ class StorageRulesTest {
     private static final String ASSIGNED = "s3://lake/tables/" + ID;
 
     private final ProfileTableFiles files = new ProfileTableFiles(PROFILE,
-            new MetadataFiles(PROFILE, AnonymousCredentialsProvider.create()));
+            new MetadataFiles(PROFILE, AnonymousCredentialsProvider.create(), Optional.empty()));
 
     private static CommitRule.Change change(String location, Facts before, Map<String, String> properties) {
         CatalogObject object = CatalogObject.active(UUID.randomUUID(), ID, UUID.randomUUID(), new Name("t", "t"),
