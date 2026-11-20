@@ -1,0 +1,20 @@
+Breaks: a create checks the table's name before asking about the namespace, so a bad name answers 400 where a missing namespace answers 404, telling a caller that may not see the namespace that it exists.
+Module: catalog-server
+Test: HiddenNamesTest#aBadTableNameIsCheckedOnlyOnceTheCallerMaySeeTheNamespace
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
+index 94281fb..055dd48 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
+@@ -115,10 +115,10 @@ class TableRoutes {
+         String json = body == null ? "" : body;
+         RestRequest.NewTable table = RestRequest.createTable(json);
+         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
++        ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
+         RequestContext request = RequestContext.of(http, callers);
+         guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchNamespace(levels));
+         // The name is checked only now, so a bad one tells a caller that may not see the namespace nothing.
+-        ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
+         Target target = new Target(catalog, prefix, namespace, table.name(), request, Optional.ofNullable(delegation));
+         if (table.stageCreate()) {
+             return staged(target, record, name, json);

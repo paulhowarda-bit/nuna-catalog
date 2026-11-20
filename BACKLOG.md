@@ -18,7 +18,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
-| [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
@@ -40,6 +39,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
+| [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
 
 ## Open items in full
 
@@ -125,23 +125,6 @@ Done when the operator can have the archive supply or check the accepted tips, a
 can together break separation of duties. Not settled in the ledger since; confirm it still holds first.
 
 Done when two concurrent grants cannot together break SoD, shown by a test that races them.
-
-### 14. HEAD and loads answer 404 before 403, so names leak to signed-in callers
-
-- Decided: 2026-11-19, D18
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, three routes reordered, with tests; after Paul decides
-
-`build-plan.md`, M5 (2026-11-08), Open: HEAD and loads answer 404 before 403, so any signed-in caller can learn
-which names exist. Not settled in the ledger since; confirm it still holds first. Whether names are secret is
-Paul's call (see item 20).
-
-The metrics route answers in the same order (`TableRoutes.java`, `metrics`: `objects.existing` before
-`guard.onObject`), so it falls under this item too (found 2026-11-15, Iceberg observability review).
-
-Done when Paul has decided, and the routes answer as he decided, with tests.
-
-**Decided 2026-11-19 (D18):** names are hidden ("Hide names"): a caller without access gets the same answer whether or not the name exists, on HEAD, loads and the metrics route.
 
 ### 15. ETags do not survive a change of server (Paul decides)
 
@@ -559,6 +542,34 @@ failing), with a heavy test that disables the job on a fresh schema and finds th
 Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
 job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
 
+### 73. Namespace, table and view names still leak through the management API
+
+- Added: 2026-11-19 by agent-a3d0c67abbd88cfb2, from item 14
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/main/java/nuna/catalog/server/security/ catalog-server/src/test/
+- Effort: M, a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides
+
+Item 14 hid names on the Iceberg routes (D18 as amended 2026-11-19, "Hide names"): a caller that holds nothing on a
+namespace, table or view, or above it, or (for a namespace) on anything inside it, gets the 404 a missing one gets.
+The management API under `/management/v1/catalogs/{catalog}/...` still looks the name up first and asks second, so a
+signed-in caller can tell a name that exists (403) from one that does not (404):
+
+- `GovernanceRoutes`: governance, attributes, holds, policies and DR freezes, on a namespace, table or view, resolve
+  the target with `management.target(...)` (404 `NoSuchTableException` and the like) before `guard.require(...)`
+  (403). For example `GET .../namespaces/hr/tables/staff/governance` as a caller with nothing on `hr`.
+- `GrantRoutes`: a grant, a revoke and the listing of grants on an object resolve the securable with
+  `Securables.resolve` (404) before the privilege check (403); `SecurityGateTest#separationOfDutiesHoldsForEveryGrant`
+  shows the 403 for a namespace the granter holds nothing on.
+- `AuditReadRoutes` and `HealthRoutes` take a target through the same lookups.
+
+The `/check` route answers `allowed: false` alike for a missing and a refused object, so it does not leak.
+
+D18's amendment names HEAD, loads and the metrics route on the Iceberg API; whether hiding reaches the management
+API, whose callers are mostly stewards, grant admins and operators, is Paul's call. If it does, the Iceberg routes'
+rule and `Guard`'s check of grants inside a namespace (the catalog list's rule, item 20) are the model, and the hidden
+refusal is audited as every refusal is.
+
+Done when Paul has decided, and the management routes answer as he decided, with tests.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -570,6 +581,7 @@ job that cannot run refuse the start, as the other findings do, or only be repor
 | [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
 | [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
+| [14](backlog/14.md) | HEAD and loads answer 404 before 403, so names leak to signed-in callers | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |

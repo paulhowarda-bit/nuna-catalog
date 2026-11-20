@@ -149,7 +149,8 @@ class SecurityGateTest {
     @AfterEach
     void everyRefusalIsAudited() {
         assertThat(audit.denials().size() + audit.authFailures().size())
-                .as("one audit event for each 401 or 403").isEqualTo(refusals);
+                .as("one audit event for each 401 or 403, and for each refusal answered as a missing name")
+                .isEqualTo(refusals);
     }
 
     @Test
@@ -189,15 +190,15 @@ class SecurityGateTest {
         ok(send(ANN, "GET", "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/orders", null));
         ok(send(ANN, "GET", "/v1/gate/namespaces?parent=" + ns(List.of("sales")), null));
 
-        assertError(send(ANN, "GET", "/v1/gate/namespaces/hr/tables/staff", null), 403, "ForbiddenException");
+        // Ann holds nothing on hr: the table is hidden from her (D18), and the refusal is audited all the same.
+        assertHidden(send(ANN, "GET", "/v1/gate/namespaces/hr/tables/staff", null), "NoSuchTableException",
+                "loadTable");
         Denial denial = audit.denials().getLast();
-        assertThat(denial.operation()).isEqualTo("loadTable");
         assertThat(denial.privilege()).isEqualTo("select");
-        assertThat(denial.reason()).startsWith("no_privilege");
         assertThat(denial.securable().path()).containsExactly("hr", "staff");
         assertThat(denial.actor().principal()).isEqualTo("ann");
 
-        assertError(send(ANN, "HEAD", "/v1/gate/namespaces/hr/tables/staff", null), 403, null);
+        assertHidden(send(ANN, "HEAD", "/v1/gate/namespaces/hr/tables/staff", null), null, "tableExists");
         assertError(send(ANN, "POST", "/v1/gate/namespaces/sales/tables", TABLE.formatted("new_one")),
                 403, "ForbiddenException");
         assertThat(audit.denials().getLast().privilege()).as("select gives no create").isEqualTo("create");
@@ -206,7 +207,55 @@ class SecurityGateTest {
         assertThat(audit.denials().getLast().privilege()).as("select gives no modify").isEqualTo("modify");
     }
 
-    /** A metrics report needs select on its table, as a load does; a refusal is audited like any other. */
+    /**
+     * D18, amended 2026-11-19 (backlog 14): a caller that holds nothing on a namespace, table or view, or above it,
+     * or (for a namespace) on anything inside it, gets the answer a missing one gets, word for word but for the
+     * name. One that holds anything there may learn that it exists, and is refused with 403. Every refusal is
+     * audited either way.
+     */
+    @Test
+    void namesAreHiddenFromACallerThatHoldsNothingOnThem() throws Exception {
+        String hr = "/v1/gate/namespaces/hr";
+        String nowhere = "/v1/gate/namespaces/nowhere";
+        assertAnsweredAsMissing(send(ANN, "GET", hr, null), send(ANN, "GET", nowhere, null), "hr", "nowhere",
+                "loadNamespaceMetadata");
+        assertHidden(send(ANN, "HEAD", hr, null), null, "namespaceExists");
+        assertAnsweredAsMissing(send(ANN, "GET", hr + "/tables", null), send(ANN, "GET", nowhere + "/tables", null),
+                "hr", "nowhere", "listTables");
+        assertAnsweredAsMissing(send(ANN, "GET", "/v1/gate/namespaces?parent=hr", null),
+                send(ANN, "GET", "/v1/gate/namespaces?parent=nowhere", null), "hr", "nowhere", "listNamespaces");
+
+        String staff = hr + "/tables/staff";
+        String none = hr + "/tables/none";
+        assertAnsweredAsMissing(send(ANN, "GET", staff, null), send(ANN, "GET", none, null), "staff", "none",
+                "loadTable");
+        assertAnsweredAsMissing(send(ANN, "GET", staff + "/credentials", null),
+                send(ANN, "GET", none + "/credentials", null), "staff", "none", "loadCredentials");
+        String report = """
+                {"report-type":"commit-report","table-name":"t","snapshot-id":1,"sequence-number":1,
+                 "operation":"append","metrics":{}}""";
+        assertAnsweredAsMissing(send(ANN, "POST", staff + "/metrics", report),
+                send(ANN, "POST", none + "/metrics", report), "staff", "none", "reportMetrics");
+        assertAnsweredAsMissing(send(ANN, "DELETE", staff, null), send(ANN, "DELETE", none, null), "staff", "none",
+                "dropTable");
+        assertAnsweredAsMissing(send(ANN, "POST", staff + "/unregister", null),
+                send(ANN, "POST", none + "/unregister", null), "staff", "none", "unregisterTable");
+        assertThat(table("hr/staff").state()).isEqualTo(CatalogObject.State.ACTIVE);
+
+        // Hugo holds describe on hr.staff alone: he may learn that hr and the table exist, and is refused the rest.
+        String hugo = IssuerForTests.bearer("hugo", "hr-describers");
+        noContent(grant(GINA, tableSpec("hr/staff"), "hr-describers", "describe"));
+        noContent(send(hugo, "HEAD", staff, null));
+        assertDenied(send(hugo, "GET", staff, null), "loadTable", "no_privilege");
+        assertDenied(send(hugo, "GET", hr, null), "loadNamespaceMetadata", "no_privilege");
+        assertThat(send(hugo, "HEAD", hr, null).statusCode()).isEqualTo(403);
+        assertThat(audit.denials().getLast().operation()).isEqualTo("namespaceExists");
+    }
+
+    /**
+     * A metrics report needs select on its table, as a load does; a refusal is audited like any other, and a caller
+     * that holds nothing on the table is answered as if it did not exist (D18).
+     */
     @Test
     void metricsAreReportedOnlyOnATableTheCallerMayRead() throws Exception {
         String report = """
@@ -214,8 +263,8 @@ class SecurityGateTest {
                  "operation":"append","metrics":{}}""";
         noContent(send(ANN, "POST", "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/orders/metrics",
                 report));
-        assertDenied(send(ANN, "POST", "/v1/gate/namespaces/hr/tables/staff/metrics", report), "reportMetrics",
-                "no_privilege");
+        assertHidden(send(ANN, "POST", "/v1/gate/namespaces/hr/tables/staff/metrics", report),
+                "NoSuchTableException", "reportMetrics");
         assertThat(audit.denials().getLast().privilege()).isEqualTo("select");
     }
 
@@ -227,8 +276,10 @@ class SecurityGateTest {
         long orders = store.readPointer(table("sales/eu/orders").mainKey()).orElseThrow().version();
         long staff = store.readPointer(table("hr/staff").mainKey()).orElseThrow().version();
 
-        assertDenied(send(tia, "POST", "/v1/gate/transactions/commit",
-                transaction(List.of("sales", "eu", "orders"), List.of("hr", "staff"))), "updateTable", "no_privilege");
+        // Tia holds nothing on hr.staff, so it is answered as missing (D18); the refusal still refuses the lot.
+        assertHidden(send(tia, "POST", "/v1/gate/transactions/commit",
+                transaction(List.of("sales", "eu", "orders"), List.of("hr", "staff"))), "NoSuchTableException",
+                "updateTable");
         assertThat(audit.denials().getLast().securable().path()).containsExactly("hr", "staff");
         assertThat(store.readPointer(table("sales/eu/orders").mainKey()).orElseThrow().version()).isEqualTo(orders);
         assertThat(store.readPointer(table("hr/staff").mainKey()).orElseThrow().version()).isEqualTo(staff);
@@ -253,7 +304,8 @@ class SecurityGateTest {
      * D13, amended 2026-11-12: unregister needs modify, and a regulated or row/column-flagged table is refused
      * until a steward removes the flag. A dropped or unregistered table's own file brings it back only in the
      * namespace it left, for a caller with create there: registered anywhere else it is 409, even for a caller
-     * with every right, since a move would hand it that namespace's grants.
+     * with every right, since a move would hand it that namespace's grants. A caller that holds nothing on the
+     * namespace it registers into is answered as if the namespace did not exist (D18).
      */
     @Test
     void unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace() throws Exception {
@@ -275,7 +327,8 @@ class SecurityGateTest {
         String rita = IssuerForTests.bearer("rita", "registrars");
         noContent(grant(GINA, namespaceSpec("hr"), "registrars", "create"));
         String again = "{\"name\":\"passing\",\"metadata-location\":\"" + file + "\"}";
-        assertDenied(send(rita, "POST", "/v1/gate/namespaces/sales/register", again), "registerTable", "no_privilege");
+        assertHidden(send(rita, "POST", "/v1/gate/namespaces/sales/register", again), "NoSuchNamespaceException",
+                "registerTable");
         assertThat(audit.denials().getLast().securable().path()).containsExactly("sales");
         assertError(send(rita, "POST", "/v1/gate/namespaces/hr/register", again), 409, "AlreadyExistsException");
         assertError(send(DANA, "POST", "/v1/gate/namespaces/hr/register", again), 409, "AlreadyExistsException");
@@ -289,14 +342,16 @@ class SecurityGateTest {
         String left = "{\"name\":\"passing\",\"metadata-location\":\""
                 + JsonPath.read(unregistered.body(), "$.metadata-location") + "\"}";
         assertError(send(rita, "POST", "/v1/gate/namespaces/hr/register", left), 409, "AlreadyExistsException");
-        assertDenied(send(rita, "POST", "/v1/gate/namespaces/sales/register", left), "registerTable", "no_privilege");
+        assertHidden(send(rita, "POST", "/v1/gate/namespaces/sales/register", left), "NoSuchNamespaceException",
+                "registerTable");
         assertThat(store.readObject(UUID.fromString(id)).orElseThrow().state())
                 .isEqualTo(CatalogObject.State.UNREGISTERED);
     }
 
     /**
      * D13, amended 2026-11-12: register-view needs create on the namespace, as register does, and a dropped
-     * view's own file brings it back only in the namespace it left.
+     * view's own file brings it back only in the namespace it left. A caller that holds nothing on that namespace
+     * is answered as if it did not exist (D18).
      */
     @Test
     void registerViewNeedsCreateAndADroppedViewComesBackOnlyInItsOwnNamespace() throws Exception {
@@ -311,8 +366,8 @@ class SecurityGateTest {
         String vera = IssuerForTests.bearer("vera", "view-registrars");
         noContent(grant(GINA, namespaceSpec("hr"), "view-registrars", "create"));
 
-        assertDenied(send(vera, "POST", "/v1/gate/namespaces/sales/register-view", again), "registerView",
-                "no_privilege");
+        assertHidden(send(vera, "POST", "/v1/gate/namespaces/sales/register-view", again),
+                "NoSuchNamespaceException", "registerView");
         assertThat(audit.denials().getLast().privilege()).isEqualTo("create");
         assertThat(audit.denials().getLast().securable().path()).containsExactly("sales");
         assertError(send(vera, "POST", "/v1/gate/namespaces/hr/register-view", again), 409, "AlreadyExistsException");
@@ -355,8 +410,8 @@ class SecurityGateTest {
         HttpResponse<String> viaEngine = send(ENGINE, "GET", pii, null, "X-Nuna-End-User", "ann",
                 "X-Nuna-End-User-Groups", "analysts");
         ok(viaEngine);
-        assertDenied(send(ENGINE, "GET", "/v1/gate/namespaces/hr/tables/staff", null, "X-Nuna-End-User", "ann",
-                "X-Nuna-End-User-Groups", "analysts"), "loadTable", "no_privilege");
+        assertHidden(send(ENGINE, "GET", "/v1/gate/namespaces/hr/tables/staff", null, "X-Nuna-End-User", "ann",
+                "X-Nuna-End-User-Groups", "analysts"), "NoSuchTableException", "loadTable");
         Denial denial = audit.denials().getLast();
         assertThat(denial.actor().principal()).isEqualTo("svc-trino");
         assertThat(denial.actor().endUser()).as("the engine's end user is the one decided for").isEqualTo("ann");
@@ -517,6 +572,28 @@ class SecurityGateTest {
         Denial denial = audit.denials().getLast();
         assertThat(denial.operation()).isEqualTo(operation);
         assertThat(denial.reason()).startsWith(reason);
+    }
+
+    /**
+     * A refusal answered as a missing name (D18): a 404 of the given type (none for a HEAD), with its denial audited.
+     * It counts among the refusals, since {@link #everyRefusalIsAudited} expects its audit event.
+     */
+    private void assertHidden(HttpResponse<String> response, String type, String operation) {
+        assertError(response, 404, type);
+        refusals++;
+        Denial denial = audit.denials().getLast();
+        assertThat(denial.operation()).isEqualTo(operation);
+        assertThat(denial.reason()).startsWith("no_privilege");
+    }
+
+    /** {@code hidden} is {@code missing}'s answer word for word, but for the name; only {@code hidden} is audited. */
+    private void assertAnsweredAsMissing(HttpResponse<String> hidden, HttpResponse<String> missing, String name,
+                                         String missingName, String operation) {
+        assertThat(missing.statusCode()).as(missing.body()).isEqualTo(404);
+        assertThat(hidden.statusCode()).as(hidden.body()).isEqualTo(404);
+        assertThat(hidden.body()).isEqualTo(missing.body().replace(missingName, name));
+        refusals++;
+        assertThat(audit.denials().getLast().operation()).isEqualTo(operation);
     }
 
     private static void assertError(HttpResponse<String> response, int status, String type) {

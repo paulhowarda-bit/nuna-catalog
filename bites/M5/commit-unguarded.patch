@@ -2,14 +2,15 @@ Breaks: A commit to an existing table is not authorized.
 Module: catalog-server
 Test: SecurityGateTest#privilegesInheritDownTheTreeAndNeverSideways
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index b0989a1..0836724 100644
+index 94281fb..e00337b 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -182,7 +182,6 @@ class TableRoutes {
+@@ -190,8 +190,6 @@ class TableRoutes {
          RequestContext request = RequestContext.of(http, callers);
          Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
          if (existing.isPresent()) {
--            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body));
+-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body),
+-                    Http.noSuchTable(qualified));
          } else {
-             guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
+             guard.onNewObject(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchTable(qualified));
          }

@@ -3,13 +3,13 @@ Module: catalog-server
 Test: RestRoutesTest#registerBringsADroppedTableBackAndRefusesTakenUuidsAndLocationsOutsideTheProfile
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index e400b6a..f43e84d 100644
+index 94281fb..cc72f9c 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -230,7 +230,7 @@ class TableRoutes {
+@@ -240,7 +240,7 @@ class TableRoutes {
          NamespaceRecord record = lookup.existingNamespace(catalog, levels);
          RequestContext request = RequestContext.of(http, callers);
-         guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE);
+         guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE, Http.noSuchNamespace(levels));
 -        if (registration.overwrite() && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
 +        if (false && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
              throw CatalogError.badRequest("Registering over an existing table (overwrite) is not supported: "
