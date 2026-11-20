@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**31 open:** 6 S, 11 M, 10 L, 4 XL.
+**32 open:** 6 S, 11 M, 11 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -43,6 +43,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
+| [114](backlog/114.md) | L | Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window) | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window | 2026-11-20 |
 
 ## Open items in full
 
@@ -1506,6 +1507,64 @@ when Paul asks.
 
 Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
 every ref, the governance routes and the console show the branch, and a test on each store shows it.
+
+### 114. Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window)
+
+- Added: 2026-11-20 by Paul
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/, catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-maintenance/, docs/observability/table-health.md, docs/observability/health-page.md, decision-ledger.md
+- Effort: L, a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window
+
+Paul asked (2026-11-20) whether there is a UI to see health data and to start maintenance tasks. The console shows
+health (the **Health** page and each table's **Health** tab, docs/observability/health-page.md), but nothing can
+start maintenance, in the console or through the API:
+
+- The console's only writes are grants (`catalog-server/src/main/resources/nuna/ui/api.js`, the two `POST`s at lines
+  154 and 159).
+- The maintenance routes are the worker's (`GET /management/v1/maintenance/work`, the deletions and the health
+  reports, `MaintenanceRoutes` and `HealthRoutes`) and the reads behind the health page. None asks for work.
+- The worker decides when work runs. It reads the work list every `scan-interval` (10 minutes); expiry, manifest
+  rewrite, purges and due deletions run at every scan, and compaction and orphan scans start only inside the nightly
+  cleanup window (D30, amended 2026-11-15; catalog-maintenance/README.md, "The cleanup window"). A table that needs
+  compaction at 09:00 waits for the night, and one that does not need it by the worker's thresholds never gets a Job.
+- An operator's only levers are the table's maintenance policy (`PUT .../maintenance-policy`, `modify` on the table)
+  and the deployment's window, neither of which says "now".
+
+Expiry and manifest rewrite already run within 10 minutes whenever the policy makes them due, so the request is for
+the two heavy jobs: a compaction of one table, and an orphan scan of one table.
+
+**The question for Paul:** may a requested compaction or orphan scan start outside the cleanup window?
+- *Recommended: yes.* The window keeps the routine heavy load off the day; a request is someone's deliberate choice
+  for one table. It still counts against `compaction.max-jobs`, and its Job gets a deadline of its own (a new
+  setting, 2 hours by default) in place of the window's end.
+- *Or: no.* The request queues the table for tonight's window, ahead of the needy tables. D30 stays as it is, but
+  nothing runs "now".
+
+Settled on the recommendation, unless Paul says otherwise:
+- **Who may ask:** `modify` on the table, as for its maintenance policy. Every request and refusal is audited.
+- **The guards stay the catalog's.** A request is refused when the table's resolved policy disables that job, and
+  when a hold or freeze would keep it off the work list. A requested compaction runs whether or not the assessment
+  says the table needs one: that is the point of asking.
+- **The worker still polls.** The catalog keeps the request; the work list carries requested tables in a section of
+  their own; the worker takes them at its next scan, so a request starts within one `scan-interval`. No push from the
+  catalog to the worker, as D30 (2) decided. One pending request per table and job; asking again changes nothing.
+  The request is cleared when the worker reports the job started, through the reports it already makes.
+
+What done looks like:
+- `POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests` with
+  `{"job": "compaction" | "orphan-scan"}`, answering 202, and the request shown in the table's health
+  (`GET .../tables/{table}/health`: who asked, when, waiting or started).
+- The request kept by an add-only schema step on PostgreSQL, CockroachDB, Oracle and MongoDB, so the rolling upgrade
+  stays safe; a store suite shows it kept, deduplicated, cleared on start and gone with a purged table.
+- The worker runs requested jobs at its next scan, inside or outside the window as Paul decides, and reports them
+  as it reports nightly ones; a test like `NightlyCleanupTest` shows a request made in the day run (or wait for the
+  night).
+- On a table's **Health** tab, **Compact now** and **Scan for orphans now** for a viewer with `modify`, and the
+  pending request while it waits; `ConsoleHealthTest` shows a reader sees no buttons and a refused request shows the
+  catalog's answer.
+- Route tests for who may ask and every refusal; bites for a request taken without `modify`, a request taken under a
+  hold, and (if Paul says yes) a requested Job given the window's end as its deadline.
+- docs/observability/table-health.md, health-page.md and catalog-maintenance/README.md describe it; D30 amended with
+  Paul's answer, quoted.
 
 ## Done and dropped
 
