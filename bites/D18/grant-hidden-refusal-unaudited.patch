@@ -1,0 +1,18 @@
+Breaks: a grant-route refusal answered as a missing name is not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GrantHiddenNamesTest#aHiddenRefusalIsAuditedAsEveryRefusalIs
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index b25c50b..9eacdb7 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -313,6 +313,9 @@ class GrantRoutes {
+      */
+     private void require(RequestContext request, Securables.Resolved on, Operation operation) {
+         if (authorizer.decide(request.caller(), on.target(), operation) instanceof Decision.Denied denied) {
++            if (!holdings.something(request.caller(), on.target())) {
++                throw on.missing();
++            }
+             AccessDenied refused = denials.refuse(request.actor(), operation.name(), on.named(),
+                     denied.privilege() == null ? null : denied.privilege().wireName(),
+                     denied.reason().name().toLowerCase(java.util.Locale.ROOT), denied.message());
