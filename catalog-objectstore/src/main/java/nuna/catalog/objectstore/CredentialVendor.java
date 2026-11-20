@@ -16,7 +16,8 @@ import software.amazon.awssdk.services.sts.model.Tag;
 /**
  * Vends temporary credentials for one table's prefix through STS AssumeRole, for one storage profile
  * (D21). The session policy confines them to the table, and to writes with the profile's KMS key if it names one
- * (D26); the session name and tags say who they are for. On-prem stores (MinIO, Ceph) answer STS on their S3 endpoint; AWS uses the regional STS endpoint.
+ * (D26); the session name and tags say who they are for. On-prem stores (MinIO, Ceph) answer STS on their S3
+ * endpoint; AWS uses the regional STS endpoint.
  */
 public final class CredentialVendor implements AutoCloseable {
 

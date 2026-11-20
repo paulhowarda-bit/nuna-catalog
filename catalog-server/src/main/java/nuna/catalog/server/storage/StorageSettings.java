@@ -49,8 +49,9 @@ public record StorageSettings(
      *                        ARN in the profile's region; AWS S3 profiles only, and the server refuses to start on any
      *                        other value. The server's metadata files are written with it, vended credentials may write
      *                        with it alone (a write with no key or any other is refused), and the config handed to
-     *                        engines tells them to use it ({@code s3.sse.type} and {@code s3.sse.key}). The catalog's own
-     *                        identity and the STS role need its use ({@code kms:GenerateDataKey}, {@code kms:Decrypt}).
+     *                        engines tells them to use it ({@code s3.sse.type} and {@code s3.sse.key}). The catalog's
+     *                        own identity and the STS role need its use ({@code kms:GenerateDataKey},
+     *                        {@code kms:Decrypt}).
      *                        Without it, writes are encrypted as the bucket's default says
      */
     public record Profile(

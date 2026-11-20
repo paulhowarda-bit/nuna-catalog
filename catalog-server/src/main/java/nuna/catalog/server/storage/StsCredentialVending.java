@@ -137,9 +137,9 @@ public final class StsCredentialVending implements CredentialVending {
     }
 
     /**
-     * The load response's FileIO config and storage credential. With the profile's KMS key, the config tells Iceberg's
-     * S3FileIO to write with it ({@code s3.sse.type} {@code kms}, {@code s3.sse.key} the key ARN), as the session policy
-     * demands (D26); an engine whose client reads neither must be set up to name the key itself.
+     * The load response's FileIO config and storage credential. With the profile's KMS key, the config tells
+     * Iceberg's S3FileIO to write with it ({@code s3.sse.type} {@code kms}, {@code s3.sse.key} the key ARN), as the
+     * session policy demands (D26); an engine whose client reads neither must be set up to name the key itself.
      */
     static Vended vended(CatalogStorage.Bound bound, VendedCredentials credentials, String epoch,
                          String refreshPath, boolean cached) {

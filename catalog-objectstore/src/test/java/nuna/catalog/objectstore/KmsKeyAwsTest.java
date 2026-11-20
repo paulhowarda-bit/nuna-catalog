@@ -30,10 +30,20 @@ import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
  * writes with SSE-KMS and no key id, which also makes S3 create the key in an account that has none yet.
  *
  * <p>Credentials vended for a table of a profile that names the key write with it, in one request or in parts, and
- * read what they wrote; they are refused a write with no encryption header, with SSE-S3, with SSE-KMS naming no key,
- * and with another key ARN, which the session policy refuses before S3 asks KMS (AccessDenied, not KMS's NotFound for
- * a key that does not exist). The server's metadata write ({@link MetadataFiles}, the run's sign-in) is encrypted with
- * the key. The vending role allows every S3 action on the run's buckets, so each refusal is the session policy's.
+ * read what they wrote; the session policy refuses them (AccessDenied) a write with no encryption header and with
+ * SSE-S3, and read access any write. The vending role allows every S3 action on the run's buckets, so each of those
+ * refusals is the session policy's. What the first runs of 2026-11-20 showed of S3's order:
+ * <ul>
+ *   <li>A write with SSE-KMS naming no key gets through: S3 checks the condition against the key it will use, and
+ *       with no key named that is {@code aws/s3}, this profile's key, which it is then encrypted with.</li>
+ *   <li>The parts of a multipart upload carry no encryption header, yet are let through after a
+ *       CreateMultipartUpload naming the key.</li>
+ *   <li>S3 looks the named key up before it checks the policy: a key ARN that does not exist is refused by S3 itself,
+ *       400 "does not exist", not by the policy. The account holds no key but {@code aws/s3}, and Paul allowed no
+ *       other, so a write naming another existing key is not run here; {@code SessionPolicyTest} shows the condition
+ *       names exactly the profile's key.</li>
+ * </ul>
+ * The server's metadata write ({@link MetadataFiles}, the run's sign-in) is encrypted with the key.
  *
  * <p>The {@code aws/s3} key's own policy lets every principal in the account use it through S3, so this run does not
  * show that the session policy's KMS statement is enough for a customer-managed key whose policy defers to IAM.
@@ -86,14 +96,22 @@ class KmsKeyAwsTest {
                         RequestBody.fromString("no encryption")));
                 assertAccessDenied(() -> writer.putObject(r -> r.bucket(bucket).key(refused)
                         .serverSideEncryption(ServerSideEncryption.AES256), RequestBody.fromString("SSE-S3")));
-                assertAccessDenied(() -> writer.putObject(r -> r.bucket(bucket).key(refused)
-                        .serverSideEncryption(ServerSideEncryption.AWS_KMS), RequestBody.fromString("no key named")));
-                assertAccessDenied(() -> writer.putObject(withKey(bucket, otherKey, refused),
-                        RequestBody.fromString("another key")));
                 assertAccessDenied(() -> writer.createMultipartUpload(r -> r.bucket(bucket).key(refused)));
-                assertAccessDenied(() -> writer.createMultipartUpload(multipartWithKey(bucket, otherKey, refused)));
+                assertAccessDenied(() -> writer.createMultipartUpload(r -> r.bucket(bucket).key(refused)
+                        .serverSideEncryption(ServerSideEncryption.AES256)));
                 assertAccessDenied(() -> reader.putObject(withKey(bucket, key, refused),
                         RequestBody.fromString("reader")));
+                // SSE-KMS naming no key: S3 checks the condition against the key it will use, here aws/s3, which is
+                // this profile's key, so the write is let through and encrypted with it. With a customer-managed key
+                // as the profile's, the same write would come to aws/s3 and be refused; that is not run here.
+                String defaultKey = "t/orders/data/default-key.parquet";
+                writer.putObject(r -> r.bucket(bucket).key(defaultKey)
+                        .serverSideEncryption(ServerSideEncryption.AWS_KMS), RequestBody.fromString("no key named"));
+                assertEncryptedWith(admin.headObject(r -> r.bucket(bucket).key(defaultKey)), key);
+                // A key that does not exist: S3 refuses it before the policy is asked.
+                assertNoSuchKey(() -> writer.putObject(withKey(bucket, otherKey, refused),
+                        RequestBody.fromString("another key")));
+                assertNoSuchKey(() -> writer.createMultipartUpload(multipartWithKey(bucket, otherKey, refused)));
                 assertThat(admin.listObjectsV2(r -> r.bucket(bucket).prefix(refused)).contents()).isEmpty();
             }
 
@@ -127,6 +145,15 @@ class KmsKeyAwsTest {
                 .isInstanceOfSatisfying(S3Exception.class, e -> {
                     assertThat(e.statusCode()).as(e.getMessage()).isEqualTo(403);
                     assertThat(e.awsErrorDetails().errorCode()).isEqualTo("AccessDenied");
+                });
+    }
+
+    /** Refused by S3 itself because the key named does not exist, as the runs of 2026-11-20 saw: 400. */
+    private static void assertNoSuchKey(Executable call) {
+        assertThatThrownBy(call::execute)
+                .isInstanceOfSatisfying(S3Exception.class, e -> {
+                    assertThat(e.statusCode()).as(e.getMessage()).isEqualTo(400);
+                    assertThat(e.getMessage()).contains("does not exist");
                 });
     }
 

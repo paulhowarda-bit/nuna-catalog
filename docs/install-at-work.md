@@ -236,8 +236,8 @@ config:
 kubectl -n <namespace> create configmap nuna-storage-ca --from-file=lake.crt=<CA PEM file>
 ```
 
-- An AWS S3 profile's KMS key (D26, backlog 23): `kms-key` names one key ARN, in the profile's region (not an alias:
-  the policy condition compares the key ARN a write names). The server's metadata files are written with it;
+- An AWS S3 profile's KMS key (D26, backlog 23): `kms-key` names one key ARN, in the profile's region (not an alias or a
+  bare key id). The server's metadata files are written with it;
   credentials vended for the profile's tables may write only with SSE-KMS under exactly that key, so a write with no
   encryption header, with SSE-S3 or with another key is refused; and the load response tells engines to use it
   (`s3.sse.type: kms`, `s3.sse.key: <ARN>`), which Iceberg's Java S3FileIO (Spark, Flink, the worker's Jobs) reads.

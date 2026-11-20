@@ -29,7 +29,7 @@ public record StorageProfile(
 
     /**
      * A key ARN: {@code arn:<partition>:kms:<region>:<account>:key/<key id>}, the id a single-Region key's UUID or a
-     * multi-Region key's {@code mrk-} id. Nothing else passes, so the key carries no character a policy reads specially.
+     * multi-Region key's {@code mrk-} id. Nothing else passes, so the key holds no character a policy reads specially.
      */
     private static final Pattern KEY_ARN = Pattern.compile("arn:(aws|aws-cn|aws-us-gov):kms:([a-z0-9-]+):[0-9]{12}"
             + ":key/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|mrk-[0-9a-f]{32})");
@@ -69,10 +69,9 @@ public record StorageProfile(
     }
 
     /**
-     * Checks that {@code key} can be a profile's KMS key: a key ARN (an alias or a bare key id never matches the
-     * session policy's condition, which compares the key a write names), in the profile's region and partition, since
-     * S3 encrypts only with a key in the bucket's region. Only AWS S3 profiles name one: the condition and the ARN
-     * are AWS's.
+     * Checks that {@code key} can be a profile's KMS key: a key ARN, the form AWS documents for the session policy's
+     * condition and the one engines are told to send, in the profile's region and partition, since S3 encrypts only
+     * with a key in the bucket's region. Only AWS S3 profiles name one: the condition and the ARN are AWS's.
      *
      * @throws IllegalArgumentException saying what is wrong
      */
