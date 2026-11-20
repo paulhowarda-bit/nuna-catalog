@@ -29,7 +29,8 @@ import org.testcontainers.utility.DockerImageName;
 
 /**
  * The server on Oracle ({@code nuna.database.backend=oracle}): Boot's own pool reaches the catalog service, which
- * has Transaction Guard on, with the read timeout set as deploy/README.md says, and the REST flow works on it.
+ * has Transaction Guard on, with the read timeout set as deploy/README.md says, and the REST flow works on it. The
+ * pool reaches the database through a link the test can cut; while it is cut the routes answer 503 with Retry-After.
  */
 @Tag("heavy")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -60,26 +61,36 @@ class OracleBackendTest {
         new BackendFlow(port).run();
     }
 
+    /** Backlog 70: what item 7 made the store raise for a database it cannot reach, the routes answer as an outage. */
+    @Test
+    void anOutageAnswers503WithRetryAfterUntilTheLinkIsBack() {
+        new BackendFlow(port).outage(Oracle.link::cut, Oracle.link::heal);
+    }
+
     /**
      * Oracle Free with the catalog service and the catalog role's grants (OracleCatalogStore's class comment), and
-     * the server's datasource on it. An initializer, as IssuerForTests is: the store is made while the web server
-     * starts, before property registrar beans run. One container for the JVM; Testcontainers removes it at exit.
+     * the server's datasource on it, through {@link LinkForTests}; the setup goes to the database directly. An
+     * initializer, as IssuerForTests is: the store is made while the web server starts, before property registrar
+     * beans run. One container for the JVM; Testcontainers removes it at exit.
      */
     static class Oracle implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
         private static final String USER = "catalog";
         private static final String PASSWORD = "catalog";
         private static final String SERVICE = "catalog_tg";
+        private static final String ALIAS = "oracle";
+        private static final int PORT = 1521;
         /** Free caps itself at 2 GB of memory; the container gets a little headroom and no more. */
         private static final long MEMORY_BYTES = 2560L * 1024 * 1024;
 
         private static OracleContainer oracle;
+        private static LinkForTests link;
 
         @Override
         public void initialize(ConfigurableApplicationContext context) {
-            OracleContainer oracle = started();
+            started();
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("oracle-for-tests", Map.of(
-                    "spring.datasource.url", url(oracle, SERVICE),
+                    "spring.datasource.url", url(link.host(), link.port(), SERVICE),
                     "spring.datasource.username", USER,
                     "spring.datasource.password", PASSWORD,
                     "spring.datasource.hikari.data-source-properties.oracle.jdbc.ReadTimeout", "120000")));
@@ -89,7 +100,10 @@ class OracleBackendTest {
             if (oracle != null) {
                 return oracle;
             }
+            link = new LinkForTests();
             oracle = new OracleContainer(DockerImageName.parse(System.getProperty("oracle.image")))
+                    .withNetwork(link.network())
+                    .withNetworkAliases(ALIAS)
                     .withUsername(USER)
                     .withPassword(PASSWORD)
                     .withStartupTimeout(Duration.ofMinutes(5))
@@ -109,18 +123,24 @@ class OracleBackendTest {
                     "SELECT ON SYS.V_$SERVICES", "SELECT ON SYS.V_$PARAMETER", "CREATE JOB"}) {
                 execute(sysdba, "GRANT " + grant + " TO " + USER);
             }
-            awaitService(direct(oracle, SERVICE, USER, false));
+            link.to(ALIAS, PORT);
+            // Through the link, as the server will connect.
+            awaitService(dataSource(url(link.host(), link.port(), SERVICE), USER, false));
             return oracle;
         }
 
-        private static String url(OracleContainer oracle, String service) {
-            return "jdbc:oracle:thin:@//" + oracle.getHost() + ":" + oracle.getOraclePort() + "/" + service;
+        private static String url(String host, int port, String service) {
+            return "jdbc:oracle:thin:@//" + host + ":" + port + "/" + service;
         }
 
         private static DataSource direct(OracleContainer oracle, String service, String user, boolean sysdba) {
+            return dataSource(url(oracle.getHost(), oracle.getOraclePort(), service), user, sysdba);
+        }
+
+        private static DataSource dataSource(String url, String user, boolean sysdba) {
             try {
                 OracleDataSource dataSource = new OracleDataSource();
-                dataSource.setURL(url(oracle, service));
+                dataSource.setURL(url);
                 dataSource.setUser(user);
                 dataSource.setPassword(PASSWORD);
                 Properties properties = new Properties();

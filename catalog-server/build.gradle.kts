@@ -34,6 +34,8 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-oracle-free")
+    // The link OracleBackendTest and MongodbBackendTest cut, the store tests' proxy (backlog 70).
+    testImplementation("org.testcontainers:testcontainers-toxiproxy")
     testImplementation(project(path = ":catalog-security", configuration = "testJar"))
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:testcontainers-kafka")
@@ -67,7 +69,8 @@ configurations.consumable("execJar") {
 }
 
 tasks.test {
-    listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image", "chrome.image")
+    listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image", "chrome.image",
+        "toxiproxy.image")
         .forEach { systemProperty(it, project.property(it)!!) }
     // IcebergImportBoundaryTest and NoKmsBoundaryTest read every module's main sources.
     inputs.files(rootProject.fileTree(rootDir) { include("*/src/main/java/**/*.java") })
