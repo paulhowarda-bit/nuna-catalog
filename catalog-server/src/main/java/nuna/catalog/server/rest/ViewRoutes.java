@@ -28,7 +28,10 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The view routes of D13. Creates and replaces go through the commit engine (M3). */
+/**
+ * The view routes of D13. Creates and replaces go through the commit engine (M3). Through a branch or tag
+ * ({@code catalog@ref}, D33), lists, loads and HEAD read as of the ref; every write there is refused ({@link OnRef}).
+ */
 @RestController
 class ViewRoutes {
 
@@ -90,13 +93,16 @@ class ViewRoutes {
     @GetMapping(VIEW)
     ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace,
                                 @PathVariable String view, HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.LOAD_VIEW);
+        OnRef on = lookup.onRef(prefix, RequestContext.of(http, callers), Guard.LOAD_VIEW);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
-        CatalogObject object = objects.existing(catalog, levels, view, Kind.VIEW);
+        Lookup.Seen seen = objects.seen(on, levels, view, Kind.VIEW);
+        CatalogObject object = seen.object();
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, view),
                 Guard.LOAD_VIEW, Http.noSuchView(Http.qualified(levels, view)));
-        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
-        reads.read(http, catalog, AuditEvents.path(levels, view), object, current.pointer());
+        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object,
+                lookup.pointer(on, seen));
+        reads.read(http, catalog, AuditEvents.path(levels, view), object, current.pointer(), on.branch());
         return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of(),
                 GovernanceChain.of(store, object).labels()));
     }
@@ -115,7 +121,7 @@ class ViewRoutes {
                                    @RequestBody(required = false) String body,
                                    HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.REPLACE_VIEW);
+        CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.REPLACE_VIEW);
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, view);
         NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchView(qualified));

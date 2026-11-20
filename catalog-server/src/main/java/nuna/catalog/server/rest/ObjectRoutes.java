@@ -22,6 +22,7 @@ import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
+import nuna.catalog.store.Pointer;
 import nuna.catalog.store.WriteResult;
 import java.time.Clock;
 import java.time.Instant;
@@ -33,7 +34,8 @@ import org.springframework.stereotype.Component;
 
 /**
  * What table and view routes share: listing, existence, soft drop (D25) and rename. Tables and views
- * share one name space per namespace, so a name held by the other kind is reported as such.
+ * share one name space per namespace, so a name held by the other kind is reported as such. Listing and existence
+ * read through a ref's cut; drops and renames happen on main only (D33, as amended 2026-11-20).
  */
 @Component
 class ObjectRoutes {
@@ -73,35 +75,44 @@ class ObjectRoutes {
                 Http.qualified(levels, name));
     }
 
-    /** The active object of {@code kind} the path names; a missing namespace is a missing object. */
+    /** The active object of {@code kind} the path names on main; a missing namespace is a missing object. */
     CatalogObject existing(CatalogRecord catalog, List<String> levels, String name, Kind kind) {
+        return seen(OnRef.main(catalog), levels, name, kind).object();
+    }
+
+    /**
+     * The object of {@code kind} the path names, as main or the ref sees it ({@link Lookup#seen}); a missing namespace
+     * is a missing object.
+     */
+    Lookup.Seen seen(OnRef on, List<String> levels, String name, Kind kind) {
         String qualified = Http.qualified(levels, name);
-        NamespaceRecord namespace = lookup.namespace(catalog, levels).orElseThrow(() -> noSuch(kind, qualified));
-        return lookup.object(namespace, name, kind).orElseThrow(() -> noSuch(kind, qualified));
+        NamespaceRecord namespace = lookup.namespace(on, levels).orElseThrow(() -> noSuch(kind, qualified));
+        return lookup.seen(on, namespace, levels, name, kind).orElseThrow(() -> noSuch(kind, qualified));
     }
 
     ResponseEntity<String> list(String prefix, String namespace, String pageToken, String pageSize, Kind kind,
                                 RequestContext request) {
-        CatalogRecord catalog = lookup.catalog(prefix, request,
-                kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS);
+        OnRef on = lookup.onRef(prefix, request, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
-        NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+        NamespaceRecord record = lookup.existingNamespace(on, levels);
         guard.onNamespace(request, catalog, record, levels, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS,
                 Http.noSuchNamespace(levels));
-        Page<CatalogObject> page = lookup.listing(pageToken, pageSize,
-                pageRequest -> store.listObjects(record.id(), kind, CatalogObject.State.ACTIVE, pageRequest));
+        Page<String> page = lookup.listing(pageToken, pageSize,
+                pageRequest -> lookup.objectNames(on, record.id(), kind, pageRequest));
         List<Identifier> identifiers = page.items().stream()
-                .map(o -> new Identifier(levels, o.name().display()))
+                .map(name -> new Identifier(levels, name))
                 .toList();
         return Http.json(200, RestResponse.identifiers(identifiers, page.nextToken().orElse(null)));
     }
 
     /** 404 for an object that does not exist, and for one the caller may not learn exists (D18). */
     ResponseEntity<Void> exists(String prefix, String namespace, String name, Kind kind, RequestContext request) {
-        CatalogRecord catalog = lookup.catalog(prefix, request,
-                kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS);
+        OnRef on = lookup.onRef(prefix, request, kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
-        Optional<CatalogObject> found = lookup.namespace(catalog, levels).flatMap(ns -> lookup.object(ns, name, kind));
+        Optional<CatalogObject> found = lookup.namespace(on, levels)
+                .flatMap(ns -> lookup.seen(on, ns, levels, name, kind)).map(Lookup.Seen::object);
         if (found.isEmpty() || !guard.allowsOnObject(request, catalog, found.get(), AuditEvents.path(levels, name),
                 kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS)) {
             return ResponseEntity.notFound().build();
@@ -220,9 +231,13 @@ class ObjectRoutes {
         };
     }
 
-    /** The current metadata of an object, or the 500 the engine answers for a file that fails its hash. */
-    static CommitEngine.Current.Loaded current(CommitEngine reader, CatalogObject object) {
-        return switch (reader.readCurrent(object)) {
+    /**
+     * The metadata {@code pointer} names for an object, main's or a ref's, or the 500 the engine answers for a file
+     * that fails its hash.
+     */
+    static CommitEngine.Current.Loaded current(CommitEngine reader, CatalogObject object, Optional<Pointer> pointer) {
+        return switch (reader.readAt(object, pointer.orElseThrow(() -> new IllegalStateException("object "
+                + object.id() + " has no pointer")))) {
             case CommitEngine.Current.Loaded loaded -> loaded;
             case CommitEngine.Current.Refused refused ->
                     throw CatalogError.of(500, refused.error().type(), refused.error().message());

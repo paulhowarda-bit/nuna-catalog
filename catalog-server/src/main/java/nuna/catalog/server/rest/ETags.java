@@ -5,12 +5,15 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
+import java.util.UUID;
 
 /**
  * Table-load ETags (D14). The tag hashes what decides the response body without reading metadata:
  * the metadata file's location (a file never changes), the snapshot mode, the view chain the load is
- * scoped to, the credential epoch, and the labels the load sends (D27, amended 2026-11-12). So a 304 is
+ * scoped to, the credential epoch, the labels the load sends (D27, amended 2026-11-12), and the branch or tag a load
+ * reads through (D33). So a 304 is
  * decided from the pointer and one governance read, and a label changed on the table or above it
  * changes the tag.
  */
@@ -21,11 +24,21 @@ final class ETags {
 
     static String of(String metadataLocation, boolean refsOnly, String referencedBy, String credentialEpoch,
                      Map<String, String> labels) {
+        return of(metadataLocation, refsOnly, referencedBy, credentialEpoch, labels, Optional.empty());
+    }
+
+    /**
+     * {@link #of} for a load through a branch or tag, whose id the tag carries too (D33): the same file read through
+     * main and through a tag is answered with different credentials. A load on main hashes what it always did.
+     */
+    static String of(String metadataLocation, boolean refsOnly, String referencedBy, String credentialEpoch,
+                     Map<String, String> labels, Optional<UUID> ref) {
         StringBuilder labelled = new StringBuilder();
         new TreeMap<>(labels).forEach((label, value) -> labelled.append(label.length()).append(':').append(label)
                 .append(value.length()).append(':').append(value));
         String canonical = String.join("\n", metadataLocation, refsOnly ? "refs" : "all",
-                referencedBy == null ? "" : referencedBy, credentialEpoch, labelled);
+                referencedBy == null ? "" : referencedBy, credentialEpoch, labelled)
+                + ref.map(id -> "\nref:" + id).orElse("");
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(canonical.getBytes(StandardCharsets.UTF_8));
             return "\"" + HexFormat.of().formatHex(digest, 0, 16) + "\"";

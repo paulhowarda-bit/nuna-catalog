@@ -57,7 +57,7 @@ class TransactionRoutes {
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.COMMIT_TRANSACTION);
+        CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.COMMIT_TRANSACTION);
         String json = body == null ? "" : body;
         List<RestRequest.TableCommit> commits = RestRequest.commitTransaction(json);
         if (commits.size() > settings.maxTransactionTables()) {

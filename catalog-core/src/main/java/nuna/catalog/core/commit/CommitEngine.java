@@ -210,8 +210,16 @@ public final class CommitEngine {
      * matches its hash is alerted; for a regulated object the read fails closed (D5, D26).
      */
     public Current readCurrent(CatalogObject object) {
-        Pointer pointer = store.readPointer(object.mainKey())
-                .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
+        return readAt(object, store.readPointer(object.mainKey())
+                .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer")));
+    }
+
+    /**
+     * The metadata {@code pointer} names for a table or view, as {@link #readCurrent} reads main's: a branch's own
+     * pointer, or the one a ref's cut took (D33). The file is checked against the pointer's hash, alerted and, for a
+     * regulated object, refused as on main.
+     */
+    public Current readAt(CatalogObject object, Pointer pointer) {
         Optional<String> json = load(object, pointer, GovernanceChain.of(store, object));
         return json.<Current>map(j -> new Current.Loaded(pointer, j))
                 .orElseGet(() -> new Current.Refused(new ServerError(SERVICE_FAILURE, "Metadata file "
