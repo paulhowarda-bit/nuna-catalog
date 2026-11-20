@@ -226,9 +226,10 @@ config:
   store, and name it in the chart's `storageCaConfigMap.name`; the chart mounts it at `/etc/nuna/storage-ca`, and
   the profile's `ca-bundle` names the file there. That profile's S3 and STS clients then trust the bundle beside
   the JVM's CAs; no other client does, and the JVM's trust store is left alone. The server refuses to start, naming
-  the profile and the file, if it cannot read the file or finds no certificate in it. Vended credentials carry the
-  endpoint, not the CA: engines (Spark, Trino, PyIceberg and the rest) must trust the store through their own
-  setup, as they would without the catalog.
+  the profile and the file, if it cannot read the file or finds no certificate in it; the audit archive's client
+  trusts its profile's bundle the same way (backlog 87). Vended credentials carry the endpoint, not the CA: engines
+  (Spark, Trino, PyIceberg and the rest) must trust the store through their own setup, as they would without the
+  catalog. The worker's compaction Jobs are the exception: the worker hands them the CA (section 6).
 
 ```bash
 kubectl -n <namespace> create configmap nuna-storage-ca --from-file=lake.crt=<CA PEM file>
@@ -265,8 +266,11 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
 - A store with a private CA: give the worker's chart the same `storageCaConfigMap.name` and the profile the same
   `ca-bundle`, and write its `endpoint` as the catalog's profile writes it (scheme, host and port). The worker's
   S3 clients to that endpoint trust the bundle: its own, and those reading tables with the credentials the catalog
-  vends it, which name the catalog's endpoint. A compaction Job is Spark, an engine: its image must trust the CA
-  itself.
+  vends it, which name the catalog's endpoint. A compaction Job for a table on that store gets the bundle from the
+  worker, in a ConfigMap of its own in the Jobs' namespace, and its Spark trusts it beside the image's JDK CAs (D21,
+  amended 2026-11-20; backlog 88), so the image needs nothing added. With such a profile the chart also grants the
+  worker `create` on ConfigMaps in the Jobs' namespace. `catalog-maintenance/README.md` ("Compaction on need") says
+  what the image must have: `JAVA_HOME` and `keytool`, as the apache/spark images do.
 - Compaction is off until `compaction.image` names the Spark image and `compaction.namespace` the Jobs'
   namespace.
 - The Jobs run in their own namespace and sign in themselves, so the catalog (`compaction.catalog-uri`, by default

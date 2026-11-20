@@ -94,7 +94,8 @@ class KubernetesCompactionTest {
             WorkerSettings.Compaction settings = new WorkerSettings.Compaction(IMAGE, "Never", jobs,
                     "nuna-compaction", apiServer, serviceAccount, forPods, "2Gi", "1g", 2, 185, Map.of());
             FakeClock clock = new FakeClock();
-            KubernetesJobs compactor = new KubernetesJobs(settings, catalog.uri, catalog.workerTokens(), clock);
+            KubernetesJobs compactor = new KubernetesJobs(settings, catalog.uri, catalog.workerTokens(), Map.of(),
+                    clock);
             CleanupWindow window = TestCatalog.allDay(clock);
             CleanupWindow.Night night = window.night(clock.instant()).orElseThrow();
 

@@ -115,6 +115,16 @@ as its name, and stops (exit 3, a `TABLE CHANGED` line) unless the table it load
 long after the scan, when another table may have taken the name. The files it replaces are left for expiry. A
 finished Job is kept a day for its log; how long it is kept schedules nothing.
 
+A table on a store whose certificate a private CA signed, one whose `storage` profile (the one whose prefixes hold
+the table's location) names a `ca-bundle`, gets that CA in its Job too (D21, amended 2026-11-20; backlog 88). A pod
+mounts only ConfigMaps of its own namespace, so the worker copies the bundle it trusts into a ConfigMap of the Job's
+own, one certificate per key, named like the Job's Secret, owned by the Job and created after it, and mounts it at
+`/etc/nuna/storage-ca`. Before Spark starts, the pod builds a trust store of the image's JDK CAs
+(`$JAVA_HOME/lib/security/cacerts`, password `changeit`) and the bundle's with the JDK's `keytool`, and Spark's
+driver trusts that store (`-Djavax.net.ssl.trustStore` in `spark.driver.extraJavaOptions`, on spark-submit's command
+line). So the image needs `JAVA_HOME` and `keytool`, as the apache/spark images have; a `keytool` failure stops the
+Job with keytool's output. A table on a profile without a bundle gets the Job as before.
+
 The worker's meters count the tables assessed, the needs by reason, the Jobs started and cut off and the tables
 left over, and give each needy table a series of its own (`docs/observability/worker-metrics.md`). The catalog keeps
 each table's latest assessment and how its last Job stands or ended, as the worker reports them, and lists the
@@ -152,7 +162,7 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `storage.<profile>.region` | `us-east-1` | The region. |
 | `storage.<profile>.path-style-access` | `false` | Address buckets by path (MinIO, Ceph). |
 | `storage.<profile>.access-key-id`, `secret-access-key` | none | The worker's keys. With neither, the AWS SDK's default chain is used (IRSA, Pod Identity). |
-| `storage.<profile>.ca-bundle` | none | A PEM file of the CA that signed an on-prem store's certificate (backlog 21). It needs the `endpoint`, written as the catalog's profile writes it: the worker's S3 clients to that endpoint, its own and those reading tables with the credentials the catalog vends, trust the bundle beside the JVM's CAs. The worker refuses to start if it cannot read the file or finds no certificate in it. |
+| `storage.<profile>.ca-bundle` | none | A PEM file of the CA that signed an on-prem store's certificate (backlog 21). It needs the `endpoint`, written as the catalog's profile writes it: the worker's S3 clients to that endpoint, its own and those reading tables with the credentials the catalog vends, trust the bundle beside the JVM's CAs. A compaction Job for a table under the profile's prefixes gets it too, and its Spark trusts it ("Compaction on need"). The worker refuses to start if it cannot read the file or finds no certificate in it. |
 | `compaction.image` | none | The Spark image. Compaction is off without one. |
 | `compaction.image-pull-policy` | `IfNotPresent` | Its pull policy. |
 | `compaction.namespace` | required with an image | Where Jobs run: a namespace for them alone, never the worker's (refused at startup) nor the catalog's. A pod may run as any service account and mount any Secret of its namespace. |
@@ -210,7 +220,8 @@ nuna:
 - **In Kubernetes, for compaction only.** The Jobs run in a namespace of their own, created beforehand: never
   the worker's or the catalog's, since a pod there could run as their service accounts or mount their Secrets.
   In it the worker needs `get` and `create` on Jobs (it reads a Job's conditions to see it finish, or stop at
-  its deadline) and `create` on Secrets, nothing else. Its pods run as
+  its deadline) and `create` on Secrets, and `create` on ConfigMaps when a storage profile names a `ca-bundle`
+  (each Job's copy of its store's CA), nothing else. Its pods run as
   `job-service-account`, which has no rights and no token mounted. The chart makes that account, the Role and
   its RoleBinding there when `compaction.image` is set, and refuses to render without
   `compaction.namespace` or with the release's own. The worker's catalog sign-in, the client id and secret
