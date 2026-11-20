@@ -1,5 +1,6 @@
 package nuna.catalog.store.oracle;
 
+import static nuna.catalog.store.oracle.Jdbc.exists;
 import static nuna.catalog.store.oracle.Jdbc.instant;
 import static nuna.catalog.store.oracle.Jdbc.query;
 import static nuna.catalog.store.oracle.Jdbc.update;
@@ -12,6 +13,7 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
@@ -20,8 +22,12 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
-/** Grants to groups (D18, D19). A put locks its securable, so a drop or purge that deletes grants waits for it. */
+/**
+ * Grants to groups (D18, D19). A put locks its securable, so a drop or purge that deletes grants waits for it.
+ * A conditional put locks its catalog's row first, so conditional puts in one catalog run one at a time.
+ */
 final class OracleGrants {
 
     private static final String COLUMNS = "catalog_id, securable_kind, securable_id, group_name, privilege, granted_by,"
@@ -34,23 +40,44 @@ final class OracleGrants {
     }
 
     WriteResult put(Grant grant, String grantedBy, Change change) {
+        return transactions.change(change, "grant", connection -> insert(connection, grant, grantedBy, change));
+    }
+
+    /**
+     * The group's grants in the catalog are read only once the catalog's row is locked, and READ COMMITTED reads
+     * from that moment, so each conditional put sees every grant the one before it committed. The catalog is
+     * locked before the securable, and no write locks a namespace or object and then its catalog, so the two locks
+     * cannot deadlock (which Oracle answers with an error, not a retry).
+     */
+    WriteResult putIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
         return transactions.change(change, "grant", connection -> {
-            Optional<WriteResult> missing = Guards.missing(connection, grant.securable(), Optional.of(grant.catalogId()));
-            if (missing.isPresent()) {
-                return missing.get();
+            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", grant.catalogId())) {
+                return new WriteResult.Missing(WriteResult.Subject.CATALOG);
             }
-            try {
-                update(connection, "INSERT INTO grant_record (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        grant.catalogId(), grant.securable().kind().name(), grant.securable().id(), grant.group(),
-                        grant.privilege(), grantedBy, change.at());
-            } catch (SQLIntegrityConstraintViolationException e) {
-                if (!Jdbc.violates(e, "GRANT_RECORD_PK")) {
-                    throw e;
-                }
-                return WriteResult.UNCHANGED;
-            }
-            return WriteResult.APPLIED;
+            List<String> held = query(connection, "SELECT privilege FROM grant_record WHERE catalog_id = ?"
+                    + " AND group_name = ?", row -> row.getString("privilege"), grant.catalogId(), grant.group());
+            return admits.test(held) ? insert(connection, grant, grantedBy, change)
+                    : new WriteResult.Refused(WriteResult.Reason.NOT_ADMITTED);
         });
+    }
+
+    private static WriteResult insert(Connection connection, Grant grant, String grantedBy, Change change)
+            throws SQLException {
+        Optional<WriteResult> missing = Guards.missing(connection, grant.securable(), Optional.of(grant.catalogId()));
+        if (missing.isPresent()) {
+            return missing.get();
+        }
+        try {
+            update(connection, "INSERT INTO grant_record (" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    grant.catalogId(), grant.securable().kind().name(), grant.securable().id(), grant.group(),
+                    grant.privilege(), grantedBy, change.at());
+        } catch (SQLIntegrityConstraintViolationException e) {
+            if (!Jdbc.violates(e, "GRANT_RECORD_PK")) {
+                throw e;
+            }
+            return WriteResult.UNCHANGED;
+        }
+        return WriteResult.APPLIED;
     }
 
     WriteResult revoke(Grant grant, Change change) {

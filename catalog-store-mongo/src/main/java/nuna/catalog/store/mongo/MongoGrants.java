@@ -8,6 +8,7 @@ import static nuna.catalog.store.mongo.Docs.instant;
 import static nuna.catalog.store.mongo.Docs.page;
 import static nuna.catalog.store.mongo.Docs.time;
 import static nuna.catalog.store.mongo.Docs.uuid;
+import static nuna.catalog.store.mongo.MongoCatalogStore.CATALOG;
 import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
 
 import com.mongodb.client.MongoCollection;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
 import org.bson.BsonString;
@@ -31,7 +33,9 @@ import org.bson.BsonValue;
 
 /**
  * Grants. A grant marks its securable, so a concurrent drop or purge of the securable conflicts
- * with it. A revoke marks the securable too, so a grant put back later stamps higher.
+ * with it. A revoke marks the securable too, so a grant put back later stamps higher. A conditional
+ * grant also marks its catalog, so of two made at once in one catalog, the later to write conflicts
+ * and runs again on a snapshot that holds the other's grant.
  */
 final class MongoGrants {
 
@@ -42,26 +46,48 @@ final class MongoGrants {
     }
 
     WriteResult put(Grant grant, String grantedBy, Change change) {
+        return transactions.change(change, "grant", tx -> insert(tx, grant, grantedBy, change, Optional.empty()));
+    }
+
+    /** Reads the group's grants in the catalog from the transaction's snapshot; the catalog's mark settles any race. */
+    WriteResult putIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
         return transactions.change(change, "grant", tx -> {
-            Optional<BsonDocument> securable = Guards.live(tx, grant.securable());
-            if (securable.isEmpty() || !Guards.catalogOf(grant.securable(), securable.get()).equals(grant.catalogId())) {
-                return Guards.missing(grant.securable());
+            Optional<BsonDocument> catalog = tx.find(CATALOG, byId(uuid(grant.catalogId())));
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.CATALOG);
             }
-            if (tx.exists(GRANT, key(grant))) {
-                return WriteResult.UNCHANGED;
-            }
-            tx.see(securable.get());
-            tx.mark(Guards.collection(grant.securable().kind()), securable.get());
-            tx.collection(GRANT).insertOne(tx.session, new BsonDocument("catalogId", uuid(grant.catalogId()))
-                    .append("securableKind", new BsonString(grant.securable().kind().name()))
-                    .append("securableId", uuid(grant.securable().id()))
-                    .append("group", new BsonString(grant.group()))
-                    .append("privilege", new BsonString(grant.privilege()))
-                    .append("grantedBy", new BsonString(grantedBy))
-                    .append("grantedAt", time(change.at()))
-                    .append("clock", tx.clock()));
-            return WriteResult.APPLIED;
+            BsonDocument ofGroup = new BsonDocument("catalogId", uuid(grant.catalogId()))
+                    .append("group", new BsonString(grant.group()));
+            List<String> held = tx.collection(GRANT).find(tx.session, ofGroup)
+                    .map(doc -> doc.getString("privilege").getValue()).into(new ArrayList<>());
+            return admits.test(held) ? insert(tx, grant, grantedBy, change, catalog)
+                    : new WriteResult.Refused(WriteResult.Reason.NOT_ADMITTED);
         });
+    }
+
+    /** Puts the grant, marking its securable and, when given, its catalog's document. */
+    private static WriteResult insert(Tx tx, Grant grant, String grantedBy, Change change,
+                                      Optional<BsonDocument> catalog) {
+        Optional<BsonDocument> securable = Guards.live(tx, grant.securable());
+        if (securable.isEmpty() || !Guards.catalogOf(grant.securable(), securable.get()).equals(grant.catalogId())) {
+            return Guards.missing(grant.securable());
+        }
+        if (tx.exists(GRANT, key(grant))) {
+            return WriteResult.UNCHANGED;
+        }
+        tx.see(securable.get());
+        catalog.ifPresent(tx::see);
+        tx.mark(Guards.collection(grant.securable().kind()), securable.get());
+        catalog.ifPresent(doc -> tx.mark(CATALOG, doc));
+        tx.collection(GRANT).insertOne(tx.session, new BsonDocument("catalogId", uuid(grant.catalogId()))
+                .append("securableKind", new BsonString(grant.securable().kind().name()))
+                .append("securableId", uuid(grant.securable().id()))
+                .append("group", new BsonString(grant.group()))
+                .append("privilege", new BsonString(grant.privilege()))
+                .append("grantedBy", new BsonString(grantedBy))
+                .append("grantedAt", time(change.at()))
+                .append("clock", tx.clock()));
+        return WriteResult.APPLIED;
     }
 
     WriteResult revoke(Grant grant, Change change) {

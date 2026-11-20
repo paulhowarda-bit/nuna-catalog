@@ -54,6 +54,12 @@ class GrantReplayTest {
         }
 
         @Override
+        public WriteResult putGrantIf(Grant grant, String grantedBy, Change change,
+                                      java.util.function.Predicate<List<String>> admits) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public WriteResult revokeGrant(Grant grant, Change change) {
             if (!grants.remove(grant)) {
                 return new WriteResult.Missing(WriteResult.Subject.GRANT);

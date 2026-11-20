@@ -55,6 +55,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import javax.sql.DataSource;
 import oracle.jdbc.LogicalTransactionId;
 import org.flywaydb.core.Flyway;
@@ -479,6 +480,11 @@ public final class OracleCatalogStore implements CatalogStore {
     @Override
     public WriteResult putGrant(Grant grant, String grantedBy, Change change) {
         return grants.put(grant, grantedBy, change);
+    }
+
+    @Override
+    public WriteResult putGrantIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
+        return grants.putIf(grant, grantedBy, change, admits);
     }
 
     @Override
