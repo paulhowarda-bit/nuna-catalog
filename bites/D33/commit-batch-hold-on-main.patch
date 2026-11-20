@@ -1,0 +1,17 @@
+Breaks: a commit on a branch may swap or hold main's pointers or another branch's, so it could move main around a merge.
+Module: catalog-store-api
+Test: RefLockTest#aCommitOnABranchSwapsAndHoldsOnlyTheBranchsPointers
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java b/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java
+index 6a0f100..7c3b68b 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java
+@@ -47,7 +47,7 @@ public record CommitBatch(UUID commitId, Instant committedAt, List<PointerSwap>
+         if (ref.isPresent()) {
+             RefLock lock = ref.get();
+             boolean fits = switch (lock) {
+-                case RefLock.Hold hold -> keys.stream().allMatch(hold::owns);
++                case RefLock.Hold hold -> true;
+                 case RefLock.End end -> swaps.stream().allMatch(swap -> swap.key().branch().equals(PointerKey.MAIN))
+                         && holds.stream().allMatch(held -> end.owns(held.key()));
+             };

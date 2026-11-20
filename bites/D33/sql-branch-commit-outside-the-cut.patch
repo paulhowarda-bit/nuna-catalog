@@ -1,0 +1,18 @@
+Breaks: a commit on a branch on the SQL stores checks only that the branch has a cut, so it swaps an object outside it.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$BranchCommits#aBranchSwapsOnlyItsCut
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 4fe54a3..41a751c 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -206,8 +206,7 @@ final class SqlRefs {
+         switch (lock) {
+             case RefLock.Hold hold -> {
+                 for (PointerSwap swap : batch.swaps()) {
+-                    if (!exists(connection, "SELECT 1 FROM ref_entry WHERE ref_id = ? AND object_id = ?"
+-                            + " AND kind <> 'NAMESPACE'", hold.refId(), swap.key().objectId())) {
++                    if (!exists(connection, "SELECT 1 FROM ref_entry WHERE ref_id = ?", hold.refId())) {
+                         return Optional.of(new CommitResult.Inactive(swap.key()));
+                     }
+                 }

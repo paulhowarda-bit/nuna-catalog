@@ -1,0 +1,17 @@
+Breaks: a merge may swap the branch's own pointers, which it then deletes, instead of main's.
+Module: catalog-store-api
+Test: RefLockTest#aMergeSwapsMainAndHoldsOnlyTheBranchsPointers
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java b/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java
+index 6a0f100..6f0fbc0 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/CommitBatch.java
+@@ -48,7 +48,7 @@ public record CommitBatch(UUID commitId, Instant committedAt, List<PointerSwap>
+             RefLock lock = ref.get();
+             boolean fits = switch (lock) {
+                 case RefLock.Hold hold -> keys.stream().allMatch(hold::owns);
+-                case RefLock.End end -> swaps.stream().allMatch(swap -> swap.key().branch().equals(PointerKey.MAIN))
++                case RefLock.End end -> swaps.stream().allMatch(swap -> true)
+                         && holds.stream().allMatch(held -> end.owns(held.key()));
+             };
+             if (!fits) {

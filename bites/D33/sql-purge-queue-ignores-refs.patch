@@ -1,0 +1,17 @@
+Breaks: the purge queue on the SQL stores lists a dropped table a ref still names.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$BranchCommits#aRefKeepsADroppedTablesFiles
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+index 45da871..6dab0e2 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java
+@@ -212,7 +212,7 @@ final class SqlObjects {
+             parameters.add(page.size() + 1);
+             List<CatalogObject> objects = query(connection, "SELECT " + COLUMNS + " FROM catalog_object o"
+                     + " WHERE state IN ('DROPPED', 'PURGING') AND purge_after <= ?" + keyset
+-                    + " AND (state = 'PURGING' OR (" + UNCOVERED + " AND " + UNREFERENCED + "))"
++                    + " AND (state = 'PURGING' OR (" + UNCOVERED + "))"
+                     + " ORDER BY purge_after, id LIMIT ?",
+                     SqlObjects::object, parameters.toArray());
+             return Jdbc.page(objects, page,

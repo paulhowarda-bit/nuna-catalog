@@ -1,0 +1,21 @@
+Breaks: a commit on a branch on Oracle neither locks nor checks its ref, so it lands on a deleted, expired or unknown branch or a tag.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$BranchCommits#aCommitOnAGoneBranchWritesNothing
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
+index 635d57b..ba78a66 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Pointers.java
+@@ -69,12 +69,6 @@ final class Pointers {
+      * and records; a merge then ends its branch.
+      */
+     static CommitResult apply(Connection connection, CommitBatch batch) throws SQLException {
+-        if (batch.ref().isPresent()) {
+-            Optional<CommitResult> refused = OracleRefs.lock(connection, batch);
+-            if (refused.isPresent()) {
+-                return refused.get();
+-            }
+-        }
+         Optional<CommitResult.Conflict> conflict = lockAndCompare(connection, batch);
+         if (conflict.isPresent()) {
+             return conflict.get();

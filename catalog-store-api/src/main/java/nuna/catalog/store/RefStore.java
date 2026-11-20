@@ -54,7 +54,9 @@ public interface RefStore {
     /**
      * Deletes a ref with its cut and every pointer keyed by its id, their projection pieces included, in one
      * transaction; the name is free at once. A branch's journal rows stay, keyed by its id. The ref is locked before
-     * any pointer.
+     * any pointer, for update, so a deletion waits for a commit on the branch in flight ({@link RefLock.Hold}) and
+     * deletes what it wrote, or the commit waits and is refused. A merge ends a branch the same way
+     * ({@link RefLock.End}).
      *
      * @return {@code Applied} or {@code Missing(REF)}
      */

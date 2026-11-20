@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**31 open:** 6 S, 11 M, 10 L, 4 XL.
+**32 open:** 6 S, 11 M, 11 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -43,6 +43,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
+| [114](backlog/114.md) | L | Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window) | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window | 2026-11-20 |
 
 ## Open items in full
 
@@ -1247,6 +1248,71 @@ Build:
 Done when those cases pass on all four stores in the heavy build, the fast build is green and the bites are recorded
 in `bites/D33/`. Waits on item 102. Items 105 and 107 wait on this one.
 
+**Progress, 2026-11-20 (worktree-agent-a3407b3f55b4afd72): built; open until the heavy build passes
+`BranchCommitSuite` and `MutationSuite`'s two new mutations on all four stores.**
+- API (`catalog-store-api`): `RefLock`, sealed, `Hold(refId)` for a commit on the branch and `End(refId)` for a merge.
+  `CommitBatch` gains `Optional<RefLock> ref` (seven arguments; the six- and five-argument forms are a batch on no
+  ref, so every caller compiles unchanged) and `refKey()`; the batch refuses a `Hold` that swaps or holds anything but
+  the branch's own pointers, and an `End` that swaps anything but main's or holds anything but the branch's.
+  `CommitResult.Inactive` gains a `Subject`, `OBJECT` (as before; `new Inactive(key)` still means it) or `REF`.
+  `WriteResult.Reason.REFERENCED`. Javadoc of `CommitStore.commit`, `RefStore.deleteRef`,
+  `CatalogObjectStore.listPurgeEligible` and `claimPurge` gives the outcomes.
+- Stores: the ref is locked before any pointer and checked first (`SqlRefs.lock`, `OracleRefs.lock`,
+  `MongoRefs.openBranch`): gone, a tag, or a branch not after its expiry at `committedAt` answers `Inactive(REF)`; a
+  branch commit's swap outside the cut answers `Inactive(OBJECT)`; a merge that does not hold an own pointer of the
+  branch answers `Conflict` on it. PostgreSQL and CockroachDB lock the ref `FOR SHARE` for a branch commit and
+  `FOR UPDATE` for a merge; Oracle `FOR UPDATE` for both; MongoDB marks it on a branch commit and deletes it on a
+  merge. A merge ends the branch after its swaps with the code `deleteRef` now shares (`SqlRefs.end`,
+  `OracleRefs.end`, `MongoRefs.end`). `claimPurge` answers `Refused(REFERENCED)` while any ref's cut names the object,
+  read under the object's lock after the freeze check; `listPurgeEligible` leaves such objects out
+  (`docs/storage-design.md` sections 3, 8, 9 (f) 3 and 8, (g)).
+- Tests: `BranchCommitSuite` (11 tests, heavy), run as `@Nested class BranchCommits` in the four store suites: a
+  branch commit writes only own pointers and every record; a commit on a deleted, expired, unknown branch or a tag
+  writes nothing; outside the cut, or on an object dropped since, writes nothing; a deletion waits for a branch commit
+  held before COMMIT and deletes what it wrote; 20 rounds of a commit racing a deletion; a merge moves main and ends
+  the branch, cut, own pointers and pieces, keeps its journal and frees the name; a merge whose main or branch pointer
+  moved, or that leaves an own pointer unheld, writes nothing; a merge of a gone branch writes nothing; 20 rounds of a
+  merge racing a branch commit, never both landing; a lost merge COMMIT wrote nothing and a lost answer landed whole;
+  a tag, an expired branch and a cut copied after the drop keep a dropped table's files until deleted.
+  `MutationSuite` drives "commit on a branch" and "merge" (heavy in test 2, overnight in the lost-answer and
+  cut-link sweeps). Java only and run: `RefLockTest` (5 tests). `RefSuite#aDeletionLeavesNothing` built its first
+  own pointer at version 2, which `PointerSwap` refuses; it is version 1 now.
+- Bites in `bites/D33/`: two Java-only, seen to bite `RefLockTest` on assertions (`commit-batch-hold-on-main`,
+  `commit-batch-merge-swaps-the-branch`); 16 on the heavy `BranchCommitSuite`, checked with `git apply --check`
+  only (`sql-branch-commit-ignores-the-ref`, `sql-branch-commit-unlocked-ref`, `sql-branch-commit-outside-the-cut`,
+  `sql-merge-keeps-the-branch`, `sql-merge-ignores-an-unheld-pointer`, `sql-purge-claim-ignores-refs`,
+  `sql-purge-queue-ignores-refs`, `oracle-branch-commit-ignores-the-ref`, `oracle-merge-keeps-the-branch`,
+  `oracle-purge-claim-ignores-refs`, `mongo-branch-commit-ignores-the-ref`, `mongo-branch-commit-unmarked-ref`,
+  `mongo-merge-keeps-the-branch`, `mongo-merge-ignores-an-unheld-pointer`, `mongo-purge-claim-ignores-refs`,
+  `mongo-purge-queue-ignores-refs`). Five older bites recorded again with the same break, since their lines moved:
+  `D30/purge-claim-ignores-freeze-sql`, `-oracle` and `-mongo`, `D33/sql-ref-delete-keeps-pointers` and
+  `D33/oracle-ref-delete-keeps-pieces` (the deletion's statements are now in the `end` a merge shares).
+
+Choices made (Paul may overrule):
+- `CommitResult.Inactive(key, subject)` instead of a new result type. Why: `CommitEngine` switches over
+  `CommitResult` exhaustively; a new subject keeps every switch compiling and lets item 105 tell a gone branch from a
+  dropped table.
+- `RefLock` names the branch once per batch, as `Hold` or `End`, and the batch checks its keys fit. Why: the store
+  then locks one ref, first, and a batch cannot mix a branch commit with a merge.
+- A merge must hold every own pointer of the branch; one it does not hold answers `Conflict` on that pointer. Why:
+  the design's "holds the branch's own pointers as the merge read them" would otherwise let a commit on another table
+  of the branch, landing after the merge read the branch, be deleted with it.
+- A merge that moves no table is not a batch (a batch swaps at least one pointer): the server ends the branch with
+  `deleteRef`. Why: nothing to swap, and the deletion already locks the ref as a merge would.
+- A branch commit's swap of an object outside the cut answers `Inactive(OBJECT)`, as a dropped object does. Why: no
+  retry can succeed, and the server already maps it.
+- A branch commit does not push the branch's expiry in its batch (choice 11): the server renews it after the commit
+  (items 105 and 106). Why: two commits holding the ref for share would deadlock upgrading it to write the expiry;
+  on Oracle and MongoDB it would also turn every commit into a write of the ref.
+- `REFERENCED` counts any ref whose cut names the object, a tag or a branch past its expiry alike, until the ref is
+  deleted (item 108 deletes expired branches). Why: the store keeps a ref until a write removes it (item 102's
+  choice), and P11 says a ref keeps its files.
+- The purge claim's ref check comes after the hold and freeze checks. Why: the existing reasons keep their order.
+- On Oracle, commits on one branch take turns on the ref's lock; on MongoDB they conflict on its mark and one retries.
+  Why: neither has a shared row lock, as their object checks already do (9 (f) 8).
+- The cut-link case for the merge runs in `MutationSuite` (overnight) as the item asks, and also once in
+  `BranchCommitSuite` (heavy), which checks the branch and main as well as the records.
+
 ### 104. Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26)
 
 - Decided: 2026-11-20, D33
@@ -1506,6 +1572,64 @@ when Paul asks.
 
 Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
 every ref, the governance routes and the console show the branch, and a test on each store shows it.
+
+### 114. Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window)
+
+- Added: 2026-11-20 by Paul
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/, catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-maintenance/, docs/observability/table-health.md, docs/observability/health-page.md, decision-ledger.md
+- Effort: L, a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window
+
+Paul asked (2026-11-20) whether there is a UI to see health data and to start maintenance tasks. The console shows
+health (the **Health** page and each table's **Health** tab, docs/observability/health-page.md), but nothing can
+start maintenance, in the console or through the API:
+
+- The console's only writes are grants (`catalog-server/src/main/resources/nuna/ui/api.js`, the two `POST`s at lines
+  154 and 159).
+- The maintenance routes are the worker's (`GET /management/v1/maintenance/work`, the deletions and the health
+  reports, `MaintenanceRoutes` and `HealthRoutes`) and the reads behind the health page. None asks for work.
+- The worker decides when work runs. It reads the work list every `scan-interval` (10 minutes); expiry, manifest
+  rewrite, purges and due deletions run at every scan, and compaction and orphan scans start only inside the nightly
+  cleanup window (D30, amended 2026-11-15; catalog-maintenance/README.md, "The cleanup window"). A table that needs
+  compaction at 09:00 waits for the night, and one that does not need it by the worker's thresholds never gets a Job.
+- An operator's only levers are the table's maintenance policy (`PUT .../maintenance-policy`, `modify` on the table)
+  and the deployment's window, neither of which says "now".
+
+Expiry and manifest rewrite already run within 10 minutes whenever the policy makes them due, so the request is for
+the two heavy jobs: a compaction of one table, and an orphan scan of one table.
+
+**The question for Paul:** may a requested compaction or orphan scan start outside the cleanup window?
+- *Recommended: yes.* The window keeps the routine heavy load off the day; a request is someone's deliberate choice
+  for one table. It still counts against `compaction.max-jobs`, and its Job gets a deadline of its own (a new
+  setting, 2 hours by default) in place of the window's end.
+- *Or: no.* The request queues the table for tonight's window, ahead of the needy tables. D30 stays as it is, but
+  nothing runs "now".
+
+Settled on the recommendation, unless Paul says otherwise:
+- **Who may ask:** `modify` on the table, as for its maintenance policy. Every request and refusal is audited.
+- **The guards stay the catalog's.** A request is refused when the table's resolved policy disables that job, and
+  when a hold or freeze would keep it off the work list. A requested compaction runs whether or not the assessment
+  says the table needs one: that is the point of asking.
+- **The worker still polls.** The catalog keeps the request; the work list carries requested tables in a section of
+  their own; the worker takes them at its next scan, so a request starts within one `scan-interval`. No push from the
+  catalog to the worker, as D30 (2) decided. One pending request per table and job; asking again changes nothing.
+  The request is cleared when the worker reports the job started, through the reports it already makes.
+
+What done looks like:
+- `POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests` with
+  `{"job": "compaction" | "orphan-scan"}`, answering 202, and the request shown in the table's health
+  (`GET .../tables/{table}/health`: who asked, when, waiting or started).
+- The request kept by an add-only schema step on PostgreSQL, CockroachDB, Oracle and MongoDB, so the rolling upgrade
+  stays safe; a store suite shows it kept, deduplicated, cleared on start and gone with a purged table.
+- The worker runs requested jobs at its next scan, inside or outside the window as Paul decides, and reports them
+  as it reports nightly ones; a test like `NightlyCleanupTest` shows a request made in the day run (or wait for the
+  night).
+- On a table's **Health** tab, **Compact now** and **Scan for orphans now** for a viewer with `modify`, and the
+  pending request while it waits; `ConsoleHealthTest` shows a reader sees no buttons and a refused request shows the
+  catalog's answer.
+- Route tests for who may ask and every refusal; bites for a request taken without `modify`, a request taken under a
+  hold, and (if Paul says yes) a requested Job given the window's end as its deadline.
+- docs/observability/table-health.md, health-page.md and catalog-maintenance/README.md describe it; D30 amended with
+  Paul's answer, quoted.
 
 ## Done and dropped
 
