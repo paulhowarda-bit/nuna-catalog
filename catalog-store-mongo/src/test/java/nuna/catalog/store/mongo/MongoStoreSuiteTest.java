@@ -10,6 +10,7 @@ import static nuna.catalog.store.suite.Commits.next;
 import static nuna.catalog.store.suite.Commits.pointer;
 import static nuna.catalog.store.suite.Commits.swap;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.mongodb.client.MongoDatabase;
 import nuna.catalog.store.CatalogObject;
@@ -35,6 +36,7 @@ import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
+import nuna.catalog.store.StoreUnavailableException;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import nuna.catalog.store.suite.CatalogObjectSuite;
@@ -213,6 +215,27 @@ class MongoStoreSuiteTest extends CommitSuite {
 
         assertThat(store().readPointer(key)).contains(next(batch));
         assertThat(mongo.writtenRows(batch)).isEqualTo(WrittenRows.allOf(batch));
+    }
+
+    /**
+     * The members elect a new primary only after electionTimeoutMillis (10 s), so for longer than the stores'
+     * server selection timeout (5 s) there is none: the commit's first read in its transaction finds no primary
+     * (backlog 7).
+     */
+    @Test
+    @DisplayName("MongoDB: a commit while the set is failing over, its primary killed and no new one elected yet, is"
+            + " a clean failure the caller may repeat (unavailable), and writes nothing")
+    void commitWhileFailingOverIsUnavailable() {
+        PointerKey key = newKey();
+        Pointer base = commitNew(key, "base");
+        CommitBatch batch = fullBatch(swap(key, Optional.of(base), pointer("no-primary", 2)));
+        mongo.killPrimary();
+
+        assertThatThrownBy(() -> store().commit(batch)).isInstanceOf(StoreUnavailableException.class);
+        mongo.promoteReplica();
+
+        assertThat(mongo.writtenRows(batch)).isEqualTo(WrittenRows.NONE);
+        assertThat(store().readPointer(key)).contains(base);
     }
 
     @Test
