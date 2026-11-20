@@ -231,8 +231,10 @@ helm install nuna-catalog deploy/helm/nuna-catalog -n <namespace> -f <values.yam
 - The chart's defaults: three replicas spread over zones, a disruption budget of one, probes on
   `/ui/config.json`, a 5 s preStop pause, non-root with a read-only root filesystem. `deploy/README.md` says
   why.
-- Decide with Paul before production: sticky routing for ETags (`service.sessionAffinity: ClientIP`, or the
-  Ingress's own), Ingress and TLS, and resource sizes measured on work hardware.
+- No sticky routing for ETags: servers share the credential epoch, a window a quarter of the credential lifetime
+  long, so a conditional load answered by any server is a 304 (D14, amended 2026-11-19 and 2026-11-20; item 15).
+  Keep the chart's `service.sessionAffinity: None`; the Ingress needs no stickiness either.
+- Decide with Paul before production: Ingress and TLS, and resource sizes measured on work hardware.
 
 ## 6. Install the maintenance worker
 

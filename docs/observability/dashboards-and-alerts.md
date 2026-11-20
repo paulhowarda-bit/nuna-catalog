@@ -122,16 +122,19 @@ The series the files read, 56 in all from 44 meters:
   have it. The counters are registered when the server starts, so the first alert is a rise from 0 and `increase`
   sees it. Each alert resolves 15 minutes after the counter last rose; the `nuna.alerts` log line names the table.
 - **The worker's rules** are worker-metrics.md's, unchanged, with names and severities. `600` in them is the default
-  `scan-interval` in seconds: use the deployment's own. `NunaWorkerNotScanning` waits an hour (`for: 1h`) so that a
-  new deployment's first scan, which runs every table's orphan scan, can end; an hour is a guess to set at work.
-  `NunaWorkerGone` fires only when no worker reports at all.
+  `scan-interval` in seconds, and `20m` two of them: use the deployment's own. `NunaWorkerNotScanning` waits an hour
+  (`for: 1h`) so that a new deployment's first scan, which runs every table's orphan scan, can end; an hour is a guess
+  to set at work. `NunaPurgesFailing` and `NunaDeletionsFailing` wait two scan intervals (`for: 20m`; D43, item 80),
+  so a failure the next scan's retry clears opens no ticket. `NunaWorkerGone` fires only when no worker reports at
+  all.
 
 ## Not covered
 
 - **At least 500 commits a second has no alert.** It is the M8 SLO run's throughput target under a given load. In
   production the rate is set by demand, and nuna has no metric of offered commits to compare the served ones with, so
   a burn rate on it would fire whenever traffic is light. The dashboard shows the rate against a line at 500. Item 44
-  asks for burn-rate alerts on each SLO; whether this one gets an alert, and on what, is Paul's to decide.
+  asked for burn-rate alerts on each SLO; Paul kept this one a panel with no alert (D43, amended 2026-11-20: "Panel
+  only").
 - **No alert on errors.** The R7 SLOs are latencies of successful answers: a 5xx is neither inside nor outside them,
   so a catalog answering every call 500 fires none of these rules. The dashboards show failures by error type.
 
@@ -142,14 +145,14 @@ p99 panel, checked the same way):
 
 - Every JSON file parses, every panel and variable query uses the `datasource` variable, and panel ids are unique.
 - Every YAML file parses (PyYAML) as a rule file: a `groups:` list of rules with `alert`, `expr`, `labels` and
-  `annotations`, each with `severity` `page` or `warning`. Nine of the 17 have a `for`. The other eight fire on the
-  first evaluation that finds their condition (corrected by item 74; this line said every rule had one):
+  `annotations`, each with `severity` `page` or `warning`. Eleven of the 17 have a `for`, each a valid Prometheus
+  duration. The other six fire on the first evaluation that finds their condition (corrected by item 74, which found
+  eight; item 80 gave `NunaPurgesFailing` and `NunaDeletionsFailing` a `for` of two scan intervals):
   - `NunaMetadataIntegrity`, `NunaRegulatedSchemaChange` and `NunaLargeMetadata`. Each fires on a single event,
     which its `increase(...[15m]) > 0` holds for 15 minutes: a `for` would only delay it, and one of 15 minutes or
     more could keep a lone event from firing at all.
-  - The worker's `NunaWorkerGone`, `NunaPurgesFailing`, `NunaDeletionsFailing`, `NunaScansSlowerThanInterval` and
-    `NunaFilesOutsideTable`. Their expressions already look back over a window: 15 minutes with no sample, failures
-    and nothing done in an hour, an hour's mean, or a day's count.
+  - The worker's `NunaWorkerGone`, `NunaScansSlowerThanInterval` and `NunaFilesOutsideTable`. Their expressions
+    already look back over a window: 15 minutes with no sample, an hour's mean, or a day's count.
 - Brackets balance in every one of the 100 expressions; PromQL itself was not parsed.
 - Every series name in an expression maps back, by the translation above, to a meter named in these docs and in the
   main code, with the unit its type gives (a timer `_milliseconds`, a counter `_total`); every label maps back to a
