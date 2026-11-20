@@ -1,0 +1,19 @@
+Breaks: a rename looks for its destination before asking about its source, so a missing destination tells a caller that may not see the source that the source exists.
+Module: catalog-server
+Test: HiddenNamesTest#aRenameAsksAboutItsSourceBeforeLookingForItsDestination
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
+index 179fd70..7321789 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
+@@ -156,9 +156,9 @@ class ObjectRoutes {
+             String fromName = Http.qualified(from.namespace(), from.name());
+             String toName = Http.qualified(to.namespace(), to.name());
+             CatalogObject object = existing(catalog, from.namespace(), from.name(), kind);
++            NamespaceRecord target = lookup.existingNamespace(catalog, to.namespace());
+             guard.onObject(request, catalog, object, AuditEvents.path(from.namespace(), from.name()),
+                     kind == Kind.TABLE ? Guard.RENAME_TABLE : Guard.RENAME_VIEW, noSuch(kind, fromName));
+-            NamespaceRecord target = lookup.existingNamespace(catalog, to.namespace());
+             guard.onNamespace(request, catalog, target, to.namespace(),
+                     kind == Kind.TABLE ? Guard.RENAME_TABLE_INTO : Guard.RENAME_VIEW_INTO,
+                     Http.noSuchNamespace(to.namespace()));
