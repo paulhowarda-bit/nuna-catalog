@@ -1,0 +1,18 @@
+Breaks: a refetch the rate limit refuses is a bad token even after a failed fetch, so an IdP that stays down gets 401 past the limit's two fetches in 30 s (backlog 90).
+Module: catalog-security
+Test: JwksRefreshTest#anIdpThatStaysDownIsAnOutagePastTheRefetchLimit+anUnheldKeyWhileTheIdpIsDownIsAnOutage
+
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
+index 5fe5b29..8e0ad2e 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
+@@ -207,9 +207,6 @@ public final class TokenAuthenticator {
+             if (refusal.getCause() instanceof JWKSetUnavailableException unavailable) {
+                 return Optional.of(unavailable.getMessage());
+             }
+-            if (refusal.getCause() instanceof RateLimitReachedException && failure != null) {
+-                return Optional.of("no refetch allowed yet after the last one failed: " + failure.getMessage());
+-            }
+             return Optional.empty();
+         }
+     }
