@@ -3,17 +3,17 @@ Module: catalog-server
 Test: HiddenNamesTest#aCatalogTheCallerHoldsNothingInAnswersAsOneThatDoesNotExist+theDefaultWarehouseAnswersAsAMissingOneToACallerThatHoldsNothingInIt
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
-index f626e5c..4cc16a8 100644
+index 025b06b..e72ae7e 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
-@@ -42,7 +42,9 @@ public class ConfigRoute {
+@@ -44,7 +44,9 @@ public class ConfigRoute {
                           HttpServletRequest http) {
          String warehouse = requested == null || requested.isBlank() ? defaultWarehouse() : requested;
          RequestContext request = RequestContext.of(http, callers);
--        CatalogRecord catalog = holdings.catalog(warehouse, request.caller(), request.actor(), "getConfig", null);
-+        CatalogRecord catalog = holdings.catalog(warehouse, new nuna.catalog.core.principal.Caller(
+-        OnRef on = prefixes.resolve(warehouse, request.caller(), request.actor(), "getConfig", null);
++        OnRef on = prefixes.resolve(warehouse, new nuna.catalog.core.principal.Caller(
 +                request.caller().principal(), request.caller().engine(), true, java.util.Optional.empty()),
 +                request.actor(), "getConfig", null);
-         RequestMetrics.catalog(catalog.name());
+         RequestMetrics.catalog(on.catalog().name());
          return Wire.config(
                  Map.of(),

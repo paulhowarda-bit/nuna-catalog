@@ -16,6 +16,7 @@ import nuna.catalog.objectstore.ProfileTableFiles;
 import nuna.catalog.objectstore.StorageProfile;
 import nuna.catalog.objectstore.StorageRules;
 import nuna.catalog.objectstore.StoreKind;
+import nuna.catalog.server.rest.OnRef;
 import nuna.catalog.server.rest.RestSettings;
 import nuna.catalog.server.tracing.ObservedTableFiles;
 import nuna.catalog.store.CatalogRecord;
@@ -40,7 +41,8 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 
 /**
  * Each catalog's storage (D21, D28): the profiles configured on this server, written to the store, and
- * the catalogs bound to them. At startup it refuses overlapping profiles, plain-http endpoints, CA bundles it
+ * the catalogs bound to them. At startup it refuses a catalog's name holding {@code @} (D33), overlapping profiles,
+ * plain-http endpoints, CA bundles it
  * cannot read (backlog 21) and KMS keys that are not a key ARN in an AWS S3 profile's region (backlog 23), records
  * changed profiles (a change of KMS key alone included, backlog 98), creates declared catalogs, and refuses a declared
  * catalog the store binds differently.
@@ -65,6 +67,7 @@ public final class CatalogStorage implements AutoCloseable {
     public CatalogStorage(StorageSettings settings, CatalogStore store, RestSettings rest, Clock clock,
                           ObservationRegistry observations) {
         this.store = store;
+        settings.catalogs().keySet().forEach(CatalogStorage::requireName);
         Map<String, StorageProfile> parsed = new LinkedHashMap<>();
         Map<String, Optional<CaBundle>> caBundles = new LinkedHashMap<>();
         settings.profiles().forEach((name, profile) -> {
@@ -189,6 +192,17 @@ public final class CatalogStorage implements AutoCloseable {
         set.put("kms-key", wanted.kmsKey().orElse(""));
         store.putStorageProfile(wanted, change(new StorageSetup(StorageSetup.Action.PROFILE_SET, bound.id(),
                 bound.name(), set, CONFIGURATION), rest, clock));
+    }
+
+    /**
+     * Refuses a configured catalog's name holding {@code @}, before anything is written: the REST prefix
+     * {@code catalog@ref} keeps it for a branch or tag, so a prefix parses one way (D33, item 26's choice 4).
+     */
+    private static void requireName(String name) {
+        if (name.indexOf(OnRef.AT) >= 0) {
+            throw new IllegalStateException("nuna.storage.catalogs." + name + ": a catalog's name holds no "
+                    + OnRef.AT + ", which the REST prefix catalog" + OnRef.AT + "ref keeps for a branch or tag");
+        }
     }
 
     private void declare(String name, StorageSettings.Catalog catalog, StorageSettings settings, RestSettings rest,

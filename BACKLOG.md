@@ -1349,6 +1349,71 @@ build green; bites recorded in `bites/D33/`. Waits on item 102. Items 105 and 10
 
 **Decided 2026-11-20 (D33, amended):** reads on a ref resolve names as of its cut; creates, drops, renames and namespace changes on a branch are refused; namespace properties are live (question 1 (b), "Names too").
 
+**Progress, 2026-11-20 (worktree-agent-aa14fd77cb3da956c): built and tested in Java; open until the stock-client
+test is written and the heavy build passes it.** That test needs a tag, and nothing can make one yet but the store:
+`createRef` takes a `Change` whose outbox holds a catalog event, and no event type records a ref change until item 106
+adds `ref` (a made-up event would stop the outbox relay). So it is written once item 106's ref routes land, making the
+tag as a client would.
+- The prefix: `OnRef` (the catalog and the ref a prefix names) and `Prefixes` (a component beside `Holdings`) split
+  `catalog@ref` once, at the first `@`; `catalog` and `catalog@main` are main. The catalog is found as before
+  (`Holdings.catalog`, D18 as amended), then the ref with `findRef`. A ref the catalog does not have, or a branch past
+  its expiry, answers 404 `NoSuchWarehouseException` naming the prefix, on every route and `/v1/config`. Spring decodes
+  `%40` in the path, so both forms reach the route. `CatalogStorage` refuses a configured catalog name holding `@` at
+  startup, before it writes anything.
+- `/v1/config?warehouse=catalog@ref` answers the prefix `catalog@ref` (the ref's normalized name) and, from
+  `AdvertisedEndpoints.of`, a tag's 11 read endpoints, a branch's reads and its three commit endpoints, or main's 26.
+- Reads: `Lookup` finds namespaces (`findRefNamespace`), tables and views (`resolveOnRef`) and lists them
+  (`listRefNamespaces`, `listRefObjects`) through the cut. A namespace through a ref has the cut's id, parent and name,
+  and main's live properties, or none once main dropped it. `Lookup.pointer` serves a branch's own pointer
+  (`ref.key(id)`) where it has one, else the cut's; `CommitEngine.readAt` reads that file by location and checks its
+  SHA-256 as on main (an alert, and a refusal for a regulated object). Table load, HEAD, metrics and credentials, view
+  load and HEAD, and the three listings all read this way.
+- The ETag takes the ref's id; main's ETags are byte for byte as before. `ObjectRead.branch` names the ref, or `main`.
+  A tag vends read-only credentials, on a load and on the credentials route.
+- Writes: `Lookup.catalog` (every create, drop, rename, register, unregister and namespace change, properties
+  included) answers 400 on any ref; `Lookup.forCommit` (a table commit, a view replace, a multi-table commit) answers
+  400 on a tag, and on a branch "commits on a branch are not served yet" until item 105. Each message names the
+  operation, the tag or branch and the catalog; nothing past the ref is read.
+- Tests, Java only, run in the fast build: `RefReadsTest` (14: the real routes, guard, commit engine and error mapping
+  over a store double holding main, a tag's cut and three branches, and an HTTP server in the JVM serving the metadata
+  files) and `CatalogNameTest` (2). `HiddenNamesTest` and `StoreOutageRoutesTest` build the routes with `Prefixes`.
+- Bites in `bites/D33/`, all Java only, each seen to bite on an assertion (applied, the fast build run with its test
+  class selected, reverted): `rest-prefix-ref-ignored`, `rest-ref-listing-from-main`,
+  `rest-branch-own-pointer-ignored`, `rest-expired-branch-read`, `rest-ref-etag-as-main`, `rest-tag-vends-write`,
+  `rest-tag-write-accepted`, `rest-branch-create-accepted`, `rest-tag-config-lists-writes` and
+  `rest-ref-read-audited-as-main` on `RefReadsTest`; `catalog-name-at-sign-accepted` on `CatalogNameTest`. The hash
+  check through a ref has no bite of its own: it is main's check in `CommitEngine`, and `aCutsFileIsHashChecked`
+  covers it through a ref. Ten older bites this change moved are recorded again with the same breaks: the three in
+  `bites/D18/` were seen to bite `HiddenNamesTest`; `M4/etag-ignores-location`, `M6/real-near-expiry-304`,
+  `OBS-39/requests-raw-prefix-label`, `D13/labels-not-in-etag`, `D13/metrics-for-a-missing-table`,
+  `D13/metrics-unguarded` and `D15/transaction-cap-unchecked` name heavy tests and were checked with `git apply
+  --check` only.
+- Left: the stock `RESTCatalog` test in `IcebergClientConfigTest` (heavy), once item 106 lands, and the heavy build
+  passing it. `ConformanceServer` needs no change for it if the tag is made through item 106's route.
+
+Choices made (Paul may overrule):
+- Through a ref, rights and governance (holds, regulated, freezes) are checked against main's record of the namespace,
+  table or view, by its id. Why: rights on a ref are those on main (choice 12), and a cut keeps no grants.
+- A ref the catalog does not have, and a branch past its expiry, answer 404 `NoSuchWarehouseException`, as a catalog
+  that does not exist does. Why: the prefix is the client's warehouse; one answer for every missing one.
+- `catalog@main` is main, and the prefix `/v1/config` answers for it is `catalog`. Why: `main` is reserved and always
+  there (choice 4); one prefix per line keeps one ETag and cache key for main.
+- A branch's `/v1/config` lists its three commit endpoints already, though they answer 400 until item 105. Why: it is
+  choice 5's list for a branch, so item 105 changes no config; a stock engine's commit on a branch fails with 400
+  naming the branch until then.
+- A namespace's properties cannot be changed through a ref: that is a namespace change, refused on a branch (question
+  1 (b)). Reads through a ref show main's live properties, and none for a namespace main has dropped since the cut.
+  Why: "namespace properties are live" (D33, amended 2026-11-20); the dropped namespace has no live properties.
+- A write refused on a ref is a 400 `BadRequestException` and is not audited as a denial. Why: it is not a refusal of
+  rights; other 400s are not audited either.
+- The ETag carries the ref's id only through a ref. Why: main's tags stay as they were, so no client loses its 304 when
+  this lands.
+- A tag takes a scan's metrics report (204). Why: it only reads, and choice 5 lists it with the reads.
+- The prefix is resolved in a new component, `Prefixes`, not in `Holdings`. Why: `Holdings`' constructor is built in
+  the governance tests item 106 holds; the catalog lookup itself is unchanged.
+- `CommitEngine.readAt(object, pointer)` reads any pointer's file; `readCurrent` calls it with main's. Why: one read and
+  hash check for main and refs; item 105 builds on it.
+
 ### 105. Commits on a branch write its own pointer (item 26)
 
 - Added: 2026-11-20 by agent on item 26

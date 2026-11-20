@@ -1,0 +1,16 @@
+Breaks: a configured catalog name may hold @, so the prefix catalog@ref parses two ways (D33, item 26 choice 4).
+Module: catalog-server
+Test: CatalogNameTest#aCatalogNameHoldingAnAtSignStopsStartup
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+index d1d5a55..daf9ba2 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java
+@@ -67,7 +67,6 @@ public final class CatalogStorage implements AutoCloseable {
+     public CatalogStorage(StorageSettings settings, CatalogStore store, RestSettings rest, Clock clock,
+                           ObservationRegistry observations) {
+         this.store = store;
+-        settings.catalogs().keySet().forEach(CatalogStorage::requireName);
+         Map<String, StorageProfile> parsed = new LinkedHashMap<>();
+         Map<String, Optional<CaBundle>> caBundles = new LinkedHashMap<>();
+         settings.profiles().forEach((name, profile) -> {

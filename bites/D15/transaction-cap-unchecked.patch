@@ -3,11 +3,11 @@ Module: catalog-server
 Test: RestRoutesTest#transactionsCommitEveryTableOrNone
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-index 055e3db..4035aa5 100644
+index a735162..b8dee07 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 @@ -60,10 +60,6 @@ class TransactionRoutes {
-         CatalogRecord catalog = lookup.catalog(prefix, request, Guard.COMMIT_TRANSACTION);
+         CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.COMMIT_TRANSACTION);
          String json = body == null ? "" : body;
          List<RestRequest.TableCommit> commits = RestRequest.commitTransaction(json);
 -        if (commits.size() > settings.maxTransactionTables()) {

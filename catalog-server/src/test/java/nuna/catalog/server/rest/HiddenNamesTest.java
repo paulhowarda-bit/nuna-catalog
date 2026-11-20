@@ -148,14 +148,15 @@ class HiddenNamesTest {
         Denials denials = DenialsForTests.denials(publisher, settings, clock);
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
         Guard guard = new Guard(authorizer, denials, publisher, settings, clock, holdings);
-        Lookup lookup = new Lookup(store, settings, holdings);
+        Prefixes prefixes = new Prefixes(holdings, store, clock);
+        Lookup lookup = new Lookup(store, settings, prefixes);
         Idempotency idempotency = new Idempotency(store, clock);
         AuditEvents events = new AuditEvents(settings);
         Callers callers = request -> caller;
-        config = new ConfigRoute(settings, callers, holdings);
+        config = new ConfigRoute(settings, callers, prefixes);
         defaulted = new ConfigRoute(new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, "gate"), callers,
-                holdings);
+                prefixes);
         ObjectRoutes objectRoutes = new ObjectRoutes(store, lookup, idempotency, events, settings, guard, clock);
         // No engine, vending, metadata or meters: every case here is answered before any of them is reached.
         namespaceRoutes = new NamespaceRoutes(store, lookup, idempotency, events, callers, guard, clock);
