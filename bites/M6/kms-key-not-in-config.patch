@@ -1,0 +1,17 @@
+Breaks: the config handed to engines does not tell them to write with the profile's KMS key (backlog 23).
+Module: catalog-server
+Test: KmsKeyProfileTest#configNamesTheKey
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
+index f1a97a4..e17a2f3 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/storage/StsCredentialVending.java
+@@ -154,7 +154,7 @@ public final class StsCredentialVending implements CredentialVending {
+             config.put("s3.endpoint", bound.profile().endpoint().toString());
+         }
+         config.put("s3.path-style-access", Boolean.toString(bound.profile().kind().pathStyle()));
+-        bound.profile().kmsKey().ifPresent(key -> {
++        bound.profile().kmsKey().filter(key -> false).ifPresent(key -> {
+             config.put("s3.sse.type", "kms");
+             config.put("s3.sse.key", key);
+         });

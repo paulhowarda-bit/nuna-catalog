@@ -1,0 +1,17 @@
+Breaks: the server writes metadata files without naming the profile's KMS key (backlog 23).
+Module: catalog-server
+Test: KmsKeyProfileTest#metadataWriteNamesTheKey
+
+diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/MetadataFiles.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/MetadataFiles.java
+index ba32998..a6d1503 100644
+--- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/MetadataFiles.java
++++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/MetadataFiles.java
+@@ -182,7 +182,7 @@ public final class MetadataFiles implements AutoCloseable {
+                         .contentType("application/json")
+                         .checksumAlgorithm(ChecksumAlgorithm.SHA256)
+                         .checksumSHA256(Base64.getEncoder().encodeToString(sha256));
+-                profile.kmsKey().ifPresent(key -> request.serverSideEncryption(ServerSideEncryption.AWS_KMS)
++                profile.kmsKey().filter(key -> false).ifPresent(key -> request.serverSideEncryption(ServerSideEncryption.AWS_KMS)
+                         .ssekmsKeyId(key));
+             }, RequestBody.fromBytes(bytes));
+         } catch (SdkException e) {

@@ -3,12 +3,12 @@ Module: catalog-objectstore
 Test: VendingTest#listing
 
 diff --git a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
-index 690452e..0ceefc3 100644
+index d10f9ec..839fef4 100644
 --- a/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
 +++ b/catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java
-@@ -34,7 +34,7 @@ public final class SessionPolicy {
-                 + "{\"Effect\":\"Allow\",\"Action\":[" + quoted(access) + "],"
+@@ -43,7 +43,7 @@ public final class SessionPolicy {
                  + "\"Resource\":\"" + bucketArn + "/" + prefix + "*\"},"
+                 + kmsKey.map(key -> withKey(access, bucketArn + "/" + prefix + "*", key)).orElse("")
                  + "{\"Effect\":\"Allow\",\"Action\":\"s3:ListBucket\",\"Resource\":\"" + bucketArn + "\","
 -                + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"" + prefix + "*\"}}}]}";
 +                + "\"Condition\":{\"StringLike\":{\"s3:prefix\":\"" + table.key() + "*\"}}}]}";
