@@ -1,6 +1,7 @@
 package nuna.maintenance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.google.protobuf.ByteString;
 import io.opentelemetry.proto.common.v1.KeyValue;
@@ -15,10 +16,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import nuna.catalog.server.telemetry.OtlpReceiver;
+import nuna.catalog.tests.s3.TestS3;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,6 +36,14 @@ import org.springframework.context.ConfigurableApplicationContext;
  * scan's trace ({@code traceparent}): a work list read through the JDK's client, observed by Micrometer, and a table's
  * load through Iceberg's REST client. No attribute of the worker's spans names the table, its namespace, location or
  * catalog, or the worker's principal.
+ *
+ * <p>Not on AWS (backlog 91). The service builds its storage from its settings alone ({@link Storage#of}), which on AWS
+ * name no keys: it signs in through the SDK's default chain, its pod's role in a deployment. In this JVM that chain is
+ * the run's sign-in, the catalog servers' own identity, which the delete policy refuses deletes beneath
+ * {@code tables/}, and no setting gives the in-process service the worker's role instead; changing the chain would
+ * change the catalog's too. What this test checks, the scan's trace and the catalog's spans for its calls, does not
+ * depend on the store, and runs on Silo and Ceph; the worker's lists and deletes as its role on AWS are the other
+ * tests' ({@link TestCatalog#workerStorage}).
  */
 @Tag("heavy")
 class WorkerTraceTest {
@@ -46,6 +57,13 @@ class WorkerTraceTest {
 
     @TempDir
     Path folder;
+
+    /** Before {@link TestCatalog#get} starts anything. */
+    @BeforeAll
+    static void notOnAws() {
+        assumeTrue(TestS3.kindFromSystemProperty() != TestS3.Kind.AWS,
+                "the in-process worker service would sign in as the run's sign-in, not the worker's role");
+    }
 
     @AfterEach
     void quiet() {

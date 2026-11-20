@@ -100,7 +100,7 @@ class KubernetesCompactionTest {
             CleanupWindow.Night night = window.night(clock.instant()).orElseThrow();
 
             try (RESTCatalog writer = catalog.writer(); Worker worker = catalog.worker(clock, compactor,
-                    Storage.of(catalog.storageProfiles()), catalog.workerTokens(), new SimpleMeterRegistry(), window,
+                    catalog.workerStorage(), catalog.workerTokens(), new SimpleMeterRegistry(), window,
                     2)) {
                 TableIdentifier id = TestCatalog.table(writer, "compacted");
                 Table table = writer.loadTable(id);
