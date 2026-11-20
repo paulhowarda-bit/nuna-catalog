@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**22 open:** 5 S, 9 M, 3 L, 5 XL.
+**22 open:** 6 S, 8 M, 3 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,10 +30,10 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
+| [84](backlog/84.md) | S | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | either a grant in two setup scripts and their docs, or one rule in `Holdings.inCatalog` with tests and a bite; after Paul decides | 2026-11-20 |
 
 ## Open items in full
 
@@ -536,32 +536,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
-
-- Decided: 2026-11-20, D18
-- Added: 2026-11-19 by agent working item 20
-- Touches: catalog-server/
-- Effort: M, four lookups answer before any guard, each with a test; after Paul decides
-
-Item 20 filtered `GET /management/v1/catalogs` to the catalogs the caller holds something on (D18 as amended
-2026-11-19). Other routes still tell any signed-in caller whether a catalog name exists, whatever it holds:
-
-- `GET /v1/config?warehouse=<name>` answers 200 with the prefix for a declared catalog and 404
-  NoSuchWarehouseException for any other name, with no authorization at all (`ConfigRoute.java`, `config`).
-- Every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/` resolves the catalog before its guard:
-  404 NoSuchWarehouseException for an unknown name, then 403 for a known one the caller holds nothing on
-  (`Lookup.catalog`, `governance/Management.java` line 81, `security/Securables.catalog`). For example
-  `GET /v1/<name>/namespaces` as a caller in no granted group.
-
-D18's amendment names HEAD, loads, the metrics route (item 14) and the catalog list (item 20); it does not say
-whether a catalog's existence is hidden too. Hiding it in `/v1/config` changes what an engine with no grant sees:
-it would fail at its first call, the config, rather than at the first listing or load.
-
-Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
-holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
-
-**Decided 2026-11-20 (D18, amended):** hide catalog names too ("Hide them"): a caller that holds nothing on a catalog gets the same 404 whether it exists or not, on `/v1/config` and on every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/`. Platform operators still see every catalog ("Catalogs, not objects").
-
 ### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
 
 - Added: 2026-11-19 by the agent on item 67
@@ -659,6 +633,57 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
+### 84. An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18)
+
+- Decided: 2026-11-20, D18
+- Added: 2026-11-20 by agent working item 68
+- Touches: demo/ deploy/local/run.sh catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+- Effort: S, either a grant in two setup scripts and their docs, or one rule in `Holdings.inCatalog` with tests and a bite; after Paul decides
+
+Since item 68 (D18, amended 2026-11-20), `GET /v1/config?warehouse=<name>` answers 404 NoSuchWarehouseException to
+a caller that holds nothing in the catalog, as if it did not exist. The demo's Trino reads its two catalogs'
+config with its own token, as user `trino` in group `demo-engines`, which holds no grant on purpose: each query
+reaches nuna with the token of whoever runs it (`iceberg.rest-catalog.session=USER`; `demo/k8s/trino.yaml` lines
+33-54, `demo/Mint.java`, `demo/README.md` line 344). With item 68, Trino's config calls for `lakehouse` and `engines`
+answer 404, so its catalogs fail to start the next time the demo comes up (the overnight run rebuilds it each
+morning). `deploy/local/run.sh smoke` fails at the same call (`call "$a" trino GET "/v1/config?warehouse=lakehouse"`,
+which expects 200). Not checked by running: Docker was off limits the night item 68 was done.
+
+The same holds at work for any registered trusted engine (D17) that reads the config as itself and holds nothing.
+
+The choices:
+
+- Grant the engine's own group something in each catalog it serves, e.g. `describe` on the catalog for
+  `demo-engines` in `demo/demo.sh grants` and `deploy/local/run.sh`. Its own token could then list every name in
+  the catalog, which the demo's design avoided.
+- Let a registered trusted engine acting as itself see every catalog, as platform operators do ("Catalogs, not
+  objects"), and nothing in it: one more case in `Holdings.inCatalog`.
+- Something else.
+
+Done when Paul has chosen, the demo's Trino and `deploy/local/run.sh smoke` read the config again, and the docs
+that say Trino's own token holds no grant say what it now holds or why it sees the catalog.
+
+**Paul's answer, 2026-11-20 (D18):** "Engines see catalogs": a registered trusted engine acting as itself sees every catalog name, as operators do, and still no namespace, table or view name. One extra case in `Holdings.inCatalog`; to be built on item 68's branch before it lands.
+
+Built on worktree-agent-a317b71cf4d1dfcaa, 2026-11-20, under item 68's claim (`./backlog.sh claim 84 catalog-server/`
+was refused: item 68 holds `catalog-server/`): `Holdings.inCatalog` answers yes for a registered trusted engine with
+no end user, so it sees every catalog name on `/v1/config`, on every route under the prefix and in the catalog list,
+and still no namespace, table or view name it holds nothing on. Acting for an end user it is judged by that user's
+groups, as before. Tests (Java only): `HiddenNamesTest#aTrustedEngineActingAsItselfSeesEveryCatalogButNoNameInIt`,
+`CatalogListTest#aTrustedEngineActingAsItselfListsEveryCatalog`. Bites: `bites/D18/engines-see-no-catalog`,
+`bites/D18/engine-for-a-user-sees-every-catalog`.
+
+Left, so the item stays open: nothing registers Trino as a trusted engine. Nothing in `demo/` or `deploy/` calls
+`PUT /management/v1/engines` or writes the engine registry, so the token `demo/Mint.java` makes for `trino` (client
+`trino-demo`, group `demo-engines`, issuer `https://idp.demo/nuna`) is an unregistered client, judged by its groups,
+which hold nothing. Its config calls for `lakehouse` and `engines` still answer 404, and `deploy/local/run.sh smoke`
+still fails at `call "$a" trino GET "/v1/config?warehouse=lakehouse"`. To finish: register it, as a platform operator
+(oscar), with `PUT /management/v1/engines` and `{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}` once
+the server is up, in `demo/demo.sh` and `deploy/local/run.sh` (the demo keeps no volumes, so on every up), and say why
+Trino sees the catalogs where the docs say its token holds no grant: `demo/README.md` line 127, `demo/Mint.java`
+lines 50-51, `demo/k8s/trino.yaml` lines 8-9. Registered, the client may also name an end user (D17). Not done on
+item 68's branch: `demo/` and `deploy/` are outside its claim.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -712,6 +737,7 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
+| [68](backlog/68.md) | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | done | 2026-11-20 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [72](backlog/72.md) | Oracle's self-check does not notice a journal-partition job that cannot run | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
@@ -722,4 +748,5 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
 | [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
 | [81](backlog/81.md) | The chart's values.yaml still says only the minting server answers a 304 | done | 2026-11-20 |
+| [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |

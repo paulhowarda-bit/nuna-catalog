@@ -110,12 +110,12 @@ class TableRoutes {
                                   @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.CREATE_TABLE);
         List<String> levels = Lookup.levels(namespace);
         String json = body == null ? "" : body;
         RestRequest.NewTable table = RestRequest.createTable(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
-        RequestContext request = RequestContext.of(http, callers);
         guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchNamespace(levels));
         // The name is checked only now, so a bad one tells a caller that may not see the namespace nothing.
         ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
@@ -137,11 +137,11 @@ class TableRoutes {
                                 @RequestHeader(name = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
                                 @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                 HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.LOAD_TABLE);
         boolean refsOnly = refsOnly(snapshots);
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
-        RequestContext request = RequestContext.of(http, callers);
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
                 Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table)));
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
@@ -183,11 +183,11 @@ class TableRoutes {
                                   @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.WRITE_DATA);
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, table);
         NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchTable(qualified));
-        RequestContext request = RequestContext.of(http, callers);
         Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
         if (existing.isPresent()) {
             guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body),
@@ -233,12 +233,12 @@ class TableRoutes {
                                     @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                     @RequestBody(required = false) String body,
                                     HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.REGISTER_TABLE);
         List<String> levels = Lookup.levels(namespace);
         String json = body == null ? "" : body;
         RestRequest.Registration registration = RestRequest.register(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
-        RequestContext request = RequestContext.of(http, callers);
         guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE, Http.noSuchNamespace(levels));
         if (registration.overwrite() && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
             throw CatalogError.badRequest("Registering over an existing table (overwrite) is not supported: "
@@ -269,11 +269,11 @@ class TableRoutes {
                                       @PathVariable String table,
                                       @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                       HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.UNREGISTER_TABLE);
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, table);
         Optional<NamespaceRecord> record = lookup.namespace(catalog, levels);
-        RequestContext request = RequestContext.of(http, callers);
         Optional<CatalogObject> existing = record.flatMap(ns -> lookup.object(ns, table, Kind.TABLE));
         Optional<UUID> authorized = Optional.empty();
         if (existing.isPresent()) {
@@ -314,7 +314,7 @@ class TableRoutes {
     ResponseEntity<Void> metrics(@PathVariable String prefix, @PathVariable String namespace,
                                  @PathVariable String table, @RequestBody(required = false) String body,
                                  HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.REPORT_METRICS);
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
@@ -329,10 +329,10 @@ class TableRoutes {
                                        @PathVariable String table,
                                        @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                        HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.LOAD_CREDENTIALS);
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
-        RequestContext request = RequestContext.of(http, callers);
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
                 Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table)));
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),

@@ -52,6 +52,8 @@ final class Api implements AutoCloseable {
     private final Clock clock;
     private final KafkaConsumer<byte[], byte[]> audit;
     private final List<byte[]> seen = new ArrayList<>();
+    /** The group {@link #bystander} signs in with, once it holds its grant. */
+    private String bystanders;
 
     /** @param clock the server's clock, which tokens are checked against */
     Api(int port, JdbcTemplate jdbc, String bootstrapServers, Clock clock) {
@@ -134,9 +136,27 @@ final class Api implements AutoCloseable {
         return token("stella", "server-tests", GovernanceServer.STEWARDS);
     }
 
-    /** The {@code Authorization} header of a signed-in caller in a group that holds no grant. */
+    /**
+     * The {@code Authorization} header of a signed-in caller in a group that holds no grant: every route under the
+     * catalog answers it as for a catalog that does not exist (D18, item 68).
+     */
     String outsider() {
         return token("otto", "server-tests", "outsiders");
+    }
+
+    /**
+     * The {@code Authorization} header of a signed-in caller that holds something in the catalog, describe on a
+     * namespace of its own, and nothing on anything else there: refused there, it is answered as for a missing
+     * name (D18, backlog 73). Its namespace and grant are made on the first call.
+     */
+    String bystander() {
+        if (bystanders == null) {
+            bystanders = "bystanders-" + suffix();
+            expect(manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\""
+                    + namespace() + "\"]},\"group\":\"" + bystanders + "\",\"privilege\":\"describe\"}",
+                    "Authorization", grantAdmin()), 204);
+        }
+        return token("bea", "server-tests", bystanders);
     }
 
     /** The maintenance principal's {@code Authorization} header. */

@@ -20,8 +20,9 @@ import org.springframework.stereotype.Component;
  * operators and the purge queue for maintenance principals, as the trusted-engine registry is for operators.
  * Every refusal is audited through {@link Denials}. Names are hidden as on the Iceberg routes (D18, amended
  * 2026-11-19): a caller refused on a namespace, table or view it holds nothing on ({@link Holdings}) gets the
- * target's answer for a path that names nothing; any other refusal answers 403. The choice per route is in
- * build-plan.md, M7.
+ * target's answer for a path that names nothing; any other refusal answers 403. A caller that holds nothing on the
+ * catalog is answered before it gets here, as for a catalog that does not exist ({@link Management#catalog}, item
+ * 68). The choice per route is in build-plan.md, M7.
  */
 @Component
 class ManagementGuard {

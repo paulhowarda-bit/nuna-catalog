@@ -2,7 +2,7 @@ Breaks: the catalog takes a table assessment from anyone, not only the maintenan
 Module: catalog-server
 Test: HealthRoutesTest#onlyTheWorkerReports
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java
-index a46a53f..d321e5f 100644
+index 95478ef..146559b 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/HealthRoutes.java
 @@ -131,7 +131,6 @@ class HealthRoutes {
@@ -11,5 +11,5 @@ index a46a53f..d321e5f 100644
          Request request = management.request(http);
 -        guard.requireMaintenance(request, audit(id), "reportTableAssessment");
          JsonNode json = Management.body(body);
-         CatalogObject table = reported(uuid(id, "table"), json);
+         CatalogObject table = reported(uuid(id, "table"), json, request, "reportTableAssessment");
          TableAssessment assessment;

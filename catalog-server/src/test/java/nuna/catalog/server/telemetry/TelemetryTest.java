@@ -165,7 +165,7 @@ class TelemetryTest {
 
         HttpResponse<String> denied = send("GET", "/management/v1/catalogs/trading/namespaces/" + namespace
                 + "/tables/t/governance", null, IssuerForTests.bearer("otto", "outsiders"));
-        assertThat(denied.statusCode()).as("a management route, answered to an outsider as for a missing table")
+        assertThat(denied.statusCode()).as("a management route, answered to an outsider as for a missing catalog")
                 .isEqualTo(404);
         String deniedId = requestId(denied);
         assertThat(deniedId).matches(TRACE_ID);

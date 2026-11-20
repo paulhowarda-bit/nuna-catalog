@@ -47,9 +47,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * Names are hidden on the grant routes as on the Iceberg routes (D18, amended again 2026-11-19; backlog 73). A
  * grant, a revoke or a listing of grants on a namespace, table or view the caller holds nothing on answers exactly
  * as for one that does not exist, and the batch check answers for it as for a missing one; a caller that holds
- * something there is refused with 403, or told its own answer. Every refusal is audited; a check is not. The
- * routes and authorizer are the real ones over a store double, so this needs only Java; {@code SecurityGateTest}
- * checks the grant routes on the wire.
+ * something there is refused with 403, or told its own answer. A caller that holds nothing in the catalog at all
+ * gets, on every grant route, what a catalog that does not exist gets (D18, amended 2026-11-20; backlog 68). Every
+ * refusal is audited; a check is not. The routes and authorizer are the real ones over a store double, so this
+ * needs only Java; {@code SecurityGateTest} checks the grant routes on the wire.
  */
 class GrantHiddenNamesTest {
 
@@ -61,7 +62,10 @@ class GrantHiddenNamesTest {
     private static final Caller ANN = person("ann", "analysts");
     /** Select on the table hr.staff only. */
     private static final Caller TOM = person("tom", "staff-readers");
+    /** Describe on the namespace lobby only, so he holds something in the catalog but nothing on hr or sales. */
     private static final Caller OTTO = person("otto", "outsiders");
+    /** Nothing anywhere in the catalog. */
+    private static final Caller NED = person("ned", "newcomers");
     private static final Caller OLGA = person("olga", "platform-ops");
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), CATALOG, CATALOG);
@@ -69,11 +73,13 @@ class GrantHiddenNamesTest {
     private final Map<UUID, CatalogObject> objects = new LinkedHashMap<>();
     private final List<GrantRecord> grants = new ArrayList<>();
     private final List<CatalogEvent> audit = new ArrayList<>();
+    private boolean catalogGone;
 
     private final NamespaceRecord sales = namespace("sales");
     private final NamespaceRecord hr = namespace("hr");
     private final CatalogObject staff = object(hr, "staff", Kind.TABLE);
     private final CatalogObject roster = object(hr, "roster", Kind.VIEW);
+    private final NamespaceRecord lobby = namespace("lobby");
 
     private final GrantRoutes routes;
     private final MockHttpServletRequest http = new MockHttpServletRequest();
@@ -85,6 +91,7 @@ class GrantHiddenNamesTest {
         grant(new Securable(Securable.Kind.NAMESPACE, sales.id()), "stewards", Privilege.MANAGE_GRANTS);
         grant(new Securable(Securable.Kind.NAMESPACE, sales.id()), "analysts", Privilege.SELECT);
         grant(staff.securable(), "staff-readers", Privilege.SELECT);
+        grant(new Securable(Securable.Kind.NAMESPACE, lobby.id()), "outsiders", Privilege.DESCRIBE);
 
         CatalogStore store = store();
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
@@ -92,8 +99,9 @@ class GrantHiddenNamesTest {
         Clock clock = Clock.fixed(Instant.parse("2026-11-19T00:00:00Z"), ZoneOffset.UTC);
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
-        routes = new GrantRoutes(store, authorizer, separation, request -> caller,
-                new Denials(audit::add, settings, clock), new Holdings(authorizer, store, settings), settings, clock);
+        Denials denials = new Denials(audit::add, settings, clock);
+        routes = new GrantRoutes(store, authorizer, separation, request -> caller, denials,
+                new Holdings(authorizer, store, settings, separation, denials), settings, clock);
     }
 
     // ---- grant, revoke and the listing by object ----
@@ -185,6 +193,57 @@ class GrantHiddenNamesTest {
         assertThat(JsonPath.<List<Boolean>>read(answer, "$.results[*].allowed")).containsExactly(true, false);
         assertThat(JsonPath.<String>read(answer, "$.results[1].reason"))
                 .isEqualTo("tom holds no privilege that gives modify for check");
+    }
+
+    // ---- a catalog the caller holds nothing in (backlog 68) ----
+
+    @Test
+    void everyGrantRouteOnACatalogTheCallerHoldsNothingInAnswersAsForOneThatDoesNotExist() {
+        caller = NED;
+        Answer missing = new Answer(404, "NoSuchWarehouseException", "The given warehouse does not exist: gate");
+        List<Callable<ResponseEntity<?>>> calls = List.of(
+                () -> routes.grant(CATALOG, body("{\"type\":\"catalog\"}", "auditors", "select"), http),
+                () -> routes.revoke(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http),
+                () -> routes.listByGroups(CATALOG, null, null, null, http),
+                () -> routes.listByGroups(CATALOG, List.of("auditors"), null, null, http),
+                () -> routes.listOn(CATALOG, "catalog", null, null, null, null, http),
+                () -> routes.listOn(CATALOG, "table", List.of("hr"), "staff", null, null, http),
+                () -> routes.check(CATALOG, checks(tableSpec("hr", "staff")), http),
+                () -> routes.export(CATALOG, http));
+        for (Callable<ResponseEntity<?>> call : calls) {
+            assertThat(alike(call, catalog)).isEqualTo(missing);
+        }
+    }
+
+    @Test
+    void aGrantAdminAndAPlatformOperatorSeeEveryCatalog() {
+        caller = OLGA;
+        assertThat(answer(() -> routes.listOn(CATALOG, "catalog", null, null, null, null, http)).status())
+                .as("refused on the catalog it sees").isEqualTo(403);
+        assertThat(answer(() -> routes.listByGroups(CATALOG, null, null, null, http)).status()).isEqualTo(200);
+        caller = person("gina", "grant-admins");
+        assertThat(answer(() -> routes.listByGroups(CATALOG, List.of("auditors"), null, null, http)).status())
+                .as("manage-grants on every catalog").isEqualTo(200);
+    }
+
+    @Test
+    void aHiddenCatalogRefusalIsAuditedButAMissingOneIsNot() {
+        caller = NED;
+        answer(() -> routes.grant(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http));
+        answer(() -> routes.check(CATALOG, checks(tableSpec("hr", "staff")), http));
+
+        assertThat(denials()).extracting(Denial::operation).containsExactly("grant", "check");
+        Denial grant = denials().getFirst();
+        assertThat(grant.privilege()).isEqualTo("manage-grants");
+        assertThat(grant.reason()).startsWith("no_privilege");
+        assertThat(grant.securable().kind()).isEqualTo(nuna.catalog.audit.Securable.Kind.CATALOG);
+        assertThat(grant.securable().id()).isEqualTo(catalog.id());
+        assertThat(grant.securable().path()).isEmpty();
+        assertThat(grant.actor().principal()).isEqualTo("ned");
+
+        forget(catalog);
+        answer(() -> routes.grant(CATALOG, body(namespaceSpec("hr"), "auditors", "select"), http));
+        assertThat(denials()).as("nothing was there to refuse").hasSize(2);
     }
 
     // ---- the record ----
@@ -298,6 +357,7 @@ class GrantHiddenNamesTest {
         switch (record) {
             case NamespaceRecord namespace -> namespaces.remove(namespace.id());
             case CatalogObject object -> objects.remove(object.id());
+            case CatalogRecord ignored -> catalogGone = true;
             default -> throw new IllegalArgumentException(String.valueOf(record));
         }
     }
@@ -306,6 +366,7 @@ class GrantHiddenNamesTest {
         switch (record) {
             case NamespaceRecord namespace -> namespaces.put(namespace.id(), namespace);
             case CatalogObject object -> objects.put(object.id(), object);
+            case CatalogRecord ignored -> catalogGone = false;
             default -> throw new IllegalArgumentException(String.valueOf(record));
         }
     }
@@ -315,7 +376,8 @@ class GrantHiddenNamesTest {
     private CatalogStore store() {
         return (CatalogStore) Proxy.newProxyInstance(CatalogStore.class.getClassLoader(),
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
-                    case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
+                    case "findCatalog" -> Optional.of(catalog)
+                            .filter(c -> !catalogGone && c.normalizedName().equals(args[0]));
                     case "findNamespace" -> namespaces.values().stream()
                             .filter(ns -> ((List<String>) args[1]).equals(List.of(ns.name().normalized())))
                             .findFirst();

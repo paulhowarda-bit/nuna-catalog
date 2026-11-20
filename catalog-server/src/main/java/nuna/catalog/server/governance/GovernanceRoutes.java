@@ -98,8 +98,10 @@ class GovernanceRoutes {
                                       @PathVariable(required = false) String table,
                                       @PathVariable(required = false) String view,
                                       HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
-        guard.require(management.request(http), target, "loadGovernance", Privilege.DESCRIBE);
+        Request request = management.request(http);
+        Target target = management.target(request, "loadGovernance", Privilege.DESCRIBE,
+                prefix, namespace, table, view);
+        guard.require(request, target, "loadGovernance", Privilege.DESCRIBE);
         ObjectNode body = Management.JSON.createObjectNode();
         body.set("target", securable(target.securable()));
         ArrayNode attributes = body.putArray("attributes");
@@ -125,8 +127,9 @@ class GovernanceRoutes {
                                         @RequestBody(required = false) String body,
                                         HttpServletRequest http) {
         GovernanceAttribute.Kind kind = pushed(attribute);
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "setGovernanceAttribute", Privilege.MANAGE_TAGS,
+                prefix, namespace, table, view);
         guard.require(request, target, "setGovernanceAttribute", Privilege.MANAGE_TAGS);
         JsonNode json = Management.body(body);
         String value = Management.text(json, "value", MAX_VALUE);
@@ -143,8 +146,9 @@ class GovernanceRoutes {
                                            @PathVariable String attribute,
                                            HttpServletRequest http) {
         GovernanceAttribute.Kind kind = pushed(attribute);
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "removeGovernanceAttribute", Privilege.MANAGE_TAGS,
+                prefix, namespace, table, view);
         guard.require(request, target, "removeGovernanceAttribute", Privilege.MANAGE_TAGS);
         return remove(target, kind, attribute, request);
     }
@@ -158,8 +162,8 @@ class GovernanceRoutes {
                                      @PathVariable(required = false) String view,
                                      @RequestBody(required = false) String body,
                                      HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "placeHold", Privilege.MANAGE_TAGS, prefix, namespace, table, view);
         guard.require(request, target, "placeHold", Privilege.MANAGE_TAGS);
         String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
         Instant now = now();
@@ -183,8 +187,9 @@ class GovernanceRoutes {
                                        @PathVariable(required = false) String view,
                                        @PathVariable String holdId,
                                        HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "releaseHold", Privilege.MANAGE_TAGS,
+                prefix, namespace, table, view);
         guard.require(request, target, "releaseHold", Privilege.MANAGE_TAGS);
         UUID id = uuid(holdId);
         LegalHold hold = store.holdsOn(java.util.Set.of(target.securable())).stream()
@@ -215,8 +220,10 @@ class GovernanceRoutes {
                                   @PathVariable(required = false) String table,
                                   @PathVariable(required = false) String view,
                                   HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
-        guard.require(management.request(http), target, "loadMaintenancePolicy", Privilege.DESCRIBE);
+        Request request = management.request(http);
+        Target target = management.target(request, "loadMaintenancePolicy", Privilege.DESCRIBE,
+                prefix, namespace, table, view);
+        guard.require(request, target, "loadMaintenancePolicy", Privilege.DESCRIBE);
         Map<String, String> own = Map.of();
         for (GovernanceAttribute attribute : target.chain().attributes()) {
             if (attribute.kind() == GovernanceAttribute.Kind.MAINTENANCE_POLICY
@@ -253,8 +260,9 @@ class GovernanceRoutes {
                                      @PathVariable(required = false) String view,
                                      @RequestBody(required = false) String body,
                                      HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "setMaintenancePolicy", Privilege.MODIFY,
+                prefix, namespace, table, view);
         guard.require(request, target, "setMaintenancePolicy", Privilege.MODIFY);
         JsonNode json = Management.body(body);
         Map<String, String> keys = new TreeMap<>();
@@ -279,8 +287,9 @@ class GovernanceRoutes {
                                         @PathVariable(required = false) String table,
                                         @PathVariable(required = false) String view,
                                         HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "removeMaintenancePolicy", Privilege.MODIFY,
+                prefix, namespace, table, view);
         guard.require(request, target, "removeMaintenancePolicy", Privilege.MODIFY);
         return remove(target, GovernanceAttribute.Kind.MAINTENANCE_POLICY, POLICY_ATTRIBUTE, request);
     }
@@ -297,8 +306,8 @@ class GovernanceRoutes {
                                   @PathVariable(required = false) String view,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "setDrFreeze", null, prefix, namespace, table, view);
         guard.requireOperatorOn(request, target, "setDrFreeze");
         String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
         return put(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, reason, API_PROVENANCE, request);
@@ -310,8 +319,8 @@ class GovernanceRoutes {
                                 @PathVariable(required = false) String table,
                                 @PathVariable(required = false) String view,
                                 HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "liftDrFreeze", null, prefix, namespace, table, view);
         guard.requireOperatorOn(request, target, "liftDrFreeze");
         return remove(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, request);
     }

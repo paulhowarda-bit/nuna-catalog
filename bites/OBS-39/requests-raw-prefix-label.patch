@@ -3,14 +3,14 @@ Module: catalog-server
 Test: CatalogMetricsRoutesTest#labelsNameNoTableNamespacePersonOrFilterValue
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
-index 8946b27..ef0e6de 100644
+index 4c6e151..3317ece 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
-@@ -31,6 +31,7 @@ class Lookup {
- 
-     /** The catalog the prefix names, which also labels the request's meters. */
-     CatalogRecord catalog(String prefix) {
+@@ -38,6 +38,7 @@ class Lookup {
+      * answered as for a prefix no catalog has, its refusal of {@code operation} audited ({@link Holdings#catalog}).
+      */
+     CatalogRecord catalog(String prefix, RequestContext request, Operation operation) {
 +        RequestMetrics.catalog(prefix);
-         CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow(
-                 () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
+         CatalogRecord catalog = holdings.catalog(prefix, request.caller(), request.actor(), operation.name(),
+                 operation.privilege());
          RequestMetrics.catalog(catalog.name());

@@ -2,12 +2,12 @@ Breaks: anyone signed in reports pending deletions done, so files the worker nev
 Module: catalog-server
 Test: MutatingRoutesAuditTest#everyMutatingManagementRouteAuditsItsRefusals
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
-index 0a1bcda..6303331 100644
+index 9b65acd..1b73891 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
 @@ -197,7 +197,6 @@ class MaintenanceRoutes {
+         CatalogRecord catalog = management.catalog(prefix, request, "completePendingDeletions", null);
          CatalogObject object = existing(catalog, id);
-         Request request = management.request(http);
          nuna.catalog.audit.Securable audit = audit(catalog, object);
 -        guard.requireMaintenance(request, audit, "completePendingDeletions");
          List<UUID> ids = new ArrayList<>();

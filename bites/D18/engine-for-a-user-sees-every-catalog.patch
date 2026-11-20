@@ -1,0 +1,17 @@
+Breaks: a registered trusted engine acting for an end user sees every catalog, not only those the end user holds something in.
+Module: catalog-server
+Test: HiddenNamesTest#aTrustedEngineIsShownTheCatalogsTheEndUserHoldsSomethingIn
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+index d89a20d..87cb949 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+@@ -81,7 +81,7 @@ public class Holdings {
+      * user, it sees what that user holds.
+      */
+     public boolean inCatalog(Caller caller, UUID catalogId) {
+-        if (caller.trustedEngine() && caller.endUser().isEmpty()) {
++        if (caller.trustedEngine()) {
+             return true;
+         }
+         Set<String> groups = caller.subject().groups();

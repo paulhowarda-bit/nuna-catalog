@@ -1,0 +1,19 @@
+Breaks: a grant or revoke finds any catalog the path names, for a caller that holds nothing in it.
+Module: catalog-server
+Test: GrantHiddenNamesTest#everyGrantRouteOnACatalogTheCallerHoldsNothingInAnswersAsForOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index 5f1a658..afc0a6a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -245,8 +245,8 @@ class GrantRoutes {
+     private ResponseEntity<String> change(String catalog, String body, HttpServletRequest http, boolean grant) {
+         RequestContext request = RequestContext.of(http, callers);
+         Operation operation = grant ? GRANT : REVOKE;
+-        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), operation.name(),
+-                operation.privilege());
++        CatalogRecord record = store.findCatalog(nuna.catalog.core.Names.normalize(catalog)).orElseThrow(
++                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + catalog));
+         GrantSpec spec = read(body, GrantSpec.class);
+         if (spec.group() == null || spec.group().isBlank()) {
+             throw CatalogError.badRequest("A grant names the group it goes to; grants never go to individuals (D19)");

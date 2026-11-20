@@ -82,7 +82,8 @@ class ObjectRoutes {
 
     ResponseEntity<String> list(String prefix, String namespace, String pageToken, String pageSize, Kind kind,
                                 RequestContext request) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, request,
+                kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS);
         List<String> levels = Lookup.levels(namespace);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         guard.onNamespace(request, catalog, record, levels, kind == Kind.TABLE ? Guard.LIST_TABLES : Guard.LIST_VIEWS,
@@ -97,7 +98,8 @@ class ObjectRoutes {
 
     /** 404 for an object that does not exist, and for one the caller may not learn exists (D18). */
     ResponseEntity<Void> exists(String prefix, String namespace, String name, Kind kind, RequestContext request) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, request,
+                kind == Kind.TABLE ? Guard.TABLE_EXISTS : Guard.VIEW_EXISTS);
         List<String> levels = Lookup.levels(namespace);
         Optional<CatalogObject> found = lookup.namespace(catalog, levels).flatMap(ns -> lookup.object(ns, name, kind));
         if (found.isEmpty() || !guard.allowsOnObject(request, catalog, found.get(), AuditEvents.path(levels, name),
@@ -110,7 +112,8 @@ class ObjectRoutes {
     /** Always a soft drop: the name is free at once, the object stays undroppable until purge (D25). */
     ResponseEntity<String> drop(String prefix, String namespace, String name, Kind kind, Optional<String> key,
                                 RequestContext request) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, request,
+                kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW);
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, name);
         return idempotency.run(key, request.caller(), "DROP_" + kind, scope(catalog, levels, name), "", ticket -> {
@@ -148,7 +151,8 @@ class ObjectRoutes {
      * before the destination is looked up, so a caller that may not see the source learns nothing of either (D18).
      */
     ResponseEntity<String> rename(String prefix, String body, Kind kind, Optional<String> key, RequestContext request) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, request,
+                kind == Kind.TABLE ? Guard.RENAME_TABLE : Guard.RENAME_VIEW);
         return idempotency.run(key, request.caller(), "RENAME_" + kind, catalog.id().toString(), body, ticket -> {
             RestRequest.Rename rename = RestRequest.rename(body == null ? "" : body);
             Identifier from = rename.source();

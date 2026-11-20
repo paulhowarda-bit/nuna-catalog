@@ -1,0 +1,22 @@
+Breaks: a caller that holds nothing in a catalog is let in to it, and learns it exists from every route under it, /v1/config included.
+Module: catalog-server
+Test: HiddenNamesTest#aCatalogTheCallerHoldsNothingInAnswersAsOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+index 6f30ba5..dca355f 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+@@ -61,13 +61,6 @@ public class Holdings {
+     public CatalogRecord catalog(String name, Caller caller, Actor actor, String operation, Privilege privilege) {
+         CatalogError missing = CatalogError.noSuchWarehouse("The given warehouse does not exist: " + name);
+         CatalogRecord catalog = store.findCatalog(Names.normalize(name)).orElseThrow(() -> missing);
+-        if (!inCatalog(caller, catalog.id())) {
+-            denials.refuse(actor, operation, new nuna.catalog.audit.Securable(
+-                            nuna.catalog.audit.Securable.Kind.CATALOG, catalog.id(), catalog.name(), List.of()),
+-                    privilege == null ? null : privilege.wireName(), "no_privilege",
+-                    caller.subject().id() + " holds nothing in catalog " + catalog.name());
+-            throw missing;
+-        }
+         return catalog;
+     }
+ 

@@ -2,13 +2,13 @@ Breaks: anyone signed in may export an object's metadata and journal, without se
 Module: catalog-server
 Test: ManagementAuthorizationTest#exportNeedsSelect
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-index 06457d9..aac361e 100644
+index eb12d6e..1116da8 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-@@ -287,8 +287,6 @@ class LifecycleRoutes {
+@@ -285,8 +285,6 @@ class LifecycleRoutes {
+         CatalogRecord catalog = management.catalog(prefix, request, "exportObject", Privilege.SELECT);
          CatalogObject object = existing(catalog, id);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
-         Request request = management.request(http);
 -        guard.require(request, Authorizer.Target.of(object),
 -                Management.audit(catalog, levels, object.name().display(), object), "exportObject", Privilege.SELECT);
          ObjectNode body = Management.JSON.createObjectNode();

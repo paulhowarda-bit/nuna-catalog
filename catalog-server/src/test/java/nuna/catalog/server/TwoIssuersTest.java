@@ -130,8 +130,9 @@ class TwoIssuersTest {
         assertThat(send(ping, "GET", "/v1/markets/namespaces/" + namespace, null).statusCode())
                 .as("Ping-like token, memberOf claim").isEqualTo(200);
 
-        assertThat(send(entra, "GET", "/v1/locked/namespaces", null).statusCode()).isEqualTo(403);
-        assertThat(send(ping, "GET", "/v1/locked/namespaces", null).statusCode()).isEqualTo(403);
+        // The user holds nothing in locked, so it is answered as a catalog that does not exist, and audited (item 68).
+        assertThat(send(entra, "GET", "/v1/locked/namespaces", null).statusCode()).isEqualTo(404);
+        assertThat(send(ping, "GET", "/v1/locked/namespaces", null).statusCode()).isEqualTo(404);
         List<Denial> denials = audit.denials();
         assertThat(denials).hasSize(2);
         assertThat(denials).extracting(d -> d.actor().principal()).containsOnly(DIRECTORY_ID);

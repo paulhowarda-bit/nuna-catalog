@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConfigRouteDefaultWarehouseTest
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
-index 983cbd9..7b85eed 100644
+index f626e5c..7eb4aae 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
-@@ -33,7 +33,7 @@ public class ConfigRoute {
+@@ -53,7 +53,7 @@ public class ConfigRoute {
  
-     @GetMapping(path = "/v1/config", produces = MediaType.APPLICATION_JSON_VALUE)
-     public String config(@RequestParam(name = "warehouse", required = false) String requested) {
--        String warehouse = requested == null || requested.isBlank() ? settings.defaultWarehouse() : requested;
-+        String warehouse = requested == null || requested.isBlank() ? null : requested;
+     /** The deployment's default warehouse, for a client that names none; with none set, the client must name one. */
+     private String defaultWarehouse() {
+-        String warehouse = settings.defaultWarehouse();
++        String warehouse = null;
          if (warehouse == null || warehouse.isBlank()) {
              throw CatalogError.badRequest("Missing query parameter warehouse, and this server has no default"
                      + " warehouse");

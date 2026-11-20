@@ -80,8 +80,9 @@ class GrantRaceTest {
         Clock clock = Clock.fixed(Instant.parse("2026-11-19T00:00:00Z"), ZoneOffset.UTC);
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
         Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
-        routes = new GrantRoutes(store, authorizer, separation, request -> GINA, new Denials(audit::add, settings, clock),
-                new Holdings(authorizer, store, settings), settings, clock);
+        Denials denials = new Denials(audit::add, settings, clock);
+        routes = new GrantRoutes(store, authorizer, separation, request -> GINA, denials,
+                new Holdings(authorizer, store, settings, separation, denials), settings, clock);
     }
 
     @AfterEach
