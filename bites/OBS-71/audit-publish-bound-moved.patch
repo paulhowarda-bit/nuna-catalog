@@ -1,4 +1,4 @@
-Breaks: the audit publish timer's last bucket sits at 10 s, not the health page's 5 s.
+Breaks: the audit publish timer's last bucket sits at 10 s, not the documented 5 s; since item 74 the health page's moves with it.
 Module: catalog-server
 Test: AuditPublishBucketsTest#theAuditPublishTimerArrivesWithTheHealthPagesBuckets
 

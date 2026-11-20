@@ -141,8 +141,15 @@ At home, with no Grafana, Prometheus or promtool (2026-11-19, item 44's status e
 p99 panel, checked the same way):
 
 - Every JSON file parses, every panel and variable query uses the `datasource` variable, and panel ids are unique.
-- Every YAML file parses (PyYAML) as a rule file: a `groups:` list of rules with `alert`, `expr`, `for`, `labels`
-  and `annotations`, each with `severity` `page` or `warning`.
+- Every YAML file parses (PyYAML) as a rule file: a `groups:` list of rules with `alert`, `expr`, `labels` and
+  `annotations`, each with `severity` `page` or `warning`. Nine of the 17 have a `for`. The other eight fire on the
+  first evaluation that finds their condition (corrected by item 74; this line said every rule had one):
+  - `NunaMetadataIntegrity`, `NunaRegulatedSchemaChange` and `NunaLargeMetadata`. Each fires on a single event,
+    which its `increase(...[15m]) > 0` holds for 15 minutes: a `for` would only delay it, and one of 15 minutes or
+    more could keep a lone event from firing at all.
+  - The worker's `NunaWorkerGone`, `NunaPurgesFailing`, `NunaDeletionsFailing`, `NunaScansSlowerThanInterval` and
+    `NunaFilesOutsideTable`. Their expressions already look back over a window: 15 minutes with no sample, failures
+    and nothing done in an hour, an hour's mean, or a day's count.
 - Brackets balance in every one of the 100 expressions; PromQL itself was not parsed.
 - Every series name in an expression maps back, by the translation above, to a meter named in these docs and in the
   main code, with the unit its type gives (a timer `_milliseconds`, a counter `_total`); every label maps back to a

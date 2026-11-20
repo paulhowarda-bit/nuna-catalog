@@ -7,8 +7,8 @@ import io.micrometer.core.instrument.distribution.DistributionStatisticConfig;
 import io.micrometer.core.instrument.simple.SimpleConfig;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import nuna.catalog.server.tracing.ObservedPublisher;
+import nuna.catalog.server.tracing.TracingWiring;
 import java.time.Duration;
-import java.util.List;
 
 /**
  * The registry the health page reads (docs/observability/health-page.md). It is a meter registry bean of its own, so
@@ -18,15 +18,11 @@ import java.util.List;
  * started and never expires one, so the page can read it each minute and take the difference of two readings a day
  * apart.
  *
- * <p>The audit's publish timer ({@value ObservedPublisher#NAME}) gets histogram buckets here, and only here, for the
- * page to tell its p99; the exported timer is unchanged.
+ * <p>The audit's publish timer ({@value ObservedPublisher#NAME}) gets histogram buckets here at
+ * {@link ObservedPublisher#BUCKETS}, for the page to tell its p99. The exported timer has the same buckets
+ * ({@link TracingWiring}). The filter giving them here is this registry's own, so it has them without Boot too.
  */
 public final class HealthMeters extends SimpleMeterRegistry {
-
-    /** The audit publish timer's bucket bounds in this registry. */
-    static final List<Duration> AUDIT_BUCKETS = List.of(Duration.ofMillis(5), Duration.ofMillis(10),
-            Duration.ofMillis(25), Duration.ofMillis(50), Duration.ofMillis(100), Duration.ofMillis(250),
-            Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofMillis(2500), Duration.ofSeconds(5));
 
     /** Long enough that no histogram here ever rolls over: five years, as Micrometer's cumulative registries keep. */
     private static final Duration NEVER = Duration.ofDays(1825);
@@ -40,7 +36,8 @@ public final class HealthMeters extends SimpleMeterRegistry {
                     return config;
                 }
                 return DistributionStatisticConfig.builder()
-                        .serviceLevelObjectives(AUDIT_BUCKETS.stream().mapToDouble(Duration::toNanos).toArray())
+                        .serviceLevelObjectives(
+                                ObservedPublisher.BUCKETS.stream().mapToDouble(Duration::toNanos).toArray())
                         .build().merge(config);
             }
         });

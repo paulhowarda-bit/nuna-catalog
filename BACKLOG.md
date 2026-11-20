@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**26 open:** 6 S, 12 M, 4 L, 4 XL.
+**25 open:** 5 S, 12 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -37,7 +37,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
-| [74](backlog/74.md) | S | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | one constant and a javadoc in one class, one test's name; no wait | 2026-11-19 |
 
 ## Open items in full
 
@@ -552,30 +551,6 @@ Done when Paul has decided, and the management routes answer as he decided, with
 
 **Decided 2026-11-19 (D18, amended again):** hide names on the management API too ("Hide there too"): a caller that holds nothing on a namespace, table or view gets the 404 a missing one gets, as on the Iceberg routes since item 14. Platform operators see no namespace, table or view name there unless granted ("Catalogs, not objects").
 
-### 74. HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none
-
-- Added: 2026-11-19 by agent on item 71
-- Touches: catalog-server/src/main/java/nuna/catalog/server/health/ catalog-server/src/test/java/nuna/catalog/server/health/ docs/observability/health-page.md
-- Effort: S, one constant and a javadoc in one class, one test's name; no wait
-
-Item 71 exported the audit publish timer (`nuna.audit.publish`) with histogram buckets at `ObservedPublisher.BUCKETS`
-(catalog-server, `tracing/`), 5 ms to 5 s, through a meter filter bean in `TracingWiring`. Its claim did not reach
-`health/`, so two things there are left as they were:
-
-- `HealthMeters.AUDIT_BUCKETS` holds the same ten bounds as `ObservedPublisher.BUCKETS`, in a list of its own. Today
-  they agree (`AuditPublishBucketsTest` checks the exported bounds against the health page's, written out); a change
-  to one alone would leave the dashboard's p99 and the health page's reading different buckets. `TracingWiring`'s
-  filter leaves a registry's own buckets alone, so the health page cannot be broken by it, only drift from it.
-- `HealthMeters`' javadoc says the timer gets buckets "here, and only here ... the exported timer is unchanged", and
-  `HealthWindowTest#theAuditPublishTimerHasBucketsHereOnly` is named for that. Its assertion (a plain
-  `SimpleMeterRegistry` gives the timer none) still holds; the name and the javadoc no longer describe the server.
-  health-page.md's test table repeats the name's claim ("has buckets there only").
-
-Done when `HealthMeters` takes its bounds from `ObservedPublisher.BUCKETS` (its own filter stays: `HealthWindowTest`
-builds it without Boot, so `TracingWiring`'s bean does not reach it there), its javadoc and the test's name say the
-exported timer has the same buckets, health-page.md's test row follows, and the fast build passes. The bite
-`bites/OBS-71/audit-publish-bound-moved.patch` then needs recording again if the constant moves.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -628,3 +603,4 @@ exported timer has the same buckets, health-page.md's test row follows, and the 
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
+| [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
