@@ -1,0 +1,18 @@
+Breaks: the whole check takes a table's empty creation version below its pointer as its first DR watermark again, so a rewind would empty a table that lost an old file (D37, amended again 2026-11-20: "Never the empty version"; item 99).
+Module: catalog-maintenance
+Test: DrVerifyTest#theEmptyCreationVersionIsNoFirstWatermark+aSnapshotWithNoFilesIsEmpty
+
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java b/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
+index 2485e44..e57ac19 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java
+@@ -182,8 +182,7 @@ final class DrVerify {
+                     Version found = held.get(i);
+                     // Never the empty creation version below the pointer (D37, amended again 2026-11-20): a rewind to
+                     // it would empty a table that holds data since. At the pointer the table is that empty.
+-                    return found.version() < item.pointer().version() && empty(found)
+-                            ? new Result(Optional.empty(), missing) : new Result(Optional.of(found), missing);
++                    return new Result(Optional.of(found), missing);
+                 }
+             }
+             if (missing.isEmpty()) {

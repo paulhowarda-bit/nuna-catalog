@@ -12,6 +12,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
+import org.apache.iceberg.TableMetadata;
+import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.io.SupportsPrefixOperations;
 
@@ -28,9 +30,10 @@ import org.apache.iceberg.io.SupportsPrefixOperations;
  * <p>A table or view with no watermark, or whose journaled versions do not follow its watermark one by one, is checked
  * whole: the newest of its pointer's version and the older versions the work list names whose every file every
  * snapshot reaches is found in one listing of its location (D37, amended again 2026-11-20, item 99), so a table that
- * commits faster than its newest files reach the DR store still gets a first watermark. Files are only read, never
- * written. What a version adds is counted by catalog-iceberg's {@link AddedFiles}, which the reconcile's walk counts
- * with too.
+ * commits faster than its newest files reach the DR store still gets a first watermark; but never its empty creation
+ * version below its pointer, which leaves a table that lost an old file with none, as before (Paul: "Never the empty
+ * version"). Files are only read, never written. What a version adds is counted by catalog-iceberg's
+ * {@link AddedFiles}, which the reconcile's walk counts with too.
  */
 final class DrVerify {
 
@@ -143,8 +146,9 @@ final class DrVerify {
      * read once and passed over, without a walk of everything it reaches, when a file it adds to the next older one
      * held is missing, or when it reaches a file a newer one lacks (one missing but not among what the newer one adds
      * to it). So a walk of the whole table is made only for a version whose own files are all there: in-flight
-     * versions fail on their own files, and a file lost long ago costs one walk, not one a version. What is missing is
-     * the pointer's first gap.
+     * versions fail on their own files, and a file lost long ago costs one walk, not one a version. A whole version
+     * below the pointer that holds no data, the creation version a lost file leaves as the only one whole, gives none.
+     * What is missing is the pointer's first gap.
      */
     private Result whole(Item item) {
         String root = Storage.normalize(item.location().endsWith("/") ? item.location() : item.location() + "/");
@@ -175,7 +179,11 @@ final class DrVerify {
             if (gap.isEmpty()) {
                 gap = AddedFiles.firstMissing(null, metadata, this::bytes, present);
                 if (gap.isEmpty()) {
-                    return new Result(Optional.of(held.get(i)), missing);
+                    Version found = held.get(i);
+                    // Never the empty creation version below the pointer (D37, amended again 2026-11-20): a rewind to
+                    // it would empty a table that holds data since. At the pointer the table is that empty.
+                    return found.version() < item.pointer().version() && empty(found)
+                            ? new Result(Optional.empty(), missing) : new Result(Optional.of(found), missing);
                 }
             }
             if (missing.isEmpty()) {
@@ -198,6 +206,18 @@ final class DrVerify {
         item.versions().reversed().stream().filter(version -> version.version() < item.pointer().version())
                 .forEach(candidates::add);
         return candidates;
+    }
+
+    /**
+     * Whether no snapshot of a version reaches a data or delete file: a table's creation version, with no snapshot or
+     * an empty one (an empty create-as-select), and the schema and property changes before its first data. Its
+     * metadata file is read again, then its manifest lists, newest first, until one lists a live file; a manifest that
+     * does not count its files counts as holding some.
+     */
+    private boolean empty(Version version) {
+        TableMetadata metadata = TableMetadataParser.read(dr, version.metadataLocation());
+        return metadata.snapshots().reversed().stream().flatMap(snapshot -> snapshot.allManifests(dr).stream())
+                .noneMatch(manifest -> manifest.hasAddedFiles() || manifest.hasExistingFiles());
     }
 
     private boolean exists(String location) {
