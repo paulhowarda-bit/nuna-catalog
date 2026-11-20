@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**23 open:** 7 S, 10 M, 2 L, 4 XL.
+**20 open:** 5 S, 9 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -26,14 +26,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
-| [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 | [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
-| [96](backlog/96.md) | M | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | M | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | one more field on the stored profile in all four stores, with its migration, and the startup audit naming it | 2026-11-20 |
-| [99](backlog/99.md) | S | A table that commits faster than the DR store replicates never gets a first DR watermark | what is left: dr-watermark.md's paragraphs below, once item 28 has released it; the code is built (M) | 2026-11-20 |
 | [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
 
 ## Open items in full
@@ -414,6 +411,8 @@ heavy and overnight tests pass.**
 Left: the heavy tests named above and the overnight `DrDrillTest` have not run. `catalog-maintenance/README.md`
 (not this branch's) still says the drill's verifier "passes the rewound versions (backlog 92)" after the rewind.
 
+**Decided 2026-11-20 (D37, amended):** both DR alerts stay severity `page`. Paul: "Both page".
+
 ### 29. M9: carry nuna to work (at work)
 
 - Decided: 2026-11-20, D8
@@ -676,60 +675,6 @@ Written on 2026-11-20 (worktree-agent-af0dfeed53e61ec78), not yet run; open unti
 Left: the two heavy tests did not run (no heavy build on 2026-11-20); the overnight run's heavy build shows whether
 they pass. The item stays open until it does.
 
-### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Decided: 2026-11-20, D21
-- Touches: deploy/local/ deploy/README.md
-- Effort: S, one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install
-
-
-Item 5 (2026-11-19) installed the catalog and the maintenance worker on Docker Desktop's Kubernetes with `deploy/local`. The catalog there signs in to the local S3 store (Silo) as its root user, which no user policy binds, so the delete policy with `except` (D21: deny deletes except to maintenance principals; `deploy/README.md`, the `user-policy` lines) is never applied or checked locally, only on a real store in item 4.
-
-Paul, 2026-11-20 (D21, amended): "Yes, non-root".
-
-Done when `deploy/local run.sh up` makes the catalog its own S3 user with the profile's policies, the `except` one included, the catalog runs as that user, and `run.sh smoke` plus a delete check show a delete refused to the catalog's vended credentials and allowed to the maintenance worker, run on Docker Desktop's Kubernetes. Uninstall what the check installs.
-
-Built 2026-11-20 on worktree-agent-ac20c2b80fb2ae021, not yet run live, so the item stays open: what it is done
-when needs the run on Docker Desktop's Kubernetes.
-
-What changed in `deploy/local`:
-- `run.sh up` makes the catalog's own Silo user, `nuna-catalog` (secret `nuna-catalog-secret-key`), before the
-  chart, with policy `nuna-catalog`: get, put, the multipart actions and delete beneath `warehouse/tables/*`, list on
-  `warehouse`. Delete is in it on purpose, as another grant might give it at work, so that the `except` policy is
-  what refuses the catalog's delete. `values.yaml` signs the catalog in as `nuna-catalog`, no longer `nunademo`.
-- Once the catalog is up, `up` reads `GET /management/v1/maintenance/delete-policies` as `oscar` and applies the
-  MinIO pair: `except` as policy `nuna-no-delete` on `nuna-catalog`, `to` as policy `nuna-maintenance` on the worker's
-  user `nuna-maintenance`. `up` now makes that user; `run.sh worker` used to, and still uses it.
-- `run.sh smoke` adds a delete check. It loads the table as `lake` with vended credentials and puts
-  `<location>/data/smoke-probe` with them (200). It then expects the vended credentials' DELETE to be 403,
-  `nuna-catalog`'s DELETE 403, a vended GET 200 (the file is still there), and `nuna-maintenance`'s DELETE 204. curl
-  signs each request (`--aws-sigv4`) through a port-forward to Silo. `mc rm` would not do: it stats first (a HEAD,
-  which the worker's delete-only policy refuses) and exits 0 when a delete is refused.
-- `deploy/README.md` ("Delete rights", "Trying it locally") says so. `docs/install-at-work.md` says nothing about the
-  local install's S3 user, so it is unchanged.
-
-Checked without an install: `bash -n deploy/local/run.sh`; `helm template` of the catalog chart with `values.yaml`
-and of the worker chart with `run.sh worker`'s settings; a scratch harness with curl stubbed, over the new helpers
-(`user_policy` on a delete-policies answer shaped as the catalog writes it, `field` on a load answer, `s3`'s curl
-arguments and its failure on a wrong status). From the sources: MinIO's AssumeRole needs no `sts:` right of a
-non-root parent, only readable policies; re-adding a MinIO user keeps its policies; curl signs every `-H` header.
-
-Why not live: Docker Desktop's node had 1.5 GiB of memory requests free beside the nuna-demo stack (6 GiB of
-7.5 GiB). `run.sh up` asks 3 GiB, and even one server, PostgreSQL and Silo ask 1.6 GiB. Nothing was installed.
-
-Left, when Docker has room (the demo down, or 3 GiB of requests free):
-1. `NUNA_K8S_NAMESPACE=nuna-item79 NUNA_K8S_HOME=<scratch> deploy/local/run.sh up`, then `... run.sh smoke`: the
-   five new `ok` lines, and "smoke passed".
-2. That the `except` policy is what refuses the catalog: detach it (in the Silo pod, after
-   `mc alias set local http://localhost:9000 nunademo nunademo-secret-key`,
-   `mc admin policy detach local nuna-no-delete --user nuna-catalog`), run `smoke` again and see it fail on
-   "nuna-catalog DELETE ... answered 204, expected 403"; attach it again and see `smoke` pass.
-3. `run.sh down` with the same namespace, then `helm list -A` and `kubectl get ns`.
-4. Then the MinIO part of item 4 is done on Silo: both policies applied as the catalog gives them, on a store that
-   enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
-   then say so.
-
 ### 89. A compaction Job against a store behind a private CA, end to end
 
 - Decided: 2026-11-20, D21
@@ -893,22 +838,6 @@ it adds no manifest and no data file), and `DrDrillTest` passes in the overnight
 - Not run: the drill is `overnight`. Left: an overnight run in which `DrDrillTest`'s dry run walks, with the
   item 28 walk.
 
-### 96. A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides)
-
-- Added: 2026-11-20 by Paul (from the install at work)
-- Touches: catalog-server/src/main/java/nuna/catalog/server/storage/, catalog-objectstore/, decision-ledger.md
-- Effort: M, a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul
-
-Raised by the same report from work as item 94 (`for-paul/pending/002-the-demo-s-object-store-on-its-own-port-for-engine.md`):
-the catalog vends one `s3.endpoint` per storage profile, the demo's `http://s3:9000`, which resolves only inside the
-cluster. An engine on another machine has to set `s3.endpoint` to the public address itself, after item 94 publishes
-it on 8187. The report suggests a per-client endpoint in the storage profile, one address for clients in the cluster
-and one for the rest, and calls it "worth a thought for the work install".
-
-Paul decides whether the catalog should vend a second address, and if so how it tells the two kinds of client apart
-(the listener a request came in on, a header the front door sets, or the client's network). Until he does, nothing
-changes: outside engines set their own `s3.endpoint`.
-
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
 - Decided: 2026-11-20, D26
@@ -947,91 +876,6 @@ Done when the stored profile carries the key, a change of key alone is written a
 key in the event's settings), and a test on each store shows it.
 
 **Decided 2026-11-20 (D26, amended):** done now: "98 now, 97 at work".
-
-### 99. A table that commits faster than the DR store replicates never gets a first DR watermark
-
-- Decided: 2026-11-20, D37
-- Added: 2026-11-20 by agent on item 92
-- Touches: docs/observability/dr-watermark.md
-- Effort: S, what is left: dr-watermark.md's paragraphs below, once item 28 has released it; the code is built (M)
-
-The DR verifier (D37, amended 2026-11-20; item 28) checks a table **whole** when it has no watermark, when its
-journaled versions above the watermark do not follow it one by one, or when the watermark's metadata file is gone
-from the DR store. The whole check (`DrVerify.whole`, catalog-maintenance) lists the table's location in the DR
-store once and passes only if every file the **pointer's** version reaches is there. If not, the table's whole
-check is deferred for `nuna.maintenance.scan-interval` (10 minutes by default; `DrVerifier.verify`, `wholeFailed`),
-and the next one tests the pointer of that moment.
-
-A table that commits more often than its newest files reach the DR store (a streaming table: the SingleStore change
-feed commits every 5 seconds by default, `commit.interval.ms`) has, at each whole check, a pointer whose newest manifest list or metadata file is
-still in flight, so the check fails every time and the table never gets a first watermark. It stays in the readout
-with `watermark-version: null`, `NunaDrLagging` pages for it 15 minutes after its first commit, and after a disaster
-the rewind cannot move it ("the table has no DR watermark"). The same holds for a busy table whose journal has a gap
-above its watermark or whose watermark's file is gone, which are also checked whole.
-
-Read from the code on 2026-11-20 while writing item 92's drill leg, which waits for each table's first watermark
-before its writers start so that it does not meet this; not seen in a run.
-
-Done when a whole check reports the newest version its one listing shows whole, not only the pointer's: for
-instance the pointer's version, then each older version in its metadata log, newest first, until one is whole
-(each a parse of a metadata file, the listing reused), so a table whose last few commits are in flight gets the
-watermark of the newest that arrived. `DrVerifyTest` shows a table with no watermark whose pointer lacks a file
-getting the version before it, and dr-watermark.md says so.
-
-**Decided 2026-11-20 (D37, amended again):** "Newest whole version": the whole check takes the newest version
-whose files are all in the DR store, from its one listing, as the table's first watermark.
-
-**Built, 2026-11-20 (worktree-agent-a1d84afb68f8159b0); open until `docs/observability/dr-watermark.md` says so.**
-That file was held by item 28 while this was built; the text it needs is below.
-
-- **The versions to test come from the journal, through the work list.** `GET /management/v1/maintenance/dr-work`
-  (`DrRoutes`) names, for an object with no watermark, its newest journaled versions up to the pointer's, at most
-  100, oldest first; `oldest-unverified-at` is still its first commit. With a watermark it names the oldest 100 above
-  it, as before. Not the metadata log or the listing: the journal holds the version number the catalog checks a
-  report against (`WatermarkMismatchException`), and it names the older versions even when the pointer's own
-  metadata file is the one still in flight, which the metadata log cannot (it is in that file).
-- **The whole check** (`DrVerify.whole`) takes, newest first from the pointer's, the first of those versions whose
-  every file every snapshot reaches is in the one listing (files outside the location with one `HEAD` each), and the
-  verifier reports it as the first watermark; none when none is, as before. A view with no watermark gets the newest
-  version whose metadata file is there, from the same list.
-- **What bounds the work:** at most 101 versions. One whose metadata file the listing lacks is not read. Each other is
-  read once, and passed over without a walk of the whole table when a file it adds to the next older one held is
-  missing (in-flight versions fail on their own few files), or when it reaches a file a newer one lacks that is not
-  among what that one adds to it (a file lost long ago is carried down). So a walk of the whole table is made only
-  for a version whose own files are all there: one a check in the cases tested, as before. A whole check that finds
-  none is still put off for `nuna.maintenance.scan-interval`. A table whose newest whole version is older than its
-  100 newest gets none, as before.
-- After the first watermark the table is checked from it version by version at the next pass; its lag runs from the
-  version after it.
-- Tests (fast build): `DrVerifyTest#aBusyTableGetsTheNewestWholeVersion` (two newest commits partly in flight:
-  version 4 of 6 from one listing, then 6 once they arrive), `#aFileLostLongAgoCostsOneWalk` (no version whole;
-  version 2's manifest read once, not once a version), `#aViewWithNoWatermarkGetsTheNewestVersionThere`;
-  `DrVerifierTest#aFirstWatermarkBelowThePointerLagsFromTheVersionAfterItAndIsCheckedFromNextPass`;
-  `DrRoutesTest#anObjectWithNoWatermarkListsItsNewestVersionsAndLagsFromItsFirst`. Bite
-  `bites/D37/whole-at-the-pointer-only` (only the pointer tested again): run by hand in this worktree, the two
-  `DrVerifyTest` tests it names failed, 2 of 11, on their assertions.
-
-Left: `docs/observability/dr-watermark.md`, for whoever holds it next:
-- "Each pass", step 3, instead of "every file every snapshot of the pointer's version reaches, found in one listing
-  of its location (files outside it with one `HEAD` each)": "the newest of the pointer's version and the versions
-  the work list names below it whose every file every snapshot reaches is found in one listing of its location
-  (files outside it with one `HEAD` each), newest first (item 99; Paul, 2026-11-20: "Newest whole version"). A
-  version whose metadata file the listing lacks is not read; each other is read once and passed over without a walk
-  of the whole table when a file it adds to the next older one is missing, or when it reaches a file a newer one
-  lacks, so one walk of the whole table finds it in the cases seen. A view's: the newest whose metadata file is
-  there."
-- The routes table, `versions`: "(the journaled versions above the watermark, oldest first, at most 100; without a
-  watermark, the newest 100 up to the pointer's, for the whole check)" instead of "...; none without a watermark".
-- The tests table: `DrVerifyTest` adds "a busy table with no watermark gets the newest version whole in one listing,
-  a file lost long ago costs one walk, a view with no watermark gets its newest version there"; `DrVerifierTest`
-  adds "a first watermark below the pointer lags from the version after it"; `DrRoutesTest` adds "an object with no
-  watermark lists its newest versions"; and a `DrPassesTest` row (item 101): "each pass's tally logged at INFO, one
-  line a pass".
-- The bites paragraph adds "the whole check testing only the pointer again (`whole-at-the-pointer-only`)".
-
-**Paul, 2026-11-20 (D37, amended again):** "Never the empty version": a table whose only whole version is its empty
-creation version gets no first watermark and stays with its owner; left to build, with a Java-only test and a bite.
-"Keep for views": views keep the first-watermark rule as built.
 
 ### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
 
@@ -1091,6 +935,8 @@ version it writes, in the same transaction.
 
 Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only (the governance server's harness), so
 "a route test on each store" is `DrSuite`'s store-level test on all four plus the route test on PostgreSQL.
+
+**Decided 2026-11-20 (D37, amended):** "a route test on each store" is met by `DrSuite` on all four stores plus `DrRewindRouteTest` on PostgreSQL; the item closes when the heavy build passes them. Paul: "Yes, that's enough".
 
 ## Done and dropped
 
@@ -1160,6 +1006,7 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 | [76](backlog/76.md) | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | done | 2026-11-20 |
 | [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
+| [79](backlog/79.md) | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | done | 2026-11-20 |
 | [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
 | [81](backlog/81.md) | The chart's values.yaml still says only the minting server answers a 304 | done | 2026-11-20 |
 | [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
@@ -1173,4 +1020,6 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
 | [94](backlog/94.md) | The demo's object store on its own port, 8187, for engines on other machines | done | 2026-11-20 |
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
+| [96](backlog/96.md) | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | dropped | 2026-11-20 |
+| [99](backlog/99.md) | A table that commits faster than the DR store replicates never gets a first DR watermark | done | 2026-11-20 |
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |

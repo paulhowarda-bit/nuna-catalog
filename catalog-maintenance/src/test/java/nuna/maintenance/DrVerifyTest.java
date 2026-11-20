@@ -54,7 +54,7 @@ import org.junit.jupiter.api.Test;
  * missing any file it adds (its metadata file, manifest list, manifests, data and delete files, statistics files),
  * passes a commit that adds no snapshot on its metadata file alone and the version a rewind writes on its metadata file
  * alone, and a table with no watermark is checked whole in one listing, which gives it the newest version whole there
- * (item 99).
+ * (item 99), but never its empty creation version below its pointer (Paul, 2026-11-20: "Never the empty version").
  */
 class DrVerifyTest {
 
@@ -264,6 +264,60 @@ class DrVerifyTest {
         assertThat(result.safe()).isEmpty();
         assertThat(result.missing()).contains(a.location());
         assertThat(dr.reads(manifest)).as("version 2's manifest, which each listed version reaches").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a table that lost an old file, whose only whole version is its empty creation version, gets no first"
+            + " watermark; a new table, at that version, gets it")
+    void theEmptyCreationVersionIsNoFirstWatermark() {
+        replicateAll();
+
+        assertThat(verify.check(journaled(1, 1)).safe()).as("at its pointer").map(DrVerify.Version::version)
+                .contains(1L);
+
+        DataFile a = append("a");
+        append("b");
+        replicateAll();
+        dr.remove(a.location());
+
+        DrVerify.Result result = verify.check(journaled(3, 3));
+
+        assertThat(result.safe()).as("version 1, below the pointer, holds no data").isEmpty();
+        assertThat(result.missing()).contains(a.location());
+        assertThat(dr.listings.get()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a version whose snapshot reaches no data or delete file, as an empty create-as-select writes, is empty"
+            + " too")
+    void aSnapshotWithNoFilesIsEmpty() {
+        table.newAppend().commit();
+        committed();
+        assertThat(metadata(2).currentSnapshot()).as("an empty append's snapshot").isNotNull();
+        DataFile a = append("a");
+        append("b");
+        replicateAll();
+        dr.remove(a.location());
+
+        DrVerify.Result result = verify.check(journaled(4, 4));
+
+        assertThat(result.safe()).as("versions 1 and 2, below the pointer, hold no data").isEmpty();
+        assertThat(result.missing()).contains(a.location());
+    }
+
+    @Test
+    @DisplayName("a table that lost a file of its newer commits gets the older version with data that is whole")
+    void anOlderVersionWithDataIsAFirstWatermark() {
+        append("a");
+        DataFile b = append("b");
+        append("c");
+        replicateAll();
+        dr.remove(b.location());
+
+        DrVerify.Result result = verify.check(journaled(4, 4));
+
+        assertThat(result.safe()).map(DrVerify.Version::version).contains(2L);
+        assertThat(result.missing()).contains(b.location());
     }
 
     @Test
