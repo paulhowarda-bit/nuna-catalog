@@ -239,7 +239,7 @@ DR replica, read-only keys on the DR store, under `nuna.maintenance.dr.replicas.
 path-style access, keys, CA bundle); `nuna.maintenance.dr.verify-interval` sets how often it passes (1 minute by
 default). In the worker chart they go under `config.nuna.maintenance.dr`, the secret key under `secrets.values` as
 `nuna.maintenance.dr.replicas.<profile>.secret-access-key` and a CA bundle in `storageCaConfigMap`, as a storage
-profile's do; the chart's values do not describe them yet (item 92).
+profile's do; the chart's `values.yaml` comments them.
 The verifier keeps each table's DR watermark, the newest version whose every file the DR store holds, in the catalog
 database, so it reaches DR with the database. `GET /management/v1/dr/watermarks` lists the tables behind and their
 lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes.
@@ -274,7 +274,8 @@ lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes
 
 Each step is a platform operator's (D18, amended 2026-11-20); the rewind's commits reach the audit trail as the
 fast-forward's do. The overnight
-DR drill (`DrDrillTest`) runs the freeze, reconcile and thaw; its leg with the DR store behind is item 92's.
+DR drill (`DrDrillTest`) runs the freeze, reconcile and thaw; its leg with the DR store behind (item 92) runs the
+verifier in both regions, the rewind and the walk, and has not run yet.
 
 ## Trying it locally
 
