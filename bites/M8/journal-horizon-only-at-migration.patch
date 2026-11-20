@@ -1,0 +1,16 @@
+Breaks: a commit no longer extends the journal's partitions, so they stay where the last migration left them (backlog 9).
+Module: catalog-store-sql
+Test: JournalHorizonTest$TheStore#aWriteADayLaterExtendsThePartitionsBeforeItRuns
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
+index 1765bec..6064db4 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
+@@ -118,7 +118,6 @@ public final class SqlCatalogStore implements CatalogStore {
+ 
+     @Override
+     public CommitResult commit(CommitBatch batch) {
+-        keepJournalHorizon();
+         return transactions.write(batch.commitId(), "commit " + batch.commitId(),
+                 connection -> Pointers.apply(connection, batch), result -> result instanceof CommitResult.Committed);
+     }

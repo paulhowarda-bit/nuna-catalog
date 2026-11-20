@@ -79,7 +79,7 @@ class ViewRoutes {
         String name = RestRequest.createViewName(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
-        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW);
+        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW, Http.noSuchNamespace(levels));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, name), request)
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
                         Optional.ofNullable(key));
@@ -94,7 +94,7 @@ class ViewRoutes {
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, view, Kind.VIEW);
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, view),
-                Guard.LOAD_VIEW);
+                Guard.LOAD_VIEW, Http.noSuchView(Http.qualified(levels, view)));
         CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
         reads.read(http, catalog, AuditEvents.path(levels, view), object, current.pointer());
         return Http.json(200, views.loadView(current.pointer().metadataLocation(), current.json(), Map.of(),
@@ -116,14 +116,15 @@ class ViewRoutes {
                                    HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
-        NamespaceRecord record = lookup.namespace(catalog, levels)
-                .orElseThrow(() -> Http.noSuchView(Http.qualified(levels, view)));
+        String qualified = Http.qualified(levels, view);
+        NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchView(qualified));
         RequestContext request = RequestContext.of(http, callers);
         Optional<CatalogObject> existing = lookup.object(record, view, Kind.VIEW);
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, view), Guard.REPLACE_VIEW);
+            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, view), Guard.REPLACE_VIEW,
+                    Http.noSuchView(qualified));
         } else {
-            guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW);
+            guard.onNewObject(request, catalog, record, levels, Guard.CREATE_VIEW, Http.noSuchView(qualified));
         }
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, view), request)
                 .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
@@ -148,7 +149,7 @@ class ViewRoutes {
         RestRequest.Registration registration = RestRequest.registerView(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
-        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_VIEW);
+        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_VIEW, Http.noSuchNamespace(levels));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerView(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));

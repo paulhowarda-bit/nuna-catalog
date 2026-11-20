@@ -39,14 +39,15 @@ import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.FlywayException;
@@ -74,6 +75,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlGovernance governance;
     private final SqlDeletions deletions;
     private final SqlHealth health;
+    private final JournalHorizon horizon;
 
     public SqlCatalogStore(DataSource dataSource) {
         this(dataSource, CommitHook.NONE);
@@ -81,6 +83,12 @@ public final class SqlCatalogStore implements CatalogStore {
 
     /** {@code commitHook} is a test seam called just before each COMMIT that carries a commit or change id. */
     public SqlCatalogStore(DataSource dataSource, CommitHook commitHook) {
+        this(dataSource, commitHook, Clock.systemUTC());
+    }
+
+    /** {@code clock} is a test seam: the clock the journal's horizon is kept by. */
+    SqlCatalogStore(DataSource dataSource, CommitHook commitHook, Clock clock) {
+        this.horizon = new JournalHorizon(clock);
         this.dataSource = dataSource;
         this.transactions = new Transactions(dataSource, commitHook);
         this.maintenanceDataSource = new MaintenanceDataSource(dataSource);
@@ -111,6 +119,7 @@ public final class SqlCatalogStore implements CatalogStore {
 
     @Override
     public CommitResult commit(CommitBatch batch) {
+        keepJournalHorizon();
         return transactions.write(batch.commitId(), "commit " + batch.commitId(),
                 connection -> Pointers.apply(connection, batch), result -> result instanceof CommitResult.Committed);
     }
@@ -160,7 +169,8 @@ public final class SqlCatalogStore implements CatalogStore {
 
     /**
      * Migrates the schema; on PostgreSQL it then extends the journal's partitions
-     * {@link #JOURNAL_HORIZON_MONTHS} ahead.
+     * {@link JournalHorizon#MONTHS} ahead. A write that journals keeps them so afterwards
+     * ({@link #keepJournalHorizon()}).
      */
     @Override
     public void migrate() {
@@ -177,7 +187,7 @@ public final class SqlCatalogStore implements CatalogStore {
         } catch (FlywayException e) {
             throw new StoreException("schema migration failed", e);
         }
-        extendJournal(Instant.now().atOffset(ZoneOffset.UTC).plusMonths(JOURNAL_HORIZON_MONTHS).toInstant());
+        extendJournal(horizon.target());
     }
 
     /**
@@ -187,8 +197,14 @@ public final class SqlCatalogStore implements CatalogStore {
      */
     static final int MIGRATION_LOCK_RETRIES = 300;
 
-    /** How far ahead the journal's monthly partitions reach; a maintenance job keeps it so. */
-    public static final int JOURNAL_HORIZON_MONTHS = 12;
+    /**
+     * The longest a write waits for each lock when it extends the journal's partitions. Attaching a
+     * partition locks the default partition exclusively; behind a long reader of the journal, that
+     * wait would hold up the write and every query that queues behind the attach.
+     */
+    static final Duration HORIZON_LOCK_WAIT = Duration.ofSeconds(1);
+
+    private static final System.Logger LOG = System.getLogger(SqlCatalogStore.class.getName());
 
     /**
      * Creates the journal's missing monthly partitions through the month holding {@code through},
@@ -197,12 +213,42 @@ public final class SqlCatalogStore implements CatalogStore {
      * CockroachDB splits it into ranges itself, so there it creates none.
      */
     public int extendJournal(Instant through) {
+        return extendJournal(through, Duration.ZERO);
+    }
+
+    /**
+     * As {@link #extendJournal(Instant)}, waiting at most {@code lockWait} for each lock; zero keeps
+     * the session's own lock_timeout.
+     */
+    private int extendJournal(Instant through, Duration lockWait) {
         if (!transactions.backend().partitionsJournal) {
             return 0;
         }
-        return maintenance.writeAndRetryOnFailure("journal partition extension", connection ->
-                Jdbc.first(connection, "SELECT journal_extend(?)", row -> row.getInt(1), through).orElseThrow(),
-                created -> true);
+        return maintenance.writeAndRetryOnFailure("journal partition extension", connection -> {
+            if (!lockWait.isZero()) {
+                Jdbc.first(connection, "SELECT set_config('lock_timeout', ?, true)", row -> row.getString(1),
+                        lockWait.toMillis() + "ms");
+            }
+            return Jdbc.first(connection, "SELECT journal_extend(?)", row -> row.getInt(1), through).orElseThrow();
+        }, created -> true);
+    }
+
+    /**
+     * Before a write that journals, at most once a day: extends the journal's partitions
+     * {@link JournalHorizon#MONTHS} ahead of the clock, so a server that runs on without a migration
+     * keeps its horizon (backlog 9). It waits at most {@link #HORIZON_LOCK_WAIT} for each lock. A
+     * failure is logged and the write goes ahead: the default partition takes a commit beyond the
+     * horizon, and the next day's first write tries again.
+     */
+    private void keepJournalHorizon() {
+        horizon.claim().ifPresent(through -> {
+            try {
+                extendJournal(through, HORIZON_LOCK_WAIT);
+            } catch (StoreException e) {
+                LOG.log(System.Logger.Level.WARNING, "Could not extend the journal's partitions through " + through
+                        + "; the first write after " + JournalHorizon.EVERY + " tries again", e);
+            }
+        });
     }
 
     /** The newest Flyway step applied; version 0 before the first migration. */
@@ -257,6 +303,7 @@ public final class SqlCatalogStore implements CatalogStore {
 
     @Override
     public WriteResult createObject(ObjectCreation creation) {
+        keepJournalHorizon();
         return objects.create(creation);
     }
 
@@ -299,6 +346,7 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public WriteResult reviveObject(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name,
                                     CommitBatch batch) {
+        keepJournalHorizon();
         return objects.revive(objectId, from, namespaceId, name, batch);
     }
 
@@ -376,6 +424,11 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public WriteResult putGrant(Grant grant, String grantedBy, Change change) {
         return grants.put(grant, grantedBy, change);
+    }
+
+    @Override
+    public WriteResult putGrantIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
+        return grants.putIf(grant, grantedBy, change, admits);
     }
 
     @Override

@@ -59,6 +59,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import org.bson.BsonBoolean;
 import org.bson.BsonDocument;
@@ -463,6 +464,11 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public WriteResult putGrant(Grant grant, String grantedBy, Change change) {
         return grants.put(grant, grantedBy, change);
+    }
+
+    @Override
+    public WriteResult putGrantIf(Grant grant, String grantedBy, Change change, Predicate<List<String>> admits) {
+        return grants.putIf(grant, grantedBy, change, admits);
     }
 
     @Override

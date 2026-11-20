@@ -1,0 +1,16 @@
+Breaks: a failed extension of the journal's partitions fails the write that triggered it (backlog 9).
+Module: catalog-store-sql
+Test: JournalHorizonTest$TheStore#aFailedExtensionIsTriedAgainTheNextDayAndTheWriteGoesAhead
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
+index 1765bec..777280d 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java
+@@ -246,6 +246,7 @@ public final class SqlCatalogStore implements CatalogStore {
+             } catch (StoreException e) {
+                 LOG.log(System.Logger.Level.WARNING, "Could not extend the journal's partitions through " + through
+                         + "; the first write after " + JournalHorizon.EVERY + " tries again", e);
++                throw e;
+             }
+         });
+     }

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 5 S, 15 M, 4 L, 4 XL.
+**27 open:** 6 S, 13 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,10 +16,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
-| [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
-| [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
@@ -34,12 +31,14 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
-| [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
+| [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
+| [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
+| [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
 
 ## Open items in full
 
@@ -106,17 +105,6 @@ of the four backends, with a test and a bite.
 
 **Decided 2026-11-19 (D8):** a failed self-check refuses to start the server ("Refuse to start"). Test containers and the demo run single-node with fsync off, so they need an explicit setting that allows an unsafe database.
 
-### 9. Extend the journal horizon with a job, not only at migration
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, check four backends and add a job where one is missing, with a test
-
-`build-plan.md`, M8 follow-ups: the journal's monthly partitions are extended ahead only when migrations run
-(`SqlCatalogStore.migrate()`, 12 months ahead). A server that runs longer than that without a migration runs out.
-Oracle's V5 already adds a daily Scheduler job (M2b); check which backends still lack one.
-
-Done when every backend that partitions the journal keeps its horizon ahead without a migration, with a test.
-
 ### 10. DR reconcile: prove the accepted tips from the audit archive
 
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
@@ -126,33 +114,6 @@ Done when every backend that partitions the journal keeps its horizon ahead with
 assembled by hand. The audit archive could prove which tips were acknowledged.
 
 Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
-
-### 13. The separation-of-duties check and the grant write are not atomic
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, confirm it still holds, then one transaction and a race test
-
-`build-plan.md`, M5 (2026-11-08), Open: the SoD check and the grant write are not atomic, so two grants made at once
-can together break separation of duties. Not settled in the ledger since; confirm it still holds first.
-
-Done when two concurrent grants cannot together break SoD, shown by a test that races them.
-
-### 14. HEAD and loads answer 404 before 403, so names leak to signed-in callers
-
-- Decided: 2026-11-19, D18
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, three routes reordered, with tests; after Paul decides
-
-`build-plan.md`, M5 (2026-11-08), Open: HEAD and loads answer 404 before 403, so any signed-in caller can learn
-which names exist. Not settled in the ledger since; confirm it still holds first. Whether names are secret is
-Paul's call (see item 20).
-
-The metrics route answers in the same order (`TableRoutes.java`, `metrics`: `objects.existing` before
-`guard.onObject`), so it falls under this item too (found 2026-11-15, Iceberg observability review).
-
-Done when Paul has decided, and the routes answer as he decided, with tests.
-
-**Decided 2026-11-19 (D18):** names are hidden ("Hide names"): a caller without access gets the same answer whether or not the name exists, on HEAD, loads and the metrics route.
 
 ### 15. ETags do not survive a change of server (Paul decides)
 
@@ -390,9 +351,10 @@ each alert fired once in a test. The item stays open for those, which are its do
 
 ### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
 
+- Decided: 2026-11-19, D31
 - Added: 2026-11-16 by overnight run 2026-11-16
 - Touches: catalog-store-api/src/test/java/nuna/catalog/store/suite/CommitSuite.java, catalog-tests-load/src/test/java/nuna/catalog/load/ConcurrentWritersTest.java
-- Effort: S, the deadlock check needs the same room for one transient; then an overnight run
+- Effort: S, waits on an overnight run in which both tests pass
 
 The Nightly leg of the overnight run of 2026-11-16 (testing 30bab53) failed two tests, each on one request that went
 unanswered between about 05:45:57 and 05:46:13 UTC, while `catalog-tests-load` started `ConcurrentWritersTest`'s stack
@@ -442,6 +404,25 @@ place. After the case's writers ran, its `SELECT deadlocks FROM pg_stat_database
 `SocketTimeoutException: Read timed out`: a read reaching a container timed out, as in the stall above, met
 this time by the test's own check rather than by a writer. 8 and 16 writers at v2, and 8 and 32 at v3, passed. Logs:
 `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\nightly.log` and `nightly-results/` (run before the rename to nuna).
+
+Fixed on 2026-11-19 (Paul, 2026-11-19: "Fix the check"), not yet run; open until both tests pass in an overnight run:
+
+- `ConcurrentWritersTest` reads the deadlock count again after 1 s when the read fails, three tries at most, both
+  before the writers start and after they finish; a third failure in a row still fails the case, and what it asserts
+  is unchanged (the count after equals the count before). Each repeat prints a line (`[m8] deadlock count not read,
+  repeating in 1 s: …` and `[m8] deadlock count read after n repeat(s)`), so the overnight log shows any. The read is
+  the test's own instrument, and no writer runs while it reads, so it repeats on any failure.
+- The same exposure in the CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`): after each round it reads the
+  pointer and the winner's outcome through the store (`readPointer`, `findCommit`: 2,000 reads in 1,000 rounds), and
+  at the end the journal directly (`journalVersions`). The store's two reads are now asked again on
+  `StoreUnavailableException` alone, as the commits are (one helper, `repeating`, serves all three: three tries, 1 s
+  apart); the journal read, the suite's own instrument over four drivers that fail in their own types, on any
+  failure. It prints how many reads it repeated beside how many commits.
+- Left as they were: `ConcurrentWritersTest`'s other requests go to the catalog servers, whose answers the case
+  holds to no 5xx (the item's rule), and `Stack.grantWriters` is a write in the stack's setup, not a check.
+
+Not run: both are `-Pnightly` tests (`overnight`, `cas`), and the heavy and nightly builds were off on 2026-11-19. The
+fast build compiled both.
 
 ### 60. CredentialExpiryTest's first request answered 401
 
@@ -549,6 +530,58 @@ registry is configured, or `management.metrics.distribution.slo.nuna.audit.publi
 buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogram_quantile` beside the mean, its docs
 (`docs/observability/dashboards-and-alerts.md`) saying so.
 
+### 72. Oracle's self-check does not notice a journal-partition job that cannot run
+
+- Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
+- Touches: catalog-store-oracle/
+- Effort: S, one more query in one store's self-check and a heavy test; waits on Paul's answer below
+
+Oracle keeps its journal's horizon with migration V5's Scheduler job, `JOURNAL_PARTITIONS_AHEAD`, which creates
+this month's partition and the next two every day (item 9 checked it; `OracleStoreSuiteTest#
+schedulerJobCreatesJournalPartitionsAhead`, heavy). The job runs only while `JOB_QUEUE_PROCESSES` is not 0, and
+only while it stays enabled and keeps succeeding (V5's own comment). When it does not run, nothing says so: the
+store's `selfCheck()` reads `V_$PARAMETER` for other findings but not `job_queue_processes`, nor the job's
+`enabled`, `state` or `failure_count` in `user_scheduler_jobs`. Interval partitioning still takes every commit, but
+each month's first commit then creates its partition inside the commit, which took 0.5 to 2.6 s on Free (M2b) and
+can run past the pool's read timeout, which fails that commit (docs/storage-design.md, M2b deviation 9).
+
+Done when the self-check reports a job that cannot run (`job_queue_processes` 0, the job missing, disabled or
+failing), with a heavy test that disables the job on a fresh schema and finds the report.
+
+Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
+job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
+
+### 73. Namespace, table and view names still leak through the management API
+
+- Decided: 2026-11-19, D18
+- Added: 2026-11-19 by agent-a3d0c67abbd88cfb2, from item 14
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/main/java/nuna/catalog/server/security/ catalog-server/src/test/
+- Effort: M, a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides
+
+Item 14 hid names on the Iceberg routes (D18 as amended 2026-11-19, "Hide names"): a caller that holds nothing on a
+namespace, table or view, or above it, or (for a namespace) on anything inside it, gets the 404 a missing one gets.
+The management API under `/management/v1/catalogs/{catalog}/...` still looks the name up first and asks second, so a
+signed-in caller can tell a name that exists (403) from one that does not (404):
+
+- `GovernanceRoutes`: governance, attributes, holds, policies and DR freezes, on a namespace, table or view, resolve
+  the target with `management.target(...)` (404 `NoSuchTableException` and the like) before `guard.require(...)`
+  (403). For example `GET .../namespaces/hr/tables/staff/governance` as a caller with nothing on `hr`.
+- `GrantRoutes`: a grant, a revoke and the listing of grants on an object resolve the securable with
+  `Securables.resolve` (404) before the privilege check (403); `SecurityGateTest#separationOfDutiesHoldsForEveryGrant`
+  shows the 403 for a namespace the granter holds nothing on.
+- `AuditReadRoutes` and `HealthRoutes` take a target through the same lookups.
+
+The `/check` route answers `allowed: false` alike for a missing and a refused object, so it does not leak.
+
+D18's amendment names HEAD, loads and the metrics route on the Iceberg API; whether hiding reaches the management
+API, whose callers are mostly stewards, grant admins and operators, is Paul's call. If it does, the Iceberg routes'
+rule and `Guard`'s check of grants inside a namespace (the catalog list's rule, item 20) are the model, and the hidden
+refusal is audited as every refusal is.
+
+Done when Paul has decided, and the management routes answer as he decided, with tests.
+
+**Decided 2026-11-19 (D18, amended again):** hide names on the management API too ("Hide there too"): a caller that holds nothing on a namespace, table or view gets the 404 a missing one gets, as on the Iceberg routes since item 14. Platform operators see no namespace, table or view name there unless granted ("Catalogs, not objects").
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -557,8 +590,11 @@ buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogra
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
 | [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
+| [13](backlog/13.md) | The separation-of-duties check and the grant write are not atomic | done | 2026-11-20 |
+| [14](backlog/14.md) | HEAD and loads answer 404 before 403, so names leak to signed-in callers | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
