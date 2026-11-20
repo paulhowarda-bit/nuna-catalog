@@ -312,7 +312,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
   - Token paste is a development aid, `nuna.ui.dev-token-login=true`, off by default.
   - The console reads the token's claims for display only.
 - **Browsing uses the Iceberg REST API**, with no second read path. Tables load with `snapshots=all`.
-  - Exception: one small route, `GET /management/v1/catalogs`, lists the declared catalog names to any signed-in caller, unfiltered. These are the warehouse names every engine is configured with, and `/v1/config` already tells any signed-in caller whether a name exists.
+  - Exception: one small route, `GET /management/v1/catalogs`, lists the declared catalogs the caller holds something on: a grant to one of its groups on the catalog or on anything in it. Grant admins and platform operators see every one (D18 as amended 2026-11-19, item 20).
 - **Vended credentials kept from the browser.** D21 vends to every caller who loads a table; any caller may decline with `X-Iceberg-Access-Delegation: none` (D21 as amended 2026-11-19, item 16), and a bite guards that rule. The console asks for `none`, so it is vended nothing.
 - **Audit trail read.**
   - Route: `GET .../audit?limit=` on a catalog, namespace, table or view (default 50, at most 200). It needs `manage-grants` on the object or above. The trail shows who used the object and who was refused, which is the evidence an access review needs (D19), and separation of duties keeps grant admins away from the data itself (D18). A refusal is audited as a `Denial`, and each read as a new event, `AuditRead` (`nuna.catalog.audit-read`, v1: target, number returned, actor).
@@ -353,7 +353,7 @@ A browser console for people: browse catalogs, read governance, manage grants, a
 
 - **D21 for people:** settled 2026-11-19: any caller may decline vending with `none`, the console among them, and gets no credentials, no STS call and no credential-issue audit record (D21 as amended; item 16).
 - **OIDC against a real IdP:** the PKCE flow works against Keycloak 26.8: the demo signs people in with it by username and password (`demo/k8s/keycloak.yaml`), checked by hand in a browser on 2026-11-12, and by `ConsoleSignInTest` since 2026-11-15. It is not yet tested against Entra ID or Ping. The IdP's token endpoint must allow CORS from the console's origin. The console's "Sign out" does not end the IdP's session.
-- **Catalog names** are listed unfiltered to any signed-in caller (see above). Filter them if a deployment treats names as secret.
+- **Catalog names:** settled 2026-11-19: the list shows only the catalogs the caller holds something on (D18 as amended; item 20). `/v1/config` and the 404 for an unknown prefix still tell any signed-in caller whether a name exists: item 68.
 - **Audit read scaling:** each read opens a short-lived Kafka consumer. That is fine for people at console rates; it needs a cap if scripts start using it. A quiet object on a busy partition can fall outside the 20,000-offset window, and the console then points to the SIEM.
 - **Browser end-to-end tests:** `ConsoleBrowserTest` since 2026-11-15 (see Status). The light and dark themes are still checked by hand only.
 

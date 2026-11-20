@@ -8,6 +8,7 @@ import com.jayway.jsonpath.JsonPath;
 import nuna.catalog.audit.Denial;
 import nuna.catalog.audit.EventType;
 import java.net.http.HttpResponse;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -179,6 +180,28 @@ class ManagementAuthorizationTest {
     }
 
     @Test
+    void theCatalogListShowsOnlyCatalogsTheCallerHoldsSomethingOn() {
+        // D18, amended 2026-11-19 (item 20). The tester and the steward hold grants on the catalog, the grant
+        // admin manage-grants on every catalog; the operator holds none but runs the deployment.
+        assertThat(catalogs(null)).containsExactly(Api.CATALOG);
+        for (String holder : List.of(api.steward(), api.grantAdmin(), api.operator())) {
+            assertThat(catalogs(holder)).containsExactly(Api.CATALOG);
+        }
+        assertThat(catalogs(api.outsider())).isEmpty();
+
+        // A grant on one table is something in the catalog; revoked, it is gone.
+        String readers = "table-readers-" + Api.suffix();
+        String grant = "{\"securable\":{\"type\":\"table\",\"namespace\":[\"" + ns + "\"],\"name\":\"t\"},"
+                + "\"group\":\"" + readers + "\",\"privilege\":\"select\"}";
+        assertThat(catalogs(null, GovernanceServer.PRINCIPAL, "rita", GovernanceServer.GROUPS, readers)).isEmpty();
+        expect(api.manage("POST", "/grants", grant, AUTH, api.grantAdmin()), 204);
+        assertThat(catalogs(null, GovernanceServer.PRINCIPAL, "rita", GovernanceServer.GROUPS, readers))
+                .containsExactly(Api.CATALOG);
+        expect(api.manage("POST", "/grants/revoke", grant, AUTH, api.grantAdmin()), 204);
+        assertThat(catalogs(null, GovernanceServer.PRINCIPAL, "rita", GovernanceServer.GROUPS, readers)).isEmpty();
+    }
+
+    @Test
     void aStewardCanClassifyATableTheRegulatedRuleKeepsClosed() {
         expect(api.manage("PUT", "/namespaces/" + ns + "/attributes/regulated",
                 "{\"value\":\"true\",\"provenance\":\"records-office\"}", AUTH, api.steward()), 200);
@@ -204,6 +227,16 @@ class ManagementAuthorizationTest {
 
     private static void refused(HttpResponse<String> response) {
         expectError(response, 403, "ForbiddenException");
+    }
+
+    /**
+     * The names {@code GET /management/v1/catalogs} lists to the caller {@code authorization} names, or, when it is
+     * null, to the one {@code headers} name ({@link Api#send}).
+     */
+    private List<String> catalogs(String authorization, String... headers) {
+        String[] sent = authorization == null ? headers : new String[] {AUTH, authorization};
+        return JsonPath.read(expect(api.send("GET", "/management/v1/catalogs", null, sent), 200).body(),
+                "$.catalogs[*].name");
     }
 
     private String hold() {

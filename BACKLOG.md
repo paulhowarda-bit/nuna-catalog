@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 6 S, 12 M, 6 L, 4 XL.
+**28 open:** 5 S, 13 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,7 +25,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
-| [20](backlog/20.md) | S | Catalog names are listed to every signed-in caller (a question for work) | filter one route by the caller's grants, with a test; after work answers | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
@@ -40,6 +39,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [67](backlog/67.md) | S | An unregister whose outcome is unknown waits within the retry budget when the store is down | one path in the commit engine and a fault test, as item 8 | 2026-11-19 |
+| [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 
 ## Open items in full
 
@@ -233,20 +233,6 @@ IdP's session (Paul's call).
 rates; it needs a cap if scripts start using it.
 
 Done when the route limits how often one caller (or all callers) may read, answering 429 beyond it, with a test.
-
-### 20. Catalog names are listed to every signed-in caller (a question for work)
-
-- Decided: 2026-11-19, D18
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, filter one route by the caller's grants, with a test; after work answers
-
-`build-plan.md`, UI v1: `GET /management/v1/catalogs` lists the declared catalog names to any signed-in caller,
-unfiltered. Filter them if a deployment treats names as secret.
-
-Done when work has answered whether names are secret, and, if they are, the route lists only catalogs the caller
-holds something on, with a test.
-
-**Decided 2026-11-19 (D18):** catalog names are filtered now ("Filter them now"), as namespace and table names are (item 14), without waiting for work's answer: the route lists only the catalogs the caller holds something on.
 
 ### 21. A CA bundle per storage profile
 
@@ -508,6 +494,29 @@ Done when an unregister whose outcome is unknown during a short outage is settle
 test in `catalog-core` as item 8's are (`CommitEngineTest$UnknownOutcomes`), and an outage longer than the budget
 still answers 500 CommitStateUnknownException.
 
+### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
+
+- Added: 2026-11-19 by agent working item 20
+- Touches: catalog-server/
+- Effort: M, four lookups answer before any guard, each with a test; after Paul decides
+
+Item 20 filtered `GET /management/v1/catalogs` to the catalogs the caller holds something on (D18 as amended
+2026-11-19). Other routes still tell any signed-in caller whether a catalog name exists, whatever it holds:
+
+- `GET /v1/config?warehouse=<name>` answers 200 with the prefix for a declared catalog and 404
+  NoSuchWarehouseException for any other name, with no authorization at all (`ConfigRoute.java`, `config`).
+- Every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/` resolves the catalog before its guard:
+  404 NoSuchWarehouseException for an unknown name, then 403 for a known one the caller holds nothing on
+  (`Lookup.catalog`, `governance/Management.java` line 81, `security/Securables.catalog`). For example
+  `GET /v1/<name>/namespaces` as a caller in no granted group.
+
+D18's amendment names HEAD, loads, the metrics route (item 14) and the catalog list (item 20); it does not say
+whether a catalog's existence is hidden too. Hiding it in `/v1/config` changes what an engine with no grant sees:
+it would fail at its first call, the config, rather than at the first listing or load.
+
+Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
+holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -518,6 +527,7 @@ still answers 500 CommitStateUnknownException.
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
+| [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |
