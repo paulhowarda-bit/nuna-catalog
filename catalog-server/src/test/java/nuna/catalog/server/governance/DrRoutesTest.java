@@ -170,9 +170,27 @@ class DrRoutesTest {
         JsonNode view = item(work.get("objects"), roster);
         assertThat(view.get("kind").asString()).isEqualTo("view");
         assertThat(view.has("watermark")).isFalse();
-        assertThat(view.get("versions")).as("checked whole, at the pointer").isEmpty();
+        assertThat(view.get("versions").valueStream().map(v -> v.get("version").asLong()).toList())
+                .as("checked whole, from the newest").containsExactly(1L);
         assertThat(view.get("oldest-unverified-at").asString()).isEqualTo(committed(roster, 1).toString());
         assertThat(work.has("next-page-token")).isFalse();
+    }
+
+    @Test
+    void anObjectWithNoWatermarkListsItsNewestVersionsAndLagsFromItsFirst() {
+        CatalogObject stream = object("stream", CatalogObject.Kind.TABLE, DrRoutes.MAX_VERSIONS + 30);
+
+        JsonNode table = item(json(routes.work(null, null, http)).get("objects"), stream);
+
+        assertThat(table.has("watermark")).isFalse();
+        assertThat(table.get("versions").valueStream().map(v -> v.get("version").asLong()).toList())
+                .as("the newest, up to the pointer's, oldest first").hasSize(DrRoutes.MAX_VERSIONS)
+                .startsWith(31L).endsWith((long) DrRoutes.MAX_VERSIONS + 30);
+        assertThat(table.get("versions").get(0).get("metadata-location").asString()).isEqualTo(location(stream, 31));
+        assertThat(table.get("versions").get(0).get("committed-at").asString())
+                .isEqualTo(committed(stream, 31).toString());
+        assertThat(table.get("oldest-unverified-at").asString()).as("its first commit")
+                .isEqualTo(committed(stream, 1).toString());
     }
 
     @Test

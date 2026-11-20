@@ -52,7 +52,10 @@ class DrRoutes {
     static final String WATERMARK = ROOT + "/maintenance/tables/{id}/dr-watermark";
     static final String WATERMARKS = ROOT + "/dr/watermarks";
 
-    /** Versions above its watermark one work item lists at most; the verifier reads the rest at its next pass. */
+    /**
+     * Versions above its watermark one work item lists at most; the verifier reads the rest at its next pass. Without
+     * a watermark, the newest are listed, for the verifier's whole check (item 99).
+     */
     static final int MAX_VERSIONS = 100;
     private static final int WORK_PAGE = 100;
     private static final int MAX_WORK_PAGE = 1000;
@@ -77,8 +80,9 @@ class DrRoutes {
     /**
      * The verifier's work list: every active table and view whose watermark is below its main pointer, or which has
      * none, by id. Each item holds its location, its pointer, its watermark when it has one, the journaled versions
-     * above the watermark (at most {@value #MAX_VERSIONS}, oldest first; none when it has no watermark, since the
-     * verifier then checks the pointer's version whole) and when the oldest of them was committed.
+     * above the watermark (at most {@value #MAX_VERSIONS}, oldest first; without a watermark the newest, up to the
+     * pointer's, from which the verifier takes the newest it finds whole: D37, amended again 2026-11-20, item 99) and
+     * when the oldest version above the watermark was committed.
      */
     @GetMapping(path = WORK, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> work(@RequestParam(required = false) String pageToken,
@@ -101,19 +105,19 @@ class DrRoutes {
                 kept.put("metadata-location", watermark.metadataLocation());
             });
             ArrayNode versions = item.putArray("versions");
-            List<JournalRecord> above = journal(state.object().id(), state.watermark().map(DrWatermark::version)
-                    .orElse(0L), state.watermark().isPresent() ? MAX_VERSIONS : 1);
-            if (state.watermark().isPresent()) {
-                for (JournalRecord record : above) {
-                    ObjectNode version = versions.addObject();
-                    version.put("version", record.newVersion());
-                    version.put("metadata-location", record.newLocation());
-                    version.put("commit-id", record.commitId().toString());
-                    version.put("committed-at", record.committedAt().toString());
-                }
+            long after = state.watermark().map(DrWatermark::version)
+                    .orElse(Math.max(0, state.version() - MAX_VERSIONS));
+            List<JournalRecord> listed = journal(state.object().id(), after, MAX_VERSIONS);
+            for (JournalRecord record : listed) {
+                ObjectNode version = versions.addObject();
+                version.put("version", record.newVersion());
+                version.put("metadata-location", record.newLocation());
+                version.put("commit-id", record.commitId().toString());
+                version.put("committed-at", record.committedAt().toString());
             }
-            above.stream().findFirst().ifPresent(oldest -> item.put("oldest-unverified-at",
-                    oldest.committedAt().toString()));
+            (after == 0 || state.watermark().isPresent() ? listed : journal(state.object().id(), 0, 1)).stream()
+                    .findFirst().ifPresent(oldest -> item.put("oldest-unverified-at",
+                            oldest.committedAt().toString()));
         }
         page.nextToken().ifPresent(token -> body.put("next-page-token", token));
         return GovernanceRoutes.json(200, body);

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 7 S, 11 M, 2 L, 4 XL.
+**23 open:** 7 S, 10 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,9 +33,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [96](backlog/96.md) | M | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | a storage-profile setting and the vending that chooses between two addresses, with tests; waits on Paul | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | M | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | one more field on the stored profile in all four stores, with its migration, and the startup audit naming it | 2026-11-20 |
-| [99](backlog/99.md) | M | A table that commits faster than the DR store replicates never gets a first DR watermark | the whole check finds the newest whole version from its one listing instead of testing only the pointer's, with tests; the choice of version is D37's, so Paul may want to see it first | 2026-11-20 |
+| [99](backlog/99.md) | S | A table that commits faster than the DR store replicates never gets a first DR watermark | what is left: dr-watermark.md's paragraphs below, once item 28 has released it; the code is built (M) | 2026-11-20 |
 | [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
-| [101](backlog/101.md) | S | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | one log level or one runbook sentence, and a check that the line is there | 2026-11-20 |
 
 ## Open items in full
 
@@ -932,8 +931,8 @@ key in the event's settings), and a test on each store shows it.
 
 - Decided: 2026-11-20, D37
 - Added: 2026-11-20 by agent on item 92
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java catalog-maintenance/src/test/java/nuna/maintenance/DrVerifyTest.java docs/observability/dr-watermark.md
-- Effort: M, the whole check finds the newest whole version from its one listing instead of testing only the pointer's, with tests; the choice of version is D37's, so Paul may want to see it first
+- Touches: docs/observability/dr-watermark.md
+- Effort: S, what is left: dr-watermark.md's paragraphs below, once item 28 has released it; the code is built (M)
 
 The DR verifier (D37, amended 2026-11-20; item 28) checks a table **whole** when it has no watermark, when its
 journaled versions above the watermark do not follow it one by one, or when the watermark's metadata file is gone
@@ -960,6 +959,54 @@ getting the version before it, and dr-watermark.md says so.
 
 **Decided 2026-11-20 (D37, amended again):** "Newest whole version": the whole check takes the newest version
 whose files are all in the DR store, from its one listing, as the table's first watermark.
+
+**Built, 2026-11-20 (worktree-agent-a1d84afb68f8159b0); open until `docs/observability/dr-watermark.md` says so.**
+That file was held by item 28 while this was built; the text it needs is below.
+
+- **The versions to test come from the journal, through the work list.** `GET /management/v1/maintenance/dr-work`
+  (`DrRoutes`) names, for an object with no watermark, its newest journaled versions up to the pointer's, at most
+  100, oldest first; `oldest-unverified-at` is still its first commit. With a watermark it names the oldest 100 above
+  it, as before. Not the metadata log or the listing: the journal holds the version number the catalog checks a
+  report against (`WatermarkMismatchException`), and it names the older versions even when the pointer's own
+  metadata file is the one still in flight, which the metadata log cannot (it is in that file).
+- **The whole check** (`DrVerify.whole`) takes, newest first from the pointer's, the first of those versions whose
+  every file every snapshot reaches is in the one listing (files outside the location with one `HEAD` each), and the
+  verifier reports it as the first watermark; none when none is, as before. A view with no watermark gets the newest
+  version whose metadata file is there, from the same list.
+- **What bounds the work:** at most 101 versions. One whose metadata file the listing lacks is not read. Each other is
+  read once, and passed over without a walk of the whole table when a file it adds to the next older one held is
+  missing (in-flight versions fail on their own few files), or when it reaches a file a newer one lacks that is not
+  among what that one adds to it (a file lost long ago is carried down). So a walk of the whole table is made only
+  for a version whose own files are all there: one a check in the cases tested, as before. A whole check that finds
+  none is still put off for `nuna.maintenance.scan-interval`. A table whose newest whole version is older than its
+  100 newest gets none, as before.
+- After the first watermark the table is checked from it version by version at the next pass; its lag runs from the
+  version after it.
+- Tests (fast build): `DrVerifyTest#aBusyTableGetsTheNewestWholeVersion` (two newest commits partly in flight:
+  version 4 of 6 from one listing, then 6 once they arrive), `#aFileLostLongAgoCostsOneWalk` (no version whole;
+  version 2's manifest read once, not once a version), `#aViewWithNoWatermarkGetsTheNewestVersionThere`;
+  `DrVerifierTest#aFirstWatermarkBelowThePointerLagsFromTheVersionAfterItAndIsCheckedFromNextPass`;
+  `DrRoutesTest#anObjectWithNoWatermarkListsItsNewestVersionsAndLagsFromItsFirst`. Bite
+  `bites/D37/whole-at-the-pointer-only` (only the pointer tested again): run by hand in this worktree, the two
+  `DrVerifyTest` tests it names failed, 2 of 11, on their assertions.
+
+Left: `docs/observability/dr-watermark.md`, for whoever holds it next:
+- "Each pass", step 3, instead of "every file every snapshot of the pointer's version reaches, found in one listing
+  of its location (files outside it with one `HEAD` each)": "the newest of the pointer's version and the versions
+  the work list names below it whose every file every snapshot reaches is found in one listing of its location
+  (files outside it with one `HEAD` each), newest first (item 99; Paul, 2026-11-20: "Newest whole version"). A
+  version whose metadata file the listing lacks is not read; each other is read once and passed over without a walk
+  of the whole table when a file it adds to the next older one is missing, or when it reaches a file a newer one
+  lacks, so one walk of the whole table finds it in the cases seen. A view's: the newest whose metadata file is
+  there."
+- The routes table, `versions`: "(the journaled versions above the watermark, oldest first, at most 100; without a
+  watermark, the newest 100 up to the pointer's, for the whole check)" instead of "...; none without a watermark".
+- The tests table: `DrVerifyTest` adds "a busy table with no watermark gets the newest version whole in one listing,
+  a file lost long ago costs one walk, a view with no watermark gets its newest version there"; `DrVerifierTest`
+  adds "a first watermark below the pointer lags from the version after it"; `DrRoutesTest` adds "an object with no
+  watermark lists its newest versions"; and a `DrPassesTest` row (item 101): "each pass's tally logged at INFO, one
+  line a pass".
+- The bites paragraph adds "the whole check testing only the pointer again (`whole-at-the-pointer-only`)".
 
 ### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
 
@@ -999,23 +1046,6 @@ in `deploy/README.md` says nothing about a limit.
 
 **Decided 2026-11-20 (D37, amended again):** "Rewind sets watermark": the rewind records the watermark at the
 version it writes, in the same transaction.
-
-### 101. The DR runbook waits on the worker's log, which records a DR pass only at DEBUG
-
-- Added: 2026-11-20 by agent on item 92
-- Touches: catalog-maintenance/src/main/java/nuna/maintenance/DrVerifier.java deploy/README.md
-- Effort: S, one log level or one runbook sentence, and a check that the line is there
-
-Step 2 of the runbook in `deploy/README.md` ("Recovering in the DR region", "Verify") says to start the maintenance
-worker in DR and "wait for one DR pass to end after the start (`nuna.maintenance.dr.pass.last.success`, or the
-worker's log)". At the worker's default level, INFO, its log records no DR pass: `DrVerifier` logs its tally,
-`DR pass done: Pass[objects=.., reported=.., verified=.., behind=.., maxLag=.., failed=.., deferred=..]`, at DEBUG,
-and a failed check at WARN. In DR, where the operator may not have a metrics backend yet, the log is the easy thing
-to watch. Item 92's drill leg reads that line, so its worker runs with `logging.level.nuna.maintenance=DEBUG`.
-
-Done when either the worker logs each pass's tally at INFO (one line a minute by default, or only when the pass
-reported or failed something), or the runbook names the meter alone, or the DEBUG level to set; whichever, the
-runbook and what the worker logs agree.
 
 ## Done and dropped
 
@@ -1098,3 +1128,4 @@ runbook and what the worker logs agree.
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
 | [94](backlog/94.md) | The demo's object store on its own port, 8187, for engines on other machines | done | 2026-11-20 |
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
+| [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |

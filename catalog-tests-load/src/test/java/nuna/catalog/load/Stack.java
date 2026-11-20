@@ -203,7 +203,7 @@ final class Stack implements AutoCloseable {
      * DR store, read as the user that may only read it, the replica its DR verifier checks
      * ({@code nuna.maintenance.dr.replicas}), every second (D37). Its scans find nothing to do, since the catalog's
      * maintenance policy runs nothing by default, and its cleanup window is twelve hours away. It logs each DR pass
-     * ({@code DR pass done}, at DEBUG) to {@link ServerProcess#log}.
+     * ({@code DR pass done}, at INFO) and, at DEBUG, what each check found missing to {@link ServerProcess#log}.
      */
     ServerProcess worker(String name, URI catalog, boolean inDr) {
         TestS3 storage = inDr ? drStore : s3;
