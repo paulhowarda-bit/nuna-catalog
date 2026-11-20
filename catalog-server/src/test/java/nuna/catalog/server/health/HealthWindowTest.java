@@ -51,8 +51,12 @@ class HealthWindowTest {
                 .containsOnly(0.0);
     }
 
+    /**
+     * The audit publish timer has the exported timer's buckets here, {@link ObservedPublisher#BUCKETS}, and without
+     * Boot: this registry's own filter gives them, where a plain registry gives none.
+     */
     @Test
-    void theAuditPublishTimerHasBucketsHereOnly() {
+    void theAuditPublishTimerHasTheExportedBucketsHereWithoutBoot() {
         HealthMeters health = new HealthMeters(new MockClock());
         Timer publish = Timer.builder(ObservedPublisher.NAME).tag(Observed.OUTCOME, "acknowledged").register(health);
         publish.record(Duration.ofMillis(7));
@@ -65,6 +69,9 @@ class HealthWindowTest {
                 .containsEntry("audit.acknowledged.le.10", 1.0).containsEntry("audit.acknowledged.le.50", 2.0)
                 .containsEntry("audit.failed", 1.0);
         assertThat(figures.get("audit.acknowledged.ms")).isCloseTo(37.0, org.assertj.core.data.Offset.offset(0.01));
+        assertThat(Arrays.stream(publish.takeSnapshot().histogramCounts())
+                .map(bucket -> Duration.ofNanos((long) bucket.bucket())))
+                .as("the exported timer's bounds").containsExactlyElementsOf(ObservedPublisher.BUCKETS);
         assertThat(new SimpleMeterRegistry().timer(ObservedPublisher.NAME).takeSnapshot().histogramCounts()).isEmpty();
     }
 
