@@ -159,11 +159,13 @@ telemetry:
 
 - **Database safety settings.** The server refuses to start while the store's self-check reports a finding
   ("The database", above). Leave `config.nuna.database.allow-unsafe` empty.
-- **ETags and routing.** M8 found that ETags do not survive a change of server: each server mints its own
-  vended credentials, and the ETag includes a hash of them. With the default `service.sessionAffinity: None`,
-  a conditional load answered by another server is a 200, not a 304. `ClientIP` affinity keeps a client on
-  one server, behind the Service only. An Ingress or external balancer needs its own stickiness. The choice
-  between sticky routing and a shared credential epoch is still open (build-plan, M8 findings).
+- **ETags and routing [D14].** No sticky routing is needed. M8 found that ETags did not survive a change of
+  server, because the ETag hashed each server's own vended credentials; Paul chose a shared credential epoch
+  over sticky routing (D14, amended 2026-11-19), and item 15 built it. The epoch is the issuance window a load
+  falls in, a quarter of `nuna.storage.credential-lifetime` (7.5 minutes at the default 30; D14, amended
+  2026-11-20), so servers with the same lifetime, as one release's replicas are, give the same ETag. With the
+  default `service.sessionAffinity: None`, a conditional load answered by another server is a 304 too, and an
+  Ingress or external balancer needs no stickiness either. Each window's end costs a client one full load.
 - **Purge rate [D30].** `nuna.governance.purges-per-minute` (default 10) is counted by each server on its
   own, so the replicas together accept that many purges a minute times the replica count: three servers set
   to 10 accept 30. To hold the whole deployment to a rate, set it to that rate divided by the replica count.

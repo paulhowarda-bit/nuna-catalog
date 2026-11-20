@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**25 open:** 8 S, 9 M, 4 L, 4 XL.
+**24 open:** 7 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -34,9 +34,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
-| [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [80](backlog/80.md) | S | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | a `for` on two rules and their docs | 2026-11-20 |
+| [81](backlog/81.md) | S | The chart's values.yaml still says only the minting server answers a 304 | one comment in one values file; no wait | 2026-11-20 |
 
 ## Open items in full
 
@@ -498,25 +497,6 @@ job that cannot run refuse the start, as the other findings do, or only be repor
 
 **Decided 2026-11-20 (D8, amended):** a journal-partition job that cannot run is a finding like the others and refuses the start, unless the operator allows it by its code ("Refuse, like others").
 
-### 75. deploy/README.md and install-at-work.md still call the ETag routing choice open
-
-- Added: 2026-11-20 by agent on item 15
-- Touches: deploy/README.md docs/install-at-work.md
-- Effort: S, two paragraphs of Markdown; no wait
-
-Paul chose the shared epoch over sticky routing on 2026-11-19 (D14, amended for item 15), and item 15 built it: a
-table load's credential epoch is the issuance window it falls in, so every server gives the same ETag and a
-conditional load answered by another server is a 304. Two documents still say the choice is open, and item 15's
-claim reached neither:
-
-- `deploy/README.md`, "ETags and routing": "M8 found that ETags do not survive a change of server ... The choice
-  between sticky routing and a shared credential epoch is still open (build-plan, M8 findings)."
-- `docs/install-at-work.md`, section 5: "Decide with Paul before production: sticky routing for ETags
-  (`service.sessionAffinity: ClientIP`, or the Ingress's own) ..."
-
-Done when both say the epoch is shared (D14, item 15), so the chart's default `service.sessionAffinity: None` keeps
-304s across servers, and neither asks for sticky routing for ETags. The chart itself needs no change.
-
 ### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -531,19 +511,27 @@ Paul, 2026-11-20 (D21, amended): "Yes, non-root".
 
 Done when `deploy/local run.sh up` makes the catalog its own S3 user with the profile's policies, the `except` one included, the catalog runs as that user, and `run.sh smoke` plus a delete check show a delete refused to the catalog's vended credentials and allowed to the maintenance worker, run on Docker Desktop's Kubernetes. Uninstall what the check installs.
 
-### 80. NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing
+### 81. The chart's values.yaml still says only the minting server answers a 304
 
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Decided: 2026-11-20, D43
-- Touches: deploy/grafana/ docs/observability/
-- Effort: S, a `for` on two rules and their docs
+- Added: 2026-11-20 by agent on item 75
+- Touches: deploy/helm/nuna-catalog/values.yaml
+- Effort: S, one comment in one values file; no wait
 
+The comment above `service.sessionAffinity` in `deploy/helm/nuna-catalog/values.yaml` (lines 98 and 99) still
+describes the ETags before item 15:
 
-`NunaPurgesFailing` and `NunaDeletionsFailing` in `deploy/grafana/rules/nuna-maintenance.rules.yaml` fire on the first evaluation (item 74 named them in `docs/observability/dashboards-and-alerts.md`). One failed purge or deletion, in an hour when no other completed, opens a ticket that then resolves when the next scan's retry succeeds.
+```yaml
+  # None spreads requests over every server. A conditional load (304) is only answered by the server that
+  # minted the caller's credentials; see deploy/README.md before choosing ClientIP.
+  sessionAffinity: None
+```
 
-Paul, 2026-11-20 (D43, amended): "Add for: 2 scans".
+Since item 15 the credential epoch is a shared issuance window, a quarter of the credential lifetime (D14, amended
+2026-11-19 and 2026-11-20), so any server answers a conditional load with a 304. Item 75 corrected
+`deploy/README.md` ("ETags and routing") and `docs/install-at-work.md` to say so; its claim did not reach the chart.
 
-Done when both rules carry a `for` of two scan intervals (the worker's default scan interval, as `docs/observability/worker-metrics.md` gives it), `dashboards-and-alerts.md` and `worker-metrics.md` say so, and the rule files still parse.
+Done when the comment says `None` keeps 304s across servers because they share the epoch (D14), with no hint that
+ClientIP is needed for ETags. The value itself stays `None`.
 
 ## Done and dropped
 
@@ -601,6 +589,8 @@ Done when both rules carry a `for` of two scan intervals (the worker's default s
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
+| [75](backlog/75.md) | deploy/README.md and install-at-work.md still call the ETag routing choice open | done | 2026-11-20 |
 | [76](backlog/76.md) | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | done | 2026-11-20 |
 | [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
+| [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
