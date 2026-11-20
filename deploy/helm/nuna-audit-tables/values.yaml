@@ -1,0 +1,91 @@
+# nuna-audit-tables: the audit table writer (D23). One release per catalog deployment, beside the nuna-catalog
+# release; it reaches the catalog over HTTP like any client, and the audit topic like the SIEM. See
+# catalog-audit-tables/README.md.
+
+image:
+  repository: nuna-audit-tables
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# The writer's settings, as Spring Boot properties in YAML form: rendered into application.yaml in a ConfigMap.
+# Nothing secret goes here; secrets go in `secrets`. Every setting is documented on AuditTablesSettings in
+# catalog-audit-tables and in its README.
+config:
+  nuna:
+    audit-tables:
+      # Required: the catalog as the writer reaches it.
+      # catalog-uri: http://nuna-catalog:8181/
+      # The audit catalog, declared in the catalog's nuna.storage.catalogs, and the namespace in it of the table
+      # events. The writer creates the namespace and the table.
+      catalog: nuna_audit
+      namespace: audit
+      # Required: the writer's own principal id as the catalog records it (the value of its token's user-id claim).
+      # The records of its own requests are left out of the table.
+      # principal: nuna-audit-tables
+      # How often waiting rows are committed: rows are about this far behind the topic.
+      commit-interval: PT1M
+      # How the writer signs in: the client-credentials grant (client-secret in `secrets`). Its group needs create
+      # and write on the audit catalog, and nothing anywhere else.
+      token:
+        # endpoint: https://idp.example.internal/oauth2/token
+        # client-id: nuna-audit-tables
+        audience: nuna-catalog
+      # The audit topic, read in the writer's own consumer group, whose offsets only show its lag: the table holds
+      # the offsets it resumes from. TLS and SASL settings go in properties; secret ones (sasl.jaas.config, key
+      # store passwords) in `secrets`, as nuna.audit-tables.kafka.properties.<name>.
+      kafka:
+        # bootstrap-servers: kafka-0.kafka:9093
+        topic: nuna.catalog.audit
+        group: nuna-audit-tables
+        properties: {}
+      # More Iceberg client properties, e.g. an S3 endpoint override for the vended credentials.
+      client-properties: {}
+
+# Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value the
+# property's value, e.g. nuna.audit-tables.token.client-secret.
+secrets:
+  # A Secret you manage in the release's namespace. Takes precedence over `values`.
+  existingSecret: ""
+  # Otherwise the chart makes a Secret from these. Keep them out of git: pass a private values file.
+  values: {}
+
+javaToolOptions: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+
+env: []
+
+# Rows wait in memory for a commit interval, or until max-rows of them wait (100,000 by default).
+resources:
+  requests:
+    cpu: 250m
+    memory: 1Gi
+  limits:
+    memory: 1Gi
+
+serviceAccount:
+  create: true
+  # Defaults to the release's full name.
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

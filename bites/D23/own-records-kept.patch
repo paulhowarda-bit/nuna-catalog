@@ -1,0 +1,17 @@
+Breaks: the writer keeps the records of its own requests, so each commit's records make the next commit.
+Module: catalog-audit-tables
+Test: TableWriterTest#leavesOutTheRecordsOfItsOwnRequests
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+index 96cd910..efbc1e6 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java
+@@ -114,9 +114,6 @@ final class TableWriter implements AutoCloseable {
+                         e);
+             }
+             read.put(record.partition(), record.offset() + 1);
+-            if (principal.equals(row.principal())) {
+-                continue;
+-            }
+             if (rows.isEmpty()) {
+                 waitingSince = clock.instant();
+             }

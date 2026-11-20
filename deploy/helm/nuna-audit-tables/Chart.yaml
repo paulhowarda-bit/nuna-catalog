@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nuna-audit-tables
+description: The nuna audit table writer (D23), a separate service beside the catalog. It signs in to the catalog as its own principal and writes every record of the audit topic, about a minute behind, to the Iceberg table events in the audit catalog, which one named group reads with any engine.
+type: application
+version: 0.1.0
+appVersion: 0.1.0-SNAPSHOT
