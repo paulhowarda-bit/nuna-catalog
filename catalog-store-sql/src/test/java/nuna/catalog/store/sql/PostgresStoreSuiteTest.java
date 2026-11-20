@@ -220,6 +220,13 @@ class PostgresStoreSuiteTest extends CommitSuite {
     }
 
     @Test
+    @DisplayName("PostgreSQL: servers that run on for months without a migration keep the journal's partitions twelve"
+            + " months ahead, and a commit waits at most a second for the extension's locks")
+    void journalHorizonIsKeptWithoutAMigration() throws Exception {
+        new JournalHorizonKept(postgres.freshDatabase()).run();
+    }
+
+    @Test
     @DisplayName("PostgreSQL: a write aborted as a deadlock before COMMIT (40P01) is rolled back and run again")
     void deadlockVictimRunsAgain() throws Exception {
         DeadlockRetry.run(postgres.freshDatabase());

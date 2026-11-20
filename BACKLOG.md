@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 5 S, 15 M, 4 L, 4 XL.
+**28 open:** 6 S, 14 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,7 +16,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
-| [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
@@ -40,6 +39,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
+| [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 
 ## Open items in full
 
@@ -105,17 +105,6 @@ Done when Paul has said how a failed check should act (refuse to start, or warn)
 of the four backends, with a test and a bite.
 
 **Decided 2026-11-19 (D8):** a failed self-check refuses to start the server ("Refuse to start"). Test containers and the demo run single-node with fsync off, so they need an explicit setting that allows an unsafe database.
-
-### 9. Extend the journal horizon with a job, not only at migration
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, check four backends and add a job where one is missing, with a test
-
-`build-plan.md`, M8 follow-ups: the journal's monthly partitions are extended ahead only when migrations run
-(`SqlCatalogStore.migrate()`, 12 months ahead). A server that runs longer than that without a migration runs out.
-Oracle's V5 already adds a daily Scheduler job (M2b); check which backends still lack one.
-
-Done when every backend that partitions the journal keeps its horizon ahead without a migration, with a test.
 
 ### 10. DR reconcile: prove the accepted tips from the audit archive
 
@@ -549,6 +538,27 @@ registry is configured, or `management.metrics.distribution.slo.nuna.audit.publi
 buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogram_quantile` beside the mean, its docs
 (`docs/observability/dashboards-and-alerts.md`) saying so.
 
+### 72. Oracle's self-check does not notice a journal-partition job that cannot run
+
+- Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
+- Touches: catalog-store-oracle/
+- Effort: S, one more query in one store's self-check and a heavy test; waits on Paul's answer below
+
+Oracle keeps its journal's horizon with migration V5's Scheduler job, `JOURNAL_PARTITIONS_AHEAD`, which creates
+this month's partition and the next two every day (item 9 checked it; `OracleStoreSuiteTest#
+schedulerJobCreatesJournalPartitionsAhead`, heavy). The job runs only while `JOB_QUEUE_PROCESSES` is not 0, and
+only while it stays enabled and keeps succeeding (V5's own comment). When it does not run, nothing says so: the
+store's `selfCheck()` reads `V_$PARAMETER` for other findings but not `job_queue_processes`, nor the job's
+`enabled`, `state` or `failure_count` in `user_scheduler_jobs`. Interval partitioning still takes every commit, but
+each month's first commit then creates its partition inside the commit, which took 0.5 to 2.6 s on Free (M2b) and
+can run past the pool's read timeout, which fails that commit (docs/storage-design.md, M2b deviation 9).
+
+Done when the self-check reports a job that cannot run (`job_queue_processes` 0, the job missing, disabled or
+failing), with a heavy test that disables the job on a fresh schema and finds the report.
+
+Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
+job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -557,6 +567,7 @@ buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogra
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
 | [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
