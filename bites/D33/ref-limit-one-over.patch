@@ -1,0 +1,16 @@
+Breaks: P11's limits admit one ref more than they allow: a 51st open branch and a 1,001st tag.
+Module: catalog-store-api
+Test: RefTypesTest#p11AdmitsUpToItsLimitAndNoMore
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/RefLimits.java b/catalog-store-api/src/main/java/nuna/catalog/store/RefLimits.java
+index 17ec466..fc4388b 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/RefLimits.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/RefLimits.java
+@@ -25,6 +25,6 @@ public record RefLimits(int maxBranches, int maxTags) {
+ 
+     /** Whether a catalog that holds {@code held} open refs of {@code kind} may make one more. */
+     public boolean admitsAnother(Ref.Kind kind, long held) {
+-        return held < of(kind);
++        return held <= of(kind);
+     }
+ }

@@ -1,0 +1,16 @@
+Breaks: a branch counts as alive at the instant it expires, so its readers serve it one moment too long (P11).
+Module: catalog-store-api
+Test: RefTypesTest#aBranchExpiresAndATagNeverDoes
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java b/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
+index 715eec0..826c429 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
+@@ -68,6 +68,6 @@ public record Ref(UUID catalogId, UUID id, Name name, Kind kind, Instant created
+ 
+     /** Whether this is a branch at or past its expiry at {@code now}: such a branch is gone. */
+     public boolean expiredAt(Instant now) {
+-        return expiresAt.map(expiry -> !expiry.isAfter(now)).orElse(false);
++        return expiresAt.map(expiry -> expiry.isBefore(now)).orElse(false);
+     }
+ }

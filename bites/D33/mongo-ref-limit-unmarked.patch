@@ -1,0 +1,16 @@
+Breaks: a ref create on MongoDB counts P11's limit without marking the catalog, so creates racing for the last place do not conflict and all take it.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Refs#limitsHoldUnderConcurrentCreates
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+index 25a10df..946bca6 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+@@ -233,7 +233,6 @@ final class MongoRefs {
+         }
+         tx.see(catalog.get());
+         from.ifPresent(tx::see);
+-        tx.mark(CATALOG, catalog.get());
+         from.ifPresent(doc -> tx.mark(REF, doc));
+         tx.collection(REF).insertOne(tx.session, byId(uuid(ref.id()))
+                 .append("catalogId", uuid(ref.catalogId()))

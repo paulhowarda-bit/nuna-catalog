@@ -1157,6 +1157,66 @@ recorded in `bites/D33/`. Items 103, 104, 106 and 111 wait on this one.
 
 **Decided 2026-11-20 (D33, amended):** a ref's cut keeps each table's and view's name as well as its pointer (question 1 (b), "Names too").
 
+**Progress, 2026-11-20 (worktree-agent-a59232ac18259ccb8): built; open until the heavy build passes `RefSuite` on
+all four stores, as items 98 and 100 are.**
+- Schema steps, additions only: PostgreSQL `V11__refs.sql`, CockroachDB `V10__refs.sql` (its own folder in
+  `catalog-store-sql`), Oracle `V12__refs.sql`, MongoDB step 10 ("refs and their cuts"). `ref` gains `id` (unique
+  index `ref_id`), `created_at`, `created_by`, `from_ref` (the source ref's id, NULL for main) and `from_name` (its
+  name then, `main` for main); no release before writes `ref`, so the columns are NOT NULL where they must be. New
+  `ref_entry`, the cut: `ref_id`, `object_id`, `kind` (NAMESPACE, TABLE, VIEW), `parent_id`, `name_norm`, `name`,
+  `version`, `metadata_location`, `sha256` (all three NULL for a namespace), keyed (ref_id, object_id), with
+  `ref_entry_listing` (ref_id, parent_id, kind, name_norm, object_id) and `ref_entry_object` (object_id). MongoDB:
+  collections `ref` (unique `ref_name` on catalogId, nameNorm) and `ref_entry` with the same three indexes.
+- API (`catalog-store-api`): `Ref` (its name rules: no `@`, no `/`, not `main`; a branch expires, a tag never;
+  `key(objectId)` is (object, ref id); `expiredAt`), `RefEntry`, `RefLimits` (`P11` = 50 branches, 1,000 tags) and
+  `RefStore`, which `CatalogStore` now extends: `createRef`, `readRef`, `findRef`, `listRefs`, `renewRef`,
+  `deleteRef`, `findRefNamespace`, `resolveOnRef`, `listRefNamespaces`, `listRefObjects`. `WriteResult` gains
+  `Subject.REF` and the reasons `REF_LIMIT` and `NOT_A_BRANCH`. The javadoc gives each method's outcomes.
+- Stores: `SqlRefs` (PostgreSQL and CockroachDB), `OracleRefs`, `MongoRefs`. The SQL cut is one `INSERT … SELECT`;
+  MongoDB's is read in a snapshot session, written in batches of 1,000, and its ref inserted last in one transaction
+  (`docs/storage-design.md` section 8, rewritten as built, with 9 (c), (d), (f) 5 and (g); `build-plan.md` 2.3 and
+  2.4).
+- Tests: `RefSuite` (11 tests, heavy), run as `@Nested class Refs` in `PostgresStoreSuiteTest`,
+  `CockroachStoreSuiteTest`, `OracleStoreSuiteTest` and `MongoStoreSuiteTest`: the cut of main with names kept after a
+  rename and a drop on main; a ref from a branch takes its own pointers; names (case, per catalog, order); the order
+  of a create's outcomes; P11 under 12 concurrent creates; an expired branch frees its place, not its name; renewal;
+  a deletion leaves no cut, pointer or piece and frees the name; two races (a multi-table commit appears whole in
+  every cut; every table in a cut has its namespace); paging. `MutationSuite` drives `createRef`, `renewRef` and
+  `deleteRef`. Java-only and run: `RefTypesTest` (8 tests). `SchemaAtStartupTest` (heavy) and `RollingUpgradeTest`
+  (overnight) expect PostgreSQL V11.
+- Bites in `bites/D33/`: four Java-only, seen to bite `RefTypesTest` on assertions (`ref-name-at-sign-accepted`,
+  `ref-name-main-accepted`, `ref-branch-alive-at-its-expiry`, `ref-limit-one-over`); seven on the heavy `RefSuite`,
+  checked with `git apply --check` only (`sql-cut-in-separate-reads`, `sql-ref-limit-unlocked`,
+  `sql-ref-delete-keeps-pointers`, `sql-ref-from-branch-takes-its-cut`, `oracle-ref-delete-keeps-pieces`,
+  `mongo-ref-limit-unmarked`, `mongo-cut-read-outside-the-snapshot`).
+
+Choices made (Paul may overrule):
+- The cut keeps namespaces as entries too (kind NAMESPACE, parent and name, no pointer), so the "namespace path" is
+  the chain of parents through the cut, as `namespace.parent_id` is on main. Why: a ref then lists and resolves
+  namespaces as main does, empty ones included.
+- The lock on the catalog's refs is the catalog's own record: `FOR UPDATE` on the SQL stores (as a grant on the
+  catalog takes it), a mark on MongoDB. Why: no new lock record. Cost: on the SQL stores a top-level namespace create
+  in that catalog waits for a ref create's cut statement.
+- A branch past its expiry keeps its name until it is deleted (`NameTaken`), is not counted against P11, and cannot
+  be renewed or made from (`Missing(REF)`); read, find and list still return it, and callers check
+  `Ref.expiredAt`. Why: the store keeps a record until a write removes it, as it keeps dropped objects; ending
+  expired branches is item 108's.
+- A ref keeps its source both by id (`from_ref`) and by name then (`from_name`). Why: the id survives the name's
+  reuse; the name still reads after the source is deleted.
+- A tag's renewal answers `Refused(NOT_A_BRANCH)`, a new reason. Why: other writes refuse with a reason too.
+- `findRef(catalog, normalized name)` beside `readRef(id)`. Why: item 104 resolves `catalog@ref` by name.
+- A create answers in a fixed order: `Missing(CATALOG)`, `NameTaken`, `Missing(REF)`, `Refused(REF_LIMIT)`. Why: a
+  retried create then always names its own id (storage-design 9), even after its source is gone.
+- No index by catalog on `namespace` or `catalog_object`: the cut reads the catalog's rows by scan. Why: refs are
+  made rarely, and an index on those tables would cost every write.
+- A deletion finds the ref's own pointers and pieces through its cut (`branch = ref id AND object_id IN` the cut),
+  by their primary keys, since nothing indexes `branch`. Why: no new index on the commit path's tables. It holds
+  because creates, drops and renames are refused on a branch (question 1 (b)), so a branch's own pointers are of
+  objects in its cut.
+- `ref_entry_object` (by object) is built now for items 103 and 108. Why: one schema step instead of two.
+- On MongoDB a deletion is one transaction over the whole cut, as the item asks; a very large cut makes a large
+  transaction there, which the heavy suite's sizes do not test.
+
 ### 103. Branch commits and the merge transaction in the store (item 26)
 
 - Added: 2026-11-20 by agent on item 26

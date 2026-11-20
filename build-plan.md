@@ -78,7 +78,8 @@ Narrow by design [D7, D8.8]. Every operation is one atomic unit on every backend
 - Idempotency: claim, complete, read, wait, expire.
 - Outbox: claim the next ordered batch, mark relayed.
 - Governance records: retention classes, legal holds, classifications with provenance, trusted engines, storage profiles and allowed locations.
-- Journal: range read by object and time; tags and branches (tables exist from v1, APIs ship in v1.x) [D33].
+- Journal: range read by object and time.
+- Refs: make (from main or another ref, with its cut), read, list, renew and delete branches and tags, and read a ref's cut; in the store since 2026-11-20 (backlog 102), routes in v1.x [D33].
 - `selfCheck()` — refuses to start on unsafe durability settings [D8.2]. `schemaVersion()` and migrate [D8.7].
 
 ### 2.4 Logical data model
@@ -99,7 +100,8 @@ Mapped to tables (SQL) or collections (MongoDB) per backend. Names are stored tw
 | trusted engine | client id, issuer, allowed end-user claim, flags [D17] |
 | storage profile | id, store kind (S3/MinIO/Ceph), endpoint, STS role, allowed prefixes [D21, D36a] |
 | governance | retention class, legal hold, classification with provenance, regulated flag [D24, D27] |
-| ref | catalog id, name, kind (branch/tag), base journal position, expires-at [D33] |
+| ref | id, catalog id, name (normalized, display), kind (branch/tag), created-at and -by, made from (ref id and name; main), expires-at (branches); base journal position unused since 2026-11-20 [D33] |
+| ref entry (a ref's cut) | ref id, object id (namespace, table or view), kind, parent id, name (normalized, display), the pointer taken (version, metadata location, SHA-256); added 2026-11-20, backlog 102 [D33] |
 | schema version | backend, version, checksum, applied-at [D8.7] |
 
 ### 2.5 Backend specifics

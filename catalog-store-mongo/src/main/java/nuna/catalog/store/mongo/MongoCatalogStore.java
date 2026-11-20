@@ -42,6 +42,9 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
 import nuna.catalog.store.Securable;
@@ -103,6 +106,8 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String TABLE_HEALTH = "table_health";
     static final String MAINTENANCE_SCAN = "maintenance_scan";
     static final String DR_WATERMARK = "dr_watermark";
+    static final String REF = "ref";
+    static final String REF_ENTRY = "ref_entry";
 
     /** Projections longer than this are stored in pieces (section 7). */
     public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
@@ -130,6 +135,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoDeletions deletions;
     private final MongoHealth health;
     private final MongoDr dr;
+    private final MongoRefs refs;
 
     public MongoCatalogStore(MongoClient client, String databaseName) {
         this(client, databaseName, CommitHook.NONE);
@@ -161,6 +167,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.deletions = new MongoDeletions(transactions);
         this.health = new MongoHealth(transactions);
         this.dr = new MongoDr(transactions);
+        this.refs = new MongoRefs(transactions);
     }
 
     // ---- commit core (sections 4, 5.3 and 7) ----
@@ -632,5 +639,57 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public List<TrustedEngine> listTrustedEngines() {
         return governance.listTrustedEngines();
+    }
+
+    // ---- refs (D33) ----
+
+    @Override
+    public WriteResult createRef(Ref ref, RefLimits limits, Change change) {
+        return refs.create(ref, limits, change);
+    }
+
+    @Override
+    public Optional<Ref> readRef(UUID refId) {
+        return refs.read(refId);
+    }
+
+    @Override
+    public Optional<Ref> findRef(UUID catalogId, String normalizedName) {
+        return refs.find(catalogId, normalizedName);
+    }
+
+    @Override
+    public Page<Ref> listRefs(UUID catalogId, PageRequest page) {
+        return refs.list(catalogId, page);
+    }
+
+    @Override
+    public WriteResult renewRef(UUID refId, Instant expiresAt, Change change) {
+        return refs.renew(refId, expiresAt, change);
+    }
+
+    @Override
+    public WriteResult deleteRef(UUID refId, Change change) {
+        return refs.delete(refId, change);
+    }
+
+    @Override
+    public Optional<RefEntry> findRefNamespace(UUID refId, List<String> normalizedPath) {
+        return refs.findNamespace(refId, normalizedPath);
+    }
+
+    @Override
+    public Optional<RefEntry> resolveOnRef(UUID refId, List<String> normalizedNamespacePath, String normalizedName) {
+        return refs.resolve(refId, normalizedNamespacePath, normalizedName);
+    }
+
+    @Override
+    public Page<RefEntry> listRefNamespaces(UUID refId, UUID parentId, PageRequest page) {
+        return refs.listNamespaces(refId, parentId, page);
+    }
+
+    @Override
+    public Page<RefEntry> listRefObjects(UUID refId, UUID namespaceId, CatalogObject.Kind kind, PageRequest page) {
+        return refs.listObjects(refId, namespaceId, kind, page);
     }
 }

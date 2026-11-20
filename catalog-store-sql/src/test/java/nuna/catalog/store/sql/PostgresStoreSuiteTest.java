@@ -32,6 +32,7 @@ import nuna.catalog.store.suite.JournalSuite;
 import nuna.catalog.store.suite.MutationSuite;
 import nuna.catalog.store.suite.NamespaceSuite;
 import nuna.catalog.store.suite.OutboxSuite;
+import nuna.catalog.store.suite.RefSuite;
 import nuna.catalog.store.suite.SizeSuite;
 import nuna.catalog.store.suite.StoreUnderTest;
 import nuna.catalog.store.suite.UpgradeSuite;
@@ -123,6 +124,14 @@ class PostgresStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Dr extends DrSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Refs extends RefSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return postgres;

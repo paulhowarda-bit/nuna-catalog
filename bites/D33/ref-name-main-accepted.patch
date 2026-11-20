@@ -1,0 +1,17 @@
+Breaks: a ref may be named main, which is the catalog's main line and no ref (D33, item 26's choice 4).
+Module: catalog-store-api
+Test: RefTypesTest#mainIsReservedInAnyCase
+
+diff --git a/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java b/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
+index 715eec0..64dd36e 100644
+--- a/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
++++ b/catalog-store-api/src/main/java/nuna/catalog/store/Ref.java
+@@ -56,7 +56,7 @@ public record Ref(UUID catalogId, UUID id, Name name, Kind kind, Instant created
+                 throw new IllegalArgumentException("a ref's name holds no @ and no /: " + name.display());
+             }
+         }
+-        if (name.normalized().equals(MAIN)) {
++        if (name.normalized().equals(MAIN) && false) {
+             throw new IllegalArgumentException(MAIN + " is the catalog's main line, not a ref's name");
+         }
+     }

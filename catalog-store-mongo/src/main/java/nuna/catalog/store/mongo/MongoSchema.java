@@ -17,6 +17,8 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.OUTBOX_RELAY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static nuna.catalog.store.mongo.MongoCatalogStore.POINTER;
 import static nuna.catalog.store.mongo.MongoCatalogStore.PROJECTION_PIECE;
+import static nuna.catalog.store.mongo.MongoCatalogStore.REF;
+import static nuna.catalog.store.mongo.MongoCatalogStore.REF_ENTRY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.TABLE_HEALTH;
 
 import com.mongodb.ErrorCategory;
@@ -159,6 +161,18 @@ final class MongoSchema {
             // is. No index names it, so nothing is built; the step is recorded so the schema version marks the first
             // release that writes it.
             new Step(9, "storage profile KMS keys", database -> {
+            }),
+            // v1.x (D33, backlog 102): a catalog's branches and tags. ref holds each ref by its id, with the catalog's
+            // unique (catalog, normalized name) key the SQL stores have had since V3; ref_entry holds each ref's cut:
+            // every namespace, and every active table and view with its main pointer, as of the ref's point. A cut is
+            // written in batches before its ref, so an entry counts only while its ref exists. Both collections are
+            // new and no server of the previous release touches them, so building their indexes locks nothing it uses.
+            new Step(10, "refs and their cuts", database -> {
+                index(database, REF, "ref_name", true, null, "catalogId", "nameNorm");
+                index(database, REF_ENTRY, "ref_entry_key", true, null, "refId", "objectId");
+                index(database, REF_ENTRY, "ref_entry_listing", false, null, "refId", "parentId", "kind", "nameNorm",
+                        "objectId");
+                index(database, REF_ENTRY, "ref_entry_object", false, null, "objectId");
             }));
 
     private MongoSchema() {

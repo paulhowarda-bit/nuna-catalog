@@ -1,0 +1,17 @@
+Breaks: MongoDB reads a ref's tables outside the cut's snapshot session, so a cut can hold a table without the namespace that held it.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Refs#everyTableInACutHasItsNamespace
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+index 25a10df..b7b53fc 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+@@ -139,7 +139,7 @@ final class MongoRefs {
+         collection(NAMESPACE).find(session, new BsonDocument("catalogId", uuid(catalogId))).forEach(namespace ->
+                 entries.add(entry(refId, namespace.get("_id"), NAMESPACE_KIND, namespace.get("parentId"),
+                         namespace.get("nameNorm"), namespace.get("name"), null)));
+-        List<BsonDocument> objects = collection(OBJECT).find(session, new BsonDocument("catalogId", uuid(catalogId))
++        List<BsonDocument> objects = collection(OBJECT).find(new BsonDocument("catalogId", uuid(catalogId))
+                 .append("state", new BsonString("ACTIVE"))).into(new ArrayList<>());
+         Map<BsonValue, BsonDocument> pointers = pointers(session, objects.stream().map(o -> o.get("_id")).toList(),
+                 PointerKey.MAIN);
