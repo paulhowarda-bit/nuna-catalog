@@ -1,9 +1,14 @@
 package nuna.catalog.security;
 
+import com.nimbusds.jose.jwk.source.JWKSetSourceWithHealthStatusReporting;
+import com.nimbusds.jose.jwk.source.JWKSetUnavailableException;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
+import com.nimbusds.jose.jwk.source.RateLimitReachedException;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.util.DefaultResourceRetriever;
+import com.nimbusds.jose.util.health.HealthReport;
+import com.nimbusds.jose.util.health.HealthReportListener;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.JWTParser;
 import nuna.catalog.core.principal.Caller;
@@ -42,6 +47,10 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
  * defaults: cache for 5 minutes, refresh ahead of expiry, and at most two fetches per 30 seconds,
  * so tokens with made-up key ids cannot hammer the IdP. The one exception is how long a fetch waits
  * for the IdP's answer: {@link #JWKS_READ_TIMEOUT}, not Nimbus's 500 ms.
+ *
+ * <p>When a token needs keys the cache does not hold and they cannot be fetched (the IdP down, or slower
+ * than the timeout), the token is not checked and not accepted: the failure is 503, not 401, because the
+ * token is not known to be bad (D16, amended 2026-11-20). A token bad on its own is still 401.
  */
 public final class TokenAuthenticator {
 
@@ -49,10 +58,10 @@ public final class TokenAuthenticator {
     private static final String MOVED_CLAIMS = "_claim_names";
 
     /**
-     * How long a JWKS fetch waits for the IdP to answer. A fetch that times out refuses the token as invalid
-     * (401), so the caller is told to get a new token when its own is good. Nimbus's 500 ms did that in the
-     * overnight run of 2026-11-18, where the test JVM, slowed by the build beside it, served its in-JVM IdP's
-     * keys late (backlog 60). Fetches are rare (first use, rotation, refresh ahead of the cache's expiry) and
+     * How long a JWKS fetch waits for the IdP to answer. A fetch that times out leaves the token unchecked
+     * (503 since backlog 90; before, 401, which told the caller its good token was bad). Nimbus's 500 ms timed
+     * out in the overnight run of 2026-11-18, where the test JVM, slowed by the build beside it, served its in-JVM
+     * IdP's keys late (backlog 60). Fetches are rare (first use, rotation, refresh ahead of the cache's expiry) and
      * rate-limited, so a longer wait costs a request little; connecting keeps Nimbus's 500 ms.
      */
     private static final Duration JWKS_READ_TIMEOUT = Duration.ofSeconds(5);
@@ -68,8 +77,10 @@ public final class TokenAuthenticator {
         if (clockSkew.isNegative()) {
             throw new IllegalArgumentException("clock skew must not be negative: " + clockSkew);
         }
-        issuers = policies.stream().collect(Collectors.toUnmodifiableMap(
-                IssuerPolicy::issuer, policy -> new Issuer(policy, decoder(policy, clockSkew, clock))));
+        issuers = policies.stream().collect(Collectors.toUnmodifiableMap(IssuerPolicy::issuer, policy -> {
+            KeyFetches fetches = new KeyFetches();
+            return new Issuer(policy, decoder(policy, fetches, clockSkew, clock), fetches);
+        }));
     }
 
     /**
@@ -77,7 +88,8 @@ public final class TokenAuthenticator {
      * @param assertedEndUser the end user the caller says it acts for, when it says so
      * @param registered      whether an engine is in the trusted-engine registry
      * @throws AuthenticationFailure 401 if the token is not accepted; 403 if its client asserts an
-     *                               end user without being a registered trusted engine
+     *                               end user without being a registered trusted engine; 503 if it could
+     *                               not be checked because its issuer's keys could not be fetched
      */
     public Caller authenticate(String bearerToken, Optional<Principal> assertedEndUser,
                                Predicate<TrustedEngine> registered) {
@@ -87,6 +99,11 @@ public final class TokenAuthenticator {
         try {
             jwt = issuer.decoder().decode(bearerToken);
         } catch (JwtException e) {
+            Optional<String> outage = issuer.fetches().outage(e);
+            if (outage.isPresent()) {
+                throw AuthenticationFailure.keysUnavailable("token from " + iss + " not checked, as the issuer's keys"
+                        + " could not be fetched: " + outage.get(), e);
+            }
             throw AuthenticationFailure.invalidToken("token from " + iss + " rejected: " + e.getMessage(), e);
         }
 
@@ -139,12 +156,12 @@ public final class TokenAuthenticator {
         return groups == null ? Set.of() : Set.copyOf(groups);
     }
 
-    private static JwtDecoder decoder(IssuerPolicy policy, Duration clockSkew, Clock clock) {
+    private static JwtDecoder decoder(IssuerPolicy policy, KeyFetches fetches, Duration clockSkew, Clock clock) {
         JWKSource<SecurityContext> keys;
         try {
             keys = JWKSourceBuilder.<SecurityContext>create(policy.jwksUri().toURL(), new DefaultResourceRetriever(
                     JWKSourceBuilder.DEFAULT_HTTP_CONNECT_TIMEOUT, (int) JWKS_READ_TIMEOUT.toMillis(),
-                    JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)).build();
+                    JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)).healthReporting(fetches).build();
         } catch (MalformedURLException e) {
             throw new IllegalArgumentException("issuer " + policy.issuer() + " has a malformed JWKS URI", e);
         }
@@ -161,6 +178,39 @@ public final class TokenAuthenticator {
         return decoder;
     }
 
-    private record Issuer(IssuerPolicy policy, JwtDecoder decoder) {
+    private record Issuer(IssuerPolicy policy, JwtDecoder decoder, KeyFetches fetches) {
+    }
+
+    /**
+     * Tells an issuer's keys being out of reach from a bad token (backlog 90). Nimbus refuses a token whose
+     * keys it could not get with a {@link JWKSetUnavailableException}: the fetch failed or timed out, the IdP
+     * sent no usable key set, or the wait for another request's fetch ran out. Its rate limit refuses a
+     * refetch with a {@link RateLimitReachedException} instead, which is the IdP's doing only when the last
+     * fetch failed: an IdP that stays down would otherwise get every token past the limit's two fetches in 30
+     * seconds refused as bad. After a good fetch it means the token names a key the issuer does not publish.
+     * Nimbus reports each fetch it makes, the background ones ahead of the cache's expiry included.
+     */
+    private static final class KeyFetches
+            implements HealthReportListener<JWKSetSourceWithHealthStatusReporting<SecurityContext>, SecurityContext> {
+
+        /** Why the last fetch failed; null once one succeeds. */
+        private volatile Exception lastFailure;
+
+        @Override
+        public void notify(HealthReport<JWKSetSourceWithHealthStatusReporting<SecurityContext>, SecurityContext> report) {
+            lastFailure = report.getException();
+        }
+
+        /** Why the token's keys could not be had, when that and not the token is why it was not accepted. */
+        Optional<String> outage(JwtException refusal) {
+            Exception failure = lastFailure;
+            if (refusal.getCause() instanceof JWKSetUnavailableException unavailable) {
+                return Optional.of(unavailable.getMessage());
+            }
+            if (refusal.getCause() instanceof RateLimitReachedException && failure != null) {
+                return Optional.of("no refetch allowed yet after the last one failed: " + failure.getMessage());
+            }
+            return Optional.empty();
+        }
     }
 }
