@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**29 open:** 6 S, 13 M, 6 L, 4 XL.
+**28 open:** 6 S, 12 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -20,7 +20,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
-| [12](backlog/12.md) | M | A revive can bring an object back in a namespace it later left | one namespace comparison in each of four stores, a store-suite test and a bite | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
@@ -153,17 +152,6 @@ Done when the limit holds across replicas (or Paul decides the per-replica readi
 say so).
 
 **Decided 2026-11-19 (D30):** the limit stays per replica ("Per replica, documented"). What is left: the docs say so, so operators divide it by the replica count.
-
-### 12. A revive can bring an object back in a namespace it later left
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, one namespace comparison in each of four stores, a store-suite test and a bite
-
-`build-plan.md`, review fixes of 2026-11-12, "Not guarded": an object undropped, renamed into another namespace and
-dropped again by other callers between the engine's read and the store's revive would come back in the namespace it
-first left, because the store does not compare the namespace.
-
-Done when the store compares the namespace under its lock on all four backends, with a store-suite test and a bite.
 
 ### 13. The separation-of-duties check and the grant write are not atomic
 
@@ -527,6 +515,7 @@ still answers 500 CommitStateUnknownException.
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |

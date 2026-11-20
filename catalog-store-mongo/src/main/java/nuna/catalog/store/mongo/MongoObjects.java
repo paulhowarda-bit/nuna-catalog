@@ -194,11 +194,15 @@ final class MongoObjects {
         });
     }
 
-    /** Puts the object at the name as undrop does, and writes the batch, in the batch's transaction. */
+    /**
+     * Puts the object at the name as undrop does, and writes the batch, in the batch's transaction. The
+     * object's namespace is compared in the snapshot that writes it, so a move committed since conflicts
+     * and the retry finds the object where it now is.
+     */
     WriteResult revive(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch) {
         return transactions.write(batch.commitId(), "object revive", tx -> {
             Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state", new BsonString(from.name())));
-            if (object.isEmpty()) {
+            if (object.isEmpty() || !uuid(object.get().get("namespaceId")).equals(namespaceId)) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
             Pointers.see(tx, batch);
