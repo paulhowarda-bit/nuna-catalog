@@ -37,6 +37,9 @@ import org.testcontainers.kafka.KafkaContainer;
         "nuna.audit.relay-interval=100ms",
         "nuna.security.maintenance-principals=maintenance,maintenance-2",
         "nuna.governance.purges-per-minute=3",
+        // AuditReadRouteTest polls the trail every 200 ms until the relay catches up; AuditReadLimitTest checks
+        // the limit.
+        "nuna.governance.audit-reads-per-minute=1000",
         "nuna.governance.retention-classes.trade-records.minimum-snapshot-age=30d",
         "nuna.security.grant-admin-groups=" + GovernanceServer.GRANT_ADMINS,
         "nuna.security.platform-operator-groups=" + GovernanceServer.PLATFORM_OPS,

@@ -7,10 +7,15 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
- * Governance settings ({@code nuna.governance.*}): how fast purges run, the retention classes
- * the governance tool may push, and the maintenance policy's defaults and guardrails (D24, D25, D30).
+ * Governance settings ({@code nuna.governance.*}): how fast purges and audit-trail reads run, the retention
+ * classes the governance tool may push, and the maintenance policy's defaults and guardrails (D24, D25, D30).
  *
  * @param purgesPerMinute       purges this server accepts per minute, from all maintenance principals together
+ * @param auditReadsPerMinute   audit-trail reads ({@code GET .../audit}) this server accepts per minute from one
+ *                              caller: the principal its token names, or the end user a trusted engine acts for.
+ *                              Each read opens a Kafka consumer. The console reads once each time an object's
+ *                              Audit tab opens, its count changes or Refresh is pressed, so the default, one a
+ *                              second, never holds a person back; it holds a script to that pace (backlog 19)
  * @param retentionClasses      the retention classes by name; a push of any other name is refused
  * @param pitrWindow            the database's point-in-time-recovery window: orphan removal only ever
  *                              touches files older than this, so a restore never points at a removed file
@@ -20,6 +25,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 @ConfigurationProperties("nuna.governance")
 public record GovernanceSettings(
         @DefaultValue("10") int purgesPerMinute,
+        @DefaultValue("60") int auditReadsPerMinute,
         @DefaultValue Map<String, RetentionClass> retentionClasses,
         @DefaultValue("7d") Duration pitrWindow,
         @DefaultValue("1h") Duration minimumSnapshotAge,
@@ -37,6 +43,9 @@ public record GovernanceSettings(
     public GovernanceSettings {
         if (purgesPerMinute < 1) {
             throw new IllegalArgumentException("nuna.governance.purges-per-minute must be at least 1");
+        }
+        if (auditReadsPerMinute < 1) {
+            throw new IllegalArgumentException("nuna.governance.audit-reads-per-minute must be at least 1");
         }
     }
 

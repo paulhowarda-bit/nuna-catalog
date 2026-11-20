@@ -7,12 +7,19 @@ import static nuna.catalog.server.governance.Management.VIEW;
 
 import nuna.catalog.audit.AuditRead;
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.iceberg.Wire;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.governance.Management.Target;
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.kafka.common.KafkaException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,7 +40,10 @@ import tools.jackson.databind.node.ObjectNode;
  * {@code manage-grants} on the target or above: the trail shows who used the object and who was refused,
  * which is the evidence an access review needs (D19), and separation of duties keeps grant admins away from
  * the data itself (D18). Each read is audited as an {@link AuditRead}; a refusal is a {@code Denial}.
- * The reasons are in build-plan.md, UI v1.
+ * Each read opens a Kafka consumer, so one caller may read at most {@code audit-reads-per-minute} times a minute
+ * on a server (each replica counts its own); beyond that the route answers 429 with {@code Retry-After}, as a
+ * purge claim over its limit is, and like that one the 429 is not audited: it is no authorization decision and
+ * reads nothing (backlog 19). The reasons are in build-plan.md, UI v1.
  */
 @RestController
 class AuditReadRoutes {
@@ -42,17 +52,25 @@ class AuditReadRoutes {
     private static final String AUDIT = "/audit";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 200;
+    private static final Duration RATE_WINDOW = Duration.ofMinutes(1);
 
     private final Management management;
     private final ManagementGuard guard;
     private final RecentAudit recent;
     private final AuditTrail trail;
+    private final GovernanceSettings settings;
+    private final Clock clock;
+    /** Each caller's reads in the last minute, oldest first; a caller with none is not kept. */
+    private final Map<String, Deque<Instant>> recentReads = new HashMap<>();
 
-    AuditReadRoutes(Management management, ManagementGuard guard, RecentAudit recent, AuditTrail trail) {
+    AuditReadRoutes(Management management, ManagementGuard guard, RecentAudit recent, AuditTrail trail,
+                    GovernanceSettings settings, Clock clock) {
         this.management = management;
         this.guard = guard;
         this.recent = recent;
         this.trail = trail;
+        this.settings = settings;
+        this.clock = clock;
     }
 
     @GetMapping(path = {CATALOG + AUDIT, NAMESPACE + AUDIT, TABLE + AUDIT, VIEW + AUDIT},
@@ -71,6 +89,13 @@ class AuditReadRoutes {
         if (!recent.configured()) {
             throw CatalogError.of(503, "ServiceUnavailableException",
                     "The audit topic is not configured on this server (nuna.audit.kafka-bootstrap-servers)");
+        }
+        String caller = request.caller().subject().id();
+        if (!takeReadSlot(caller, clock.instant())) {
+            return ResponseEntity.status(429).header("Retry-After", Long.toString(RATE_WINDOW.toSeconds()))
+                    .contentType(MediaType.APPLICATION_JSON).body(Wire.error(429, "TooManyRequestsException",
+                            "More than " + settings.auditReadsPerMinute() + " audit reads in a minute by " + caller
+                                    + "; retry later"));
         }
         RecentAudit.Result result;
         try {
@@ -97,6 +122,23 @@ class AuditReadRoutes {
         window.put("complete", result.window().complete());
         window.put("scan-limit", RecentAudit.SCAN_LIMIT);
         return GovernanceRoutes.json(200, body);
+    }
+
+    /** Takes one read from the caller's allowance for this minute; false when it is spent. */
+    private synchronized boolean takeReadSlot(String caller, Instant now) {
+        Instant windowStart = now.minus(RATE_WINDOW);
+        for (Deque<Instant> reads : recentReads.values()) {
+            while (!reads.isEmpty() && !reads.peekFirst().isAfter(windowStart)) {
+                reads.removeFirst();
+            }
+        }
+        recentReads.values().removeIf(Deque::isEmpty);
+        Deque<Instant> reads = recentReads.computeIfAbsent(caller, c -> new ArrayDeque<>());
+        if (reads.size() >= settings.auditReadsPerMinute()) {
+            return false;
+        }
+        reads.addLast(now);
+        return true;
     }
 
     private static int limit(String limit) {
