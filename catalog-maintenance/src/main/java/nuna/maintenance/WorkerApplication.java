@@ -87,10 +87,15 @@ public class WorkerApplication {
             LOG.info("Verifying the DR store every {}", settings.verifyInterval());
         }
 
-        private void pass() {
+        /**
+         * One pass, its tally logged at INFO, one line a pass, so an operator waiting on a pass in DR sees it without
+         * a metrics backend (item 101).
+         */
+        void pass() {
+            long start = System.nanoTime();
             try {
                 DrVerifier.Pass pass = verifier.runOnce();
-                LOG.debug("DR pass done: {}", pass);
+                LOG.info("DR pass done: {} in {} ms", pass, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start));
             } catch (RuntimeException e) {
                 // A scheduled task that throws is never run again.
                 LOG.error("DR pass failed", e);

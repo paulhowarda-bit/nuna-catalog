@@ -145,6 +145,35 @@ class DrVerifierTest {
     }
 
     @Test
+    void aFirstWatermarkBelowThePointerLagsFromTheVersionAfterItAndIsCheckedFromNextPass() {
+        clock.now = T1;
+        List<DrVerify.Version> newest = List.of(version(5), version(6), version(7));
+        DrVerify.Item busy = new DrVerify.Item(UUID.randomUUID(), "table", "s3://lake/t", version(7), Optional.empty(),
+                newest, version(1).committedAt());
+        pages.add(List.of(busy));
+        results.put(busy.id(), new DrVerify.Result(Optional.of(version(5)), Optional.of("s3://lake/t/m/7.json")));
+
+        DrVerifier.Pass pass = verifier.runOnce();
+
+        assertThat(reported).containsOnly(Map.entry(busy.id(), 5L));
+        assertThat(pass.verified()).isEqualTo(5);
+        assertThat(pass.behind()).isEqualTo(1);
+        // Version 6, committed 4 minutes before, is the oldest commit not found whole.
+        assertThat(pass.maxLag()).isEqualTo(Duration.ofMinutes(4));
+
+        DrVerify.Item next = table(5, 7, 6, 7);
+        pages.set(0, List.of(new DrVerify.Item(busy.id(), next.kind(), next.location(), next.pointer(),
+                next.watermark(), next.versions(), next.oldestUnverifiedAt())));
+        results.put(busy.id(), safe(next, 7));
+        clock.now = T1.plusSeconds(60);
+        DrVerifier.Pass after = verifier.runOnce();
+
+        assertThat(after.deferred()).as("checked from its watermark, not deferred as a failed whole check").isZero();
+        assertThat(reported).containsOnly(Map.entry(busy.id(), 7L));
+        assertThat(after.behind()).isZero();
+    }
+
+    @Test
     void anObjectWhoseCheckFailsDoesNotStopThePass() {
         DrVerify.Item failing = table(1, 3, 2, 3);
         DrVerify.Item next = table(1, 2, 2);
