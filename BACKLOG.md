@@ -43,7 +43,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
-| [114](backlog/114.md) | L | Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window) | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window | 2026-11-20 |
+| [114](backlog/114.md) | L | Run a table's maintenance now, from the console, outside the cleanup window too | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites | 2026-11-20 |
 
 ## Open items in full
 
@@ -1638,11 +1638,12 @@ when Paul asks.
 Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
 every ref, the governance routes and the console show the branch, and a test on each store shows it.
 
-### 114. Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window)
+### 114. Run a table's maintenance now, from the console, outside the cleanup window too
 
+- Decided: 2026-11-20, D30
 - Added: 2026-11-20 by Paul
 - Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/, catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-maintenance/, docs/observability/table-health.md, docs/observability/health-page.md, decision-ledger.md
-- Effort: L, a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window
+- Effort: L, a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites
 
 Paul asked (2026-11-20) whether there is a UI to see health data and to start maintenance tasks. The console shows
 health (the **Health** page and each table's **Health** tab, docs/observability/health-page.md), but nothing can
@@ -1662,12 +1663,11 @@ start maintenance, in the console or through the API:
 Expiry and manifest rewrite already run within 10 minutes whenever the policy makes them due, so the request is for
 the two heavy jobs: a compaction of one table, and an orphan scan of one table.
 
-**The question for Paul:** may a requested compaction or orphan scan start outside the cleanup window?
-- *Recommended: yes.* The window keeps the routine heavy load off the day; a request is someone's deliberate choice
-  for one table. It still counts against `compaction.max-jobs`, and its Job gets a deadline of its own (a new
-  setting, 2 hours by default) in place of the window's end.
-- *Or: no.* The request queues the table for tonight's window, ahead of the needy tables. D30 stays as it is, but
-  nothing runs "now".
+**Decided (Paul, 2026-11-20, D30 amended):** a requested compaction or orphan scan may start outside the cleanup
+window, with a deadline ("Yes, with a deadline", over queuing it for tonight's window). It still counts against
+`compaction.max-jobs`. A requested compaction Job's deadline is a new setting, 2 hours by default, in place of the
+window's end; a requested orphan scan stops at the same deadline and records nothing, as at the window's end. The
+nightly work keeps the window.
 
 Settled on the recommendation, unless Paul says otherwise:
 - **Who may ask:** `modify` on the table, as for its maintenance policy. Every request and refusal is audited.
@@ -1685,16 +1685,16 @@ What done looks like:
   (`GET .../tables/{table}/health`: who asked, when, waiting or started).
 - The request kept by an add-only schema step on PostgreSQL, CockroachDB, Oracle and MongoDB, so the rolling upgrade
   stays safe; a store suite shows it kept, deduplicated, cleared on start and gone with a purged table.
-- The worker runs requested jobs at its next scan, inside or outside the window as Paul decides, and reports them
-  as it reports nightly ones; a test like `NightlyCleanupTest` shows a request made in the day run (or wait for the
-  night).
+- The worker runs requested jobs at its next scan, inside or outside the window, and reports them as it reports
+  nightly ones; a test like `NightlyCleanupTest` shows a request made in the day run, its Job given the request
+  deadline and an orphan scan stopped at it.
 - On a table's **Health** tab, **Compact now** and **Scan for orphans now** for a viewer with `modify`, and the
   pending request while it waits; `ConsoleHealthTest` shows a reader sees no buttons and a refused request shows the
   catalog's answer.
 - Route tests for who may ask and every refusal; bites for a request taken without `modify`, a request taken under a
-  hold, and (if Paul says yes) a requested Job given the window's end as its deadline.
-- docs/observability/table-health.md, health-page.md and catalog-maintenance/README.md describe it; D30 amended with
-  Paul's answer, quoted.
+  hold, a requested Job given the window's end as its deadline, and a requested job held back until the window.
+- docs/observability/table-health.md, health-page.md and catalog-maintenance/README.md describe it, including the
+  deadline setting (D30, amended 2026-11-20).
 
 ## Done and dropped
 
