@@ -85,6 +85,9 @@ final class ConformanceServer {
                         "spring.datasource.url=" + postgres.getJdbcUrl(),
                         "spring.datasource.username=" + postgres.getUsername(),
                         "spring.datasource.password=" + postgres.getPassword(),
+                        // One node with fsync off (Testcontainers' default): the self-check's findings would
+                        // otherwise refuse to start the server (D8.2).
+                        "nuna.database.allow-unsafe=pg.no-sync-standby,pg.fsync-off",
                         "nuna.storage.catalogs." + WAREHOUSE + ".profile=" + PROFILE,
                         "nuna.storage.catalogs." + WAREHOUSE + ".kms-key-set=test-keys",
                         "nuna.storage.catalogs." + WAREHOUSE + ".legal-entity=Test Entity",

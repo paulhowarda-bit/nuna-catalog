@@ -12,7 +12,10 @@ import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
 
-/** The backend switch: what {@code nuna.database.*} accepts, and a MongoDB deployment without a DataSource. */
+/**
+ * The backend switch: what {@code nuna.database.*} accepts, a MongoDB deployment without a DataSource, and the
+ * self-check findings a test or demo database is allowed.
+ */
 class DatabaseSettingsTest {
 
     private static final String GOOD_URI = "mongodb://catalog:s3cret@h1,h2,h3/catalog?replicaSet=rs0&socketTimeoutMS=30000";
@@ -33,6 +36,23 @@ class DatabaseSettingsTest {
                 "mongodb://catalog:s3cret@h1/?socketTimeoutMS=30000"), "must name the catalog's database");
         assertRefused(Map.of("nuna.database.backend", "mongodb", "nuna.database.mongodb.uri",
                 "mongodb://catalog:s3cret@h1/catalog?replicaSet=rs0"), "must set socketTimeoutMS");
+    }
+
+    @Test
+    void noUnsafeDatabaseIsAllowedUnlessItsFindingsAreNamed() {
+        assertThat(bind(Map.of()).allowUnsafe()).isEmpty();
+        assertThat(bind(Map.of("nuna.database.allow-unsafe", "pg.no-sync-standby,pg.fsync-off")).allowUnsafe())
+                .containsExactlyInAnyOrder("pg.no-sync-standby", "pg.fsync-off");
+        assertThat(bind(Map.of("nuna.database.allow-unsafe[0]", "mongo.too-few-voters")).allowUnsafe())
+                .containsExactly("mongo.too-few-voters");
+
+        // As a container sets it: an environment variable.
+        StandardEnvironment environment = new StandardEnvironment();
+        environment.getPropertySources().addFirst(new SystemEnvironmentPropertySource(
+                StandardEnvironment.SYSTEM_ENVIRONMENT_PROPERTY_SOURCE_NAME,
+                Map.of("NUNA_DATABASE_ALLOWUNSAFE", "ora.no-data-guard")));
+        assertThat(Binder.get(environment).bindOrCreate("nuna.database", DatabaseSettings.class).allowUnsafe())
+                .containsExactly("ora.no-data-guard");
     }
 
     @Test

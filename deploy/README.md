@@ -118,6 +118,15 @@ migrates its schema. What each one asks of the catalog's database role is on the
 `OracleBackendTest` and `MongodbBackendTest` (catalog-server, `heavy`) run the server this way on Oracle Free
 and a one-member replica set.
 
+Before it migrates, each server runs the store's self-check of the database's safety settings [D8]: a
+synchronous standby and `synchronous_commit` on PostgreSQL, Transaction Guard and a synchronized Data Guard
+standby on Oracle, three voters and a majority write concern on MongoDB, three voting replicas on CockroachDB,
+among others (docs/storage-design.md section 7). Any finding stops the server with an error that names each
+one, before it changes anything in the database, and a self-check the role cannot run stops it too.
+`config.nuna.database.allow-unsafe` lists findings, by code, that the server starts despite, logging each as a
+warning; it is empty by default. Only a test or demo database on one node sets it, as `deploy/local/values.yaml`
+does with `[pg.no-sync-standby]`; leave it empty in production.
+
 ### Telemetry
 
 Both charts send metrics, traces and logs to an OpenTelemetry collector over OTLP/HTTP when `telemetry.endpoint` is
@@ -148,9 +157,8 @@ telemetry:
 
 ### Before production
 
-- **Database safety settings.** Each store can check its database's safety settings (`selfCheck`: a
-  synchronous standby, Transaction Guard, a majority write concern, and so on), but the server does not run
-  that check yet. Until it does, check them against the store's class comment by hand.
+- **Database safety settings.** The server refuses to start while the store's self-check reports a finding
+  ("The database", above). Leave `config.nuna.database.allow-unsafe` empty.
 - **ETags and routing.** M8 found that ETags do not survive a change of server: each server mints its own
   vended credentials, and the ETag includes a hash of them. With the default `service.sessionAffinity: None`,
   a conditional load answered by another server is a 200, not a 304. `ClientIP` affinity keeps a client on
