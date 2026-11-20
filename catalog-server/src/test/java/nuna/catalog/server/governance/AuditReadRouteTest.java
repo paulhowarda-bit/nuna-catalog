@@ -65,10 +65,10 @@ class AuditReadRouteTest {
     @Test
     void readingTheTrailNeedsManageGrants() {
         // The tester holds create and modify, the steward manage-tags: neither may read who used the table. The
-        // outsider holds nothing on it and is answered as if it did not exist (D18, backlog 73).
+        // bystander holds nothing on it and is answered as if it did not exist (D18, backlog 73).
         expectError(api.manage("GET", table + "/audit", null), 403, "ForbiddenException");
         expectError(api.manage("GET", table + "/audit", null, AUTH, api.steward()), 403, "ForbiddenException");
-        expectError(api.manage("GET", table + "/audit", null, AUTH, api.outsider()), 404, "NoSuchTableException");
+        expectError(api.manage("GET", table + "/audit", null, AUTH, api.bystander()), 404, "NoSuchTableException");
         expect(api.manage("GET", table + "/audit", null, AUTH, api.grantAdmin()), 200);
     }
 

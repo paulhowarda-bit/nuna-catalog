@@ -94,8 +94,10 @@ class LifecycleRoutes {
     @GetMapping(path = DROPPED, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> dropped(@PathVariable("catalog") String prefix, @PathVariable String namespace,
                                    HttpServletRequest http) {
-        Management.Target target = management.target(prefix, namespace, null, null);
-        guard.require(management.request(http), target, "listDropped", Privilege.DESCRIBE);
+        Request request = management.request(http);
+        Management.Target target = management.target(request, "listDropped", Privilege.DESCRIBE,
+                prefix, namespace, null, null);
+        guard.require(request, target, "listDropped", Privilege.DESCRIBE);
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode objects = body.putArray("dropped");
         for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
@@ -120,11 +122,11 @@ class LifecycleRoutes {
     @PostMapping(path = UNDROP, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> undrop(@PathVariable("catalog") String prefix, @PathVariable String id,
                                   @RequestBody(required = false) String body, HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
+        Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "undropObject", Privilege.CREATE);
         CatalogObject object = existing(catalog, id);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElseThrow(
                 () -> CatalogError.of(404, "NoSuchNamespaceException", "The namespace of " + id + " no longer exists"));
-        Request request = management.request(http);
         guard.require(request, new Authorizer.Target.Namespace(catalog.id(), object.namespaceId()),
                 namespaceAudit(catalog, object.namespaceId(), levels), "undropObject", Privilege.CREATE);
         if (object.state() != CatalogObject.State.DROPPED) {
@@ -168,9 +170,9 @@ class LifecycleRoutes {
     @PostMapping(path = PURGE_CLAIM, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> claimPurge(@PathVariable("catalog") String prefix, @PathVariable String id,
                                       HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
-        CatalogObject object = existing(catalog, id);
         Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "claimPurge", null);
+        CatalogObject object = existing(catalog, id);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
         nuna.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
         guard.requireMaintenance(request, audit, "claimPurge");
@@ -222,9 +224,9 @@ class LifecycleRoutes {
      */
     @PostMapping(path = PURGE, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> purge(@PathVariable("catalog") String prefix, @PathVariable String id, HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
-        CatalogObject object = existing(catalog, id);
         Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "purge", null);
+        CatalogObject object = existing(catalog, id);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
         nuna.catalog.audit.Securable audit = Management.audit(catalog, levels, object.name().display(), object);
         guard.requireMaintenance(request, audit, "purge");
@@ -279,10 +281,10 @@ class LifecycleRoutes {
      */
     @GetMapping(path = EXPORT, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> export(@PathVariable("catalog") String prefix, @PathVariable String id, HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
+        Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "exportObject", Privilege.SELECT);
         CatalogObject object = existing(catalog, id);
         List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
-        Request request = management.request(http);
         guard.require(request, Authorizer.Target.of(object),
                 Management.audit(catalog, levels, object.name().display(), object), "exportObject", Privilege.SELECT);
         ObjectNode body = Management.JSON.createObjectNode();

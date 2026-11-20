@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ManagementAuthorizationTest#placingAHoldNeedsManageTags
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 501b568..8b23195 100644
+index 274a8ec..624a18a 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -157,7 +157,6 @@ class GovernanceRoutes {
+@@ -164,7 +164,6 @@ class GovernanceRoutes {
                                       HttpServletRequest http) {
-         Target target = management.target(prefix, namespace, table, view);
          Request request = management.request(http);
+         Target target = management.target(request, "placeHold", Privilege.MANAGE_TAGS, prefix, namespace, table, view);
 -        guard.require(request, target, "placeHold", Privilege.MANAGE_TAGS);
          String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
          Instant now = now();

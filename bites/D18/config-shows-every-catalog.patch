@@ -1,0 +1,19 @@
+Breaks: GET /v1/config answers with the prefix of any catalog the warehouse names, to a caller that holds nothing in it.
+Module: catalog-server
+Test: HiddenNamesTest#aCatalogTheCallerHoldsNothingInAnswersAsOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
+index 6b31ca9..3b9774b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java
+@@ -48,8 +48,8 @@ public class ConfigRoute {
+         if (requested == null || requested.isBlank()) {
+             catalog = defaultCatalog();
+         } else {
+-            RequestContext request = RequestContext.of(http, callers);
+-            catalog = holdings.catalog(requested, request.caller(), request.actor(), "getConfig", null);
++            catalog = store.findCatalog(Names.normalize(requested)).orElseThrow(
++                    () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + requested));
+         }
+         RequestMetrics.catalog(catalog.name());
+         return Wire.config(

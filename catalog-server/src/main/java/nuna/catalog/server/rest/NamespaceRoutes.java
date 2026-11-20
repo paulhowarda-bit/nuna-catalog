@@ -72,7 +72,7 @@ class NamespaceRoutes {
                                 @RequestParam(required = false) String pageToken,
                                 @RequestParam(required = false) String pageSize,
                                 HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.LIST_NAMESPACES);
         List<String> parentLevels = parent == null || parent.isEmpty() ? List.of() : Lookup.levels(parent);
         UUID parentId = parentLevels.isEmpty() ? catalog.id() : lookup.existingNamespace(catalog, parentLevels).id();
         guard.onParent(RequestContext.of(http, callers), catalog, parentId, parentLevels, Guard.LIST_NAMESPACES,
@@ -90,8 +90,8 @@ class NamespaceRoutes {
                                   @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
         RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.CREATE_NAMESPACE);
         return idempotency.run(Optional.ofNullable(key), request.caller(), "CREATE_NAMESPACE", catalog.id().toString(),
                 body, ticket -> {
                     RestRequest.NewNamespace created = RestRequest.createNamespace(body == null ? "" : body);
@@ -138,7 +138,7 @@ class NamespaceRoutes {
     ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace,
                                 HttpServletRequest http) {
         List<String> levels = Lookup.levels(namespace);
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.LOAD_NAMESPACE);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         guard.onNamespace(RequestContext.of(http, callers), catalog, record, levels, Guard.LOAD_NAMESPACE,
                 Http.noSuchNamespace(levels));
@@ -149,7 +149,7 @@ class NamespaceRoutes {
     @RequestMapping(path = NAMESPACE, method = RequestMethod.HEAD)
     ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace,
                                 HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.NAMESPACE_EXISTS);
         List<String> levels = Lookup.levels(namespace);
         Optional<NamespaceRecord> found = lookup.namespace(catalog, levels);
         if (found.isEmpty() || !guard.allowsOnNamespace(RequestContext.of(http, callers), catalog, found.get(), levels,
@@ -163,9 +163,9 @@ class NamespaceRoutes {
     ResponseEntity<String> drop(@PathVariable String prefix, @PathVariable String namespace,
                                 @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                 HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
-        List<String> levels = Lookup.levels(namespace);
         RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.DROP_NAMESPACE);
+        List<String> levels = Lookup.levels(namespace);
         return idempotency.run(Optional.ofNullable(key), request.caller(), "DROP_NAMESPACE",
                 catalog.id() + "/" + String.join("\u001f", levels), "", ticket -> {
                     NamespaceRecord record = lookup.existingNamespace(catalog, levels);
@@ -203,9 +203,9 @@ class NamespaceRoutes {
                                             @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                             @RequestBody(required = false) String body,
                                             HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
-        List<String> levels = Lookup.levels(namespace);
         RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.UPDATE_PROPERTIES);
+        List<String> levels = Lookup.levels(namespace);
         return idempotency.run(Optional.ofNullable(key), request.caller(), "UPDATE_NAMESPACE_PROPERTIES",
                 catalog.id() + "/" + String.join("\u001f", levels), body, ticket -> {
                     RestRequest.PropertyChanges changes = RestRequest.updateNamespaceProperties(body == null ? "" : body);

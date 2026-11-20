@@ -63,8 +63,9 @@ class AuditReadRoutes {
                                   @PathVariable(required = false) String view,
                                   @RequestParam(required = false) String limit,
                                   HttpServletRequest http) {
-        Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
+        Target target = management.target(request, "readAudit", Privilege.MANAGE_GRANTS,
+                prefix, namespace, table, view);
         guard.require(request, target, "readAudit", Privilege.MANAGE_GRANTS);
         int wanted = limit(limit);
         if (!recent.configured()) {

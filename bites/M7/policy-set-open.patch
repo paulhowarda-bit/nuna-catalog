@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ManagementAuthorizationTest#settingTheMaintenancePolicyNeedsModify
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 501b568..d85c73a 100644
+index 274a8ec..b5647a0 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -261,7 +261,6 @@ class GovernanceRoutes {
-                                      HttpServletRequest http) {
-         Target target = management.target(prefix, namespace, table, view);
+@@ -263,7 +263,6 @@ class GovernanceRoutes {
          Request request = management.request(http);
+         Target target = management.target(request, "setMaintenancePolicy", Privilege.MODIFY,
+                 prefix, namespace, table, view);
 -        guard.require(request, target, "setMaintenancePolicy", Privilege.MODIFY);
          JsonNode json = Management.body(body);
          Map<String, String> keys = new TreeMap<>();

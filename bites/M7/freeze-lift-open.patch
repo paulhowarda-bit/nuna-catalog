@@ -3,13 +3,13 @@ Module: catalog-server
 Test: ManagementAuthorizationTest#liftingADrFreezeNeedsAPlatformOperator
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 462c115..787d25e 100644
+index 274a8ec..6e76196 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -312,7 +312,6 @@ class GovernanceRoutes {
+@@ -321,7 +321,6 @@ class GovernanceRoutes {
                                  HttpServletRequest http) {
-         Target target = management.target(prefix, namespace, table, view);
          Request request = management.request(http);
+         Target target = management.target(request, "liftDrFreeze", null, prefix, namespace, table, view);
 -        guard.requireOperatorOn(request, target, "liftDrFreeze");
          return remove(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, request);
      }

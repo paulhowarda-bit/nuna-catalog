@@ -73,12 +73,12 @@ class ViewRoutes {
                                   @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.CREATE_VIEW);
         List<String> levels = Lookup.levels(namespace);
         String json = body == null ? "" : body;
         String name = RestRequest.createViewName(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
-        RequestContext request = RequestContext.of(http, callers);
         guard.onNamespace(request, catalog, record, levels, Guard.CREATE_VIEW, Http.noSuchNamespace(levels));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, name), request)
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
@@ -90,7 +90,7 @@ class ViewRoutes {
     @GetMapping(VIEW)
     ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace,
                                 @PathVariable String view, HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.LOAD_VIEW);
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, view, Kind.VIEW);
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, view),
@@ -114,11 +114,11 @@ class ViewRoutes {
                                    @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                    @RequestBody(required = false) String body,
                                    HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.REPLACE_VIEW);
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, view);
         NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchView(qualified));
-        RequestContext request = RequestContext.of(http, callers);
         Optional<CatalogObject> existing = lookup.object(record, view, Kind.VIEW);
         if (existing.isPresent()) {
             guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, view), Guard.REPLACE_VIEW,
@@ -143,12 +143,12 @@ class ViewRoutes {
                                     @RequestHeader(name = Http.IDEMPOTENCY_KEY, required = false) String key,
                                     @RequestBody(required = false) String body,
                                     HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix);
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.REGISTER_VIEW);
         List<String> levels = Lookup.levels(namespace);
         String json = body == null ? "" : body;
         RestRequest.Registration registration = RestRequest.registerView(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
-        RequestContext request = RequestContext.of(http, callers);
         guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_VIEW, Http.noSuchNamespace(levels));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerView(ObjectRoutes.name(catalog, record, levels, registration.name()), json,

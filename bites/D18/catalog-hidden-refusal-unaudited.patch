@@ -1,0 +1,19 @@
+Breaks: a catalog answered as missing to a caller that holds nothing in it is not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: HiddenNamesTest#aHiddenCatalogRefusalIsAuditedAsEveryRefusalIs
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+index 6f30ba5..0c10f89 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+@@ -62,10 +62,6 @@ public class Holdings {
+         CatalogError missing = CatalogError.noSuchWarehouse("The given warehouse does not exist: " + name);
+         CatalogRecord catalog = store.findCatalog(Names.normalize(name)).orElseThrow(() -> missing);
+         if (!inCatalog(caller, catalog.id())) {
+-            denials.refuse(actor, operation, new nuna.catalog.audit.Securable(
+-                            nuna.catalog.audit.Securable.Kind.CATALOG, catalog.id(), catalog.name(), List.of()),
+-                    privilege == null ? null : privilege.wireName(), "no_privilege",
+-                    caller.subject().id() + " holds nothing in catalog " + catalog.name());
+             throw missing;
+         }
+         return catalog;

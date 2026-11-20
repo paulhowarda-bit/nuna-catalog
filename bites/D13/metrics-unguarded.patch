@@ -3,11 +3,11 @@ Module: catalog-server
 Test: SecurityGateTest#metricsAreReportedOnlyOnATableTheCallerMayRead
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index 94281fb..417bbf8 100644
+index 77a5cbe..79f952f 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 @@ -317,8 +317,6 @@ class TableRoutes {
-         CatalogRecord catalog = lookup.catalog(prefix);
+         CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.REPORT_METRICS);
          List<String> levels = Lookup.levels(namespace);
          CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
 -        guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),

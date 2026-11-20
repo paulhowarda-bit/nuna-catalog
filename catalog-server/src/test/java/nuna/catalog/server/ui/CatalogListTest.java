@@ -17,6 +17,7 @@ import nuna.catalog.core.Names;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
@@ -108,8 +109,11 @@ class CatalogListTest {
     // ---- helpers ----
 
     private List<String> list(Caller caller) {
-        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store(),
-                new Separation(Set.of(GRANT_ADMINS), Set.of(PLATFORM_OPS)));
+        CatalogStore store = store();
+        // Only the catalog rule is asked here, which needs the store and the separation of duties.
+        Holdings holdings = new Holdings(null, store, null, new Separation(Set.of(GRANT_ADMINS), Set.of(PLATFORM_OPS)),
+                null);
+        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store, holdings);
         ResponseEntity<String> response = routes.catalogs(null);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         return JsonPath.read(response.getBody(), "$.catalogs[*].name");

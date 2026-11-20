@@ -3,14 +3,14 @@ Module: catalog-server
 Test: ManagementAuthorizationTest#readingGovernanceNeedsDescribe
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-index 501b568..216d62a 100644
+index 274a8ec..9b7ea74 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-@@ -96,7 +96,6 @@ class GovernanceRoutes {
-                                       @PathVariable(required = false) String view,
-                                       HttpServletRequest http) {
-         Target target = management.target(prefix, namespace, table, view);
--        guard.require(management.request(http), target, "loadGovernance", Privilege.DESCRIBE);
+@@ -101,7 +101,6 @@ class GovernanceRoutes {
+         Request request = management.request(http);
+         Target target = management.target(request, "loadGovernance", Privilege.DESCRIBE,
+                 prefix, namespace, table, view);
+-        guard.require(request, target, "loadGovernance", Privilege.DESCRIBE);
          ObjectNode body = Management.JSON.createObjectNode();
          body.set("target", securable(target.securable()));
          ArrayNode attributes = body.putArray("attributes");

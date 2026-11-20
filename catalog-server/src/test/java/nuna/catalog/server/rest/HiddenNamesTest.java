@@ -26,6 +26,8 @@ import nuna.catalog.core.principal.Principal;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.ConfigRoute;
+import nuna.catalog.server.security.Denials;
 import nuna.catalog.server.security.DenialsForTests;
 import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.telemetry.RequestIds;
@@ -52,8 +54,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * each case asks once with the name there, then again once the object is gone, then once its namespace is gone
  * too, and expects one answer. A caller that holds something on the name, any grant on it or above it (every
  * privilege implies describe) or, for a namespace, on anything in it, is still refused with 403. Every refusal is
- * audited as before. The routes run against a store double, so this needs only Java; {@code SecurityGateTest}
- * checks the same on the wire. Unregister needs the commit engine and is covered there only.
+ * audited as before. A caller that holds nothing in the catalog at all gets, on {@code /v1/config} and on every
+ * route under the prefix, what a catalog that does not exist gets (D18, amended 2026-11-20; backlog 68). The routes
+ * run against a store double, so this needs only Java; {@code SecurityGateTest} checks the same on the wire.
+ * Unregister needs the commit engine and is covered there only.
  */
 class HiddenNamesTest {
 
@@ -74,7 +78,10 @@ class HiddenNamesTest {
     private static final String REGISTER = """
             {"name":"back","metadata-location":"s3://gate/hr/back/metadata/v1.metadata.json"}""";
 
+    /** Describe on the namespace lobby only, so he holds something in the catalog but nothing on hr or sales. */
     private static final Caller OTTO = person("otto", "outsiders");
+    /** Nothing anywhere in the catalog. */
+    private static final Caller NED = person("ned", "newcomers");
     /** Select on the namespace sales. */
     private static final Caller ANN = person("ann", "analysts");
     /** Modify on the namespace sales. */
@@ -96,6 +103,7 @@ class HiddenNamesTest {
     private final List<String> released = new ArrayList<>();
     private final List<CatalogEvent> audit = new ArrayList<>();
     private final List<String> reported = new ArrayList<>();
+    private boolean catalogGone;
 
     private final NamespaceRecord sales = namespace(null, "sales");
     private final NamespaceRecord hr = namespace(null, "hr");
@@ -105,7 +113,9 @@ class HiddenNamesTest {
     private final CatalogObject salaries = object(hr, "salaries", Kind.TABLE);
     private final CatalogObject roster = object(hr, "roster", Kind.VIEW);
     private final CatalogObject slips = object(payroll, "slips", Kind.TABLE);
+    private final NamespaceRecord lobby = namespace(null, "lobby");
 
+    private final ConfigRoute config;
     private final NamespaceRoutes namespaceRoutes;
     private final TableRoutes tables;
     private final ViewRoutes views;
@@ -121,20 +131,23 @@ class HiddenNamesTest {
         grant(staff.securable(), "staff-readers", Privilege.SELECT);
         grant(salaries.securable(), "describers", Privilege.DESCRIBE);
         grant(slips.securable(), "payroll", Privilege.SELECT);
+        grant(new Securable(Securable.Kind.NAMESPACE, lobby.id()), "outsiders", Privilege.DESCRIBE);
 
         CatalogStore store = store();
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, null);
         Clock clock = Clock.fixed(Instant.parse("2026-11-19T00:00:00Z"), ZoneOffset.UTC);
         AuditPublisher publisher = audit::add;
-        Authorizer authorizer = new Authorizer(store, store, store,
-                new Separation(Set.of("grant-admins"), Set.of("platform-ops")), false, Set.of());
-        Guard guard = new Guard(authorizer, DenialsForTests.denials(publisher, settings, clock), publisher, settings,
-                clock, new Holdings(authorizer, store, settings));
-        Lookup lookup = new Lookup(store, settings);
+        Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
+        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
+        Denials denials = DenialsForTests.denials(publisher, settings, clock);
+        Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
+        Guard guard = new Guard(authorizer, denials, publisher, settings, clock, holdings);
+        Lookup lookup = new Lookup(store, settings, holdings);
         Idempotency idempotency = new Idempotency(store, clock);
         AuditEvents events = new AuditEvents(settings);
         Callers callers = request -> caller;
+        config = new ConfigRoute(store, settings, callers, holdings);
         ObjectRoutes objectRoutes = new ObjectRoutes(store, lookup, idempotency, events, settings, guard, clock);
         // No engine, vending, metadata or meters: every case here is answered before any of them is reached.
         namespaceRoutes = new NamespaceRoutes(store, lookup, idempotency, events, callers, guard, clock);
@@ -397,6 +410,97 @@ class HiddenNamesTest {
         assertThat(kept).hasSize(2);
     }
 
+    // ---- a catalog the caller holds nothing in (backlog 68) ----
+
+    @Test
+    void aCatalogTheCallerHoldsNothingInAnswersAsOneThatDoesNotExist() {
+        caller = NED;
+        Answer missing = new Answer(404, "NoSuchWarehouseException", "The given warehouse does not exist: gate");
+        List<Callable<ResponseEntity<?>>> calls = List.of(
+                () -> ResponseEntity.ok(config.config("gate", http)),
+                () -> namespaceRoutes.list("gate", null, null, null, http),
+                () -> namespaceRoutes.exists("gate", "hr", http),
+                () -> namespaceRoutes.load("gate", "hr", http),
+                () -> namespaceRoutes.create("gate", null, "{\"namespace\":[\"fresh\"]}", http),
+                () -> tables.list("gate", "sales", null, null, http),
+                () -> tables.exists("gate", "hr", "staff", http),
+                () -> tables.load("gate", "hr", "staff", null, null, null, null, http),
+                () -> tables.create("gate", "hr", null, null, TABLE.formatted("fresh"), http),
+                () -> tables.commit("gate", "hr", "staff", null, null, SET_PROPERTY, http),
+                () -> tables.metrics("gate", "hr", "staff", REPORT, http),
+                () -> tables.rename("gate", null, rename("hr", "staff", "sales", "moved"), http),
+                () -> views.load("gate", "hr", "roster", http),
+                () -> transactions.commit("gate", null, transaction("staff"), http));
+        for (Callable<ResponseEntity<?>> call : calls) {
+            assertThat(alike(call, catalog)).isEqualTo(missing);
+            catalogGone = false;
+        }
+        assertThat(reported).isEmpty();
+    }
+
+    @Test
+    void theNameIsEchoedAsGivenWhetherTheCatalogIsHiddenOrMissing() {
+        caller = NED;
+        assertThat(alike(() -> ResponseEntity.ok(config.config("GATE", http)), catalog))
+                .isEqualTo(new Answer(404, "NoSuchWarehouseException", "The given warehouse does not exist: GATE"));
+    }
+
+    @Test
+    void aPlatformOperatorAndAGrantAdminSeeEveryCatalog() {
+        for (Caller seer : List.of(OLGA, GINA)) {
+            caller = seer;
+            assertThat(JsonPath.<String>read(config.config("gate", http), "$.overrides.prefix")).isEqualTo("gate");
+            assertThat(answer(() -> namespaceRoutes.create("gate", null, "{\"namespace\":[\"fresh\"]}", http))
+                    .status()).as("%s is refused on the catalog it sees", seer.principal().id()).isEqualTo(403);
+        }
+    }
+
+    @Test
+    void aCallerThatHoldsAnythingInTheCatalogGetsItsConfigAndA403OnTheCatalog() {
+        for (Caller holder : List.of(OTTO, TOM, PAM)) {
+            caller = holder;
+            assertThat(JsonPath.<String>read(config.config("gate", http), "$.overrides.prefix")).isEqualTo("gate");
+            assertThat(answer(() -> namespaceRoutes.create("gate", null, "{\"namespace\":[\"fresh\"]}", http))
+                    .status()).as("%s lacks create on the catalog", holder.principal().id()).isEqualTo(403);
+        }
+    }
+
+    @Test
+    void aTrustedEngineIsShownTheCatalogsTheEndUserHoldsSomethingIn() {
+        Principal engine = new Principal("svc-trino", Set.of("staff-readers"));
+        caller = new Caller(engine, "trino", true, Optional.of(NED.principal()));
+        assertThat(alike(() -> ResponseEntity.ok(config.config("gate", http)), catalog))
+                .isEqualTo(new Answer(404, "NoSuchWarehouseException", "The given warehouse does not exist: gate"));
+        catalogGone = false;
+        caller = new Caller(new Principal("svc-trino", Set.of("newcomers")), "trino", true,
+                Optional.of(TOM.principal()));
+        assertThat(JsonPath.<String>read(config.config("gate", http), "$.overrides.prefix")).isEqualTo("gate");
+    }
+
+    @Test
+    void aHiddenCatalogRefusalIsAuditedAsEveryRefusalIs() {
+        caller = NED;
+        answer(() -> ResponseEntity.ok(config.config("gate", http)));
+        answer(() -> tables.load("gate", "hr", "staff", null, null, null, null, http));
+
+        assertThat(denials()).extracting(Denial::operation).containsExactly("getConfig", "loadTable");
+        assertThat(denials().getFirst().privilege()).isNull();
+        Denial load = denials().get(1);
+        assertThat(load.privilege()).isEqualTo("select");
+        assertThat(load.reason()).startsWith("no_privilege");
+        assertThat(load.securable().kind()).isEqualTo(nuna.catalog.audit.Securable.Kind.CATALOG);
+        assertThat(load.securable().id()).isEqualTo(catalog.id());
+        assertThat(load.securable().catalog()).isEqualTo("gate");
+        assertThat(load.securable().path()).isEmpty();
+        assertThat(load.actor().principal()).isEqualTo("ned");
+        assertThat(load.actor().requestId()).isEqualTo("request-1");
+
+        forget(catalog);
+        answer(() -> ResponseEntity.ok(config.config("gate", http)));
+        answer(() -> tables.load("gate", "hr", "staff", null, null, null, null, http));
+        assertThat(denials()).as("nothing was there to refuse").hasSize(2);
+    }
+
     // ---- helpers ----
 
     /** What a client is told: the status, and an error's type and message. */
@@ -477,6 +581,7 @@ class HiddenNamesTest {
         switch (record) {
             case NamespaceRecord namespace -> namespaces.remove(namespace.id());
             case CatalogObject object -> objects.remove(object.id());
+            case CatalogRecord ignored -> catalogGone = true;
             default -> throw new IllegalArgumentException(String.valueOf(record));
         }
     }
@@ -502,7 +607,8 @@ class HiddenNamesTest {
     private CatalogStore store() {
         return (CatalogStore) Proxy.newProxyInstance(CatalogStore.class.getClassLoader(),
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
-                    case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
+                    case "findCatalog" -> Optional.of(catalog)
+                            .filter(c -> !catalogGone && c.normalizedName().equals(args[0]));
                     case "findNamespace" -> findNamespace((List<String>) args[1]);
                     case "readNamespace" -> Optional.ofNullable(namespaces.get((UUID) args[0]));
                     case "findObject" -> objects.values().stream()

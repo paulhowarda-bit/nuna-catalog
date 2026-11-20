@@ -3,11 +3,11 @@ Module: catalog-server
 Test: SecurityGateTest#separationOfDutiesHoldsForEveryGrant
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index c4b77cc..3864788 100644
+index 5f1a658..bbeeba9 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -234,7 +234,7 @@ class GrantRoutes {
-         Operation operation = grant ? GRANT : REVOKE;
+@@ -256,7 +256,7 @@ class GrantRoutes {
+         Securables.Resolved on = securables.resolve(spec.securable());
          require(request, on, operation);
          if (grant) {
 -            if (request.caller().subject().groups().contains(spec.group())) {
