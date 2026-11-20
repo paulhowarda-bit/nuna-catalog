@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 import nuna.catalog.server.telemetry.OtlpReceiver;
 import org.junit.jupiter.api.Test;
@@ -48,6 +49,13 @@ import tools.jackson.databind.json.JsonMapper;
 class TelemetryTest {
 
     private static final Duration ARRIVAL = Duration.ofSeconds(20);
+    /**
+     * For the worker's own JVM to start. With this class running alone it took 5.8 to 8.4 s (2026-11-19); in the heavy
+     * build of that night the worker's context in this JVM took 74 s, 25 times its usual 3 s, which would put the cold
+     * JVM near 3.5 minutes.
+     */
+    private static final Duration START = Duration.ofMinutes(5);
+    private static final int TAIL = 80;
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @TempDir
@@ -111,8 +119,8 @@ class TelemetryTest {
             List<String> command = new ArrayList<>(List.of(ProcessHandle.current().info().command().orElseThrow(),
                     "@" + classPath, WorkerApplication.class.getName()));
             command.addAll(arguments());
-            ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true)
-                    .redirectOutput(folder.resolve("worker.log").toFile());
+            Path log = folder.resolve("worker.log");
+            ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
             builder.environment().putAll(Map.of(
                     "OTEL_EXPORTER_OTLP_ENDPOINT", receiver.base(),
                     "OTEL_SERVICE_NAME", "nuna-maintenance-test",
@@ -121,13 +129,21 @@ class TelemetryTest {
                     "OTEL_BLRP_SCHEDULE_DELAY", "100"));
             Process worker = builder.start();
             try {
-                OtlpReceiver.Received<io.opentelemetry.proto.metrics.v1.Metric> metric = receiver.awaitMetric(m ->
-                        m.item().getName().startsWith("jvm."), ARRIVAL);
-                assertThat(metric.service()).isEqualTo("nuna-maintenance-test");
-                assertThat(OtlpReceiver.attribute(metric.resource().getAttributesList(), "k8s.pod.name"))
-                        .hasValue("worker-pod-1");
-                assertThat(receiver.awaitLog(l -> l.item().getBody().getStringValue().startsWith("Scanning "),
-                        ARRIVAL).service()).isEqualTo("nuna-maintenance-test");
+                // Its start has an allowance of its own, and ARRIVAL counts from there, as for the worker in this
+                // JVM: beside a heavy build's tests a cold JVM and its context took over 20 s (backlog 62). The line,
+                // in this test's output, says how long the start took.
+                System.out.println(awaitStarted(worker, log));
+                try {
+                    OtlpReceiver.Received<io.opentelemetry.proto.metrics.v1.Metric> metric = receiver.awaitMetric(m ->
+                            m.item().getName().startsWith("jvm."), ARRIVAL);
+                    assertThat(metric.service()).isEqualTo("nuna-maintenance-test");
+                    assertThat(OtlpReceiver.attribute(metric.resource().getAttributesList(), "k8s.pod.name"))
+                            .hasValue("worker-pod-1");
+                    assertThat(receiver.awaitLog(l -> l.item().getBody().getStringValue().startsWith("Scanning "),
+                            ARRIVAL).service()).isEqualTo("nuna-maintenance-test");
+                } catch (AssertionError e) {
+                    throw new AssertionError(e.getMessage() + " after the worker started\n" + tail(log), e);
+                }
             } finally {
                 worker.destroyForcibly();
                 worker.waitFor();
@@ -177,6 +193,40 @@ class TelemetryTest {
         StandardEnvironment set = environment(Map.of("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318"));
         new Telemetry.MetricsExportNeedsEndpoint().postProcessEnvironment(set, new SpringApplication());
         assertThat(set.getProperty(Telemetry.MetricsExportNeedsEndpoint.ENABLED)).isNull();
+    }
+
+    /** Spring's line saying the worker has started, from its log; fails with the log if it exits or takes START. */
+    private static String awaitStarted(Process worker, Path log) throws IOException, InterruptedException {
+        long deadline = System.nanoTime() + START.toNanos();
+        while (true) {
+            boolean alive = worker.isAlive();
+            Optional<String> started = lines(log).filter(line -> line.contains("Started WorkerApplication in "))
+                    .findFirst();
+            if (started.isPresent()) {
+                return started.get();
+            }
+            if (!alive) {
+                throw new AssertionError("the worker exited with " + worker.exitValue() + " before it started\n"
+                        + tail(log));
+            }
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("the worker did not start within " + START + "\n" + tail(log));
+            }
+            Thread.sleep(100);
+        }
+    }
+
+    /** The worker's log for a failure's message, its last lines if it is long. */
+    private static String tail(Path log) throws IOException {
+        List<String> lines = lines(log).toList();
+        int from = Math.max(0, lines.size() - TAIL);
+        return "worker.log" + (from == 0 ? "" : ", the last " + TAIL + " of its " + lines.size() + " lines") + ":\n"
+                + String.join("\n", lines.subList(from, lines.size()));
+    }
+
+    /** Not {@link Files#readString}: the line the worker is writing may end mid-character. */
+    private static Stream<String> lines(Path log) throws IOException {
+        return new String(Files.readAllBytes(log), StandardCharsets.UTF_8).lines();
     }
 
     /** An environment holding only {@code properties}: none of this machine's variables or system properties. */
