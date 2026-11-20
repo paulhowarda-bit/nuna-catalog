@@ -37,6 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +53,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * Grant administration (D18, D19): grant and revoke to groups, list by principal (its groups), list by object,
  * the batch check, and the export for access certification. Every refusal is audited; every grant change goes
- * through the outbox in the same transaction (D23).
+ * through the outbox in the same transaction (D23). The separation-of-duties check runs inside the store's write
+ * of the grant, so two grants made at once cannot together break it (backlog 13).
  */
 @RestController
 class GrantRoutes {
@@ -238,11 +240,6 @@ class GrantRoutes {
                 throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
                         "separation-of-duties", "no one grants to a group they belong to: " + spec.group());
             }
-            Optional<String> conflict = separation.refusal(spec.group(), privilege, held(record.id(), spec.group()));
-            if (conflict.isPresent()) {
-                throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
-                        "separation-of-duties", conflict.get());
-            }
         }
         Grant stored = new Grant(record.id(), on.stored(), spec.group(), privilege.wireName());
         Instant now = clock.instant();
@@ -251,9 +248,11 @@ class GrantRoutes {
                 privilege.wireName(), request.actor()));
         Change change = new Change(UUID.randomUUID(), now, List.of(new OutboxEvent(event.type().typeName(),
                 new String(EventCodec.encode(event), StandardCharsets.UTF_8))), Optional.empty());
+        AtomicReference<String> separated = new AtomicReference<>();
         WriteResult result;
         try {
-            result = grant ? store.putGrant(stored, request.caller().subject().id(), change)
+            result = grant ? store.putGrantIf(stored, request.caller().subject().id(), change,
+                    held -> admits(spec.group(), privilege, held, separated))
                     : store.revokeGrant(stored, change);
         } catch (CommitOutcomeUnknownException e) {
             // Both are safe to repeat: a repeated grant answers unchanged, a repeated revoke not found.
@@ -263,6 +262,9 @@ class GrantRoutes {
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
             case WriteResult.Unchanged unchanged -> ResponseEntity.noContent().build();
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_ADMITTED ->
+                    throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
+                            "separation-of-duties", separated.get());
             case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.GRANT ->
                     throw CatalogError.of(404, "NotFoundException", "No such grant: " + privilege.wireName()
                             + " to " + spec.group());
@@ -272,24 +274,23 @@ class GrantRoutes {
         };
     }
 
-    /** Every privilege the group holds anywhere in the catalog, for the separation check. */
-    private List<Privilege> held(UUID catalogId, String group) {
-        List<Privilege> held = new ArrayList<>();
-        PageRequest request = PageRequest.first(EXPORT_PAGE);
-        while (true) {
-            Page<GrantRecord> page = store.listGrantsOfGroups(catalogId, Set.of(group), request);
-            for (GrantRecord grant : page.items()) {
-                try {
-                    held.add(Privilege.fromWireName(grant.grant().privilege()));
-                } catch (IllegalArgumentException e) {
-                    // A privilege from a newer version: it conflicts with nothing this version knows.
-                }
+    /**
+     * The separation check, which the store asks inside its write: whether {@code group} may be granted
+     * {@code privilege}, given every privilege it holds anywhere in the catalog, by wire name. Why not goes into
+     * {@code refusal}; the store's last call decides.
+     */
+    private boolean admits(String group, Privilege privilege, List<String> held, AtomicReference<String> refusal) {
+        List<Privilege> known = new ArrayList<>();
+        for (String name : held) {
+            try {
+                known.add(Privilege.fromWireName(name));
+            } catch (IllegalArgumentException e) {
+                // A privilege from a newer version: it conflicts with nothing this version knows.
             }
-            if (page.nextToken().isEmpty()) {
-                return held;
-            }
-            request = request.after(page);
         }
+        Optional<String> conflict = separation.refusal(group, privilege, known);
+        refusal.set(conflict.orElse(null));
+        return conflict.isEmpty();
     }
 
     private void require(RequestContext request, Securables.Resolved on, Operation operation) {

@@ -53,6 +53,8 @@ public sealed interface WriteResult {
          * A regulated flag on the record or one of its ancestors (D27), or a row/column-policy flag on the
          * record itself (D20), forbids it until a steward removes the flag.
          */
-        FLAGGED
+        FLAGGED,
+        /** The condition the caller set, asked inside the write, refused it ({@link GrantStore#putGrantIf}). */
+        NOT_ADMITTED
     }
 }
