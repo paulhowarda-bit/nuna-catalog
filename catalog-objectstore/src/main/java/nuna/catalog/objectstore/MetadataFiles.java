@@ -22,6 +22,7 @@ import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.ServerSideEncryption;
 
 /**
  * Writes and reads one storage profile's metadata.json files (plan 2.2 steps 4 and 6). Every
@@ -171,15 +172,19 @@ public final class MetadataFiles implements AutoCloseable {
 
     /**
      * Sends the SHA-256 with the bytes, so the store refuses any that arrive changed. Ceph RGW
-     * checks the hash only when the request also names the algorithm.
+     * checks the hash only when the request also names the algorithm. With the profile's KMS key, the
+     * file is encrypted with it (D26): S3 calls KMS, under the catalog's own identity, which needs the key's use.
      */
     void put(ObjectLocation file, byte[] bytes, byte[] sha256) {
         try {
-            s3.putObject(request -> request.bucket(file.bucket()).key(file.key())
-                    .contentType("application/json")
-                    .checksumAlgorithm(ChecksumAlgorithm.SHA256)
-                    .checksumSHA256(Base64.getEncoder().encodeToString(sha256)),
-                    RequestBody.fromBytes(bytes));
+            s3.putObject(request -> {
+                request.bucket(file.bucket()).key(file.key())
+                        .contentType("application/json")
+                        .checksumAlgorithm(ChecksumAlgorithm.SHA256)
+                        .checksumSHA256(Base64.getEncoder().encodeToString(sha256));
+                profile.kmsKey().ifPresent(key -> request.serverSideEncryption(ServerSideEncryption.AWS_KMS)
+                        .ssekmsKeyId(key));
+            }, RequestBody.fromBytes(bytes));
         } catch (SdkException e) {
             throw new ObjectStoreException("writing " + file + " failed", e);
         }

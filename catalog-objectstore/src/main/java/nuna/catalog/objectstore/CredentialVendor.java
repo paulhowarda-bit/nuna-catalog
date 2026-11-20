@@ -15,8 +15,9 @@ import software.amazon.awssdk.services.sts.model.Tag;
 
 /**
  * Vends temporary credentials for one table's prefix through STS AssumeRole, for one storage profile
- * (D21). The session policy confines them to the table; the session name and tags say who they are
- * for. On-prem stores (MinIO, Ceph) answer STS on their S3 endpoint; AWS uses the regional STS endpoint.
+ * (D21). The session policy confines them to the table, and to writes with the profile's KMS key if it names one
+ * (D26); the session name and tags say who they are for. On-prem stores (MinIO, Ceph) answer STS on their S3
+ * endpoint; AWS uses the regional STS endpoint.
  */
 public final class CredentialVendor implements AutoCloseable {
 
@@ -49,7 +50,7 @@ public final class CredentialVendor implements AutoCloseable {
         }
         // Every table lives at <table root>/<uuid>, so this is the longest policy the profile ever sends.
         SessionPolicy.forTable(profile.tableRoot().child(new UUID(0, 0).toString()), Access.READ_WRITE,
-                profile.region());
+                profile.region(), profile.kmsKey());
         StsClientBuilder builder = StsClient.builder()
                 .region(Region.of(profile.region()))
                 .credentialsProvider(credentials);
@@ -74,7 +75,7 @@ public final class CredentialVendor implements AutoCloseable {
      */
     public VendedCredentials vend(String location, Access access, SessionIdentity identity) {
         ObjectLocation table = profile.approve(location);
-        String policy = SessionPolicy.forTable(table, access, profile.region());
+        String policy = SessionPolicy.forTable(table, access, profile.region(), profile.kmsKey());
         String sessionName = identity.sessionName();
         AssumeRoleResponse response;
         try {

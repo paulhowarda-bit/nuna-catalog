@@ -40,10 +40,11 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 
 /**
  * Each catalog's storage (D21, D28): the profiles configured on this server, written to the store, and
- * the catalogs bound to them. At startup it refuses overlapping profiles, plain-http endpoints and CA bundles it
- * cannot read (backlog 21), records changed profiles, creates declared catalogs, and refuses a declared catalog the
- * store binds differently.
- * The catalog never calls KMS: encryption at rest is the bucket's default key, and the key set is recorded.
+ * the catalogs bound to them. At startup it refuses overlapping profiles, plain-http endpoints, CA bundles it
+ * cannot read (backlog 21) and KMS keys that are not a key ARN in an AWS S3 profile's region (backlog 23), records
+ * changed profiles, creates declared catalogs, and refuses a declared catalog the store binds differently.
+ * The catalog never calls KMS: encryption at rest is the profile's KMS key, which S3 uses for each write that names
+ * it (D26), or else the bucket's default key, and the key set is recorded.
  * Each profile's requests to its object store are observed (docs/observability/spans.md).
  */
 public final class CatalogStorage implements AutoCloseable {
@@ -139,8 +140,15 @@ public final class CatalogStorage implements AutoCloseable {
                         + e.getMessage(), e);
             }
         }
+        if (config.kmsKey() != null) {
+            try {
+                StorageProfile.requireKmsKey(config.kind(), config.region(), config.kmsKey());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException("nuna.storage.profiles." + name + ".kms-key: " + e.getMessage(), e);
+            }
+        }
         return StorageProfile.of(config.kind(), config.endpoint(), config.region(), config.tableRoot(),
-                config.allowedPrefixes());
+                config.allowedPrefixes(), Optional.ofNullable(config.kmsKey()));
     }
 
     /** The profile's CA bundle, read now so that one the server cannot use stops it starting. */

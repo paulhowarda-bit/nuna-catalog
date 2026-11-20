@@ -100,6 +100,6 @@ class ArchiveCaBundleTest {
     private StorageSettings storage(Path caBundle) {
         return new StorageSettings(Map.of("archive", new StorageSettings.Profile(StoreKind.CEPH,
                 objectStore.endpoint.toString(), "us-east-1", ROOT, List.of(ROOT), null, "archiver", "archiver-secret",
-                null, caBundle)), Map.of(), Duration.ofMinutes(30), 100, true);
+                null, caBundle, null)), Map.of(), Duration.ofMinutes(30), 100, true);
     }
 }
