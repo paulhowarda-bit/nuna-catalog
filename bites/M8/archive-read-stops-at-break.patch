@@ -1,0 +1,16 @@
+Breaks: the streamed archive read stops at a break, so a later segment the store cannot serve no longer fails the read as unreadable (503) before the break fails it as broken (500), as it did when every segment was fetched before any was checked (backlog 86).
+Module: catalog-audit
+Test: ArchivedCommitsTest#aSegmentThatCannotBeFetchedAfterABreakFailsTheReadAsUnreadable
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+index 7578bba..aa958c0 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+@@ -240,7 +240,6 @@ public final class ObjectLockArchive {
+                     ChainHead.GENESIS, expected(segments, anchor), verified);
+             // Fetch the segments after a break too, as the read that fetched every segment before checking any did:
+             // a segment the store cannot serve still fails the read as unreadable before the break fails it as broken.
+-            records.transferTo(OutputStream.nullOutputStream());
+             return verification;
+         } catch (IOException e) {
+             throw new UncheckedIOException(e);

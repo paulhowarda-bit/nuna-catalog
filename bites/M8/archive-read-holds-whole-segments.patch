@@ -1,0 +1,18 @@
+Breaks: the archive read fetches each segment whole into memory before checking it, instead of streaming it a buffer at a time (backlog 86).
+Module: catalog-audit
+Test: ArchivedCommitsTest#readsAChainLargerThanTheReaderHoldsAtOnce
+
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+index 7578bba..3340f3b 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+@@ -283,7 +283,8 @@ public final class ObjectLockArchive {
+                 current.close();
+                 current = InputStream.nullInputStream();
+                 Segment segment = next.next();
+-                current = s3.getObject(r -> r.bucket(bucket).key(segment.key()).versionId(segment.versionId()));
++                current = new java.io.ByteArrayInputStream(s3.getObjectAsBytes(r -> r.bucket(bucket)
++                        .key(segment.key()).versionId(segment.versionId())).asByteArray());
+             }
+             return n;
+         }

@@ -1,17 +1,21 @@
 package nuna.catalog.audit.archive;
 
+import java.io.ByteArrayInputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Proxy;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeSet;
 import java.util.function.Consumer;
 import software.amazon.awssdk.core.ResponseBytes;
+import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CommonPrefix;
@@ -42,16 +46,40 @@ final class MemoryS3 {
     }
 
     private final List<Version> versions = new ArrayList<>();
+    private final Map<String, RuntimeException> unreadable = new HashMap<>();
     private RuntimeException failure;
+    private long fetched;
+    private int open;
+    private int mostOpen;
 
     /** Every later call fails with {@code failure}, as a store that cannot be reached. */
     void failWith(RuntimeException failure) {
         this.failure = failure;
     }
 
+    /** Every later GET of {@code key} fails with {@code failure}, as a store that cannot serve that one object. */
+    void failGetOf(String key, RuntimeException failure) {
+        unreadable.put(key, failure);
+    }
+
+    /** How many bytes of stored objects GETs have handed out, streamed or whole. */
+    long fetched() {
+        return fetched;
+    }
+
+    /** The most streamed GETs open at once. */
+    int mostOpen() {
+        return mostOpen;
+    }
+
     /** Replaces the stored bytes of {@code key}'s versions, as a fault or a hand behind the archive's back would. */
     void overwrite(String key, byte[] bytes) {
         versions.replaceAll(v -> v.key().equals(key) ? new Version(v.key(), v.id(), bytes, v.metadata(), v.at()) : v);
+    }
+
+    /** The stored bytes of {@code key}'s first version, read behind the client's back: no GET, nothing fetched. */
+    byte[] bytes(String key) {
+        return versions.stream().filter(v -> v.key().equals(key)).findFirst().orElseThrow().bytes();
     }
 
     /** The keys written, in order. */
@@ -91,6 +119,12 @@ final class MemoryS3 {
                         case "listObjectVersions" -> versions((ListObjectVersionsRequest) args[0]);
                         case "headObject" -> head(request(HeadObjectRequest.builder(), args[0]));
                         case "getObjectAsBytes" -> get(request(GetObjectRequest.builder(), args[0]));
+                        case "getObject" -> {
+                            if (args.length != 1) {
+                                throw new UnsupportedOperationException("the archive streams a GET, it does not save one");
+                            }
+                            yield stream(request(GetObjectRequest.builder(), args[0]));
+                        }
                         default -> throw new UnsupportedOperationException("the archive does not call " + method.getName());
                     };
                 });
@@ -157,7 +191,50 @@ final class MemoryS3 {
     }
 
     private ResponseBytes<GetObjectResponse> get(GetObjectRequest request) {
-        return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(),
-                find(request.key(), request.versionId()).bytes());
+        byte[] bytes = readable(request).bytes();
+        fetched += bytes.length;
+        return ResponseBytes.fromByteArray(GetObjectResponse.builder().build(), bytes);
+    }
+
+    /** The object's bytes as the SDK streams them, counting each byte as the reader takes it. */
+    private ResponseInputStream<GetObjectResponse> stream(GetObjectRequest request) {
+        InputStream bytes = new ByteArrayInputStream(readable(request).bytes());
+        open++;
+        mostOpen = Math.max(mostOpen, open);
+        InputStream counted = new FilterInputStream(bytes) {
+            private boolean closed;
+
+            @Override
+            public int read() throws IOException {
+                int b = super.read();
+                fetched += b == -1 ? 0 : 1;
+                return b;
+            }
+
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                int n = super.read(b, off, len);
+                fetched += Math.max(n, 0);
+                return n;
+            }
+
+            @Override
+            public void close() throws IOException {
+                if (!closed) {
+                    closed = true;
+                    open--;
+                }
+                super.close();
+            }
+        };
+        return new ResponseInputStream<>(GetObjectResponse.builder().build(), counted);
+    }
+
+    private Version readable(GetObjectRequest request) {
+        RuntimeException refused = unreadable.get(request.key());
+        if (refused != null) {
+            throw refused;
+        }
+        return find(request.key(), request.versionId());
     }
 }
