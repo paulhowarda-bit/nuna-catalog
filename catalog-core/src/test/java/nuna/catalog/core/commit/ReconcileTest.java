@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -27,6 +28,7 @@ import org.junit.jupiter.api.Test;
  * never received. Each test writes such files itself, as a primary-region server would have, and lost-swap
  * attempts as files at a version another file also holds.
  */
+@Tag("heavy")
 class ReconcileTest {
 
     private static final Caller OPERATOR = new Caller(new Principal("operator", Set.of("platform-operators")),

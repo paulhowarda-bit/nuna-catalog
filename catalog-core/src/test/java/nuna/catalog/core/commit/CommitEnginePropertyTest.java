@@ -25,6 +25,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import org.apache.iceberg.TableMetadataParser;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -33,6 +34,7 @@ import org.junit.jupiter.params.provider.ValueSource;
  * or failing cleanly. Whatever the interleaving, every request is applied exactly once or not at
  * all, its reply says which, and a retry with its key never applies it twice (D9, D10).
  */
+@Tag("heavy")
 class CommitEnginePropertyTest {
 
     private static final int WRITERS = 4;

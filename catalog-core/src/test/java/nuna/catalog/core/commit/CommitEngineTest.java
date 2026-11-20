@@ -44,9 +44,11 @@ import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.view.ViewMetadataParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** The commit loop on PostgreSQL, through the storage interface only. */
+@Tag("heavy")
 class CommitEngineTest {
 
     private final Harness h = new Harness();

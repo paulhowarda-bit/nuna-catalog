@@ -32,6 +32,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +59,7 @@ import org.springframework.test.context.ContextConfiguration;
         "nuna.storage.catalogs.gate.profile=" + S3ForTests.PROFILE,
         "nuna.storage.catalogs.gate.kms-key-set=test-keys",
         "nuna.storage.catalogs.gate.legal-entity=Test Entity"})
+@Tag("heavy")
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)

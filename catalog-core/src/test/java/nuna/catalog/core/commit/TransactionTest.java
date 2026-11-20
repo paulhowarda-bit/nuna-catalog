@@ -38,9 +38,11 @@ import java.util.stream.Collectors;
 import org.apache.iceberg.TableMetadataParser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 /** Multi-table transactions (D15) on PostgreSQL, through the storage interface only. */
+@Tag("heavy")
 class TransactionTest {
 
     private final Harness h = new Harness();

@@ -28,6 +28,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ObjectLockMode;
@@ -41,6 +42,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
  * real AWS: there a COMPLIANCE lock would leave objects and a bucket nobody can delete for five years, so the
  * test locks in GOVERNANCE mode and the run deletes them at the end.
  */
+@Tag("heavy")
 class LockedArchiveTest {
 
     private static TestS3 store;

@@ -28,6 +28,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.openqa.selenium.By;
@@ -56,6 +57,7 @@ import org.springframework.test.context.DynamicPropertySource;
  * of the deployment would, with figures of its own, and one port has nothing listening. {@code nuna.health.peers}
  * names both, as the Helm chart names its headless Service.
  */
+@Tag("heavy")
 @GovernanceServer
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ConsoleHealthTest {
