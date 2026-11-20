@@ -1,0 +1,17 @@
+Breaks: a grant on something inside a namespace no longer lets the caller learn the namespace exists, unlike the catalog list's rule (item 20).
+Module: catalog-server
+Test: HiddenNamesTest#aGrantOnAnythingInANamespaceLetsTheCallerSeeTheNamespace
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+index 1ea81dc..8cd3d1b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+@@ -319,7 +319,7 @@ class Guard {
+             return true;
+         }
+         Set<String> groups = request.caller().subject().groups();
+-        if (groups.isEmpty()) {
++        if (true || groups.isEmpty()) {
+             return false;
+         }
+         Map<UUID, UUID> parents = new HashMap<>();

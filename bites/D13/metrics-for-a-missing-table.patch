@@ -3,10 +3,10 @@ Module: catalog-server
 Test: RestRoutesTest#metricsCredentialsAndTokens
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index e400b6a..48b9617 100644
+index 94281fb..3ed5bdb 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -297,6 +297,9 @@ class TableRoutes {
+@@ -316,6 +316,9 @@ class TableRoutes {
                                   HttpServletRequest http) {
          CatalogRecord catalog = lookup.catalog(prefix);
          List<String> levels = Lookup.levels(namespace);
@@ -15,4 +15,4 @@ index e400b6a..48b9617 100644
 +        }
          CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
          guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
-                 Guard.REPORT_METRICS);
+                 Guard.REPORT_METRICS, Http.noSuchTable(Http.qualified(levels, table)));

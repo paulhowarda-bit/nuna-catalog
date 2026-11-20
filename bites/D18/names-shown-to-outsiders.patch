@@ -1,0 +1,20 @@
+Breaks: a caller that holds nothing on a table, view or namespace is refused with 403 again, so the existence check answers before access and the name leaks.
+Module: catalog-server
+Test: HiddenNamesTest#loadsAnswerAsForATableThatDoesNotExist+headAnswers404AsForATableOrViewThatDoesNotExist+theMetricsRouteAnswersAsForATableThatDoesNotExistAndReportsNothing
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+index 1ea81dc..69d9294 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+@@ -279,10 +279,7 @@ class Guard {
+                 AccessDenied refused = denials.refuse(request.actor(), operation.name(), named,
+                         denied.privilege() == null ? null : denied.privilege().wireName(),
+                         denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+-                if (holdsSomething.getAsBoolean()) {
+-                    throw refused;
+-                }
+-                return false;
++                throw refused;
+             }
+             case Decision.Exempted exempted -> {
+                 try {

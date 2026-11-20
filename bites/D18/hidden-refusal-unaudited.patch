@@ -1,0 +1,18 @@
+Breaks: a refusal answered as a missing name is not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: HiddenNamesTest#aHiddenRefusalIsAuditedAsEveryRefusalIs
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+index 1ea81dc..09a9b2d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+@@ -276,6 +276,9 @@ class Guard {
+                             BooleanSupplier holdsSomething) {
+         switch (decision) {
+             case Decision.Denied denied -> {
++                if (!holdsSomething.getAsBoolean()) {
++                    return false;
++                }
+                 AccessDenied refused = denials.refuse(request.actor(), operation.name(), named,
+                         denied.privilege() == null ? null : denied.privilege().wireName(),
+                         denied.reason().name().toLowerCase(Locale.ROOT), denied.message());

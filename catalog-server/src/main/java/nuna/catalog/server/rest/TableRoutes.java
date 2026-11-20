@@ -1,6 +1,7 @@
 package nuna.catalog.server.rest;
 
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.core.Names;
 import nuna.catalog.core.commit.CommitEngine;
 import nuna.catalog.core.commit.CommitReply;
 import nuna.catalog.core.commit.GovernanceChain;
@@ -18,6 +19,7 @@ import nuna.catalog.store.CatalogObject.Kind;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Pointer;
 import jakarta.servlet.http.HttpServletRequest;
@@ -113,9 +115,10 @@ class TableRoutes {
         String json = body == null ? "" : body;
         RestRequest.NewTable table = RestRequest.createTable(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
-        ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
         RequestContext request = RequestContext.of(http, callers);
-        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
+        guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchNamespace(levels));
+        // The name is checked only now, so a bad one tells a caller that may not see the namespace nothing.
+        ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
         Target target = new Target(catalog, prefix, namespace, table.name(), request, Optional.ofNullable(delegation));
         if (table.stageCreate()) {
             return staged(target, record, name, json);
@@ -140,7 +143,7 @@ class TableRoutes {
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
         RequestContext request = RequestContext.of(http, callers);
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_TABLE);
+                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table)));
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
@@ -182,14 +185,15 @@ class TableRoutes {
                                   HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
-        NamespaceRecord record = lookup.namespace(catalog, levels)
-                .orElseThrow(() -> Http.noSuchTable(Http.qualified(levels, table)));
+        String qualified = Http.qualified(levels, table);
+        NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchTable(qualified));
         RequestContext request = RequestContext.of(http, callers);
         Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body));
+            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body),
+                    Http.noSuchTable(qualified));
         } else {
-            guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE);
+            guard.onNewObject(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchTable(qualified));
         }
         Target target = new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
@@ -235,7 +239,7 @@ class TableRoutes {
         RestRequest.Registration registration = RestRequest.register(json);
         NamespaceRecord record = lookup.existingNamespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
-        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE);
+        guard.onNamespace(request, catalog, record, levels, Guard.REGISTER_TABLE, Http.noSuchNamespace(levels));
         if (registration.overwrite() && lookup.object(record, registration.name(), Kind.TABLE).isPresent()) {
             throw CatalogError.badRequest("Registering over an existing table (overwrite) is not supported: "
                     + Http.qualified(levels, registration.name()) + ". Commit to the table, or drop or unregister it"
@@ -256,7 +260,9 @@ class TableRoutes {
      * table, or one flagged for row/column policy, is refused until a steward removes the flag (D20, D27),
      * and a hold, a DR freeze, or a flag set since this check refuses it in the store. The engine unregisters
      * only the table checked here, so one that takes the name meanwhile is left alone. A table already gone
-     * still reaches the engine, so a retry with the key replays the first answer.
+     * still reaches the engine, so a retry with the key replays the first answer. So do a table the caller may
+     * not learn exists, with nothing authorized, and a namespace that does not exist, by an id no namespace has:
+     * the engine answers each, and a key keeps each answer, as for a missing table (D18).
      */
     @PostMapping(UNREGISTER)
     ResponseEntity<String> unregister(@PathVariable String prefix, @PathVariable String namespace,
@@ -265,31 +271,36 @@ class TableRoutes {
                                       HttpServletRequest http) {
         CatalogRecord catalog = lookup.catalog(prefix);
         List<String> levels = Lookup.levels(namespace);
-        NamespaceRecord record = lookup.namespace(catalog, levels)
-                .orElseThrow(() -> Http.noSuchTable(Http.qualified(levels, table)));
+        String qualified = Http.qualified(levels, table);
+        Optional<NamespaceRecord> record = lookup.namespace(catalog, levels);
         RequestContext request = RequestContext.of(http, callers);
-        Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        Optional<CatalogObject> existing = record.flatMap(ns -> lookup.object(ns, table, Kind.TABLE));
+        Optional<UUID> authorized = Optional.empty();
         if (existing.isPresent()) {
             CatalogObject object = existing.get();
             List<String> path = AuditEvents.path(levels, table);
-            guard.onObject(request, catalog, object, path, Guard.UNREGISTER_TABLE);
-            GovernanceChain governance = GovernanceChain.of(store, object);
-            String qualified = Http.qualified(levels, table);
-            if (governance.regulated()) {
-                throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "regulated", "table "
-                        + qualified + " is in a regulated area and cannot be unregistered; a steward removes the"
-                        + " regulated flag first");
-            }
-            if (governance.attributes().stream().anyMatch(a -> a.target().equals(object.securable())
-                    && a.kind() == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && "true".equalsIgnoreCase(a.value()))) {
-                throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "flagged_table", "table "
-                        + qualified + " has a row/column policy and cannot be unregistered; a steward removes the"
-                        + " flag first");
+            if (guard.allowsOnObject(request, catalog, object, path, Guard.UNREGISTER_TABLE)) {
+                GovernanceChain governance = GovernanceChain.of(store, object);
+                if (governance.regulated()) {
+                    throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "regulated", "table "
+                            + qualified + " is in a regulated area and cannot be unregistered; a steward removes the"
+                            + " regulated flag first");
+                }
+                if (governance.attributes().stream().anyMatch(a -> a.target().equals(object.securable())
+                        && a.kind() == GovernanceAttribute.Kind.ROW_COLUMN_POLICY
+                        && "true".equalsIgnoreCase(a.value()))) {
+                    throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "flagged_table",
+                            "table " + qualified + " has a row/column policy and cannot be unregistered; a steward"
+                                    + " removes the flag first");
+                }
+                authorized = Optional.of(object.id());
             }
         }
+        ObjectName name = record.isPresent() ? ObjectRoutes.name(catalog, record.get(), levels, table)
+                : new ObjectName(catalog.id(), nowhere(catalog, levels), new Name(Names.normalize(table), table),
+                        qualified);
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
-                .unregisterTable(ObjectRoutes.name(catalog, record, levels, table),
-                        existing.map(CatalogObject::id), request.caller(), Optional.ofNullable(key));
+                .unregisterTable(name, authorized, request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.UNREGISTER_TABLE, reply);
         return ObjectRoutes.reply(reply, done -> Http.json(200,
                 RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
@@ -297,7 +308,7 @@ class TableRoutes {
 
     /**
      * Forwarded to telemetry, never stored (D13). Only for a table that exists (404 NoSuchTableException otherwise)
-     * and that the caller may read.
+     * and that the caller may read; one that holds nothing on it gets the same 404 (D18).
      */
     @PostMapping(METRICS)
     ResponseEntity<Void> metrics(@PathVariable String prefix, @PathVariable String namespace,
@@ -307,7 +318,7 @@ class TableRoutes {
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
-                Guard.REPORT_METRICS);
+                Guard.REPORT_METRICS, Http.noSuchTable(Http.qualified(levels, table)));
         RestRequest.MetricsSummary summary = RestRequest.reportMetrics(body == null ? "" : body);
         metrics.report(catalog.name(), levels, table, summary);
         return ResponseEntity.noContent().build();
@@ -323,7 +334,7 @@ class TableRoutes {
         CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
         RequestContext request = RequestContext.of(http, callers);
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_CREDENTIALS);
+                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table)));
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         return Http.json(200, RestResponse.credentials(vended.credentials()));
@@ -395,6 +406,15 @@ class TableRoutes {
                 target.catalog(), tableId, AuditEvents.path(Lookup.levels(target.namespace()), target.table()),
                 location, target.request().caller(), target.request().requestId(), target.delegation(), refresh,
                 write)));
+    }
+
+    /**
+     * The id an unregister names a namespace that does not exist by: name-based, so no namespace has it (theirs are
+     * random), and the same for every request naming that path, so a key binds to it as to any other.
+     */
+    private static UUID nowhere(CatalogRecord catalog, List<String> levels) {
+        String path = catalog.id() + "\u001f" + String.join("\u001f", levels.stream().map(Names::normalize).toList());
+        return UUID.nameUUIDFromBytes(path.getBytes(StandardCharsets.UTF_8));
     }
 
     private static String segment(String value) {

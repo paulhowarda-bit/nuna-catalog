@@ -3,15 +3,15 @@ Module: catalog-server
 Test: SecurityGateTest#unregisterNeedsModifyAndATableComesBackOnlyInItsOwnNamespace
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index 12ff24f..e046158 100644
+index 94281fb..ff536b1 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -261,7 +261,7 @@ class TableRoutes {
-             guard.onObject(request, catalog, object, path, Guard.UNREGISTER_TABLE);
-             GovernanceChain governance = GovernanceChain.of(store, object);
-             String qualified = Http.qualified(levels, table);
--            if (governance.regulated()) {
-+            if (false && governance.regulated()) {
-                 throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "regulated", "table "
-                         + qualified + " is in a regulated area and cannot be unregistered; a steward removes the"
-                         + " regulated flag first");
+@@ -281,7 +281,7 @@ class TableRoutes {
+             List<String> path = AuditEvents.path(levels, table);
+             if (guard.allowsOnObject(request, catalog, object, path, Guard.UNREGISTER_TABLE)) {
+                 GovernanceChain governance = GovernanceChain.of(store, object);
+-                if (governance.regulated()) {
++                if (false && governance.regulated()) {
+                     throw guard.refuse(request, catalog, object, path, Guard.UNREGISTER_TABLE, "regulated", "table "
+                             + qualified + " is in a regulated area and cannot be unregistered; a steward removes the"
+                             + " regulated flag first");

@@ -3,13 +3,13 @@ Module: catalog-server
 Test: HeldTablesTest#aDrFreezeRefusesWritesUntilLifted
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
-index 0da663e..3f93b07 100644
+index 179fd70..cacae69 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
-@@ -116,7 +116,6 @@ class ObjectRoutes {
+@@ -117,7 +117,6 @@ class ObjectRoutes {
              CatalogObject object = existing(catalog, levels, name, kind);
              guard.onObject(request, catalog, object, AuditEvents.path(levels, name),
-                     kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW);
+                     kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW, noSuch(kind, qualified));
 -            requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + qualified);
              Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
              Instant purgeAfter = now.plus(settings.dropRetention());
