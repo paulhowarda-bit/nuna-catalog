@@ -150,7 +150,7 @@ Done when the milestone's scope is built and its gate is green, as for the other
 
 ### 28. DR replication-watermark verifier (v1.x)
 
-- Decided: 2026-11-19, D37
+- Decided: 2026-11-20, D37
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in
 
@@ -256,6 +256,18 @@ Two choices made in building it, for Paul to confirm:
    above its pointer), so commits the DR store holds whole beyond the DR database's pointer are not recovered; a
    table with no watermark walks as before. The rewind is for tables; views are neither walked nor rewound, as
    before.
+
+**Paul's answers to the questions above, 2026-11-20 (D37, amended again).** Left for item 28, on top of what landed
+at d176a3b:
+1. "Walk with a file check": the reconcile walks every table forward from the DR database's pointer, watermark or
+   not, only through versions whose every added file, data included, is in the DR store, checked at recovery,
+   stopping at the first that is not. This replaces "stops at the watermark" and covers the tables with no
+   watermark, which walk unchecked today. `bites/D37/walk-past-the-watermark` is recorded again for the new check.
+2. "Accept it": the relaxed safe-version rule stays as built.
+3. "Rewind views too": `dr-reconcile`'s rewind moves each frozen view back to its watermark as it does tables,
+   with a Java-only test and a bite.
+4. "Owner decides": a table still without a watermark is reported and left alone, as built.
+Done when 1 and 3 are built with Java-only tests and bites, and the heavy and overnight tests named above pass.
 
 ### 29. M9: carry nuna to work (at work)
 

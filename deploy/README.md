@@ -5,6 +5,8 @@
   stores and the identity provider run elsewhere [D36], and the values name them.
 - `image/maintenance.Dockerfile` and `helm/nuna-maintenance/`: the maintenance worker's image and chart
   [D30], one release beside each catalog deployment. See catalog-maintenance/README.md.
+- `image/audit-tables.Dockerfile` and `helm/nuna-audit-tables/`: the audit-tables writer's image and chart [D23],
+  which writes every audit record into the audit catalog's `events` table. See catalog-audit-tables/README.md.
 - `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
 
 ## The image
@@ -208,8 +210,9 @@ telemetry:
 
   The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
   them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
-  `unprotected`. Only the Ceph form has a test (`DeletePolicyCephTest`, heavy, `-Ps3=ceph`, in the heavy
-  pass's Ceph leg), and it has not run yet. `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
+  `unprotected`. Each form has a heavy test, and each ran on 2026-11-20 (backlog 4): `DeletePolicyAwsTest`
+  on real S3 (`-Ps3=aws`), `DeletePolicyMinioTest` on Silo with non-root users, and `DeletePolicyCephTest`
+  (`-Ps3=ceph`, in the heavy pass's Ceph leg). `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
   tries a delete as each user ("Trying it locally").
 - **Compaction Jobs [D30].** With `config.nuna.maintenance.compaction.image` set, the maintenance worker
   launches its compaction Jobs in `config.nuna.maintenance.compaction.namespace`. Create that namespace
