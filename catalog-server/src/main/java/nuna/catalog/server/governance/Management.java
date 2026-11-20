@@ -58,9 +58,11 @@ class Management {
      * @param audit     the same, as audit records name it
      * @param object    the table or view, when the path names one
      * @param chain     its holds and attributes, and those of every level above it
+     * @param missing   the answer for a path that names nothing, which a refused caller that holds nothing on the
+     *                  namespace, table or view gets too (D18)
      */
     record Target(CatalogRecord catalog, Securable securable, nuna.catalog.audit.Securable audit,
-                  Optional<CatalogObject> object, GovernanceChain chain) {
+                  Optional<CatalogObject> object, GovernanceChain chain, CatalogError missing) {
     }
 
     /** The caller of one request and the actor its audit records name. */
@@ -84,37 +86,47 @@ class Management {
 
     NamespaceRecord namespace(CatalogRecord catalog, List<String> levels) {
         return store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
-                .orElseThrow(() -> CatalogError.of(404, "NoSuchNamespaceException",
-                        "Namespace does not exist: " + String.join(".", levels)));
+                .orElseThrow(() -> noSuchNamespace(levels));
     }
 
-    /** The target a path names: a catalog, or a namespace, or a table or view in it. */
+    private static CatalogError noSuchNamespace(List<String> levels) {
+        return CatalogError.of(404, "NoSuchNamespaceException", "Namespace does not exist: " + String.join(".", levels));
+    }
+
+    /**
+     * The target a path names: a catalog, or a namespace, or a table or view in it. A table or view path whose
+     * namespace does not exist answers as one whose table or view does not, as the Iceberg routes do, so it does
+     * not tell whether the namespace exists (D18).
+     */
     Target target(String prefix, String namespace, String table, String view) {
         CatalogRecord catalog = catalog(prefix);
         if (namespace == null) {
             return new Target(catalog, new Securable(Securable.Kind.CATALOG, catalog.id()),
                     new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.CATALOG, catalog.id(),
                             catalog.name(), List.of()),
-                    Optional.empty(), GovernanceChain.ofCatalog(store, catalog.id()));
+                    Optional.empty(), GovernanceChain.ofCatalog(store, catalog.id()),
+                    CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
         }
         List<String> levels = RestRequest.namespaceLevels(namespace);
-        NamespaceRecord record = namespace(catalog, levels);
         if (table == null && view == null) {
+            NamespaceRecord record = namespace(catalog, levels);
             return new Target(catalog, new Securable(Securable.Kind.NAMESPACE, record.id()),
                     new nuna.catalog.audit.Securable(nuna.catalog.audit.Securable.Kind.NAMESPACE, record.id(),
                             catalog.name(), levels),
-                    Optional.empty(), GovernanceChain.of(store, record));
+                    Optional.empty(), GovernanceChain.of(store, record), noSuchNamespace(levels));
         }
         CatalogObject.Kind kind = table != null ? CatalogObject.Kind.TABLE : CatalogObject.Kind.VIEW;
         String name = table != null ? table : view;
         String qualified = String.join(".", levels) + "." + name;
-        CatalogObject object = store.findObject(record.id(), Names.normalize(name))
+        CatalogError missing = kind == CatalogObject.Kind.TABLE
+                ? CatalogError.of(404, "NoSuchTableException", "Table does not exist: " + qualified)
+                : CatalogError.of(404, "NoSuchViewException", "View does not exist: " + qualified);
+        CatalogObject object = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
+                .flatMap(record -> store.findObject(record.id(), Names.normalize(name)))
                 .filter(o -> o.kind() == kind)
-                .orElseThrow(() -> kind == CatalogObject.Kind.TABLE
-                        ? CatalogError.of(404, "NoSuchTableException", "Table does not exist: " + qualified)
-                        : CatalogError.of(404, "NoSuchViewException", "View does not exist: " + qualified));
+                .orElseThrow(() -> missing);
         return new Target(catalog, object.securable(), audit(catalog, levels, name, object),
-                Optional.of(object), GovernanceChain.of(store, object));
+                Optional.of(object), GovernanceChain.of(store, object), missing);
     }
 
     static nuna.catalog.audit.Securable audit(CatalogRecord catalog, List<String> levels, String name,

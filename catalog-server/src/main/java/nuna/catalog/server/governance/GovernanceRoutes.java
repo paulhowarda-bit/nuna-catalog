@@ -299,7 +299,7 @@ class GovernanceRoutes {
                                   HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
-        guard.requireOperator(request, target.audit(), "setDrFreeze");
+        guard.requireOperatorOn(request, target, "setDrFreeze");
         String reason = Management.text(Management.body(body), "reason", MAX_VALUE);
         return put(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, reason, API_PROVENANCE, request);
     }
@@ -312,7 +312,7 @@ class GovernanceRoutes {
                                 HttpServletRequest http) {
         Target target = management.target(prefix, namespace, table, view);
         Request request = management.request(http);
-        guard.requireOperator(request, target.audit(), "liftDrFreeze");
+        guard.requireOperatorOn(request, target, "liftDrFreeze");
         return remove(target, GovernanceAttribute.Kind.DR_FREEZE, FREEZE_ATTRIBUTE, request);
     }
 

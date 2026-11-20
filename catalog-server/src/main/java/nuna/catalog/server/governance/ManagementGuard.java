@@ -7,7 +7,9 @@ import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.governance.Management.Target;
+import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.server.security.Denials;
+import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.security.SecuritySettings;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
@@ -16,7 +18,10 @@ import org.springframework.stereotype.Component;
  * Authorization of the M7 management routes (D18, D25, D37), asked once the path's target is resolved and
  * before any other work. Privileges go through M5's {@link Authorizer}; the DR freeze is for platform
  * operators and the purge queue for maintenance principals, as the trusted-engine registry is for operators.
- * Every refusal is audited and answers 403 through {@link Denials}. The choice per route is in build-plan.md, M7.
+ * Every refusal is audited through {@link Denials}. Names are hidden as on the Iceberg routes (D18, amended
+ * 2026-11-19): a caller refused on a namespace, table or view it holds nothing on ({@link Holdings}) gets the
+ * target's answer for a path that names nothing; any other refusal answers 403. The choice per route is in
+ * build-plan.md, M7.
  */
 @Component
 class ManagementGuard {
@@ -25,40 +30,52 @@ class ManagementGuard {
     private final Separation separation;
     private final SecuritySettings security;
     private final Denials denials;
+    private final Holdings holdings;
 
-    ManagementGuard(Authorizer authorizer, Separation separation, SecuritySettings security, Denials denials) {
+    ManagementGuard(Authorizer authorizer, Separation separation, SecuritySettings security, Denials denials,
+                    Holdings holdings) {
         this.authorizer = authorizer;
         this.separation = separation;
         this.security = security;
         this.denials = denials;
+        this.holdings = holdings;
     }
 
-    /** {@code privilege} on the target, through grants on it or above it. */
+    /**
+     * {@code privilege} on the target, through grants on it or above it. A caller that holds nothing on the
+     * namespace, table or view gets {@link Target#missing}.
+     */
     void require(Request request, Target target, String operation, Privilege privilege) {
-        Authorizer.Target on = switch (target.securable().kind()) {
-            case CATALOG -> new Authorizer.Target.Catalog(target.catalog().id());
-            case NAMESPACE -> new Authorizer.Target.Namespace(target.catalog().id(), target.securable().id());
-            case TABLE, VIEW -> new Authorizer.Target.TableOrView(target.object().orElseThrow());
-        };
-        require(request, on, target.audit(), operation, privilege);
+        Authorizer.Target on = on(target);
+        if (authorizer.decide(request.caller(), on, new Operation(operation, privilege, false))
+                instanceof Decision.Denied denied) {
+            throw hidden(request, on, target, refuse(request, target.audit(), operation, denied));
+        }
     }
 
-    /** {@code privilege} on {@code on}, which audit records name {@code named}. */
+    /** {@code privilege} on {@code on}, which audit records name {@code named}; a refusal is 403. */
     void require(Request request, Authorizer.Target on, nuna.catalog.audit.Securable named, String operation,
                  Privilege privilege) {
         if (authorizer.decide(request.caller(), on, new Operation(operation, privilege, false))
                 instanceof Decision.Denied denied) {
-            throw denials.refuse(request.actor(), operation, named,
-                    denied.privilege() == null ? null : denied.privilege().wireName(),
-                    denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+            throw refuse(request, named, operation, denied);
         }
     }
 
-    /** A platform operator (D18): the DR freeze is a deployment action, like the trusted-engine registry. */
+    /**
+     * A platform operator (D18), on the target: the DR freeze is a deployment action, like the trusted-engine
+     * registry. Any other caller that holds nothing on the namespace, table or view gets {@link Target#missing}.
+     */
+    void requireOperatorOn(Request request, Target target, String operation) {
+        if (!operator(request)) {
+            throw hidden(request, on(target), target, notOperator(request, target.audit(), operation));
+        }
+    }
+
+    /** A platform operator (D18), for a route on no namespace, table or view; a refusal is 403. */
     void requireOperator(Request request, nuna.catalog.audit.Securable target, String operation) {
-        if (request.caller().subject().groups().stream().noneMatch(separation.platformOperatorGroups()::contains)) {
-            throw denials.refuse(request.actor(), operation, target, null, "no_privilege",
-                    "only platform operators may call " + operation);
+        if (!operator(request)) {
+            throw notOperator(request, target, operation);
         }
     }
 
@@ -68,5 +85,34 @@ class ManagementGuard {
             throw denials.refuse(request.actor(), operation, target, null, "not_maintenance",
                     "only a maintenance principal may call " + operation);
         }
+    }
+
+    private boolean operator(Request request) {
+        return request.caller().subject().groups().stream().anyMatch(separation.platformOperatorGroups()::contains);
+    }
+
+    private AccessDenied notOperator(Request request, nuna.catalog.audit.Securable target, String operation) {
+        return denials.refuse(request.actor(), operation, target, null, "no_privilege",
+                "only platform operators may call " + operation);
+    }
+
+    private AccessDenied refuse(Request request, nuna.catalog.audit.Securable named, String operation,
+                                Decision.Denied denied) {
+        return denials.refuse(request.actor(), operation, named,
+                denied.privilege() == null ? null : denied.privilege().wireName(),
+                denied.reason().name().toLowerCase(Locale.ROOT), denied.message());
+    }
+
+    /** The refusal, already audited: 403 to a caller that holds something on the target, else the missing answer. */
+    private RuntimeException hidden(Request request, Authorizer.Target on, Target target, AccessDenied refused) {
+        return holdings.something(request.caller(), on) ? refused : target.missing();
+    }
+
+    private static Authorizer.Target on(Target target) {
+        return switch (target.securable().kind()) {
+            case CATALOG -> new Authorizer.Target.Catalog(target.catalog().id());
+            case NAMESPACE -> new Authorizer.Target.Namespace(target.catalog().id(), target.securable().id());
+            case TABLE, VIEW -> new Authorizer.Target.TableOrView(target.object().orElseThrow());
+        };
     }
 }

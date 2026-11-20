@@ -15,14 +15,12 @@ import nuna.catalog.core.commit.TableFiles;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.server.storage.CatalogStorage;
-import nuna.catalog.iceberg.RestRequest;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.Name;
-import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
@@ -96,18 +94,16 @@ class LifecycleRoutes {
     @GetMapping(path = DROPPED, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> dropped(@PathVariable("catalog") String prefix, @PathVariable String namespace,
                                    HttpServletRequest http) {
-        CatalogRecord catalog = management.catalog(prefix);
-        List<String> levels = RestRequest.namespaceLevels(namespace);
-        NamespaceRecord record = management.namespace(catalog, levels);
-        guard.require(management.request(http), Authorizer.Target.of(record),
-                namespaceAudit(catalog, record.id(), levels), "listDropped", Privilege.DESCRIBE);
+        Management.Target target = management.target(prefix, namespace, null, null);
+        guard.require(management.request(http), target, "listDropped", Privilege.DESCRIBE);
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode objects = body.putArray("dropped");
         for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
             PageRequest page = PageRequest.first(PAGE);
             while (true) {
-                Page<CatalogObject> listed = store.listObjects(record.id(), kind, CatalogObject.State.DROPPED, page);
-                listed.items().forEach(o -> objects.add(object(catalog, o)));
+                Page<CatalogObject> listed = store.listObjects(target.securable().id(), kind,
+                        CatalogObject.State.DROPPED, page);
+                listed.items().forEach(o -> objects.add(object(target.catalog(), o)));
                 if (listed.nextToken().isEmpty()) {
                     break;
                 }
