@@ -1,0 +1,18 @@
+Breaks: a purge claim on Oracle reads no ref, so a dropped table a tag still names is claimed and its files deleted.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$BranchCommits#aRefKeepsADroppedTablesFiles
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
+index c91a3d0..49f31f3 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
+@@ -256,9 +256,6 @@ final class OracleObjects {
+             if (Guards.frozen(connection, objectId, claim.catalogId(), path)) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }
+-            if (exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ?", objectId)) {
+-                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+-            }
+             update(connection, "UPDATE catalog_object SET state = 'PURGING', purge_claimant = ? WHERE id = ?",
+                     claimant, objectId);
+             return WriteResult.APPLIED;

@@ -8,14 +8,18 @@ import static nuna.catalog.store.oracle.Jdbc.update;
 
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.Change;
+import nuna.catalog.store.CommitBatch;
+import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -25,7 +29,9 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * A catalog's branches and tags (D33): the ref record and its cut, {@code ref_entry}. A create locks the catalog's
@@ -33,7 +39,9 @@ import java.util.UUID;
  * shared row lock, so it locks the ref it is made from for update too, and a deletion of that ref waits. The cut is
  * one INSERT ... SELECT, which reads as of one SCN, so it holds every multi-table transaction whole, and every table
  * with the namespace that held it. Text is copied as stored, through the codec. Renewal and deletion lock the ref for
- * update; a deletion then deletes the ref's own pointers, their pieces, its cut and the record.
+ * update; a deletion then deletes the ref's own pointers, their pieces, its cut and the record. A commit on a branch
+ * and a merge lock the ref for update too, before any pointer ({@link #lock}); a merge then ends the branch as a
+ * deletion does.
  */
 final class OracleRefs {
 
@@ -160,14 +168,65 @@ final class OracleRefs {
             if (!exists(connection, "SELECT 1 FROM ref WHERE id = ? FOR UPDATE", refId)) {
                 return MISSING;
             }
-            String branch = refId.toString();
-            update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
-            update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
-                    branch, refId);
-            update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
-            update(connection, "DELETE FROM ref WHERE id = ?", refId);
+            end(connection, refId);
             return WriteResult.APPLIED;
         });
+    }
+
+    /**
+     * Deletes a ref locked for update: its own pointers and their pieces, its cut and its record. Its journal rows
+     * stay. A deletion and a merge both end a ref this way.
+     */
+    static void end(Connection connection, UUID refId) throws SQLException {
+        String branch = refId.toString();
+        update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
+        update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+                branch, refId);
+        update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+        update(connection, "DELETE FROM ref WHERE id = ?", refId);
+    }
+
+    /**
+     * Locks the ref a commit lands on or ends, before any pointer (D33, backlog 103), for update: Oracle has no shared
+     * row lock, so commits on one branch take turns, as commits of one object take turns on its row. A merge or a
+     * deletion waits for them. Then checks it, as the lock returns it: a branch not past its expiry at the batch's
+     * time. A commit on the branch swaps only objects of the branch's cut, which never changes while the ref lives. A
+     * merge holds every own pointer of the branch: with the ref locked no commit on the branch is in flight, so an own
+     * pointer the merge does not hold landed after the merge read the branch, and ending the branch would lose it.
+     *
+     * @return empty when the commit may go on; else what it answers: {@code Inactive(REF)}, {@code Inactive(OBJECT)}
+     *         naming a swap outside the cut, or {@code Conflict} naming an own pointer the merge does not hold
+     */
+    static Optional<CommitResult> lock(Connection connection, CommitBatch batch) throws SQLException {
+        RefLock lock = batch.ref().orElseThrow();
+        Optional<Locked> locked = first(connection, "SELECT kind, expires_at FROM ref WHERE id = ? FOR UPDATE",
+                row -> new Locked(Ref.Kind.valueOf(Jdbc.text(row, "kind")), instant(row, "expires_at")), lock.refId());
+        if (locked.isEmpty() || locked.get().kind() != Ref.Kind.BRANCH
+                || !locked.get().expiresAt().isAfter(batch.committedAt())) {
+            return Optional.of(new CommitResult.Inactive(batch.refKey(), CommitResult.Subject.REF));
+        }
+        switch (lock) {
+            case RefLock.Hold hold -> {
+                for (PointerSwap swap : batch.swaps()) {
+                    if (!exists(connection, "SELECT 1 FROM ref_entry WHERE ref_id = ? AND object_id = ?"
+                            + " AND kind <> 'NAMESPACE'", hold.refId(), swap.key().objectId())) {
+                        return Optional.of(new CommitResult.Inactive(swap.key()));
+                    }
+                }
+            }
+            case RefLock.End end -> {
+                Set<UUID> held = batch.holds().stream().map(h -> h.key().objectId()).collect(Collectors.toSet());
+                String branch = end.refId().toString();
+                for (UUID objectId : query(connection, "SELECT object_id FROM pointer WHERE branch = ? AND object_id IN ("
+                        + CUT_OBJECTS + ") ORDER BY object_id", row -> Jdbc.uuid(row, "object_id"), branch, end.refId())) {
+                    if (!held.contains(objectId)) {
+                        PointerKey key = new PointerKey(objectId, branch);
+                        return Optional.of(new CommitResult.Conflict(key, Pointers.read(connection, key)));
+                    }
+                }
+            }
+        }
+        return Optional.empty();
     }
 
     Optional<RefEntry> findNamespace(UUID refId, List<String> normalizedPath) {

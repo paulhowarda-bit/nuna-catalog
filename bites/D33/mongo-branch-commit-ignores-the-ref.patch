@@ -1,0 +1,18 @@
+Breaks: a commit on a branch on MongoDB checks only that its ref exists, so it lands on a tag or a branch past its expiry.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$BranchCommits#aCommitOnAGoneBranchWritesNothing
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+index 51b7f8f..44918e1 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+@@ -382,8 +382,7 @@ final class MongoRefs {
+      */
+     static Optional<BsonDocument> openBranch(Tx tx, CommitBatch batch) {
+         Optional<BsonDocument> found = tx.find(REF, byId(uuid(batch.ref().orElseThrow().refId())));
+-        if (found.isEmpty() || !found.get().getString("kind").getValue().equals(Ref.Kind.BRANCH.name())
+-                || expired(found.get(), batch.committedAt())) {
++        if (found.isEmpty()) {
+             return Optional.empty();
+         }
+         return Optional.of(tx.see(found.get()));

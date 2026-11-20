@@ -20,11 +20,15 @@ public interface CommitStore {
     /**
      * Swaps every pointer in the batch and writes its journal, outbox and idempotency records,
      * and the DR watermark of each swap that records one ({@link PointerSwap#drWatermark}), all or
-     * nothing.
+     * nothing. A batch with a ref ({@link CommitBatch#ref}) locks it before any pointer and checks it
+     * first; a merge ({@link RefLock.End}) also deletes the branch, its cut and its own pointers.
      *
-     * @return {@code Committed}; {@code Conflict} when an expected pointer did not match; or
-     * {@code Inactive} when a swapped pointer's object exists and is not active (an object the store
-     * has no record of, as in the suite's bare pointers, is not checked)
+     * @return {@code Committed}; {@code Inactive(REF)} when the batch's ref is gone, a tag, or a branch
+     * past its expiry at {@code committedAt}; {@code Inactive(OBJECT)} when a commit on a branch swaps
+     * an object outside the branch's cut; {@code Conflict} when a merge does not hold an own pointer of
+     * the branch (these three are checked first, in that order); {@code Conflict} when an expected
+     * pointer did not match; or {@code Inactive(OBJECT)} when a swapped pointer's object exists and is
+     * not active (an object the store has no record of, as in the suite's bare pointers, is not checked)
      * @throws CommitOutcomeUnknownException when the transaction may or may not have committed
      * @throws StoreException                when it failed cleanly before COMMIT was sent
      */

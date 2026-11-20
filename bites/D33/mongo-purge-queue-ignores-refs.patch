@@ -1,0 +1,18 @@
+Breaks: the purge queue on MongoDB lists a dropped table a ref still names.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$BranchCommits#aRefKeepsADroppedTablesFiles
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
+index de05ff3..153b844 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java
+@@ -260,8 +260,7 @@ final class MongoObjects {
+                                 chunk.stream().map(object -> object.get("_id")).toList());
+                         for (BsonDocument object : chunk) {
+                             if (object.getString("state").getValue().equals(PURGING)
+-                                    || (holdTargets(object).stream().noneMatch(covered::contains)
+-                                    && !referenced.contains(object.get("_id")))) {
++                                    || holdTargets(object).stream().noneMatch(covered::contains)) {
+                                 eligible.add(object(object));
+                             }
+                         }

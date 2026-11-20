@@ -11,6 +11,7 @@ import nuna.catalog.store.PointerHold;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.PointerLock;
 import nuna.catalog.store.PointerSwap;
+import nuna.catalog.store.RefLock;
 import java.io.ByteArrayOutputStream;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -64,8 +65,17 @@ final class Pointers {
         }
     }
 
-    /** Locks every pointer in key order, compares, and writes the batch's swaps, journal and records. */
+    /**
+     * Locks the batch's ref, if any, then every pointer in key order, compares, and writes the batch's swaps, journal
+     * and records; a merge then ends its branch.
+     */
     static CommitResult apply(Connection connection, CommitBatch batch) throws SQLException {
+        if (batch.ref().isPresent()) {
+            Optional<CommitResult> refused = SqlRefs.lock(connection, batch);
+            if (refused.isPresent()) {
+                return refused.get();
+            }
+        }
         Optional<CommitResult.Conflict> conflict = lockAndCompare(connection, batch);
         if (conflict.isPresent()) {
             return conflict.get();
@@ -75,6 +85,9 @@ final class Pointers {
             return inactive.get();
         }
         record(connection, batch);
+        if (batch.ref().orElse(null) instanceof RefLock.End end) {
+            SqlRefs.end(connection, end.refId());
+        }
         return new CommitResult.Committed(batch.commitId());
     }
 
