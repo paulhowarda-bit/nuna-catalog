@@ -1,0 +1,17 @@
+Breaks: once the first day has passed, every write and every concurrent writer extends the journal's partitions, not one a day (backlog 9).
+Module: catalog-store-sql
+Test: JournalHorizonTest$WhenAndHowFar#theFirstExtensionIsDueADayAfterTheStoreIsMade+oneOfManyWritersExtendsAndTheOthersGoOn
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/JournalHorizon.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/JournalHorizon.java
+index 8a0818e..6a52970 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/JournalHorizon.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/JournalHorizon.java
+@@ -45,7 +45,7 @@ final class JournalHorizon {
+     Optional<Instant> claim() {
+         Instant now = clock.instant();
+         Instant next = due.get();
+-        if (now.isBefore(next) || !due.compareAndSet(next, now.plus(EVERY))) {
++        if (now.isBefore(next)) {
+             return Optional.empty();
+         }
+         return Optional.of(through(now));
