@@ -360,11 +360,12 @@ class VendingRouteTest {
         String root = "s3://" + S3ForTests.bucket() + "/tables";
         String role = objectStore.roleArn.orElse(null);
         StorageSettings.Profile profile = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
-                "us-east-1", root, List.of(root), role, "a", "b", null, null);
+                "us-east-1", root, List.of(root), role, "a", "b", null, null, null);
         StorageSettings.Profile nested = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
-                "us-east-1", root + "/eu", List.of(root + "/eu"), role, "a", "b", null, null);
+                "us-east-1", root + "/eu", List.of(root + "/eu"), role, "a", "b", null, null, null);
         StorageSettings.Profile injected = new StorageSettings.Profile(kind, objectStore.endpoint.toString(),
-                "us-east-1", root, List.of(root), role, "a", "b", "arn:aws:iam:::user/w\"}],\"Statement\":[{\"x", null);
+                "us-east-1", root, List.of(root), role, "a", "b", "arn:aws:iam:::user/w\"}],\"Statement\":[{\"x", null,
+                null);
         Clock clock = Clock.systemUTC();
         ObservationRegistry none = ObservationRegistry.NOOP;
 

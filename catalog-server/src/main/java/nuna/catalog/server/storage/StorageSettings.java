@@ -45,6 +45,13 @@ public record StorageSettings(
      *                        this profile's S3 and STS clients trust them beside the JVM's CAs, and no other client does.
      *                        The server refuses to start if it cannot read the file or finds no certificate in it. Vended
      *                        credentials carry no trust: an engine trusts the store through its own setup
+     * @param kmsKey          the SSE-KMS key every write to this profile must use (D26, amended 2026-11-19), as a key
+     *                        ARN in the profile's region; AWS S3 profiles only, and the server refuses to start on any
+     *                        other value. The server's metadata files are written with it, vended credentials may write
+     *                        with it alone (a write with no key or any other is refused), and the config handed to
+     *                        engines tells them to use it ({@code s3.sse.type} and {@code s3.sse.key}). The catalog's own
+     *                        identity and the STS role need its use ({@code kms:GenerateDataKey}, {@code kms:Decrypt}).
+     *                        Without it, writes are encrypted as the bucket's default says
      */
     public record Profile(
             StoreKind kind,
@@ -56,7 +63,8 @@ public record StorageSettings(
             String accessKeyId,
             String secretAccessKey,
             String maintenancePrincipal,
-            Path caBundle) {
+            Path caBundle,
+            String kmsKey) {
     }
 
     /** A catalog's boundary: its storage profile, the KMS key set its data is encrypted under, its legal entity. */
