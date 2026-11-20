@@ -3,15 +3,15 @@ Module: catalog-server
 Test: SecurityGateTest#separationOfDutiesHoldsForEveryGrant
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-index c4b77cc..036d42c 100644
+index da70fbc..e61063b 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
-@@ -238,7 +238,7 @@ class GrantRoutes {
-                 throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
-                         "separation-of-duties", "no one grants to a group they belong to: " + spec.group());
+@@ -288,7 +288,7 @@ class GrantRoutes {
+                 // A privilege from a newer version: it conflicts with nothing this version knows.
              }
--            Optional<String> conflict = separation.refusal(spec.group(), privilege, held(record.id(), spec.group()));
-+            Optional<String> conflict = Optional.empty();
-             if (conflict.isPresent()) {
-                 throw denials.refuse(request.actor(), operation.name(), on.named(), privilege.wireName(),
-                         "separation-of-duties", conflict.get());
+         }
+-        Optional<String> conflict = separation.refusal(group, privilege, known);
++        Optional<String> conflict = Optional.empty();
+         refusal.set(conflict.orElse(null));
+         return conflict.isEmpty();
+     }
