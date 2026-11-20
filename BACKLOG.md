@@ -146,6 +146,9 @@ customer-managed key whose key policy defers to IAM (`aws/s3`'s policy lets ever
 through S3). Left to items 97 (a key on MinIO and Ceph profiles) and 98 (the key is not recorded with the profile,
 so a change of key is not audited). SEC-8 (keys per domain) is a work question.
 
+**Paul, 2026-11-20 (D26, amended):** no customer-managed test key for now ("Not now"); the refusal of another
+real key and the KMS grant for a customer-managed key are checked at work.
+
 ### 24. Kubernetes deployment: what was not checked (at work)
 
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
@@ -365,6 +368,11 @@ watermark and its pointer and lack files (nothing builds on the rewind's file, s
 The runbook now says to run the verifier again before walking. Or the walk could judge the versions as the verifier
 does ("Accept it": a version adding nothing beyond the newest whole one is whole), and a rewound table would walk at
 once.
+
+**Paul, 2026-11-20, after the check from the watermark landed (D37, amended again):** "Judge like the verifier":
+the walk judges the versions between the watermark and the pointer as the verifier does, so a pointer version that
+adds nothing beyond the newest whole one (the version a rewind writes) counts as whole and the table walks at once,
+with no second verifier pass; the runbook drops that pass. Left for item 28, with item 100.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -863,6 +871,7 @@ changes: outside engines set their own `s3.endpoint`.
 
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
+- Decided: 2026-11-20, D26
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
 - Touches: catalog-objectstore/src/main/java/nuna/catalog/objectstore/StorageProfile.java catalog-objectstore/src/main/java/nuna/catalog/objectstore/SessionPolicy.java catalog-objectstore/src/test/ catalog-tests-s3/ docs/install-at-work.md
 - Effort: M, a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet
@@ -879,8 +888,11 @@ Done when a MinIO and a Ceph profile can name a key in the form its store takes,
 are refused a write with no key or another key on each store (a heavy test per store, as `KmsKeyAwsTest` on AWS),
 and the server's metadata files are written with it; or Paul decides on-prem profiles name no key for now.
 
+**Decided 2026-11-20 (D26, amended):** at work, once its on-prem store is known (PLT-3): "98 now, 97 at work".
+
 ### 98. A storage profile's KMS key is not recorded with the profile, so a change of key is not audited
 
+- Decided: 2026-11-20, D26
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
 - Touches: catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-audit/src/main/java/nuna/catalog/audit/StorageSetup.java
 - Effort: M, one more field on the stored profile in all four stores, with its migration, and the startup audit naming it
@@ -894,8 +906,11 @@ audits nothing, and the store cannot say which key a profile used when.
 Done when the stored profile carries the key, a change of key alone is written and audited as PROFILE_SET (with the
 key in the event's settings), and a test on each store shows it.
 
+**Decided 2026-11-20 (D26, amended):** done now: "98 now, 97 at work".
+
 ### 99. A table that commits faster than the DR store replicates never gets a first DR watermark
 
+- Decided: 2026-11-20, D37
 - Added: 2026-11-20 by agent on item 92
 - Touches: catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java catalog-maintenance/src/test/java/nuna/maintenance/DrVerifyTest.java docs/observability/dr-watermark.md
 - Effort: M, the whole check finds the newest whole version from its one listing instead of testing only the pointer's, with tests; the choice of version is D37's, so Paul may want to see it first
@@ -923,8 +938,12 @@ instance the pointer's version, then each older version in its metadata log, new
 watermark of the newest that arrived. `DrVerifyTest` shows a table with no watermark whose pointer lacks a file
 getting the version before it, and dr-watermark.md says so.
 
+**Decided 2026-11-20 (D37, amended again):** "Newest whole version": the whole check takes the newest version
+whose files are all in the DR store, from its one listing, as the table's first watermark.
+
 ### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
 
+- Decided: 2026-11-20, D37
 - Added: 2026-11-20 by agent on item 92
 - Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/DrRoutes.java catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java docs/observability/dr-watermark.md deploy/README.md
 - Effort: M, one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first
@@ -957,6 +976,9 @@ the versions after the last rewind only, or always the pointer's too; or the ver
 journaled commit of its own after a rewind against the watermark directly. Done when a table that gave up more than
 100 versions is at its watermark after the rewind and the next pass, in a route test on each store, and the runbook
 in `deploy/README.md` says nothing about a limit.
+
+**Decided 2026-11-20 (D37, amended again):** "Rewind sets watermark": the rewind records the watermark at the
+version it writes, in the same transaction.
 
 ### 101. The DR runbook waits on the worker's log, which records a DR pass only at DEBUG
 

@@ -295,6 +295,14 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
   prefixes: read `GET /management/v1/maintenance/delete-policies` and apply each entry as `deploy/README.md`
   says (a bucket policy on AWS S3 and Ceph, two user policies on MinIO). The catalog never applies them
   itself. A profile without `maintenance-principal` is listed as `unprotected`.
+- The DR verifier (D37, amended 2026-11-20) is off until `dr.replicas.<profile>` names, for a storage profile,
+  its DR store: the same buckets and paths on the DR region's endpoint (`endpoint`, `region`,
+  `path-style-access`, `access-key-id`, `ca-bundle`; the secret key in `secrets.values` as
+  `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a private CA's bundle in `storageCaConfigMap`). Give
+  it keys of its own that may only read the DR store: `s3:ListBucket` on each replicated bucket and
+  `s3:GetObject` beneath the profile's prefixes. `dr.verify-interval` sets how often it passes (1 minute by
+  default). An AWS DR bucket under another name waits on PLT-4. `deploy/README.md` ("Recovering in the DR
+  region") says when to run it in each region.
 
 ## 7. Check the install
 
