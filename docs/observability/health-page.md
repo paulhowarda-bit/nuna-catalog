@@ -28,7 +28,7 @@ Over the last day, for the whole deployment:
   alerts").
 - **The audit's Kafka acknowledgement**: records acknowledged, their mean time and p99, and publishes that failed
   (`nuna.audit.publish`, spans.md). A failed publish refused the request it audited (D23).
-- **Credential vending**: vends issued, served from the cache, declined by a trusted engine, and failed, with the
+- **Credential vending**: vends issued, served from the cache, declined by the caller, and failed, with the
   failures by error type (`nuna.catalog.credential.vends`).
 - **Latency against the SLOs**: loads answered 200 (p99 under 50 ms), loads answered 304 (under 10 ms) and commits,
   `updateTable` and `commitTransaction`, answered 200 (under 300 ms), from `nuna.catalog.requests`. Each row gives the

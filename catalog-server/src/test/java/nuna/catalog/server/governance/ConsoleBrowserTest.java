@@ -164,9 +164,9 @@ class ConsoleBrowserTest {
         assertThat(fact("Default sort order")).isEqualTo("id 1");
         assertThat(fact("Snapshots")).isEqualTo("3");
         assertThat(fact("Current snapshot")).startsWith(S3 + " · ").endsWith("append");
-        // The catalog vends credentials with every load to a caller that is not a trusted engine (D21); the console
-        // says so, and keeps nothing of them.
-        browser.awaitText(By.cssSelector("section.pane .notice"), "discarded them unread");
+        // The console asks for no storage credentials, and the catalog honours that from any caller (D21, amended
+        // 2026-11-19): there is nothing to discard, and nothing of them reaches the page or the tab's storage.
+        assertThat(driver.findElements(By.cssSelector("section.pane .notice"))).isEmpty();
         assertThat(driver.getPageSource()).doesNotContain("storage-credentials", "secret-access-key",
                 "session-token");
         assertThat(storageKeys()).containsExactly("nuna.token");

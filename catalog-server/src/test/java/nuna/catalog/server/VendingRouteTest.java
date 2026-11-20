@@ -9,9 +9,12 @@ import nuna.catalog.server.rest.AuditPublisher;
 import nuna.catalog.server.rest.RestSettings;
 import nuna.catalog.server.storage.CatalogStorage;
 import nuna.catalog.server.storage.StorageSettings;
+import nuna.catalog.server.storage.StsCredentialVending;
 import nuna.catalog.objectstore.StoreKind;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.tests.s3.TestS3;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -104,6 +107,9 @@ class VendingRouteTest {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private MeterRegistry meters;
 
     private String namespace;
 
@@ -275,20 +281,47 @@ class VendingRouteTest {
     }
 
     @Test
-    @DisplayName("a trusted engine that declines delegation gets none; any other caller still gets credentials")
-    void onlyTrustedEnginesMayDecline() throws Exception {
+    @DisplayName("any caller that declines delegation gets no credentials, no AssumeRole and no audit record; without"
+            + " the header, or naming another mechanism too, it is vended to (D21, amended 2026-11-19)")
+    void anyCallerMayDecline() throws Exception {
         createTable("t", "alice");
+        ISSUED.clear();
+        double assumed = assumeRoles();
 
-        HttpResponse<String> trusted = send("GET", table("t"), null, TRUSTED, "X-Iceberg-Access-Delegation", "none");
-        assertThat(trusted.statusCode()).isEqualTo(200);
-        assertThat(trusted.body()).doesNotContain("s3.access-key-id").doesNotContain("storage-credentials\":[{");
+        // dave is a person signed in directly, as the console's user is; the trusted engine declines as before.
+        for (String caller : List.of("dave", TRUSTED)) {
+            for (String path : List.of(table("t"), table("t") + "/credentials")) {
+                HttpResponse<String> declined = send("GET", path, null, caller, "X-Iceberg-Access-Delegation", "none");
+                assertThat(declined.statusCode()).as(caller + " " + path).isEqualTo(200);
+                assertNoStorageAccess(declined.body());
+            }
+        }
+        assertThat(assumeRoles()).as("no AssumeRole for a declined vend").isEqualTo(assumed);
+        assertThat(ISSUED).as("no credential issue to audit").isEmpty();
 
-        HttpResponse<String> untrusted = send("GET", table("t"), null, "dave", "X-Iceberg-Access-Delegation", "none");
-        assertThat(JsonPath.<Map<String, String>>read(untrusted.body(), "$.config")).containsKey("s3.access-key-id");
+        HttpResponse<String> vended = send("GET", table("t"), null, "dave");
+        assertThat(JsonPath.<Map<String, String>>read(vended.body(), "$.config")).containsKey("s3.access-key-id");
+        assertThat(assumeRoles()).as("a load without the header mints, nothing was cached").isEqualTo(assumed + 1);
+        assertThat(ISSUED).singleElement().extracting(issue -> issue.actor().principal()).isEqualTo("dave");
 
         HttpResponse<String> both = send("GET", table("t"), null, TRUSTED,
                 "X-Iceberg-Access-Delegation", "vended-credentials,none");
         assertThat(JsonPath.<Map<String, String>>read(both.body(), "$.config")).containsKey("s3.access-key-id");
+    }
+
+    /** A load or credentials answer with no storage credentials and no storage settings in its config. */
+    private static void assertNoStorageAccess(String body) {
+        Map<String, Object> response = JsonPath.read(body, "$");
+        assertThat((List<?>) response.getOrDefault("storage-credentials", List.of())).as(body).isEmpty();
+        @SuppressWarnings("unchecked")
+        Map<String, String> config = (Map<String, String>) response.getOrDefault("config", Map.of());
+        assertThat(config.keySet()).as(body).noneMatch(key -> key.startsWith("s3.") || key.startsWith("client."));
+        assertThat(body).doesNotContain("s3.access-key-id", "s3.session-token");
+    }
+
+    /** STS AssumeRole calls, each one observation (spans.md). */
+    private double assumeRoles() {
+        return meters.find(StsCredentialVending.ASSUME_ROLE).timers().stream().mapToDouble(Timer::count).sum();
     }
 
     @Test

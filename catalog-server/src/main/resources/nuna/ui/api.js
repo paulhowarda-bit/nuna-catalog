@@ -94,19 +94,13 @@ export async function views(catalog, levels) {
 }
 
 /**
- * loadTable with every snapshot. The catalog vends storage credentials with a load by default (D21); the
- * console never uses them, so they are dropped here and never shown or kept.
+ * loadTable with every snapshot. The console asks for no storage credentials, and the catalog honours that from
+ * any caller (D21, amended 2026-11-19), so no storage keys reach the browser.
  */
 export async function table(catalog, levels, name) {
   const p = await prefix(catalog);
-  const loaded = await call(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}/tables/`
+  return call(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}/tables/`
     + `${encodeURIComponent(name)}?snapshots=all`, {headers: {'X-Iceberg-Access-Delegation': 'none'}});
-  const credentials = Boolean(loaded['storage-credentials'] && loaded['storage-credentials'].length)
-    || Object.keys(loaded.config || {}).some(key => key.startsWith('s3.') || key.startsWith('client.'));
-  delete loaded['storage-credentials'];
-  delete loaded.config;
-  loaded.credentialsDiscarded = credentials;
-  return loaded;
 }
 
 export async function view(catalog, levels, name) {

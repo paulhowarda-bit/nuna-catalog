@@ -45,7 +45,8 @@ import org.slf4j.LoggerFactory;
  * read-only to anyone else. None of them deletes, a maintenance principal's included: the maintenance worker deletes
  * with its own storage identity (D30). Each caller's credentials are cached for most
  * of their lifetime; each new set is audited before it is first handed out, and if the audit fails it is
- * thrown away (D23). A trusted engine that asks for no delegation gets none. Each AssumeRole is observed as
+ * thrown away (D23). Any caller that asks for no delegation gets none, trusted engine or not (D21, amended
+ * 2026-11-19): no AssumeRole and no credential issue to audit. Each AssumeRole is observed as
  * {@value #ASSUME_ROLE} (docs/observability/spans.md); a cached set calls nothing, and its vend says it was cached.
  */
 public final class StsCredentialVending implements CredentialVending {
@@ -80,10 +81,10 @@ public final class StsCredentialVending implements CredentialVending {
 
     @Override
     public Vended vend(Request request) {
-        Caller caller = request.caller();
-        if (caller.trustedEngine() && declined(request.delegation())) {
+        if (declined(request.delegation())) {
             return Vended.NONE;
         }
+        Caller caller = request.caller();
         CatalogStorage.Bound bound = storage.forCatalog(request.catalog().id());
         Access access = request.write() ? Access.READ_WRITE : Access.READ;
         String subject = caller.endUser().map(Principal::id).orElse(caller.principal().id());
