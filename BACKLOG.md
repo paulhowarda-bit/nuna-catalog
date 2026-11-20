@@ -8,11 +8,11 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 6 S, 14 M, 9 L, 4 XL.
+**31 open:** 7 S, 14 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
-| [1](backlog/1.md) | L | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | runs on all four backends, then fixes for whatever fails; only when Paul asks | 2026-11-14 |
+| [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
@@ -20,7 +20,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [8](backlog/8.md) | M | findCommit waits within the retry budget when the store is down | one path in the commit engine and a fault test | 2026-11-14 |
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [11](backlog/11.md) | L | The purge rate limit is per replica | a limit shared through the store on all four backends; S if Paul keeps it per replica | 2026-11-14 |
+| [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
 | [12](backlog/12.md) | M | A revive can bring an object back in a namespace it later left | one namespace comparison in each of four stores, a store-suite test and a bite | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
@@ -30,28 +30,27 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
 | [20](backlog/20.md) | S | Catalog names are listed to every signed-in caller (a question for work) | filter one route by the caller's grants, with a test; after work answers | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
-| [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
-| [23](backlog/23.md) | L | Per-request SSE-KMS keys (waits on SEC-8) | the KMS key in vended sessions and their policy, tested on AWS; waits on SEC-8 | 2026-11-14 |
+| [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
+| [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
 | [27](backlog/27.md) | XL | Queryable audit tables (v1.x, D23) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
 | [28](backlog/28.md) | L | DR replication-watermark verifier (v1.x) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
-| [32](backlog/32.md) | S | The Ceph leg found no Docker right after the heavy build | mitigated; what is left is an overnight run that passes, or reading ceph-results/ if it fails | 2026-11-15 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [61](backlog/61.md) | M | KubernetesCompactionTest: kubectl get job ran past its minute, after item 54's fix | the cause is unknown: kubectl's handling of the template, or a slow API | 2026-11-18 |
 | [62](backlog/62.md) | S | The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone | print worker.log on failure, then fix what it shows | 2026-11-18 |
 
 ## Open items in full
 
 ### 1. Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks)
 
+- Decided: 2026-11-19, D42
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, runs on all four backends, then fixes for whatever fails; only when Paul asks
+- Effort: S, closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42)
 
 Paul's plan (2026-11-13, CLAUDE.md): after the install at work he runs `./heavy.sh` in a worktree of its own:
 `-Pheavy` on all four backends, the Ceph leg, then every bite. Don't start it unless he asks.
@@ -67,6 +66,8 @@ Never run yet (`build-plan.md` Status, 2026-11-12 and 2026-11-13; `docs/install-
 
 Done when `./heavy.sh` is green, every bite bites on its assertion (read the logs: see item 3), and the run is
 recorded in `build-plan.md`'s Status. Anything that fails gets an item of its own.
+
+**Decided 2026-11-19 (D42):** the overnight run covers this pass ("Overnight run covers it"): it runs the heavy build, the Ceph leg and the bites every night that code changed. This item closes the first night all three are green; there is no pass of its own.
 
 ### 4. Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS
 
@@ -95,6 +96,7 @@ starts with its own identity, completes a scan, and launches a compaction Job in
 
 ### 6. The server runs the store's self-check at startup (ask Paul before wiring it)
 
+- Decided: 2026-11-19, D8
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: M, one startup call, tested on four backends with a bite; after Paul decides
 
@@ -104,6 +106,8 @@ The storage design says the server runs the store's `selfCheck()` at startup (D8
 
 Done when Paul has said how a failed check should act (refuse to start, or warn), and the server does that on each
 of the four backends, with a test and a bite.
+
+**Decided 2026-11-19 (D8):** a failed self-check refuses to start the server ("Refuse to start"). Test containers and the demo run single-node with fsync off, so they need an explicit setting that allows an unsafe database.
 
 ### 7. Oracle and MongoDB stores answer an outage with 503, not 500
 
@@ -151,14 +155,17 @@ Done when the operator can have the archive supply or check the accepted tips, a
 
 ### 11. The purge rate limit is per replica
 
+- Decided: 2026-11-19, D30
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, a limit shared through the store on all four backends; S if Paul keeps it per replica
+- Effort: S, per replica is kept (D30); the docs say so
 
 `build-plan.md`, maintenance worker, catalog side (2026-11-13): `nuna.governance.purges-per-minute` is kept per
 replica, so three replicas accept three times the configured rate.
 
 Done when the limit holds across replicas (or Paul decides the per-replica reading is what he wants and the docs
 say so).
+
+**Decided 2026-11-19 (D30):** the limit stays per replica ("Per replica, documented"). What is left: the docs say so, so operators divide it by the replica count.
 
 ### 12. A revive can bring an object back in a namespace it later left
 
@@ -183,6 +190,7 @@ Done when two concurrent grants cannot together break SoD, shown by a test that 
 
 ### 14. HEAD and loads answer 404 before 403, so names leak to signed-in callers
 
+- Decided: 2026-11-19, D18
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: M, three routes reordered, with tests; after Paul decides
 
@@ -195,8 +203,11 @@ The metrics route answers in the same order (`TableRoutes.java`, `metrics`: `obj
 
 Done when Paul has decided, and the routes answer as he decided, with tests.
 
+**Decided 2026-11-19 (D18):** names are hidden ("Hide names"): a caller without access gets the same answer whether or not the name exists, on HEAD, loads and the metrics route.
+
 ### 15. ETags do not survive a change of server (Paul decides)
 
+- Decided: 2026-11-19, D14
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: M, a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses
 
@@ -210,8 +221,11 @@ Two ways, for Paul: derive the epoch from a shared issuance window so servers ag
 Done when Paul has chosen, and two servers answer one client's conditional loads with 304s (or the chart routes
 stickily), with a test.
 
+**Decided 2026-11-19 (D14):** a shared epoch ("Shared epoch"): servers derive the credential epoch from a shared issuance window, so they agree on the ETag; not sticky routing.
+
 ### 16. May the console decline vended credentials? (Paul decides, D21)
 
+- Decided: 2026-11-19, D21
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: S, the console declines as a trusted engine does, with a test and a bite; after Paul decides
 
@@ -222,8 +236,11 @@ decline, or get no credentials at all?
 Done when Paul has decided, and the console's loads carry no credentials if that is his choice, with a test and a
 bite.
 
+**Decided 2026-11-19 (D21):** any caller that asks for no credentials gets none ("Honour none from anyone"), not only trusted engines; the console already asks with `X-Iceberg-Access-Delegation: none`.
+
 ### 17. Console sign-in against Entra ID and Ping, with an automated test
 
+- Decided: 2026-11-19, D16
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: M, checks against Entra ID and Ping at work; ending the IdP session if Paul wants it
 
@@ -245,6 +262,8 @@ before any code is traded (bite `bites/UI/console-sign-in-ignores-state.patch`, 
 with the test in it on 2026-11-15. Still open: the flow against Entra ID and Ping (work), and "Sign out" not ending the
 IdP's session (Paul's call).
 
+**Decided 2026-11-19 (D16):** "Sign out" also ends the identity provider's session ("End the IdP session"). The checks against Entra ID and Ping still happen at work.
+
 ### 19. Cap the audit-read route for scripted use
 
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
@@ -257,6 +276,7 @@ Done when the route limits how often one caller (or all callers) may read, answe
 
 ### 20. Catalog names are listed to every signed-in caller (a question for work)
 
+- Decided: 2026-11-19, D18
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: S, filter one route by the caller's grants, with a test; after work answers
 
@@ -265,6 +285,8 @@ unfiltered. Filter them if a deployment treats names as secret.
 
 Done when work has answered whether names are secret, and, if they are, the route lists only catalogs the caller
 holds something on, with a test.
+
+**Decided 2026-11-19 (D18):** catalog names are filtered now ("Filter them now"), as namespace and table names are (item 14), without waiting for work's answer: the route lists only the catalogs the caller holds something on.
 
 ### 21. A CA bundle per storage profile
 
@@ -276,8 +298,9 @@ needs it added to the JVM's.
 
 Done when a profile can name its own CA bundle, and a test against a store with a private CA passes.
 
-### 22. Administer storage profiles and catalogs at runtime
+### 22. Administer storage profiles and catalogs at runtime (not now, D41)
 
+- Decided: 2026-11-19, D41
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, routes, storage on four backends, audit and the startup checks; only if Paul wants it
 
@@ -287,10 +310,13 @@ Done when a profile can name its own CA bundle, and a test against a store with 
 Done when Paul has said whether runtime administration is wanted. If it is: a management route, for platform
 operators, audited, with the same overlap and TLS checks as startup.
 
+**Decided 2026-11-19 (D41):** left open and not to be built now ("lets leave it open and document it as a backlog item we will not do right now"). What it would change: storage profiles (store kind, endpoint, region, table root, allowed prefixes, STS role or static keys, the maintenance worker's identity), new catalogs (profile, KMS key set and legal entity, fixed once a catalog exists) and the vending settings are read at startup, so adding a catalog or a store, or rotating a MinIO or Ceph static key, takes a config change and a rolling restart. Nessie works the same way by default; its hidden stored mode, which only its tests can update, is described in D41.
+
 ### 23. Per-request SSE-KMS keys (waits on SEC-8)
 
+- Decided: 2026-11-19, D26
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, the KMS key in vended sessions and their policy, tested on AWS; waits on SEC-8
+- Effort: M, one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8
 
 `build-plan.md`, M6, Open: per-request SSE-KMS keys and a KMS condition in the session policy. Today encryption at
 rest is the bucket's default key and the catalog records only the key set's name (D26). Waits on SEC-8 (KMS
@@ -298,6 +324,8 @@ key-policy owners per domain), a work question in section 6.
 
 Done when SEC-8 is answered and, if keys are per domain, vended sessions write with the catalog's key and the session
 policy refuses any other.
+
+**Decided 2026-11-19 (D26):** one KMS key per storage profile now ("Per-profile key now"): vended sessions must write with it and are refused any other. How keys map to domains still waits on SEC-8.
 
 ### 24. Kubernetes deployment: what was not checked (at work)
 
@@ -323,6 +351,7 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 
 ### 26. Branches, tags and merge (v1.x, D33)
 
+- Decided: 2026-11-19, D33
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, a v1.x milestone
 
@@ -331,8 +360,11 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 
 Done when the milestone's scope is built and its gate is green, as for the other v1.x phases.
 
+**Decided 2026-11-19 (D33):** built next ("Build it next"), after the items the backlog review of 2026-11-19 chose to fix, not left for v1.x.
+
 ### 27. Queryable audit tables (v1.x, D23)
 
+- Decided: 2026-11-19, D23
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, a v1.x milestone; scope to settle with Paul
 
@@ -341,14 +373,19 @@ cover the audit until then (UI v1).
 
 Done when the milestone's scope is settled with Paul, built, and its gate is green.
 
+**Decided 2026-11-19 (D23):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
+
 ### 28. DR replication-watermark verifier (v1.x)
 
+- Decided: 2026-11-19, D37
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: L, a v1.x milestone; scope to settle with Paul
 
 `build-plan.md`, v1.x milestones: a DR replication-watermark verifier. Not started.
 
 Done when the milestone's scope is settled with Paul, built, and its gate is green.
+
+**Decided 2026-11-19 (D37):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -362,48 +399,6 @@ MinIO and Ceph (PLT-3), and the overnight job in work CI running `./nightly.sh`.
 
 Done when `docs/install-at-work.md` is carried out at work and M9's entry in `build-plan.md`'s Status says what
 passed. Items for anything that fails.
-
-### 32. The Ceph leg found no Docker right after the heavy build
-
-- Added: 2026-11-15 by overnight run 2026-11-15
-- Touches: overnight.sh
-- Effort: S, mitigated; what is left is an overnight run that passes, or reading ceph-results/ if it fails
-
-The overnight run of 2026-11-15 (started by hand at 06:14 on Paul's word, testing 071d2cc) passed the heavy build at
-06:40, then failed the Ceph leg 39 s later: `./gradlew :catalog-objectstore:test :catalog-maintenance:test -Pheavy
--Ps3=ceph` ended "BUILD FAILED in 37s", 15 of `catalog-maintenance`'s 20 tests failed. The first,
-`GuardrailsTest#onlyFilesBeneathTheTablesOwnLocationAreRecorded`, failed with Testcontainers' "Could not find a valid
-Docker environment"; the other 14 with "Previous attempts to find a Docker environment failed. Will not retry". The
-nightly that started a minute later, and the 218 bites after it, all found Docker. Logs:
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-15\ceph.log` and `summary.md`.
-
-Why Docker was not found is not known, and the evidence is gone:
-- The leg's result files, which hold Testcontainers' own log of the search, were overwritten in the clone by the
-  bites that ran the same modules later; `overnight.sh` keeps only the failure lines it copies into the summary.
-- Docker Desktop's backend log had rotated past 06:40 by the time it was read.
-
-Done when a failed leg's result files are kept under `runs/<date>/` (so the next failure can be read), and the Ceph
-leg passes in an overnight run. If it fails the same way again, the kept files should say why; waiting for
-`docker info` before each leg is a guess until then.
-
-Progress, 2026-11-15: `overnight.sh` now keeps a failed leg's result files, with `docker info` taken just after, in
-`runs/<date>/<leg>-results/` (`status/2026-11-15-overnight-keep-results.md`). What is left: the Ceph leg passing in an
-overnight run, or, if it fails again, reading why in `ceph-results/`.
-
-Diagnosed and mitigated on 2026-11-15 (`status/2026-11-15-overnight-fixes.md`), still open until the Ceph leg
-passes in an overnight run:
-- Docker itself was up. Its VM logs (`%LOCALAPPDATA%\Docker\log\vm\dockerd.log`, `containerd.log.0`) show the heavy
-  build's last containers removed at 06:40:27 and 06:40:39, and `catalog-objectstore`'s test JVM starting its
-  containers at 06:40:54. Only `catalog-maintenance`'s JVM, starting at the same moment, failed: Testcontainers
-  pings Docker for `client.ping.timeout` (10 s), then gives up for the rest of that JVM.
-- Run on its own at 13:28, on a quiet Docker, the same leg found Docker in both JVMs: objectstore 197 tests passed,
-  maintenance 19 of 20. The one failure, `KubernetesCompactionTest` (the Job never ran), came from the nuna-demo
-  stack, which was up and had 6.1 GiB of the node's memory requested, leaving no room for the Job's 2 GiB.
-- So `overnight.sh` now waits before each leg, and before the bites, until no container a test started is left and
-  `docker info` answers (up to 3 min), and gives Testcontainers 60 s to reach Docker
-  (`TESTCONTAINERS_CLIENT_PING_TIMEOUT`, checked to reach the test JVMs through Gradle).
-- If it fails again, `ceph-results/` will hold the maintenance tests' output, Testcontainers' log of the search
-  among it. `catalog-objectstore`'s tests have no SLF4J provider, so theirs would not.
 
 ### 43. Hook nuna into work's OpenTelemetry collector and Prometheus (at work)
 
@@ -432,6 +427,7 @@ Done when a load from a work engine shows as a trace and as metrics in work's Gr
 
 ### 44. Grafana dashboards and Prometheus alert rules for nuna (at work)
 
+- Decided: 2026-11-19, D43
 - Added: 2026-11-15 by Iceberg observability review, at Paul's request
 - Touches: deploy/grafana/ docs/observability/
 - Effort: L, dashboards and alert rules for six areas, each alert fired once in a test
@@ -449,6 +445,8 @@ files):
 - Client reports by engine.
 
 Done when the dashboards show live data at work and each alert has fired once in a test.
+
+**Decided 2026-11-19 (D43):** drafted at home now ("Draft at home now"), against nuna's own metric names and Prometheus' usual OTLP mapping, instead of waiting for item 43; queries may need renaming at work.
 
 ### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
 
@@ -527,29 +525,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 61. KubernetesCompactionTest: kubectl get job ran past its minute, after item 54's fix
-
-- Added: 2026-11-18 by overnight run 2026-11-18
-- Touches: catalog-maintenance/src/test/java/nuna/maintenance/KubernetesCompactionTest.java
-- Effort: M, the cause is unknown: kubectl's handling of the template, or a slow API
-
-Item 54 changed the Job-condition filter to single quotes. In the heavy build of the overnight run of 2026-11-18
-(testing 2dee958, the demo taken down for the run), the first run with that fix,
-`nuna.maintenance.KubernetesCompactionTest#compactionRunsAsAJobPerTable` failed on that same call, in a new way:
-`AssertionError: kubectl --context docker-desktop get job <cut-off Job> -n <test namespace> -o
-jsonpath={.status.conditions[?(@.type=='Failed')].reason} ran past PT1M` (`KubernetesCompactionTest.java:173`,
-through `run` at 247). Everything before it passed: the Jobs ran, and `await` saw the cut-off Job fail (",1"). So
-one `kubectl get` with that template did not end within a minute, where item 54's check by hand answered at once.
-Not known yet: whether the template as Windows hands it over makes kubectl wait, or the cluster's API was slow.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\heavy.log`, and
-`heavy-results\catalog-maintenance\build\test-results\test\TEST-keel.maintenance.KubernetesCompactionTest.xml` there
-(05:09:19 UTC; run before the rename to nuna). The heavy build stops at the first module that fails, so that night
-again ran no Oracle, MongoDB or CockroachDB suite, conformance, engine or rolling-upgrade test, and no bite.
-
-Done when the call answers within its minute with the reason the test expects ("DeadlineExceeded"), and the test
-passes in the overnight run.
-
 ### 62. The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone
 
 - Added: 2026-11-18 by overnight run 2026-11-18
@@ -588,6 +563,7 @@ ran. Evidence:
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
+| [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |
 | [33](backlog/33.md) | The Keycloak account page fails for every demo user | done | 2026-11-15 |
 | [34](backlog/34.md) | Keycloak sign-in for CloudBeaver and SingleStore Studio | done | 2026-11-15 |
 | [35](backlog/35.md) | kafbat: fence off the catalog's topics and keep an audit log | done | 2026-11-15 |
@@ -612,6 +588,7 @@ ran. Evidence:
 | [57](backlog/57.md) | Publish Silo's console on localhost:8184 | done | 2026-11-16 |
 | [58](backlog/58.md) | Demo: TLS at one front door, with a certificate that work's can replace | done | 2026-11-17 |
 | [59](backlog/59.md) | Rename keel to nuna, short for nunatak, everywhere | done | 2026-11-18 |
+| [61](backlog/61.md) | KubernetesCompactionTest: kubectl get job ran past its minute, after item 54's fix | done | 2026-11-19 |
 | [63](backlog/63.md) | The overnight folder moves inside the repo, gitignored | done | 2026-11-18 |
 | [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
