@@ -1,0 +1,21 @@
+Breaks: accept-archived on a server with no archive walks as though the archive recorded nothing, taking every accept unchecked, instead of failing the request (backlog 10).
+Module: catalog-server
+Test: ReconcileArchiveOptionTest#noArchive
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+index c87bccd..ddf0ca3 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+@@ -144,8 +144,10 @@ class ReconcileRoutes {
+      * would take every {@code accept} entry unchecked.
+      */
+     static ArchivedCommits.Read archived(Optional<ObjectLockArchive> archive) {
+-        ObjectLockArchive configured = archive.orElseThrow(() -> CatalogError.of(409, "ArchiveNotConfiguredException",
+-                "accept-archived reads the audit archive, and this server has none: nuna.audit.archive.bucket is not set"));
++        if (archive.isEmpty()) {
++            return new ArchivedCommits.Read(java.util.Map.of(), 0, 0);
++        }
++        ObjectLockArchive configured = archive.get();
+         try {
+             return ArchivedCommits.read(configured);
+         } catch (IllegalStateException e) {
