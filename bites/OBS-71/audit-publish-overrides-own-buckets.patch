@@ -1,0 +1,17 @@
+Breaks: the export's buckets replace those a registry gives the timer of its own, the health page's among them.
+Module: catalog-server
+Test: AuditPublishBucketsTest#aRegistryThatGivesTheTimerBucketsOfItsOwnKeepsThem
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java b/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java
+index 4d50d59..8a140d0 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/tracing/TracingWiring.java
+@@ -29,7 +29,7 @@ public class TracingWiring {
+         return new MeterFilter() {
+             @Override
+             public DistributionStatisticConfig configure(Meter.Id id, DistributionStatisticConfig config) {
+-                return id.getName().equals(ObservedPublisher.NAME) ? config.merge(buckets) : config;
++                return id.getName().equals(ObservedPublisher.NAME) ? buckets.merge(config) : config;
+             }
+         };
+     }

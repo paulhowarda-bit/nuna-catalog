@@ -672,7 +672,7 @@ here, and two branches adding at once collided. The entries below are the histor
   - Catalog change, so reruns are safe. A file is pending once per object: a unique index `pending_deletion_object` (PostgreSQL V7, CockroachDB V6, Oracle V8, MongoDB step 6). Recording a file again keeps its first not-before, writes nothing, and answers 200 instead of 201. `SchemaAtStartupTest` and `RollingUpgradeTest` expect schema 7. `IcebergImportBoundaryTest` lists `catalog-maintenance` as a client.
   - Packaging.
     - Image: `deploy/image/maintenance.Dockerfile`. It was built once and started without settings; it refused to start for want of `catalog-uri`, as it should.
-    - Chart: `deploy/helm/nuna-maintenance`. It passes `helm lint` and renders; it is not installed anywhere. It runs one replica (Recreate) with its own service account, the settings in a ConfigMap and the secrets as a config tree. With a compaction image it adds a Role and RoleBinding for Jobs and Secrets.
+    - Chart: `deploy/helm/nuna-maintenance`. It passes `helm lint` and renders; it was first installed on 2026-11-19, on Docker Desktop's Kubernetes (backlog 5). It runs one replica (Recreate) with its own service account, the settings in a ConfigMap and the secrets as a config tree. With a compaction image it adds a Role and RoleBinding for Jobs and Secrets.
   - Tests, fast:
     - `SnapshotExpiryTest`: expiry queues only unreachable files; branch and tag files survive.
     - `OrphanScanTest`: young orphans are kept.

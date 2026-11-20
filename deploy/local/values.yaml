@@ -27,11 +27,15 @@ config:
       profiles:
         silo:
           kind: MINIO
+          # run.sh up sets silo.<namespace>.svc instead: clients in other namespaces (the maintenance worker and its
+          # compaction Jobs) reach the store at the endpoint the catalog vends them.
           endpoint: http://silo:9000
           region: us-east-1
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
           access-key-id: nunademo
+          # The maintenance worker's own Silo user (run.sh worker), the only one its delete policy lets delete.
+          maintenance-principal: nuna-maintenance
       catalogs:
         lakehouse:
           profile: silo
@@ -46,8 +50,18 @@ config:
           user-id-claim: sub
           groups-claim: groups
           client-id-claim: azp
+        # The maintenance worker's identity provider (deploy/local/keycloak.yaml), which run.sh worker starts. Its
+        # keys are fetched when its first token arrives, so the catalog runs without it.
+        - issuer: http://keycloak:8080/realms/nuna
+          jwks-uri: http://keycloak:8080/realms/nuna/protocol/openid-connect/certs
+          audiences: [nuna-catalog]
+          algorithms: [RS256]
+          user-id-claim: preferred_username
+          groups-claim: groups
+          client-id-claim: azp
       grant-admin-groups: [demo-grant-admins]
       platform-operator-groups: [demo-operators]
+      maintenance-principals: [service-account-nuna-maintenance]
     audit:
       kafka-bootstrap-servers: kafka:9092
     ui:

@@ -52,7 +52,9 @@ Each server holds only its own meters, so the server the browser reaches asks th
    (Boot's own fallback registry steps aside for it). Whatever the exporting registry does, this one keeps every count,
    sum and histogram bucket since the server started and never rolls a histogram over. (Boot's fallback,
    `SimpleMeterRegistry`, forgets a histogram's buckets within minutes.) The audit publish timer gets histogram buckets
-   here only (5 ms to 5 s), for the page's p99; the exported timer is unchanged.
+   here (5 ms to 5 s), for the page's p99; since item 71 the exported timer has the same buckets (spans.md), and
+   since item 74 both take them from one list, `ObservedPublisher.BUCKETS`. The registry gives them through a filter
+   of its own, so it has them without Boot too.
 2. **A reading each minute.** `HealthWindow` reads the registry every minute into flat counts that only grow, such as
    `load`, `load.le.50` or `alerts.metadata-integrity` (`Figures`). The last day's figures are now's reading less the
    newest reading a day old or older, so the window is one day and at most a minute more. About 1,440 readings are
@@ -109,10 +111,11 @@ that no compaction has run for it.
 
 | Test | Shows |
 |---|---|
-| `HealthWindowTest` | The registry keeps every histogram bucket where `SimpleMeterRegistry` lets them go; the audit publish timer has buckets there only; the last day is now's reading less the newest a day old, or since the start; the figures judged against the SLOs; vends by outcome and failures by type. |
+| `HealthWindowTest` | The registry keeps every histogram bucket where `SimpleMeterRegistry` lets them go; the audit publish timer has the exported timer's buckets there, without Boot, where a plain registry gives it none; the last day is now's reading less the newest a day old, or since the start; the figures judged against the SLOs; vends by outcome and failures by type. |
 | `PeersTest` | Every address is asked with the caller's token; a peer that cannot be reached, does not resolve, refuses, or answers something else gives no figures and says why. |
 | `ConsoleHealthTest` (Selenium, P8) | In Chrome, against a server with another server standing in beside it and a third that does not answer: an operator sees each figure as the two servers' sum, the silent server named, and the worker's scans; a reader sees no catalog health and only the tables they may read, neediest first, each linking to its health (assessment, reasons, last compaction), and a table they may not read refused; someone with no grant sees neither, and their token never reaches another server. |
 | `ConsoleTest` | `health.js` is served under the console's Content-Security-Policy and writes no markup. |
 
 The bites are in `bites/D38/`: `catalog-health-for-anyone`, `server-health-for-anyone`, `one-server-only`,
-`window-never-moves`, `histograms-roll-over` and `table-health-for-anyone`.
+`window-never-moves`, `histograms-roll-over` and `table-health-for-anyone`; and in `bites/OBS-71/`,
+`health-page-buckets-of-its-own` (item 74).

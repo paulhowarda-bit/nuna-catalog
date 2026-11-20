@@ -1836,7 +1836,7 @@
       "id": 30,
       "type": "timeseries",
       "title": "Mean acknowledgement time, by event",
-      "description": "nuna.audit.publish: a synchronous audit record (D23), from the send to Kafka's acknowledgement. Mean only: the exported timer has no histogram buckets, so Prometheus cannot give its p99 (backlog 71). The console's health page has the p99.",
+      "description": "nuna.audit.publish: a synchronous audit record (D23), from the send to Kafka's acknowledgement. The p99 is beside it.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1902,6 +1902,75 @@
       }
     },
     {
+      "id": 38,
+      "type": "timeseries",
+      "title": "p99 acknowledgement time, by event",
+      "description": "histogram_quantile over nuna.audit.publish's buckets, 5 ms to 5 s (backlog 71): an estimate within the bucket the p99 falls in, and 5 s when it falls past 5 s. The console's health page names the bucket.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 100
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.99, sum by (event, le) (rate(nuna_audit_publish_milliseconds_bucket{job=~\"$job\", outcome=\"acknowledged\"}[5m])))",
+          "legendFormat": "{{event}}",
+          "refId": "A",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
       "id": 31,
       "type": "timeseries",
       "title": "Audit records acknowledged a second, by event",
@@ -1913,8 +1982,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 100
+        "x": 0,
+        "y": 108
       },
       "targets": [
         {
@@ -1981,8 +2050,8 @@
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
+        "w": 12,
+        "x": 12,
         "y": 108
       },
       "targets": [

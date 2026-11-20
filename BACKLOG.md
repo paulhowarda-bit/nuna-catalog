@@ -8,13 +8,12 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**27 open:** 6 S, 13 M, 4 L, 4 XL.
+**25 open:** 5 S, 12 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
-| [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
@@ -36,7 +35,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
-| [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [73](backlog/73.md) | M | Namespace, table and view names still leak through the management API | a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides | 2026-11-19 |
 
@@ -78,17 +76,6 @@ its owner a policy change.
 Done when each policy has been applied as the catalog gives it (AWS: the `nuna-sandbox` account; MinIO: a store
 that enforces user policies), the worker deletes and lists beneath its prefixes and nobody else can, and the Ceph
 question has an answer, each recorded in `build-plan.md`.
-
-### 5. Install the nuna-maintenance Helm chart somewhere
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, install the chart on Docker Desktop's Kubernetes and fix what the install finds
-
-`deploy/helm/nuna-maintenance` passes `helm lint` and renders, but has never been installed
-(`build-plan.md`, maintenance worker of 2026-11-13; `docs/install-at-work.md`).
-
-Done when the chart is installed against a running catalog (Docker Desktop's Kubernetes is enough), the worker
-starts with its own identity, completes a scan, and launches a compaction Job in its own namespace.
 
 ### 6. The server runs the store's self-check at startup (ask Paul before wiring it)
 
@@ -512,24 +499,6 @@ their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
 
-### 71. Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99
-
-- Added: 2026-11-19 by agent on item 44
-- Touches: catalog-server/src/main/java/nuna/catalog/server/tracing/ catalog-server/src/test/java/nuna/catalog/server/telemetry/ deploy/grafana/ docs/observability/
-- Effort: S, one meter filter on the exported registry, a test, and the dashboard panel; no wait
-
-Item 44's catalog dashboard (`deploy/grafana/dashboards/nuna-catalog.json`, "Audit: Kafka acknowledgement") can
-show only the mean acknowledgement time: the exported `nuna.audit.publish` timer has no histogram buckets, so
-Prometheus gets `nuna_audit_publish_milliseconds_count` and `_sum` and nothing to take a p99 from. The console's
-health page does show the p99, because `HealthMeters` (catalog-server, `health/HealthMeters.java`) adds buckets from
-5 ms to 5 s (`AUDIT_BUCKETS`) to its own registry only; docs/observability/health-page.md says "the exported timer
-is unchanged".
-
-Done when the exported `nuna.audit.publish` timer carries the same bucket bounds (a meter filter where the OTLP
-registry is configured, or `management.metrics.distribution.slo.nuna.audit.publish`), a telemetry test sees the
-buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogram_quantile` beside the mean, its docs
-(`docs/observability/dashboards-and-alerts.md`) saying so.
-
 ### 72. Oracle's self-check does not notice a journal-partition job that cannot run
 
 - Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
@@ -588,6 +557,7 @@ Done when Paul has decided, and the management routes answer as he decided, with
 |--:|:--|:--|:--|
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
+| [5](backlog/5.md) | Install the nuna-maintenance Helm chart somewhere | done | 2026-11-20 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
 | [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
@@ -632,3 +602,5 @@ Done when Paul has decided, and the management routes answer as he decided, with
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
+| [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
+| [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |

@@ -237,7 +237,13 @@ docker build -f deploy/image/maintenance.Dockerfile -t nuna-maintenance:<version
 - with `config.nuna.maintenance.compaction.image` set, the Role, RoleBinding and Job service account in the
   Jobs' namespace (`config.nuna.maintenance.compaction.namespace`, which must exist).
 
-See `values.yaml` for the rest.
+See `values.yaml` for the rest. `deploy/local/run.sh worker` installs it on Docker Desktop's Kubernetes beside the
+local catalog (`deploy/README.md`, "Trying it locally"); it was first installed that way on 2026-11-19 (backlog 5).
+
+The compaction Jobs run in a namespace other than the worker's and the catalog's, and sign in themselves, so three
+addresses must resolve from there: the catalog (`compaction.catalog-uri`, by default `catalog-uri`), the identity
+provider's token endpoint (`token.endpoint`), and the store endpoint the catalog vends with each table's credentials,
+which the worker reads with too. A short Service name of another namespace does not: name it `<service>.<namespace>.svc`.
 
 ## Tests
 
@@ -256,6 +262,7 @@ day (`TestCatalog.allDay`).
 | `GuardrailsTest` | | Held, frozen and unregistered tables are untouched until the hold and freeze go; a table no longer the one the work list named is neither assessed nor compacted. |
 | `PurgeTest` | | A purge removes the prefix after its claim; another worker's claim is left alone; a claimed purge resumes. |
 | `PendingDeletionTest` | | Pending deletions wait for their time, then are deleted and reported done. |
+| `FailedOrphanScanTest` | | An orphan scan that fails is tried again at the next scan, the same night, and once it has run, not again that night; against a stand-in catalog on the JDK's HTTP server, no Docker. |
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock, in a window of four hours a day: compaction and orphan scans once a night in the window and never outside it, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
 | `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say, and kept by the catalog as the worker reports them. |

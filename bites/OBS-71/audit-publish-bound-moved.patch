@@ -1,0 +1,17 @@
+Breaks: the audit publish timer's last bucket sits at 10 s, not the documented 5 s; since item 74 the health page's moves with it.
+Module: catalog-server
+Test: AuditPublishBucketsTest#theAuditPublishTimerArrivesWithTheHealthPagesBuckets
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedPublisher.java b/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedPublisher.java
+index 227d866..97e2756 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedPublisher.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/tracing/ObservedPublisher.java
+@@ -19,7 +19,7 @@ public final class ObservedPublisher implements EventPublisher {
+     /** The timer's histogram bucket bounds, the console health page's: from 5 ms to 5 s. */
+     public static final List<Duration> BUCKETS = List.of(Duration.ofMillis(5), Duration.ofMillis(10),
+             Duration.ofMillis(25), Duration.ofMillis(50), Duration.ofMillis(100), Duration.ofMillis(250),
+-            Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofMillis(2500), Duration.ofSeconds(5));
++            Duration.ofMillis(500), Duration.ofSeconds(1), Duration.ofMillis(2500), Duration.ofSeconds(10));
+ 
+     private final EventPublisher publisher;
+     private final KeyValues topic;
