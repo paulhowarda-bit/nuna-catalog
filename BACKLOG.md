@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**22 open:** 5 S, 9 M, 4 L, 4 XL.
+**23 open:** 5 S, 10 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -34,6 +34,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
+| [83](backlog/83.md) | M | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | a check of each step's manifest list, manifests and data files before the swap, with tests; or folded into item 28 | 2026-11-20 |
 
 ## Open items in full
 
@@ -654,6 +655,20 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
 4. Then the MinIO part of item 4 is done on Silo: both policies applied as the catalog gives them, on a store that
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
+
+### 83. The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-core/src/test/
+- Effort: M, a check of each step's manifest list, manifests and data files before the swap, with tests; or folded into item 28
+
+`Reconcile.plan` (`catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java`) walks a table forward through its metadata files only: it lists the table's metadata files, reads each, and moves the pointer through every file a later file builds on (lines 81 to 130 on main at 8833233). It never checks that the manifest list, the manifests or the data files a step names exist in the store it runs against. When the DR region's storage is replicated asynchronously and not in write order (S3 Cross-Region Replication, MinIO and Ceph bucket replication), a metadata file can reach the DR store before the files it lists, so the reconcile can move a table to a version whose reads fail with a missing file.
+
+Found on 2026-11-20 by the agent drafting item 28's scope (the DR replication-watermark verifier), which names it in its Out section as worth an item of its own. Item 28's verifier, as proposed, keeps a watermark of the newest version whose files all reached the DR store; the reconcile could stop at that watermark instead of checking files itself.
+
+Paul decides: fix it on its own (the reconcile checks each step's files before the swap and stops at the first missing one, reporting it), or fold it into item 28 (the reconcile stops at the watermark).
+
+Done when the reconcile never moves a table to a version whose manifest list, manifests or data files are missing from the store, with a test that removes one file of a later version and shows the walk stopping before it, and a bite.
 
 ## Done and dropped
 
