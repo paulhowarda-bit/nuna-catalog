@@ -53,7 +53,8 @@ import org.junit.jupiter.api.Test;
  * to, and the DR store, which holds what the test replicates to it. The watermark stops before the first version
  * missing any file it adds (its metadata file, manifest list, manifests, data and delete files, statistics files),
  * passes a commit that adds no snapshot on its metadata file alone and the version a rewind writes on its metadata file
- * alone, and a table with no watermark is checked whole in one listing.
+ * alone, and a table with no watermark is checked whole in one listing, which gives it the newest version whole there
+ * (item 99).
  */
 class DrVerifyTest {
 
@@ -212,6 +213,79 @@ class DrVerifyTest {
     }
 
     @Test
+    @DisplayName("a busy table with no watermark, whose newest commits are still on their way to the DR store, gets the"
+            + " newest version whole there from the one listing")
+    void aBusyTableGetsTheNewestWholeVersion() {
+        append("a");
+        append("b");
+        append("c");
+        append("d");
+        DataFile e = append("e");
+        replicateAll();
+        // Behind: version 6's metadata file, manifest list and data file, and version 5's manifest list.
+        dr.remove(versions.get(5));
+        dr.remove(metadata(6).currentSnapshot().manifestListLocation());
+        dr.remove(e.location());
+        dr.remove(metadata(5).currentSnapshot().manifestListLocation());
+
+        DrVerify.Result result = verify.check(journaled(6, 6));
+
+        assertThat(result.safe()).map(DrVerify.Version::version).contains(4L);
+        assertThat(result.safe()).map(DrVerify.Version::metadataLocation).contains(versions.get(3));
+        assertThat(result.missing()).as("the pointer's").contains(versions.get(5));
+        assertThat(dr.listings.get()).isEqualTo(1);
+        assertThat(dr.heads.get()).as("everything is under the table's location").isZero();
+
+        replicate(versions.get(5));
+
+        assertThat(verify.check(journaled(6, 6)).safe()).as("its metadata file is not enough")
+                .map(DrVerify.Version::version).contains(4L);
+
+        replicateAll();
+
+        assertThat(verify.check(journaled(6, 6)).safe()).map(DrVerify.Version::version).contains(6L);
+    }
+
+    @Test
+    @DisplayName("a file every listed version reaches, lost long ago: no version is whole, found in one walk of the"
+            + " whole table, not one for each version")
+    void aFileLostLongAgoCostsOneWalk() {
+        DataFile a = append("a");
+        append("b");
+        append("c");
+        append("d");
+        append("e");
+        replicateAll();
+        dr.remove(a.location());
+        String manifest = metadata(2).currentSnapshot().allManifests(primary).getFirst().path();
+
+        DrVerify.Result result = verify.check(journaled(6, 5));
+
+        assertThat(result.safe()).isEmpty();
+        assertThat(result.missing()).contains(a.location());
+        assertThat(dr.reads(manifest)).as("version 2's manifest, which each listed version reaches").isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a view with no watermark whose newest metadata file is not yet in the DR store gets the newest that is")
+    void aViewWithNoWatermarkGetsTheNewestVersionThere() {
+        String root = "s3://lake/views/" + UUID.randomUUID();
+        List<DrVerify.Version> view = new ArrayList<>();
+        for (int v = 1; v <= 3; v++) {
+            view.add(new DrVerify.Version(v, root + "/metadata/0000" + v + "-" + UUID.randomUUID() + ".metadata.json",
+                    Optional.of(NOW)));
+        }
+        dr.put(view.get(0).metadataLocation(), "{}".getBytes(StandardCharsets.UTF_8));
+        dr.put(view.get(1).metadataLocation(), "{}".getBytes(StandardCharsets.UTF_8));
+
+        DrVerify.Result result = verify.check(new DrVerify.Item(UUID.randomUUID(), "view", root, view.get(2),
+                Optional.empty(), view, Optional.of(NOW)));
+
+        assertThat(result.safe()).contains(view.get(1));
+        assertThat(result.missing()).contains(view.get(2).metadataLocation());
+    }
+
+    @Test
     @DisplayName("journaled versions that do not follow the watermark one by one are checked whole at the pointer")
     void aGapInTheVersionsIsCheckedWhole() {
         append("a");
@@ -285,6 +359,16 @@ class DrVerifyTest {
                 List.of(), Optional.of(NOW));
     }
 
+    /** The table with no watermark, as the work list names it: its {@code newest} newest versions, the pointer's last. */
+    private DrVerify.Item journaled(int pointer, int newest) {
+        List<DrVerify.Version> listed = new ArrayList<>();
+        for (int v = Math.max(1, pointer - newest + 1); v <= pointer; v++) {
+            listed.add(version(v));
+        }
+        return new DrVerify.Item(UUID.randomUUID(), "table", table.location(), version(pointer), Optional.empty(),
+                listed, version(1).committedAt());
+    }
+
     /** Every version's metadata file, and every file the newest reaches, as a replicator that caught up would. */
     private void replicateAll() {
         versions.forEach(this::replicate);
@@ -332,12 +416,20 @@ class DrVerifyTest {
         }
     }
 
-    /** The DR store: what the test put there, and how often the check asked for one file or listed a prefix. */
+    /**
+     * The DR store: what the test put there, and how often the check asked for one file, listed a prefix or read a
+     * file.
+     */
     private static final class MemoryDr implements SupportsPrefixOperations {
 
         private final Map<String, byte[]> files = new ConcurrentHashMap<>();
+        private final Map<String, AtomicInteger> reads = new ConcurrentHashMap<>();
         final AtomicInteger heads = new AtomicInteger();
         final AtomicInteger listings = new AtomicInteger();
+
+        int reads(String location) {
+            return reads.getOrDefault(location, new AtomicInteger()).get();
+        }
 
         void put(String location, byte[] bytes) {
             files.put(location, bytes);
@@ -358,6 +450,12 @@ class DrVerifyTest {
                     public boolean exists() {
                         heads.incrementAndGet();
                         return true;
+                    }
+
+                    @Override
+                    public SeekableInputStream newStream() {
+                        reads.computeIfAbsent(location, read -> new AtomicInteger()).incrementAndGet();
+                        return super.newStream();
                     }
                 };
             }

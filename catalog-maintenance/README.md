@@ -142,8 +142,11 @@ so it reaches the DR region with the database. It only lists and reads the DR st
 before a disaster, and in the DR region, its replicas naming the DR store itself, before the rewind
 (`deploy/README.md`, "Recovering in the DR region"). How it checks, its routes and the readout are in
 `docs/observability/dr-watermark.md`; its meters (`nuna.maintenance.dr.*`) and alerts in
-`docs/observability/worker-metrics.md`. It logs a check that failed at WARN, and each pass's tally
-(`DR pass done`) only at DEBUG.
+`docs/observability/worker-metrics.md`. It logs each pass's tally at INFO, one line a pass:
+`DR pass done: Pass[objects=.., reported=.., verified=.., behind=.., maxLag=.., failed=.., deferred=..] in .. ms`, the
+tables and views checked, the watermarks moved, the versions they moved past, those still behind, the largest lag,
+the checks that failed and the whole checks put off, and how long the pass took. It logs a check that failed at WARN,
+and what a check found missing at DEBUG.
 
 ## Running it
 
@@ -305,7 +308,7 @@ day (`TestCatalog.allDay`).
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock, in a window of four hours a day: compaction and orphan scans once a night in the window and never outside it, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
 | `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say, and kept by the catalog as the worker reports them. |
-| `DrVerifyTest`, `DrVerifierTest` | | The DR check on two in-memory stores: the watermark stops before the first version missing any file, a version that adds nothing passes on its metadata file, a table with no watermark is checked whole; a pass reports only above the kept watermark, keeps going past a failed check, and sets its meters (`docs/observability/dr-watermark.md`). |
+| `DrVerifyTest`, `DrVerifierTest`, `DrPassesTest` | | The DR check on two in-memory stores: the watermark stops before the first version missing any file, a version that adds nothing passes on its metadata file, a table with no watermark is checked whole and gets the newest version whole in one listing; a pass reports only above the kept watermark, keeps going past a failed check, sets its meters and logs its tally at INFO (`docs/observability/dr-watermark.md`). |
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan changes nothing; the next one catches up. |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |
