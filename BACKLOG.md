@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**24 open:** 7 S, 9 M, 4 L, 4 XL.
+**25 open:** 8 S, 9 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -35,7 +35,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [72](backlog/72.md) | S | Oracle's self-check does not notice a journal-partition job that cannot run | one more query in one store's self-check and a heavy test; waits on Paul's answer below | 2026-11-19 |
 | [75](backlog/75.md) | S | deploy/README.md and install-at-work.md still call the ETag routing choice open | two paragraphs of Markdown; no wait | 2026-11-20 |
-| [78](backlog/78.md) | S | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | a guard change on six routes with tests, once Paul decides; waits on Paul | 2026-11-20 |
+| [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
+| [80](backlog/80.md) | S | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | a `for` on two rules and their docs | 2026-11-20 |
 
 ## Open items in full
 
@@ -223,6 +224,7 @@ Done when the milestone's scope is settled with Paul, built, and its gate is gre
 
 ### 29. M9: carry nuna to work (at work)
 
+- Decided: 2026-11-20, D8
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, the whole install checklist, at work
 
@@ -233,6 +235,8 @@ MinIO and Ceph (PLT-3), and the overnight job in work CI running `./nightly.sh`.
 
 Done when `docs/install-at-work.md` is carried out at work and M9's entry in `build-plan.md`'s Status says what
 passed. Items for anything that fails.
+
+**Added 2026-11-20 (D8, amended):** the DR runbook (PLT-4) tells operators to add `pg.no-sync-standby` to `nuna.database.allow-unsafe` while serving from the DR region, and to remove it once a synchronous standby is back; otherwise the servers there refuse to start (item 6).
 
 ### 43. Hook nuna into work's OpenTelemetry collector and Prometheus (at work)
 
@@ -301,6 +305,8 @@ OTLP translation itself is assumed.
 
 Still open, at work: item 43's names (rename the queries where they differ), the dashboards showing live data, and
 each alert fired once in a test. The item stays open for those, which are its done condition.
+
+**Paul's answer, 2026-11-20 (D43, amended):** the 500 commits a second target stays a panel with no alert ("Panel only").
 
 ### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
 
@@ -401,6 +407,7 @@ passes in the overnight run.
 
 ### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
 
+- Decided: 2026-11-20, D18
 - Added: 2026-11-19 by agent working item 20
 - Touches: catalog-server/
 - Effort: M, four lookups answer before any guard, each with a test; after Paul decides
@@ -421,6 +428,8 @@ it would fail at its first call, the config, rather than at the first listing or
 
 Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
 holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
+
+**Decided 2026-11-20 (D18, amended):** hide catalog names too ("Hide them"): a caller that holds nothing on a catalog gets the same 404 whether it exists or not, on `/v1/config` and on every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/`. Platform operators still see every catalog ("Catalogs, not objects").
 
 ### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
 
@@ -467,6 +476,7 @@ link is back.
 
 ### 72. Oracle's self-check does not notice a journal-partition job that cannot run
 
+- Decided: 2026-11-20, D8
 - Added: 2026-11-19 by agent-a3dc4bb4c858dc2c8, from item 9
 - Touches: catalog-store-oracle/
 - Effort: S, one more query in one store's self-check and a heavy test; waits on Paul's answer below
@@ -485,6 +495,8 @@ failing), with a heavy test that disables the job on a fresh schema and finds th
 
 Paul decides: since item 6 (D8, amended 2026-11-19) the server refuses to start on any self-check finding. Should a
 job that cannot run refuse the start, as the other findings do, or only be reported (the commits still land)?
+
+**Decided 2026-11-20 (D8, amended):** a journal-partition job that cannot run is a finding like the others and refuses the start, unless the operator allows it by its code ("Refuse, like others").
 
 ### 75. deploy/README.md and install-at-work.md still call the ETag routing choice open
 
@@ -505,36 +517,33 @@ claim reached neither:
 Done when both say the epoch is shared (D14, item 15), so the chart's default `service.sessionAffinity: None` keeps
 304s across servers, and neither asks for sticky routing for ETags. The chart itself needs no change.
 
-### 78. Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing
+### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: S, a guard change on six routes with tests, once Paul decides; waits on Paul
+- Decided: 2026-11-20, D21
+- Touches: deploy/local/ deploy/README.md
+- Effort: S, one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install
 
-Item 73 hid namespace, table and view names on the management API (D18, amended again 2026-11-19: "Hide there too";
-"Catalogs, not objects"). Two kinds of route were left as they were, because the decision does not settle them:
 
-1. **The DR routes, which D37 gives to platform operators by name.** `PUT` and `DELETE .../dr-freeze` on a namespace,
-   table or view need a platform operator and no grant, so an operator that holds nothing there still learns whether
-   the name exists (200 or 204 for one that does, 404 for one that does not; a thaw of an unfrozen object answers
-   `NoSuchAttributeException`, of a missing one `NoSuchNamespaceException` and the like). `POST .../dr-reconcile`
-   answers with the path of every active table in the catalog. "Catalogs, not objects" says an operator sees no
-   object name unless granted; D37 says the freeze and the reconcile are operators' deployment actions. Either the DR
-   routes stay open to operators by name (D37 an exception to "Catalogs, not objects"), or an operator needs a grant
-   on what it freezes and sees only the tables it holds something on in a reconcile.
-   A caller that is not an operator and holds nothing on the target already gets the 404 since item 73.
-2. **The routes by object id.** `POST .../objects/{id}/undrop`, `GET .../objects/{id}/export`, and the maintenance
-   purge-claim and purge routes still answer 403 to a refused caller (one that holds nothing on the object; for the
-   purge routes, anyone but a maintenance principal) and 404 for an unknown id. They show no name, only whether an
-   id is in use, and an id is a random UUID the caller must already have. Either they stay as they are, or a caller
-   that holds nothing gets the unknown id's 404.
+Item 5 (2026-11-19) installed the catalog and the maintenance worker on Docker Desktop's Kubernetes with `deploy/local`. The catalog there signs in to the local S3 store (Silo) as its root user, which no user policy binds, so the delete policy with `except` (D21: deny deletes except to maintenance principals; `deploy/README.md`, the `user-policy` lines) is never applied or checked locally, only on a real store in item 4.
 
-Evidence: `GovernanceRoutes.freeze` and `thaw` (`guard.requireOperatorOn`, which hides only from non-operators),
-`ReconcileRoutes.reconcile`, `LifecycleRoutes.undrop` and `export` (`guard.require` on an `Authorizer.Target`, 403
-only), `claimPurge` and `purge` (`guard.requireMaintenance`), as of item 73's landing.
+Paul, 2026-11-20 (D21, amended): "Yes, non-root".
 
-Done when Paul has decided each, the decision is in `decision-ledger.md`, and the routes answer as he decided, with
-tests.
+Done when `deploy/local run.sh up` makes the catalog its own S3 user with the profile's policies, the `except` one included, the catalog runs as that user, and `run.sh smoke` plus a delete check show a delete refused to the catalog's vended credentials and allowed to the maintenance worker, run on Docker Desktop's Kubernetes. Uninstall what the check installs.
+
+### 80. NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Decided: 2026-11-20, D43
+- Touches: deploy/grafana/ docs/observability/
+- Effort: S, a `for` on two rules and their docs
+
+
+`NunaPurgesFailing` and `NunaDeletionsFailing` in `deploy/grafana/rules/nuna-maintenance.rules.yaml` fire on the first evaluation (item 74 named them in `docs/observability/dashboards-and-alerts.md`). One failed purge or deletion, in an hour when no other completed, opens a ticket that then resolves when the next scan's retry succeeds.
+
+Paul, 2026-11-20 (D43, amended): "Add for: 2 scans".
+
+Done when both rules carry a `for` of two scan intervals (the worker's default scan interval, as `docs/observability/worker-metrics.md` gives it), `dashboards-and-alerts.md` and `worker-metrics.md` say so, and the rule files still parse.
 
 ## Done and dropped
 
@@ -594,3 +603,4 @@ tests.
 | [74](backlog/74.md) | HealthMeters keeps its own copy of the audit publish buckets and still says the exported timer has none | done | 2026-11-20 |
 | [76](backlog/76.md) | The overnight load tests expect every conditional load to be a 304, but the shared epoch changes every window | done | 2026-11-20 |
 | [77](backlog/77.md) | rest/Guard keeps its own copy of the rule security/Holdings now holds; TelemetryTest and table-health.md still say an outsider gets 403 on the management API | done | 2026-11-20 |
+| [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
