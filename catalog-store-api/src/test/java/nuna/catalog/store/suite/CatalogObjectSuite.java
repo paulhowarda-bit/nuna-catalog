@@ -400,12 +400,12 @@ public abstract class CatalogObjectSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("Objects: revive brings a dropped or unregistered object back with its id, swapping its pointer in the same transaction")
+    @DisplayName("Objects: revive brings a dropped or unregistered object back with its id in its own namespace, swapping its pointer in the same transaction")
     void reviveBringsTheObjectBack() {
         UUID catalog = newCatalog();
         NamespaceRecord namespace = newNamespace(catalog, "ns");
         NamespaceRecord elsewhere = newNamespace(catalog, "elsewhere");
-        CatalogObject usurper = newTable(elsewhere, "taken");
+        CatalogObject usurper = newTable(namespace, "taken");
         for (CatalogObject.State from : List.of(CatalogObject.State.DROPPED, CatalogObject.State.UNREGISTERED)) {
             CatalogObject table = newTable(namespace, "t-" + from);
             Pointer base = store.readPointer(table.mainKey()).orElseThrow();
@@ -415,29 +415,64 @@ public abstract class CatalogObjectSuite extends GroupSuite {
                 assertApplied(store.unregisterObject(table.id(), base, change()));
             }
             CommitBatch taken = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "taken-" + table.id()));
-            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("TAKEN"), taken))
+            assertThat(store.reviveObject(table.id(), from, namespace.id(), name("TAKEN"), taken))
                     .isEqualTo(new WriteResult.NameTaken(usurper.id()));
             assertThat(underTest().writtenRows(taken)).isEqualTo(WrittenRows.NONE);
             CatalogObject.State other = from == CatalogObject.State.DROPPED
                     ? CatalogObject.State.UNREGISTERED : CatalogObject.State.DROPPED;
-            assertThat(store.reviveObject(table.id(), other, elsewhere.id(), name("Back"), taken))
+            assertThat(store.reviveObject(table.id(), other, namespace.id(), name("Back"), taken))
                     .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("Back"), taken))
+                    .as("another namespace").isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+            assertThat(underTest().writtenRows(taken)).isEqualTo(WrittenRows.NONE);
             CommitBatch stale = Commits.batch(Commits.swap(table.mainKey(), Optional.of(Commits.pointer("stale", 1)),
                     Commits.pointer("stale-next-" + table.id(), 2)));
-            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("Back"), stale))
+            assertThat(store.reviveObject(table.id(), from, namespace.id(), name("Back"), stale))
                     .isEqualTo(new WriteResult.VersionMismatch(1));
             CommitBatch revive = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "revived-" + table.id()));
 
-            assertThat(store.reviveObject(table.id(), from, elsewhere.id(), name("Back-" + from), revive))
+            assertThat(store.reviveObject(table.id(), from, namespace.id(), name("Back-" + from), revive))
                     .isEqualTo(WriteResult.APPLIED);
 
-            assertThat(store.findObject(elsewhere.id(), "back-" + from.name().toLowerCase(java.util.Locale.ROOT)))
-                    .contains(CatalogObject.active(catalog, table.id(), elsewhere.id(), name("Back-" + from), table.kind(),
+            assertThat(store.findObject(namespace.id(), "back-" + from.name().toLowerCase(java.util.Locale.ROOT)))
+                    .contains(CatalogObject.active(catalog, table.id(), namespace.id(), name("Back-" + from), table.kind(),
                             table.locationRoot()));
             assertThat(store.readPointer(table.mainKey())).contains(Commits.next(revive));
             assertThat(underTest().writtenRows(revive)).isEqualTo(WrittenRows.allOf(revive));
             assertThat(store.findCommit(revive.commitId(), table.mainKey())).isEqualTo(CommitLookup.COMMITTED);
         }
+    }
+
+    @Test
+    @DisplayName("Objects: an object undropped, renamed into another namespace and dropped again after a revive read it is not brought back in the namespace it first left, and writes nothing")
+    void reviveComparesTheNamespace() {
+        UUID catalog = newCatalog();
+        NamespaceRecord home = newNamespace(catalog, "home");
+        NamespaceRecord away = newNamespace(catalog, "away");
+        CatalogObject table = newTable(home, "t");
+        Pointer base = store.readPointer(table.mainKey()).orElseThrow();
+        assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
+        CatalogObject read = store.readObject(table.id()).orElseThrow();
+        CommitBatch revive = Commits.fullBatch(Commits.advance(table.mainKey(), Optional.of(base), "revived-" + table.id()));
+        assertApplied(store.undropObject(table.id(), home.id(), name("t"), change()));
+        assertApplied(store.renameObject(table.id(), away.id(), name("moved"), change()));
+        assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
+        assertThat(store.readPointer(table.mainKey())).as("undrop, rename and drop leave the pointer").contains(base);
+
+        assertThat(store.reviveObject(table.id(), read.state(), read.namespaceId(), read.name(), revive))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+
+        assertThat(underTest().writtenRows(revive)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.findObject(home.id(), "t")).isEmpty();
+        CatalogObject current = store.readObject(table.id()).orElseThrow();
+        assertThat(current.state()).isEqualTo(CatalogObject.State.DROPPED);
+        assertThat(current.namespaceId()).isEqualTo(away.id());
+        assertThat(store.readPointer(table.mainKey())).contains(base);
+
+        assertThat(store.reviveObject(table.id(), CatalogObject.State.DROPPED, away.id(), name("moved"), revive))
+                .as("where it now is").isEqualTo(WriteResult.APPLIED);
+        assertThat(store.findObject(away.id(), "moved")).contains(CatalogObject.active(catalog, table.id(), away.id(),
+                name("moved"), table.kind(), table.locationRoot()));
     }
 
     @Tag("heavy")

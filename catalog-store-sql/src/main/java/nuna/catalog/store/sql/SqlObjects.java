@@ -107,11 +107,11 @@ final class SqlObjects {
 
     WriteResult rename(UUID objectId, UUID namespaceId, Name name, Change change) {
         return transactions.change(change, "object rename", connection -> {
-            Optional<UUID> catalogId = lock(connection, objectId, CatalogObject.State.ACTIVE);
-            if (catalogId.isEmpty()) {
+            Optional<Placed> locked = lock(connection, objectId, CatalogObject.State.ACTIVE);
+            if (locked.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
-            return place(connection, objectId, catalogId.get(), namespaceId, name, "");
+            return place(connection, objectId, locked.get().catalogId(), namespaceId, name, "");
         });
     }
 
@@ -162,8 +162,9 @@ final class SqlObjects {
     }
 
     /**
-     * Locks the batch's pointers, then the object, as unregister does; puts the object at the name as
-     * undrop does, and writes the batch, all in the batch's transaction.
+     * Locks the batch's pointers, then the object, as unregister does, and compares its namespace under
+     * that lock; puts the object at the name as undrop does, and writes the batch, all in the batch's
+     * transaction.
      */
     WriteResult revive(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch) {
         return transactions.write(batch.commitId(), "object revive", connection -> {
@@ -171,11 +172,11 @@ final class SqlObjects {
             if (conflict.isPresent()) {
                 return new WriteResult.VersionMismatch(conflict.get().actual().map(Pointer::version).orElse(0L));
             }
-            Optional<UUID> catalogId = lock(connection, objectId, from);
-            if (catalogId.isEmpty()) {
+            Optional<Placed> locked = lock(connection, objectId, from);
+            if (locked.isEmpty() || !locked.get().namespaceId().equals(namespaceId)) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
-            WriteResult placed = place(connection, objectId, catalogId.get(), namespaceId, name,
+            WriteResult placed = place(connection, objectId, locked.get().catalogId(), namespaceId, name,
                     ", state = 'ACTIVE', dropped_at = NULL, purge_after = NULL");
             if (placed.equals(WriteResult.APPLIED)) {
                 Pointers.record(connection, batch);
@@ -186,11 +187,11 @@ final class SqlObjects {
 
     WriteResult undrop(UUID objectId, UUID namespaceId, Name name, Change change) {
         return transactions.change(change, "object undrop", connection -> {
-            Optional<UUID> catalogId = lock(connection, objectId, CatalogObject.State.DROPPED);
-            if (catalogId.isEmpty()) {
+            Optional<Placed> locked = lock(connection, objectId, CatalogObject.State.DROPPED);
+            if (locked.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
             }
-            return place(connection, objectId, catalogId.get(), namespaceId, name,
+            return place(connection, objectId, locked.get().catalogId(), namespaceId, name,
                     ", state = 'ACTIVE', dropped_at = NULL, purge_after = NULL");
         });
     }
@@ -316,10 +317,15 @@ final class SqlObjects {
         }, namespaceId, catalogId);
     }
 
-    private static Optional<UUID> lock(Connection connection, UUID objectId, CatalogObject.State state)
+    /** Where a locked object is. */
+    private record Placed(UUID catalogId, UUID namespaceId) {
+    }
+
+    private static Optional<Placed> lock(Connection connection, UUID objectId, CatalogObject.State state)
             throws SQLException {
-        return first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ? AND state = ? FOR UPDATE",
-                row -> Jdbc.uuid(row, "catalog_id"), objectId, state.name());
+        return first(connection, "SELECT catalog_id, namespace_id FROM catalog_object WHERE id = ? AND state = ?"
+                + " FOR UPDATE", row -> new Placed(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "namespace_id")),
+                objectId, state.name());
     }
 
     private record Held(UUID catalogId, List<UUID> path) {

@@ -71,15 +71,17 @@ public interface CatalogObjectStore {
     WriteResult unregisterObject(UUID objectId, Pointer expected, Change change);
 
     /**
-     * Makes an object in state {@code from}, dropped or unregistered, active again as {@code name} in
-     * {@code namespaceId}, keeping its id, and applies {@code batch}, which swaps its main pointer to
+     * Makes an object in state {@code from} in {@code namespaceId}, dropped or unregistered, active again
+     * there as {@code name}, keeping its id, and applies {@code batch}, which swaps its main pointer to
      * the file registered for it, with the batch's journal, outbox and idempotency records, all in one
-     * transaction (D13, D25). An unknown outcome is resolved with {@link CommitStore#findCommit} on the
-     * batch's id and the object's main pointer.
+     * transaction (D13, D25). The state and the namespace are compared under the object's lock, so an
+     * object undropped, renamed into another namespace and dropped again since the caller read it is not
+     * brought back in the namespace it left. An unknown outcome is resolved with
+     * {@link CommitStore#findCommit} on the batch's id and the object's main pointer.
      *
-     * @return {@code Applied}, {@code NameTaken}, {@code Missing(OBJECT)} (not in state {@code from}),
-     *         {@code Missing(NAMESPACE)}, or {@code VersionMismatch} carrying the main pointer's version
-     *         when it is not the batch's expected one
+     * @return {@code Applied}, {@code NameTaken}, {@code Missing(OBJECT)} (not in state {@code from} in
+     *         {@code namespaceId}), {@code Missing(NAMESPACE)}, or {@code VersionMismatch} carrying the main
+     *         pointer's version when it is not the batch's expected one
      * @throws CommitOutcomeUnknownException carrying the batch's commit id
      */
     WriteResult reviveObject(UUID objectId, CatalogObject.State from, UUID namespaceId, Name name, CommitBatch batch);
