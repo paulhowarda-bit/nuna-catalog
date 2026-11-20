@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 6 S, 8 M, 2 L, 4 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,7 +30,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
-| [91](backlog/91.md) | S | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | written and run on AWS but for KubernetesCompactionTest, which waits on room on Docker Desktop's Kubernetes for its Job's 2 GiB (the nuna-demo stack down, Paul's call) | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 
 ## Open items in full
@@ -641,60 +640,6 @@ Done when a request whose token cannot be checked because the issuer's keys cann
 record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
 fetch failure mapped back to 401) makes that test fail.
 
-### 91. On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/test/java/nuna/maintenance/PurgeTest.java catalog-maintenance/src/test/java/nuna/maintenance/NightlyCleanupTest.java catalog-maintenance/src/test/java/nuna/maintenance/OrphanRaceTest.java catalog-maintenance/src/test/java/nuna/maintenance/ScanMetricsTest.java catalog-maintenance/src/test/java/nuna/maintenance/KubernetesCompactionTest.java catalog-maintenance/src/test/java/nuna/maintenance/WorkerRunTest.java catalog-maintenance/src/test/java/nuna/maintenance/ChildJvm.java catalog-maintenance/src/test/java/nuna/maintenance/WorkerTraceTest.java catalog-maintenance/src/test/java/nuna/maintenance/TestCatalog.java
-- Effort: S, written and run on AWS but for KubernetesCompactionTest, which waits on room on Docker Desktop's Kubernetes for its Job's 2 GiB (the nuna-demo stack down, Paul's call)
-
-Found by item 4 (2026-11-20). Since item 4, `TestCatalog` applies the S3 delete policy to the AWS run's bucket, as
-it does on Ceph, and `TestCatalog.worker(clock, compactor)` signs the worker in as the run's maintenance role
-(`awsWorkerStorage`: S3FileIO with Iceberg's AssumeRoleAwsClientFactory), since `Storage.of` reaches AWS only
-through the SDK's default chain, which in the test JVM is the run's sign-in, the catalog's own identity.
-
-Tests that build the worker's storage themselves still call `Storage.of(catalog.storageProfiles())`, and so sign in
-as the run's sign-in on AWS, which the policy refuses deletes beneath `tables/`: `PurgeTest` (its simulated crashed
-worker's partial delete), `NightlyCleanupTest`, `OrphanRaceTest`, `ScanMetricsTest`, `KubernetesCompactionTest`,
-`WorkerRunTest`; the child JVMs of `KillMidPurgeTest` and `LargeOrphanScanTest` (`ChildJvm.storage`); and
-`WorkerTraceTest`, which runs the worker service in-process with storage settings, so its default chain too.
-Item 4 could not claim these files (its claim named fewer, and widening a claim needs a release).
-
-Evidence: `./gradlew :catalog-maintenance:test -Pheavy -Ps3=aws -Pnuna.aws.profile=fidice-sandbox --tests
-nuna.maintenance.PurgeTest` (2026-11-20, item 4's run): `aClaimedPurgeResumesAfterACrash` failed at PurgeTest.java:67,
-`BulkDeletionFailureException: Failed to delete 1 files` (its setup's `Storage.of` delete, before the worker runs);
-`purgeRemovesThePrefixAfterAClaim`, `OrphanScanTest`, `PendingDeletionTest` and `SnapshotExpiryTest` passed with the
-worker as its role.
-
-Done when every in-JVM call uses the worker's storage from `TestCatalog` (make `awsWorkerStorage` reachable, say
-`catalog.workerStorage()`), the child JVMs get the role (a system property `ChildJvm.start` sets on AWS, read by
-`ChildJvm.storage`), `WorkerTraceTest` either gets the role or assumes it is not on AWS, and those tests pass with
-`-Ps3=aws` (heavy: PostgreSQL and Kafka containers, and the AWS sign-in).
-
-Worked on 2026-11-20 (worktree-agent-a544b000343c8de1e); open until `KubernetesCompactionTest` passes on AWS.
-
-- `TestCatalog.workerStorage()`: storage as the worker, `Storage.of(storageProfiles())` on Silo and Ceph as before, the
-  run's maintenance role on AWS through `TestCatalog.asRole(role)` (once the private `awsWorkerStorage`). The six
-  tests call it instead of `Storage.of(catalog.storageProfiles())`, and `worker(clock, compactor)` uses it.
-- `ChildJvm.start` sets `-Dnuna.test.worker-role=<the role's ARN>` on AWS, and `ChildJvm.storage` opens
-  `TestCatalog.asRole` when it is set (the child's default chain is the run's sign-in, from `-Daws.profile`), else
-  `Storage.of` as before. `PurgeProcess` and `OrphanScanProcess` are unchanged.
-- `WorkerTraceTest` assumes it is not on AWS (a `@BeforeAll` assumption, before anything starts). The service builds
-  its storage from its settings alone, which on AWS name no keys, so it signs in through the SDK's default chain: in
-  the test JVM that is the run's sign-in, which the in-process catalog servers share, and no setting gives the
-  in-process service another identity without a hook in main code or a JVM of its own. What it checks, the scan's
-  trace, does not depend on the store and runs on Silo and Ceph.
-
-On AWS (`fidice-sandbox`, us-east-1), one Gradle run per class, each `:catalog-maintenance:test -Pheavy -Ps3=aws
--Pnuna.aws.profile=fidice-sandbox --tests <class>` with PostgreSQL and Kafka containers: `PurgeTest` 2 tests, 0
-failures (`aClaimedPurgeResumesAfterACrash` included); `NightlyCleanupTest` 3, 0; `OrphanRaceTest` 2, 0;
-`ScanMetricsTest` 1, 0; `WorkerRunTest` 1, 0; `KillMidPurgeTest` 1, 0 (its child deleted as the role: under the
-policy no other identity could); `WorkerTraceTest` 1 skipped. On Silo, `WorkerTraceTest` 1 test, 0 failures, not
-skipped. After the runs, 0 buckets and 0 roles named `nuna-test-` in the account. `LargeOrphanScanTest` (overnight)
-compiles; not run.
-
-Left: `KubernetesCompactionTest` on AWS, not run: its Job's pod requests 2 GiB, and Docker Desktop's node had 6 GiB of
-its 7.5 GiB allocatable requested by the nuna-demo stack, so the pod would not fit (6 + 2 > 7.5).
-
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -794,3 +739,4 @@ the watermark. Three parts were left:
 | [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
+| [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
