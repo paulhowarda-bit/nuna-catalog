@@ -190,7 +190,7 @@ class ManagementHiddenNamesTest {
         caller = TOM;
         assertThat(alike(() -> governance.governance("gate", "hr", "salaries", null, http), salaries))
                 .isEqualTo(new Answer(404, "NoSuchTableException", "Table does not exist: hr.salaries"));
-        assertThat(alike(() -> governance.freeze("gate", "hr", "roster", null, REASON, http), roster))
+        assertThat(alike(() -> governance.freeze("gate", "hr", null, "roster", REASON, http), roster))
                 .isEqualTo(new Answer(404, "NoSuchViewException", "View does not exist: hr.roster"));
     }
 
