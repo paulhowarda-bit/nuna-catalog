@@ -7,7 +7,8 @@ import java.util.Objects;
  * The commit engine's bounds (build-plan P10).
  *
  * @param maxAttempts  attempts of one request, the first included, before a lost swap is a 409 (D9); also
- *                     how often findCommit is asked to decide an unknown outcome while the store is down
+ *                     how often the store is asked to decide an unknown outcome while it is down (findCommit,
+ *                     or an unregister's read-back)
  * @param retryBudget  wall-clock bound on those attempts and asks, from the request's start; no retry starts
  *                     after it
  * @param firstBackoff the wait before the second attempt; it doubles per attempt, as iceberg-core's

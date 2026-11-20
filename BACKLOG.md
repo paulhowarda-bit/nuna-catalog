@@ -38,8 +38,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [67](backlog/67.md) | S | An unregister whose outcome is unknown waits within the retry budget when the store is down | one path in the commit engine and a fault test, as item 8 | 2026-11-19 |
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
+| [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 
 ## Open items in full
 
@@ -471,29 +471,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 67. An unregister whose outcome is unknown waits within the retry budget when the store is down
-
-- Added: 2026-11-19 by the agent on item 8
-- Touches: catalog-core/
-- Effort: S, one path in the commit engine and a fault test, as item 8
-
-Item 8 made `findCommit` wait within the retry budget (P10: at most 4 attempts or 2 s) when the store cannot be
-reached, so a commit, create, register or transaction whose outcome is unknown during a short outage is settled. An
-unregister does not settle through `findCommit`: when `unregisterObject` throws `CommitOutcomeUnknownException`, the
-engine reads the object back with `readObject`, and when that read fails it answers 500 CommitStateUnknownException
-at once (`CommitEngine.unregister`, `catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java` about
-line 650), whatever the failure. Item 8 left it alone, as its title names `findCommit`.
-
-`Reconcile.apply` (the DR runbook's reconcile, D37) also asks `findCommit` after an unknown outcome, with no wait: a
-store outage there throws out of the apply to the operator's route at once. Nothing is lost (a second run plans
-again from the pointer), but the count of steps already applied is not reported. Giving it the wait means passing
-the engine's `CommitSettings` and sleeper to `Reconcile`, which `catalog-server`'s `ReconcileRoutes` constructs;
-it is noted here, not part of this item.
-
-Done when an unregister whose outcome is unknown during a short outage is settled within the budget, shown by a fault
-test in `catalog-core` as item 8's are (`CommitEngineTest$UnknownOutcomes`), and an outage longer than the budget
-still answers 500 CommitStateUnknownException.
-
 ### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
 
 - Added: 2026-11-19 by agent working item 20
@@ -516,6 +493,29 @@ it would fail at its first call, the config, rather than at the first listing or
 
 Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
 holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
+
+### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
+
+- Added: 2026-11-19 by the agent on item 67
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java, catalog-core/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+- Effort: S, one call in Reconcile, its construction in one route, and a test with a store double
+
+Items 8 and 67 made the commit engine wait within the retry budget (P10: at most 4 asks, none starting more than 2 s
+after the request started, with the commit loop's backoff) when the store cannot be reached while it decides an
+unknown outcome. `Reconcile.apply` (the DR runbook's reconcile, D37) does not: when `store.commit` throws
+`CommitOutcomeUnknownException` it asks `findCommit` once (`catalog-core/src/main/java/nuna/catalog/core/commit/
+Reconcile.java`, about line 185), so a store outage there throws `StoreUnavailableException` out of the apply to the
+operator's route at once. Nothing is lost (a second run plans again from the pointer), but the count of steps already
+applied is not reported.
+
+Giving it the wait means passing the engine's `CommitSettings` and sleeper to `Reconcile`, which
+`catalog-server`'s `ReconcileRoutes` constructs (`new Reconcile(store, files, clock)`), and sharing the engine's
+asking loop (`CommitEngine.decide`, private today) rather than copying it. Item 67 left it, as its brief kept it out
+of scope (`catalog-server` was held by another agent).
+
+Done when a reconcile step whose outcome is unknown during a short outage is settled within the budget, shown by a
+test with a store double that needs no database (as `UnregisterOutageTest` does), and an outage longer than the
+budget answers as today.
 
 ## Done and dropped
 
@@ -561,3 +561,4 @@ holds nothing on a catalog gets the same answer whether or not it exists, with t
 | [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
+| [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |

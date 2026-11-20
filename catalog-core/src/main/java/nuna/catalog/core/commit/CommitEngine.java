@@ -613,7 +613,8 @@ public final class CommitEngine {
      * Unregisters an active table (D13), the one the REST layer authorized: its main pointer as read must
      * still be current when the store locks it, so a commit racing the unregister either lands first, and
      * the unregister reads again, or is refused after it. The answer names the metadata the table was
-     * unregistered at; a key replays it.
+     * unregistered at; a key replays it. One whose outcome was unknown is decided by reading the table back,
+     * waiting out a short outage as {@link #decide} does.
      */
     private CommitReply unregister(Request request) {
         Optional<CatalogObject> found = store.findObject(request.name().namespaceId(),
@@ -647,7 +648,7 @@ public final class CommitEngine {
             } catch (CommitOutcomeUnknownException e) {
                 Optional<CatalogObject> after;
                 try {
-                    after = store.readObject(object.id());
+                    after = decide(() -> store.readObject(object.id()), started, "unregister " + request.commitId());
                 } catch (StoreException readFailed) {
                     return new ServerError(STATE_UNKNOWN, "Unregister of " + display(request)
                             + " may or may not have been applied: " + e.getMessage());
@@ -973,26 +974,19 @@ public final class CommitEngine {
     }
 
     /**
-     * Decides a commit whose outcome was unknown (D9), by any one key it swapped. A store that cannot be
-     * reached is asked again within the retry bounds (P10): at most {@code maxAttempts} times, and never after
-     * the request's retry budget. Empty means it did not commit and another attempt may run.
+     * Decides a commit whose outcome was unknown (D9), by any one key it swapped, asking the store as
+     * {@link #decide} does. Empty means it did not commit and another attempt may run.
      */
     private Optional<CommitReply> settle(Request request, PointerKey anyKey, Supplier<CommitReply> landed,
                                          int attempt, Instant started) {
         CommitLookup lookup;
-        for (int asked = 1; ; asked++) {
-            try {
-                lookup = store.findCommit(request.commitId(), anyKey);
-                break;
-            } catch (StoreException e) {
-                if (e instanceof StoreUnavailableException && backOff(asked, started)) {
-                    LOG.log(System.Logger.Level.DEBUG, "store unavailable deciding commit " + request.commitId(), e);
-                    continue;
-                }
-                LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
-                return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()
-                        + " may or may not have been applied: " + e.getMessage()));
-            }
+        try {
+            lookup = decide(() -> store.findCommit(request.commitId(), anyKey), started,
+                    "commit " + request.commitId());
+        } catch (StoreException e) {
+            LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
+            return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()
+                    + " may or may not have been applied: " + e.getMessage()));
         }
         if (lookup == CommitLookup.COMMITTED) {
             return Optional.of(landed.get());
@@ -1002,6 +996,26 @@ public final class CommitEngine {
         }
         return Optional.of(new ServerError(SERVICE_FAILURE, "Commit " + request.commitId()
                 + " was not applied and the retry bound is spent"));
+    }
+
+    /**
+     * Asks the store what became of a write whose outcome was unknown (D9). A store that cannot be reached
+     * is asked again within the retry bounds (P10): at most {@code maxAttempts} times, with the commit loop's
+     * backoff, and never after the request's retry budget, counted from {@code started}. Throws the last
+     * failure once those are spent, and any other {@link StoreException} (the store answers but cannot
+     * say) at once.
+     */
+    private <T> T decide(Supplier<T> ask, Instant started, String what) {
+        for (int asked = 1; ; asked++) {
+            try {
+                return ask.get();
+            } catch (StoreUnavailableException e) {
+                if (!backOff(asked, started)) {
+                    throw e;
+                }
+                LOG.log(System.Logger.Level.DEBUG, "store unavailable deciding " + what, e);
+            }
+        }
     }
 
     private CommitReply committed(CatalogObject object, Pointer pointer, String json, boolean regulatedChange,
