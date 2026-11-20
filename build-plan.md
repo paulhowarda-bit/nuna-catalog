@@ -287,7 +287,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
   - `accept` is assembled by hand; the audit archive could prove tips instead.
   - A register is refused under a DR freeze, so the runbook registers unknown tables after the thaw.
   - Oracle and MongoDB stores do not raise `StoreUnavailableException` yet, so an outage there still answers 500.
-  - `findCommit` answers "unknown" at once when the store is down, where it could wait within the retry budget.
+  - `findCommit` (backlog 8) and an unregister's read-back (backlog 67) wait within the retry budget when the store is down; the DR reconcile's apply still asks once (backlog 69).
 
 ### M9 — Carry to work
 
