@@ -8,12 +8,11 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 4 S, 8 M, 2 L, 4 XL.
+**19 open:** 6 S, 7 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
-| [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
@@ -30,6 +29,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
+| [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
+| [91](backlog/91.md) | S | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | one-line changes in six tests and a system property for the child JVMs; WorkerTraceTest's in-process worker service may need more (below) | 2026-11-20 |
 
 ## Open items in full
 
@@ -55,20 +56,6 @@ Done when `./heavy.sh` is green, every bite bites on its assertion (read the log
 recorded in `build-plan.md`'s Status. Anything that fails gets an item of its own.
 
 **Decided 2026-11-19 (D42):** the overnight run covers this pass ("Overnight run covers it"): it runs the heavy build, the Ceph leg and the bites every night that code changed. This item closes the first night all three are green; there is no pass of its own.
-
-### 4. Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, three policies applied to real stores and the worker run on AWS; no new code expected
-
-`build-plan.md`, follow-ups of 2026-11-13: the AWS bucket policy and the MinIO worker policy from
-`GET /management/v1/maintenance/delete-policies` have never been applied to a real store, and no pass runs the
-maintenance worker on AWS. Also never checked (review fixes of 2026-11-13): whether Ceph lets a bucket policy refuse
-its owner a policy change.
-
-Done when each policy has been applied as the catalog gives it (AWS: the `nuna-sandbox` account; MinIO: a store
-that enforces user policies), the worker deletes and lists beneath its prefixes and nobody else can, and the Ceph
-question has an answer, each recorded in `build-plan.md`.
 
 ### 17. Console sign-in against Entra ID and Ping, with an automated test
 
@@ -565,12 +552,63 @@ one), declares a storage profile naming that `ca-bundle`, runs a compaction Job 
 real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
 fail on an assertion, not on fixture start-up.
 
+### 90. An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401
+
+- Decided: 2026-11-20, D16
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-security/ catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java bites/D16/
+- Effort: S, one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite
+
+When the catalog cannot fetch an issuer's signing keys (the IdP is down, or slower than the 5 s read timeout item 60
+gave the JWKS fetch), `TokenAuthenticator` refuses the token as invalid: 401 with `Bearer error="invalid_token"`. That
+tells the client its good token is bad, so it throws the token away or sends its user to sign in again, when the
+fault is the IdP's and passes. `JwksRefreshTest#anUnreachableJwksMeansNoTokenIsAccepted` asserts the 401 today.
+Found by item 60's agent, 2026-11-20.
+
+Paul, 2026-11-20: "503, Retry-After".
+
+Done when a request whose token cannot be checked because the issuer's keys cannot be fetched answers 503 with a
+`Retry-After` header in the Iceberg error shape, and no token is accepted unchecked; a token that is bad on its own
+(wrong signature against keys the catalog holds, expired, wrong audience or issuer) still answers 401; the audit
+record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
+fetch failure mapped back to 401) makes that test fail.
+
+### 91. On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-maintenance/src/test/java/nuna/maintenance/PurgeTest.java catalog-maintenance/src/test/java/nuna/maintenance/NightlyCleanupTest.java catalog-maintenance/src/test/java/nuna/maintenance/OrphanRaceTest.java catalog-maintenance/src/test/java/nuna/maintenance/ScanMetricsTest.java catalog-maintenance/src/test/java/nuna/maintenance/KubernetesCompactionTest.java catalog-maintenance/src/test/java/nuna/maintenance/WorkerRunTest.java catalog-maintenance/src/test/java/nuna/maintenance/ChildJvm.java catalog-maintenance/src/test/java/nuna/maintenance/WorkerTraceTest.java catalog-maintenance/src/test/java/nuna/maintenance/TestCatalog.java
+- Effort: S, one-line changes in six tests and a system property for the child JVMs; WorkerTraceTest's in-process worker service may need more (below)
+
+Found by item 4 (2026-11-20). Since item 4, `TestCatalog` applies the S3 delete policy to the AWS run's bucket, as
+it does on Ceph, and `TestCatalog.worker(clock, compactor)` signs the worker in as the run's maintenance role
+(`awsWorkerStorage`: S3FileIO with Iceberg's AssumeRoleAwsClientFactory), since `Storage.of` reaches AWS only
+through the SDK's default chain, which in the test JVM is the run's sign-in, the catalog's own identity.
+
+Tests that build the worker's storage themselves still call `Storage.of(catalog.storageProfiles())`, and so sign in
+as the run's sign-in on AWS, which the policy refuses deletes beneath `tables/`: `PurgeTest` (its simulated crashed
+worker's partial delete), `NightlyCleanupTest`, `OrphanRaceTest`, `ScanMetricsTest`, `KubernetesCompactionTest`,
+`WorkerRunTest`; the child JVMs of `KillMidPurgeTest` and `LargeOrphanScanTest` (`ChildJvm.storage`); and
+`WorkerTraceTest`, which runs the worker service in-process with storage settings, so its default chain too.
+Item 4 could not claim these files (its claim named fewer, and widening a claim needs a release).
+
+Evidence: `./gradlew :catalog-maintenance:test -Pheavy -Ps3=aws -Pnuna.aws.profile=fidice-sandbox --tests
+nuna.maintenance.PurgeTest` (2026-11-20, item 4's run): `aClaimedPurgeResumesAfterACrash` failed at PurgeTest.java:67,
+`BulkDeletionFailureException: Failed to delete 1 files` (its setup's `Storage.of` delete, before the worker runs);
+`purgeRemovesThePrefixAfterAClaim`, `OrphanScanTest`, `PendingDeletionTest` and `SnapshotExpiryTest` passed with the
+worker as its role.
+
+Done when every in-JVM call uses the worker's storage from `TestCatalog` (make `awsWorkerStorage` reachable, say
+`catalog.workerStorage()`), the child JVMs get the role (a system property `ChildJvm.start` sets on AWS, read by
+`ChildJvm.storage`), `WorkerTraceTest` either gets the role or assumes it is not on AWS, and those tests pass with
+`-Ps3=aws` (heavy: PostgreSQL and Kafka containers, and the AWS sign-in).
+
 ## Done and dropped
 
 | # | Item | Status | On |
 |--:|:--|:--|:--|
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
+| [4](backlog/4.md) | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | done | 2026-11-20 |
 | [5](backlog/5.md) | Install the nuna-maintenance Helm chart somewhere | done | 2026-11-20 |
 | [6](backlog/6.md) | The server runs the store's self-check at startup (ask Paul before wiring it) | done | 2026-11-20 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |

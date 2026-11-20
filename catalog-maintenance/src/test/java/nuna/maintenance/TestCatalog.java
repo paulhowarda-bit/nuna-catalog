@@ -29,6 +29,7 @@ import java.time.LocalTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -42,8 +43,11 @@ import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.aws.AssumeRoleAwsClientFactory;
+import org.apache.iceberg.aws.s3.S3FileIO;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.io.PositionOutputStream;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.types.Types;
@@ -237,16 +241,19 @@ final class TestCatalog {
     }
 
     /**
-     * On Ceph, the delete policy an operator applies (D30), as it is: beneath {@code tables/} only the worker's own
-     * user deletes, and it lists there too; it reads files through vended credentials. Silo enforces no bucket
-     * policy, and the AWS run's identity is the worker's.
+     * On Ceph and AWS, the delete policy an operator applies (D30), as it is: beneath {@code tables/} only the
+     * worker's own identity deletes (Ceph's maintenance user, the AWS run's maintenance role), and it lists there too;
+     * it reads files through vended credentials. Silo enforces no bucket policy. On AWS the run's sign-in, which is
+     * also the catalog's own identity here, may then no longer delete beneath {@code tables/}; {@link TestS3} removes
+     * the policy as the worker when the run ends.
      */
     private void protectDeletes() {
-        if (s3.kind != TestS3.Kind.CEPH) {
+        if (s3.kind == TestS3.Kind.SILO) {
             return;
         }
-        String policy = DeletePolicy.bucketPolicy(StoreKind.CEPH, TestS3.REGION, bucket, List.of(new DeletePolicy.Worker(
-                s3.maintenancePrincipal(), List.of(ObjectLocation.parse("s3://" + bucket + "/tables")))));
+        String policy = DeletePolicy.bucketPolicy(StoreKind.valueOf(s3.profileKind()), TestS3.REGION, bucket,
+                List.of(new DeletePolicy.Worker(s3.maintenancePrincipal(),
+                        List.of(ObjectLocation.parse("s3://" + bucket + "/tables")))));
         try (S3Client client = s3.client()) {
             client.putBucketPolicy(r -> r.bucket(bucket).policy(policy));
         }
@@ -317,7 +324,38 @@ final class TestCatalog {
 
     /** The worker, with its own clock, deciding nothing by the server's. */
     Worker worker(Clock clock, Compactor compactor) {
-        return worker(clock, compactor, Storage.of(storageProfiles()));
+        return worker(clock, compactor,
+                s3.kind == TestS3.Kind.AWS ? awsWorkerStorage() : Storage.of(storageProfiles()));
+    }
+
+    /**
+     * On AWS, the worker's storage as its own role, the run's maintenance role. A deployed worker reaches AWS as its
+     * role through the SDK's default chain (its pod's identity), which is all {@link Storage#of} uses there; in this
+     * JVM that chain is the run's sign-in, the catalog's own identity, which the delete policy refuses. So the same
+     * S3FileIO is opened here with Iceberg's AssumeRoleAwsClientFactory, which assumes the role from that sign-in, and
+     * the worker lists and deletes through it as {@link Storage#of}'s does: listPrefix and deleteFiles.
+     */
+    private Storage awsWorkerStorage() {
+        S3FileIO io = new S3FileIO();
+        io.initialize(Map.of("client.region", TestS3.REGION, "http-client.type", "apache",
+                "client.factory", AssumeRoleAwsClientFactory.class.getName(),
+                "client.assume-role.arn", s3.maintenancePrincipal(), "client.assume-role.region", TestS3.REGION));
+        return new Storage() {
+            @Override
+            public Iterable<FileInfo> list(String prefix) {
+                return io.listPrefix(prefix);
+            }
+
+            @Override
+            public void delete(Collection<String> locations) {
+                io.deleteFiles(locations);
+            }
+
+            @Override
+            public void close() {
+                io.close();
+            }
+        };
     }
 
     Worker worker(Clock clock, Compactor compactor, Storage storage) {
