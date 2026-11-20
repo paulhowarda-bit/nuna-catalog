@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**17 open:** 3 S, 8 M, 2 L, 4 XL.
+**18 open:** 3 S, 9 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,6 +29,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
+| [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 
 ## Open items in full
 
@@ -511,6 +512,28 @@ a production chain will not fit in a server's heap. The drill and the tests read
 Done when the reconcile's read verifies and filters each chain in one streamed pass, segment by segment
 (`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
 memory (`MemoryS3`) whose chain is larger than the reader holds at once.
+
+### 89. A compaction Job against a store behind a private CA, end to end
+
+- Decided: 2026-11-20, D21
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-maintenance/src/test/ catalog-tests-s3/ bites/M6/
+- Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
+
+Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
+compaction Jobs: the worker copies the bundle into a ConfigMap owned by each Job, and the Job's command builds a JVM
+trust store from the image's JDK CAs and the bundle and points Spark's driver at it. No test runs a compaction Job
+against a store behind a private CA. `KubernetesJobsTest` checks the Job's spec only; `KubernetesCompactionTest`
+(heavy) and the engine matrix's compaction leg (overnight) use stores with public or no TLS; the trust-store
+command was run by hand once, on a Windows JDK, not in the Spark image (item 88's done note).
+
+Paul, 2026-11-20, asked whether to add this: "Add it, here", on Docker Desktop with a TLS store, as an overnight
+test.
+
+Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS from a private CA (`PrivateCa` makes
+one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
+real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
+fail on an assertion, not on fixture start-up.
 
 ## Done and dropped
 
