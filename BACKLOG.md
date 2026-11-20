@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**31 open:** 7 S, 14 M, 6 L, 4 XL.
+**30 open:** 6 S, 14 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -42,7 +42,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [62](backlog/62.md) | S | The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone | print worker.log on failure, then fix what it shows | 2026-11-18 |
 
 ## Open items in full
 
@@ -525,35 +524,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 62. The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone
-
-- Added: 2026-11-18 by overnight run 2026-11-18
-- Touches: catalog-maintenance/src/test/java/nuna/maintenance/TelemetryTest.java
-- Effort: S, print worker.log on failure, then fix what it shows
-
-The heavy build of the overnight run of 2026-11-18 (testing 2dee958, the demo taken down for the run) failed
-`nuna.maintenance.TelemetryTest#theStandardVariablesAloneTurnExportOn` at about 05:16 UTC:
-`AssertionError: no matching metric arrived within PT20S` (`TelemetryTest.java:181`, from 102 and 124). The test
-starts the worker's main in a JVM of its own with only the `OTEL_*` variables set, and waits 20 s (`ARRIVAL`) for a
-`jvm.*` metric. Those 20 s cover starting that JVM and its Spring context while the heavy build runs two modules'
-tests at once. The worker's own output went to `worker.log` in the test's temporary folder, which is gone, so the
-run does not show whether it started late or never exported. The other three TelemetryTest cases passed. The test is
-not tagged heavy, so every fast build runs it and every landing's has passed it; it also passed in the overnight run
-of 2026-11-16.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\heavy.log`, and
-`heavy-results\catalog-maintenance\build\test-results\test\TEST-keel.maintenance.TelemetryTest.xml` there (run
-before the rename to nuna).
-
-Done when a failure tells a slow start from export that never begins (for example: the test prints `worker.log`
-when it fails), the cause is fixed, and the test passes in the overnight run.
-
-**Again on 2026-11-19:** the heavy build of that night's run (testing d34547f, after the rename; it started at 07:16,
-item 66) failed the same test the same way, 21.1 s, `OtlpReceiver.await(OtlpReceiver.java:181)` from
-`TelemetryTest.java:124`. It was the heavy build's only failure; the build stops at the first failing module, so only seven modules' tests
-ran. Evidence:
-`.overnight\runs\2026-11-19\heavy-results\catalog-maintenance\build\test-results\test\TEST-nuna.maintenance.TelemetryTest.xml`.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -589,6 +559,7 @@ ran. Evidence:
 | [58](backlog/58.md) | Demo: TLS at one front door, with a certificate that work's can replace | done | 2026-11-17 |
 | [59](backlog/59.md) | Rename keel to nuna, short for nunatak, everywhere | done | 2026-11-18 |
 | [61](backlog/61.md) | KubernetesCompactionTest: kubectl get job ran past its minute, after item 54's fix | done | 2026-11-19 |
+| [62](backlog/62.md) | The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone | done | 2026-11-19 |
 | [63](backlog/63.md) | The overnight folder moves inside the repo, gitignored | done | 2026-11-18 |
 | [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
