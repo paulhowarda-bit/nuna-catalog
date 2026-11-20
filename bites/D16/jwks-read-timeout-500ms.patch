@@ -1,17 +1,17 @@
-Breaks: a JWKS fetch waits only Nimbus's 500 ms for the IdP, so a slow IdP gets a good token refused as invalid (backlog 60).
+Breaks: a JWKS fetch waits only Nimbus's 500 ms for the IdP, so a slow IdP gets a good token refused (backlog 60; 401 before backlog 90, 503 since).
 Module: catalog-security
 Test: JwksRefreshTest#aSlowJwksIsWaitedForNotTakenForAnInvalidToken
 
 diff --git a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
-index 77ddf1c..d0c890e 100644
+index 5fe5b29..a16c98d 100644
 --- a/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
 +++ b/catalog-security/src/main/java/nuna/catalog/security/TokenAuthenticator.java
-@@ -55,7 +55,7 @@ public final class TokenAuthenticator {
-      * keys late (backlog 60). Fetches are rare (first use, rotation, refresh ahead of the cache's expiry) and
+@@ -64,7 +64,7 @@ public final class TokenAuthenticator {
+      * IdP's keys late (backlog 60). Fetches are rare (first use, rotation, refresh ahead of the cache's expiry) and
       * rate-limited, so a longer wait costs a request little; connecting keeps Nimbus's 500 ms.
       */
 -    private static final Duration JWKS_READ_TIMEOUT = Duration.ofSeconds(5);
 +    private static final Duration JWKS_READ_TIMEOUT = Duration.ofMillis(500);
-
+ 
      private final Map<String, Issuer> issuers;
-
+ 

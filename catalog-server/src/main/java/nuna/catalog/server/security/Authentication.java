@@ -40,7 +40,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * names the principal; a registered trusted engine may also name the end user it acts for, in two headers:
  * {@value #END_USER} (the end user's id, as the issuers' user-id claim carries it) and {@value #END_USER_GROUPS}
  * (comma-separated groups, each percent-encoded). A request that cannot be authenticated answers 401 (403 when
- * an unregistered client names an end user) and is audited as an {@link AuthFailure}; it never reaches a route.
+ * an unregistered client names an end user, 503 with Retry-After when its token could not be checked because the
+ * issuer's keys could not be fetched) and is audited as an {@link AuthFailure}; it never reaches a route.
  */
 final class Authentication extends OncePerRequestFilter {
 
@@ -158,13 +159,22 @@ final class Authentication extends OncePerRequestFilter {
         if (challenge != null) {
             response.setHeader("WWW-Authenticate", challenge);
         }
+        if (status == 503) {
+            // The issuer's keys could not be fetched: the token is not known to be bad, so the client sends it
+            // again, after the wait a store outage asks for (D16, amended 2026-11-20).
+            LOG.warn("{} (request {})", reason, requestId);
+            response.setHeader("Retry-After", StoreOutage.RETRY_AFTER_SECONDS);
+        }
         response.setContentType("application/json");
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
-        String type = status == 401 ? "NotAuthorizedException" : "ForbiddenException";
         // The reason stays in the audit record; the client learns only what it must fix.
-        String message = status == 401 ? "Not authorized: the bearer token is missing or was not accepted"
-                : "Forbidden: " + reason;
-        response.getWriter().write(Wire.error(status, type, message));
+        response.getWriter().write(switch (status) {
+            case 401 -> Wire.error(status, "NotAuthorizedException",
+                    "Not authorized: the bearer token is missing or was not accepted");
+            case 503 -> Wire.error(status, "ServiceUnavailableException",
+                    "The token could not be checked: its issuer's signing keys could not be fetched; retry later");
+            default -> Wire.error(status, "ForbiddenException", "Forbidden: " + reason);
+        });
     }
 
     /** What an unverified token claims, for the audit record only; it never authenticates anyone. */

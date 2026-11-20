@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 5 S, 8 M, 2 L, 4 XL.
+**18 open:** 4 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,7 +29,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
-| [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 
 ## Open items in full
@@ -475,6 +474,9 @@ retrieve JWK set from URL: Read timed out".
 - `CredentialExpiryTest`'s status assertions now carry the response: status, `WWW-Authenticate` and body, and on a
   401 a pointer to the `nuna.audit.fallback` line, since the body never names the reason by design.
   `IssuerForTests` sends no requests, so it has nothing to report.
+- Since item 90 (2026-11-20), a JWKS fetch that fails or times out answers 503 with `Retry-After`, not 401
+  `invalid_token`: the 401 above is what such a fetch gave before. A 503's body says the issuer's keys could not be
+  fetched.
 
 Left: `CredentialExpiryTest` is tagged heavy since D44, so it did not run here; the overnight run's heavy build
 shows whether it passes.
@@ -619,27 +621,6 @@ one), declares a storage profile naming that `ca-bundle`, runs a compaction Job 
 real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
 fail on an assertion, not on fixture start-up.
 
-### 90. An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401
-
-- Decided: 2026-11-20, D16
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-security/ catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java bites/D16/
-- Effort: S, one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite
-
-When the catalog cannot fetch an issuer's signing keys (the IdP is down, or slower than the 5 s read timeout item 60
-gave the JWKS fetch), `TokenAuthenticator` refuses the token as invalid: 401 with `Bearer error="invalid_token"`. That
-tells the client its good token is bad, so it throws the token away or sends its user to sign in again, when the
-fault is the IdP's and passes. `JwksRefreshTest#anUnreachableJwksMeansNoTokenIsAccepted` asserts the 401 today.
-Found by item 60's agent, 2026-11-20.
-
-Paul, 2026-11-20: "503, Retry-After".
-
-Done when a request whose token cannot be checked because the issuer's keys cannot be fetched answers 503 with a
-`Retry-After` header in the Iceberg error shape, and no token is accepted unchecked; a token that is bad on its own
-(wrong signature against keys the catalog holds, expired, wrong audience or issuer) still answers 401; the audit
-record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
-fetch failure mapped back to 401) makes that test fail.
-
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -739,4 +720,5 @@ the watermark. Three parts were left:
 | [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
+| [90](backlog/90.md) | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | done | 2026-11-20 |
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
