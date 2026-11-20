@@ -22,7 +22,10 @@ today.
     `OrphanRaceTest`, `KillMidPurgeTest`, `KafkaDownTest`, and the store races
     (`commitRacingTheUnregisterExactlyOneApplies`, `lostReviveAnswerResolvesToCommitted`).
   - About 70 of the 200 recorded bites (`bites/`), which have never been run.
-  - The `nuna-maintenance` Helm chart, which has never been installed.
+  - The `nuna-maintenance` Helm chart beyond Docker Desktop's Kubernetes. On 2026-11-19 (backlog 5) it was installed
+    there beside the local catalog (`deploy/local/run.sh worker`): Keycloak's client-credentials grant, a Silo user
+    of its own, one compaction Job that succeeded. Never against a real IdP, a real store or a cluster of more than
+    one node.
   - The AWS S3 and MinIO delete policies, which have never been applied to a real store.
 - Paul will run the heavy pass (`./heavy.sh`) after the install to harden these. Do not run `-Pheavy`, the
   bites or `-Pnightly` unless he asks.
@@ -239,6 +242,12 @@ helm install nuna-maintenance deploy/helm/nuna-maintenance -n <namespace> -f <wo
 - `storage.<profile>.prefixes` must cover every table location, and the keys there are the worker's own.
 - Compaction is off until `compaction.image` names the Spark image and `compaction.namespace` the Jobs'
   namespace.
+- The Jobs run in their own namespace and sign in themselves, so the catalog (`compaction.catalog-uri`, by default
+  `catalog-uri`), the token endpoint, and the store endpoint the catalog vends must all resolve from there; the
+  worker reads tables at that store endpoint too. An in-cluster service needs its `<service>.<namespace>.svc` name:
+  the first local install failed on a short one (`UnknownHostException: silo`, backlog 5).
+- `deploy/local/run.sh worker` is a working example of the whole install on Docker Desktop: `deploy/local/keycloak.yaml`
+  for the IdP's client and `deploy/local/worker-values.yaml` for the values.
 - Then a platform operator applies the delete policies, once, and again after any change of a profile's
   prefixes: read `GET /management/v1/maintenance/delete-policies` and apply each entry as `deploy/README.md`
   says (a bucket policy on AWS S3 and Ceph, two user policies on MinIO). The catalog never applies them

@@ -8,13 +8,12 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**27 open:** 6 S, 13 M, 4 L, 4 XL.
+**26 open:** 6 S, 12 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
 | [1](backlog/1.md) | S | Heavy pass to harden v1.x phases 1 and 2 (after the install at work, only when Paul asks) | closes on the first overnight run whose heavy build, Ceph leg and bites are all green (D42) | 2026-11-14 |
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
-| [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
@@ -78,17 +77,6 @@ its owner a policy change.
 Done when each policy has been applied as the catalog gives it (AWS: the `nuna-sandbox` account; MinIO: a store
 that enforces user policies), the worker deletes and lists beneath its prefixes and nobody else can, and the Ceph
 question has an answer, each recorded in `build-plan.md`.
-
-### 5. Install the nuna-maintenance Helm chart somewhere
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: M, install the chart on Docker Desktop's Kubernetes and fix what the install finds
-
-`deploy/helm/nuna-maintenance` passes `helm lint` and renders, but has never been installed
-(`build-plan.md`, maintenance worker of 2026-11-13; `docs/install-at-work.md`).
-
-Done when the chart is installed against a running catalog (Docker Desktop's Kubernetes is enough), the worker
-starts with its own identity, completes a scan, and launches a compaction Job in its own namespace.
 
 ### 6. The server runs the store's self-check at startup (ask Paul before wiring it)
 
@@ -594,6 +582,7 @@ exported timer has the same buckets, health-page.md's test row follows, and the 
 |--:|:--|:--|:--|
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
+| [5](backlog/5.md) | Install the nuna-maintenance Helm chart somewhere | done | 2026-11-20 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
 | [9](backlog/9.md) | Extend the journal horizon with a job, not only at migration | done | 2026-11-19 |
