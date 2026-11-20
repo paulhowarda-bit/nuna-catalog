@@ -87,11 +87,14 @@ call() {
 }
 
 smoke() {
-  local pods forwards=() ports=() log port ns table
+  local pods ports=() log port ns table
   mapfile -t pods < <(k get pods -l app.kubernetes.io/instance="$RELEASE" --field-selector=status.phase=Running -o name)
   (( ${#pods[@]} >= 2 )) || { echo "need two running servers, found ${#pods[@]}" >&2; return 1; }
-  # Each server on a free local port. kubectl itself runs in the background, so $! is the process to stop.
-  trap 'kill "${forwards[@]}" 2>/dev/null || true' RETURN
+  # Each server on a free local port. kubectl itself runs in the background, so $! is the process to stop. Stopped
+  # when the script exits, since a failed call exits it (set -e) without returning: the list is global so the trap
+  # still sees it then.
+  forwards=()
+  trap 'kill "${forwards[@]}" 2>/dev/null || true' EXIT
   for pod in "${pods[@]:0:2}"; do
     log=$(mktemp)
     kubectl --context "$CONTEXT" -n "$NS" port-forward "$pod" :8181 >"$log" 2>&1 &
