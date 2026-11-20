@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**23 open:** 5 S, 10 M, 4 L, 4 XL.
+**22 open:** 5 S, 9 M, 3 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -24,7 +24,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
 | [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
 | [27](backlog/27.md) | XL | Queryable audit tables (v1.x, D23) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
-| [28](backlog/28.md) | L | DR replication-watermark verifier (v1.x) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
+| [28](backlog/28.md) | XL | DR replication-watermark verifier (v1.x) | the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
@@ -34,7 +34,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [83](backlog/83.md) | M | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | a check of each step's manifest list, manifests and data files before the swap, with tests; or folded into item 28 | 2026-11-20 |
 
 ## Open items in full
 
@@ -272,11 +271,13 @@ on nothing. It touches `catalog-audit`, `deploy/helm`, `settings.gradle.kts`, `I
    archive, hash-checked and five years back, but up to 5 minutes behind and only where one is configured (the demo
    has none).
 
+**Paul's answers on the proposed scope, 2026-11-20 (D23, amended):** all five as recommended: Iceberg tables in an audit catalog ("Iceberg audit catalog"); one group Paul names reads them ("One named group"); every record, reads included ("All, reads included"); a service with its own principal writes them ("Own service"); rows from the audit topic ("The audit topic"). The proposed scope above is settled; build it.
+
 ### 28. DR replication-watermark verifier (v1.x)
 
 - Decided: 2026-11-19, D37
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, a v1.x milestone; scope to settle with Paul
+- Effort: XL, the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in
 
 `build-plan.md`, v1.x milestones: a DR replication-watermark verifier. Not started.
 
@@ -349,6 +350,8 @@ so their claims overlap and they go one at a time, 69 (S) first.
    manifests today and would need the DR store's keys.
 4. Model the DR store as the same bucket on another endpoint (on-prem site replication) and leave renamed AWS
    buckets to PLT-4 at work? Recommended: yes.
+
+**Paul's answers on the proposed scope, 2026-11-20 (D37, amended):** all four as recommended: every file, data included, must reach DR ("Every file, data too"); the rewind is built now ("Yes, now"), so the item is XL; the verifier runs in the maintenance worker ("Maintenance worker"); the DR store is the same bucket on another endpoint, renamed AWS buckets wait on PLT-4 ("Yes"). Item 83 is folded in ("Fold into 28"): the reconcile stops at the watermark, so it never moves a table to a version whose files are not all in the DR store. The proposed scope above is settled; build it after items 69 and 10, which edit the same reconcile code.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -656,20 +659,6 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
-### 83. The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-core/src/test/
-- Effort: M, a check of each step's manifest list, manifests and data files before the swap, with tests; or folded into item 28
-
-`Reconcile.plan` (`catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java`) walks a table forward through its metadata files only: it lists the table's metadata files, reads each, and moves the pointer through every file a later file builds on (lines 81 to 130 on main at 8833233). It never checks that the manifest list, the manifests or the data files a step names exist in the store it runs against. When the DR region's storage is replicated asynchronously and not in write order (S3 Cross-Region Replication, MinIO and Ceph bucket replication), a metadata file can reach the DR store before the files it lists, so the reconcile can move a table to a version whose reads fail with a missing file.
-
-Found on 2026-11-20 by the agent drafting item 28's scope (the DR replication-watermark verifier), which names it in its Out section as worth an item of its own. Item 28's verifier, as proposed, keeps a watermark of the newest version whose files all reached the DR store; the reconcile could stop at that watermark instead of checking files itself.
-
-Paul decides: fix it on its own (the reconcile checks each step's files before the swap and stops at the first missing one, reporting it), or fold it into item 28 (the reconcile stops at the watermark).
-
-Done when the reconcile never moves a table to a version whose manifest list, manifests or data files are missing from the store, with a test that removes one file of a later version and shows the walk stopping before it, and a bite.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -733,3 +722,4 @@ Done when the reconcile never moves a table to a version whose manifest list, ma
 | [78](backlog/78.md) | Paul decides: whether the DR routes and the routes by object id hide names and ids from a caller that holds nothing | done | 2026-11-20 |
 | [80](backlog/80.md) | NunaPurgesFailing and NunaDeletionsFailing wait two scan intervals before firing | done | 2026-11-20 |
 | [81](backlog/81.md) | The chart's values.yaml still says only the minting server answers a 304 | done | 2026-11-20 |
+| [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
