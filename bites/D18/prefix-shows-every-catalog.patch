@@ -3,17 +3,17 @@ Module: catalog-server
 Test: HiddenNamesTest#aCatalogTheCallerHoldsNothingInAnswersAsOneThatDoesNotExist
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
-index 4c6e151..abcabe6 100644
+index b75ebcf..0e9e822 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
-@@ -38,8 +38,8 @@ class Lookup {
-      * answered as for a prefix no catalog has, its refusal of {@code operation} audited ({@link Holdings#catalog}).
+@@ -53,8 +53,8 @@ class Lookup {
+      * audited.
       */
-     CatalogRecord catalog(String prefix, RequestContext request, Operation operation) {
--        CatalogRecord catalog = holdings.catalog(prefix, request.caller(), request.actor(), operation.name(),
+     OnRef onRef(String prefix, RequestContext request, Operation operation) {
+-        OnRef on = prefixes.resolve(prefix, request.caller(), request.actor(), operation.name(),
 -                operation.privilege());
-+        CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow(
-+                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix));
-         RequestMetrics.catalog(catalog.name());
-         return catalog;
++        OnRef on = new OnRef(store.findCatalog(Names.normalize(OnRef.catalogName(prefix))).orElseThrow(
++                () -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix)), Optional.empty());
+         RequestMetrics.catalog(on.catalog().name());
+         return on;
      }
