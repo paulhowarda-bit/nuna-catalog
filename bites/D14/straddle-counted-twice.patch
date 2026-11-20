@@ -1,0 +1,17 @@
+Breaks: a full load that straddles a window boundary does not use the boundary up, so the overnight load tests accept a second full load for it: more full loads than boundaries crossed.
+Module: catalog-tests-load
+Test: ConditionalLoadsTest#aLoadStraddlingABoundaryCountsAsCrossingIt
+
+diff --git a/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java b/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java
+index f0e6609..17e6c9c 100644
+--- a/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java
++++ b/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java
+@@ -92,7 +92,7 @@ final class ConditionalLoads {
+                 .isNotEqualTo(etag);
+         etag = answer.etag();
+         // The new ETag is from a later window than the one it replaces, and from no earlier one than the load's.
+-        earliest = Math.max(index(window, load.sent()), earliest + 1);
++        earliest = index(window, load.sent());
+         boundaryLoads++;
+         return false;
+     }

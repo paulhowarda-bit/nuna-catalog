@@ -1,0 +1,20 @@
+Breaks: the overnight load tests accept a full load for a conditional load anywhere, not only across a credential-epoch window boundary, so a server that changes its ETags inside a window passes them.
+Module: catalog-tests-load
+Test: ConditionalLoadsTest#aFullLoadInsideTheETagsWindowFails+aFullLoadAfterABoundaryPassesOnceAndItsETagIsHeld
+
+diff --git a/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java b/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java
+index f0e6609..b704878 100644
+--- a/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java
++++ b/catalog-tests-load/src/test/java/nuna/catalog/load/ConditionalLoads.java
+@@ -83,11 +83,6 @@ final class ConditionalLoads {
+         }
+         assertThat(answer.status()).as("a conditional load answered neither 304 nor 200: %s", answer.body())
+                 .isEqualTo(200);
+-        assertThat(index(window, load.answered()))
+-                .as("a full load answered inside the issuance window its ETag can be from (windows of %s, counted"
+-                        + " from the Unix epoch; sent at %d ms, answered at %d ms): only a boundary changes the epoch",
+-                        window, load.sent(), load.answered())
+-                .isGreaterThan(earliest);
+         assertThat(answer.etag()).as("the ETag of a full load across a window boundary").isNotNull()
+                 .isNotEqualTo(etag);
+         etag = answer.etag();
