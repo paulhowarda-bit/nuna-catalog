@@ -1,0 +1,17 @@
+Breaks: an Oracle database that cannot be reached is a plain store failure, so the routes answer 500 instead of 503 with Retry-After.
+Module: catalog-store-oracle
+Test: UnavailableFailuresTest
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Transactions.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Transactions.java
+index b0c1dd1..658a14f 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Transactions.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/Transactions.java
+@@ -191,7 +191,7 @@ final class Transactions {
+      * that wraps the driver's error, as UCP does, is seen through its causes.
+      */
+     static boolean unavailable(SQLException e) {
+-        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
++        for (Throwable cause = null; cause != null; cause = cause.getCause()) {
+             if (cause instanceof SQLRecoverableException || cause instanceof SQLTransientConnectionException
+                     || cause instanceof SQLNonTransientConnectionException) {
+                 return true;

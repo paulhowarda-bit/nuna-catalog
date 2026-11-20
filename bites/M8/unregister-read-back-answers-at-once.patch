@@ -1,0 +1,17 @@
+Breaks: an unregister whose outcome was lost answers 500 CommitStateUnknownException at once when the store cannot be reached, instead of reading the table back again within the retry budget (P10, backlog 67).
+Module: catalog-core
+Test: UnregisterOutageTest#shortOutageIsWaitedOut+timedOutageThenSentAgain+outageLongerThanTheBudget
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index bfc2653..951b99c 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -648,7 +648,7 @@ public final class CommitEngine {
+             } catch (CommitOutcomeUnknownException e) {
+                 Optional<CatalogObject> after;
+                 try {
+-                    after = decide(() -> store.readObject(object.id()), started, "unregister " + request.commitId());
++                    after = store.readObject(object.id());
+                 } catch (StoreException readFailed) {
+                     return new ServerError(STATE_UNKNOWN, "Unregister of " + display(request)
+                             + " may or may not have been applied: " + e.getMessage());

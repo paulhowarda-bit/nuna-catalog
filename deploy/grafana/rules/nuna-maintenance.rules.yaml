@@ -1,0 +1,99 @@
+# Prometheus alert rules for the nuna maintenance worker (backlog 44, D43), as worker-metrics.md ("Alerts")
+# designs them; its "ticket" is severity warning here. A plain rule file: load it with rule_files, or put the list
+# under `groups:` into a PrometheusRule's spec.groups as it is.
+#
+# Draft: the series names assume Prometheus' default OTLP translation (docs/observability/dashboards-and-alerts.md).
+# 600 is the worker's scan-interval in seconds (the default); use the deployment's own.
+groups:
+  - name: nuna-maintenance
+    rules:
+      - alert: NunaWorkerNotScanning
+        # No scan has succeeded for three intervals. A new deployment reads 0 until its first scan ends, which runs
+        # every table's orphan scan: the for: must outlast that first scan. One hour is a guess; set it at work.
+        expr: |
+          time() - max by (job) (max_over_time(nuna_maintenance_scan_last_success_seconds[1d])) > 3 * 600
+        for: 1h
+        labels:
+          severity: page
+        annotations:
+          summary: "The maintenance worker has not finished a scan for three intervals ({{ $labels.job }})"
+          description: >-
+            The last successful scan ended {{ $value | humanizeDuration }} ago. The catalog or the worker's identity
+            provider may be unreachable, the worker may crash before each scan ends, or one scan may be running that
+            long. worker-metrics.md, "Alerts".
+      - alert: NunaWorkerGone
+        # No worker series at all: the worker is not running, or its telemetry does not reach the collector.
+        expr: |
+          absent_over_time(nuna_maintenance_scan_last_success_seconds[15m])
+        labels:
+          severity: page
+        annotations:
+          summary: "No maintenance worker reports any metrics"
+          description: >-
+            nuna_maintenance_scan_last_success_seconds has had no sample for 15 minutes. worker-metrics.md,
+            "Alerts".
+      - alert: NunaPurgesFailing
+        expr: |
+          sum by (job) (increase(nuna_maintenance_failures_total{kind="purge"}[1h])) > 0
+            and sum by (job) (increase(nuna_maintenance_purges_completed_total[1h])) == 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Purges fail and none completes ({{ $labels.job }})"
+          description: >-
+            Dropped objects' files stay in storage. The worker's WARN lines name the objects. worker-metrics.md,
+            "Alerts".
+      - alert: NunaDeletionsFailing
+        expr: |
+          sum by (job) (increase(nuna_maintenance_failures_total{kind="deletion"}[1h])) > 0
+            and sum by (job) (increase(nuna_maintenance_files_deleted_total[1h])) == 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "Due deletions fail and nothing is deleted ({{ $labels.job }})"
+          description: >-
+            Often the worker's storage identity or the bucket's delete policy (catalog-maintenance/README.md, "The
+            identity it needs"). worker-metrics.md, "Alerts".
+      - alert: NunaMaintenanceJobFailing
+        # Failures of one kind in every half hour for three hours.
+        expr: |
+          sum by (job, kind) (increase(nuna_maintenance_failures_total[30m])) > 0
+        for: 3h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Maintenance jobs of kind {{ $labels.kind }} fail at every scan ({{ $labels.job }})"
+          description: >-
+            The worker's WARN lines name the table or object. worker-metrics.md, "Alerts".
+      - alert: NunaScansSlowerThanInterval
+        expr: |
+          sum by (job) (rate(nuna_maintenance_scan_milliseconds_sum[1h]))
+            / sum by (job) (rate(nuna_maintenance_scan_milliseconds_count[1h])) > 600 * 1000
+        labels:
+          severity: warning
+        annotations:
+          summary: "A scan takes longer than the scan interval on average ({{ $labels.job }})"
+          description: >-
+            Mean scan time over the last hour is {{ $value | humanize }} ms. The work list has outgrown one worker,
+            or a store or the catalog is slow. worker-metrics.md, "Alerts".
+      - alert: NunaCompactionFallingBehind
+        expr: |
+          sum by (job) (increase(nuna_maintenance_tables_left_over_total[1d]))
+            + sum by (job) (increase(nuna_maintenance_compactions_cut_off_total[1d])) > 0
+        for: 3d
+        labels:
+          severity: warning
+        annotations:
+          summary: "Compaction does not finish in the cleanup window, night after night ({{ $labels.job }})"
+          description: >-
+            Needy tables were left over at the window's end, or Jobs cut off by it. The window is too short for the
+            work, or compaction.max-jobs too low. worker-metrics.md, "Alerts".
+      - alert: NunaFilesOutsideTable
+        expr: |
+          sum by (job) (increase(nuna_maintenance_files_outside_total[1d])) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "A table writes files outside its own location ({{ $labels.job }})"
+          description: >-
+            The worker never records or deletes them, so they stay in storage. worker-metrics.md, "Alerts".

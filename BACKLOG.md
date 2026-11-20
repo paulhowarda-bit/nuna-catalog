@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 5 S, 13 M, 6 L, 4 XL.
+**28 open:** 5 S, 15 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,10 +16,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
-| [7](backlog/7.md) | L | Oracle and MongoDB stores answer an outage with 503, not 500 | two store modules, each with its own driver errors and a heavy fault test | 2026-11-14 |
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
@@ -35,11 +33,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [28](backlog/28.md) | L | DR replication-watermark verifier (v1.x) | a v1.x milestone; scope to settle with Paul | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
-| [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
+| [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [67](backlog/67.md) | S | An unregister whose outcome is unknown waits within the retry budget when the store is down | one path in the commit engine and a fault test, as item 8 | 2026-11-19 |
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
+| [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
+| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
+| [71](backlog/71.md) | S | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | one meter filter on the exported registry, a test, and the dashboard panel; no wait | 2026-11-19 |
 
 ## Open items in full
 
@@ -106,18 +106,6 @@ of the four backends, with a test and a bite.
 
 **Decided 2026-11-19 (D8):** a failed self-check refuses to start the server ("Refuse to start"). Test containers and the demo run single-node with fsync off, so they need an explicit setting that allows an unsafe database.
 
-### 7. Oracle and MongoDB stores answer an outage with 503, not 500
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, two store modules, each with its own driver errors and a heavy fault test
-
-`build-plan.md`, M8 follow-ups: the Oracle and MongoDB stores do not raise `StoreUnavailableException`, so a
-database outage there answers 500 where PostgreSQL answers 503 with Retry-After. Still so on 2026-11-14: neither
-store module's main code names the exception.
-
-Done when both stores raise it for a database that cannot be reached, is failing over or is out of connections,
-when nothing was applied, and a heavy test on each shows a 503 with Retry-After.
-
 ### 9. Extend the journal horizon with a job, not only at migration
 
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
@@ -138,20 +126,6 @@ Done when every backend that partitions the journal keeps its horizon ahead with
 assembled by hand. The audit archive could prove which tips were acknowledged.
 
 Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
-
-### 11. The purge rate limit is per replica
-
-- Decided: 2026-11-19, D30
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, per replica is kept (D30); the docs say so
-
-`build-plan.md`, maintenance worker, catalog side (2026-11-13): `nuna.governance.purges-per-minute` is kept per
-replica, so three replicas accept three times the configured rate.
-
-Done when the limit holds across replicas (or Paul decides the per-replica reading is what he wants and the docs
-say so).
-
-**Decided 2026-11-19 (D30):** the limit stays per replica ("Per replica, documented"). What is left: the docs say so, so operators divide it by the replica count.
 
 ### 13. The separation-of-duties check and the grant write are not atomic
 
@@ -376,7 +350,7 @@ Done when a load from a work engine shows as a trace and as metrics in work's Gr
 - Decided: 2026-11-19, D43
 - Added: 2026-11-15 by Iceberg observability review, at Paul's request
 - Touches: deploy/grafana/ docs/observability/
-- Effort: L, dashboards and alert rules for six areas, each alert fired once in a test
+- Effort: M, at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43
 
 After 39, 40, 41 and 43, written against the series as they land in work's Prometheus (43 records the names).
 Dashboards go in `deploy/grafana/` as JSON, and alert rules in the form work uses (PrometheusRule or plain rule
@@ -393,6 +367,26 @@ files):
 Done when the dashboards show live data at work and each alert has fired once in a test.
 
 **Decided 2026-11-19 (D43):** drafted at home now ("Draft at home now"), against nuna's own metric names and Prometheus' usual OTLP mapping, instead of waiting for item 43; queries may need renaming at work.
+
+Progress (2026-11-19, worktree-agent-a393cd9f05a19bc08): drafted at home, as D43 says. Three dashboards in
+`deploy/grafana/dashboards/` (the catalog, 30 panels; the worker, 16; client reports by engine, 13), each with a
+`datasource` variable, and two plain rule files in `deploy/grafana/rules/` (17 alerts, each with `severity` `page` or
+`warning`), which a PrometheusRule's `spec.groups` takes as they are. docs/observability/dashboards-and-alerts.md says
+what each shows, the 55 series names they assume and what to rename if work's Prometheus differs. Every area above is
+covered except two:
+- At least 500 commits a second has a dashboard panel (the rate against a line at 500) but no burn-rate alert: it is
+  the M8 SLO run's target under a given load, production demand sets the rate, and nuna has no metric of offered
+  commits to burn against. Whether it gets an alert, and on what, is Paul's to decide.
+- The audit's Kafka acknowledgement time is shown as a mean only: the exported timer has no buckets, so there is no
+  p99 in Prometheus. Item 71.
+
+Checked at home: every JSON and YAML file parses (Python 3.12, PyYAML 6.0.3), brackets balance in all 99 expressions,
+and every series and label maps back to a meter and tag named in docs/observability/ and the main code (55 of 55, 17
+of 17). Not checked: no Grafana, Prometheus or promtool here, so no import, no rule load, no PromQL parse, and the
+OTLP translation itself is assumed.
+
+Still open, at work: item 43's names (rename the queries where they differ), the dashboards showing live data, and
+each alert fired once in a test. The item stays open for those, which are its done condition.
 
 ### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
 
@@ -471,29 +465,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 67. An unregister whose outcome is unknown waits within the retry budget when the store is down
-
-- Added: 2026-11-19 by the agent on item 8
-- Touches: catalog-core/
-- Effort: S, one path in the commit engine and a fault test, as item 8
-
-Item 8 made `findCommit` wait within the retry budget (P10: at most 4 attempts or 2 s) when the store cannot be
-reached, so a commit, create, register or transaction whose outcome is unknown during a short outage is settled. An
-unregister does not settle through `findCommit`: when `unregisterObject` throws `CommitOutcomeUnknownException`, the
-engine reads the object back with `readObject`, and when that read fails it answers 500 CommitStateUnknownException
-at once (`CommitEngine.unregister`, `catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java` about
-line 650), whatever the failure. Item 8 left it alone, as its title names `findCommit`.
-
-`Reconcile.apply` (the DR runbook's reconcile, D37) also asks `findCommit` after an unknown outcome, with no wait: a
-store outage there throws out of the apply to the operator's route at once. Nothing is lost (a second run plans
-again from the pointer), but the count of steps already applied is not reported. Giving it the wait means passing
-the engine's `CommitSettings` and sleeper to `Reconcile`, which `catalog-server`'s `ReconcileRoutes` constructs;
-it is noted here, not part of this item.
-
-Done when an unregister whose outcome is unknown during a short outage is settled within the budget, shown by a fault
-test in `catalog-core` as item 8's are (`CommitEngineTest$UnknownOutcomes`), and an outage longer than the budget
-still answers 500 CommitStateUnknownException.
-
 ### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
 
 - Added: 2026-11-19 by agent working item 20
@@ -517,13 +488,76 @@ it would fail at its first call, the config, rather than at the first listing or
 Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
 holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
 
+### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
+
+- Added: 2026-11-19 by the agent on item 67
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java, catalog-core/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+- Effort: S, one call in Reconcile, its construction in one route, and a test with a store double
+
+Items 8 and 67 made the commit engine wait within the retry budget (P10: at most 4 asks, none starting more than 2 s
+after the request started, with the commit loop's backoff) when the store cannot be reached while it decides an
+unknown outcome. `Reconcile.apply` (the DR runbook's reconcile, D37) does not: when `store.commit` throws
+`CommitOutcomeUnknownException` it asks `findCommit` once (`catalog-core/src/main/java/nuna/catalog/core/commit/
+Reconcile.java`, about line 185), so a store outage there throws `StoreUnavailableException` out of the apply to the
+operator's route at once. Nothing is lost (a second run plans again from the pointer), but the count of steps already
+applied is not reported.
+
+Giving it the wait means passing the engine's `CommitSettings` and sleeper to `Reconcile`, which
+`catalog-server`'s `ReconcileRoutes` constructs (`new Reconcile(store, files, clock)`), and sharing the engine's
+asking loop (`CommitEngine.decide`, private today) rather than copying it. Item 67 left it, as its brief kept it out
+of scope (`catalog-server` was held by another agent).
+
+Done when a reconcile step whose outcome is unknown during a short outage is settled within the budget, shown by a
+test with a store double that needs no database (as `UnregisterOutageTest` does), and an outage longer than the
+budget answers as today.
+
+### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
+
+- Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
+- Touches: catalog-server/src/test/
+- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut
+
+Item 7 made the Oracle and MongoDB stores raise `StoreUnavailableException` for a database that cannot be reached,
+is failing over or is out of connections. Its checks stop at the store: the Java-only `UnavailableFailuresTest` in
+`catalog-store-oracle` and `catalog-store-mongo`, the shared suite's `CommitSuite#linkDownBeforeCommitIsACleanFailure`
+(heavy, every backend) and `MongoStoreSuiteTest#commitWhileFailingOverIsUnavailable` (heavy). The routes' answer to
+that exception, 503 with Retry-After, is store-independent (`catalog-server`'s error mapping, `catalog-core`'s
+`CommitEngine`), but nothing runs the server against Oracle or MongoDB with the database away. The only test that
+watches the routes through an outage is `catalog-tests-load`'s `KillPrimaryTest` (overnight), on PostgreSQL only.
+`catalog-server` was held by other agents while item 7 was worked, so the route-level check could not go there.
+
+Done when `catalog-server`'s `OracleBackendTest` and `MongodbBackendTest` (both `@Tag("heavy")`) each cut the link to
+their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a proxy) and show a load-table and a
+commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
+link is back.
+
+### 71. Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99
+
+- Added: 2026-11-19 by agent on item 44
+- Touches: catalog-server/src/main/java/nuna/catalog/server/tracing/ catalog-server/src/test/java/nuna/catalog/server/telemetry/ deploy/grafana/ docs/observability/
+- Effort: S, one meter filter on the exported registry, a test, and the dashboard panel; no wait
+
+Item 44's catalog dashboard (`deploy/grafana/dashboards/nuna-catalog.json`, "Audit: Kafka acknowledgement") can
+show only the mean acknowledgement time: the exported `nuna.audit.publish` timer has no histogram buckets, so
+Prometheus gets `nuna_audit_publish_milliseconds_count` and `_sum` and nothing to take a p99 from. The console's
+health page does show the p99, because `HealthMeters` (catalog-server, `health/HealthMeters.java`) adds buckets from
+5 ms to 5 s (`AUDIT_BUCKETS`) to its own registry only; docs/observability/health-page.md says "the exported timer
+is unchanged".
+
+Done when the exported `nuna.audit.publish` timer carries the same bucket bounds (a meter filter where the OTLP
+registry is configured, or `management.metrics.distribution.slo.nuna.audit.publish`), a telemetry test sees the
+buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogram_quantile` beside the mean, its docs
+(`docs/observability/dashboards-and-alerts.md`) saying so.
+
 ## Done and dropped
 
 | # | Item | Status | On |
 |--:|:--|:--|:--|
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
+| [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
@@ -561,3 +595,4 @@ holds nothing on a catalog gets the same answer whether or not it exists, with t
 | [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
+| [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |

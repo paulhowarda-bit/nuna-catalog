@@ -362,16 +362,22 @@ public abstract class CommitSuite {
         assertThat(store.readPointer(key)).contains(base);
     }
 
+    /**
+     * The database cannot be reached, so the store answers that nothing was applied
+     * ({@link StoreUnavailableException}), which the routes answer 503 with Retry-After (backlog 7).
+     */
     @Tag("heavy")
     @Test
-    @DisplayName("2 Atomicity: a link that is down before the commit starts is a clean failure, not an unknown outcome")
+    @DisplayName("2 Atomicity: a link that is down before the commit starts is a clean failure the caller may repeat"
+            + " (unavailable), not an unknown outcome")
     void linkDownBeforeCommitIsACleanFailure() {
         PointerKey key = newKey();
         Pointer base = commitNew(key, "base");
         CommitBatch batch = fullBatch(swap(key, Optional.of(base), pointer("never", 2)));
         faults.cutLink();
 
-        assertThatThrownBy(() -> store.commit(batch)).isInstanceOf(StoreException.class);
+        assertThatThrownBy(() -> store.commit(batch)).isInstanceOf(StoreUnavailableException.class);
+        assertThatThrownBy(() -> store.readPointer(key)).isInstanceOf(StoreUnavailableException.class);
         faults.healLink();
 
         assertThat(underTest.writtenRows(batch)).isEqualTo(WrittenRows.NONE);
