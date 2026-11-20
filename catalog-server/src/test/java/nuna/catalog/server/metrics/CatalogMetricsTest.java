@@ -102,7 +102,8 @@ class CatalogMetricsTest {
         Stream.of(MetricsSummary.SCAN, MetricsSummary.COMMIT).forEach(type -> RestRequest.reportResults(type)
                 .keySet().forEach(result -> reports.add(CatalogMetrics.REPORT + result.replace('-', '.'))));
         List<String> meters = Stream.concat(Stream.of(RequestMetrics.REQUESTS, COMMITS, VENDS, MetricsWiring.CACHE,
-                ServerAlerts.INTEGRITY, ServerAlerts.REGULATED_SCHEMA, ServerAlerts.LARGE_METADATA), reports.stream())
+                ServerAlerts.INTEGRITY, ServerAlerts.REGULATED_SCHEMA, ServerAlerts.LARGE_METADATA, RefGauges.REFS,
+                RefGauges.EXPIRING), reports.stream())
                 .toList();
 
         assertThat(meters).hasSizeGreaterThan(40).filteredOn(meter -> !doc.contains("`" + meter + "`"))

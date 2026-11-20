@@ -2,6 +2,7 @@ package nuna.catalog.server.governance;
 
 import nuna.catalog.audit.CredentialIssue;
 import nuna.catalog.audit.archive.ObjectLockArchive;
+import nuna.catalog.audit.publish.AuditUnavailableException;
 import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.core.commit.CommitRule;
 import nuna.catalog.core.commit.Rules;
@@ -15,6 +16,7 @@ import io.micrometer.observation.ObservationRegistry;
 import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -34,7 +36,7 @@ import software.amazon.awssdk.services.s3.S3ClientBuilder;
  * forbid, a soft-drop window no longer than the PITR window, or an archive bucket without Object Lock.
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties({AuditSettings.class, GovernanceSettings.class})
+@EnableConfigurationProperties({AuditSettings.class, GovernanceSettings.class, RefSettings.class})
 class GovernanceWiring {
 
     /**
@@ -132,5 +134,16 @@ class GovernanceWiring {
     @Bean
     CommitRule snapshotMinimumAge(GovernanceSettings governance) {
         return Rules.snapshotMinimumAge(governance.minimumSnapshotAge(), governance::minimumAgeOf);
+    }
+
+    /**
+     * A branch's expiry warning (D33, choice 11), which changes nothing in the store, goes out as the relay sends a
+     * batch: to the audit topic, then the change stream. Without Kafka it fails closed, so the warning is not marked
+     * sent.
+     */
+    @Bean
+    RefRoutes.Notices refNotices(AuditRuntime runtime) {
+        return event -> runtime.notices().orElseThrow(() -> new AuditUnavailableException(event,
+                new IllegalStateException("nuna.audit.kafka-bootstrap-servers is not set"))).deliver(List.of(event));
     }
 }

@@ -5,20 +5,25 @@ import static nuna.catalog.server.governance.Management.ROOT;
 
 import nuna.catalog.audit.FileDeletion;
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.core.Names;
 import nuna.catalog.server.governance.Management.Request;
+import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.KeyState;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.PendingDeletion;
+import nuna.catalog.store.Ref;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -43,7 +48,8 @@ import tools.jackson.databind.node.ObjectNode;
  * The maintenance worker's side of the catalog (D30), for a maintenance principal acting as itself only: the
  * work list it scans, and the files it records for deletion and reports deleted. Every file the worker deletes
  * waits out the database's PITR window as a pending deletion first, so a database restored to any point it
- * still holds never names a deleted file. Each route asks {@link ManagementGuard} before any other work.
+ * still holds never names a deleted file. Each route asks {@link ManagementGuard} before any other work. The work
+ * list also names the branches to warn of and to end (D33, choice 11), which {@link RefRoutes} does.
  */
 @RestController
 class MaintenanceRoutes {
@@ -58,22 +64,26 @@ class MaintenanceRoutes {
             MaintenancePolicy.COMPACTION_ENABLED, MaintenancePolicy.REWRITE_ENABLED);
 
     /** The work list's sections, in the order its pages walk them. */
-    private enum Section { TABLES, PURGES, DELETIONS }
+    private enum Section { TABLES, PURGES, DELETIONS, REFS }
 
     private final CatalogStore store;
     private final Management management;
     private final ManagementGuard guard;
     private final GovernanceSettings settings;
     private final CatalogNames catalogs;
+    private final RefSettings refSettings;
+    private final StorageSettings storage;
     private final Clock clock;
 
     MaintenanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
-                      CatalogNames catalogs, Clock clock) {
+                      CatalogNames catalogs, RefSettings refSettings, StorageSettings storage, Clock clock) {
         this.store = store;
         this.management = management;
         this.guard = guard;
         this.settings = settings;
         this.catalogs = catalogs;
+        this.refSettings = refSettings;
+        this.storage = storage;
         this.clock = clock;
     }
 
@@ -81,9 +91,11 @@ class MaintenanceRoutes {
      * What the maintenance worker has to do, page by page: first every active table whose resolved maintenance
      * policy (D30) runs a job, with the policy in force, which leaves out what a hold or a DR freeze stops; then
      * the purge queue (dropped objects past their window that no hold or freeze covers, and every claimed one);
-     * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers. Each
-     * page holds items of one section; the token walks on to the next section, unless {@code section}
-     * ({@code tables}, {@code purges} or {@code deletions}) asks for that section alone.
+     * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers; then the
+     * branches past their expiry, to end, and those within {@code nuna.refs.expiry-warning} of it that have not been
+     * warned of, to warn of ({@link #refs}). Each page holds items of one section; the token walks on to the next
+     * section, unless {@code section} ({@code tables}, {@code purges}, {@code deletions} or {@code refs}) asks for that
+     * section alone.
      */
     @GetMapping(path = WORK, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> work(@RequestParam(required = false) String section,
@@ -94,7 +106,8 @@ class MaintenanceRoutes {
         try {
             only = Optional.ofNullable(section).map(name -> Section.valueOf(name.toUpperCase(Locale.ROOT)));
         } catch (IllegalArgumentException e) {
-            throw CatalogError.badRequest("No work list section " + section + "; there are tables, purges and deletions");
+            throw CatalogError.badRequest("No work list section " + section
+                    + "; there are tables, purges, deletions and refs");
         }
         Section current = only.orElse(Section.TABLES);
         Optional<String> inner = Optional.empty();
@@ -116,6 +129,7 @@ class MaintenanceRoutes {
         ArrayNode tables = body.putArray("tables");
         ArrayNode purges = body.putArray("purges");
         ArrayNode deletions = body.putArray("deletions");
+        ArrayNode refs = body.putArray("refs");
         Optional<String> next;
         try {
             next = switch (current) {
@@ -134,13 +148,14 @@ class MaintenanceRoutes {
                     listed.items().forEach(deletion -> deletions.add(deletion(deletion)));
                     yield listed.nextToken();
                 }
+                case REFS -> refs(page, now, refs);
             };
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("Invalid page token: " + e.getMessage());
         }
         Section listed = current;
         Optional<String> token = next.map(t -> PageToken.encode(listed.name(), t)).or(() ->
-                only.isPresent() || listed == Section.DELETIONS ? Optional.empty()
+                only.isPresent() || listed == Section.REFS ? Optional.empty()
                         : Optional.of(PageToken.encode(Section.values()[listed.ordinal() + 1].name(), "")));
         token.ifPresent(t -> body.put("next-page-token", t));
         return GovernanceRoutes.json(200, body);
@@ -216,6 +231,53 @@ class MaintenanceRoutes {
             case WriteResult.Unchanged unchanged -> ResponseEntity.noContent().build();
             default -> throw new IllegalStateException("completeDeletions answered " + result);
         };
+    }
+
+    /**
+     * One page of the refs section: one page of the refs of one declared catalog, the catalogs taken by name. Of each
+     * branch it lists the one past its expiry, to end, and the one within {@code nuna.refs.expiry-warning} of it whose
+     * warning was not sent ({@link RefRoutes#warned}), to warn of (D33, choice 11; the worker's side is item 108). Its
+     * token names the catalog and the store's token in it.
+     */
+    private Optional<String> refs(PageRequest page, Instant now, ArrayNode items) {
+        List<String> names = storage.catalogs().keySet().stream().sorted(Comparator.comparing(Names::normalize))
+                .toList();
+        if (names.isEmpty()) {
+            return Optional.empty();
+        }
+        String catalog = names.getFirst();
+        Optional<String> within = Optional.empty();
+        if (page.token().isPresent()) {
+            List<String> parts = PageToken.decode(page.token().get(), 2);
+            catalog = parts.get(0);
+            within = Optional.of(parts.get(1)).filter(token -> !token.isEmpty());
+            if (!names.contains(catalog)) {
+                throw new IllegalArgumentException("no declared catalog " + catalog);
+            }
+        }
+        Optional<String> next = Optional.empty();
+        Optional<CatalogRecord> record = store.findCatalog(Names.normalize(catalog));
+        if (record.isPresent()) {
+            Page<Ref> listed = store.listRefs(record.get().id(), new PageRequest(within, page.size()));
+            for (Ref ref : listed.items()) {
+                String action = ref.expiredAt(now) ? "end" : refSettings.expiring(ref, now)
+                        && !(store.readKey(RefRoutes.warned(ref.id(), ref.expiresAt().orElseThrow()), now)
+                        instanceof KeyState.Done) ? "warn" : null;
+                if (action != null) {
+                    ObjectNode item = items.addObject();
+                    item.put("id", ref.id().toString());
+                    item.put("catalog", catalog);
+                    item.put("name", ref.name().display());
+                    item.put("expires-at", ref.expiresAt().orElseThrow().toString());
+                    item.put("action", action);
+                }
+            }
+            next = listed.nextToken();
+        }
+        String listedCatalog = catalog;
+        int at = names.indexOf(catalog);
+        return next.map(token -> PageToken.encode(listedCatalog, token)).or(() -> at + 1 < names.size()
+                ? Optional.of(PageToken.encode(names.get(at + 1), "")) : Optional.empty());
     }
 
     /** The table as the work list shows it, when its resolved policy runs a job. */

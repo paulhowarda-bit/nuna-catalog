@@ -30,7 +30,8 @@ class AuditRowsTest {
             EventType.UNREGISTER, EventType.PURGE_CLAIM, EventType.FILE_DELETION, EventType.MAINTENANCE_EXEMPTION);
     private static final Set<EventType> ABOUT_THE_NAMESPACE = EnumSet.of(EventType.NAMESPACE_CHANGE,
             EventType.HOLD_CHANGE, EventType.LABEL_CHANGE);
-    private static final Set<EventType> ABOUT_THE_CATALOG = EnumSet.of(EventType.GRANT_CHANGE, EventType.STORAGE_SETUP);
+    private static final Set<EventType> ABOUT_THE_CATALOG = EnumSet.of(EventType.GRANT_CHANGE, EventType.STORAGE_SETUP,
+            EventType.REF);
     private static final Set<EventType> ABOUT_NO_OBJECT = EnumSet.of(EventType.AUTH_FAILURE, EventType.ENGINE_CHANGE);
 
     /** A golden line, its event and its row. */

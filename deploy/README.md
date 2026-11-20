@@ -219,6 +219,21 @@ telemetry:
   first, for the Jobs alone: never the catalog's nor the worker's, since a pod there may run as any service
   account and mount any Secret of it. The chart puts its Role, RoleBinding and the Jobs' service account
   there, and refuses to render without the namespace or with the release's own.
+- **Branches and tags [D33, P11].** A catalog's refs are made, listed, read, renewed and deleted under
+  `/management/v1/catalogs/{catalog}/refs` (making, renewing and deleting need `create` on the catalog; listing
+  and reading, any holding in it). P11's limits and expiry are settings: `nuna.refs.max-branches` (default 50
+  open branches a catalog), `nuna.refs.max-tags` (1000), `nuna.refs.branch-idle-expiry` (30 days: a branch's
+  creation and each renewal set its expiry that far ahead, and so will each commit on it once item 105 lands),
+  `nuna.refs.branch-max-life` (180 days from its creation, which no renewal passes) and
+  `nuna.refs.expiry-warning` (7 days). A create past a limit answers 409 naming the setting. Tags never expire.
+  The maintenance worker reads the branches to warn of and to end from
+  `GET /management/v1/maintenance/work?section=refs`; it warns of each once, a `ref` event (expiring) on the
+  audit topic and the change stream (`POST /management/v1/maintenance/refs/{id}/warn`, which answers 503 while
+  Kafka is down, so the warning goes out at a later scan), and ends a branch past its expiry (`.../end`). A
+  branch past its expiry is gone for every route at once, but keeps its name until the worker ends it, so a new
+  branch of that name waits for the worker's next scan. The gauges `nuna.catalog.refs` and
+  `nuna.catalog.refs.expiring` show each catalog's count against its limits
+  (`docs/observability/catalog-metrics.md`).
 - **TLS.** TLS from clients to the catalog is the Ingress's job. TLS from the catalog to the database goes
   in the JDBC URL.
 - **Resources.** The defaults (1 CPU, 2 GiB, heap at 75 % of that) are a starting point, not a measurement.

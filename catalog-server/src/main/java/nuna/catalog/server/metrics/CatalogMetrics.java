@@ -39,9 +39,11 @@ public final class CatalogMetrics {
     public static final String REPORT_TYPE = "report.type";
     public static final String OPERATION = "operation";
     public static final String ENGINE_NAME = "engine.name";
+    /** A ref's kind, never its name (D33, choice 13): {@code branch} or {@code tag}. */
+    public static final String REF_KIND = "ref.kind";
     /** Every label a catalog meter may carry. */
     public static final Set<String> LABELS = Set.of(CATALOG, OPERATION_ID, OUTCOME, ERROR_TYPE, REQUIREMENT_TYPE,
-            REPORT_TYPE, OPERATION, ENGINE_NAME);
+            REPORT_TYPE, OPERATION, ENGINE_NAME, REF_KIND);
 
     /** A label's value when there is nothing to say: no catalog, no error, no requirement. */
     public static final String NONE = "none";
