@@ -1,0 +1,19 @@
+Breaks: the health page's audit publish timer gets bounds of its own again, its last at 10 s, not the exported timer's 5 s (backlog 74).
+Module: catalog-server
+Test: HealthWindowTest#theAuditPublishTimerHasTheExportedBucketsHereWithoutBoot
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java b/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java
+index b7376fa..dafbc3b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/health/HealthMeters.java
+@@ -36,8 +36,8 @@ public final class HealthMeters extends SimpleMeterRegistry {
+                     return config;
+                 }
+                 return DistributionStatisticConfig.builder()
+-                        .serviceLevelObjectives(
+-                                ObservedPublisher.BUCKETS.stream().mapToDouble(Duration::toNanos).toArray())
++                        .serviceLevelObjectives(java.util.stream.LongStream.of(5, 10, 25, 50, 100, 250, 500, 1000,
++                                2500, 10000).mapToDouble(ms -> Duration.ofMillis(ms).toNanos()).toArray())
+                         .build().merge(config);
+             }
+         });

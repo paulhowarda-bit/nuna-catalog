@@ -133,7 +133,7 @@ final class Figures {
         if (acknowledged > 0) {
             audit.put("mean-ms", Math.round(10 * figures.getOrDefault(ACKNOWLEDGED + ".ms", 0.0) / acknowledged)
                     / 10.0);
-            audit.set("p99", p99(figures, ACKNOWLEDGED, HealthMeters.AUDIT_BUCKETS));
+            audit.set("p99", p99(figures, ACKNOWLEDGED, ObservedPublisher.BUCKETS));
         }
 
         ObjectNode vends = out.putObject("credential-vends");
