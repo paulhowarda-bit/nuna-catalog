@@ -1,0 +1,17 @@
+Breaks: a commit the engine found the store unavailable for (CommitReply.Unavailable, nothing applied) answers 500 ServiceFailureException without Retry-After, not 503, so a client does not repeat it.
+Module: catalog-server
+Test: StoreOutageRoutesTest#aDatabaseLostMidCommitAnswers503
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
+index 45f5645..460dc23 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
+@@ -216,7 +216,7 @@ class ObjectRoutes {
+             case CommitReply.Applied applied -> ResponseEntity.noContent().build();
+             case CommitReply.Failure failure -> Http.error(failure.status(), failure.type(), failure.message());
+             case CommitReply.ServerError error -> Http.error(500, error.type(), error.message());
+-            case CommitReply.Unavailable unavailable -> Http.unavailable(unavailable.message());
++            case CommitReply.Unavailable unavailable -> Http.error(500, Http.SERVICE_FAILURE, unavailable.message());
+         };
+     }
+ 

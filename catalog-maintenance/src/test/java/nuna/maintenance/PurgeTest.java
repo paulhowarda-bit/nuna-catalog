@@ -63,7 +63,7 @@ class PurgeTest {
             assertThat(catalog.management().claimPurge(TestCatalog.CATALOG, java.util.UUID.fromString(dropped.id)))
                     .isEqualTo(Management.Claim.CLAIMED);
             List<String> files = catalog.list(dropped.location + "/");
-            try (Storage storage = Storage.of(catalog.storageProfiles())) {
+            try (Storage storage = catalog.workerStorage()) {
                 storage.delete(files.subList(0, 1));
             }
 

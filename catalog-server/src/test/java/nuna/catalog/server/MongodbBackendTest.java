@@ -28,7 +28,8 @@ import org.testcontainers.utility.DockerImageName;
 
 /**
  * The server on MongoDB ({@code nuna.database.backend=mongodb}): no {@code spring.datasource.*} and no DataSource,
- * a one-member replica set named by {@code nuna.database.mongodb.uri}, and the REST flow works on it.
+ * a one-member replica set named by {@code nuna.database.mongodb.uri}, and the REST flow works on it. The client
+ * reaches the set through a link the test can cut; while it is cut the routes answer 503 with Retry-After.
  */
 @Tag("heavy")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
@@ -57,31 +58,46 @@ class MongodbBackendTest {
         new BackendFlow(port).run();
     }
 
+    /** Backlog 70: what item 7 made the store raise for a database it cannot reach, the routes answer as an outage. */
+    @Test
+    void anOutageAnswers503WithRetryAfterUntilTheLinkIsBack() {
+        new BackendFlow(port).outage(Mongodb.link::cut, Mongodb.link::heal);
+    }
+
     /**
-     * A one-member replica set (transactions need a replica set, not three members) and the server's URI for it.
-     * An initializer, as IssuerForTests is: the store is made while the web server starts, before property
-     * registrar beans run. One container for the JVM; Testcontainers removes it at exit.
+     * A one-member replica set (transactions need a replica set, not three members) and the server's URI for it,
+     * through {@link LinkForTests}; the set is initiated directly. An initializer, as IssuerForTests is: the store
+     * is made while the web server starts, before property registrar beans run. One container for the JVM;
+     * Testcontainers removes it at exit.
      */
     static class Mongodb implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
+        private static final String ALIAS = "mongodb";
+        private static final int PORT = 27017;
+
         private static GenericContainer<?> mongodb;
+        private static LinkForTests link;
 
         @Override
         public void initialize(ConfigurableApplicationContext context) {
+            started();
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("mongodb-for-tests",
-                    Map.of("nuna.database.mongodb.uri", uri(started(), "catalog"))));
+                    Map.of("nuna.database.mongodb.uri", uri(link.host(), link.port(), "catalog"))));
         }
 
         private static synchronized GenericContainer<?> started() {
             if (mongodb != null) {
                 return mongodb;
             }
+            link = new LinkForTests();
             mongodb = new GenericContainer<>(DockerImageName.parse(System.getProperty("mongo.image")))
+                    .withNetwork(link.network())
+                    .withNetworkAliases(ALIAS)
                     .withCommand("--replSet", "rs0", "--bind_ip_all")
-                    .withExposedPorts(27017)
+                    .withExposedPorts(PORT)
                     .waitingFor(Wait.forLogMessage(".*Waiting for connections.*", 1));
             mongodb.start();
-            try (MongoClient admin = MongoClients.create(uri(mongodb, ""))) {
+            try (MongoClient admin = MongoClients.create(uri(mongodb.getHost(), mongodb.getMappedPort(PORT), ""))) {
                 admin.getDatabase("admin").runCommand(new Document("replSetInitiate", new Document("_id", "rs0")
                         .append("members", List.of(new Document("_id", 0).append("host", "localhost:27017")))));
                 Instant deadline = Instant.now().plusSeconds(60);
@@ -95,13 +111,13 @@ class MongodbBackendTest {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException(e);
             }
+            link.to(ALIAS, PORT);
             return mongodb;
         }
 
         /** Direct to the one member: its configured host is the container's own name for itself. */
-        private static String uri(GenericContainer<?> mongodb, String database) {
-            return "mongodb://" + mongodb.getHost() + ":" + mongodb.getMappedPort(27017) + "/" + database
-                    + "?directConnection=true&socketTimeoutMS=60000";
+        private static String uri(String host, int port, String database) {
+            return "mongodb://" + host + ":" + port + "/" + database + "?directConnection=true&socketTimeoutMS=60000";
         }
     }
 }

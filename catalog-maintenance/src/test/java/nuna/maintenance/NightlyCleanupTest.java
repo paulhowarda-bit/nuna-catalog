@@ -82,7 +82,7 @@ class NightlyCleanupTest {
                     "orphan-removal.older-than", "P8D"));
             UUID uuid = UUID.fromString(table.uuid().toString());
 
-            try (Worker worker = worker(compactor, Storage.of(catalog.storageProfiles()), Duration.ofDays(1))) {
+            try (Worker worker = worker(compactor, catalog.workerStorage(), Duration.ofDays(1))) {
                 for (Instant day : List.of(Instant.parse("2027-03-27T12:00:00Z"), OPENS.minusSeconds(1))) {
                     ScanReport report = at(day, worker);
                     assertThat(report.tablesAssessed).as("assessed at %s", day).isZero();
@@ -101,13 +101,13 @@ class NightlyCleanupTest {
                 assertThat(later.tablesAssessed + later.compactionsStarted + later.orphanScans).as("once a night")
                         .isZero();
             }
-            try (Worker restarted = worker(compactor, Storage.of(catalog.storageProfiles()), Duration.ofDays(1))) {
+            try (Worker restarted = worker(compactor, catalog.workerStorage(), Duration.ofDays(1))) {
                 ScanReport report = at(Instant.parse("2027-03-28T00:30:00Z"), restarted);
                 assertThat(report.tablesAssessed).as("restarted in the window: assessed again").isEqualTo(1);
                 assertThat(report.compactionsStarted).as("tonight's Job is there").isZero();
                 assertThat(compactor.launches(uuid)).isEqualTo(1);
             }
-            try (Worker restarted = worker(compactor, Storage.of(catalog.storageProfiles()), Duration.ofDays(1))) {
+            try (Worker restarted = worker(compactor, catalog.workerStorage(), Duration.ofDays(1))) {
                 ScanReport report = at(Instant.parse("2027-03-28T12:00:00Z"), restarted);
                 assertThat(report.tablesAssessed).as("restarted in the day").isZero();
                 assertThat(report.orphanScans + report.orphanScansCutShort).isZero();
@@ -120,7 +120,7 @@ class NightlyCleanupTest {
     void theNeediestStartFirstAndTheWindowsEndStopsThem() throws Exception {
         StubCompactor compactor = new StubCompactor(Compactor.State.RUNNING);
         try (RESTCatalog writer = catalog.writer();
-             Worker worker = worker(compactor, Storage.of(catalog.storageProfiles()), Duration.ofDays(1))) {
+             Worker worker = worker(compactor, catalog.workerStorage(), Duration.ofDays(1))) {
             // Its four small files count for nothing at a threshold of 100, its one delete file is a quarter of its
             // data files, under the share: its equality delete alone puts it first.
             Table withDeletes = compacted(writer, "equality", 4, Map.of("compaction.min-input-files", "100"));
@@ -204,7 +204,7 @@ class NightlyCleanupTest {
     @Test
     void anOrphanScanTheWindowsEndCutsShortIsScannedAgainTheNextNight() throws Exception {
         AtomicReference<String> cutAt = new AtomicReference<>();
-        Storage storage = Storage.of(catalog.storageProfiles());
+        Storage storage = catalog.workerStorage();
         // The window's end comes as the scan lists the table's files.
         Storage closing = new Storage() {
             @Override

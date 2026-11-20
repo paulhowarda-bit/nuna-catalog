@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**20 open:** 6 S, 8 M, 2 L, 4 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,12 +25,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
-| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
+| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
-| [91](backlog/91.md) | S | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | one-line changes in six tests and a system property for the child JVMs; WorkerTraceTest's in-process worker service may need more (below) | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 
 ## Open items in full
@@ -485,8 +484,8 @@ The item stays open until an overnight run's heavy build passes `CredentialExpir
 ### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
 
 - Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
-- Touches: catalog-server/src/test/
-- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut
+- Touches: catalog-server/src/test/, catalog-server/build.gradle.kts, bites/M8/
+- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass
 
 Item 7 made the Oracle and MongoDB stores raise `StoreUnavailableException` for a database that cannot be reached,
 is failing over or is out of connections. Its checks stop at the store: the Java-only `UnavailableFailuresTest` in
@@ -501,6 +500,32 @@ Done when `catalog-server`'s `OracleBackendTest` and `MongodbBackendTest` (both 
 their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a proxy) and show a load-table and a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
+
+Written on 2026-11-20 (worktree-agent-af0dfeed53e61ec78), not yet run; open until both pass in an overnight run:
+
+- `OracleBackendTest` and `MongodbBackendTest` put their database behind Toxiproxy on a Docker network, as `OracleFree`
+  and `MongoReplicaSet` do, and the server connects through it; setup goes to the database directly.
+  `LinkForTests` is that proxy for the server's tests. The store fixtures themselves could not be shared: they are
+  package-private in their modules' tests, which no other module depends on (only `catalog-store-api`'s suite is a
+  test jar), and those modules are item 28's. What the build does share is reused: the
+  `testcontainers-toxiproxy` dependency and the pinned `toxiproxy.image`, now in `catalog-server/build.gradle.kts`.
+- Each class's new test `anOutageAnswers503WithRetryAfterUntilTheLinkIsBack` runs `BackendFlow.outage`: a new table,
+  then with the link cut a load and a commit (set-properties) each answer 503 `ServiceUnavailableException`,
+  `Retry-After: 2`, `application/json`, `$.error.code` 503. Then, the link back, the load (repeated on Retry-After,
+  two minutes at most, as a client would while the pool or driver reconnects) answers 200 without the property, so
+  the 503 commit applied nothing; the commit answers 200 with it, and a reload shows it. The server's pool and driver
+  keep their defaults, so each 503 can take their 30 s wait (HikariCP's connection timeout, MongoDB's server
+  selection).
+- `StoreOutageRoutesTest` (Java only, `catalog-server` had none): the real table routes, commit engine and
+  `ErrorResponses`, served through MockMvc, over a store double that raises `StoreUnavailableException`. With the
+  database away, a load and a commit answer 503 with Retry-After in the Iceberg shape at their first read; lost
+  mid-request, a load meets it at its pointer read (`ErrorResponses`) and a commit inside the engine
+  (`CommitReply.Unavailable`, `ObjectRoutes.reply`). Bites: `bites/M8/store-outage-escapes-routes.patch` (the
+  handler gone: 500) and `bites/M8/commit-unavailable-answers-500.patch`. With both breaks applied, the fast build
+  failed exactly those three tests, each with "expected: 503 but was: 500" (143 tests in `catalog-server`, 3 failed).
+
+Left: the two heavy tests did not run (no heavy build on 2026-11-20); the overnight run's heavy build shows whether
+they pass. The item stays open until it does.
 
 ### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
 
@@ -615,35 +640,6 @@ Done when a request whose token cannot be checked because the issuer's keys cann
 record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
 fetch failure mapped back to 401) makes that test fail.
 
-### 91. On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/test/java/nuna/maintenance/PurgeTest.java catalog-maintenance/src/test/java/nuna/maintenance/NightlyCleanupTest.java catalog-maintenance/src/test/java/nuna/maintenance/OrphanRaceTest.java catalog-maintenance/src/test/java/nuna/maintenance/ScanMetricsTest.java catalog-maintenance/src/test/java/nuna/maintenance/KubernetesCompactionTest.java catalog-maintenance/src/test/java/nuna/maintenance/WorkerRunTest.java catalog-maintenance/src/test/java/nuna/maintenance/ChildJvm.java catalog-maintenance/src/test/java/nuna/maintenance/WorkerTraceTest.java catalog-maintenance/src/test/java/nuna/maintenance/TestCatalog.java
-- Effort: S, one-line changes in six tests and a system property for the child JVMs; WorkerTraceTest's in-process worker service may need more (below)
-
-Found by item 4 (2026-11-20). Since item 4, `TestCatalog` applies the S3 delete policy to the AWS run's bucket, as
-it does on Ceph, and `TestCatalog.worker(clock, compactor)` signs the worker in as the run's maintenance role
-(`awsWorkerStorage`: S3FileIO with Iceberg's AssumeRoleAwsClientFactory), since `Storage.of` reaches AWS only
-through the SDK's default chain, which in the test JVM is the run's sign-in, the catalog's own identity.
-
-Tests that build the worker's storage themselves still call `Storage.of(catalog.storageProfiles())`, and so sign in
-as the run's sign-in on AWS, which the policy refuses deletes beneath `tables/`: `PurgeTest` (its simulated crashed
-worker's partial delete), `NightlyCleanupTest`, `OrphanRaceTest`, `ScanMetricsTest`, `KubernetesCompactionTest`,
-`WorkerRunTest`; the child JVMs of `KillMidPurgeTest` and `LargeOrphanScanTest` (`ChildJvm.storage`); and
-`WorkerTraceTest`, which runs the worker service in-process with storage settings, so its default chain too.
-Item 4 could not claim these files (its claim named fewer, and widening a claim needs a release).
-
-Evidence: `./gradlew :catalog-maintenance:test -Pheavy -Ps3=aws -Pnuna.aws.profile=fidice-sandbox --tests
-nuna.maintenance.PurgeTest` (2026-11-20, item 4's run): `aClaimedPurgeResumesAfterACrash` failed at PurgeTest.java:67,
-`BulkDeletionFailureException: Failed to delete 1 files` (its setup's `Storage.of` delete, before the worker runs);
-`purgeRemovesThePrefixAfterAClaim`, `OrphanScanTest`, `PendingDeletionTest` and `SnapshotExpiryTest` passed with the
-worker as its role.
-
-Done when every in-JVM call uses the worker's storage from `TestCatalog` (make `awsWorkerStorage` reachable, say
-`catalog.workerStorage()`), the child JVMs get the role (a system property `ChildJvm.start` sets on AWS, read by
-`ChildJvm.storage`), `WorkerTraceTest` either gets the role or assumes it is not on AWS, and those tests pass with
-`-Ps3=aws` (heavy: PostgreSQL and Kafka containers, and the AWS sign-in).
-
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
@@ -743,3 +739,4 @@ the watermark. Three parts were left:
 | [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
+| [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
