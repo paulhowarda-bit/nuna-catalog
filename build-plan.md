@@ -286,7 +286,7 @@ Since 2026-11-11 every M8 suite is tagged `overnight` and runs only in the overn
   - The journal horizon is extended only when migrations run, not by a job.
   - `accept` is assembled by hand; the audit archive could prove tips instead.
   - A register is refused under a DR freeze, so the runbook registers unknown tables after the thaw.
-  - Oracle and MongoDB stores do not raise `StoreUnavailableException` yet, so an outage there still answers 500.
+  - Oracle and MongoDB stores raise `StoreUnavailableException` for an outage since backlog 7; the route-level check of their 503 with Retry-After is backlog 70.
   - `findCommit` (backlog 8) and an unregister's read-back (backlog 67) wait within the retry budget when the store is down; the DR reconcile's apply still asks once (backlog 69).
 
 ### M9 — Carry to work

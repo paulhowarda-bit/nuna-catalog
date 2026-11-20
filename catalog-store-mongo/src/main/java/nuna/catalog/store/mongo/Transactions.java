@@ -1,9 +1,15 @@
 package nuna.catalog.store.mongo;
 
+import static com.mongodb.MongoException.TRANSIENT_TRANSACTION_ERROR_LABEL;
 import static com.mongodb.MongoException.UNKNOWN_TRANSACTION_COMMIT_RESULT_LABEL;
 
 import com.mongodb.ClientSessionOptions;
+import com.mongodb.MongoConnectionPoolClearedException;
 import com.mongodb.MongoException;
+import com.mongodb.MongoNodeIsRecoveringException;
+import com.mongodb.MongoNotPrimaryException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.ReadConcern;
 import com.mongodb.ReadPreference;
 import com.mongodb.TransactionOptions;
@@ -15,8 +21,10 @@ import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitHook;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.StoreException;
+import nuna.catalog.store.StoreUnavailableException;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
@@ -27,8 +35,9 @@ import org.bson.types.ObjectId;
 /**
  * Runs the store's write transactions: snapshot reads and majority writes on the primary
  * (docs/storage-design.md section 4). A failure before commitTransaction is sent is a clean
- * {@link StoreException}; a failed commitTransaction of a write that carries a commit or change
- * id is an unknown outcome. The transaction body is never replayed once commitTransaction is sent.
+ * {@link StoreException}, or a {@link StoreUnavailableException} when the database could not be
+ * reached; a failed commitTransaction of a write that carries a commit or change id is an unknown
+ * outcome. The transaction body is never replayed once commitTransaction is sent.
  */
 final class Transactions {
 
@@ -39,6 +48,15 @@ final class Transactions {
      */
     static final int COMMIT_ATTEMPTS = 3;
     static final int WRITE_CONFLICT = 112;
+    static final int NO_SUCH_TRANSACTION = 251;
+    /**
+     * The codes the driver's retryable-writes rules retry on (CommandOperationHelper, driver 5.14): a host not
+     * found or unreachable (6, 7), a network timeout or socket error (89, 9001), majority reads not yet available
+     * (134), a time limit exceeded at a router (262), and a server that is not primary, is recovering, lost its
+     * primary role or is shutting down (10107, 13435, 13436, 11600, 11602, 189, 91).
+     */
+    private static final Set<Integer> RETRYABLE_CODES =
+            Set.of(6, 7, 89, 91, 134, 189, 262, 9001, 10107, 11600, 11602, 13435, 13436);
     /** How long a write keeps retrying while a concurrent transaction holds a document it writes. */
     private static final Duration WRITE_CONFLICT_BUDGET = Duration.ofSeconds(10);
     static final TransactionOptions TRANSACTION = TransactionOptions.builder()
@@ -86,7 +104,7 @@ final class Transactions {
         try {
             return body.get();
         } catch (MongoException e) {
-            throw new StoreException(what + " failed", e);
+            throw failed(what + " failed", e);
         }
     }
 
@@ -98,7 +116,7 @@ final class Transactions {
         try (ClientSession session = client.startSession(SNAPSHOT)) {
             return body.apply(session);
         } catch (MongoException e) {
-            throw new StoreException(what + " failed", e);
+            throw failed(what + " failed", e);
         }
     }
 
@@ -136,7 +154,7 @@ final class Transactions {
                 try {
                     session.commitTransaction();
                 } catch (MongoException e) {
-                    throw new StoreException(what + " may not have committed; it is safe to repeat", e);
+                    throw failed(what + " may not have committed; it is safe to repeat", e);
                 }
             }
             return result;
@@ -163,7 +181,7 @@ final class Transactions {
             } catch (MongoException e) {
                 abort(session, e);
                 if (e.getCode() != WRITE_CONFLICT || System.nanoTime() > deadline) {
-                    throw new StoreException(what + " failed before COMMIT was sent", e);
+                    throw failed(what + " failed before COMMIT was sent", e);
                 }
             } catch (RuntimeException e) {
                 abort(session, e);
@@ -200,6 +218,30 @@ final class Transactions {
                 }
             }
         }
+    }
+
+    /**
+     * A failure in which nothing was committed: {@link StoreUnavailableException} when the database could
+     * not be reached or is changing primary, so the caller may repeat once it is back.
+     */
+    static StoreException failed(String message, MongoException e) {
+        return unavailable(e) ? new StoreUnavailableException(message, e) : new StoreException(message, e);
+    }
+
+    /**
+     * Whether the database was unreachable rather than refusing the work: what the driver's retryable-writes
+     * rules retry on (a network error, a server that is not primary, recovering or shutting down, a pool the
+     * driver cleared after a network error, {@link #RETRYABLE_CODES}); no server or pooled connection within
+     * the client's timeouts (MongoTimeoutException); or a new primary that does not know the transaction the
+     * old one began (NoSuchTransaction). Inside a transaction these carry the TransientTransactionError label,
+     * which says the transaction will not commit; NoSuchTransaction counts only with it. The label alone is not
+     * enough: a write conflict carries it too.
+     */
+    static boolean unavailable(MongoException e) {
+        return e instanceof MongoSocketException || e instanceof MongoTimeoutException
+                || e instanceof MongoConnectionPoolClearedException || e instanceof MongoNotPrimaryException
+                || e instanceof MongoNodeIsRecoveringException || RETRYABLE_CODES.contains(e.getCode())
+                || e.getCode() == NO_SUCH_TRANSACTION && e.hasErrorLabel(TRANSIENT_TRANSACTION_ERROR_LABEL);
     }
 
     static void backOff(int attempt) {

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 5 S, 13 M, 6 L, 4 XL.
+**28 open:** 5 S, 14 M, 5 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -16,7 +16,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [4](backlog/4.md) | M | Apply the AWS S3 and MinIO delete policies to a real store, and run the worker on AWS | three policies applied to real stores and the worker run on AWS; no new code expected | 2026-11-14 |
 | [5](backlog/5.md) | M | Install the nuna-maintenance Helm chart somewhere | install the chart on Docker Desktop's Kubernetes and fix what the install finds | 2026-11-14 |
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
-| [7](backlog/7.md) | L | Oracle and MongoDB stores answer an outage with 503, not 500 | two store modules, each with its own driver errors and a heavy fault test | 2026-11-14 |
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
 | [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
@@ -40,6 +39,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
+| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 
 ## Open items in full
 
@@ -105,18 +105,6 @@ Done when Paul has said how a failed check should act (refuse to start, or warn)
 of the four backends, with a test and a bite.
 
 **Decided 2026-11-19 (D8):** a failed self-check refuses to start the server ("Refuse to start"). Test containers and the demo run single-node with fsync off, so they need an explicit setting that allows an unsafe database.
-
-### 7. Oracle and MongoDB stores answer an outage with 503, not 500
-
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: L, two store modules, each with its own driver errors and a heavy fault test
-
-`build-plan.md`, M8 follow-ups: the Oracle and MongoDB stores do not raise `StoreUnavailableException`, so a
-database outage there answers 500 where PostgreSQL answers 503 with Retry-After. Still so on 2026-11-14: neither
-store module's main code names the exception.
-
-Done when both stores raise it for a database that cannot be reached, is failing over or is out of connections,
-when nothing was applied, and a heavy test on each shows a 503 with Retry-After.
 
 ### 9. Extend the journal horizon with a job, not only at migration
 
@@ -517,12 +505,33 @@ Done when a reconcile step whose outcome is unknown during a short outage is set
 test with a store double that needs no database (as `UnregisterOutageTest` does), and an outage longer than the
 budget answers as today.
 
+### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
+
+- Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
+- Touches: catalog-server/src/test/
+- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut
+
+Item 7 made the Oracle and MongoDB stores raise `StoreUnavailableException` for a database that cannot be reached,
+is failing over or is out of connections. Its checks stop at the store: the Java-only `UnavailableFailuresTest` in
+`catalog-store-oracle` and `catalog-store-mongo`, the shared suite's `CommitSuite#linkDownBeforeCommitIsACleanFailure`
+(heavy, every backend) and `MongoStoreSuiteTest#commitWhileFailingOverIsUnavailable` (heavy). The routes' answer to
+that exception, 503 with Retry-After, is store-independent (`catalog-server`'s error mapping, `catalog-core`'s
+`CommitEngine`), but nothing runs the server against Oracle or MongoDB with the database away. The only test that
+watches the routes through an outage is `catalog-tests-load`'s `KillPrimaryTest` (overnight), on PostgreSQL only.
+`catalog-server` was held by other agents while item 7 was worked, so the route-level check could not go there.
+
+Done when `catalog-server`'s `OracleBackendTest` and `MongodbBackendTest` (both `@Tag("heavy")`) each cut the link to
+their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a proxy) and show a load-table and a
+commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
+link is back.
+
 ## Done and dropped
 
 | # | Item | Status | On |
 |--:|:--|:--|:--|
 | [2](backlog/2.md) | First run of ./nightly.sh (only when Paul asks) | done | 2026-11-15 |
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
+| [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |

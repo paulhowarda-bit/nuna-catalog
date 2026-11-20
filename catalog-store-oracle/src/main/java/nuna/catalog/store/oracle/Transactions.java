@@ -4,11 +4,16 @@ import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitHook;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.StoreException;
+import nuna.catalog.store.StoreUnavailableException;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLRecoverableException;
+import java.sql.SQLTransientConnectionException;
 import java.sql.Statement;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 import javax.sql.DataSource;
@@ -18,10 +23,19 @@ import oracle.jdbc.OracleConnection;
 /**
  * Runs the store's statements. Writes are READ COMMITTED transactions that lock what they check
  * (SELECT FOR UPDATE: Oracle has no shared row lock); a failure before COMMIT is sent is a clean
- * {@link StoreException}, and any failure of a COMMIT that carries a commit or change id is an
- * unknown outcome (docs/storage-design.md section 4).
+ * {@link StoreException}, or a {@link StoreUnavailableException} when the database could not be reached,
+ * and any failure of a COMMIT that carries a commit or change id is an unknown outcome
+ * (docs/storage-design.md section 4).
  */
 final class Transactions {
+
+    /** The SQLState ojdbc gives every Oracle Net error (ORA-12xxx), the listener's refusals among them. */
+    private static final String ORACLE_NET = "66000";
+    /**
+     * ORA-03135 (connection lost contact) and ORA-16000 (the database is open read-only: a write reached a
+     * standby during failover), which ojdbc raises as plain SQLExceptions of other classes.
+     */
+    private static final Set<Integer> UNAVAILABLE_ERRORS = Set.of(3135, 16000);
 
     @FunctionalInterface
     interface Body<T> {
@@ -47,7 +61,7 @@ final class Transactions {
         try (Connection connection = dataSource.getConnection()) {
             return body.run(connection);
         } catch (SQLException e) {
-            throw new StoreException(what + " failed", e);
+            throw failed(what + " failed", e);
         }
     }
 
@@ -64,7 +78,7 @@ final class Transactions {
                 connection.rollback();
             }
         } catch (SQLException e) {
-            throw new StoreException(what + " failed", e);
+            throw failed(what + " failed", e);
         }
     }
 
@@ -122,7 +136,7 @@ final class Transactions {
             try {
                 connection.commit();
             } catch (SQLException e) {
-                throw new StoreException(what + " may not have committed; it is safe to repeat", e);
+                throw failed(what + " may not have committed; it is safe to repeat", e);
             }
             return result;
         } finally {
@@ -139,7 +153,7 @@ final class Transactions {
         try (Connection connection = dataSource.getConnection()) {
             barrier(connection);
         } catch (SQLException e) {
-            throw new StoreException(what + ": cannot confirm the answer is durable", e);
+            throw failed(what + ": cannot confirm the answer is durable", e);
         }
     }
 
@@ -155,15 +169,49 @@ final class Transactions {
         try {
             return dataSource.getConnection();
         } catch (SQLException e) {
-            throw new StoreException(what + " could not connect", e);
+            throw failed(what + " could not connect", e);
         }
+    }
+
+    /**
+     * A failure in which nothing was committed: {@link StoreUnavailableException} when the database could
+     * not be reached or dropped the connection, so the caller may repeat once it is back.
+     */
+    static StoreException failed(String message, SQLException e) {
+        return unavailable(e) ? new StoreUnavailableException(message, e) : new StoreException(message, e);
+    }
+
+    /**
+     * Whether the database was unreachable rather than refusing the work: what ojdbc raises as
+     * SQLRecoverableException (a lost or dropped connection, a killed session, an instance starting, stopping or
+     * gone, sessions or processes exhausted, a service the listener does not offer during failover, a
+     * switchover), an Oracle Net error (a refused connection, a listener out of handlers or blocking new
+     * connections), a connection exception (class 08, as a connect timeout), {@link #UNAVAILABLE_ERRORS}, or a
+     * pool timing out waiting for a connection (SQLTransientConnectionException, as HikariCP raises it). A pool
+     * that wraps the driver's error, as UCP does, is seen through its causes.
+     */
+    static boolean unavailable(SQLException e) {
+        for (Throwable cause = e; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLRecoverableException || cause instanceof SQLTransientConnectionException
+                    || cause instanceof SQLNonTransientConnectionException) {
+                return true;
+            }
+            if (cause instanceof SQLException sql) {
+                String state = sql.getSQLState();
+                if (state != null && (state.startsWith("08") || state.equals(ORACLE_NET))
+                        || UNAVAILABLE_ERRORS.contains(sql.getErrorCode())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static LogicalTransactionId logicalTransactionId(Connection connection, String what) {
         try {
             return connection.unwrap(OracleConnection.class).getLogicalTransactionId();
         } catch (SQLException e) {
-            StoreException failure = new StoreException(what + " failed before COMMIT was sent", e);
+            StoreException failure = failed(what + " failed before COMMIT was sent", e);
             try {
                 connection.rollback();
             } catch (SQLException rollbackFailure) {
@@ -180,7 +228,7 @@ final class Transactions {
             return body.run(connection);
         } catch (SQLException | RuntimeException e) {
             RuntimeException failure = e instanceof RuntimeException runtime ? runtime
-                    : new StoreException(what + " failed before COMMIT was sent", e);
+                    : failed(what + " failed before COMMIT was sent", (SQLException) e);
             try {
                 connection.rollback();
             } catch (SQLException rollbackFailure) {
@@ -194,7 +242,7 @@ final class Transactions {
         try {
             connection.rollback();
         } catch (SQLException e) {
-            throw new StoreException(what + " could not roll back", e);
+            throw failed(what + " could not roll back", e);
         }
     }
 

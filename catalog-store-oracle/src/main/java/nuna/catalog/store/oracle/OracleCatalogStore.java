@@ -157,7 +157,7 @@ public final class OracleCatalogStore implements CatalogStore {
             undecided.remove(commitId);
             return outcome;
         } catch (SQLException e) {
-            throw new StoreException("cannot decide whether commit " + commitId + " committed", e);
+            throw Transactions.failed("cannot decide whether commit " + commitId + " committed", e);
         }
     }
 

@@ -205,7 +205,7 @@ public final class MongoCatalogStore implements CatalogStore {
                     .append("commitId", uuid(commitId))).first();
             return journaled == null ? CommitLookup.NOT_COMMITTED : CommitLookup.COMMITTED;
         } catch (MongoException e) {
-            throw new StoreException("cannot decide whether commit " + commitId + " committed", e);
+            throw Transactions.failed("cannot decide whether commit " + commitId + " committed", e);
         }
     }
 
