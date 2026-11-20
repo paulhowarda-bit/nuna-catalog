@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 /**
  * Checks an archive's hash chain (format in {@link Chain}). Hashes cover the stored bytes, so the
@@ -28,7 +29,17 @@ public final class ArchiveVerifier {
      */
     public static Verification verify(InputStream records, ChainHead start, ChainHead expectedHead)
             throws IOException {
-        InputStream in = new BufferedInputStream(records);
+        return verify(new BufferedInputStream(records), start, expectedHead, body -> { });
+    }
+
+    /**
+     * As {@link #verify(InputStream, ChainHead, ChainHead)}, reading through the caller's buffer, and handing
+     * {@code verified} each record's body ({@code <sequence> SP <event JSON>}) once its hash checks, before the next
+     * record is read. A chain broken further on has handed over every record before the break, so the caller acts
+     * on none of them unless this returns {@link Verification.Intact}.
+     */
+    static Verification verify(BufferedInputStream in, ChainHead start, ChainHead expectedHead,
+                               Consumer<byte[]> verified) throws IOException {
         byte[] previous = Chain.HEX.parseHex(start.hash());
         long sequence = start.sequence();
         long line = 0;
@@ -56,6 +67,7 @@ public final class ArchiveVerifier {
             }
             previous = computed;
             sequence++;
+            verified.accept(body);
         }
         ChainHead end = new ChainHead(sequence, Chain.HEX.formatHex(previous));
         if (!end.equals(expectedHead)) {

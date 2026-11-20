@@ -2,19 +2,22 @@ package nuna.catalog.audit.archive;
 
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.EventCodec;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
+import java.io.BufferedInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
@@ -48,6 +51,12 @@ public final class ObjectLockArchive {
     static final String NEXT_OFFSET = "next-offset";
 
     /**
+     * How many bytes of a chain a read holds at once besides the record it is checking: one buffer of the stream from
+     * the store. A chain is read in one pass, segment by segment, never whole: it can outgrow any heap (D23).
+     */
+    static final int READ_BUFFER = 64 * 1024;
+
+    /**
      * One written segment.
      *
      * @param key        its object key
@@ -65,6 +74,7 @@ public final class ObjectLockArchive {
     private final Duration retention;
     private final Clock clock;
     private final ObjectLockMode mode;
+    private final int readBuffer;
 
     /**
      * @param prefix    the key prefix every chain lives under, without a trailing slash
@@ -79,7 +89,14 @@ public final class ObjectLockArchive {
      * the server, which always locks in COMPLIANCE mode (D23).
      */
     ObjectLockArchive(S3Client s3, String bucket, String prefix, Duration retention, Clock clock, ObjectLockMode mode) {
+        this(s3, bucket, prefix, retention, clock, mode, READ_BUFFER);
+    }
+
+    /** For tests: {@code readBuffer} in place of {@link #READ_BUFFER}, so a small archive is larger than a read holds. */
+    ObjectLockArchive(S3Client s3, String bucket, String prefix, Duration retention, Clock clock, ObjectLockMode mode,
+                      int readBuffer) {
         this.mode = Objects.requireNonNull(mode, "mode");
+        this.readBuffer = readBuffer;
         this.s3 = Objects.requireNonNull(s3, "s3");
         this.bucket = Objects.requireNonNull(bucket, "bucket");
         this.prefix = Objects.requireNonNull(prefix, "prefix");
@@ -170,8 +187,7 @@ public final class ObjectLockArchive {
      * segment's recorded end.
      */
     public Verification verify(String chain, Optional<ChainHead> anchor) {
-        List<Segment> segments = segments(chain);
-        return verify(concatenate(segments), expected(segments, anchor));
+        return read(chain, anchor, body -> { });
     }
 
     /**
@@ -180,43 +196,102 @@ public final class ObjectLockArchive {
      * @throws IllegalStateException if it is broken
      */
     public List<CatalogEvent> events(String chain, Optional<ChainHead> anchor) {
-        List<Segment> segments = segments(chain);
-        byte[] all = concatenate(segments);
-        Verification verification = verify(all, expected(segments, anchor));
-        if (!(verification instanceof Verification.Intact)) {
-            throw new IllegalStateException("archive chain " + chain + " is broken: " + verification);
-        }
         List<CatalogEvent> events = new ArrayList<>();
-        if (all.length == 0) {
-            return events;
-        }
-        for (String line : new String(all, StandardCharsets.UTF_8).split("\n")) {
-            int afterHash = line.indexOf(' ');
-            int afterSequence = line.indexOf(' ', afterHash + 1);
-            events.add(EventCodec.decode(line.substring(afterSequence + 1).getBytes(StandardCharsets.UTF_8)));
-        }
+        forEachEvent(chain, anchor, events::add);
         return events;
     }
 
-    private static Verification verify(byte[] records, ChainHead expected) {
-        try {
-            return ArchiveVerifier.verify(new ByteArrayInputStream(records), ChainHead.GENESIS, expected);
+    /**
+     * Hands {@code each} the chain's events in order, as {@link #verify} reads and checks it: each event once its
+     * record's hash checks. A chain broken further on has handed over every event before the break by the time this
+     * throws, so the caller acts on none of them until it returns. An event that cannot be decoded, or that
+     * {@code each} refuses, fails the read only once the chain is known to verify, as it did when the chain was read
+     * whole and checked before any event was decoded.
+     *
+     * @throws IllegalStateException if the chain is broken
+     */
+    void forEachEvent(String chain, Optional<ChainHead> anchor, Consumer<CatalogEvent> each) {
+        List<RuntimeException> refused = new ArrayList<>(1);
+        Verification verification = read(chain, anchor, body -> {
+            if (refused.isEmpty()) {
+                try {
+                    each.accept(event(body));
+                } catch (RuntimeException e) {
+                    refused.add(e);
+                }
+            }
+        });
+        if (!(verification instanceof Verification.Intact)) {
+            throw new IllegalStateException("archive chain " + chain + " is broken: " + verification);
+        }
+        if (!refused.isEmpty()) {
+            throw refused.getFirst();
+        }
+    }
+
+    /**
+     * Checks the chain from genesis in one pass, segment by segment, holding at most {@code readBuffer} bytes of it
+     * besides the record being checked, and hands {@code verified} each record's body once its hash checks.
+     */
+    private Verification read(String chain, Optional<ChainHead> anchor, Consumer<byte[]> verified) {
+        List<Segment> segments = segments(chain);
+        try (InputStream records = new SegmentStream(segments)) {
+            Verification verification = ArchiveVerifier.verify(new BufferedInputStream(records, readBuffer),
+                    ChainHead.GENESIS, expected(segments, anchor), verified);
+            // Fetch the segments after a break too, as the read that fetched every segment before checking any did:
+            // a segment the store cannot serve still fails the read as unreadable before the break fails it as broken.
+            records.transferTo(OutputStream.nullOutputStream());
+            return verification;
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The event a verified record's body ({@code <sequence> SP <event JSON>}) holds. */
+    private static CatalogEvent event(byte[] body) {
+        int space = 0;
+        while (body[space] != ' ') {
+            space++;
+        }
+        return EventCodec.decode(Arrays.copyOfRange(body, space + 1, body.length));
     }
 
     private static ChainHead expected(List<Segment> segments, Optional<ChainHead> anchor) {
         return anchor.orElse(segments.isEmpty() ? ChainHead.GENESIS : segments.getLast().end());
     }
 
-    private byte[] concatenate(List<Segment> segments) {
-        ByteArrayOutputStream all = new ByteArrayOutputStream();
-        for (Segment segment : segments) {
-            all.writeBytes(s3.getObjectAsBytes(b -> b.bucket(bucket).key(segment.key()).versionId(segment.versionId()))
-                    .asByteArray());
+    /** A chain's segments as one stream, each fetched only once the one before it has been read to its end. */
+    private final class SegmentStream extends InputStream {
+
+        private final Iterator<Segment> next;
+        private InputStream current = InputStream.nullInputStream();
+
+        SegmentStream(List<Segment> segments) {
+            this.next = segments.iterator();
         }
-        return all.toByteArray();
+
+        @Override
+        public int read() throws IOException {
+            byte[] one = new byte[1];
+            return read(one, 0, 1) == -1 ? -1 : one[0] & 0xff;
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int n;
+            while ((n = current.read(b, off, len)) == -1 && next.hasNext()) {
+                current.close();
+                current = InputStream.nullInputStream();
+                Segment segment = next.next();
+                current = s3.getObject(r -> r.bucket(bucket).key(segment.key()).versionId(segment.versionId()));
+            }
+            return n;
+        }
+
+        @Override
+        public void close() throws IOException {
+            current.close();
+        }
     }
 
     private Segment segment(String key, String versionId) {
