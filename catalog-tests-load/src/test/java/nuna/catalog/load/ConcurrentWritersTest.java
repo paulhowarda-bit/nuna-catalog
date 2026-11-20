@@ -81,7 +81,7 @@ class ConcurrentWritersTest {
         List<String> namespace = List.of("load", "contention", "w" + writers, "v" + formatVersion);
         catalog.createNamespace(namespace);
         catalog.createTable(namespace, "hot", formatVersion);
-        long deadlocksBefore = stack.postgres.deadlocks();
+        long deadlocksBefore = deadlocks();
 
         Appender.Ledger ledger = new Appender.Ledger();
         Set<String> ops = new HashSet<>();
@@ -112,9 +112,34 @@ class ConcurrentWritersTest {
                 + " commit(incl. retries) " + ledger.commitLatency.summary() + " statuses " + catalog.statusSummary());
 
         assertThat(catalog.serverErrors).as("5xx answers").isEmpty();
-        assertThat(stack.postgres.deadlocks()).as("deadlocks").isEqualTo(deadlocksBefore);
+        assertThat(deadlocks()).as("deadlocks").isEqualTo(deadlocksBefore);
         assertThat(ledger.unknown).as("commits never acknowledged").isEmpty();
         assertThat(ledger.acknowledged).hasSize(writers * COMMITS_PER_WRITER);
         assertThat(history).as("snapshots in main's history").isEqualTo(writers * COMMITS_PER_WRITER);
+    }
+
+    /**
+     * The deadlocks PostgreSQL has counted in the catalog database, read again after 1 s when the read fails, three
+     * tries at most. The read is this test's own instrument, not the catalog under test, and no writer runs while it
+     * reads, so a read a second later reads the same count. In the overnight run of 2026-11-18 the read after "32
+     * writers, format v2" failed on one connection attempt that timed out reaching the container (backlog 55); a third
+     * failure in a row still fails the case. Each repeat is printed, so the overnight log shows any.
+     */
+    private static long deadlocks() {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                long deadlocks = stack.postgres.deadlocks();
+                if (attempt > 1) {
+                    System.out.printf("[m8] deadlock count read after %d repeat(s)%n", attempt - 1);
+                }
+                return deadlocks;
+            } catch (RuntimeException e) {
+                if (attempt == 3) {
+                    throw e;
+                }
+                System.out.printf("[m8] deadlock count not read, repeating in 1 s: %s, caused by %s%n", e, e.getCause());
+                ServerProcess.pause(Duration.ofSeconds(1));
+            }
+        }
     }
 }

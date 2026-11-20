@@ -40,6 +40,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.LongStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
@@ -108,6 +109,7 @@ public abstract class CommitSuite {
         PointerKey key = newKey();
         ExecutorService writers = Executors.newFixedThreadPool(CAS_WRITERS);
         AtomicInteger repeated = new AtomicInteger();
+        AtomicInteger reread = new AtomicInteger();
         try {
             Optional<Pointer> base = Optional.empty();
             for (int round = 0; round < CAS_ROUNDS; round++) {
@@ -120,7 +122,7 @@ public abstract class CommitSuite {
                 for (CommitBatch batch : batches) {
                     results.add(writers.submit(() -> {
                         start.await();
-                        return commitRepeatingWhileUnavailable(batch, repeated);
+                        return repeating(StoreUnavailableException.class, () -> store.commit(batch), repeated);
                     }));
                 }
                 List<CommitBatch> winners = new ArrayList<>();
@@ -140,33 +142,44 @@ public abstract class CommitSuite {
                 assertThat(conflicts).as("losers of round %d", round).hasSize(CAS_WRITERS - 1)
                         .allSatisfy(conflict -> assertThat(conflict).isEqualTo(
                                 new CommitResult.Conflict(key, Optional.of(winning))));
-                assertThat(store.readPointer(key)).contains(winning);
-                assertThat(store.findCommit(winners.getFirst().commitId(), key)).isEqualTo(CommitLookup.COMMITTED);
+                assertThat(repeating(StoreUnavailableException.class, () -> store.readPointer(key), reread))
+                        .contains(winning);
+                assertThat(repeating(StoreUnavailableException.class,
+                        () -> store.findCommit(winners.getFirst().commitId(), key), reread))
+                        .isEqualTo(CommitLookup.COMMITTED);
                 base = Optional.of(winning);
             }
+            assertThat(repeating(RuntimeException.class, () -> underTest.journalVersions(key), reread))
+                    .as("one journal entry per committed version")
+                    .containsExactlyElementsOf(LongStream.rangeClosed(1, CAS_ROUNDS).boxed().toList());
         } finally {
             writers.shutdownNow();
             if (repeated.get() > 0) {
                 System.out.println("CAS: " + repeated + " commits repeated after the store could not reach the database");
             }
+            if (reread.get() > 0) {
+                System.out.println("CAS: " + reread + " reads repeated after they could not reach the database");
+            }
         }
-        assertThat(underTest.journalVersions(key)).as("one journal entry per committed version")
-                .containsExactlyElementsOf(LongStream.rangeClosed(1, CAS_ROUNDS).boxed().toList());
     }
 
     /**
-     * Commits {@code batch}, and commits it again while the store answers that it could not reach the database: that
-     * answer means nothing was applied, and a caller repeats the request ({@link StoreUnavailableException}). The
-     * overnight run of 2026-11-16 lost the CAS test to one CockroachDB connection that waited out its 15 s while the
-     * Docker host stalled; a third such answer in a row still fails the round.
+     * Asks {@code request} again, after 1 s, while it fails with {@code transientFailure}; a third such failure in a
+     * row still fails the test. The overnight run of 2026-11-16 lost this test to one CockroachDB connection that
+     * waited out its 15 s while the Docker host stalled (backlog 55), and every request of a round meets that stall
+     * alike: each writer's commit, and the round's reads of the pointer and the commit's outcome after it. Those are
+     * asked again on {@link StoreUnavailableException} alone: it means the store could not reach the database and
+     * nothing was applied, and its callers repeat it (the commit engine does). The journal read at the end is the
+     * suite's own instrument, not the store under test, so any failure of it is asked again: the backends' drivers
+     * fail in their own types, and reading again cannot change what was committed.
      */
-    private CommitResult commitRepeatingWhileUnavailable(CommitBatch batch, AtomicInteger repeated)
-            throws InterruptedException {
+    private static <T> T repeating(Class<? extends RuntimeException> transientFailure, Supplier<T> request,
+                                   AtomicInteger repeated) throws InterruptedException {
         for (int attempt = 1; ; attempt++) {
             try {
-                return store.commit(batch);
-            } catch (StoreUnavailableException e) {
-                if (attempt == 3) {
+                return request.get();
+            } catch (RuntimeException e) {
+                if (!transientFailure.isInstance(e) || attempt == 3) {
                     throw e;
                 }
                 repeated.incrementAndGet();
