@@ -322,7 +322,7 @@ async function chooseCatalog(wanted) {
     return;
   }
   if (!names.length) {
-    fill(main, h('p', null, 'This deployment declares no catalog (nuna.storage.catalogs).'));
+    fill(main, h('p', null, 'No catalog to show: this deployment declares none, or you hold no privilege on any.'));
     return;
   }
   const chosen = names.find(n => n.toLowerCase() === (wanted || '').toLowerCase()) || names[0];
