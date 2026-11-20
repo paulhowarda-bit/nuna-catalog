@@ -1,0 +1,17 @@
+Breaks: findCommit answers at once when the store cannot be reached, instead of asking again within the retry budget (P10).
+Module: catalog-core
+Test: CommitEngineTest$UnknownOutcomes#shortOutageIsWaitedOut+timedOutageThenSentAgain+outageLongerThanTheBudget
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index dc1be0a..6f2d26c 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -985,7 +985,7 @@ public final class CommitEngine {
+                 lookup = store.findCommit(request.commitId(), anyKey);
+                 break;
+             } catch (StoreException e) {
+-                if (e instanceof StoreUnavailableException && backOff(asked, started)) {
++                if (false) {
+                     LOG.log(System.Logger.Level.DEBUG, "store unavailable deciding commit " + request.commitId(), e);
+                     continue;
+                 }

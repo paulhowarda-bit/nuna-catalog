@@ -3,15 +3,15 @@ Module: catalog-core
 Test: CommitEngineTest$Idempotency#outageWhileSettlingStaysUnknown
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-index 49ae41b..493d5e0 100644
+index dc1be0a..4f2fcea 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-@@ -728,6 +728,8 @@ public final class CommitEngine {
-         CommitLookup lookup;
-         try {
-             lookup = store.findCommit(request.commitId(), anyKey);
-+        } catch (StoreUnavailableException e) {
-+            return Optional.of(new Unavailable("Catalog store unavailable: " + e.getMessage()));
-         } catch (StoreException e) {
-             LOG.log(System.Logger.Level.WARNING, "cannot decide commit " + request.commitId(), e);
-             return Optional.of(new ServerError(STATE_UNKNOWN, "Commit " + request.commitId()
+@@ -984,6 +984,8 @@ public final class CommitEngine {
+             try {
+                 lookup = store.findCommit(request.commitId(), anyKey);
+                 break;
++            } catch (StoreUnavailableException e) {
++                return Optional.of(new Unavailable("Catalog store unavailable: " + e.getMessage()));
+             } catch (StoreException e) {
+                 if (e instanceof StoreUnavailableException && backOff(asked, started)) {
+                     LOG.log(System.Logger.Level.DEBUG, "store unavailable deciding commit " + request.commitId(), e);
