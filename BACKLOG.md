@@ -207,6 +207,70 @@ Done when the milestone's scope is settled with Paul, built, and its gate is gre
 
 **Decided 2026-11-19 (D23):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
 
+**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
+
+**What it is for:** access reviewers (D19), grant admins and the platform team asking across objects, people and
+months: every table a principal read last quarter, every denial in a namespace, grants never used. Nothing answers
+that today. The console's trail (`AuditReadRoutes`, `RecentAudit`) shows one object's newest 200 records from at most
+the last 20,000 offsets of its partition, and a catalog's trail only records about the catalog itself. The SIEM (D23)
+is searched only by its users, never in SQL beside the data, and at home there is none. The archive
+(`ObjectLockArchive.events`) is read whole, chain by chain.
+
+**In:**
+- One Iceberg table, `events`, in a catalog of the deployment's own (say `nuna_audit`, declared in
+  `nuna.storage.catalogs.*`), format v2 so every reader in the matrix reads it (R5), partitioned by `day(time)`, and
+  queried by any engine through the catalog, as Tabular's system tables were (the plan report's v1.x list).
+- Columns: `event_id`, `time`, `type`, `source`; `principal`, `end_user`, `engine`, `request_id`; `catalog`,
+  `object_kind`, `object_id`, `object_path`; `operation`, `privilege`, `reason` where the type has them; `data`, the
+  whole payload as JSON, so a new payload version needs no new column; `topic_partition`, `topic_offset`, which tie a
+  row to its archive chain. The mapping from each `EventType` lives in `catalog-audit`, without Iceberg (D2).
+- A writer, `catalog-audit-tables`: a service with its own image, Helm chart and principal, an Iceberg Java client of
+  the catalog like the maintenance worker (D2 as amended). It reads the audit topic in its own consumer group and
+  commits every `commit-interval` (1 min by default) with the offsets it wrote in the same Iceberg commit, resuming
+  from them, so each offset is written once. The relay is at least once (D23), so an `event_id` can repeat. It leaves
+  out the records of its own requests, or each commit would make a record that makes the next commit; they stay in
+  the topic, the SIEM and the archive. An outage delays rows; no request waits for it. The worker's expiry and
+  nightly compaction keep the table tidy (D30).
+- Who reads: a group Paul names, granted `select` on the audit catalog (D19); the writer holds create and write there
+  only. D18's hiding works at the catalog: anyone else gets a missing catalog's 404, `/v1/config` included (item 68),
+  and platform operators see its name, not its table. Rows are not filtered: a reader sees every object and person in
+  the deployment's records, as a SIEM user does, so the group must be narrow.
+
+**Out:**
+- History older than the topic's retention: a backfill from the archive, sharing item 10's archive reader.
+- Rows filtered per reader: an engine reads the files, so the catalog cannot filter rows (D20); only per-catalog
+  tables could. Typed tables or views per event type: `data` holds the fields.
+- Deleting old rows: the archive is the five-year record, and no Iceberg table is a record's only copy (D24).
+- Records that went to the fallback log in a Kafka outage (reads and denials never wait, M7): not in the topic, so
+  not in the table.
+- The demo, whose stack already fills Docker's memory (`demo/README.md`); the console's trail reading the table.
+
+**The gate:**
+- Fast build: `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an
+  `EventType` with no mapping; the writer against a fake topic and catalog resumes after its last committed offset,
+  writes no offset twice and leaves out its own records.
+- Heavy (PostgreSQL, Silo, Kafka): `AuditTablesTest` finds a row for each kind of request within two intervals; a
+  writer killed mid-batch leaves no gap and no repeat; a caller without the grant gets 404, one with it reads it all.
+- Overnight: `EngineMatrixTest` reads `events` from Spark and PyIceberg.
+- Bites in `bites/D23/`: a type dropped from the mapping; offsets committed before their rows; the writer's own
+  records kept; the audit catalog readable without the grant.
+
+**Effort,** XL as the header says: a module, image and chart, the mapping, a heavy test and a matrix leg. It waits
+on nothing. It touches `catalog-audit`, `deploy/helm`, `settings.gradle.kts`, `IcebergImportBoundaryTest` (D2) and
+`catalog-tests-engines`.
+
+**Questions for Paul:**
+1. Where do the tables live? Recommended: Iceberg tables in an audit catalog, read by any engine. Or: tables in the
+   catalog's database behind a search route (a schema step on four stores; every read kept in the database).
+2. Who reads them? Recommended: one group you name, seeing every name. Or: a table per catalog for its grant admins
+   (a writer path per catalog; auth failures belong to none).
+3. Which records? Recommended: all, since a review needs reads. Or: changes and denials only, far smaller.
+4. What writes them? Recommended: a service with its own principal. Or: a job in the maintenance worker (no new
+   image, but the maintenance principal then writes audit data).
+5. Where do rows come from? Recommended: the audit topic, a minute behind, history from its retention on. Or: the
+   archive, hash-checked and five years back, but up to 5 minutes behind and only where one is configured (the demo
+   has none).
+
 ### 28. DR replication-watermark verifier (v1.x)
 
 - Decided: 2026-11-19, D37
@@ -218,6 +282,72 @@ Done when the milestone's scope is settled with Paul, built, and its gate is gre
 Done when the milestone's scope is settled with Paul, built, and its gate is green.
 
 **Decided 2026-11-19 (D37):** built next ("Build it next"), not left for v1.x; the scope is settled with Paul first.
+
+**Proposed scope, 2026-11-20 (for Paul's review; not decided):**
+
+**What it is for:** platform operators running the DR runbook (D37; the DR routes are theirs, D18). Storage and the
+database both replicate to DR asynchronously (D37), so after losing the primary region the DR database can name files
+the DR store never got. Nothing says today how far behind DR storage is, or which tables DR could serve whole. The
+reconcile covers only a database behind its storage: when the pointer's own file is missing it stops ("storage is
+behind the database", `Reconcile.plan`), and nothing moves the table back. The research behind D37 recommended this
+verifier, the rewind being the minimum (`research_notes/Enterprise Iceberg REST catalog plan/persistence_scale_ha.md`).
+
+**In:**
+- A DR-safe watermark per table: the newest journaled version such that every file it and each earlier version
+  added is in the DR store. It lives in the catalog database (a new record, a schema step on all four stores, as
+  D38's table assessment was), because it must reach DR with the database. It is written after the version it names,
+  so a replica that keeps commit order never holds a watermark above its pointer.
+- The verifier, a job in the maintenance worker (D30), which already reads every manifest for its orphan scan and
+  holds a storage identity per store. Every `dr-verify-interval` (1 min by default) it reads a new work list,
+  `GET /management/v1/maintenance/dr-work` (each table's watermark and the journaled versions above it), and checks
+  in the DR store each version's metadata file, manifest list, new manifests, the data and delete files they add, and
+  statistics files; for a view, the metadata file. A table with no watermark is checked once, whole, by listing its
+  location. It reports with `PUT /management/v1/maintenance/tables/{id}/dr-watermark` as a maintenance principal
+  acting as itself; a version below the stored one or above the pointer is refused. As with D38's reports, only
+  refusals are audited. The DR store: each worker storage profile names a read-only replica (endpoint, region, keys),
+  bucket and paths unchanged, as on-prem site replication keeps them.
+- The readout, for platform operators by name (D18 as amended 2026-11-20, item 78):
+  `GET /management/v1/dr/watermarks`, the tables behind, each with pointer, watermark, versions behind and lag (time
+  since its oldest unverified commit); table-free worker meters (tables behind, largest lag), and an alert in
+  `deploy/grafana` past 15 minutes (S3 Replication Time Control's 99.9% bound) until PLT-4 gives the SLA.
+- The rewind, `dr-reconcile` with `"rewind": true`: a table under a DR freeze whose pointer is above its watermark
+  moves back to it in one journaled commit, published like the fast-forward. It writes the watermark's metadata again
+  as the next version, because the walk stops where a file's version is not the pointer's. The answer lists the lost
+  tail (versions, commit ids, times) for business reconciliation. The runbook runs one verifier pass in DR first, so
+  the watermark goes as far as the DR store allows; the runbook is written down in `deploy/README.md`, which has none.
+
+**Out:**
+- The forward walk on async storage: `Reconcile.plan` reads metadata files only, so it can step to a proven file
+  whose manifests or data never reached DR. Checking there needs files the journal lacks; worth an item of its own.
+- Serving DR-region readers the watermark before any failover (the research's full design).
+- Renamed buckets: S3 bucket names are global, so an AWS DR bucket has another name while every path in the metadata
+  names the primary's. Rewriting locations, or Multi-Region Access Points, waits on PLT-4 at work.
+- A console panel, and the demo, which has one store.
+
+**The gate:**
+- Fast build: `DrVerifyTest` (`catalog-maintenance`), two in-memory stores: the watermark stops before the first
+  version missing any file, never moves back, and passes a commit that adds no snapshot on its metadata file alone.
+- Heavy (PostgreSQL, two Silo stores, a replicator the test pauses): the store suite's watermark cases on all four
+  backends; the routes in `ManagementAuthorizationTest` and `MutatingRoutesAuditTest`; `DrRewindRouteTest`: frozen
+  tables only, the lost tail reported, every file of the new version present.
+- Overnight: `DrDrillTest` gains a leg with the DR store behind: region lost, DR promoted, verifier pass, freeze,
+  rewind, thaw; every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived.
+- Bites in `bites/D37/`: data files left out of the check; a lower watermark accepted; a rewind without a freeze; a
+  rewind past the watermark.
+
+**Effort,** XL as proposed, more than five days: a schema step on four stores, three routes, a worker job, the rewind
+and a drill leg; L without the rewind. It touches `Reconcile.java` and `ReconcileRoutes.java`, as items 69 and 10 do,
+so their claims overlap and they go one at a time, 69 (S) first.
+
+**Questions for Paul:**
+1. What must reach DR before a version is safe? Recommended: every file it adds, data included, so a table at its
+   watermark reads whole. Or: metadata and manifests only, data trusted to the SLA (fewer checks; a data file can
+   still be missing at failover).
+2. Build the rewind now? Recommended: yes. Or: verifier and readout now, rewind later (then L).
+3. Where does the verifier run? Recommended: in the maintenance worker. Or: in the catalog server, which reads no
+   manifests today and would need the DR store's keys.
+4. Model the DR store as the same bucket on another endpoint (on-prem site replication) and leave renamed AWS
+   buckets to PLT-4 at work? Recommended: yes.
 
 ### 29. M9: carry nuna to work (at work)
 
