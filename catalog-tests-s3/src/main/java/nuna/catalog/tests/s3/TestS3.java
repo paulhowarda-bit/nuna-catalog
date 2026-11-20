@@ -313,6 +313,17 @@ public final class TestS3 implements AutoCloseable {
     }
 
     /**
+     * Silo of its own, apart from the run's ({@link #get}) and whatever {@code -Ps3} names, as the run's is, its root
+     * user's keys {@link #ACCESS_KEY} and {@link #SECRET_KEY}: another region's store, the DR drill's (backlog 92).
+     * Started on each call and stopped by {@link #close} or when the JVM exits.
+     */
+    public static TestS3 siloOfItsOwn() {
+        TestS3 store = silo();
+        Runtime.getRuntime().addShutdownHook(new Thread(store::close, "test-s3-own-stop"));
+        return store;
+    }
+
+    /**
      * Silo serving TLS, as an on-prem store whose certificate a private CA signed does (backlog 89): a store of its
      * own, apart from the run's ({@link #get}) and whatever {@code -Ps3} names, started on each call and stopped when
      * the JVM exits. Its certificate, which {@code ca} signs ({@link PrivateCa#issue}), names this machine as tests

@@ -1,5 +1,7 @@
 package nuna.catalog.load;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -10,6 +12,12 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.iceberg.ManifestFile;
+import org.apache.iceberg.avro.Avro;
+import org.apache.iceberg.inmemory.InMemoryOutputFile;
+import org.apache.iceberg.io.FileAppender;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -18,12 +26,20 @@ import tools.jackson.databind.JsonNode;
  * while (as Iceberg's commit retry does), reloads and tries again with a new body; a 5xx or an unreachable server sends the same body again under the same idempotency key, so an
  * attempt that did commit is answered from its key instead of committing twice. Every snapshot's summary
  * carries its logical commit's name, and the ledger records which commits were acknowledged.
+ *
+ * <p>Each snapshot names a manifest list, {@code <table>/metadata/snap-<id>.avro}. An appender given the table's store
+ * writes it there before the commit's first attempt, empty, as Iceberg writes one for a snapshot that adds no
+ * manifest, so the table reads whole and the DR checks find every file its versions add (D37; backlog 93). One given
+ * none writes nothing: the load, SLO and upgrade tests time the catalog's commit route alone and never read a
+ * manifest list.
  */
 final class Appender {
 
     /** What became of each logical commit, by name. */
     static final class Ledger {
         final Map<String, Long> acknowledged = new ConcurrentHashMap<>();
+        /** The metadata file of the version each commit made, when its own answer named it (a reload does not). */
+        final Map<String, String> locations = new ConcurrentHashMap<>();
         final Set<String> unknown = ConcurrentHashMap.newKeySet();
         final AtomicLong conflicts = new AtomicLong();
         final AtomicLong resent = new AtomicLong();
@@ -41,13 +57,27 @@ final class Appender {
     private final List<String> namespace;
     private final String table;
     private final Ledger ledger;
+    /** The table's store, where the manifest lists go; null to write none. */
+    private final S3Client files;
     private State state;
 
+    /** An appender that writes no file: its snapshots name manifest lists that do not exist. */
     Appender(Catalog catalog, List<String> namespace, String table, Ledger ledger) {
+        this(catalog, namespace, table, ledger, null);
+    }
+
+    /** An appender that writes each snapshot's manifest list to {@code files}, the table's store, before committing. */
+    Appender(Catalog catalog, List<String> namespace, String table, Ledger ledger, S3Client files) {
         this.catalog = catalog;
         this.namespace = namespace;
         this.table = table;
         this.ledger = ledger;
+        this.files = files;
+    }
+
+    /** The manifest list a snapshot of the table at {@code location} names. */
+    static String manifestList(String location, long snapshotId) {
+        return location + "/metadata/snap-" + snapshotId + ".avro";
     }
 
     /**
@@ -70,6 +100,7 @@ final class Appender {
         long deadline = System.nanoTime() + patience.toNanos();
         long started = System.nanoTime();
         boolean triedOnce = false;
+        boolean written = files == null;
         int conflicts = 0;
         while (System.nanoTime() < deadline) {
             if (state == null) {
@@ -79,6 +110,12 @@ final class Appender {
                 if (ledger.acknowledged.containsKey(ops.getFirst())) {
                     return true;
                 }
+            }
+            if (!written) {
+                for (long snapshotId : snapshotIds) {
+                    writeManifestList(manifestList(state.location(), snapshotId), snapshotId, state.formatVersion());
+                }
+                written = true;
             }
             String body = body(snapshotIds, ops);
             String key = UUID.randomUUID().toString();
@@ -97,7 +134,9 @@ final class Appender {
                 }
                 if (answer.status() == 200) {
                     acknowledge(ops, snapshotIds, started);
-                    state = state(answer.json().get("metadata"));
+                    JsonNode json = answer.json();
+                    ops.forEach(op -> ledger.locations.put(op, json.get("metadata-location").asString()));
+                    state = state(json.get("metadata"));
                     return true;
                 }
                 if (answer.status() == 409) {
@@ -162,10 +201,11 @@ final class Appender {
             String lineage = state.formatVersion() >= 3 ? ",\"first-row-id\":" + rowId + ",\"added-rows\":1" : "";
             updates.append("""
                     {"action":"add-snapshot","snapshot":{"snapshot-id":%d%s,"sequence-number":%d,
-                      "timestamp-ms":%d,"manifest-list":"%s/metadata/snap-%d.avro",
+                      "timestamp-ms":%d,"manifest-list":"%s",
                       "summary":{"operation":"append","m8-op":"%s"},"schema-id":0%s}},"""
                     .formatted(snapshotIds[i], parent < 0 ? "" : ",\"parent-snapshot-id\":" + parent, ++sequence,
-                            System.currentTimeMillis(), state.location(), snapshotIds[i], ops.get(i), lineage));
+                            System.currentTimeMillis(), manifestList(state.location(), snapshotIds[i]), ops.get(i),
+                            lineage));
             parent = snapshotIds[i];
             rowId++;
         }
@@ -174,6 +214,25 @@ final class Appender {
                  "updates":[%s{"action":"set-snapshot-ref","ref-name":"main","snapshot-id":%d,"type":"branch"}]}"""
                 .formatted(state.mainSnapshot() < 0 ? "null" : String.valueOf(state.mainSnapshot()), updates,
                         snapshotIds[snapshotIds.length - 1]);
+    }
+
+    /**
+     * Writes an empty manifest list for the snapshot to {@code location} in the table's store, as Iceberg's client
+     * writes one: an Avro file of manifest_file records, here none, since the snapshot adds no manifest.
+     */
+    private void writeManifestList(String location, long snapshotId, int formatVersion) {
+        InMemoryOutputFile out = new InMemoryOutputFile(location);
+        try (FileAppender<Object> list = Avro.write(out).schema(ManifestFile.schema()).named("manifest_file")
+                .meta(Map.of("snapshot-id", String.valueOf(snapshotId), "format-version",
+                        String.valueOf(formatVersion))).build()) {
+            // no manifest
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot write the manifest list " + location, e);
+        }
+        String path = location.substring("s3://".length());
+        int slash = path.indexOf('/');
+        files.putObject(r -> r.bucket(path.substring(0, slash)).key(path.substring(slash + 1)),
+                RequestBody.fromBytes(out.toByteArray()));
     }
 
     private static State state(JsonNode metadata) {

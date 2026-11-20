@@ -62,6 +62,11 @@ tasks.jar {
     archiveClassifier = ""
 }
 
+// The DR drill (catalog-tests-load) runs the worker from its runnable jar, as it is deployed.
+configurations.consumable("execJar") {
+    outgoing.artifact(tasks.bootJar)
+}
+
 tasks.test {
     listOf("postgres.image", "kafka.image").forEach { systemProperty(it, project.property(it)!!) }
     val root = rootDir
