@@ -46,8 +46,9 @@ import org.junit.jupiter.api.Test;
  * proven files past it. The walk does not stop at the watermark ("Walk with a file check": each step's files are
  * checked instead, and the versions between the watermark and the pointer first, "Check from the watermark", both in
  * ReconcileFileCheckTest), and the rewind moves a table, or a view ("Rewind views too"), back to the
- * watermark in one commit, giving up versions 3 and 4 by name. Against a store double holding one object's pointer,
- * journal and watermark, so it needs no database.
+ * watermark in one commit, giving up versions 3 and 4 by name, and that commit records the version it writes as the
+ * watermark ("Rewind sets watermark", item 100). Against a store double holding one object's pointer, journal and
+ * watermark, so it needs no database.
  */
 class ReconcileWatermarkTest {
 
@@ -120,6 +121,7 @@ class ReconcileWatermarkTest {
         Reconcile.Applied applied = reconcile.apply(plan, OPERATOR, events());
         assertThat(applied.stepsApplied()).isEqualTo(3);
         assertThat(pointer.metadataLocation()).isEqualTo(v5.location());
+        assertThat(swapped).as("a walk's steps leave the watermark to the verifier").noneMatch(PointerSwap::drWatermark);
     }
 
     @Test
@@ -152,7 +154,7 @@ class ReconcileWatermarkTest {
 
     @Test
     @DisplayName("the rewind lists the commits it gives up, then writes the watermark's metadata again as the next"
-            + " version and swaps to it in one journaled, published commit")
+            + " version and swaps to it in one journaled, published commit that records it as the watermark")
     void theRewindMovesBackToTheWatermark() {
         Reconcile.Rewind plan = reconcile.planRewind(table);
 
@@ -181,12 +183,42 @@ class ReconcileWatermarkTest {
         assertThat(swapped.getFirst().journal().updatesJson()).contains("\"dr-rewind\"")
                 .contains("\"watermark-version\":2").contains(v2.location()).contains("\"versions-given-up\":2");
         assertThat(swapped.getFirst().journal().principal()).isEqualTo("operator");
+        assertThat(swapped.getFirst().drWatermark()).as("the commit records the version it writes as the watermark")
+                .isTrue();
+        assertThat(watermark).contains(new DrWatermark(5, pointer.metadataLocation(), CLOCK.instant()));
         assertThat(published).hasSize(1);
         assertThat(published.getFirst().after()).isEqualTo(pointer);
         Reconcile.Rewind again = reconcile.planRewind(table);
-        assertThat(again.problem()).as("until the verifier passes version 5").get().asString()
-                .contains("already holds the DR watermark's metadata");
+        assertThat(again.problem()).as("no verifier pass needed").get().asString()
+                .contains("the pointer is at the DR watermark, version 5");
         assertThat(again.lost()).isEmpty();
+        Reconcile.Plan walk = reconcile.plan(table, Set.of());
+        assertThat(walk.problem()).as("the walk takes the table from the rewound version at once").isEmpty();
+        assertThat(walk.steps()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a rewind that gives up more than 100 versions leaves the table at its watermark too (item 100)")
+    void aRewindGivingUpMoreThanAHundredVersionsEndsAtItsWatermark() {
+        for (long n = 5; n <= 152; n++) {
+            journal.add(new JournalRecord(UUID.randomUUID(), table.mainKey(), CLOCK.instant().minusSeconds(600 - n),
+                    new JournalEntry("writer-" + n, null, "spark", "[]", "[]"),
+                    Optional.of(journal.getLast().newLocation()), root + "/metadata/" + "%05d".formatted(n)
+                    + "-lost.metadata.json", n));
+        }
+        pointer = new Pointer(journal.getLast().newLocation(), 152, "lost", new byte[0]);
+
+        Reconcile.Rewind plan = reconcile.planRewind(table);
+        Reconcile.Rewound rewound = reconcile.rewind(plan, OPERATOR, events());
+
+        assertThat(plan.lost()).hasSize(150).extracting(Reconcile.Lost::version).startsWith(3L).endsWith(152L);
+        assertThat(rewound.problem()).isEmpty();
+        assertThat(pointer.version()).isEqualTo(153);
+        assertThat(files.read(pointer.metadataLocation(), "").json()).isEqualTo(files.read(v2.location(), "").json());
+        assertThat(watermark).contains(new DrWatermark(153, pointer.metadataLocation(), CLOCK.instant()));
+        assertThat(reconcile.planRewind(table).problem()).get().asString()
+                .contains("the pointer is at the DR watermark, version 153");
+        assertThat(reconcile.plan(table, Set.of()).problem()).isEmpty();
     }
 
     @Test
@@ -305,7 +337,9 @@ class ReconcileWatermarkTest {
             assertThat(swap.key()).isEqualTo(view.mainKey());
             assertThat(swap.journal().updatesJson()).contains("\"dr-rewind\"").contains("\"watermark-version\":2")
                     .contains(w2.location()).contains("\"versions-given-up\":2");
+            assertThat(swap.drWatermark()).isTrue();
         });
+        assertThat(watermark).contains(new DrWatermark(5, pointer.metadataLocation(), CLOCK.instant()));
         assertThat(published).singleElement().satisfies(commit -> assertThat(commit.object()).isEqualTo(view));
     }
 
@@ -336,6 +370,11 @@ class ReconcileWatermarkTest {
                             yield new CommitResult.Conflict(swap.key(), Optional.of(pointer));
                         }
                         pointer = swap.next();
+                        if (swap.drWatermark()) {
+                            // As every store records it in the commit's transaction (DrSuite).
+                            watermark = Optional.of(new DrWatermark(swap.next().version(),
+                                    swap.next().metadataLocation(), batch.committedAt()));
+                        }
                         swapped.add(swap);
                         yield new CommitResult.Committed(batch.commitId());
                     }

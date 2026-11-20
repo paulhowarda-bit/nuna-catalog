@@ -23,14 +23,16 @@ catalog's own that may import iceberg-core (D2, `IcebergImportBoundaryTest`), an
   too (Paul, 2026-11-20: "Every file, data too"), so a table at its watermark reads whole.
 - A version that adds no snapshot (a schema or property change) is safe on its metadata file alone.
 - A version that adds nothing to the newest safe version, no snapshot and no statistics file that version lacks, is
-  safe on its metadata file alone too, whatever versions came between. This is how the version a rewind writes, the
-  watermark's metadata again, becomes safe as soon as its file arrives: under the plain rule it would follow the
-  versions it gave up, which never arrive.
+  safe on its metadata file alone too, whatever versions came between. So the version a rewind writes, the
+  watermark's metadata again, is safe, though it follows the versions it gave up, which never arrive; and so is a
+  commit that rolls a table back and expires the snapshots in between. The reconcile's walk judges versions the same
+  way.
 - A view's version is safe when its metadata file is in the DR store.
 - The watermark is kept in the catalog database, one record per object, so it reaches DR with the database (PostgreSQL
-  V9, CockroachDB V8, Oracle V10, MongoDB step 8). It is written after the version it names, so a replica that keeps
-  commit order never holds a watermark above its pointer. It never moves back: a report below the kept watermark, or
-  above the pointer, is refused. A purge deletes it.
+  V9, CockroachDB V8, Oracle V10, MongoDB step 8). The verifier's report is written after the version it names, so a
+  replica that keeps commit order never holds a watermark above its pointer. A DR rewind records it in the commit that
+  writes the version it names (Paul, 2026-11-20: "Rewind sets watermark"; item 100). It never moves back: a report
+  below the kept watermark, or above the pointer, is refused. A purge deletes it.
 
 ## The verifier
 
@@ -99,12 +101,15 @@ object's; the worker's `nuna.maintenance.dr.lag.max` gives the largest after eac
   files. The walk stops before the first step that lacks one and names the file in its `problem`; a file that cannot
   be read stops it the same way. It asks one `HEAD` for each file a step adds and reads each manifest list and
   manifest it adds. The walk never moves a table back.
-- **The walk checks from the watermark** (Paul, 2026-11-20: "Check from the watermark"). A table whose pointer is
-  above its watermark is checked from the watermark before it is walked: each version the DR database's journal
-  records above the watermark, the pointer's included, must hold every file it adds to the version before it (the
-  watermark's, for the first), its own metadata file among them, counted as for a step. If one lacks a file, the walk
-  takes nothing for the table, no step and no tip, and its `problem` names the file and says to rewind the table to
-  its watermark. The versions come from the journal, as the verifier's work list and the rewind's `lost` tail do: the
+- **The walk checks from the watermark** (Paul, 2026-11-20: "Check from the watermark", then "Judge like the
+  verifier"). A table whose pointer is above its watermark is checked from the watermark before it is walked: each
+  version the DR database's journal records above the watermark, up to the pointer's, is judged as the verifier judges
+  it (The watermark, above), its own metadata file among its files, counted as for a step. The table is walked only
+  when the pointer's version is whole that way. So a pointer that adds nothing to the newest whole version, as the
+  version a rewind writes adds nothing to the watermark, is whole though versions between them are not, while a
+  version built on one that is not whole never is. Otherwise the walk takes nothing for the table, no step and no tip,
+  and its `problem` names the first file missing since the newest whole version and says to rewind the table to its
+  watermark. The versions come from the journal, as the verifier's work list and the rewind's `lost` tail do: the
   journal and the pointer are written in one transaction, so the DR database holds every version up to its pointer.
   When the journal does not hold them one by one up to the pointer, or the store lacks the watermark's own metadata
   file, they cannot be checked, and the walk takes nothing and says so. A file that cannot be read stops it the same
@@ -116,16 +121,16 @@ object's; the worker's `nuna.maintenance.dr.lag.max` gives the largest after eac
   none), `lost` (the journaled commits above the watermark, each with `version`, `metadata-location`, `commit-id`,
   `committed-at` and `principal`, for business reconciliation) and any `problem`. With `"apply": true`, each such table
   and view under a DR freeze moves back in one journaled commit: the watermark's metadata written again as the
-  pointer's next version, published as the fast-forward's commits are (`rewound-to`). One with no watermark, one not
-  frozen, one whose watermark's file storage lacks, or one whose pointer moved since the plan is not moved, and says
-  why (`apply-problem`); one with no watermark is left to its owner (Paul, 2026-11-20: "Owner decides"). One already
-  holding the watermark's metadata has nothing to rewind.
+  pointer's next version, published as the fast-forward's commits are (`rewound-to`). The same commit records that
+  version as the watermark (Paul, 2026-11-20: "Rewind sets watermark"; item 100): it is the watermark's own metadata,
+  whole by construction, so the object is no longer behind once the rewind answers, however many commits it gave up,
+  and needs no verifier pass. One with no watermark, one not frozen, one whose watermark's file storage lacks, or one
+  whose pointer moved since the plan is not moved, and says why (`apply-problem`); one with no watermark is left to
+  its owner (Paul, 2026-11-20: "Owner decides").
 - **Rewind before walking** is the runbook's order, though no longer the only guard: whatever the order, a table is
-  not walked from a pointer above its watermark unless every version between them is whole. Until the verifier's next
-  pass, the versions a walk takes are above the watermark, and a rewind then would give them up again. A table just
-  rewound is reported by the walk, with nothing taken, until the verifier passes its rewind's version: the versions it
-  gave up lie between its watermark and its pointer and lack files. Nothing builds on the file a rewind writes, so
-  there is nothing to take for it meanwhile.
+  not walked from a pointer above its watermark unless the pointer's version is whole, judged from the watermark.
+  Until the verifier's next pass, the versions a walk takes are above the watermark, and a rewind then would give them
+  up again. A table just rewound is at its watermark and is walked from there at once.
 
 ## Not covered
 
@@ -141,14 +146,16 @@ object's; the worker's `nuna.maintenance.dr.lag.max` gives the largest after eac
 | `DrVerifyTest` (`catalog-maintenance`) | Two in-memory stores: the watermark stops before the first version missing any file (a data file, a manifest, a manifest list, a metadata file), delete and statistics files are checked, nothing above the watermark passes while its next version lacks a file, a commit that adds no snapshot passes on its metadata file, a rewind's version passes, a table with no watermark or a gap is checked whole in one listing, a view's version passes on its metadata file. | fast build |
 | `DrVerifierTest` (`catalog-maintenance`) | A pass reads every page, reports only above the kept watermark, keeps going past a failed check, retries a failed whole check no sooner than its interval, sets its meters; worker-metrics.md lists them. | fast build |
 | `DrRoutesTest` (`catalog-server`) | The routes and guard over a store double: who may call each, and a report taken only for a version the journal or the pointer holds, with its own location. | fast build |
-| `ReconcileFileCheckTest` (`catalog-core`) | An Iceberg client's table in memory and a DR store holding what the test replicates: the walk stops before the first version missing a data file, a manifest it adds or its manifest list, a delete file or a statistics file, and names it; only the checked steps are swapped; a manifest that cannot be read stops the walk. From the watermark: a pointer above it walks on when every version between them is whole, and takes nothing, reported for the rewind, when one lacks a file it adds (even one a later version deletes), its manifest list, its metadata file or the pointer's; a pointer at its watermark, or a table with none, walks from its pointer as before; versions the journal does not hold one by one, or a watermark file the store lacks, take nothing. | fast build |
-| `ReconcileWatermarkTest` (`catalog-core`) | A table at its watermark walks forward past it, and a watermark below the pointer whose versions since are whole, or none, leaves the walk as it is; the rewind moves back to the watermark, only for a frozen table, not when there is nothing to rewind or the pointer moved; a view is rewound as a table is. | fast build |
-| `DrSuite`, in each store suite | The watermark on all four backends: it only rises, only active tables and views keep one, the objects behind are listed, a purge deletes it, the journal reads after a version. | heavy |
-| `DrRewindRouteTest` | The rewind through the route: a frozen table, and a frozen view, above its watermark is rewound to it with its lost tail reported, and only a platform operator rewinds. | heavy |
+| `ReconcileFileCheckTest` (`catalog-core`) | An Iceberg client's table in memory and a DR store holding what the test replicates: the walk stops before the first version missing a data file, a manifest it adds or its manifest list, a delete file or a statistics file, and names it; only the checked steps are swapped; a manifest that cannot be read stops the walk. From the watermark: a pointer above it walks on when every version between them is whole, and takes nothing, reported for the rewind, when one lacks a file it adds (even one a later version deletes), its manifest list, its metadata file or the pointer's; a pointer at its watermark, or a table with none, walks from its pointer as before; versions the journal does not hold one by one, or a watermark file the store lacks, take nothing. Judged as the verifier judges them: a rewound table walks at once, with its watermark at the rewind's version or still below it, while the versions a rewind gives up, and a version built on them, never count. | fast build |
+| `ReconcileWatermarkTest` (`catalog-core`) | A table at its watermark walks forward past it, and a watermark below the pointer whose versions since are whole, or none, leaves the walk as it is; the rewind moves back to the watermark and records its version as the watermark in the same commit, also after giving up more than 100 versions, only for a frozen table, not when there is nothing to rewind or the pointer moved; a view is rewound as a table is. | fast build |
+| `DrSuite`, in each store suite | The watermark on all four backends: it only rises, only active tables and views keep one, a rewind's commit records it at the version it writes (also past more than 100 versions) and a conflicting one records nothing, the objects behind are listed, a purge deletes it, the journal reads after a version. | heavy |
+| `DrRewindRouteTest` | The rewind through the route: a frozen table, and a frozen view, above its watermark is rewound to it with its lost tail reported, the table then at its watermark, out of the work list and walked at once, also after giving up more than 100 versions; only a platform operator rewinds. | heavy |
 | `MetadataFilesTest#anyFileIsFoundAndRead` (`catalog-objectstore`) | The object store's `HEAD` and whole read of any file of a table, which the walk's check uses. | heavy |
 | `ManagementAuthorizationTest`, `MutatingRoutesAuditTest` | Who may call the routes, and the refusals audited. | heavy |
 
 The bites are in `bites/D37/`: data files left out of the check, a lower watermark accepted, a rewind without a
 freeze, a rewind past the watermark, the walk past a version whose files are not all in the DR store
-(`walk-past-the-watermark`, recorded again for the file check), a view not rewound, and the walk's check starting at
-the pointer again rather than at the watermark (`check-from-the-pointer`).
+(`walk-past-the-watermark`, recorded again for the file check), a view not rewound, the walk's check starting at
+the pointer again rather than at the watermark (`check-from-the-pointer`), the walk counting a version built on given-up
+ones as whole (`walk-counts-given-up-versions`), and the rewind leaving the watermark where it was
+(`rewind-leaves-the-watermark`).

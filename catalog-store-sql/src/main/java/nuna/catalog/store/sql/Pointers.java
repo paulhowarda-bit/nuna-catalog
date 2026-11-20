@@ -5,6 +5,7 @@ import static nuna.catalog.store.sql.Jdbc.utc;
 
 import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
+import nuna.catalog.store.DrWatermark;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerHold;
 import nuna.catalog.store.PointerKey;
@@ -203,6 +204,12 @@ final class Pointers {
                 insert.addBatch();
             }
             insert.executeBatch();
+        }
+        for (PointerSwap swap : batch.swaps()) {
+            if (swap.drWatermark()) {
+                SqlDr.raise(connection, swap.key().objectId(), new DrWatermark(swap.next().version(),
+                        swap.next().metadataLocation(), batch.committedAt()));
+            }
         }
     }
 

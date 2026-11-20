@@ -12,6 +12,7 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.WriteResult;
+import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -52,14 +53,7 @@ final class OracleDr {
             if (watermark.version() > pointer.get()) {
                 return AHEAD;
             }
-            int written = upsert(connection, "dr_watermark_pk", "MERGE INTO dr_watermark t USING (SELECT ? object_id,"
-                            + " ? version, ? metadata_location, ? recorded_at FROM dual) s ON (t.object_id = s.object_id)"
-                            + " WHEN MATCHED THEN UPDATE SET t.version = s.version,"
-                            + " t.metadata_location = s.metadata_location, t.recorded_at = s.recorded_at"
-                            + " WHERE t.version < s.version"
-                            + " WHEN NOT MATCHED THEN INSERT (object_id, version, metadata_location, recorded_at)"
-                            + " VALUES (s.object_id, s.version, s.metadata_location, s.recorded_at)",
-                    objectId, watermark.version(), watermark.metadataLocation(), watermark.recordedAt());
+            int written = raise(connection, objectId, watermark);
             if (written == 1) {
                 return WriteResult.APPLIED;
             }
@@ -67,6 +61,21 @@ final class OracleDr {
                     objectId).orElseThrow(() -> new SQLException("the dr_watermark row the merge kept is gone"));
             return kept == watermark.version() ? WriteResult.UNCHANGED : BEHIND;
         }, WriteResult.APPLIED::equals);
+    }
+
+    /**
+     * Keeps {@code watermark} in place of a lower one, in the caller's transaction: the report's write, and a DR
+     * rewind's in its commit ({@link Pointers}). Returns the rows merged, 0 when the same or a higher one is kept.
+     */
+    static int raise(Connection connection, UUID objectId, DrWatermark watermark) throws SQLException {
+        return upsert(connection, "dr_watermark_pk", "MERGE INTO dr_watermark t USING (SELECT ? object_id,"
+                        + " ? version, ? metadata_location, ? recorded_at FROM dual) s ON (t.object_id = s.object_id)"
+                        + " WHEN MATCHED THEN UPDATE SET t.version = s.version,"
+                        + " t.metadata_location = s.metadata_location, t.recorded_at = s.recorded_at"
+                        + " WHERE t.version < s.version"
+                        + " WHEN NOT MATCHED THEN INSERT (object_id, version, metadata_location, recorded_at)"
+                        + " VALUES (s.object_id, s.version, s.metadata_location, s.recorded_at)",
+                objectId, watermark.version(), watermark.metadataLocation(), watermark.recordedAt());
     }
 
     Optional<DrWatermark> read(UUID objectId) {

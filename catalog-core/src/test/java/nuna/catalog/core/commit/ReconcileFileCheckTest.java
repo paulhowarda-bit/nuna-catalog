@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
+import nuna.catalog.iceberg.Metadata;
+import nuna.catalog.iceberg.Outcome;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.CommitBatch;
@@ -66,9 +68,10 @@ import org.junit.jupiter.api.Test;
  * holds what the test replicates to it, and the DR database's pointer names version 1. The walk moves the table forward
  * only through versions whose every added file, data included, is in that store, and stops at the first that lacks
  * one, saying which. A table whose pointer is above its DR watermark is checked from the watermark (D37, amended again
- * 2026-11-20: "Check from the watermark"): if a version between them lacks a file, the walk takes nothing for it and
- * reports it for the rewind. Against a store double holding the table's pointer, watermark and journal, so it needs no
- * database.
+ * 2026-11-20: "Check from the watermark"), the versions between them judged as the verifier judges them ("Judge like
+ * the verifier"): if the pointer's is not whole, the walk takes nothing for the table and reports it for the rewind;
+ * a version that adds nothing to the newest whole one, as the version a rewind writes, counts as whole. Against a store
+ * double holding the table's pointer, watermark and journal, so it needs no database.
  */
 class ReconcileFileCheckTest {
 
@@ -306,6 +309,76 @@ class ReconcileFileCheckTest {
                 + versions.get(1));
     }
 
+    // ---- judged as the verifier judges them ----
+
+    @Test
+    @DisplayName("a rewound table walks at once, its watermark at the version the rewind wrote or still below it: that"
+            + " version adds nothing to the watermark, so it counts as whole though the versions it gave up lack files")
+    void aRewoundTableWalksAtOnce() {
+        append("a");
+        DataFile b = append("b");
+        append("c");
+        replicateAll();
+        at(3);
+        DrWatermark first = new DrWatermark(1, versions.get(1), Instant.now());
+        watermark = Optional.of(first);
+        remove(b.location());
+        remove(metadata(3).currentSnapshot().manifestListLocation());
+        assertThat(reconcile.plan(object, Set.of()).problem()).as("before the rewind").get().asString()
+                .contains("the walk takes nothing for the table; rewind it to its watermark");
+
+        Reconcile.Rewound rewound = reconcile.rewind(reconcile.planRewind(object), OPERATOR,
+                commit -> List.of(new OutboxEvent("test.commit", "{}")));
+
+        assertThat(rewound.problem()).isEmpty();
+        assertThat(pointer.version()).isEqualTo(4);
+        String after = builtOn(pointer.metadataLocation(), 5);
+        for (Optional<DrWatermark> kept : List.of(watermark, Optional.of(first))) {
+            watermark = kept;
+
+            Reconcile.Plan plan = reconcile.plan(object, Set.of(after));
+
+            assertThat(plan.problem()).as("watermark %s", kept).isEmpty();
+            assertThat(plan.steps()).as("watermark %s", kept).extracting(Reconcile.Step::location)
+                    .containsExactly(after);
+        }
+    }
+
+    @Test
+    @DisplayName("the versions a rewind would give up never count as whole, nor does a version built on them, though its"
+            + " own files are all there or it adds none: the walk takes nothing for the table")
+    void theGivenUpVersionsNeverCount() {
+        append("a");
+        DataFile b = append("b");
+        append("c");
+        table.updateProperties().set("owner", "dr").commit();
+        committed();
+        replicateAll();
+        watermark = Optional.of(new DrWatermark(1, versions.get(1), Instant.now()));
+        remove(b.location());
+
+        for (int version : List.of(3, 4)) {
+            at(version);
+
+            Reconcile.Plan plan = reconcile.plan(object, Set.of());
+
+            assertThat(plan.steps()).as("pointer at %s", version).isEmpty();
+            assertThat(plan.tips()).as("pointer at %s", version).isEmpty();
+            assertThat(plan.problem()).as("pointer at %s", version).get().asString()
+                    .contains("storage does not hold " + b.location()).contains("which version 2 adds")
+                    .contains("the walk takes nothing for the table; rewind it to its watermark");
+        }
+        assertThat(swapped).isEmpty();
+    }
+
+    /** A property change built on {@code base}, written to the DR store as a commit after a rewind writes it. */
+    private String builtOn(String base, long version) {
+        String json = ((Outcome.NewMetadata) Metadata.commitTable(Requests.update(Requests.assertUuid(
+                table.uuid().toString()), Requests.setProperties(Map.of("after", "rewind"))), dr.read(base, "").json(),
+                base)).json();
+        return dr.write(table.location(), version, json).location();
+    }
+
     /**
      * Version 2 adds data file b and version 3 deletes it, so the pointer's version 3 and version 4 past it are whole
      * without b, but version 2 is not; the DR database's pointer names version 3, and the DR store holds every file.
@@ -413,7 +486,10 @@ class ReconcileFileCheckTest {
 
     // ---- the store double ----
 
-    /** The store calls a reconcile makes, over the one table; any other call fails the test. */
+    /**
+     * The store calls a reconcile makes, over the one table; any other call fails the test. A commit past the client's
+     * versions joins them, so the journal records it, and a rewind's records its watermark, as every store does.
+     */
     private CatalogStore store() {
         return (CatalogStore) Proxy.newProxyInstance(CatalogStore.class.getClassLoader(),
                 new Class<?>[] {CatalogStore.class}, (proxy, method, args) -> switch (method.getName()) {
@@ -431,6 +507,13 @@ class ReconcileFileCheckTest {
                             yield new CommitResult.Conflict(swap.key(), Optional.of(pointer));
                         }
                         pointer = swap.next();
+                        if (swap.next().version() == versions.size()) {
+                            versions.add(swap.next().metadataLocation());
+                        }
+                        if (swap.drWatermark()) {
+                            watermark = Optional.of(new DrWatermark(swap.next().version(),
+                                    swap.next().metadataLocation(), batch.committedAt()));
+                        }
                         swapped.add(swap);
                         yield new CommitResult.Committed(batch.commitId());
                     }
