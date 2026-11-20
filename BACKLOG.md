@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 4 S, 8 M, 2 L, 4 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,6 +30,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
+| [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
 
 ## Open items in full
 
@@ -564,6 +565,27 @@ Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS f
 one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
 real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
 fail on an assertion, not on fixture start-up.
+
+### 90. An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401
+
+- Decided: 2026-11-20, D16
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-security/ catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java bites/D16/
+- Effort: S, one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite
+
+When the catalog cannot fetch an issuer's signing keys (the IdP is down, or slower than the 5 s read timeout item 60
+gave the JWKS fetch), `TokenAuthenticator` refuses the token as invalid: 401 with `Bearer error="invalid_token"`. That
+tells the client its good token is bad, so it throws the token away or sends its user to sign in again, when the
+fault is the IdP's and passes. `JwksRefreshTest#anUnreachableJwksMeansNoTokenIsAccepted` asserts the 401 today.
+Found by item 60's agent, 2026-11-20.
+
+Paul, 2026-11-20: "503, Retry-After".
+
+Done when a request whose token cannot be checked because the issuer's keys cannot be fetched answers 503 with a
+`Retry-After` header in the Iceberg error shape, and no token is accepted unchecked; a token that is bad on its own
+(wrong signature against keys the catalog holds, expired, wrong audience or issuer) still answers 401; the audit
+record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
+fetch failure mapped back to 401) makes that test fail.
 
 ## Done and dropped
 
