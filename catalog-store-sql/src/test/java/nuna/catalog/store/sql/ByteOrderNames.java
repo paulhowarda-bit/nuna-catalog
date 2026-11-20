@@ -65,7 +65,7 @@ final class ByteOrderNames {
     private static UUID catalog(CatalogStore store) {
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), "profile", StorageProfile.Kind.MINIO,
                 Optional.of("https://minio.suite:9000"), "arn:aws:iam::000000000000:role/suite",
-                List.of("s3://suite-warehouse/"));
+                List.of("s3://suite-warehouse/"), Optional.empty());
         assertThat(store.putStorageProfile(profile, change())).isEqualTo(WriteResult.APPLIED);
         UUID id = UUID.randomUUID();
         Name name = name("Catalog-" + id);

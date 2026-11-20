@@ -67,12 +67,13 @@ final class OracleGovernance {
     WriteResult putStorageProfile(StorageProfile profile, Change change) {
         return transactions.change(change, "storage profile put", connection -> {
             upsert(connection, "storage_profile_pk", "MERGE INTO storage_profile t USING (SELECT ? id, ? name, ? kind,"
-                            + " ? endpoint, ? sts_role FROM dual) s ON (t.id = s.id)"
+                            + " ? endpoint, ? sts_role, ? kms_key FROM dual) s ON (t.id = s.id)"
                             + " WHEN MATCHED THEN UPDATE SET t.name = s.name, t.kind = s.kind, t.endpoint = s.endpoint,"
-                            + " t.sts_role = s.sts_role"
-                            + " WHEN NOT MATCHED THEN INSERT (id, name, kind, endpoint, sts_role)"
-                            + " VALUES (s.id, s.name, s.kind, s.endpoint, s.sts_role)",
-                    profile.id(), profile.name(), profile.kind().name(), profile.endpoint().orElse(null), profile.stsRole());
+                            + " t.sts_role = s.sts_role, t.kms_key = s.kms_key"
+                            + " WHEN NOT MATCHED THEN INSERT (id, name, kind, endpoint, sts_role, kms_key)"
+                            + " VALUES (s.id, s.name, s.kind, s.endpoint, s.sts_role, s.kms_key)",
+                    profile.id(), profile.name(), profile.kind().name(), profile.endpoint().orElse(null), profile.stsRole(),
+                    profile.kmsKey().orElse(null));
             update(connection, "DELETE FROM storage_profile_location WHERE profile_id = ?", profile.id());
             List<Object[]> locations = new ArrayList<>();
             for (int i = 0; i < profile.allowedLocations().size(); i++) {
@@ -88,10 +89,11 @@ final class OracleGovernance {
         return transactions.snapshot("storage profile read", connection -> {
             List<String> locations = query(connection, "SELECT location FROM storage_profile_location"
                     + " WHERE profile_id = ? ORDER BY ordinal", row -> Jdbc.text(row, "location"), profileId);
-            return first(connection, "SELECT id, name, kind, endpoint, sts_role FROM storage_profile WHERE id = ?",
+            return first(connection, "SELECT id, name, kind, endpoint, sts_role, kms_key FROM storage_profile WHERE id = ?",
                     row -> new StorageProfile(Jdbc.uuid(row, "id"), Jdbc.text(row, "name"),
                             StorageProfile.Kind.valueOf(row.getString("kind")),
-                            Optional.ofNullable(Jdbc.text(row, "endpoint")), Jdbc.text(row, "sts_role"), locations),
+                            Optional.ofNullable(Jdbc.text(row, "endpoint")), Jdbc.text(row, "sts_role"), locations,
+                            Optional.ofNullable(Jdbc.text(row, "kms_key"))),
                     profileId);
         });
     }

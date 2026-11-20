@@ -66,7 +66,7 @@ public abstract class MutationSuite extends GroupSuite {
                 }),
                 new Mutation("putStorageProfile", () -> (target, change) -> target.putStorageProfile(
                         new StorageProfile(UUID.randomUUID(), "p", StorageProfile.Kind.MINIO, Optional.of("https://m"),
-                                "role", List.of("s3://m/")), change)),
+                                "role", List.of("s3://m/"), Optional.empty()), change)),
                 new Mutation("createNamespace", () -> {
                     UUID catalog = newCatalog();
                     return (target, change) -> target.createNamespace(new NamespaceRecord(catalog, UUID.randomUUID(),
@@ -155,7 +155,7 @@ public abstract class MutationSuite extends GroupSuite {
 
     private StorageProfile profile() {
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), "p", StorageProfile.Kind.S3, Optional.empty(),
-                "role", List.of());
+                "role", List.of(), Optional.empty());
         assertApplied(store.putStorageProfile(profile, change()));
         return profile;
     }

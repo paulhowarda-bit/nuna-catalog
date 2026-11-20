@@ -57,22 +57,23 @@ final class SqlGovernance {
 
     WriteResult putStorageProfile(StorageProfile profile, Change change) {
         return transactions.change(change, "storage profile put", connection -> {
-            update(connection, "INSERT INTO storage_profile (id, name, kind, endpoint, sts_role, allowed_locations)"
-                            + " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,"
+            update(connection, "INSERT INTO storage_profile (id, name, kind, endpoint, sts_role, allowed_locations,"
+                            + " kms_key) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name,"
                             + " kind = EXCLUDED.kind, endpoint = EXCLUDED.endpoint, sts_role = EXCLUDED.sts_role,"
-                            + " allowed_locations = EXCLUDED.allowed_locations",
+                            + " allowed_locations = EXCLUDED.allowed_locations, kms_key = EXCLUDED.kms_key",
                     profile.id(), profile.name(), profile.kind().name(), profile.endpoint().orElse(null), profile.stsRole(),
-                    profile.allowedLocations().toArray(String[]::new));
+                    profile.allowedLocations().toArray(String[]::new), profile.kmsKey().orElse(null));
             return WriteResult.APPLIED;
         });
     }
 
     Optional<StorageProfile> readStorageProfile(UUID profileId) {
         return transactions.autocommit("storage profile read", connection -> first(connection,
-                "SELECT id, name, kind, endpoint, sts_role, allowed_locations FROM storage_profile WHERE id = ?",
+                "SELECT id, name, kind, endpoint, sts_role, allowed_locations, kms_key FROM storage_profile WHERE id = ?",
                 row -> new StorageProfile(Jdbc.uuid(row, "id"), row.getString("name"),
                         StorageProfile.Kind.valueOf(row.getString("kind")), Optional.ofNullable(row.getString("endpoint")),
-                        row.getString("sts_role"), Jdbc.texts(row, "allowed_locations")), profileId));
+                        row.getString("sts_role"), Jdbc.texts(row, "allowed_locations"),
+                        Optional.ofNullable(row.getString("kms_key"))), profileId));
     }
 
     WriteResult putAttribute(GovernanceAttribute attribute, Change change) {

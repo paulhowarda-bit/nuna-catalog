@@ -312,7 +312,7 @@ class MongoStoreSuiteTest extends CommitSuite {
         commitWithEvent(behind, key, Optional.of(next(first)), "pointer-2");
 
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), "lamport", StorageProfile.Kind.S3, Optional.empty(),
-                "arn:aws:iam::000000000000:role/lamport", List.of());
+                "arn:aws:iam::000000000000:role/lamport", List.of(), Optional.empty());
         assertApplied(ahead.putStorageProfile(profile, event("profile")));
         UUID catalogId = UUID.randomUUID();
         assertApplied(ahead.createCatalog(new CatalogRecord(catalogId, "lamport", "Lamport"),
@@ -524,7 +524,7 @@ class MongoStoreSuiteTest extends CommitSuite {
 
     private static UUID newCatalog(CatalogStore store, String name) {
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), name, StorageProfile.Kind.S3, Optional.empty(),
-                "arn:aws:iam::000000000000:role/" + name, List.of());
+                "arn:aws:iam::000000000000:role/" + name, List.of(), Optional.empty());
         assertApplied(store.putStorageProfile(profile, Changes.change()));
         UUID catalogId = UUID.randomUUID();
         assertApplied(store.createCatalog(new CatalogRecord(catalogId, name + "-" + catalogId, name),

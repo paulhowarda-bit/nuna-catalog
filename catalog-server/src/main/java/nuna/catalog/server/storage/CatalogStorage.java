@@ -42,7 +42,8 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
  * Each catalog's storage (D21, D28): the profiles configured on this server, written to the store, and
  * the catalogs bound to them. At startup it refuses overlapping profiles, plain-http endpoints, CA bundles it
  * cannot read (backlog 21) and KMS keys that are not a key ARN in an AWS S3 profile's region (backlog 23), records
- * changed profiles, creates declared catalogs, and refuses a declared catalog the store binds differently.
+ * changed profiles (a change of KMS key alone included, backlog 98), creates declared catalogs, and refuses a declared
+ * catalog the store binds differently.
  * The catalog never calls KMS: encryption at rest is the profile's KMS key, which S3 uses for each write that names
  * it (D26), or else the bucket's default key, and the key set is recorded.
  * Each profile's requests to its object store are observed (docs/observability/spans.md).
@@ -163,6 +164,11 @@ public final class CatalogStorage implements AutoCloseable {
         }
     }
 
+    /**
+     * Writes the profile to the store, with a {@code storage-setup} PROFILE_SET event naming what is set, when the
+     * store holds it otherwise or not at all: its kind, endpoint, STS role, allowed prefixes or KMS key (D26; backlog
+     * 98). The event's {@code kms-key} is empty when the profile names no key, as its {@code sts-role} is.
+     */
     private void record(Bound bound, StorageSettings.Profile config, RestSettings rest, Clock clock) {
         nuna.catalog.store.StorageProfile wanted = new nuna.catalog.store.StorageProfile(bound.id(), bound.name(),
                 switch (config.kind()) {
@@ -171,7 +177,7 @@ public final class CatalogStorage implements AutoCloseable {
                     case CEPH -> nuna.catalog.store.StorageProfile.Kind.CEPH;
                 },
                 config.kind() == StoreKind.S3 ? Optional.empty() : Optional.of(config.endpoint()),
-                config.stsRole() == null ? "" : config.stsRole(), config.allowedPrefixes());
+                config.stsRole() == null ? "" : config.stsRole(), config.allowedPrefixes(), bound.profile().kmsKey());
         if (store.readStorageProfile(bound.id()).equals(Optional.of(wanted))) {
             return;
         }
@@ -180,6 +186,7 @@ public final class CatalogStorage implements AutoCloseable {
         set.put("endpoint", config.endpoint());
         set.put("sts-role", wanted.stsRole());
         set.put("allowed-prefixes", String.join(",", config.allowedPrefixes()));
+        set.put("kms-key", wanted.kmsKey().orElse(""));
         store.putStorageProfile(wanted, change(new StorageSetup(StorageSetup.Action.PROFILE_SET, bound.id(),
                 bound.name(), set, CONFIGURATION), rest, clock));
     }

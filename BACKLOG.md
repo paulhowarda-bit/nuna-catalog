@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 5 S, 8 M, 2 L, 4 XL.
+**19 open:** 6 S, 7 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,7 +29,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 | [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
-| [98](backlog/98.md) | M | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | one more field on the stored profile in all four stores, with its migration, and the startup audit naming it | 2026-11-20 |
+| [98](backlog/98.md) | S | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails | 2026-11-20 |
 | [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
 
 ## Open items in full
@@ -815,8 +815,8 @@ and the server's metadata files are written with it; or Paul decides on-prem pro
 
 - Decided: 2026-11-20, D26
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-audit/src/main/java/nuna/catalog/audit/StorageSetup.java
-- Effort: M, one more field on the stored profile in all four stores, with its migration, and the startup audit naming it
+- Touches: catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-audit/src/main/java/nuna/catalog/audit/StorageSetup.java catalog-server/src/test/java/nuna/catalog/server/storage/KmsKeyProfileTest.java catalog-server/src/test/java/nuna/catalog/server/SchemaAtStartupTest.java catalog-security/src/test/java/nuna/catalog/security/Estate.java catalog-core/src/test/java/nuna/catalog/core/commit/Harness.java catalog-tests-load/src/test/java/nuna/catalog/load/RollingUpgradeTest.java bites/M6/profile-kms-key-unrecorded.patch
+- Effort: S, built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails
 
 At startup `CatalogStorage.record` writes each configured profile to the store and audits a `storage-setup`
 PROFILE_SET event when the stored profile differs: kind, endpoint, STS role and allowed prefixes. Item 23 added a
@@ -828,6 +828,33 @@ Done when the stored profile carries the key, a change of key alone is written a
 key in the event's settings), and a test on each store shows it.
 
 **Decided 2026-11-20 (D26, amended):** done now: "98 now, 97 at work".
+
+**Progress, 2026-11-20 (worktree-agent-a5f236698c7f0b3fc): built; open until the heavy build passes the store test
+on all four stores, as items 28 and 100 are.**
+- `nuna.catalog.store.StorageProfile` gains `kmsKey`, empty when the profile names no key. `CatalogStorage.record`
+  takes it from the configured profile, so a change of key alone (none to a key, one key to another, a key to none)
+  differs from what the store holds and is written with a `storage-setup` PROFILE_SET event whose settings carry
+  `kms-key`: the key ARN, or empty for none, as `sts-role` is. A start with the key the store holds writes and audits
+  nothing, as before.
+- Schema steps add the key: PostgreSQL `V10__storage_profile_kms_key.sql`, CockroachDB `V9__…` (its own folder in
+  `catalog-store-sql`), Oracle `V11__…` (a nullable `kms_key` column on `storage_profile`), MongoDB step 9 (a `kmsKey`
+  field, no index, recorded as step 4 was). A profile stored before the step reads as naming no key until a server
+  of this release records it; servers of the previous release do not name the column and leave a recorded key as
+  it is.
+- Tests: `GovernanceSuite#storageProfileKeepsItsKmsKey` (heavy, in the suite that `PostgresStoreSuiteTest`,
+  `CockroachStoreSuiteTest`, `OracleStoreSuiteTest` and `MongoStoreSuiteTest` all run): a profile with no key reads
+  back with none; puts that change only the key, to a key, to another and back to none, each read back exactly,
+  with their change records. Oracle's empty-string test stores an empty key. Java-only, run:
+  `KmsKeyProfileTest#keyChangeIsRecordedAndAudited` and `#unchangedKeyAuditsNothing` (the server started again and
+  again on one store double that holds what is written). `SchemaAtStartupTest` (heavy) and `RollingUpgradeTest`
+  (overnight) expect PostgreSQL V10.
+- Bite `bites/M6/profile-kms-key-unrecorded` (the profile recorded without its key), seen to bite both
+  `KmsKeyProfileTest` tests on assertions.
+- No other reader shows the stored profile: the console, the management routes (delete policies read the
+  configured profile, not the stored one) and `docs/` say nothing of its fields, so none was changed.
+
+Left: the heavy and overnight tests above have not run; agents ran no container tests on 2026-11-20. The overnight
+run's heavy build runs them.
 
 ### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
 
