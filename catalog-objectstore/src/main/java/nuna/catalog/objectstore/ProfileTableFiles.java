@@ -46,6 +46,16 @@ public final class ProfileTableFiles implements TableFiles {
         return files.tableLocations();
     }
 
+    @Override
+    public boolean exists(String location) {
+        return files.exists(location);
+    }
+
+    @Override
+    public byte[] bytes(String location) {
+        return files.bytes(location);
+    }
+
     /** False for anything that is not a canonical {@code s3://} location, which can lie within nothing. */
     @Override
     public boolean isWithin(String location, String root) {

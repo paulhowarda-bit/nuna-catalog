@@ -270,6 +270,11 @@ public final class Metadata {
                 log.isEmpty() ? Optional.empty() : Optional.of(log.getLast().file()));
     }
 
+    /** Reads a view metadata file's facts, for the DR rewind (D37); throws on anything that is not view metadata. */
+    public static ViewFacts viewFacts(String metadataJson, String metadataLocation) {
+        return facts(ViewMetadataParser.fromJson(metadataLocation, metadataJson));
+    }
+
     private static String arrayOrEmpty(JsonNode node) {
         return node == null || node.isNull() ? "[]" : node.toString();
     }

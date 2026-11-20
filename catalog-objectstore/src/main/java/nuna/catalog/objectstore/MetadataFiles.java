@@ -21,6 +21,7 @@ import software.amazon.awssdk.services.s3.S3ClientBuilder;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * Writes and reads one storage profile's metadata.json files (plan 2.2 steps 4 and 6). Every
@@ -88,6 +89,45 @@ public final class MetadataFiles implements AutoCloseable {
             throw new MetadataIntegrityException(location, expectedSha256, actual);
         }
         return new LoadedMetadata(location, new String(bytes, UTF_8), actual, intact);
+    }
+
+    /**
+     * Whether the store holds an object at {@code location}, one {@code HEAD}: any file of a table, data included, for
+     * the DR reconcile's check of what a step adds (D37, amended 2026-11-20).
+     *
+     * @throws LocationRejectedException when the location is not the profile's to read
+     */
+    public boolean exists(String location) {
+        ObjectLocation file = profile.approve(location);
+        try {
+            s3.headObject(request -> request.bucket(file.bucket()).key(file.key()));
+            return true;
+        } catch (NoSuchKeyException e) {
+            return false;
+        } catch (S3Exception e) {
+            if (e.statusCode() == 404) {
+                return false;
+            }
+            throw new ObjectStoreException("asking for " + file + " failed", e);
+        } catch (SdkException e) {
+            throw new ObjectStoreException("asking for " + file + " failed", e);
+        }
+    }
+
+    /**
+     * Any file of a table, read whole, unhashed: the DR reconcile reads manifest lists and manifests with it.
+     *
+     * @throws MetadataNotFoundException when no file is at {@code location}
+     */
+    public byte[] bytes(String location) {
+        ObjectLocation file = profile.approve(location);
+        try {
+            return s3.getObjectAsBytes(request -> request.bucket(file.bucket()).key(file.key())).asByteArray();
+        } catch (NoSuchKeyException e) {
+            throw new MetadataNotFoundException(location, e);
+        } catch (SdkException e) {
+            throw new ObjectStoreException("reading " + file + " failed", e);
+        }
     }
 
     /**

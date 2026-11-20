@@ -1,6 +1,7 @@
 package nuna.catalog.core.commit;
 
 import static nuna.catalog.core.commit.Requests.assertUuid;
+import static nuna.catalog.core.commit.Requests.assertViewUuid;
 import static nuna.catalog.core.commit.Requests.setProperties;
 import static nuna.catalog.core.commit.Requests.update;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,6 +27,7 @@ import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Securable;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -40,10 +42,11 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The reconcile and the DR watermark (D37, amended 2026-11-20; item 83 folded into item 28). The verifier found every
- * file of version 2 in the DR store and none past it. The DR database's pointer names version 3, so storage is
- * behind the database there, while storage holds proven files past it. The walk never moves the table past its
- * watermark, and the rewind moves it back to the watermark in one commit, giving up versions 3 and 4 by name. Against a
- * store double holding one table's pointer, journal and watermark, so it needs no database.
+ * file of version 2 in the DR store and none past it. The DR database's pointer names version 4, and storage holds
+ * proven files past it. The walk does not stop at the watermark ("Walk with a file check": each step's files are
+ * checked instead, ReconcileFileCheckTest), and the rewind moves a table, or a view ("Rewind views too"), back to the
+ * watermark in one commit, giving up versions 3 and 4 by name. Against a store double holding one object's pointer,
+ * journal and watermark, so it needs no database.
  */
 class ReconcileWatermarkTest {
 
@@ -101,68 +104,47 @@ class ReconcileWatermarkTest {
         return files.write(root, Reconcile.version(base.location()) + 1, json);
     }
 
-    // ---- the walk stops at the watermark ----
+    // ---- the walk does not stop at the watermark ----
 
     @Test
-    @DisplayName("a table at its watermark takes no proven file past it, and the plan says how many it left")
-    void theWalkStopsAtTheWatermark() {
+    @DisplayName("a table at its watermark walks forward through the proven files past it, each checked")
+    void aTableAtItsWatermarkWalksForward() {
         pointer = new Pointer(v2.location(), 2, v2.sha256(), new byte[0]);
 
         Reconcile.Plan plan = reconcile.plan(table, Set.of());
 
-        assertThat(plan.steps()).isEmpty();
-        assertThat(plan.problem()).get().asString().contains("stops at the DR watermark, version 2")
-                .contains("3 proven files follow it, from " + v3.location());
+        assertThat(plan.steps()).extracting(Reconcile.Step::location)
+                .containsExactly(v3.location(), v4.location(), v5.location());
+        assertThat(plan.problem()).isEmpty();
         Reconcile.Applied applied = reconcile.apply(plan, OPERATOR, events());
-        assertThat(applied.stepsApplied()).isZero();
-        assertThat(pointer.version()).isEqualTo(2);
-        assertThat(swapped).isEmpty();
+        assertThat(applied.stepsApplied()).isEqualTo(3);
+        assertThat(pointer.metadataLocation()).isEqualTo(v5.location());
     }
 
     @Test
-    @DisplayName("an accepted tip or an archived swap moves the table no further past its watermark")
-    void noProofMovesItPastTheWatermark() {
-        pointer = new Pointer(v5.location(), 5, v5.sha256(), new byte[0]);
-        watermark = Optional.of(new DrWatermark(5, v5.location(), CLOCK.instant()));
+    @DisplayName("the walk is the same with a watermark below the pointer, at it, or none, and an accepted tip or an"
+            + " archived swap is taken as without one")
+    void theWatermarkDoesNotChangeTheWalk() {
         String tip = files.metadataFiles(root).stream().filter(location -> Reconcile.version(location) == 6)
                 .findFirst().orElseThrow();
+        for (Optional<DrWatermark> kept : List.of(Optional.of(new DrWatermark(2, v2.location(), CLOCK.instant())),
+                Optional.of(new DrWatermark(4, v4.location(), CLOCK.instant())), Optional.<DrWatermark>empty())) {
+            watermark = kept;
 
-        Reconcile.Plan accepted = reconcile.plan(table, Set.of(tip));
-        Reconcile.Plan archived = reconcile.plan(table, Set.of(), Optional.of(List.of(new Reconcile.ArchivedCommit(
-                v5.location(), tip, 6, files.read(tip, "").sha256()))));
+            Reconcile.Plan plan = reconcile.plan(table, Set.of());
+            Reconcile.Plan accepted = reconcile.plan(table, Set.of(tip));
+            Reconcile.Plan archived = reconcile.plan(table, Set.of(), Optional.of(List.of(
+                    new Reconcile.ArchivedCommit(v5.location(), tip, 6, files.read(tip, "").sha256()))));
 
-        for (Reconcile.Plan plan : List.of(accepted, archived)) {
-            assertThat(plan.steps()).isEmpty();
-            assertThat(plan.problem()).get().asString().contains("1 proven file follows it, from " + tip);
+            assertThat(plan.steps()).as("watermark %s", kept).extracting(Reconcile.Step::location)
+                    .containsExactly(v5.location());
+            assertThat(plan.tips()).as("watermark %s", kept).containsExactly(tip);
+            for (Reconcile.Plan taken : List.of(accepted, archived)) {
+                assertThat(taken.steps()).as("watermark %s", kept).extracting(Reconcile.Step::location)
+                        .containsExactly(v5.location(), tip);
+                assertThat(taken.problem()).isEmpty();
+            }
         }
-    }
-
-    @Test
-    @DisplayName("a table with no watermark walks as before, and one whose walk ends at its watermark is left as is")
-    void withoutAWatermarkOrWithinItTheWalkIsUnchanged() {
-        pointer = new Pointer(v2.location(), 2, v2.sha256(), new byte[0]);
-        watermark = Optional.empty();
-
-        assertThat(reconcile.plan(table, Set.of()).steps()).extracting(Reconcile.Step::location)
-                .containsExactly(v3.location(), v4.location(), v5.location());
-
-        watermark = Optional.of(new DrWatermark(2, v2.location(), CLOCK.instant()));
-        files.remove(v3.location());
-        files.remove(v4.location());
-        files.remove(v5.location());
-        Reconcile.Plan plan = reconcile.plan(table, Set.of());
-        assertThat(plan.steps()).isEmpty();
-        assertThat(plan.problem()).isEmpty();
-    }
-
-    @Test
-    @DisplayName("a pointer above the watermark takes no file and says to rewind")
-    void aPointerAboveTheWatermarkSaysToRewind() {
-        Reconcile.Plan plan = reconcile.plan(table, Set.of());
-
-        assertThat(plan.steps()).isEmpty();
-        assertThat(plan.problem()).get().asString().contains("version 4, is above the DR watermark, version 2")
-                .contains("\"rewind\": true");
     }
 
     // ---- the rewind ----
@@ -254,6 +236,76 @@ class ReconcileWatermarkTest {
 
         assertThat(rewound.problem()).get().asString().contains("no longer at version 4; plan again");
         assertThat(pointer.metadataLocation()).isEqualTo(v5.location());
+    }
+
+    // ---- views ----
+
+    @Test
+    @DisplayName("a view above its watermark is rewound as a table is: its lost commits listed, and only under a DR"
+            + " freeze its watermark's metadata written again as the next version in one journaled, published commit")
+    void aFrozenViewIsRewoundToItsWatermark() {
+        UUID viewId = UUID.randomUUID();
+        String viewRoot = MemoryFiles.ROOT + "/" + viewId;
+        CatalogObject view = new CatalogObject(CATALOG, viewId, NAMESPACE, new Name("recent", "Recent"),
+                CatalogObject.Kind.VIEW, CatalogObject.State.ACTIVE, Optional.empty(), Optional.empty(), viewRoot,
+                Optional.empty());
+        List<TableFiles.Written> versions = new ArrayList<>();
+        versions.add(files.write(viewRoot, 1, ((Outcome.NewMetadata) Metadata.createView(Requests.createView("recent"),
+                viewId.toString(), viewRoot, CLOCK.millis())).json()));
+        for (String value : List.of("a", "b", "c")) {
+            String json = ((Outcome.NewMetadata) Metadata.commitView(update(assertViewUuid(viewId.toString()),
+                    setProperties(Map.of("written", value))), files.read(versions.getLast().location(), "").json()))
+                    .json();
+            versions.add(files.write(viewRoot, versions.size() + 1, json));
+        }
+        journal.clear();
+        for (TableFiles.Written version : versions) {
+            long n = Reconcile.version(version.location());
+            journal.add(new JournalRecord(UUID.randomUUID(), view.mainKey(), CLOCK.instant().minusSeconds(600 - n),
+                    new JournalEntry("writer-" + n, null, "trino", "[]", "[]"),
+                    n == 1 ? Optional.empty() : Optional.of(journal.getLast().newLocation()), version.location(), n));
+        }
+        TableFiles.Written w2 = versions.get(1);
+        TableFiles.Written w4 = versions.get(3);
+        pointer = new Pointer(w4.location(), 4, w4.sha256(), new byte[0]);
+
+        watermark = Optional.empty();
+        assertThat(reconcile.planRewind(view).problem()).get().asString().contains("the view has no DR watermark");
+
+        watermark = Optional.of(new DrWatermark(2, w2.location(), CLOCK.instant()));
+        Reconcile.Rewind plan = reconcile.planRewind(view);
+
+        assertThat(plan.problem()).isEmpty();
+        assertThat(plan.object()).isEqualTo(view);
+        assertThat(plan.to()).isEqualTo(watermark);
+        assertThat(plan.lost()).extracting(Reconcile.Lost::version).containsExactly(3L, 4L);
+        assertThat(plan.lost()).extracting(Reconcile.Lost::metadataLocation)
+                .containsExactly(versions.get(2).location(), w4.location());
+        assertThat(plan.lost()).extracting(Reconcile.Lost::principal).containsExactly("writer-3", "writer-4");
+
+        frozen = false;
+        assertThat(reconcile.rewind(plan, OPERATOR, events()).problem()).get().asString()
+                .contains("not frozen for DR reconcile");
+        assertThat(swapped).isEmpty();
+
+        frozen = true;
+        Reconcile.Rewound rewound = reconcile.rewind(plan, OPERATOR, events());
+
+        assertThat(rewound.problem()).isEmpty();
+        assertThat(rewound.to()).contains(pointer);
+        assertThat(pointer.version()).isEqualTo(5);
+        assertThat(Reconcile.version(pointer.metadataLocation())).isEqualTo(5);
+        assertThat(pointer.metadataLocation()).startsWith(viewRoot + "/metadata/");
+        assertThat(files.read(pointer.metadataLocation(), "").json()).as("version 2's metadata, again")
+                .isEqualTo(files.read(w2.location(), "").json());
+        assertThat(new String(pointer.projection(), StandardCharsets.UTF_8)).contains("\"kind\":\"view\"")
+                .contains("\"uuid\":\"" + viewId + "\"");
+        assertThat(swapped).singleElement().satisfies(swap -> {
+            assertThat(swap.key()).isEqualTo(view.mainKey());
+            assertThat(swap.journal().updatesJson()).contains("\"dr-rewind\"").contains("\"watermark-version\":2")
+                    .contains(w2.location()).contains("\"versions-given-up\":2");
+        });
+        assertThat(published).singleElement().satisfies(commit -> assertThat(commit.object()).isEqualTo(view));
     }
 
     // ---- the store double ----

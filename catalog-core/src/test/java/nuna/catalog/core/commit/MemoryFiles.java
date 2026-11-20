@@ -61,12 +61,33 @@ final class MemoryFiles implements TableFiles {
         return path.size() > prefix.size() && path.subList(0, prefix.size()).equals(prefix);
     }
 
+    /** The {@code .metadata.json} files, as catalog-objectstore lists them: manifests share the directory. */
     @Override
     public List<String> metadataFiles(String locationRoot) {
         String directory = locationRoot + "/metadata/";
         return files.keySet().stream()
-                .filter(location -> location.startsWith(directory) && location.indexOf('/', directory.length()) < 0)
+                .filter(location -> location.startsWith(directory) && location.indexOf('/', directory.length()) < 0
+                        && location.endsWith(".metadata.json"))
                 .toList();
+    }
+
+    @Override
+    public boolean exists(String location) {
+        return files.containsKey(location);
+    }
+
+    @Override
+    public byte[] bytes(String location) {
+        byte[] bytes = files.get(location);
+        if (bytes == null) {
+            throw new IllegalStateException("no file at " + location);
+        }
+        return bytes;
+    }
+
+    /** Puts any file, as a table's writer or the replication to DR would. */
+    void put(String location, byte[] bytes) {
+        files.put(location, bytes);
     }
 
     @Override

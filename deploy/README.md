@@ -253,16 +253,18 @@ lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes
    pass to end after the start (`nuna.maintenance.dr.pass.last.success`, or the worker's log). The DR work list
    includes frozen tables, so the pass moves each watermark as far as the DR store allows.
 3. **Read the plan.** `POST /management/v1/catalogs/{catalog}/dr-reconcile` with `{"rewind": true}` lists each table
-   above its watermark, the watermark it would move back to, and its `lost` commits (version, commit id, time,
-   principal): the commits DR does not hold whole. Hand the lost tail to the tables' owners for business
-   reconciliation. A table with no watermark (`"watermark": null`) has no version known whole in DR; it is not moved,
-   and its owner decides what to do with it.
-4. **Rewind.** The same with `{"rewind": true, "apply": true}`: each frozen table above its watermark moves back to
-   it in one journaled commit, the watermark's metadata written again as the next version. A table that did not move
-   says why (`apply-problem`); a pointer that moved since the plan means run step 3 again.
-5. **Walk forward** tables with no watermark, as before the watermark: `{}` reports, `{"apply": true}` moves each
-   along its proven metadata files. A table with a watermark is never walked past it. Table locations no catalog holds
-   are listed as `unknown-locations`.
+   and each view above its watermark (under `tables` and `views`), the watermark it would move back to, and its
+   `lost` commits (version, commit id, time, principal): the commits DR does not hold whole. Hand the lost tail to the
+   owners for business reconciliation. One with no watermark (`"watermark": null`) has no version known whole in DR;
+   it is not moved, and its owner decides what to do with it.
+4. **Rewind.** The same with `{"rewind": true, "apply": true}`: each frozen table and view above its watermark moves
+   back to it in one journaled commit, the watermark's metadata written again as the next version. One that did not
+   move says why (`apply-problem`); a pointer that moved since the plan means run step 3 again.
+5. **Walk forward** every table, with a watermark or without: `{}` reports, `{"apply": true}` moves each along its
+   proven metadata files, taking a step only when the DR store holds every file it adds, data included, and stopping
+   before the first that lacks one (its `problem` names the file). Rewind before walking, never after: until the
+   verifier's next pass the walked versions are above the watermark, and a rewind would give them up. Table locations
+   no catalog holds are listed as `unknown-locations`.
 6. **Thaw:** `DELETE /management/v1/catalogs/{catalog}/dr-freeze`. Then register the unknown locations by name, if
    wanted: a register is refused under a freeze.
 

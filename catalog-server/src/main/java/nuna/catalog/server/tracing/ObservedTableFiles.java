@@ -62,6 +62,17 @@ public final class ObservedTableFiles implements TableFiles {
         return observe("tableLocations", files::tableLocations, listed -> "listed");
     }
 
+    /** {@code found}, or {@code absent} when storage holds no such file. */
+    @Override
+    public boolean exists(String location) {
+        return observe("exists", () -> files.exists(location), found -> found ? "found" : "absent");
+    }
+
+    @Override
+    public byte[] bytes(String location) {
+        return observe("bytes", () -> files.bytes(location), read -> "read");
+    }
+
     private <T> T observe(String operation, Supplier<T> call, Function<? super T, String> outcome) {
         return Observed.call(registry, NAME, "objectstore " + operation, profile.and("operation", operation), call,
                 outcome);
