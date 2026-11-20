@@ -234,7 +234,9 @@ and paths on another endpoint (Paul, 2026-11-20).
 **Before a disaster.** Run the maintenance worker's DR verifier in the primary region: name each storage profile's
 DR replica, read-only keys on the DR store, under `nuna.maintenance.dr.replicas.<profile>` (endpoint, region,
 path-style access, keys, CA bundle); `nuna.maintenance.dr.verify-interval` sets how often it passes (1 minute by
-default). The worker chart does not set these yet (item 92): put them in the worker's `application.yaml` override.
+default). In the worker chart they go under `config.nuna.maintenance.dr`, the secret key under `secrets.values` as
+`nuna.maintenance.dr.replicas.<profile>.secret-access-key` and a CA bundle in `storageCaConfigMap`, as a storage
+profile's do; the chart's values do not describe them yet (item 92).
 The verifier keeps each table's DR watermark, the newest version whose every file the DR store holds, in the catalog
 database, so it reaches DR with the database. `GET /management/v1/dr/watermarks` lists the tables behind and their
 lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes.
