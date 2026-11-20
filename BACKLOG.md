@@ -348,6 +348,8 @@ their areas do not overlap (the stores; the Iceberg routes; the management route
 107 and 108 can then run at once; 109, 110 and 111 follow; 112 closes the milestone. Each item records its own bites
 in `bites/D33/` and names its heavy and overnight tests, which the overnight run runs.
 
+**Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
+
 ### 28. DR replication-watermark verifier (v1.x)
 
 - Decided: 2026-11-20, D37
@@ -1279,6 +1281,8 @@ past expiry answering 404 everywhere; `ManagementAuthorizationTest` and `Mutatin
 `AuditRowsTest` maps the new type (fast). Fast build green; bites recorded in `bites/D33/`. Waits on item 102. Items
 107, 108 and 109 wait on this one.
 
+**Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
+
 ### 107. Merge a branch into main, per table, in one bounded transaction (item 26)
 
 - Added: 2026-11-20 by agent on item 26
@@ -1340,6 +1344,8 @@ queued once the branch is deleted; a tag's files survive expiry on main; a tag m
 commit keeps its files (the recheck); a merged branch's files are main's; an expired branch is ended and warned of
 once. Fast build green; bites recorded in `bites/D33/` (main's reach alone; the recheck skipped). Waits on items 105
 and 106.
+
+**Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
 
 ### 109. Console: the catalog's refs, the merge preview and a ref selector (item 26)
 
