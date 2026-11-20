@@ -1,0 +1,17 @@
+Breaks: a self-check finding only warns, as an allowed one does, so the server starts on an unsafe database.
+Module: catalog-server
+Test: StoreWiringTest#aFindingRefusesToStartTheServer+eachFindingMustBeAllowedByItsCode
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
+index b11c9d3..37ac3a0 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
+@@ -61,7 +61,7 @@ class StoreWiring {
+     static CatalogStore ready(CatalogStore store, Set<String> allowUnsafe) {
+         List<SafetyFinding> refused = new ArrayList<>();
+         for (SafetyFinding finding : store.selfCheck()) {
+-            if (allowUnsafe.contains(finding.code())) {
++            if (finding != null) {
+                 LOG.warn("The catalog's database is unsafe, allowed by nuna.database.allow-unsafe: {}: {}",
+                         finding.code(), finding.detail());
+             } else {
