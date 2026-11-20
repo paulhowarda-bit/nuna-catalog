@@ -44,7 +44,8 @@ import org.junit.jupiter.api.Test;
  * The reconcile and the DR watermark (D37, amended 2026-11-20; item 83 folded into item 28). The verifier found every
  * file of version 2 in the DR store and none past it. The DR database's pointer names version 4, and storage holds
  * proven files past it. The walk does not stop at the watermark ("Walk with a file check": each step's files are
- * checked instead, ReconcileFileCheckTest), and the rewind moves a table, or a view ("Rewind views too"), back to the
+ * checked instead, and the versions between the watermark and the pointer first, "Check from the watermark", both in
+ * ReconcileFileCheckTest), and the rewind moves a table, or a view ("Rewind views too"), back to the
  * watermark in one commit, giving up versions 3 and 4 by name. Against a store double holding one object's pointer,
  * journal and watermark, so it needs no database.
  */
@@ -122,8 +123,8 @@ class ReconcileWatermarkTest {
     }
 
     @Test
-    @DisplayName("the walk is the same with a watermark below the pointer, at it, or none, and an accepted tip or an"
-            + " archived swap is taken as without one")
+    @DisplayName("the walk is the same with a watermark below the pointer whose versions since are whole, at it, or"
+            + " none, and an accepted tip or an archived swap is taken as without one")
     void theWatermarkDoesNotChangeTheWalk() {
         String tip = files.metadataFiles(root).stream().filter(location -> Reconcile.version(location) == 6)
                 .findFirst().orElseThrow();
