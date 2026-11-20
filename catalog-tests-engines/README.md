@@ -304,6 +304,29 @@ The Job's `compact.py` checks the table's id and runs `rewrite_data_files`: 32 f
 snapshot before it still reads all 32. So no replaced file was deleted: they wait for expiry. The catalog's
 database lists no pending deletion for the table. Not run against a stack already up (`-Pengines.stack`).
 
+## The queryable audit table (2026-11-20, not yet run)
+
+`EngineMatrixTest#auditTables` reads the audit table of D23 (backlog 85) from Spark and PyIceberg, after PyIceberg's
+test and before SingleStore takes its memory. The matrix's catalog declares a third catalog, `nuna_audit`, and names
+its groups in `k8s/catalog.properties`: `nuna.audit.tables.readers=auditors` and
+`nuna.audit.tables.writers=audit-writers`, so the server grants `auditors` select there and `audit-writers` create
+and write at startup. Then the harness:
+
+- reads the audit topic's end offsets (`kafka-get-offsets.sh`, as a Job of the Kafka image);
+- starts a token endpoint of its own (`k8s/token-endpoint.yaml`, `images/python/token_endpoint.py` in the PyIceberg
+  image), which answers the writer's client-credentials grant with the token the harness signed for it (principal
+  `nuna-audit-tables`, group `audit-writers`): the matrix's issuer is only a key the harness holds;
+- installs the writer with its chart, `deploy/helm/nuna-audit-tables`, from its image
+  (`deploy/image/audit-tables.Dockerfile`, built from the runnable jar this build makes), committing every 10 s, and
+  waits for the commit that reaches those offsets;
+- runs `images/spark/audit_tables_matrix.py` and `images/python/audit_tables_matrix.py` as the readers' group
+  (Secret `audit-token`, `NUNA_AUDIT_TOKEN`), then uninstalls the writer and the token endpoint.
+
+Each reader prints `RESULT audit <reader>.<check>`: `format` 2; `seeded` `create,select,write`, the privileges in
+the grant records the server made at startup (principal `nuna-configuration`, catalog `nuna_audit`); `commits` `yes`,
+the matrix's own commits in catalog `engines`; `own` 0, the writer's own requests left out; `offsets` `unique`, each
+row at a place of its own in the topic. Not against a stack already up (`-Pengines.stack`).
+
 ## Kafka Connect upsert: not supported (2026-11-12)
 
 The Apache Iceberg 1.12.0 Kafka Connect sink has no upsert or equality-delete mode: its configuration

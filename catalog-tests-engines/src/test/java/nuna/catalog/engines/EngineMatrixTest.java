@@ -47,7 +47,8 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * set, so a skipped step fails as surely as a wrong answer.
  *
  * <p>Compaction ({@link #compaction()}) runs the maintenance worker's own compaction Job (D30 (3)) on a table of
- * small files, in a namespace of its own beside {@value #NAMESPACE}.
+ * small files, in a namespace of its own beside {@value #NAMESPACE}. The audit table ({@link #auditTables()}) runs the
+ * audit table writer (D23) from its image and chart, and Spark and PyIceberg read its table as the readers' group.
  *
  * <p>Spark runs first and leaves its tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
  * rows, one with the added column set), v3 with a deletion vector, four that took DELETE, UPDATE and MERGE
@@ -93,9 +94,19 @@ class EngineMatrixTest {
     /** The maintenance worker's principal (in the catalog's nuna.security.maintenance-principals) and group. */
     private static final String WORKER = "nuna-maintenance";
     private static final String WORKERS = "maintainers";
+    /**
+     * The audit table writer's principal (and its chart's release) and group, and the audit table's readers' group:
+     * the catalog grants both groups on catalog nuna_audit at startup ({@code nuna.audit.tables.*} in
+     * {@code k8s/catalog.properties}).
+     */
+    private static final String AUDIT_WRITER = "nuna-audit-tables";
+    private static final String AUDIT_WRITERS = "audit-writers";
+    private static final String AUDITORS = "auditors";
+    private static final String AUDIT_TOPIC = "nuna.catalog.audit";
     /** The chart's release, and so its Service: engines reach the catalog on http://nuna-catalog:8181. */
     private static final String RELEASE = "nuna-catalog";
     private static final String CATALOG_IMAGE = "nuna-catalog:engines";
+    private static final String AUDIT_TABLES_IMAGE = "nuna-audit-tables:engines";
     private static final String SPARK_IMAGE = "nuna-engines/spark:4.1.4-iceberg-1.12.0";
     private static final String KAFKA_CONNECT_IMAGE = "nuna-engines/kafka-connect:4.2.2-iceberg-1.12.0";
     private static final String PYTHON_IMAGE = "nuna-engines/python:pyiceberg-0.12.0";
@@ -213,8 +224,11 @@ class EngineMatrixTest {
         // The server's own image (deploy/image/Dockerfile), from the folder holding the runnable jar.
         build(CATALOG_IMAGE, "-f", repo.resolve("deploy/image/Dockerfile").toString(),
                 Path.of(System.getProperty("engines.catalog-jar")).getParent().toString());
+        // The audit table writer's (deploy/image/audit-tables.Dockerfile), likewise from its runnable jar's folder.
+        build(AUDIT_TABLES_IMAGE, "-f", repo.resolve("deploy/image/audit-tables.Dockerfile").toString(),
+                Path.of(System.getProperty("engines.audit-tables-jar")).getParent().toString());
         buildEngineImages();
-        images.addAll(List.of(CATALOG_IMAGE, SPARK_IMAGE, KAFKA_CONNECT_IMAGE, PYTHON_IMAGE));
+        images.addAll(List.of(CATALOG_IMAGE, AUDIT_TABLES_IMAGE, SPARK_IMAGE, KAFKA_CONNECT_IMAGE, PYTHON_IMAGE));
         load(images);
         record("cluster", (kind ? "kind cluster created" : "namespace created in " + context)
                 + " and images ready in " + seconds(started));
@@ -485,11 +499,157 @@ class EngineMatrixTest {
     }
 
     /**
+     * The queryable audit table (D23, backlog 85): the audit table writer, from its image and its chart
+     * ({@code deploy/helm/nuna-audit-tables}), writes the audit topic into {@code nuna_audit.audit.events}, and Spark
+     * and PyIceberg read the table as the readers' group ({@code images/spark/audit_tables_matrix.py},
+     * {@code images/python/audit_tables_matrix.py}). The catalog declares {@code nuna_audit} and, from
+     * {@code nuna.audit.tables.*} in {@code k8s/catalog.properties}, grants the readers ({@value #AUDITORS}) select
+     * there and the writer's group ({@value #AUDIT_WRITERS}) create and write at startup. The writer signs in with the
+     * client-credentials grant, as in a deployment, against a token endpoint of the harness's own
+     * ({@code k8s/token-endpoint.yaml}) that answers with a token the harness signed for it. Once the writer has
+     * committed everything the topic held when it started, both readers find: format v2; the three grants the server
+     * made at startup, in their grant records; the matrix's own commits in catalog engines; no row of the writer's
+     * own requests; and each row at a place of its own in the topic. The writer and its token endpoint are removed
+     * afterwards, before SingleStore takes its memory.
+     *
+     * <p>Not against a stack already up ({@code -Pengines.stack}): the audit catalog and its groups are the run's own
+     * catalog settings, and the run's token issuer signs the writer's and the readers' tokens.
+     */
+    @Test
+    @Order(5)
+    void auditTables() {
+        assumeFalse(existing, "-Pengines.stack: the audit catalog, its groups and the tokens are the run's own stack's");
+        Map<String, String> results = runEngine("audit", () -> {
+            try {
+                String writer = startAuditWriter();
+                String spark = job("audit-spark", SPARK_IMAGE, List.of("bash", "/scripts/run.sh",
+                        "/scripts/audit_tables_matrix.py"), "2Gi");
+                String pyiceberg = job("audit-pyiceberg", PYTHON_IMAGE, List.of("python", "-u",
+                        "/scripts/audit_tables_matrix.py"), "1Gi");
+                return writer + "\n" + spark + "\n" + pyiceberg;
+            } finally {
+                stopAuditWriter();
+            }
+        });
+        Map<String, String> expected = new LinkedHashMap<>();
+        for (String reader : List.of("spark", "pyiceberg")) {
+            expected.put("audit " + reader + ".format", "2");
+            expected.put("audit " + reader + ".seeded", "create,select,write");
+            expected.put("audit " + reader + ".commits", "yes");
+            expected.put("audit " + reader + ".own", "0");
+            expected.put("audit " + reader + ".offsets", "unique");
+        }
+        assertThat(results).containsAllEntriesOf(expected);
+    }
+
+    /**
+     * Starts the audit table writer as a deployment runs it, once the harness knows how far the audit topic reaches,
+     * and waits until the writer has committed the topic that far. Returns the commit's log line.
+     */
+    private static String startAuditWriter() throws Exception {
+        // From a Job of the Kafka image: a second JVM in the broker's pod would crowd its memory limit.
+        String listed = job("audit-offsets", System.getProperty("kafka.image"), List.of(
+                "/opt/kafka/bin/kafka-get-offsets.sh", "--bootstrap-server", "kafka:9092", "--topic", AUDIT_TOPIC),
+                "512Mi");
+        Map<Integer, Long> end = new LinkedHashMap<>();
+        Matcher offset = Pattern.compile("(?m)^" + Pattern.quote(AUDIT_TOPIC) + ":(\\d+):(\\d+)\\s*$").matcher(listed);
+        while (offset.find()) {
+            end.put(Integer.parseInt(offset.group(1)), Long.parseLong(offset.group(2)));
+        }
+        if (end.isEmpty()) {
+            throw new IllegalStateException("no offsets of topic " + AUDIT_TOPIC + ":\n" + listed);
+        }
+
+        kubectl(Duration.ofMinutes(1), "delete", "secret", "audit-writer-token", "audit-token", "--ignore-not-found");
+        kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "audit-writer-token",
+                "--from-literal=token=" + sign(AUDIT_WRITER, AUDIT_WRITERS));
+        kubectl(Duration.ofMinutes(1), "create", "secret", "generic", "audit-token",
+                "--from-literal=token=" + sign("avery", AUDITORS));
+        Map<String, String> endpoint = new LinkedHashMap<>(placeholders);
+        endpoint.put("IMAGE", PYTHON_IMAGE);
+        apply(engines.resolve("k8s"), "token-endpoint.yaml", endpoint);
+        kubectl(Duration.ofMinutes(4), "rollout", "status", "deployment/token-endpoint", "--timeout=3m");
+
+        Map<String, Object> writer = new LinkedHashMap<>();
+        writer.put("catalog-uri", "http://" + RELEASE + ":8181/");
+        writer.put("principal", AUDIT_WRITER);
+        writer.put("commit-interval", "PT10S");
+        writer.put("token", Map.of("endpoint", "http://token-endpoint:8080/token", "client-id", AUDIT_WRITER,
+                "audience", AUDIENCE));
+        writer.put("kafka", Map.of("bootstrap-servers", "kafka:9092", "topic", AUDIT_TOPIC));
+        Map<String, Object> chart = new LinkedHashMap<>();
+        String[] image = AUDIT_TABLES_IMAGE.split(":");
+        chart.put("image", Map.of("repository", image[0], "tag", image[1], "pullPolicy", "Never"));
+        chart.put("resources", Map.of("requests", Map.of("cpu", "100m", "memory", "512Mi"),
+                "limits", Map.of("memory", "512Mi")));
+        chart.put("config", Map.of("nuna", Map.of("audit-tables", writer)));
+        chart.put("secrets", Map.of("values", Map.of("nuna.audit-tables.token.client-secret", "engine-matrix")));
+        Path values = runDir.resolve("audit-tables-values.json");
+        Files.writeString(values, json(chart) + "\n", StandardCharsets.UTF_8);
+        cli.ok(Duration.ofMinutes(6), "helm", "--kube-context", context, "--namespace", namespace, "upgrade",
+                "--install", AUDIT_WRITER,
+                Path.of(System.getProperty("engines.repo-root")).resolve("deploy/helm/nuna-audit-tables").toString(),
+                "-f", values.toString(), "--wait", "--timeout", "5m");
+
+        // The writer logs each commit: "Wrote <n> audit records to the audit table, up to offsets {0=<next>, ...}".
+        Pattern committed = Pattern.compile("Wrote \\d+ audit records to the audit table, up to offsets \\{([^}]*)}");
+        Path saved = runDir.resolve("audit-tables-writer.log");
+        Instant deadline = Instant.now().plus(Duration.ofMinutes(5));
+        String log = "";
+        while (Instant.now().isBefore(deadline)) {
+            log = cli.run(Duration.ofMinutes(1), null, kubectlCommand("logs", "deployment/" + AUDIT_WRITER)).output();
+            Matcher commit = committed.matcher(log);
+            while (commit.find()) {
+                if (reaches(commit.group(1), end)) {
+                    Files.writeString(saved, log, StandardCharsets.UTF_8);
+                    return commit.group();
+                }
+            }
+            Thread.sleep(10_000);
+        }
+        Files.writeString(saved, log, StandardCharsets.UTF_8);
+        throw new IllegalStateException("the audit table writer committed nothing up to " + end + " in 5 minutes:\n"
+                + log);
+    }
+
+    /** Whether a commit's offsets, as the writer logs them ({@code 0=12, 1=7}), reach {@code end} on every partition. */
+    private static boolean reaches(String offsets, Map<Integer, Long> end) {
+        Map<Integer, Long> reached = new LinkedHashMap<>();
+        for (String entry : offsets.split(",")) {
+            String[] parts = entry.strip().split("=");
+            if (parts.length == 2) {
+                reached.put(Integer.parseInt(parts[0]), Long.parseLong(parts[1]));
+            }
+        }
+        return end.entrySet().stream().allMatch(e -> reached.getOrDefault(e.getKey(), 0L) >= e.getValue());
+    }
+
+    /** Removes the audit table writer and its token endpoint, and waits until the writer's pod is gone. */
+    private static void stopAuditWriter() {
+        cli.run(Duration.ofMinutes(3), null, "helm", "--kube-context", context, "--namespace", namespace, "uninstall",
+                AUDIT_WRITER);
+        cli.run(Duration.ofMinutes(3), null, kubectlCommand("delete", "deployment,service", "token-endpoint",
+                "--ignore-not-found", "--wait=true"));
+        cli.run(Duration.ofMinutes(3), null, kubectlCommand("wait", "--for=delete", "pod", "-l",
+                "app.kubernetes.io/instance=" + AUDIT_WRITER, "--timeout=2m"));
+    }
+
+    /** A token of the run's issuer for {@code subject} in {@code group}, valid for two hours. */
+    private static String sign(String subject, String group) throws Exception {
+        Instant now = Instant.now();
+        return TestIdp.sign(key, JWSAlgorithm.RS256, new JWTClaimsSet.Builder()
+                .issuer(ISSUER).audience(AUDIENCE).subject(subject).claim("groups", List.of(group))
+                .claim("azp", subject)
+                .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(now.plusSeconds(2 * 3600)))
+                .build());
+    }
+
+    /**
      * SingleStore reads Iceberg tables through pipelines (D35) into database {@code nuna_m8}. On its own the
      * harness starts it (the plain dev image) for this test only; an existing stack already has it.
      */
     @Test
-    @Order(5)
+    @Order(6)
     void singlestore() {
         Map<String, String> results = runEngine("singlestore", () -> {
             if (!existing) {

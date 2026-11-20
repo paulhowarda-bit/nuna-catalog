@@ -2,16 +2,22 @@ plugins {
     `java-library`
 }
 
-description = "Nightly engine matrix (the demo): the catalog's Helm chart in Docker Desktop's Kubernetes, with Spark, Kafka Connect, PyIceberg and SingleStore against it."
+description = "Nightly engine matrix (the demo): the catalog's Helm chart in Docker Desktop's Kubernetes, with Spark, Kafka Connect, PyIceberg and SingleStore against it, and the audit table writer's chart beside it."
 
 // The catalog image packs the server's runnable jar, built first by this build.
 val serverJar = configurations.dependencyScope("serverJar")
 val serverJarFile = configurations.resolvable("serverJarFile") {
     extendsFrom(serverJar.get())
 }
+// So does the audit table writer's image, the writer's (EngineMatrixTest#auditTables).
+val auditTablesJar = configurations.dependencyScope("auditTablesJar")
+val auditTablesJarFile = configurations.resolvable("auditTablesJarFile") {
+    extendsFrom(auditTablesJar.get())
+}
 
 dependencies {
     serverJar(project(path = ":catalog-server", configuration = "execJar"))
+    auditTablesJar(project(path = ":catalog-audit-tables", configuration = "execJar"))
 
     // The run's S3 store: -Ps3=silo (default), ceph or aws.
     testImplementation(project(":catalog-tests-s3"))
@@ -26,10 +32,12 @@ dependencies {
 
 tasks.test {
     val jar: FileCollection = serverJarFile.get()
+    val auditJar: FileCollection = auditTablesJarFile.get()
     val engines = projectDir
     val root = rootDir
     val runDir = layout.buildDirectory.dir("engines-run")
     inputs.files(jar).withPropertyName("serverJar").withPathSensitivity(PathSensitivity.NONE)
+    inputs.files(auditJar).withPropertyName("auditTablesJar").withPathSensitivity(PathSensitivity.NONE)
     inputs.dir("images").withPropertyName("images").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir("k8s").withPropertyName("k8s").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(rootProject.file("deploy")).withPropertyName("deploy").withPathSensitivity(PathSensitivity.RELATIVE)
@@ -49,6 +57,7 @@ tasks.test {
         systemProperty("engines.dir", engines.absolutePath)
         systemProperty("engines.repo-root", root.absolutePath)
         systemProperty("engines.catalog-jar", jar.singleFile.absolutePath)
+        systemProperty("engines.audit-tables-jar", auditJar.singleFile.absolutePath)
         systemProperty("engines.run-dir", runDir.get().asFile.absolutePath)
     }
 }

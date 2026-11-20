@@ -1,5 +1,6 @@
 # One engine's run (${ENGINE}), as a Job: its image (built and loaded by the harness) prints RESULT and LIMIT
-# lines, which the harness reads from the Job's log. The token comes from Secret engine-token.
+# lines, which the harness reads from the Job's log. The token comes from Secret engine-token; the audit table's
+# readers (EngineMatrixTest#auditTables) read on the readers' group's, from Secret audit-token.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -19,5 +20,8 @@ spec:
             - name: NUNA_TOKEN
               valueFrom:
                 secretKeyRef: {name: engine-token, key: token}
+            - name: NUNA_AUDIT_TOKEN
+              valueFrom:
+                secretKeyRef: {name: audit-token, key: token, optional: true}
           resources:
             limits: {memory: ${MEMORY}}

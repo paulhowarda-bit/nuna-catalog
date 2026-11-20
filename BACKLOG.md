@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 3 S, 9 M, 2 L, 4 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,11 +25,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
-| [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
+| [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
-| [85](backlog/85.md) | M | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
+| [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
+| [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
 
 ## Open items in full
 
@@ -404,8 +405,8 @@ fast build compiled both.
 ### 60. CredentialExpiryTest's first request answered 401
 
 - Added: 2026-11-18 by overnight run 2026-11-18
-- Touches: catalog-server/
-- Effort: M, the cause is unknown: the test records no reason for the 401
+- Touches: catalog-security/, catalog-server/src/test/java/nuna/catalog/server/CredentialExpiryTest.java, bites/D16/
+- Effort: S, the reason was in the test's output; one timeout and a Java-only test
 
 The heavy build of the overnight run of 2026-11-18 (testing 2dee958, the demo taken down for the run) failed
 `nuna.catalog.server.CredentialExpiryTest#noNotModifiedNearExpiryAndANewEpochIsANewETag` at 05:11:22 UTC:
@@ -422,6 +423,36 @@ before the rename to nuna).
 
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
+
+Fixed 2026-11-20 on worktree-agent-a919c80972fe867d3: the cause was a JWKS fetch that Nimbus gave up on after its default 500 ms read timeout, in a test JVM slowed
+by the build beside it. The test's output did say why: its one `audit.fallback` line is the auth-failure event, whose
+reason is "token from https://idp.test/keel rejected: An error occurred while attempting to decode the Jwt: Couldn't
+retrieve JWK set from URL: Read timed out".
+- The first request of a fresh Spring context fetches the test issuer's keys from `TestIdp`, a JDK `HttpServer` in
+  the same JVM (`IssuerForTests`). `TokenAuthenticator` built its JWKS source with `JWKSourceBuilder.create(url)`,
+  whose retriever waits 500 ms to connect and 500 ms to read, with no retry. A fetch that times out refuses the token
+  as invalid: 401, `Bearer error="invalid_token"`.
+- The JVM was slow: that night `CredentialExpiryTest`'s context took 30.8 s to start (12.7 s for the web context),
+  against 5.3 s (1.1 s) on 2026-11-16, and the request reached Tomcat 3.3 s after the context started. Beside it,
+  `catalog-maintenance`'s `KubernetesCompactionTest` ran Spark Jobs in Docker Desktop's Kubernetes from 05:09:19 to
+  05:15:09 UTC (350 s, failed), and `TelemetryTest` there missed a 20 s wait. On 2026-11-19 the two overlapped again:
+  the test's context took 25.3 s and it passed. The same refusal, "Couldn't retrieve JWK set from URL: Read timed
+  out", is in the nightly `LargeExpiryTest` of 2026-11-19 (catalog-maintenance's `TestCatalog`, also a `TestIdp`),
+  which passed regardless.
+- Fixed in `TokenAuthenticator`: a JWKS fetch waits up to 5 s for the IdP's answer (`JWKS_READ_TIMEOUT`); connecting
+  keeps Nimbus's 500 ms, and the cache, refresh-ahead and rate limit are unchanged. A slow IdP at work would have had
+  the same effect on the first request to each node, and on each key rotation.
+- `JwksRefreshTest#aSlowJwksIsWaitedForNotTakenForAnInvalidToken` (Java only): `TestIdp.slowFetches` answers after
+  1 s; the token is accepted after one fetch. Without the fix it failed with the overnight's message (fast build of
+  2026-11-20, 47 tests in catalog-security, 1 failed). Bite: `bites/D16/jwks-read-timeout-500ms.patch`.
+- `CredentialExpiryTest`'s status assertions now carry the response: status, `WWW-Authenticate` and body, and on a
+  401 a pointer to the `nuna.audit.fallback` line, since the body never names the reason by design.
+  `IssuerForTests` sends no requests, so it has nothing to report.
+
+Left: `CredentialExpiryTest` is tagged heavy since D44, so it did not run here; the overnight run's heavy build
+shows whether it passes.
+
+The item stays open until an overnight run's heavy build passes `CredentialExpiryTest`, as its done-when asks (the test is heavy since D44 and did not run on 2026-11-20).
 
 ### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
 
@@ -497,37 +528,6 @@ Left, when Docker has room (the demo down, or 3 GiB of requests free):
    enforces user policies, with only the worker deleting (item 5 showed it lists as its own user). Item 4 should
    then say so.
 
-### 85. Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest)
-
-- Decided: 2026-11-20, D23
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/ catalog-audit-tables/ bites/D23/ catalog-tests-engines/ deploy/README.md
-- Effort: M, a server setting with its startup grants and tests, a fourth bite, a matrix leg and a docs line; it waits on nothing
-
-Item 27 (D23, amended 2026-11-20) built the scope's "In" on branch `worktree-agent-a7d8e407a7bbd4032`: the row mapping
-(`AuditRows`, `catalog-audit`), the writer `catalog-audit-tables` with its Java-only tests, the heavy
-`AuditTablesTest` (which checks D18's hiding of the audit catalog at `/v1/config` and for platform operators, item 68),
-three of the scope's four bites in `bites/D23/`, the image `deploy/image/audit-tables.Dockerfile`, the chart
-`deploy/helm/nuna-audit-tables`, and `IcebergImportBoundaryTest`'s exemption for the new module with D2's matching
-amendment. Every piece of the settled scope it left is here:
-
-1. **The readers' group as a setting.** Paul, 2026-11-20 (D23, amended): "Make the group a setting"; then "Seed;
-   admins may add": the catalog server's setting grants the readers' group `select` on the audit catalog at startup,
-   and grant admins may grant other groups there through the normal, audited grants API (the server refuses nothing
-   extra); and "Yes, seed both": the same setting names the writer service's group, granted `create` and `write` on
-   the audit catalog at startup. The setting names the audit catalog too (for instance `nuna.audit.tables.catalog`,
-   `.readers`, `.writers`), and a startup grant that already exists is left as it is. Until it lands the grants are
-   made by hand (`catalog-audit-tables/README.md`, "Deploying it", which then names the setting instead).
-2. **The fourth bite**, "the audit catalog readable without the grant", in `bites/D23/`, against the code of 1:
-   `AuditTablesTest#onlyTheAuditorsFindTheAuditTable` fails when it bites. The test's fixture then takes the two
-   groups from the setting instead of writing `grant_record` rows.
-3. **The overnight leg:** `EngineMatrixTest` (`catalog-tests-engines`) reads `nuna_audit.audit.events` from Spark and
-   PyIceberg, as the scope's gate says.
-4. **`deploy/README.md`** names the new image and chart beside the maintenance worker's.
-
-Done when the setting grants the readers' group and the writer's at startup, with tests; the fourth bite bites;
-`AuditTablesTest` passes in the heavy build; and `EngineMatrixTest` reads `events` overnight.
-
 ### 86. The DR reconcile's archive proof reads each audit-archive chain whole into memory
 
 - Added: 2026-11-20 by the agent on item 10
@@ -543,6 +543,49 @@ a production chain will not fit in a server's heap. The drill and the tests read
 Done when the reconcile's read verifies and filters each chain in one streamed pass, segment by segment
 (`ArchiveVerifier` already reads an `InputStream`), keeping only the commit records, with a test over an archive in
 memory (`MemoryS3`) whose chain is larger than the reader holds at once.
+
+### 89. A compaction Job against a store behind a private CA, end to end
+
+- Decided: 2026-11-20, D21
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-maintenance/src/test/ catalog-tests-s3/ bites/M6/
+- Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
+
+Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
+compaction Jobs: the worker copies the bundle into a ConfigMap owned by each Job, and the Job's command builds a JVM
+trust store from the image's JDK CAs and the bundle and points Spark's driver at it. No test runs a compaction Job
+against a store behind a private CA. `KubernetesJobsTest` checks the Job's spec only; `KubernetesCompactionTest`
+(heavy) and the engine matrix's compaction leg (overnight) use stores with public or no TLS; the trust-store
+command was run by hand once, on a Windows JDK, not in the Spark image (item 88's done note).
+
+Paul, 2026-11-20, asked whether to add this: "Add it, here", on Docker Desktop with a TLS store, as an overnight
+test.
+
+Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS from a private CA (`PrivateCa` makes
+one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
+real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
+fail on an assertion, not on fixture start-up.
+
+### 90. An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401
+
+- Decided: 2026-11-20, D16
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: catalog-security/ catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java bites/D16/
+- Effort: S, one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite
+
+When the catalog cannot fetch an issuer's signing keys (the IdP is down, or slower than the 5 s read timeout item 60
+gave the JWKS fetch), `TokenAuthenticator` refuses the token as invalid: 401 with `Bearer error="invalid_token"`. That
+tells the client its good token is bad, so it throws the token away or sends its user to sign in again, when the
+fault is the IdP's and passes. `JwksRefreshTest#anUnreachableJwksMeansNoTokenIsAccepted` asserts the 401 today.
+Found by item 60's agent, 2026-11-20.
+
+Paul, 2026-11-20: "503, Retry-After".
+
+Done when a request whose token cannot be checked because the issuer's keys cannot be fetched answers 503 with a
+`Retry-After` header in the Iceberg error shape, and no token is accepted unchecked; a token that is bad on its own
+(wrong signature against keys the catalog holds, expired, wrong audience or issuer) still answers 401; the audit
+record still names the reason; `JwksRefreshTest` asserts the 503 and a bad token's 401 (Java only); and a bite (the
+fetch failure mapped back to 401) makes that test fail.
 
 ## Done and dropped
 
@@ -616,5 +659,6 @@ memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 | [82](backlog/82.md) | /v1/config without a warehouse names the default catalog to a caller that holds nothing on it (Paul decides, D18) | done | 2026-11-20 |
 | [83](backlog/83.md) | The DR reconcile moves a table to metadata whose manifests or data may not have reached the DR store | done | 2026-11-20 |
 | [84](backlog/84.md) | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | done | 2026-11-20 |
+| [85](backlog/85.md) | Audit tables, the server half: the readers' group as a setting, the Iceberg boundary and the engine leg (item 27's rest) | done | 2026-11-20 |
 | [87](backlog/87.md) | The audit archive's S3 client does not trust its storage profile's CA bundle | done | 2026-11-20 |
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |

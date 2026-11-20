@@ -54,6 +54,7 @@ public final class TestIdp implements AutoCloseable {
     private final AtomicInteger fetches = new AtomicInteger();
     private volatile String jwks = new JWKSet().toString();
     private volatile int status = 200;
+    private volatile Duration delay = Duration.ZERO;
 
     public TestIdp(String issuer, String audience) throws IOException {
         this.issuer = issuer;
@@ -61,6 +62,12 @@ public final class TestIdp implements AutoCloseable {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/keys", exchange -> {
             fetches.incrementAndGet();
+            try {
+                Thread.sleep(delay);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException(e);
+            }
             byte[] body = jwks.getBytes(UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(status, body.length);
@@ -86,6 +93,11 @@ public final class TestIdp implements AutoCloseable {
 
     public void failFetches() {
         status = 503;
+    }
+
+    /** Answers each JWKS fetch only after {@code delay}, as a slow IdP, or one in a loaded test JVM, does. */
+    public void slowFetches(Duration delay) {
+        this.delay = delay;
     }
 
     public int fetches() {
