@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 6 S, 7 M, 2 L, 4 XL.
+**30 open:** 6 S, 11 M, 9 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -17,7 +17,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [24](backlog/24.md) | L | Kubernetes deployment: what was not checked (at work) | five checks at work: Ingress, IRSA or Pod Identity, OpenShift, zones, sizing | 2026-11-14 |
 | [25](backlog/25.md) | M | One hot table under contention: throughput and fairness (measure at work) | a measuring run on work hardware; a change only if Paul wants one | 2026-11-14 |
-| [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | a v1.x milestone | 2026-11-14 |
+| [26](backlog/26.md) | XL | Branches, tags and merge (v1.x, D33) | the milestone over build items 102 to 112 (seven L, four M; see the design below) | 2026-11-14 |
 | [28](backlog/28.md) | XL | DR replication-watermark verifier (v1.x) | the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in | 2026-11-14 |
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
@@ -31,6 +31,17 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | S | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails | 2026-11-20 |
 | [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
+| [102](backlog/102.md) | L | Refs in the store: the ref record and its cut on four stores (item 26) | a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them | 2026-11-20 |
+| [103](backlog/103.md) | L | Branch commits and the merge transaction in the store (item 26) | a change to the commit core on four stores (a ref held by every branch commit, a batch that ends a ref) and the purge claim's ref check, each with suite cases and bites; waits on item 102 | 2026-11-20 |
+| [104](backlog/104.md) | L | Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26) | every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102 | 2026-11-20 |
+| [105](backlog/105.md) | L | Commits on a branch write its own pointer (item 26) | the engine's twelve reads and swaps of main's key become the ref's, for tables, views and transactions, with the merge cap and the unknown-outcome path on a branch; most tests need only Java; waits on items 103 and 104 | 2026-11-20 |
+| [106](backlog/106.md) | L | Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26) | five routes with their rights, idempotency, limits, audit and meters, and the work list's expiry section, with route tests; waits on item 102 | 2026-11-20 |
+| [107](backlog/107.md) | L | Merge a branch into main, per table, in one bounded transaction (item 26) | the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106 | 2026-11-20 |
+| [108](backlog/108.md) | L | Cleanup protects every ref, and the worker warns of and ends expired branches (item 26) | the orphan scan and expiry across several metadata files per table, the recheck of files recorded before a ref was made, and the expiry section, with heavy tests on Silo; waits on items 105 and 106 | 2026-11-20 |
+| [109](backlog/109.md) | M | Console: the catalog's refs, the merge preview and a ref selector (item 26) | one panel and a selector over routes that exist, four actions, one browser test case; waits on items 104, 106 and 107 | 2026-11-20 |
+| [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109 | 2026-11-20 |
+| [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on Paul's answer to item 26's question 3, on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
+| [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 
 ## Open items in full
 
@@ -143,7 +154,7 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 
 - Decided: 2026-11-19, D33
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: XL, a v1.x milestone
+- Effort: XL, the milestone over build items 102 to 112 (seven L, four M; see the design below)
 
 `build-plan.md`, v1.x milestones: branches, tags and merge over the v1 storage. The REST prefix selects the branch
 (`trading@dev`), Nessie merge semantics per table, cleanup protects every ref, defaults from P11 (D33). Not started.
@@ -151,6 +162,188 @@ Done when it is measured on work hardware and Paul has decided whether the numbe
 Done when the milestone's scope is built and its gate is green, as for the other v1.x phases.
 
 **Decided 2026-11-19 (D33):** built next ("Build it next"), after the items the backlog review of 2026-11-19 chose to fix, not left for v1.x.
+
+## Design, 2026-11-20 (for Paul's review)
+
+Three questions for Paul, all on scope, are at the end. Everything else that D33 and P11 leave open is settled below
+as a numbered choice with its reason; Paul may overrule any of them. The build items, 102 to 112, are written to the
+recommended answers, and each question names the items another answer would change.
+
+### What is in place
+
+- **Pointers and commits.** Every store keys pointers by (object, branch), and every pointer is `main`
+  (`PointerKey.MAIN`). The commit core swaps and holds several pointers in one transaction, in a fixed key order, on
+  all four stores (`CommitBatch`, D15); `/transactions/commit` has used it since 2026-11-12 (built, advertised, capped
+  at 100 by P10). A merge's swaps on main need no new transaction shape. Every caller asks for main's key:
+  `CommitEngine` in twelve places, `Reconcile`, the DR and lifecycle routes, `TableRoutes.load`.
+- **The journal.** One row per swap, keyed (commit, object, branch), read per pointer by version. Its `seq` is drawn
+  at insert, so a lower one can commit after a higher one, and MongoDB's journal has none (`docs/storage-design.md`,
+  M1 MongoDB deviation 3). Storage-design section 8 left the tag protocol open for this milestone: a journal position
+  is not a consistent cut across tables without a lock or a commit-ordered clock.
+- **The ref record.** PostgreSQL, CockroachDB and Oracle have had a `ref` table since V3 (catalog id, name, kind,
+  `base_position` as text in an encoding never fixed, expires-at), with no Java type and no operation. MongoDB has no
+  collection for it.
+- **The prefix.** `Lookup.catalog` hands the whole `{prefix}` to `Holdings.catalog`, which normalizes it as a catalog
+  name; nothing parses `@`. Catalogs come from configuration (`nuna.storage.catalogs.<name>`), and nothing refuses `@`
+  in their names.
+- **Cleanup.** The worker loads each table on main. Its orphan scan reaches every snapshot of main's metadata, so
+  every Iceberg ref inside the table counts; its expiry is Iceberg's RemoveSnapshots on main. It knows no catalog ref:
+  the orphan scan would queue a branch's files once they pass the orphan age, and expiry on main would queue files
+  that a tag's older metadata still reaches. A purge claim checks holds and freezes, not refs.
+- **Authorization and audit.** A commit asks write (data only) or modify on each table, in one batched check (D18); a
+  refusal is a `Denial`. The `Commit` and `ObjectRead` events already carry a `branch`, always `main`. No event type
+  records a ref change, and a new type needs an `AuditRows` mapping or the audit tables' writer fails on it.
+- **Console and demo.** The table page shows Iceberg's own refs ("Refs: branches and tags"), and audit lines read "on
+  main"; the console already writes (grants). The demo's `LakeWriter` makes an Iceberg tag `eod-2026-11-09` and an
+  Iceberg branch `surveillance-review` inside the trades table. No catalog ref exists anywhere.
+
+### Iceberg's refs and D33's refs
+
+An Iceberg branch or tag is a named snapshot inside one table's metadata file: an engine makes it with
+`ALTER TABLE … CREATE TAG` or `manageSnapshots()` and reads it with `VERSION AS OF` or `table.branch_x`. A D33 ref
+belongs to the catalog: it chooses which metadata file each table's pointer names, for every table at once. The two
+nest. On the catalog branch `trading@dev`, each table's metadata has its own Iceberg refs, and an engine's write goes
+to that metadata's Iceberg `main` (or to an Iceberg branch it names). Iceberg refs made on a catalog branch reach main
+only by merge, which takes the branch's whole metadata file. The catalog never uses Iceberg's refs for its own, and
+the same name in both means two unrelated things. D18's `manage-tags` privilege is about governance tags (D27), not
+either kind.
+
+### What each part needs
+
+1. **Refs and their records on four stores** (item 102). A schema step adds an id, creator, creation time and origin
+   to `ref`, and a new record, the ref's cut: each table's and view's main pointer and name as of the ref's point
+   (choice 1). MongoDB gets both collections. A new store group makes, reads, lists, renews and deletes refs and
+   resolves names through a cut, with a shared suite.
+2. **The prefix `catalog@ref`** (item 104): parsed once beside the catalog lookup; no `@` means `main`.
+3. **Reads as of a tag or a branch's base** (item 104): a tag reads its cut; a branch reads its own pointer where it
+   has one and its cut elsewhere (D33). Names and listings come from the cut (question 1).
+4. **Commits on a branch** (items 103 and 105): the engine reads the branch's pointer and swaps the branch's key
+   (object, ref id); the first commit to a table creates it. Every branch commit holds the ref, so a merge or a
+   deletion waits for it or refuses it. D6 holds: a commit still locks one pointer per table.
+5. **Merge** (items 103 and 107): per table, D33's rule. Main still at the cut: main takes the branch's pointer.
+   Moved or dropped on main too: a conflict, and nothing moves. All tables go in one `CommitBatch`, which also ends
+   the branch.
+6. **P11's limits and expiry** (items 102, 106 and 108): 50 open branches and 1,000 tags per catalog, checked in the
+   create's transaction; a branch expires 30 days after its last commit unless renewed, within 180 days of its
+   creation; tags never expire. Settings under `nuna.refs.*`, changeable without code like P10's.
+7. **Cleanup protecting every ref** (items 103 and 108): the orphan scan and expiry reach across every ref's metadata
+   for the table, and a purge waits while a ref names the table.
+8. **Authorization, audit and metrics** (items 104 to 107): choices 12 and 13.
+9. **Management routes** (items 106 and 107): choice 6.
+10. **The console** (item 109) and **the demo** (item 110): choices 15 and 16.
+11. **The gate** (item 112), as for the other v1.x phases: the fast build; the heavy build (`RefSuite` on four stores,
+    the route tests, the worker's cleanup tests on Silo, the Ceph leg); the overnight run (Spark and PyIceberg on a
+    branch and a tag in the engine matrix, `MutationSuite` over the ref mutations); and every bite in `bites/D33/`
+    biting.
+
+### Choices made (Paul may overrule)
+
+1. **A ref keeps its point as a cut.** When it is made, one consistent read records each table's and view's main
+   pointer (version, location, hash) and name; a branch's own pointers sit beside the cut. Why: a journal position
+   would need a catalog-wide lock in every commit on four stores, and MongoDB has neither read locks nor a `seq`
+   (storage-design 8), while a cut changes no commit path. The cost is a row per table per ref, about 10 million rows
+   at P11's limits on a 10,000-table catalog. Overruling this means storage-design 8's option (a), the lock.
+2. **Refs are made from now,** from main or from another ref's head, never at a past time. Why: the journal cannot
+   give a consistent cut of the past (choice 1).
+3. **A branch's pointers and journal rows are keyed by the ref's id,** never its name; main stays `main`. Why: a
+   deleted branch's name can be used again without old rows answering for it.
+4. **Ref names** are case-insensitive and case-preserving like every name (D8.6), without `@` or `/`; `main` is
+   reserved and always there; a configured catalog name with `@` stops the server at startup. Why: the prefix must
+   parse one way.
+5. **A tag is read-only to every engine:** its `/v1/config` lists only the read endpoints, a write on it is refused
+   with 400 naming the tag, and it vends read-only credentials. Why: Iceberg's clients check the endpoint list before
+   a call, so a stock engine fails at once and plainly.
+6. **Management routes** under `/management/v1/catalogs/{catalog}/refs`: list (paged), create (`name`, `kind`,
+   `from`), read (with a branch's changed tables), renew, delete, and `…/{ref}/merge` with `dry-run`; every write takes
+   an Idempotency-Key (D10). Why: the Iceberg spec has no refs, and the management API holds the other catalog-scoped
+   operations.
+7. **A conflict lists every conflicting table** (name, the cut's version, main's, the branch's, or dropped) in a 409,
+   and nothing moves; a dry run answers the same without moving anything; a merge that loses a race to a main commit
+   plans again within P10's bound. Why: data CI needs the whole list at once, and the console shows it before the
+   button.
+8. **A merge judges each moved table as a commit on main:** main's rules (D11), holds (D24) and freezes (D37) apply to
+   the change from main's metadata to the branch's. Why: a hold or freeze set after the branch's commits must still
+   bind.
+9. **A merge moves at most `nuna.refs.max-merge-tables` tables, default 100 (P10's cap), and a branch commit that
+   would take the branch past it is refused.** Why: it is the bound the four stores' suites prove for one transaction
+   (D15), and a branch too big to merge would be stranded.
+10. **A merge ends the branch.** Why: P11 says merging releases it; a branch left open would pin files and drift from
+    its cut.
+11. **P11's 180 days is a branch's whole life:** commits and renewals set its expiry 30 days ahead, never past 180
+    days from its creation. Seven days before, the catalog sends one `ref` event (expiring) on the change stream, a
+    gauge counts such branches, and the console marks them; at expiry the branch is gone for every route, and the
+    worker's next scan ends it. Why: the only reading that bounds how long a branch pins files, and the change stream
+    is how the catalog tells people things (D23).
+12. **Rights, with no new privilege:** making, renewing and deleting a ref needs `create` on the catalog; a merge
+    needs that and, on every table it moves, the right a commit of that change needs on main (write for data only,
+    else modify), in one batched check; reading and writing on a ref need the same rights as on main; listing refs
+    needs any holding in the catalog (D18 as amended). Why: D18's privilege set stays as it is. The alternative is a
+    new `manage-refs` privilege, if branch makers should not also make namespaces.
+13. **Audit and metrics:** ref changes travel through the outbox as one new event type, `ref` (created, renewed,
+    deleted, merged with the tables moved, expiring, expired); refusals are `Denial`s; commits and reads on a branch
+    name it in the `branch` field they already carry. Meters gain a ref-kind label (main, branch, tag), never a ref's
+    name, plus per-catalog gauges of open branches, tags and branches expiring within 7 days, and merges by outcome.
+    Why: names as labels would grow without bound.
+14. **Cleanup across refs:** the maintenance work list names, for each table, the metadata each ref reaches (a tag's
+    cut, a branch's cut and head); the orphan scan and expiry reach across all of it and queue only what none
+    reaches. A deletion recorded before a ref was made is checked against that ref before the file goes. A purge claim
+    is refused while a ref's cut names the table, so a tag keeps a dropped table's files. Maintenance itself runs on
+    main only: a branch is neither expired nor compacted, and after a merge its files are main's. Why: P11 and D33; a
+    tag made between expiry's read and its commit would otherwise lose files.
+15. **The console:** a catalog's refs (list, make, renew, delete, and merge with its dry run shown first), a ref
+    selector on namespace and table pages, and the table page's "Refs: branches and tags" renamed "Iceberg refs in
+    this table". Why: the two kinds of ref must not share a label.
+16. **The demo:** `up` makes a catalog tag and a branch `dev` with a change to two tables; Trino gets a second catalog
+    on `lakehouse@dev`; the README walks a merge in the console. Why: the four uses need a branch to try them on.
+
+### Questions for Paul (scope)
+
+1. **What does a ref keep besides each table's contents?**
+   - (b) Recommended: **names too.** A ref keeps each table's and view's name as of its point, so a tag reproduces a
+     table later dropped or renamed on main, and a branch shows names as of its point. Creates, drops, renames and
+     namespace changes happen on main only and are refused on a branch; namespace properties are live. Why: the same
+     cut gives it at little extra cost, and a tag that keeps a dropped table's files (P11) can then read them.
+   - (a) **Contents only:** names and namespaces are live on every ref; a table dropped or renamed on main is gone
+     from every ref, its files kept unread while a ref names it. Changes items 102 and 104.
+   - (c) **Everything branches, as in Nessie:** tables, views and namespaces can be made, dropped and renamed on a
+     branch, and a merge carries them; objects and namespaces gain a ref on four stores. About two more L items.
+2. **Do grants that name a branch belong in this milestone?**
+   - (a) Recommended: **no.** A table's grants hold on every ref (choice 12), so whoever may write a table on a branch
+     may write it on main. Why: D33's four uses isolate data, not rights, and branch grants would change D18's model
+     on four stores; they can follow as an item of their own.
+   - (b) **Yes:** a grant can name a branch, so a group can write on `dev` without writing main. One more L item.
+3. **Do refs follow a regional failover (D37) in this milestone?**
+   - (a) Recommended: **a report only** (item 111). After a failover the reconcile lists every ref whose cut or branch
+     head names a metadata file missing from the DR store, and the runbook says to delete those; branches are not
+     walked or rewound. Why: branches are short-lived and tags mostly name older versions DR already holds, so a
+     report shows the gap for an M item.
+   - (b) **Yes, whole:** the walk with its file check and the rewind (item 28) cover branch heads too, and a tag naming
+     a version the rewind gave up is reported. Item 111 becomes L.
+   - (c) **No:** nothing for refs in DR; the runbook says refs may name missing files. Item 111 is dropped.
+
+### Build items, in order
+
+Item 26 stays open as the milestone over these, and closes with item 112.
+
+| Item | Title | Effort | Waits on |
+|---|---|---|---|
+| 102 | Refs in the store: the ref record and its cut on four stores | L | none |
+| 103 | Branch commits and the merge transaction in the store | L | 102 |
+| 104 | Reads on a ref: the catalog@ref prefix, config, loads and listings | L | 102 |
+| 106 | Ref management routes: create, list, renew and delete, with P11's limits and expiry | L | 102 |
+| 105 | Commits on a branch write its own pointer | L | 103, 104 |
+| 107 | Merge a branch into main, per table, in one bounded transaction | L | 103, 105, 106 |
+| 108 | Cleanup protects every ref, and the worker warns of and ends expired branches | L | 105, 106 |
+| 109 | Console: the catalog's refs, the merge preview and a ref selector | M | 104, 106, 107 |
+| 110 | Demo: a catalog tag, a branch with Trino on it, and a merge | M | 107, 109 |
+| 111 | After a regional failover, report every ref that names a file the DR store lacks | M | question 3; 100, 102, 105 |
+| 112 | Branches, tags and merge: engines on refs, the docs and the gate | M | 102 to 111 |
+
+102 goes first; item 98, which held the four stores, landed its schema steps on 2026-11-20, so 102's come after
+them. Then 103, 104 and 106 can run at once, since
+their areas do not overlap (the stores; the Iceberg routes; the management routes and audit). 105 follows 103 and 104;
+107 and 108 can then run at once; 109, 110 and 111 follow; 112 closes the milestone. Each item records its own bites
+in `bites/D33/` and names its heavy and overnight tests, which the overnight run runs.
 
 ### 28. DR replication-watermark verifier (v1.x)
 
@@ -916,6 +1109,308 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 "a route test on each store" is `DrSuite`'s store-level test on all four plus the route test on PostgreSQL.
 
 **Decided 2026-11-20 (D37, amended):** "a route test on each store" is met by `DrSuite` on all four stores plus `DrRewindRouteTest` on PostgreSQL; the item closes when the heavy build passes them. Paul: "Yes, that's enough".
+
+### 102. Refs in the store: the ref record and its cut on four stores (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/ docs/storage-design.md build-plan.md
+- Effort: L, a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them
+
+Part of item 26 (D33). Its design section says why, in choices 1 to 4 and question 1; this item is written for
+question 1's recommended answer (a ref keeps names too). Answer (a) leaves the names out of the cut; (c) needs more.
+
+What is missing: PostgreSQL, CockroachDB and Oracle have had a `ref` table since V3 (`V3__whole_contract.sql` in each:
+catalog id, name, kind, `base_position` as text, expires-at), with no Java type and no operation; MongoDB has no
+collection for it (`docs/storage-design.md` 9 (f) 5). `base_position` waited for a tag protocol that was never fixed
+(storage-design 8): the journal's `seq` is drawn at insert, so it is not in commit order, and MongoDB's journal has
+none.
+
+Build:
+- A schema step on each store, after item 98's (PostgreSQL V10, CockroachDB V9, Oracle V11 and MongoDB's newest
+  step): the ref gains an id (UUID), created-at, created-by and what it was made from; `base_position` stays unused. A new record, the ref's cut (`ref_entry`): ref id, object id, kind,
+  namespace path and name (normalized and display), and the object's main pointer as of the ref's point (version,
+  metadata location, SHA-256). MongoDB gets both as collections with the same unique keys. Additions only
+  (storage-design 9 (f) 6).
+- `RefStore` in `catalog-store-api`, joined to `CatalogStore`: `createRef` (from main, or from another ref's current
+  head: that ref's own pointer for a table where it has one, else its cut), `readRef`, `listRefs` (paged),
+  `renewRef`, `deleteRef` (its cut and every pointer keyed by its id go in the same transaction), `resolveOnRef` (an
+  object by namespace path and name, through the cut), and paged listings of a ref's namespaces, tables and views.
+  Each write takes a `Change` (outbox, idempotency), as every mutation does (storage-design 9).
+- The cut is read in one consistent read. On the SQL stores one `INSERT … SELECT`, whose statement snapshot holds
+  every multi-table transaction whole. On MongoDB a snapshot read at one cluster time, written in batches; the ref is
+  visible only once its whole cut is written. P11's counts (open branches, tags) are checked in the create's
+  transaction under a lock on the catalog's refs, so two creates cannot pass a limit together.
+- A shared `RefSuite`, tagged `heavy`, run inside each store's suite as the other groups are: a cut never holds half
+  of a multi-table transaction committed while it is read; names compare as every name does (D8.6); the limits hold
+  under concurrent creates; a deletion leaves no cut row and no pointer of the ref; paging. `MutationSuite` drives the
+  new mutations (overnight).
+- `docs/storage-design.md` section 8 rewritten as built, and `build-plan.md`'s ref row (2.4) with it.
+
+Done when `RefSuite` passes on all four stores in the heavy build, the fast build is green, and the guards' bites are
+recorded in `bites/D33/`. Items 103, 104, 106 and 111 wait on this one.
+
+### 103. Branch commits and the merge transaction in the store (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/
+- Effort: L, a change to the commit core on four stores (a ref held by every branch commit, a batch that ends a ref) and the purge claim's ref check, each with suite cases and bites; waits on item 102
+
+Part of item 26 (D33); its design section says why (choices 3, 9, 10 and 14).
+
+What is missing: `CommitBatch` swaps and holds pointers in one transaction (D15) but knows no ref. A commit on a
+branch must not land once the branch is merged, deleted or expired, and a merge must move main's pointers and end
+the branch in one transaction (D33). A purge claim checks holds and freezes (`claimPurge`, storage-design 9 (f) 3),
+not refs, so a dropped table that a tag still names would lose its files (P11).
+
+Build:
+- `CommitBatch` gains an optional ref hold: the branch must exist, be a branch and not be past its expiry. The store
+  locks the ref record for share where it can (PostgreSQL and CockroachDB `FOR SHARE`; Oracle and MongoDB as their
+  object checks do, storage-design 9 (f) 8), so a merge or a deletion waits for a branch commit or refuses it. A
+  branch's pointer for a table is created by the first swap of its key (expected empty).
+- A ref end, for the merge: one transaction locks the ref record for update, then swaps main's pointers, holds the
+  branch's own pointers as the merge read them, and deletes the branch, its cut and its pointers. The ref is locked
+  before any pointer, in a fixed order, so a merge and a branch commit cannot deadlock.
+- `claimPurge` answers `Refused(REFERENCED)` while a ref's cut names the object, read under the object's lock, and
+  the purge queue leaves such objects out.
+- Suite cases on all four stores (heavy): a branch commit racing a merge or a deletion lands before it or is refused,
+  never after it; a merge whose expected main pointer moved writes nothing; a ref end and its swaps are one
+  transaction (the cut repeated in `MutationSuite`, overnight); a purge claim is refused under a ref.
+
+Done when those cases pass on all four stores in the heavy build, the fast build is green and the bites are recorded
+in `bites/D33/`. Waits on item 102. Items 105 and 107 wait on this one.
+
+### 104. Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/ catalog-server/src/main/java/nuna/catalog/server/ConfigRoute.java catalog-server/src/main/java/nuna/catalog/server/AdvertisedEndpoints.java catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-server/src/test/java/nuna/catalog/server/RestRoutesTest.java catalog-tests-conformance/src/test/java/nuna/catalog/conformance/IcebergClientConfigTest.java
+- Effort: L, every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102
+
+Part of item 26 (D33); its design section says why (choices 4 and 5, question 1). Written for question 1's
+recommended answer (b): names and listings come from the ref's cut, and creates, drops and renames stay on main.
+
+What is wrong: `Lookup.catalog` hands the whole `{prefix}` to `Holdings.catalog`, which normalizes it as a catalog
+name, so `trading@dev` is a catalog that does not exist (404). Nothing refuses `@` in a configured catalog name
+(`CatalogStorage.declare`). Every read takes `object.mainKey()` (`TableRoutes.load`, `CommitEngine.readCurrent`).
+
+Build:
+- The prefix `catalog@ref`, parsed once beside the catalog lookup; no `@` means `main`. The ref is read from the
+  store, and a branch past its expiry is gone. The hidden-name rules stay as they are (D18 as amended). Whether a
+  client sends `@` as is or as `%40`, the route takes both. A configured catalog name holding `@` stops the server at
+  startup (choice 4).
+- `/v1/config?warehouse=trading@dev` answers the prefix `trading@dev`; for a tag it lists only the read endpoints
+  (choice 5).
+- Reads on a ref: names, namespace listings and table and view listings through the cut. A table's or view's pointer
+  is the branch's own where it has one, else the cut's (D33). The metadata is read by location and its SHA-256
+  checked as on main; the ETag carries the ref; HEAD and the credentials route alike. A tag vends read-only
+  credentials.
+- A write on a tag is refused with 400 naming the tag. Creates, drops, renames, registers, unregisters and namespace
+  changes on a branch are refused (question 1). Commits on a branch stay refused until item 105.
+- `ObjectRead` events name the branch or tag in the `branch` field they already carry.
+
+Done when route tests cover a load, HEAD, listing and credentials on a tag and on a branch with no commits yet, a
+write on a tag (400), and a catalog name holding `@` (refused at startup); and a stock `RESTCatalog` with
+`warehouse=<catalog>@<tag>` reads a table as of the tag and fails a commit at Iceberg's endpoint check (heavy). Fast
+build green; bites recorded in `bites/D33/`. Waits on item 102. Items 105 and 109 wait on this one.
+
+### 105. Commits on a branch write its own pointer (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/test/java/nuna/catalog/core/commit/ catalog-server/src/main/java/nuna/catalog/server/rest/
+- Effort: L, the engine's twelve reads and swaps of main's key become the ref's, for tables, views and transactions, with the merge cap and the unknown-outcome path on a branch; most tests need only Java; waits on items 103 and 104
+
+Part of item 26 (D33); its design section says why (choices 3, 9 and 13).
+
+What is wrong: `CommitEngine` reads and swaps `object.mainKey()` in twelve places (create, commit, register,
+transaction, settle), so every commit goes to main.
+
+Build:
+- A commit on `catalog@branch` reads the branch's pointer (its own, else the cut's), checks the client's
+  requirements against it, applies and judges as on main, and swaps the branch's key (object, ref id), holding the
+  ref (item 103). The first commit to a table on the branch creates its pointer. Tables, views and
+  `/transactions/commit` alike: lost swaps retried within P10's bound, unknown outcomes settled by `findCommit` on the
+  branch's key, Idempotency-Keys replayed.
+- A commit that would make the branch change more tables than `nuna.refs.max-merge-tables` (default 100) is refused,
+  so the branch can always merge (choice 9).
+- A commit to a table that main has dropped since the branch's point is refused (the store's `Inactive`).
+- The `Commit` event names the branch; the commit meter gains the ref kind, main or branch (choice 13).
+
+Done when engine tests (fast build, Java only) cover the first and a second commit on a branch, two first commits
+racing, a transaction across two tables on a branch, the cap, and a commit after the branch ended; and route tests
+(heavy) with a stock `RESTCatalog` on `<catalog>@<branch>` commit two tables, leave main unchanged, and read the
+branch's rows back. Fast build green; bites recorded in `bites/D33/`. Waits on items 103 and 104. Items 107, 108
+and 111 wait on this one.
+
+### 106. Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java catalog-server/src/main/java/nuna/catalog/server/metrics/ catalog-server/src/main/resources/application.yaml catalog-audit/src/main/java/nuna/catalog/audit/ catalog-audit/src/test/java/nuna/catalog/audit/ catalog-server/src/test/java/nuna/catalog/server/governance/ deploy/README.md
+- Effort: L, five routes with their rights, idempotency, limits, audit and meters, and the work list's expiry section, with route tests; waits on item 102
+
+Part of item 26 (D33); its design section says why (choices 6, 11, 12 and 13).
+
+What is missing: no route makes, lists, renews or deletes a ref. P11's limits and expiry exist only in
+`build-plan.md`. No event type records a ref change (`EventType`), and a type with no `AuditRows` mapping fails there.
+
+Build:
+- `/management/v1/catalogs/{catalog}/refs`: list (paged), create (`name`, `kind`, `from`: main or a ref), read (for a
+  branch, its changed tables that the caller can describe), renew, delete. Each write takes an Idempotency-Key
+  (D10). The merge route is item 107's.
+- Rights (choice 12): `create` on the catalog to create, renew and delete; any holding in the catalog to list and
+  read. Refusals are `Denial`s.
+- P11 as settings: `nuna.refs.max-branches` (50), `max-tags` (1,000), `branch-idle-expiry` (30 days),
+  `branch-max-life` (180 days), `expiry-warning` (7 days). A create past a limit is refused, naming it. A commit or a
+  renewal moves a branch's expiry 30 days ahead, never past 180 days from its creation (choice 11).
+- The maintenance work list gains a `refs` section, the branches to warn of and those past expiry, and two
+  maintenance routes, warn (once per branch) and end; the worker's side is item 108's.
+- The audit event type `ref` (created, renewed, deleted, merged, expiring, expired), mapped in `AuditRows`; meters
+  (choice 13). `deploy/README.md` names the settings.
+
+Done when route tests (heavy) cover each route's rights, its idempotent replay and its audit, the limits, and a branch
+past expiry answering 404 everywhere; `ManagementAuthorizationTest` and `MutatingRoutesAuditTest` include the routes;
+`AuditRowsTest` maps the new type (fast). Fast build green; bites recorded in `bites/D33/`. Waits on item 102. Items
+107, 108 and 109 wait on this one.
+
+### 107. Merge a branch into main, per table, in one bounded transaction (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-core/src/main/java/nuna/catalog/core/refs/ catalog-core/src/test/java/nuna/catalog/core/refs/ catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: L, the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106
+
+Part of item 26 (D33); its design section says why (choices 7 to 10 and 12).
+
+What is missing: nothing merges. D33: per table, with Nessie's semantics (changed only on the branch, main takes it;
+changed on both, a conflict), all tables moving in one bounded multi-table transaction.
+
+Build:
+- `POST /management/v1/catalogs/{catalog}/refs/{ref}/merge`, with `dry-run`. For every table and view the branch
+  changed: if main's pointer is still the cut's, main takes the branch's pointer (its metadata location, hash and
+  projection) as its next version, journaled on main under the merge's commit id; if main moved too, or dropped the
+  table, it is a conflict. Any conflict answers 409 listing every one (name, the cut's version, main's version, the
+  branch's version, or dropped) and moves nothing (choice 7). Otherwise one `CommitBatch`: main's swaps, the
+  branch's pointers held, the ref ended (item 103). A swap lost to a main commit plans again within P10's bound.
+- Each moved table is judged as a commit on main: main's rules (D11), holds (D24) and freezes (D37) on the change
+  from main's metadata to the branch's, and the caller's right for it on main, every table in one batched check,
+  with `create` on the catalog (choices 8 and 12).
+- At most `nuna.refs.max-merge-tables` tables (choice 9). The branch ends with the merge (choice 10). A `ref` event
+  (merged, with the tables moved) and one `Commit` event per table on main.
+
+Done when merge engine tests (fast build, Java only) cover: a table changed only on the branch moves; one changed on
+both conflicts; one dropped on main conflicts; a race with a main commit; a hold set after the branch's commit; the
+dry run. Route tests (heavy) with two stock writers, one on the branch and one on main: the merge moves only what
+only the branch changed, main then reads the branch's rows there, and the rights and audit hold. Fast build green;
+bites recorded in `bites/D33/`. Waits on items 103, 105 and 106. Item 109 waits on this one.
+
+### 108. Cleanup protects every ref, and the worker warns of and ends expired branches (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-maintenance/src/main/java/nuna/maintenance/OrphanScan.java catalog-maintenance/src/main/java/nuna/maintenance/TableJobs.java catalog-maintenance/src/main/java/nuna/maintenance/Worker.java catalog-maintenance/src/main/java/nuna/maintenance/Management.java catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java catalog-maintenance/src/test/java/nuna/maintenance/ catalog-maintenance/README.md catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+- Effort: L, the orphan scan and expiry across several metadata files per table, the recheck of files recorded before a ref was made, and the expiry section, with heavy tests on Silo; waits on items 105 and 106
+
+Part of item 26 (D33, P11); its design section says why (choices 11 and 14).
+
+What is wrong: the worker loads each table on main (`Catalogs.loadTable`). Its orphan scan reaches every snapshot of
+main's metadata (`OrphanScan.Reach`), which covers every Iceberg ref inside the table but no catalog ref, and its
+expiry is Iceberg's RemoveSnapshots on main (`TableJobs.expire`). A branch's commits write files main's metadata never
+reaches, which the orphan scan would queue once they are older than the orphan age; expiry on main queues files that
+a tag's older metadata still reaches. P11: a branch or tag blocks file cleanup for everything it references.
+
+Build (choice 14):
+- The work list's table entries name the metadata location each ref reaches for the table (a tag's cut, a branch's
+  cut and its own head). The orphan scan reaches across all of them, and expiry's candidates go through the same
+  reach before they are recorded.
+- The worker sends, with each recorded deletion, the time it read those locations; the catalog refuses the record
+  (409) if a ref was made in the catalog since, and the worker reads again. Before deleting a due file, the worker
+  checks it against every ref made after it was recorded, and completes it without deleting it if one reaches it.
+- Maintenance stays on main: branches are neither expired nor compacted nor rewritten.
+- The worker's side of expiry: from the work list's `refs` section (item 106) it sends each branch's warning once
+  and ends each branch past its expiry.
+- A meter of files kept for a ref.
+
+Done when worker tests (heavy, Silo) show: a branch's files survive the orphan scan past the orphan age, and are
+queued once the branch is deleted; a tag's files survive expiry on main; a tag made between expiry's read and its
+commit keeps its files (the recheck); a merged branch's files are main's; an expired branch is ended and warned of
+once. Fast build green; bites recorded in `bites/D33/` (main's reach alone; the recheck skipped). Waits on items 105
+and 106.
+
+### 109. Console: the catalog's refs, the merge preview and a ref selector (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-server/src/main/resources/nuna/ui/ catalog-server/src/test/java/nuna/catalog/server/ConsoleTest.java catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, one panel and a selector over routes that exist, four actions, one browser test case; waits on items 104, 106 and 107
+
+Part of item 26 (D33); its design section says why (choice 15).
+
+What is missing: the console shows Iceberg's in-table refs on the table page ("Refs: branches and tags",
+`detail.js`) and nothing of the catalog's refs; its audit lines read "on main".
+
+Build: on a catalog, a refs panel: the list (kind, made by, made at, made from, expiry, and a branch's changed
+tables), create, renew, delete, and merge, with the dry run's moves and conflicts shown before the merge button. A
+ref selector on the namespace and table pages, reading through `catalog@ref`. The table page's section renamed
+"Iceberg refs in this table". Branches near expiry marked. Only the actions the caller's rights allow are offered.
+
+Done when `ConsoleTest` (fast) covers the new files' rules (no inline code, no markup written), and
+`ConsoleBrowserTest` (heavy, Chrome) makes a branch, commits on it through a stock client, previews and merges it,
+and reads a table as of a tag. Waits on items 104, 106 and 107. Item 110 waits on this one.
+
+### 110. Demo: a catalog tag, a branch with Trino on it, and a merge (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: demo/
+- Effort: M, the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109
+
+Part of item 26 (D33); its design section says why (choice 16).
+
+What is missing: the demo's `LakeWriter` makes an Iceberg tag `eod-2026-11-09` and an Iceberg branch
+`surveillance-review` inside the trades table, but no catalog ref, so none of D33's four uses can be tried there.
+
+Build: `demo/demo.sh up` makes a catalog tag on the sample data and a branch `dev` with a change to two tables. Trino
+gets a second catalog, `lakehouse_dev` (`iceberg.rest-catalog.warehouse=lakehouse@dev`), in the same Trino. The README
+walks the uses: read as of the tag, change two tables on `dev`, preview and merge in the console, and the conflict
+when main moved too.
+
+Done when `up` (run only when Paul lets Docker be used for it) leaves the tag and the branch, Trino reads both, and
+the README's walk works as written; checked by hand and recorded in `status/`. Waits on items 107 and 109.
+
+### 111. After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java deploy/README.md
+- Effort: M, one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on Paul's answer to item 26's question 3, on items 102 and 105, and on item 100, which holds `Reconcile.java`
+
+Part of item 26 (D33, D37). Written for question 3's recommended answer (a), report only; another answer changes it,
+and only Paul decides that.
+
+What is missing: the DR reconcile and its rewind (D37, item 28) walk and rewind main's pointers only. After a regional
+failover, a branch's head or a tag's cut can name a metadata file the DR store never got, and nothing says so.
+
+Build: the reconcile's answer lists every ref whose cut or branch head names a metadata file missing from the DR
+store, with the tables concerned. The runbook in `deploy/README.md` says to delete those refs, or keep them for the
+primary's return. Branches are not walked or rewound.
+
+Done when a route test (heavy) with a DR store missing one branch head's metadata file reports that branch and no
+other ref. Fast build green; bite recorded in `bites/D33/`. Waits on Paul's answer to question 3, then on items 102,
+105 and 100.
+
+### 112. Branches, tags and merge: engines on refs, the docs and the gate (item 26)
+
+- Added: 2026-11-20 by agent on item 26
+- Touches: catalog-tests-engines/ docs/refs.md build-plan.md
+- Effort: M, engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111
+
+Part of item 26 (D33); its design section gives the gate.
+
+What is missing: once items 102 to 111 have landed, nothing has yet shown stock engines on refs, engine users have no
+page saying how to name a ref, and `build-plan.md` still lists the milestone as not started.
+
+Build:
+- The engine matrix (`EngineMatrixTest`, overnight): Spark and PyIceberg read a table as of a catalog tag, commit to
+  two tables on a branch, and are refused a write on a tag; the branch is merged and both read main.
+- `docs/refs.md`: how an engine names a ref (`warehouse=<catalog>@<ref>`), what a branch and a tag allow, merge and
+  its conflicts, P11's limits and expiry, and how catalog refs differ from Iceberg's refs inside a table.
+- `build-plan.md`: the v1.x milestone line marked done, naming the run that closed it.
+
+Done, and item 26 with it, the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh` (the engine
+matrix included) and bites are all green with items 102 to 111 landed. Waits on items 102 to 111.
 
 ## Done and dropped
 
