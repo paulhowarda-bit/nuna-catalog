@@ -58,6 +58,6 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
 
 - The pass was planned for after M9. On 2026-11-10 Paul moved it to after M8, before M9: M9 happens at work, and he wants a fully checked build to carry there.
 - One run in a worktree: `./heavy.sh` (`./gradlew build -Pheavy`, then a Ceph leg, `./gradlew :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph`, then every recorded bite; it stops if either build fails). The `overnight` tests are not part of it. Fix anything that fails or does not bite.
-- The next pass, to harden v1.x phases 1 and 2, comes after the install at work (Paul, 2026-11-13).
+- The next pass, to harden v1.x phases 1 and 2, was planned for after the install at work (Paul, 2026-11-13). On 2026-11-19 Paul decided the overnight run covers it (D42): item 1 closes the first night its heavy build, Ceph leg and bites are all green.
 - From 2026-11-15 the overnight run (Builds) runs the heavy build, the Ceph leg and the bites every night that code changed.
 - The pass leaves out the CAS test: at the old 10,000 rounds it alone ran past 10 hours across the five backends of that day (YugabyteDB, dropped on 2026-11-11, took 2.2 s a round). It belongs to a scheduled overnight job in work CI (M9 in `build-plan.md`); at home the overnight run runs it, at 1,000 rounds, in `./nightly.sh`.
