@@ -43,7 +43,7 @@ final class Estate {
     Estate() {
         UUID profileId = UUID.randomUUID();
         assertThat(store.putStorageProfile(new StorageProfile(profileId, "p-" + profileId, StorageProfile.Kind.CEPH,
-                Optional.of("https://rgw.internal:8443"), "arn:aws:iam::1:role/catalog", List.of(ROOT)), change()))
+                Optional.of("https://rgw.internal:8443"), "arn:aws:iam::1:role/catalog", List.of(ROOT), Optional.empty()), change()))
                 .isEqualTo(WriteResult.APPLIED);
         assertThat(store.createCatalog(new CatalogRecord(catalogId, "c-" + catalogId, "C-" + catalogId),
                 new CatalogSettings(profileId, "kms-default", "acme"), change())).isEqualTo(WriteResult.APPLIED);

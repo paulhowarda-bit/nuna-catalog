@@ -152,6 +152,13 @@ final class MongoSchema {
                         throw e;
                     }
                 }
+            }),
+            // D26 (amended 2026-11-20, backlog 98): a storage profile records its KMS key, kmsKey, null when it names
+            // none. A profile stored before this step has no kmsKey and reads as naming none until a server of this
+            // release records it; servers of the previous release $set the fields they know and leave kmsKey as it
+            // is. No index names it, so nothing is built; the step is recorded so the schema version marks the first
+            // release that writes it.
+            new Step(9, "storage profile KMS keys", database -> {
             }));
 
     private MongoSchema() {

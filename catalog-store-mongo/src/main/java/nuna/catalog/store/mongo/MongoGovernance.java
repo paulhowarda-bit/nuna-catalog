@@ -90,6 +90,7 @@ final class MongoGovernance {
                             .append("endpoint", text(profile.endpoint().orElse(null)))
                             .append("stsRole", new BsonString(profile.stsRole()))
                             .append("allowedLocations", strings(profile.allowedLocations()))
+                            .append("kmsKey", text(profile.kmsKey().orElse(null)))
                             .append("clock", tx.clock())), new UpdateOptions().upsert(true));
             return WriteResult.APPLIED;
         });
@@ -100,7 +101,8 @@ final class MongoGovernance {
                 .find(byId(uuid(profileId))).first()).map(doc -> new StorageProfile(uuid(doc.get("_id")),
                 doc.getString("name").getValue(), StorageProfile.Kind.valueOf(doc.getString("kind").getValue()),
                 Optional.ofNullable(string(doc, "endpoint")), doc.getString("stsRole").getValue(),
-                doc.getArray("allowedLocations").stream().map(value -> value.asString().getValue()).toList())));
+                doc.getArray("allowedLocations").stream().map(value -> value.asString().getValue()).toList(),
+                Optional.ofNullable(string(doc, "kmsKey")))));
     }
 
     WriteResult putAttribute(GovernanceAttribute attribute, Change change) {

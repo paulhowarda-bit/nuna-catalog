@@ -77,7 +77,7 @@ final class Harness {
         UUID profileId = UUID.randomUUID();
         assertThat(faults.real.putStorageProfile(new StorageProfile(profileId, "profile-" + profileId,
                 StorageProfile.Kind.CEPH, Optional.of("https://rgw.internal:8443"), "arn:aws:iam::1:role/catalog",
-                List.of(MemoryFiles.ROOT)), change())).isEqualTo(WriteResult.APPLIED);
+                List.of(MemoryFiles.ROOT), Optional.empty()), change())).isEqualTo(WriteResult.APPLIED);
         assertThat(faults.real.createCatalog(new CatalogRecord(catalogId, "c-" + catalogId, "C-" + catalogId),
                 new CatalogSettings(profileId, "kms-default", "acme"), change())).isEqualTo(WriteResult.APPLIED);
         assertThat(faults.real.createNamespace(new NamespaceRecord(catalogId, namespaceId, catalogId,

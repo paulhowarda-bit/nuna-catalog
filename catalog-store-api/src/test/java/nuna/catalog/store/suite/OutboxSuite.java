@@ -80,7 +80,7 @@ public abstract class OutboxSuite extends GroupSuite {
     private Change writeChange() {
         Change change = fullChange();
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), "outbox", StorageProfile.Kind.S3, Optional.empty(),
-                "arn:aws:iam::000000000000:role/outbox", List.of());
+                "arn:aws:iam::000000000000:role/outbox", List.of(), Optional.empty());
         assertThat(store.putStorageProfile(profile, change)).isEqualTo(WriteResult.APPLIED);
         return change;
     }
@@ -234,7 +234,7 @@ public abstract class OutboxSuite extends GroupSuite {
         drain(now);
         Change change = fullChange();
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), "p", StorageProfile.Kind.CEPH,
-                Optional.of("https://ceph.suite"), "role", List.of("s3://a/"));
+                Optional.of("https://ceph.suite"), "role", List.of("s3://a/"), Optional.empty());
         assertThat(store.putStorageProfile(profile, Changes.change())).isEqualTo(WriteResult.APPLIED);
         UUID catalog = UUID.randomUUID();
         assertThat(store.createCatalog(new CatalogRecord(catalog, "c-" + catalog, "C-" + catalog),

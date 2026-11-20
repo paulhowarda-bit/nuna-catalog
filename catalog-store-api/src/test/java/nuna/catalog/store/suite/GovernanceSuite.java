@@ -34,7 +34,7 @@ public abstract class GovernanceSuite extends GroupSuite {
 
     private StorageProfile newProfile(List<String> locations) {
         StorageProfile profile = new StorageProfile(UUID.randomUUID(), "profile", StorageProfile.Kind.S3,
-                Optional.empty(), "arn:aws:iam::000000000000:role/governance", locations);
+                Optional.empty(), "arn:aws:iam::000000000000:role/governance", locations, Optional.empty());
         assertApplied(store.putStorageProfile(profile, change()));
         return profile;
     }
@@ -86,7 +86,7 @@ public abstract class GovernanceSuite extends GroupSuite {
     void storageProfileIsReplacedWhole() {
         StorageProfile profile = newProfile(List.of("s3://b/", "s3://a/", "s3://c/"));
         StorageProfile replaced = new StorageProfile(profile.id(), "renamed", StorageProfile.Kind.CEPH,
-                Optional.of("https://ceph.internal:7480"), "role-2", List.of("s3://z/", "s3://b/"));
+                Optional.of("https://ceph.internal:7480"), "role-2", List.of("s3://z/", "s3://b/"), Optional.empty());
         Change change = fullChange();
 
         assertThat(store.readStorageProfile(profile.id())).contains(profile);
@@ -95,6 +95,29 @@ public abstract class GovernanceSuite extends GroupSuite {
         assertThat(store.readStorageProfile(profile.id())).contains(replaced);
         assertThat(underTest().changeRows(change)).isEqualTo(WrittenRows.allOf(change));
         assertThat(store.readStorageProfile(UUID.randomUUID())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Governance: a storage profile keeps its KMS key, and a put that changes only the key, from none to"
+            + " a key, to another key and back to none, replaces it (D26, backlog 98)")
+    void storageProfileKeepsItsKmsKey() {
+        StorageProfile none = newProfile(List.of("s3://lake/"));
+        String key = "arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+        String other = "arn:aws:kms:us-east-1:111122223333:key/0987dcba-09fe-87dc-65ba-ab0987654321";
+
+        assertThat(store.readStorageProfile(none.id())).contains(none);
+        for (Optional<String> kmsKey : List.of(Optional.of(key), Optional.of(other), Optional.<String>empty())) {
+            StorageProfile next = new StorageProfile(none.id(), none.name(), none.kind(), none.endpoint(),
+                    none.stsRole(), none.allowedLocations(), kmsKey);
+            Change change = fullChange();
+
+            assertThat(store.putStorageProfile(next, change)).as("put with key %s", kmsKey)
+                    .isEqualTo(WriteResult.APPLIED);
+
+            assertThat(store.readStorageProfile(none.id())).as("read after the put with key %s", kmsKey)
+                    .contains(next);
+            assertThat(underTest().changeRows(change)).isEqualTo(WrittenRows.allOf(change));
+        }
     }
 
     @Test

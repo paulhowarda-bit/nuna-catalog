@@ -13,8 +13,9 @@ import java.util.UUID;
  * @param action   what happened
  * @param id       the profile's or the catalog's id
  * @param name     its name
- * @param settings what was set, sorted by key: for a profile its kind, endpoint, role and allowed
- *                 locations; for a catalog its storage profile, KMS key set and legal entity
+ * @param settings what was set, sorted by key: for a profile its kind, endpoint, role, allowed
+ *                 locations and KMS key ({@code kms-key}, empty when it names none: D26, backlog 98);
+ *                 for a catalog its storage profile, KMS key set and legal entity
  * @param actor    who set it
  */
 public record StorageSetup(Action action, UUID id, String name, Map<String, String> settings, Actor actor)

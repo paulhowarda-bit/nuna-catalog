@@ -240,7 +240,7 @@ class OracleStoreSuiteTest extends CommitSuite {
             assertThat(store.findNamespace(catalog, List.of("\0empties"))).contains(namespace);
 
             StorageProfile profile = new StorageProfile(UUID.randomUUID(), "", StorageProfile.Kind.S3, Optional.of(""), "",
-                    List.of("", "\0s3://x/", "s3://y/"));
+                    List.of("", "\0s3://x/", "s3://y/"), Optional.of(""));
             assertApplied(store.putStorageProfile(profile, Changes.change()));
             assertThat(store.readStorageProfile(profile.id())).contains(profile);
 
