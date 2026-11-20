@@ -277,9 +277,10 @@ class DrDrillTest {
      * last version the DR store holds whole, the commits it gave up are exactly those whose files never arrived, the
      * quiet table, whole in DR, is not touched, and every table reads whole in DR.
      *
-     * <p>Expectations written for "Check from the watermark" (D37, amended again 2026-11-20), which was being built
-     * beside this leg: the walk runs after the verifier has passed the rewound versions, so each table's watermark is at
-     * its pointer and the walk has nothing to check or take, whether it checks from the watermark or from the pointer.
+     * <p>The walk checks from the watermark (D37, amended again 2026-11-20: "Check from the watermark"; backlog 28). It
+     * runs after the verifier has passed the rewound versions, so each table's watermark is at its pointer and the walk
+     * has nothing to check or take. Run before that pass, it would find the lost versions, still journaled between the
+     * watermark and the rewound pointer, not whole in the DR store and take nothing for the table.
      */
     @Test
     void aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore() throws Exception {
