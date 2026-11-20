@@ -15,9 +15,11 @@ import java.util.Map;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ContextConfiguration;
 
 /**
@@ -38,6 +40,9 @@ class ConsoleTest {
 
     @Value("${local.server.port}")
     private int port;
+
+    @Autowired
+    private JdbcTemplate jdbc;
 
     @Test
     void thePageAndEveryFileAreServedWithoutATokenUnderTheContentSecurityPolicy() throws Exception {
@@ -89,10 +94,17 @@ class ConsoleTest {
     }
 
     @Test
-    void signedInCallersListTheDeclaredCatalogs() throws Exception {
-        HttpResponse<String> response = get("/management/v1/catalogs", IssuerForTests.bearer("nobody", "no-grants"));
-        assertThat(response.statusCode()).isEqualTo(200);
-        assertThat(JsonPath.<List<String>>read(response.body(), "$.catalogs[*].name")).containsExactly("trading");
+    void signedInCallersListOnlyTheCatalogsTheyHoldSomethingOn() throws Exception {
+        // D18, amended 2026-11-19 (item 20): a caller who holds nothing in a catalog is not told its name.
+        HttpResponse<String> nothing = get("/management/v1/catalogs", IssuerForTests.bearer("nobody", "no-grants"));
+        assertThat(nothing.statusCode()).isEqualTo(200);
+        assertThat(JsonPath.<List<String>>read(nothing.body(), "$.catalogs[*].name")).isEmpty();
+
+        IssuerForTests.grant(jdbc, "trading", "console-describers", "describe");
+        HttpResponse<String> held = get("/management/v1/catalogs",
+                IssuerForTests.bearer("dora", "no-grants", "console-describers"));
+        assertThat(held.statusCode()).isEqualTo(200);
+        assertThat(JsonPath.<List<String>>read(held.body(), "$.catalogs[*].name")).containsExactly("trading");
     }
 
     @Test

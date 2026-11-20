@@ -1,0 +1,16 @@
+Breaks: GET /management/v1/catalogs lists every declared catalog again, to any signed-in caller, whatever it holds.
+Module: catalog-server
+Test: CatalogListTest
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+index cd5243e..5723b1e 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+@@ -103,7 +103,6 @@ class UiRoutes {
+                 || separation.platformOperatorGroups().contains(group));
+         List<Map<String, String>> catalogs = new ArrayList<>();
+         storage.catalogs().keySet().stream().sorted(String.CASE_INSENSITIVE_ORDER)
+-                .filter(name -> everyCatalog || holdsSomething(name, groups))
+                 .forEach(name -> catalogs.add(Map.of("name", name)));
+         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
+                 .body(JSON.writeValueAsString(Map.of("catalogs", catalogs)));

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 6 S, 12 M, 6 L, 4 XL.
+**28 open:** 5 S, 13 M, 6 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,7 +25,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
 | [17](backlog/17.md) | M | Console sign-in against Entra ID and Ping, with an automated test | checks against Entra ID and Ping at work; ending the IdP session if Paul wants it | 2026-11-14 |
 | [19](backlog/19.md) | S | Cap the audit-read route for scripted use | a per-caller limit on one route, answering 429, with a test | 2026-11-14 |
-| [20](backlog/20.md) | S | Catalog names are listed to every signed-in caller (a question for work) | filter one route by the caller's grants, with a test; after work answers | 2026-11-14 |
 | [21](backlog/21.md) | M | A CA bundle per storage profile | a trust store per profile, and a test store with a private CA | 2026-11-14 |
 | [22](backlog/22.md) | XL | Administer storage profiles and catalogs at runtime (not now, D41) | routes, storage on four backends, audit and the startup checks; only if Paul wants it | 2026-11-14 |
 | [23](backlog/23.md) | M | Per-request SSE-KMS keys (waits on SEC-8) | one KMS key per storage profile in vended sessions and their policy, tested on AWS; per-domain keys wait on SEC-8 | 2026-11-14 |
@@ -39,7 +38,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | L | Grafana dashboards and Prometheus alert rules for nuna (at work) | dashboards and alert rules for six areas, each alert fired once in a test | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [67](backlog/67.md) | S | An unregister whose outcome is unknown waits within the retry budget when the store is down | one path in the commit engine and a fault test, as item 8 | 2026-11-19 |
+| [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
+| [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 
 ## Open items in full
 
@@ -233,20 +233,6 @@ IdP's session (Paul's call).
 rates; it needs a cap if scripts start using it.
 
 Done when the route limits how often one caller (or all callers) may read, answering 429 beyond it, with a test.
-
-### 20. Catalog names are listed to every signed-in caller (a question for work)
-
-- Decided: 2026-11-19, D18
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, filter one route by the caller's grants, with a test; after work answers
-
-`build-plan.md`, UI v1: `GET /management/v1/catalogs` lists the declared catalog names to any signed-in caller,
-unfiltered. Filter them if a deployment treats names as secret.
-
-Done when work has answered whether names are secret, and, if they are, the route lists only catalogs the caller
-holds something on, with a test.
-
-**Decided 2026-11-19 (D18):** catalog names are filtered now ("Filter them now"), as namespace and table names are (item 14), without waiting for work's answer: the route lists only the catalogs the caller holds something on.
 
 ### 21. A CA bundle per storage profile
 
@@ -485,28 +471,51 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 67. An unregister whose outcome is unknown waits within the retry budget when the store is down
+### 68. Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18)
 
-- Added: 2026-11-19 by the agent on item 8
-- Touches: catalog-core/
-- Effort: S, one path in the commit engine and a fault test, as item 8
+- Added: 2026-11-19 by agent working item 20
+- Touches: catalog-server/
+- Effort: M, four lookups answer before any guard, each with a test; after Paul decides
 
-Item 8 made `findCommit` wait within the retry budget (P10: at most 4 attempts or 2 s) when the store cannot be
-reached, so a commit, create, register or transaction whose outcome is unknown during a short outage is settled. An
-unregister does not settle through `findCommit`: when `unregisterObject` throws `CommitOutcomeUnknownException`, the
-engine reads the object back with `readObject`, and when that read fails it answers 500 CommitStateUnknownException
-at once (`CommitEngine.unregister`, `catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java` about
-line 650), whatever the failure. Item 8 left it alone, as its title names `findCommit`.
+Item 20 filtered `GET /management/v1/catalogs` to the catalogs the caller holds something on (D18 as amended
+2026-11-19). Other routes still tell any signed-in caller whether a catalog name exists, whatever it holds:
 
-`Reconcile.apply` (the DR runbook's reconcile, D37) also asks `findCommit` after an unknown outcome, with no wait: a
-store outage there throws out of the apply to the operator's route at once. Nothing is lost (a second run plans
-again from the pointer), but the count of steps already applied is not reported. Giving it the wait means passing
-the engine's `CommitSettings` and sleeper to `Reconcile`, which `catalog-server`'s `ReconcileRoutes` constructs;
-it is noted here, not part of this item.
+- `GET /v1/config?warehouse=<name>` answers 200 with the prefix for a declared catalog and 404
+  NoSuchWarehouseException for any other name, with no authorization at all (`ConfigRoute.java`, `config`).
+- Every route under `/v1/{prefix}/` and `/management/v1/catalogs/{catalog}/` resolves the catalog before its guard:
+  404 NoSuchWarehouseException for an unknown name, then 403 for a known one the caller holds nothing on
+  (`Lookup.catalog`, `governance/Management.java` line 81, `security/Securables.catalog`). For example
+  `GET /v1/<name>/namespaces` as a caller in no granted group.
 
-Done when an unregister whose outcome is unknown during a short outage is settled within the budget, shown by a fault
-test in `catalog-core` as item 8's are (`CommitEngineTest$UnknownOutcomes`), and an outage longer than the budget
-still answers 500 CommitStateUnknownException.
+D18's amendment names HEAD, loads, the metrics route (item 14) and the catalog list (item 20); it does not say
+whether a catalog's existence is hidden too. Hiding it in `/v1/config` changes what an engine with no grant sees:
+it would fail at its first call, the config, rather than at the first listing or load.
+
+Done when Paul has decided whether catalog names are hidden on these routes too, and, if they are, a caller who
+holds nothing on a catalog gets the same answer whether or not it exists, with tests and a bite.
+
+### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
+
+- Added: 2026-11-19 by the agent on item 67
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java, catalog-core/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+- Effort: S, one call in Reconcile, its construction in one route, and a test with a store double
+
+Items 8 and 67 made the commit engine wait within the retry budget (P10: at most 4 asks, none starting more than 2 s
+after the request started, with the commit loop's backoff) when the store cannot be reached while it decides an
+unknown outcome. `Reconcile.apply` (the DR runbook's reconcile, D37) does not: when `store.commit` throws
+`CommitOutcomeUnknownException` it asks `findCommit` once (`catalog-core/src/main/java/nuna/catalog/core/commit/
+Reconcile.java`, about line 185), so a store outage there throws `StoreUnavailableException` out of the apply to the
+operator's route at once. Nothing is lost (a second run plans again from the pointer), but the count of steps already
+applied is not reported.
+
+Giving it the wait means passing the engine's `CommitSettings` and sleeper to `Reconcile`, which
+`catalog-server`'s `ReconcileRoutes` constructs (`new Reconcile(store, files, clock)`), and sharing the engine's
+asking loop (`CommitEngine.decide`, private today) rather than copying it. Item 67 left it, as its brief kept it out
+of scope (`catalog-server` was held by another agent).
+
+Done when a reconcile step whose outcome is unknown during a short outage is settled within the budget, shown by a
+test with a store double that needs no database (as `UnregisterOutageTest` does), and an outage longer than the
+budget answers as today.
 
 ## Done and dropped
 
@@ -518,6 +527,7 @@ still answers 500 CommitStateUnknownException.
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
+| [20](backlog/20.md) | Catalog names are listed to every signed-in caller (a question for work) | done | 2026-11-19 |
 | [30](backlog/30.md) | Two bites fail only by stopping the server's start, so run.sh calls them SETUP | done | 2026-11-15 |
 | [31](backlog/31.md) | kafbat: ana, gary and stella administer topics and produce messages | done | 2026-11-15 |
 | [32](backlog/32.md) | The Ceph leg found no Docker right after the heavy build | done | 2026-11-19 |
@@ -551,3 +561,4 @@ still answers 500 CommitStateUnknownException.
 | [64](backlog/64.md) | CloudBeaver sign-in sometimes answers 500, then works on retry | done | 2026-11-19 |
 | [65](backlog/65.md) | RollingUpgradeTest: the previous release is given nuna settings it does not read, since the rename | done | 2026-11-19 |
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
+| [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |

@@ -19,6 +19,7 @@ import nuna.catalog.core.commit.CommitReply.ServerError;
 import nuna.catalog.core.commit.CommitReply.Success;
 import nuna.catalog.core.commit.CommitReply.Unavailable;
 import nuna.catalog.store.CatalogObject;
+import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.CommitResult;
@@ -713,6 +714,141 @@ class CommitEngineTest {
             assertThat(commit("Orders", setA("Orders", "1"))).isInstanceOfSatisfying(ServerError.class,
                     e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
             assertThat(h.faults.calls("findCommit")).isEqualTo(1);
+            assertThat(h.waits).isEmpty();
+        }
+
+        // ---- an unregister, which is decided by reading the table back (backlog 67) ----
+
+        private CommitReply unregister(String table) {
+            return h.engine().unregisterTable(h.name(table), Optional.of(h.object(table).id()), ALICE,
+                    Optional.empty());
+        }
+
+        private CommitOutcomeUnknownException unregisterUnknown(Object[] args) {
+            return new CommitOutcomeUnknownException(((Change) args[2]).id(), null);
+        }
+
+        /** readObject fails as a store that cannot be reached does, for its next {@code asks} calls. */
+        private void readBackUnreachableFor(int asks) {
+            for (int i = 0; i < asks; i++) {
+                h.faults.once("readObject", (args, proceed) -> {
+                    throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+                });
+            }
+        }
+
+        @Test
+        @DisplayName("an unregister whose outcome was lost during a short outage, and which landed, is decided"
+                + " once the store answers, within the retry budget")
+        void unregisterShortOutageIsWaitedOut() {
+            Success created = h.createTable("Orders");
+            h.faults.once("unregisterObject", (args, proceed) -> {
+                proceed.call();
+                throw unregisterUnknown(args);
+            });
+            readBackUnreachableFor(2);
+
+            CommitReply reply = unregister("Orders");
+
+            assertThat(reply).isEqualTo(new Success(created.objectId(), created.metadataLocation(),
+                    created.metadataSha256(), created.metadataJson(), How.COMMITTED));
+            assertThat(h.faults.calls("unregisterObject")).isEqualTo(1);
+            assertThat(h.faults.calls("readObject")).isEqualTo(3);
+            assertBackoffs(h.waits, 100, 200);
+            assertThat(h.faults.real.readObject(created.objectId()).orElseThrow().state())
+                    .isEqualTo(CatalogObject.State.UNREGISTERED);
+        }
+
+        @Test
+        @DisplayName("an unregister lost at the start of a 600 ms outage, which did not land, is decided when the"
+                + " store is back and sent again, landing once")
+        void unregisterTimedOutageThenSentAgain() {
+            Success created = h.createTable("Orders");
+            Instant back = h.clock.instant().plusMillis(600);
+            h.faults.once("unregisterObject", (args, proceed) -> {
+                throw unregisterUnknown(args);
+            });
+            h.faults.always("readObject", (args, proceed) -> {
+                if (h.clock.instant().isBefore(back)) {
+                    throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+                }
+                return proceed.call();
+            });
+
+            CommitReply reply = unregister("Orders");
+
+            assertThat(reply).isInstanceOfSatisfying(Success.class, s -> {
+                assertThat(s.how()).isEqualTo(How.COMMITTED);
+                assertThat(s.metadataLocation()).isEqualTo(created.metadataLocation());
+            });
+            // Read back at 0, ~100 and ~300 ms while the store was away, and at ~700 ms once it was back.
+            assertThat(h.faults.calls("readObject")).isEqualTo(4);
+            assertThat(h.faults.calls("unregisterObject")).isEqualTo(2);
+            // Three waits for the store, then the unregister loop's own wait before its second attempt.
+            assertBackoffs(h.waits, 100, 200, 400, 100);
+            assertThat(h.waits.stream().reduce(Duration.ZERO, Duration::plus))
+                    .isLessThanOrEqualTo(CommitSettings.DEFAULTS.retryBudget());
+            assertThat(h.faults.real.readObject(created.objectId()).orElseThrow().state())
+                    .isEqualTo(CatalogObject.State.UNREGISTERED);
+        }
+
+        @Test
+        @DisplayName("an outage that outlasts the retry budget while reading an unregister back answers as it did"
+                + " before the store was asked again: 500 CommitStateUnknown, after 4 reads")
+        void unregisterOutageLongerThanTheBudget() {
+            Success created = h.createTable("Orders");
+            List<UUID> changeIds = new ArrayList<>();
+            h.faults.once("unregisterObject", (args, proceed) -> {
+                changeIds.add(((Change) args[2]).id());
+                throw unregisterUnknown(args);
+            });
+            h.faults.always("readObject", (args, proceed) -> {
+                throw new StoreUnavailableException("primary lost, standby not yet promoted", null);
+            });
+
+            CommitReply reply = unregister("Orders");
+
+            assertThat(reply).isEqualTo(new ServerError("CommitStateUnknownException", "Unregister of Orders"
+                    + " may or may not have been applied: outcome of commit " + changeIds.getFirst() + " is unknown"));
+            assertThat(h.faults.calls("unregisterObject")).isEqualTo(1);
+            assertThat(h.faults.calls("readObject")).isEqualTo(CommitSettings.DEFAULTS.maxAttempts());
+            assertBackoffs(h.waits, 100, 200, 400);
+            assertThat(h.faults.real.readObject(created.objectId()).orElseThrow().state())
+                    .isEqualTo(CatalogObject.State.ACTIVE);
+        }
+
+        @Test
+        @DisplayName("an unregister read back from a store that answers but cannot say is 500 CommitStateUnknown"
+                + " at once")
+        void unregisterUndecidable() {
+            h.createTable("Orders");
+            h.faults.once("unregisterObject", (args, proceed) -> {
+                throw unregisterUnknown(args);
+            });
+            h.faults.once("readObject", (args, proceed) -> {
+                throw new StoreException("standby unreachable", null);
+            });
+
+            assertThat(unregister("Orders")).isInstanceOfSatisfying(ServerError.class,
+                    e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
+            assertThat(h.faults.calls("readObject")).isEqualTo(1);
+            assertThat(h.waits).isEmpty();
+        }
+
+        @Test
+        @DisplayName("the unregister's budget is the request's: an unregister that hung for most of it leaves no"
+                + " time to read it back again")
+        void unregisterBudgetCountsFromTheRequestsStart() {
+            h.createTable("Orders");
+            h.faults.once("unregisterObject", (args, proceed) -> {
+                h.clock.advance(Duration.ofMillis(1950));
+                throw unregisterUnknown(args);
+            });
+            readBackUnreachableFor(1);
+
+            assertThat(unregister("Orders")).isInstanceOfSatisfying(ServerError.class,
+                    e -> assertThat(e.type()).isEqualTo("CommitStateUnknownException"));
+            assertThat(h.faults.calls("readObject")).isEqualTo(1);
             assertThat(h.waits).isEmpty();
         }
 
