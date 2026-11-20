@@ -64,7 +64,7 @@ class IcebergCopyTest {
         assertThat(first.kind()).isEqualTo("snapshot");
         assertThat(first.rows()).isEqualTo(3);
 
-        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"});
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"}, false);
         transaction(batch, 0, "a1", update(0, row(1, "SAP", 100, "182.100000", "FILLED")), delete(0, 2));
         // Inserted and then changed within the batch: one row, nothing earlier to remove.
         transaction(batch, 1, "b1", insert(1, row(4, "DTE", 2000, "23.100000", "NEW")));
@@ -101,7 +101,7 @@ class IcebergCopyTest {
         IcebergCopy copy = IcebergCopy.open(catalog, config("orders", ""), source);
         assertThat(copy.offsets()).containsExactly(null, null);
 
-        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"});
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"}, false);
         transaction(batch, 1, "b7", insert(1, row(9, "SAP", 1, "1.000000", "NEW")));
         copy.commit(batch);
 
@@ -117,7 +117,7 @@ class IcebergCopyTest {
         IcebergCopy first = IcebergCopy.open(catalog, config("orders", ""), source);
         IcebergCopy second = IcebergCopy.open(catalog, config("orders", ""), source);
 
-        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0"});
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0"}, false);
         transaction(batch, 0, "a1", insert(0, row(1, "SAP", 1, "1.000000", "NEW")));
         first.commit(batch);
 
@@ -130,7 +130,7 @@ class IcebergCopyTest {
     void aNewSnapshotReplacesTheCopyAndRecordsTheGap() {
         SourceTable source = orders(2);
         IcebergCopy copy = IcebergCopy.open(catalog, config("orders", "bucket(order_id, 2)"), source);
-        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"});
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"}, false);
         transaction(batch, 0, "a1", insert(0, row(1, "SAP", 1, "1.000000", "NEW")), insert(0, row(2, "SIE", 2, "2.000000", "NEW")));
         copy.commit(batch);
 
@@ -154,7 +154,7 @@ class IcebergCopyTest {
         snapshot.write(row(1, "SAP", 1, "1.000000", "NEW"));
         snapshot.write(row(3, "ALV", 1, "1.000000", "NEW"));
         IcebergCopy.Receipt first = snapshot.commit(new String[] {"a0", "b0"}, null);
-        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"});
+        ChangeBatch batch = new ChangeBatch(source, new String[] {"a0", "b0"}, false);
         transaction(batch, 0, "a1", update(0, row(1, "SAP", 2, "1.000000", "FILLED")), insert(0, row(2, "SIE", 2, "2.000000", "NEW")));
         transaction(batch, 1, "b1", delete(1, 3));
         IcebergCopy.Receipt second = copy.commit(batch);

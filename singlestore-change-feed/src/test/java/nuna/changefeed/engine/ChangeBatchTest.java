@@ -12,13 +12,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import nuna.changefeed.engine.ChangeBatch.Change;
 import nuna.changefeed.engine.ObserveReader.Event;
 import nuna.changefeed.engine.ObserveReader.Type;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class ChangeBatchTest {
 
     @Test
     void takesInATransactionOnlyWhenItCommits() {
-        ChangeBatch batch = new ChangeBatch(orders(2), new String[] {"a0", "b0"});
+        ChangeBatch batch = new ChangeBatch(orders(2), new String[] {"a0", "b0"}, false);
         batch.accept(new Event(Type.BEGIN_TRANSACTION, 1, "b1", null));
         batch.accept(insert(1, row(1, "SAP", 1, "1.000000", "NEW")));
 
@@ -33,7 +34,7 @@ class ChangeBatchTest {
 
     @Test
     void keepsEachKeysLatestStateAndWhetherEarlierRowsGo() {
-        ChangeBatch batch = new ChangeBatch(orders(1), new String[] {"a0"});
+        ChangeBatch batch = new ChangeBatch(orders(1), new String[] {"a0"}, false);
         transaction(batch, 0, "a1",
                 insert(0, row(1, "SAP", 1, "1.000000", "NEW")),
                 update(0, row(1, "SAP", 2, "1.000000", "NEW")),
@@ -53,7 +54,7 @@ class ChangeBatchTest {
 
     @Test
     void offsetsCarryOnAfterTheBatchIsCleared() {
-        ChangeBatch batch = new ChangeBatch(orders(2), new String[] {null, null});
+        ChangeBatch batch = new ChangeBatch(orders(2), new String[] {null, null}, false);
         batch.startAt(0, "a5");
         batch.startAt(1, "b5");
         transaction(batch, 0, "a6", insert(0, row(1, "SAP", 1, "1.000000", "NEW")));
@@ -64,8 +65,25 @@ class ChangeBatchTest {
     }
 
     @Test
+    void anAppendOnlyBatchStopsAtTheFirstUpdateOrDeleteBeforeItsTransactionIsTakenIn() {
+        for (Event change : List.of(update(0, row(1, "SAP", 2, "1.000000", "NEW")), delete(0, 1))) {
+            ChangeBatch batch = new ChangeBatch(orders(1), new String[] {"a0"}, true);
+            transaction(batch, 0, "a1", insert(0, row(1, "SAP", 1, "1.000000", "NEW")));
+            batch.accept(new Event(Type.BEGIN_TRANSACTION, 0, "a2", null));
+            batch.accept(insert(0, row(2, "SIE", 5, "2.000000", "NEW")));
+
+            assertThatThrownBy(() -> batch.accept(change)).isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("ops.orders is append-only")
+                    .hasMessageContaining(change.type() + " on partition 0 after offset a1")
+                    .hasMessageContaining("SNAPSHOT DATABASE ops");
+            assertThat(batch.size()).isEqualTo(1);
+            assertThat(batch.offsets()).containsExactly("a1");
+        }
+    }
+
+    @Test
     void snapshotEventsAreNotTransactionEvents() {
-        ChangeBatch batch = new ChangeBatch(orders(1), new String[] {"a0"});
+        ChangeBatch batch = new ChangeBatch(orders(1), new String[] {"a0"}, false);
         assertThatThrownBy(() -> batch.accept(new Event(Type.BEGIN_SNAPSHOT, 0, "a0", null)))
                 .isInstanceOf(IllegalArgumentException.class);
     }

@@ -1,7 +1,7 @@
 # The demo's ports on localhost, where Docker Desktop serves LoadBalancer Services, all HTTPS through one front
 # door: 8180 Keycloak, 8181 the catalog and its console, 8182 kafbat, 8183 SingleStore Studio, 8184 Silo's
-# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (only while demo.sh cdc runs, cdc.yaml). Only
-# demo.sh applies this; a matrix run publishes nothing.
+# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (only while demo.sh cdc runs, cdc.yaml), 8187
+# Silo's S3 API, for engines on other machines. Only demo.sh applies this; a matrix run publishes nothing.
 #
 # The front door is nginx (Deployment front): it ends TLS with the certificate in Secret demo-tls, which demo.sh
 # makes from ~/.nuna-demo/tls (publish_tls), and passes each request on over plain HTTP inside the cluster, to
@@ -47,6 +47,7 @@ spec:
             - {containerPort: 8184}
             - {containerPort: 8185}
             - {containerPort: 8186}
+            - {containerPort: 8187}
           readinessProbe:
             tcpSocket: {port: 8181}
             periodSeconds: 2
@@ -99,6 +100,10 @@ data:
     # CloudBeaver's sign-in proxy (cloudbeaver.yaml); CloudBeaver itself answers on the pod's 127.0.0.1.
     server { listen 8185 ssl; location / { set $to cloudbeaver.${NAMESPACE}.svc.cluster.local:4180; proxy_pass http://$to; } }
     server { listen 8186 ssl; location / { set $to connect.${NAMESPACE}.svc.cluster.local:8083; proxy_pass http://$to; } }
+    # Silo's S3 API, for an engine off this machine: the catalog vends http://s3:9000, which resolves only in the
+    # cluster, so such an engine sets s3.endpoint to https://<host>:8187 itself. Its signatures cover the Host
+    # header, which passes through unchanged, so Silo checks them against the address the engine used.
+    server { listen 8187 ssl; location / { set $to s3.${NAMESPACE}.svc.cluster.local:9000; proxy_pass http://$to; } }
 ---
 # One Service per port, under the names they had before the front door, so an up over an older demo moves each
 # port rather than publishing it twice.
@@ -171,3 +176,13 @@ spec:
   selector: {app: front}
   ports:
     - {port: 8186, targetPort: 8186}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3-public
+spec:
+  type: LoadBalancer
+  selector: {app: front}
+  ports:
+    - {port: 8187, targetPort: 8187}

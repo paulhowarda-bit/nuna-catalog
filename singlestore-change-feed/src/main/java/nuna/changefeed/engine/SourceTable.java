@@ -22,7 +22,9 @@ import org.apache.iceberg.types.Types;
  * how its value is read, its primary key, and the number of partitions of its database (one change-feed offset each).
  *
  * <p>The primary key must equal the shard key. SingleStore refuses to update a shard-key column, so a row keeps its
- * key for life, and the key alone identifies the row a delete event names (deletes carry only the key).
+ * key for life, and the key alone identifies the row a delete event names (deletes carry only the key). A table the
+ * pipeline names append-only ({@code singlestore.append-only}) needs only a primary key that contains the shard key:
+ * it is never updated, so no row's key moves, and the feed stops at its first update or delete.
  */
 public record SourceTable(String database, String table, List<Column> columns, List<String> primaryKey, int partitions) {
 
@@ -35,7 +37,8 @@ public record SourceTable(String database, String table, List<Column> columns, L
         Object read(ResultSet rs, int index) throws SQLException;
     }
 
-    public static SourceTable read(Connection c, String database, String table) throws SQLException {
+    public static SourceTable read(Connection c, String database, String table, boolean appendOnly)
+            throws SQLException {
         List<Column> columns = new ArrayList<>();
         try (PreparedStatement s = c.prepareStatement("SELECT COLUMN_NAME, DATA_TYPE, COLUMN_TYPE, NUMERIC_PRECISION, "
                 + "NUMERIC_SCALE, IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? "
@@ -55,15 +58,7 @@ public record SourceTable(String database, String table, List<Column> columns, L
         }
         List<String> primaryKey = indexColumns(c, database, table, "INDEX_NAME = 'PRIMARY'");
         Set<String> shardKey = new LinkedHashSet<>(indexColumns(c, database, table, "INDEX_TYPE = 'SHARD'"));
-        if (primaryKey.isEmpty()) {
-            throw new IllegalArgumentException(database + "." + table + " has no primary key; the change feed names "
-                    + "deleted rows by their key, so it needs one");
-        }
-        if (!shardKey.equals(new LinkedHashSet<>(primaryKey))) {
-            throw new IllegalArgumentException(database + "." + table + ": the primary key " + primaryKey
-                    + " must equal the shard key " + shardKey + ", or an update can change a row's key and the "
-                    + "Iceberg copy would keep the old row");
-        }
+        checkKeys(database + "." + table, primaryKey, shardKey, appendOnly);
         int partitions;
         try (PreparedStatement s = c.prepareStatement(
                 "SELECT NUM_PARTITIONS FROM information_schema.DISTRIBUTED_DATABASES WHERE DATABASE_NAME = ?")) {
@@ -76,6 +71,24 @@ public record SourceTable(String database, String table, List<Column> columns, L
             }
         }
         return new SourceTable(database, table, List.copyOf(columns), List.copyOf(primaryKey), partitions);
+    }
+
+    /** D35 rule (1), and its exception for an append-only table. */
+    static void checkKeys(String where, List<String> primaryKey, Set<String> shardKey, boolean appendOnly) {
+        if (primaryKey.isEmpty()) {
+            throw new IllegalArgumentException(where + " has no primary key; the change feed names deleted rows by "
+                    + "their key, so it needs one");
+        }
+        if (appendOnly) {
+            if (!primaryKey.containsAll(shardKey)) {
+                throw new IllegalArgumentException(where + ": the primary key " + primaryKey + " must contain the "
+                        + "shard key " + shardKey);
+            }
+        } else if (!shardKey.equals(new LinkedHashSet<>(primaryKey))) {
+            throw new IllegalArgumentException(where + ": the primary key " + primaryKey + " must equal the shard key "
+                    + shardKey + ", or an update can change a row's key and the Iceberg copy would keep the old row; "
+                    + "a table that is only ever inserted into can set singlestore.append-only");
+        }
     }
 
     private static List<String> indexColumns(Connection c, String database, String table, String which)

@@ -311,11 +311,11 @@ tokens_expired() {
 check_ports() {
   k get service catalog-public >/dev/null 2>&1 && return 0
   local port busy=()
-  for port in 8180 8181 8182 8183 8184 8185 8186; do
+  for port in 8180 8181 8182 8183 8184 8185 8186 8187; do
     if (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null; then busy+=("$port"); fi
   done
   if (( ${#busy[@]} )); then
-    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8186. Stop what holds them." >&2
+    echo "localhost port(s) ${busy[*]} are in use; the demo publishes 8180 to 8187. Stop what holds them." >&2
     return 1
   fi
 }
