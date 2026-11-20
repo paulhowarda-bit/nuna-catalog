@@ -1,0 +1,51 @@
+# The maintenance worker's chart (deploy/helm/nuna-maintenance) on a local cluster, beside the catalog that
+# deploy/local/run.sh up installs. run.sh worker installs it in a namespace of its own, <catalog namespace>-maintenance,
+# with its compaction Jobs in another, <catalog namespace>-compaction, and sets the settings that name the catalog's
+# namespace: catalog-uri, token.endpoint, storage.silo.endpoint and compaction.namespace. Never use these values
+# anywhere else.
+image:
+  repository: nuna-maintenance
+  tag: local
+  # Docker Desktop's cluster runs images straight from the local Docker engine.
+  pullPolicy: Never
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 768Mi
+  limits:
+    memory: 768Mi
+
+config:
+  nuna:
+    maintenance:
+      scan-interval: PT1M
+      # Open all day, each night ending as the next begins at 12:00 UTC: compaction and orphan scans start at once.
+      # A Job started just before 12:00 UTC is stopped at 12:00 by its deadline.
+      cleanup-window:
+        start: "12:00"
+        end: "12:00"
+        zone: UTC
+      # The client-credentials grant against deploy/local/keycloak.yaml; the secret is in `secrets`.
+      token:
+        client-id: nuna-maintenance
+        scope: nuna-catalog
+        audience: nuna-catalog
+      # The worker's own Silo user, which run.sh worker makes; its secret key is in `secrets`.
+      storage:
+        silo:
+          prefixes: [s3://warehouse/tables]
+          path-style-access: true
+          access-key-id: nuna-maintenance
+      # The engine matrix's Spark image (catalog-tests-engines/images/spark), from the local Docker engine.
+      compaction:
+        image: nuna-engines/spark:4.1.4-iceberg-1.12.0
+        image-pull-policy: Never
+        memory: 1536Mi
+        driver-memory: 768m
+        max-jobs: 1
+
+secrets:
+  values:
+    nuna.maintenance.token.client-secret: nuna-maintenance-client-secret
+    nuna.maintenance.storage.silo.secret-access-key: nuna-maintenance-secret-key

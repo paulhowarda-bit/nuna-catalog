@@ -1,0 +1,24 @@
+Breaks: a table's orphan scan is recorded as tonight's before it runs, so one that fails waits a whole orphan interval instead of running again at the next scan.
+Module: catalog-maintenance
+Test: FailedOrphanScanTest#aFailedOrphanScanIsTriedAgainAtTheNextScan
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+index 7e414a6..877af68 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+@@ -312,6 +312,7 @@ final class Worker implements AutoCloseable {
+             CleanupWindow.Night night = open.get();
+             job(ScanReport.Failure.ORPHAN_SCAN, ScanSpans.Part.ORPHAN_SCAN, "scanning for orphans of", work, report,
+                     () -> {
++                orphanScans.put(work.id(), night.date());
+                 List<String> found;
+                 try {
+                     found = OrphanScan.find(table, storage, now.minus(work.duration("orphan-removal.older-than")),
+@@ -325,8 +326,6 @@ final class Worker implements AutoCloseable {
+                 report.orphanScans++;
+                 report.orphansFound += found.size();
+                 record(work, table, found, report);
+-                // Tonight's only once it is done: a scan that failed is tried again at the next scan (backlog 5).
+-                orphanScans.put(work.id(), night.date());
+             });
+         }
+     }

@@ -1,0 +1,127 @@
+# The maintenance worker's identity provider on a local cluster: Keycloak in the catalog's namespace, applied by
+# deploy/local/run.sh worker. Realm nuna holds one confidential client, nuna-maintenance, with the client-credentials
+# grant and the scope nuna-catalog, as docs/install-at-work.md asks of work's IdP for the worker. Its tokens name the
+# service account's user name (preferred_username, service-account-nuna-maintenance, the principal the catalog lists
+# in nuna.security.maintenance-principals), the group nuna-workers and the audience nuna-catalog. Their issuer is
+# always http://keycloak:8080/realms/nuna (--hostname), however Keycloak is reached: the worker and its compaction Jobs
+# reach it from other namespaces as keycloak.<namespace>.svc. Development mode, in-memory database, realm imported at
+# each start. Test client secret only; never use any of this outside a laptop.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+data:
+  nuna.json: |
+    {
+      "realm": "nuna",
+      "enabled": true,
+      "sslRequired": "none",
+      "accessTokenLifespan": 900,
+      "groups": [{"name": "nuna-workers"}],
+      "clientScopes": [
+        {
+          "name": "nuna-catalog",
+          "protocol": "openid-connect",
+          "attributes": {"include.in.token.scope": "true", "display.on.consent.screen": "false"}
+        }
+      ],
+      "clients": [
+        {
+          "clientId": "nuna-maintenance",
+          "name": "nuna maintenance worker",
+          "enabled": true,
+          "publicClient": false,
+          "clientAuthenticatorType": "client-secret",
+          "secret": "nuna-maintenance-client-secret",
+          "serviceAccountsEnabled": true,
+          "standardFlowEnabled": false,
+          "implicitFlowEnabled": false,
+          "directAccessGrantsEnabled": false,
+          "fullScopeAllowed": false,
+          "defaultClientScopes": [],
+          "optionalClientScopes": ["nuna-catalog"],
+          "protocolMappers": [
+            {
+              "name": "nuna-audience",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-audience-mapper",
+              "config": {"included.custom.audience": "nuna-catalog", "access.token.claim": "true",
+                         "id.token.claim": "false"}
+            },
+            {
+              "name": "groups",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-group-membership-mapper",
+              "config": {"claim.name": "groups", "full.path": "false", "access.token.claim": "true",
+                         "id.token.claim": "false", "userinfo.token.claim": "false"}
+            },
+            {
+              "name": "username",
+              "protocol": "openid-connect",
+              "protocolMapper": "oidc-usermodel-property-mapper",
+              "config": {"user.attribute": "username", "claim.name": "preferred_username",
+                         "jsonType.label": "String", "access.token.claim": "true", "id.token.claim": "false",
+                         "userinfo.token.claim": "false"}
+            }
+          ]
+        }
+      ],
+      "users": [
+        {
+          "username": "service-account-nuna-maintenance",
+          "enabled": true,
+          "serviceAccountClientId": "nuna-maintenance",
+          "groups": ["/nuna-workers"]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+spec:
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: keycloak}
+  template:
+    metadata:
+      labels: {app: keycloak}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.8.2
+          args: ["start-dev", "--import-realm", "--http-port=8080", "--health-enabled=true",
+                 "--hostname=http://keycloak:8080"]
+          env:
+            - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
+            - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: nuna-test}
+            - {name: JAVA_OPTS_KC_HEAP, value: "-XX:MaxRAMPercentage=50 -XX:InitialRAMPercentage=25"}
+          ports:
+            - containerPort: 8080
+            - containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            periodSeconds: 5
+            failureThreshold: 60
+          volumeMounts:
+            - {name: realm, mountPath: /opt/keycloak/data/import, readOnly: true}
+          resources:
+            requests: {memory: 512Mi}
+            limits: {memory: 768Mi}
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+spec:
+  selector: {app: keycloak}
+  ports:
+    - port: 8080
