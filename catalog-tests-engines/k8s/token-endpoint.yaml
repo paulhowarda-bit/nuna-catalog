@@ -1,0 +1,41 @@
+# The identity provider's token endpoint for the audit table writer (EngineMatrixTest#auditTables): the writer signs
+# in with the client-credentials grant, as in a deployment, and this answers with the token the harness signed for it
+# (Secret audit-writer-token). Runs ${IMAGE}, the matrix's PyIceberg image, which carries token_endpoint.py.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: token-endpoint
+spec:
+  selector:
+    matchLabels: {app: token-endpoint}
+  template:
+    metadata:
+      labels: {app: token-endpoint}
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: token-endpoint
+          image: ${IMAGE}
+          imagePullPolicy: Never
+          command: ["python", "-u", "/scripts/token_endpoint.py"]
+          env:
+            - name: WRITER_TOKEN
+              valueFrom:
+                secretKeyRef: {name: audit-writer-token, key: token}
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            periodSeconds: 2
+          resources:
+            limits: {memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: token-endpoint
+spec:
+  selector: {app: token-endpoint}
+  ports:
+    - port: 8080

@@ -1,0 +1,19 @@
+Breaks: the server grants the readers' group nothing on the audit catalog at startup, so the auditors read the audit table only if something other than the setting's grant lets them.
+Module: catalog-server
+Test: AuditCatalogGrantsTest#grantsTheReadersSelectAndTheWritersCreateAndWriteOnTheAuditCatalog
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogGrants.java b/catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogGrants.java
+index 5de45f9..cebbea4 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogGrants.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/AuditCatalogGrants.java
+@@ -70,10 +70,6 @@ class AuditCatalogGrants {
+         CatalogRecord catalog = store.findCatalog(Names.normalize(settings.catalog())).orElseThrow(() ->
+                 new IllegalStateException("nuna.audit.tables.catalog names no catalog: " + settings.catalog()
+                         + "; declare it in nuna.storage.catalogs"));
+-        if (!blank(settings.readers())) {
+-            grant(store, separation, source, clock, catalog, "nuna.audit.tables.readers", settings.readers(),
+-                    Privilege.SELECT);
+-        }
+         if (!blank(settings.writers())) {
+             for (Privilege privilege : List.of(Privilege.CREATE, Privilege.WRITE)) {
+                 grant(store, separation, source, clock, catalog, "nuna.audit.tables.writers", settings.writers(),
