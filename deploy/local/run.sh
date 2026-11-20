@@ -2,7 +2,7 @@
 # The catalog's Helm chart on a local Kubernetes cluster, with throwaway backing services. See deploy/README.md.
 #
 #   deploy/local/run.sh up      build the jar and image, start PostgreSQL, Kafka and Silo, install the chart
-#   deploy/local/run.sh smoke   check it through each server: config, namespace, table, vended credentials
+#   deploy/local/run.sh smoke   check it through each server: config, namespace, table, vended credentials, deletes
 #   deploy/local/run.sh worker  after up: the maintenance worker's chart, with Keycloak for its sign-in
 #   deploy/local/run.sh down    uninstall and delete the namespaces
 #
@@ -23,9 +23,52 @@ WORKER=nuna-maintenance
 WORKER_NS="$NS-maintenance"
 JOBS_NS="$NS-compaction"
 SPARK_IMAGE=nuna-engines/spark:4.1.4-iceberg-1.12.0
+# The catalog's and the worker's own Silo users, as values.yaml and worker-values.yaml name them (D21). Silo's root
+# user, whom no policy binds, only manages users here.
+CATALOG_USER=nuna-catalog
+CATALOG_SECRET=nuna-catalog-secret-key
+WORKER_SECRET=nuna-maintenance-secret-key
 
 k() { kubectl --context "$CONTEXT" -n "$NS" "$@"; }
 say() { printf '\n== %s\n' "$*"; }
+
+# Forwards a free local port to port $2 of $1 (a pod or svc/<name>) and sets $port to it. kubectl itself runs in the
+# background, so $! is the process to stop. They are stopped when the script exits, since a failed call exits it
+# (set -e) without returning: the list is global so the trap still sees it then.
+forwards=()
+trap 'kill "${forwards[@]}" 2>/dev/null || true' EXIT
+forward() {
+  local log
+  log=$(mktemp)
+  kubectl --context "$CONTEXT" -n "$NS" port-forward "$1" ":$2" >"$log" 2>&1 &
+  forwards+=($!)
+  port=
+  for _ in $(seq 1 30); do
+    port=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$log")
+    [[ -n "$port" ]] && break
+    sleep 1
+  done
+  [[ -n "$port" ]] || { echo "port-forward to $1 did not start: $(cat "$log")" >&2; return 1; }
+  rm -f "$log"
+}
+
+# Gives Silo user $1, made with secret key $2 if it is new, the user policy named $3, whose text comes on stdin. Runs
+# in the Silo pod as Silo's root user, and may run again: re-adding a user keeps the policies attached to it.
+silo_policy() {
+  k exec -i deployment/silo -- sh -ec "
+    cat > /tmp/$3.json
+    mc alias set local http://localhost:9000 nunademo nunademo-secret-key >/dev/null
+    mc admin user add local $1 $2
+    mc admin policy create local $3 /tmp/$3.json
+    mc admin policy detach local $3 --user $1 >/dev/null 2>&1 || true
+    mc admin policy attach local $3 --user $1"
+}
+
+# The text of the MinIO user policy whose $1 (except or to) names the worker, from the catalog's delete policies in
+# $2: a JSON string there, unescaped.
+user_policy() {
+  sed -nE 's/.*"'"$1"'":"'"$WORKER"'","policy":"((\\"|[^"])*)".*/\1/p' <<<"$2" | sed 's/\\"/"/g'
+}
 
 up() {
   say "building the server jar (no tests run) and the image nuna-catalog:local"
@@ -43,6 +86,14 @@ up() {
   k wait --for=condition=available --timeout=5m deployment/postgres deployment/kafka deployment/silo
   k wait --for=condition=complete --timeout=3m job/seed
 
+  say "the catalog's own Silo user, $CATALOG_USER, which may read, write and list beneath the profile's prefix"
+  # Its vended credentials are cut down from these rights. Delete is in them on purpose, as some other grant may give
+  # it elsewhere: the delete policy with except, applied once the catalog is up to give it, takes it away again
+  # (D21), so the catalog's refused delete in smoke is that policy's doing.
+  silo_policy "$CATALOG_USER" "$CATALOG_SECRET" "$CATALOG_USER" <<'JSON'
+{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::warehouse/tables/*"]},{"Effect":"Allow","Action":["s3:ListBucket"],"Resource":["arn:aws:s3:::warehouse"]}]}
+JSON
+
   say "installing the chart"
   # The store by a name that resolves in every namespace: the catalog vends its endpoint with each table's
   # credentials, and the maintenance worker and its compaction Jobs read tables from namespaces of their own.
@@ -52,6 +103,21 @@ up() {
   # A new image under the same tag is not a change Helm sees.
   k rollout restart deployment/"$RELEASE"
   k rollout status deployment/"$RELEASE" --timeout=10m
+
+  say "the delete policies the catalog gives (D21): with except to $CATALOG_USER, with to the worker's own user"
+  # As a platform operator (oscar) applies them, from GET /management/v1/maintenance/delete-policies. The worker's
+  # user, $WORKER, is made here, before its chart (run.sh worker), so smoke can delete as it.
+  local policies except to
+  forward "svc/$RELEASE" 8181
+  policies=$(curl -sf -H "Authorization: Bearer $(tr -d '\r\n' < "$RUN/tokens/oscar.jwt")" \
+    "http://localhost:$port/management/v1/maintenance/delete-policies") || true
+  except=$(user_policy except "$policies")
+  to=$(user_policy to "$policies")
+  [[ -n "$except" && -n "$to" ]] || { echo "the catalog gave no user policies for $WORKER: $policies" >&2; return 1; }
+  echo "except $WORKER: $except"
+  silo_policy "$CATALOG_USER" "$CATALOG_SECRET" nuna-no-delete <<<"$except"
+  echo "to $WORKER: $to"
+  silo_policy "$WORKER" "$WORKER_SECRET" "$WORKER" <<<"$to"
 
   say "granting the demo groups their privileges (by SQL, as demo/demo.sh does)"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
@@ -86,27 +152,35 @@ call() {
   rm -f "$out"
 }
 
+# One S3 request to Silo on a local port as $who, signed by curl (SigV4) with an access key, its secret key and, for
+# vended credentials, their session token; fails the script on anything but the expected status (403: refused).
+s3() {
+  local port=$1 who=$2 key=$3 secret=$4 token=$5 method=$6 object=$7 expect=$8
+  local out status args
+  out=$(mktemp)
+  args=(-s -o "$out" -w '%{http_code}' -X "$method" --aws-sigv4 aws:amz:us-east-1:s3 --user "$key:$secret"
+    "http://localhost:$port/$object")
+  [[ -n "$token" ]] && args+=(-H "x-amz-security-token: $token")
+  [[ "$method" == PUT ]] && args+=(--data-binary "written by run.sh smoke")
+  status=$(curl "${args[@]}" || true)
+  if [[ "$status" != "$expect" ]]; then
+    echo "FAIL: $who $method $object answered $status, expected $expect: $(head -c 600 "$out")" >&2
+    rm -f "$out"
+    return 1
+  fi
+  echo "ok   $status  $who $method $object"
+  rm -f "$out"
+}
+
+# A string field of the last response, the last if it occurs more than once.
+field() { sed -nE 's/.*"'"$1"'":"([^"]*)".*/\1/p' "$RUN/last-response.json"; }
+
 smoke() {
-  local pods ports=() log port ns table
+  local pods ports=() ns table key secret token object
   mapfile -t pods < <(k get pods -l app.kubernetes.io/instance="$RELEASE" --field-selector=status.phase=Running -o name)
   (( ${#pods[@]} >= 2 )) || { echo "need two running servers, found ${#pods[@]}" >&2; return 1; }
-  # Each server on a free local port. kubectl itself runs in the background, so $! is the process to stop. Stopped
-  # when the script exits, since a failed call exits it (set -e) without returning: the list is global so the trap
-  # still sees it then.
-  forwards=()
-  trap 'kill "${forwards[@]}" 2>/dev/null || true' EXIT
   for pod in "${pods[@]:0:2}"; do
-    log=$(mktemp)
-    kubectl --context "$CONTEXT" -n "$NS" port-forward "$pod" :8181 >"$log" 2>&1 &
-    forwards+=($!)
-    port=
-    for _ in $(seq 1 30); do
-      port=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$log")
-      [[ -n "$port" ]] && break
-      sleep 1
-    done
-    [[ -n "$port" ]] || { echo "port-forward to $pod did not start: $(cat "$log")" >&2; return 1; }
-    rm -f "$log"
+    forward "$pod" 8181
     ports+=("$port")
     echo "server $pod on localhost:$port"
   done
@@ -123,16 +197,29 @@ smoke() {
   grep -q '"s3.access-key-id"' "$RUN/last-response.json" \
     && echo "ok   the load on :$a carried vended credentials" \
     || { echo "FAIL: no vended credentials in the load" >&2; return 1; }
+  # Who may delete beneath the table (D21): the worker's own Silo user, not the table's vended credentials nor the
+  # catalog's own user, whom the delete policy with except binds. A writer's vended credentials put the file.
+  call "$b" lake GET "/v1/lakehouse/namespaces/$ns/tables/events" "" 200 "X-Iceberg-Access-Delegation: vended-credentials"
+  key=$(field s3.access-key-id) secret=$(field s3.secret-access-key) token=$(field s3.session-token)
+  object=$(field location)
+  object=${object#s3://}/data/smoke-probe
+  forward svc/silo 9000
+  echo "silo on localhost:$port"
+  s3 "$port" "lake's vended credentials" "$key" "$secret" "$token" PUT "$object" 200
+  s3 "$port" "lake's vended credentials" "$key" "$secret" "$token" DELETE "$object" 403
+  s3 "$port" "$CATALOG_USER" "$CATALOG_USER" "$CATALOG_SECRET" "" DELETE "$object" 403
+  s3 "$port" "lake's vended credentials" "$key" "$secret" "$token" GET "$object" 200
+  s3 "$port" "$WORKER" "$WORKER" "$WORKER_SECRET" "" DELETE "$object" 204
   call "$b" lake DELETE "/v1/lakehouse/namespaces/$ns/tables/events" "" 204
   call "$a" lake DELETE "/v1/lakehouse/namespaces/$ns" "" 204
   echo "smoke passed on ${pods[0]#pod/} and ${pods[1]#pod/}"
 }
 
 # The maintenance worker (D30) beside the catalog, with its own identity everywhere: a client of its own at an
-# identity provider (Keycloak, the client-credentials grant), its own Silo user, and the chart's service account,
-# which may create compaction Jobs in their own namespace and nothing else.
+# identity provider (Keycloak, the client-credentials grant), its own Silo user with the delete policy the catalog
+# gives for it (run.sh up makes both), and the chart's service account, which may create compaction Jobs in their own
+# namespace and nothing else.
 worker() {
-  local forward log port policy
   say "building the worker jar (no tests run) and the image nuna-maintenance:local"
   (cd "$REPO" && ./gradlew -q :catalog-maintenance:bootJar)
   docker build -q -f "$REPO/deploy/image/maintenance.Dockerfile" -t nuna-maintenance:local \
@@ -146,33 +233,6 @@ worker() {
   say "starting Keycloak, the worker's identity provider, in namespace $NS"
   k apply -f "$REPO/deploy/local/keycloak.yaml"
   k wait --for=condition=available --timeout=5m deployment/keycloak
-
-  say "the worker's own Silo user, with the delete policy the catalog gives for it"
-  # The catalog runs as Silo's root user here, whom no policy binds, so the other policy (except) is not applied.
-  log=$(mktemp)
-  kubectl --context "$CONTEXT" -n "$NS" port-forward "svc/$RELEASE" :8181 >"$log" 2>&1 &
-  forward=$!
-  port=
-  for _ in $(seq 1 30); do
-    port=$(sed -n 's/^Forwarding from 127\.0\.0\.1:\([0-9]*\) .*/\1/p' "$log")
-    [[ -n "$port" ]] && break
-    sleep 1
-  done
-  policy=$(curl -sf -H "Authorization: Bearer $(tr -d '\r\n' < "$RUN/tokens/oscar.jwt")" \
-    "http://localhost:$port/management/v1/maintenance/delete-policies") || true
-  kill "$forward" 2>/dev/null || true
-  rm -f "$log"
-  # The user policy "to" the worker, a JSON string in the answer, unescaped.
-  policy=$(sed -nE 's/.*"to":"'"$WORKER"'","policy":"((\\"|[^"])*)".*/\1/p' <<<"$policy" | sed 's/\\"/"/g')
-  [[ -n "$policy" ]] || { echo "the catalog gave no delete policy for $WORKER" >&2; return 1; }
-  echo "$policy"
-  k exec -i deployment/silo -- sh -ec "
-    cat > /tmp/$WORKER-policy.json
-    mc alias set local http://localhost:9000 nunademo nunademo-secret-key >/dev/null
-    mc admin user add local $WORKER nuna-maintenance-secret-key
-    mc admin policy create local $WORKER /tmp/$WORKER-policy.json
-    mc admin policy detach local $WORKER --user $WORKER >/dev/null 2>&1 || true
-    mc admin policy attach local $WORKER --user $WORKER" <<<"$policy"
 
   say "granting the worker's group nuna-workers write on lakehouse"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
