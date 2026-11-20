@@ -1,0 +1,17 @@
+Breaks: a grant, revoke or grant listing on a namespace, table or view the caller holds nothing on is refused with 403 again, so the name leaks.
+Module: catalog-server
+Test: GrantHiddenNamesTest#aGrantOnANamespaceTheGranterHoldsNothingOnAnswersAsForOneThatDoesNotExist+aGrantOnATableOrViewTheGranterHoldsNothingOnAnswersAsForOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+index b25c50b..f364d93 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/GrantRoutes.java
+@@ -316,7 +316,7 @@ class GrantRoutes {
+             AccessDenied refused = denials.refuse(request.actor(), operation.name(), on.named(),
+                     denied.privilege() == null ? null : denied.privilege().wireName(),
+                     denied.reason().name().toLowerCase(java.util.Locale.ROOT), denied.message());
+-            throw holdings.something(request.caller(), on.target()) ? refused : on.missing();
++            throw refused;
+         }
+     }
+ 

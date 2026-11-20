@@ -1,0 +1,18 @@
+Breaks: a grant on a table or view whose namespace does not exist answers that the namespace does not exist, so a hidden table's answer tells the namespace is there.
+Module: catalog-server
+Test: GrantHiddenNamesTest#aGrantOnATableOrViewTheGranterHoldsNothingOnAnswersAsForOneThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Securables.java b/catalog-server/src/main/java/nuna/catalog/server/security/Securables.java
+index 7253b1f..1d28708 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Securables.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Securables.java
+@@ -85,7 +85,8 @@ final class Securables {
+                 CatalogError missing = CatalogError.of(404, kind == CatalogObject.Kind.TABLE
+                         ? "NoSuchTableException" : "NoSuchViewException",
+                         spec.type() + " does not exist: " + dotted(levels) + "." + spec.name());
+-                CatalogObject object = namespace(levels)
++                CatalogObject object = Optional.of(namespace(levels).orElseThrow(() -> CatalogError.of(404,
++                                "NoSuchNamespaceException", "Namespace does not exist: " + dotted(levels))))
+                         .flatMap(namespace -> store.findObject(namespace.id(), Names.normalize(spec.name())))
+                         .filter(o -> o.kind() == kind)
+                         .orElseThrow(() -> missing);

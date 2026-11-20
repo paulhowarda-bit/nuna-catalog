@@ -1,0 +1,17 @@
+Breaks: a management path to a table or view whose namespace does not exist answers that the namespace does not exist, so a hidden table's answer tells the namespace is there.
+Module: catalog-server
+Test: ManagementHiddenNamesTest#everyRouteOnATableAnswersAsForATableThatDoesNotExist
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java b/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java
+index d2a84f2..a2acdba 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/Management.java
+@@ -121,7 +121,7 @@ class Management {
+         CatalogError missing = kind == CatalogObject.Kind.TABLE
+                 ? CatalogError.of(404, "NoSuchTableException", "Table does not exist: " + qualified)
+                 : CatalogError.of(404, "NoSuchViewException", "View does not exist: " + qualified);
+-        CatalogObject object = store.findNamespace(catalog.id(), levels.stream().map(Names::normalize).toList())
++        CatalogObject object = Optional.of(namespace(catalog, levels))
+                 .flatMap(record -> store.findObject(record.id(), Names.normalize(name)))
+                 .filter(o -> o.kind() == kind)
+                 .orElseThrow(() -> missing);

@@ -1,0 +1,17 @@
+Breaks: on the management and grant routes a grant on something inside a namespace no longer lets the caller learn the namespace exists, unlike the Iceberg routes and the catalog list (item 20).
+Module: catalog-server
+Test: ManagementHiddenNamesTest#aGrantOnAnythingInANamespaceLetsTheCallerSeeTheNamespace
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+index e4beada..d08c053 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java
+@@ -67,7 +67,7 @@ public class Holdings {
+             return true;
+         }
+         Set<String> groups = caller.subject().groups();
+-        if (groups.isEmpty()) {
++        if (true || groups.isEmpty()) {
+             return false;
+         }
+         Map<UUID, UUID> parents = new HashMap<>();

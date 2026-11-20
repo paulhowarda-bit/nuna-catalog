@@ -253,6 +253,41 @@ class SecurityGateTest {
     }
 
     /**
+     * D18, amended again 2026-11-19 (backlog 73): the management API hides names as the Iceberg routes do. Ann holds
+     * nothing on hr, so its governance, its DR freeze and the grants on its tables answer as for a name that does
+     * not exist, and the batch check answers for hr.staff as for a missing table; on sales, where she holds select,
+     * she is refused with 403.
+     */
+    @Test
+    void theManagementApiHidesNamesAsTheIcebergRoutesDo() throws Exception {
+        String hr = "/management/v1/catalogs/gate/namespaces/hr";
+        String nowhere = "/management/v1/catalogs/gate/namespaces/nowhere";
+        assertAnsweredAsMissing(send(ANN, "GET", hr + "/governance", null),
+                send(ANN, "GET", nowhere + "/governance", null), "hr", "nowhere", "loadGovernance");
+        assertAnsweredAsMissing(send(ANN, "GET", hr + "/tables/staff/governance", null),
+                send(ANN, "GET", hr + "/tables/none/governance", null), "staff", "none", "loadGovernance");
+        assertAnsweredAsMissing(send(ANN, "GET", hr + "/tables/staff/governance", null),
+                send(ANN, "GET", nowhere + "/tables/staff/governance", null), "hr", "nowhere", "loadGovernance");
+        assertAnsweredAsMissing(send(ANN, "PUT", hr + "/dr-freeze", "{\"reason\":\"drill\"}"),
+                send(ANN, "PUT", nowhere + "/dr-freeze", "{\"reason\":\"drill\"}"), "hr", "nowhere", "setDrFreeze");
+        assertAnsweredAsMissing(send(ANN, "GET", GRANTS + "/on?type=table&namespace=hr&name=staff", null),
+                send(ANN, "GET", GRANTS + "/on?type=table&namespace=hr&name=none", null), "staff", "none",
+                "listGrants");
+        assertDenied(send(ANN, "PUT", "/management/v1/catalogs/gate/namespaces/sales/attributes/owner",
+                "{\"value\":\"desk\",\"provenance\":\"hr\"}"), "setGovernanceAttribute", "no_privilege");
+
+        HttpResponse<String> checked = send(ANN, "POST", GRANTS + "/check", """
+                {"checks":[
+                  {"securable":{"type":"table","namespace":["hr"],"name":"staff"},"privilege":"select"},
+                  {"securable":{"type":"table","namespace":["hr"],"name":"none"},"privilege":"select"}]}""");
+        ok(checked);
+        assertThat(JsonPath.<Object>read(checked.body(), "$.results[0]")).isEqualTo(java.util.Map.of(
+                "privilege", "select", "allowed", false, "reason", "table does not exist: hr.staff"));
+        assertThat(JsonPath.<Object>read(checked.body(), "$.results[1]")).isEqualTo(java.util.Map.of(
+                "privilege", "select", "allowed", false, "reason", "table does not exist: hr.none"));
+    }
+
+    /**
      * A metrics report needs select on its table, as a load does; a refusal is audited like any other, and a caller
      * that holds nothing on the table is answered as if it did not exist (D18).
      */
@@ -389,7 +424,10 @@ class SecurityGateTest {
         assertDenied(grant(SAM, namespaceSpec("sales"), "stewards", "select"), "grant", "separation-of-duties");
         assertThat(audit.denials().getLast().reason()).contains("no one grants to a group they belong to");
         noContent(grant(SAM, tableSpec("sales/eu/orders"), "auditors", "select"));
-        assertDenied(grant(SAM, namespaceSpec("hr"), "auditors", "select"), "grant", "no_privilege");
+        // Sam holds nothing on hr: it is hidden from him (D18, backlog 73), and the refusal is audited all the same.
+        assertHidden(grant(SAM, namespaceSpec("hr"), "auditors", "select"), "NoSuchNamespaceException", "grant");
+        assertAnsweredAsMissing(grant(SAM, namespaceSpec("hr"), "auditors", "select"),
+                grant(SAM, namespaceSpec("nowhere"), "auditors", "select"), "hr", "nowhere", "grant");
         assertDenied(grant(DANA, catalogSpec(), "auditors", "select"), "grant", "no_privilege");
         assertError(grant(GINA, catalogSpec(), "auditors", "superuser"), 400, "BadRequestException");
 
