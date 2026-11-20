@@ -312,18 +312,12 @@ final class Worker implements AutoCloseable {
             CleanupWindow.Night night = open.get();
             job(ScanReport.Failure.ORPHAN_SCAN, ScanSpans.Part.ORPHAN_SCAN, "scanning for orphans of", work, report,
                     () -> {
-                LocalDate previous = orphanScans.put(work.id(), night.date());
                 List<String> found;
                 try {
                     found = OrphanScan.find(table, storage, now.minus(work.duration("orphan-removal.older-than")),
                             () -> night.contains(clock.instant()), () -> { });
                 } catch (OrphanScan.CutShort e) {
                     // Not recorded: the table is scanned again the next night.
-                    if (previous == null) {
-                        orphanScans.remove(work.id());
-                    } else {
-                        orphanScans.put(work.id(), previous);
-                    }
                     report.orphanScansCutShort++;
                     LOG.info("The window's end cut short the orphan scan of table {} ({})", work.name(), work.id());
                     return;
@@ -331,6 +325,8 @@ final class Worker implements AutoCloseable {
                 report.orphanScans++;
                 report.orphansFound += found.size();
                 record(work, table, found, report);
+                // Tonight's only once it is done: a scan that failed is tried again at the next scan (backlog 5).
+                orphanScans.put(work.id(), night.date());
             });
         }
     }

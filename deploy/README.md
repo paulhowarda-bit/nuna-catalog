@@ -211,13 +211,26 @@ On Docker Desktop with Kubernetes switched on:
 ```bash
 deploy/local/run.sh up      # jar, image nuna-catalog:local, PostgreSQL, Kafka, Silo, the chart (2 servers)
 deploy/local/run.sh smoke   # through each server: 401, config, namespace, table, vended credentials, drops
-deploy/local/run.sh down    # uninstall and delete the namespace
+deploy/local/run.sh worker  # after up: Keycloak, the maintenance worker's chart, its own identity everywhere
+deploy/local/run.sh down    # uninstall and delete the namespaces
 ```
 
-- It uses namespace `nuna-local`, and always passes `--context docker-desktop`
+- It uses namespace `nuna-local` (`NUNA_K8S_NAMESPACE`), and always passes `--context docker-desktop`
   (`NUNA_K8S_CONTEXT`), never the current context.
 - The test issuer is `demo/Mint.java`. Its key and tokens are in `~/.nuna-k8s` (`NUNA_K8S_HOME`).
 - Memory limits add up to 3 GiB: two servers at 768 MiB, Kafka 640, Silo 512, PostgreSQL 384.
 - `up` takes about 2 minutes. To reach the console:
   `kubectl --context docker-desktop -n nuna-local port-forward svc/nuna-catalog 8181:8181`, then open
   <http://localhost:8181/ui/> and paste a token from `~/.nuna-k8s/tokens/`.
+- The catalog names Silo `silo.<namespace>.svc`, not `silo`: it vends that endpoint with each table's credentials,
+  and the worker and its compaction Jobs read tables from other namespaces, where a short Service name does not
+  resolve.
+- `worker` installs the maintenance worker's chart [D30] in `nuna-local-maintenance`, its compaction Jobs in
+  `nuna-local-compaction`, with `local/worker-values.yaml`. The worker signs in with the client-credentials grant
+  as `service-account-nuna-maintenance` (group `nuna-workers`, granted `write` on `lakehouse`) at Keycloak
+  (`local/keycloak.yaml`, in the catalog's namespace), lists and deletes with a Silo user of its own,
+  `nuna-maintenance`, to which it attaches the `to` delete policy the catalog gives, and launches Jobs as the
+  chart's service account. Its cleanup window is open all day, turning at 12:00 UTC, and it scans every minute. The
+  Jobs run the engine matrix's Spark image, `nuna-engines/spark:4.1.4-iceberg-1.12.0`, which must be built first
+  (`docker build -t <that name> catalog-tests-engines/images/spark`). It adds 3 GiB of limits: Keycloak 768 MiB,
+  the worker 768 MiB, one Job at a time at 1.5 GiB.
