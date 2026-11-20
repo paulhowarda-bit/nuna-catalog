@@ -87,6 +87,8 @@ filter value: each value comes from the small fixed sets above. The server span 
 Over OTLP the timers arrive as `nuna.store`, `nuna.objectstore`, `nuna.sts` and `nuna.audit.publish`. By
 Micrometer's Prometheus naming they become `nuna_store_seconds` (`_count`, `_sum`, `_max`), `nuna_objectstore_seconds`,
 `nuna_sts_seconds` and `nuna_audit_publish_seconds`, each labelled with the tags above plus Micrometer's `error`.
+That naming is for a Prometheus that scrapes Micrometer. Pushed over OTLP, as nuna does today, they arrive in
+milliseconds, `nuna_store_milliseconds_count` and `_sum` and so on, as the dashboards assume (dashboards-and-alerts.md).
 
 ## Code, tests and bites
 
