@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**19 open:** 6 S, 7 M, 2 L, 4 XL.
+**20 open:** 6 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,12 +25,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
-| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
+| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [90](backlog/90.md) | S | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | one failure told apart from a bad token and mapped to 503, with Java-only tests and a bite | 2026-11-20 |
 | [91](backlog/91.md) | S | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | one-line changes in six tests and a system property for the child JVMs; WorkerTraceTest's in-process worker service may need more (below) | 2026-11-20 |
+| [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 
 ## Open items in full
 
@@ -149,7 +150,7 @@ Done when the milestone's scope is built and its gate is green, as for the other
 
 ### 28. DR replication-watermark verifier (v1.x)
 
-- Decided: 2026-11-19, D37
+- Decided: 2026-11-20, D37
 - Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
 - Effort: XL, the verifier, the watermark on four stores, its readout and the rewind (Paul chose the rewind now, 2026-11-20); item 83 folded in
 
@@ -226,6 +227,47 @@ so their claims overlap and they go one at a time, 69 (S) first.
    buckets to PLT-4 at work? Recommended: yes.
 
 **Paul's answers on the proposed scope, 2026-11-20 (D37, amended):** all four as recommended: every file, data included, must reach DR ("Every file, data too"); the rewind is built now ("Yes, now"), so the item is XL; the verifier runs in the maintenance worker ("Maintenance worker"); the DR store is the same bucket on another endpoint, renamed AWS buckets wait on PLT-4 ("Yes"). Item 83 is folded in ("Fold into 28"): the reconcile stops at the watermark, so it never moves a table to a version whose files are not all in the DR store. The proposed scope above is settled; build it after items 69 and 10, which edit the same reconcile code.
+
+**Built, 2026-11-20 (worktree-agent-a84494e1252023a8f); open until item 92 lands, which holds what is left.** The
+scope's "In", but the worker chart and the overnight drill leg:
+- The watermark on all four stores: `recordDrWatermark` (only rises, never above the pointer, active objects only),
+  `listDrBehind`, purged with its object; PostgreSQL V9, CockroachDB V8, Oracle V10, MongoDB step 8; `DrSuite` in each
+  store suite (heavy).
+- The routes: `GET /management/v1/maintenance/dr-work` and `PUT .../maintenance/tables/{id}/dr-watermark` for the
+  maintenance principal, `GET /management/v1/dr/watermarks` for platform operators (`DrRoutes`, `DrRoutesTest`).
+- The verifier in the worker (`DrVerify`, `DrVerifier`, `DrStores`): every `nuna.maintenance.dr.verify-interval`
+  when `nuna.maintenance.dr.replicas.<profile>` names a DR store; every file a version adds, data included; a whole
+  check in one listing for a table with no watermark (`DrVerifyTest`, `DrVerifierTest`, `DrStoresTest`).
+- Meters `nuna.maintenance.dr.*`, alerts `NunaDrLagging` (past 15 minutes) and `NunaDrVerifierNotPassing`.
+- The rewind (`dr-reconcile` with `"rewind": true`) and the walk stopping at the watermark (item 83):
+  `ReconcileWatermarkTest`, `DrRewindRouteTest` (heavy).
+- Docs: `docs/observability/dr-watermark.md`, worker-metrics.md, dashboards-and-alerts.md, the DR runbook in
+  `deploy/README.md`. Bites in `bites/D37/`: data files left out, a lower watermark accepted, a rewind without a
+  freeze, a rewind past the watermark, the walk past the watermark.
+
+Left (item 92): the worker chart's values comments, the settings in `catalog-maintenance/README.md` and
+`docs/install-at-work.md` (items 87 and 88 held those files), and `DrDrillTest`'s leg with the DR store behind.
+
+Two choices made in building it, for Paul to confirm:
+1. A version that adds nothing to the newest safe version (no snapshot or statistics file it lacks) is safe on its
+   metadata file alone, even after a version that is not. Without it the version a rewind writes could never pass,
+   since it follows the versions it gave up.
+2. The walk stops at the watermark literally: a table with a watermark never walks forward (its watermark is never
+   above its pointer), so commits the DR store holds whole beyond the DR database's pointer are not recovered; a
+   table with no watermark walks as before. The rewind is for tables; views are neither walked nor rewound, as
+   before.
+
+**Paul's answers to the questions above, 2026-11-20 (D37, amended again).** Left for item 28, on top of what landed
+at d176a3b:
+1. "Walk with a file check": the reconcile walks every table forward from the DR database's pointer, watermark or
+   not, only through versions whose every added file, data included, is in the DR store, checked at recovery,
+   stopping at the first that is not. This replaces "stops at the watermark" and covers the tables with no
+   watermark, which walk unchecked today. `bites/D37/walk-past-the-watermark` is recorded again for the new check.
+2. "Accept it": the relaxed safe-version rule stays as built.
+3. "Rewind views too": `dr-reconcile`'s rewind moves each frozen view back to its watermark as it does tables,
+   with a Java-only test and a bite.
+4. "Owner decides": a table still without a watermark is reported and left alone, as built.
+Done when 1 and 3 are built with Java-only tests and bites, and the heavy and overnight tests named above pass.
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -443,8 +485,8 @@ The item stays open until an overnight run's heavy build passes `CredentialExpir
 ### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
 
 - Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
-- Touches: catalog-server/src/test/
-- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut
+- Touches: catalog-server/src/test/, catalog-server/build.gradle.kts, bites/M8/
+- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass
 
 Item 7 made the Oracle and MongoDB stores raise `StoreUnavailableException` for a database that cannot be reached,
 is failing over or is out of connections. Its checks stop at the store: the Java-only `UnavailableFailuresTest` in
@@ -459,6 +501,32 @@ Done when `catalog-server`'s `OracleBackendTest` and `MongodbBackendTest` (both 
 their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a proxy) and show a load-table and a
 commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
 link is back.
+
+Written on 2026-11-20 (worktree-agent-af0dfeed53e61ec78), not yet run; open until both pass in an overnight run:
+
+- `OracleBackendTest` and `MongodbBackendTest` put their database behind Toxiproxy on a Docker network, as `OracleFree`
+  and `MongoReplicaSet` do, and the server connects through it; setup goes to the database directly.
+  `LinkForTests` is that proxy for the server's tests. The store fixtures themselves could not be shared: they are
+  package-private in their modules' tests, which no other module depends on (only `catalog-store-api`'s suite is a
+  test jar), and those modules are item 28's. What the build does share is reused: the
+  `testcontainers-toxiproxy` dependency and the pinned `toxiproxy.image`, now in `catalog-server/build.gradle.kts`.
+- Each class's new test `anOutageAnswers503WithRetryAfterUntilTheLinkIsBack` runs `BackendFlow.outage`: a new table,
+  then with the link cut a load and a commit (set-properties) each answer 503 `ServiceUnavailableException`,
+  `Retry-After: 2`, `application/json`, `$.error.code` 503. Then, the link back, the load (repeated on Retry-After,
+  two minutes at most, as a client would while the pool or driver reconnects) answers 200 without the property, so
+  the 503 commit applied nothing; the commit answers 200 with it, and a reload shows it. The server's pool and driver
+  keep their defaults, so each 503 can take their 30 s wait (HikariCP's connection timeout, MongoDB's server
+  selection).
+- `StoreOutageRoutesTest` (Java only, `catalog-server` had none): the real table routes, commit engine and
+  `ErrorResponses`, served through MockMvc, over a store double that raises `StoreUnavailableException`. With the
+  database away, a load and a commit answer 503 with Retry-After in the Iceberg shape at their first read; lost
+  mid-request, a load meets it at its pointer read (`ErrorResponses`) and a commit inside the engine
+  (`CommitReply.Unavailable`, `ObjectRoutes.reply`). Bites: `bites/M8/store-outage-escapes-routes.patch` (the
+  handler gone: 500) and `bites/M8/commit-unavailable-answers-500.patch`. With both breaks applied, the fast build
+  failed exactly those three tests, each with "expected: 503 but was: 500" (143 tests in `catalog-server`, 3 failed).
+
+Left: the two heavy tests did not run (no heavy build on 2026-11-20); the overnight run's heavy build shows whether
+they pass. The item stays open until it does.
 
 ### 79. deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked
 
@@ -601,6 +669,29 @@ Done when every in-JVM call uses the worker's storage from `TestCatalog` (make `
 `catalog.workerStorage()`), the child JVMs get the role (a system property `ChildJvm.start` sets on AWS, read by
 `ChildJvm.storage`), `WorkerTraceTest` either gets the role or assumes it is not on AWS, and those tests pass with
 `-Ps3=aws` (heavy: PostgreSQL and Kafka containers, and the AWS sign-in).
+
+### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
+
+- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
+- Touches: deploy/helm/nuna-maintenance/, catalog-maintenance/README.md, docs/install-at-work.md, catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java, deploy/README.md, docs/observability/dr-watermark.md
+- Effort: M, the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight.
+
+Item 28 built the DR replication watermark (D37, amended 2026-11-20): the watermark on all four stores, the
+verifier in the maintenance worker, its routes, readout, meters and alerts, the rewind, and the reconcile stopping at
+the watermark. Three parts were left:
+
+- **The worker chart's values** (`deploy/helm/nuna-maintenance/values.yaml`) do not describe
+  `nuna.maintenance.dr.replicas.<profile>` (endpoint, region, path-style access, keys, CA bundle) or
+  `nuna.maintenance.dr.verify-interval`. The chart already renders them, as any setting under `config`, with the
+  secret key in `secrets.values` and a CA bundle in `storageCaConfigMap`, as `deploy/README.md`'s runbook says; items
+  87 and 88 held the chart while item 28 ran. Done when the values file comments them as it does `storage`.
+- **The worker's settings in `catalog-maintenance/README.md` and `docs/install-at-work.md`** (held by item 88 then):
+  the DR replicas and the verify interval, the DR store's read-only keys, and that the verifier is off without a
+  replica. Done when both list them.
+- **The overnight drill's leg with the DR store behind** (item 28's gate): `DrDrillTest` gains a leg on two Silo
+  stores and a replicator the test pauses: region lost, DR promoted, a verifier pass in DR, freeze, rewind, thaw;
+  every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived. Done when the
+  leg is in and an overnight run has passed it.
 
 ## Done and dropped
 

@@ -185,6 +185,27 @@ class ManagementAuthorizationTest {
     }
 
     @Test
+    void theDrWorkListAndReportsAreForTheMaintenancePrincipal() {
+        String id = api.id(ns, "tables", "t");
+        String report = "/maintenance/tables/" + id + "/dr-watermark";
+        String location = JsonPath.read(expect(api.rest("GET", table, null), 200).body(), "$.metadata-location");
+        String body = "{\"version\":1,\"metadata-location\":\"" + location + "\"}";
+        refused(api.manage("GET", "/maintenance/dr-work", null));
+        refused(api.manage("GET", "/maintenance/dr-work", null, AUTH, api.operator()));
+        refused(api.manage("PUT", report, body));
+        refused(api.manage("PUT", report, body, AUTH, api.operator()));
+        expect(api.manage("GET", "/maintenance/dr-work", null, AUTH, api.maintenance()), 200);
+        expect(api.manage("PUT", report, body, AUTH, api.maintenance()), 204);
+    }
+
+    @Test
+    void theDrWatermarksAreForAPlatformOperator() {
+        refused(api.send("GET", "/management/v1/dr/watermarks", null));
+        refused(api.send("GET", "/management/v1/dr/watermarks", null, AUTH, api.maintenance()));
+        expect(api.send("GET", "/management/v1/dr/watermarks", null, AUTH, api.operator()), 200);
+    }
+
+    @Test
     void theCatalogListShowsOnlyCatalogsTheCallerHoldsSomethingOn() {
         // D18, amended 2026-11-19 (item 20). The tester and the steward hold grants on the catalog, the grant
         // admin manage-grants on every catalog; the operator holds none but runs the deployment.

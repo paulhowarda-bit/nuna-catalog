@@ -1,0 +1,25 @@
+Breaks: a store outage that escapes a route (StoreUnavailableException) answers 500 ServiceFailureException, which a client cannot safely repeat, not 503 with Retry-After.
+Module: catalog-server
+Test: StoreOutageRoutesTest#aDatabaseAwayAnswersLoadsAndCommits503+aDatabaseLostMidLoadAnswers503
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java b/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java
+index 1d6ef84..ed4ec73 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ErrorResponses.java
+@@ -51,16 +51,6 @@ class ErrorResponses {
+         return body(404, "NotFoundException", error.getMessage());
+     }
+ 
+-    /** The store could not be reached and nothing was applied: 503 with Retry-After, so the client repeats. */
+-    @ExceptionHandler(StoreUnavailableException.class)
+-    ResponseEntity<String> unavailable(StoreUnavailableException error) {
+-        LOG.warn("catalog store unavailable: {}", error.getMessage());
+-        return ResponseEntity.status(StoreOutage.STATUS)
+-                .header(HttpHeaders.RETRY_AFTER, StoreOutage.RETRY_AFTER_SECONDS)
+-                .contentType(MediaType.APPLICATION_JSON)
+-                .body(StoreOutage.body("Catalog store unavailable; nothing was applied: " + error.getMessage()));
+-    }
+-
+     /** Spring's own request errors (unknown route, wrong method, bad parameter) keep their status. */
+     @ExceptionHandler(Exception.class)
+     ResponseEntity<String> other(Exception error) {

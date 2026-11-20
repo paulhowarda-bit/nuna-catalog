@@ -5,6 +5,8 @@
   stores and the identity provider run elsewhere [D36], and the values name them.
 - `image/maintenance.Dockerfile` and `helm/nuna-maintenance/`: the maintenance worker's image and chart
   [D30], one release beside each catalog deployment. See catalog-maintenance/README.md.
+- `image/audit-tables.Dockerfile` and `helm/nuna-audit-tables/`: the audit-tables writer's image and chart [D23],
+  which writes every audit record into the audit catalog's `events` table. See catalog-audit-tables/README.md.
 - `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
 
 ## The image
@@ -208,8 +210,9 @@ telemetry:
 
   The catalog does not apply them itself: its own credentials would then need the right to undo them. Apply
   them again after changing a profile's prefixes. A profile with no `maintenance-principal` is listed as
-  `unprotected`. Only the Ceph form has a test (`DeletePolicyCephTest`, heavy, `-Ps3=ceph`, in the heavy
-  pass's Ceph leg), and it has not run yet. `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
+  `unprotected`. Each form has a heavy test, and each ran on 2026-11-20 (backlog 4): `DeletePolicyAwsTest`
+  on real S3 (`-Ps3=aws`), `DeletePolicyMinioTest` on Silo with non-root users, and `DeletePolicyCephTest`
+  (`-Ps3=ceph`, in the heavy pass's Ceph leg). `local/run.sh up` applies the MinIO form to Silo, and its `smoke`
   tries a delete as each user ("Trying it locally").
 - **Compaction Jobs [D30].** With `config.nuna.maintenance.compaction.image` set, the maintenance worker
   launches its compaction Jobs in `config.nuna.maintenance.compaction.namespace`. Create that namespace
@@ -221,6 +224,51 @@ telemetry:
 - **Resources.** The defaults (1 CPU, 2 GiB, heap at 75 % of that) are a starting point, not a measurement.
   Each metadata cache may hold up to `nuna.rest.metadata-cache-chars` (256 M characters by default).
   Size the limit on work hardware.
+
+## Recovering in the DR region
+
+The catalog database and object storage each replicate to the DR region asynchronously (D37), and neither waits for the
+other. After the primary region is lost, the DR database may name files the DR store never got, or the DR store may
+hold commits the DR database never saw. This runbook brings each table back to a version DR holds whole, as a
+platform operator. Its routes, the DR watermark and the verifier are in `docs/observability/dr-watermark.md`. The
+bucket naming per region and the replication SLA come from PLT-4 at work; until then the DR store is the same buckets
+and paths on another endpoint (Paul, 2026-11-20).
+
+**Before a disaster.** Run the maintenance worker's DR verifier in the primary region: name each storage profile's
+DR replica, read-only keys on the DR store, under `nuna.maintenance.dr.replicas.<profile>` (endpoint, region,
+path-style access, keys, CA bundle); `nuna.maintenance.dr.verify-interval` sets how often it passes (1 minute by
+default). In the worker chart they go under `config.nuna.maintenance.dr`, the secret key under `secrets.values` as
+`nuna.maintenance.dr.replicas.<profile>.secret-access-key` and a CA bundle in `storageCaConfigMap`, as a storage
+profile's do; the chart's values do not describe them yet (item 92).
+The verifier keeps each table's DR watermark, the newest version whose every file the DR store holds, in the catalog
+database, so it reaches DR with the database. `GET /management/v1/dr/watermarks` lists the tables behind and their
+lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes.
+
+**In the DR region,** with the DR database promoted and the catalog servers started on it and on the DR store:
+
+1. **Freeze** every catalog, before anything writes or cleans up: `PUT /management/v1/catalogs/{catalog}/dr-freeze`
+   with `{"reason": "DR recovery"}`. Commits, creates, drops, renames, undrops and purges are refused, and the
+   maintenance worker's scans pass the frozen tables by.
+2. **Verify.** Start the maintenance worker in DR with its replicas naming the DR store itself, and wait for one DR
+   pass to end after the start (`nuna.maintenance.dr.pass.last.success`, or the worker's log). The DR work list
+   includes frozen tables, so the pass moves each watermark as far as the DR store allows.
+3. **Read the plan.** `POST /management/v1/catalogs/{catalog}/dr-reconcile` with `{"rewind": true}` lists each table
+   above its watermark, the watermark it would move back to, and its `lost` commits (version, commit id, time,
+   principal): the commits DR does not hold whole. Hand the lost tail to the tables' owners for business
+   reconciliation. A table with no watermark (`"watermark": null`) has no version known whole in DR; it is not moved,
+   and its owner decides what to do with it.
+4. **Rewind.** The same with `{"rewind": true, "apply": true}`: each frozen table above its watermark moves back to
+   it in one journaled commit, the watermark's metadata written again as the next version. A table that did not move
+   says why (`apply-problem`); a pointer that moved since the plan means run step 3 again.
+5. **Walk forward** tables with no watermark, as before the watermark: `{}` reports, `{"apply": true}` moves each
+   along its proven metadata files. A table with a watermark is never walked past it. Table locations no catalog holds
+   are listed as `unknown-locations`.
+6. **Thaw:** `DELETE /management/v1/catalogs/{catalog}/dr-freeze`. Then register the unknown locations by name, if
+   wanted: a register is refused under a freeze.
+
+Each step is a platform operator's (D18, amended 2026-11-20); the rewind's commits reach the audit trail as the
+fast-forward's do. The overnight
+DR drill (`DrDrillTest`) runs the freeze, reconcile and thaw; its leg with the DR store behind is item 92's.
 
 ## Trying it locally
 

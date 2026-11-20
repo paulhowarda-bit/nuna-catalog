@@ -55,6 +55,10 @@ public sealed interface WriteResult {
          */
         FLAGGED,
         /** The condition the caller set, asked inside the write, refused it ({@link GrantStore#putGrantIf}). */
-        NOT_ADMITTED
+        NOT_ADMITTED,
+        /** A higher DR watermark is kept, and a watermark never moves back ({@link DrStore#recordDrWatermark}). */
+        WATERMARK_BEHIND,
+        /** The DR watermark is above the version of the object's main pointer ({@link DrStore#recordDrWatermark}). */
+        WATERMARK_AHEAD
     }
 }

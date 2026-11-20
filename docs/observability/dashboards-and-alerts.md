@@ -111,6 +111,7 @@ The series the files read, 56 in all from 44 meters:
 | `NunaRegulatedSchemaChange`, `NunaLargeMetadata` | warning | Their counter rose in the last 15 minutes |
 | `NunaWorkerNotScanning`, `NunaWorkerGone` | page | worker-metrics.md, "Alerts" |
 | `NunaPurgesFailing`, `NunaDeletionsFailing`, `NunaMaintenanceJobFailing`, `NunaScansSlowerThanInterval`, `NunaCompactionFallingBehind`, `NunaFilesOutsideTable` | warning | worker-metrics.md, "Alerts" (a "ticket" there) |
+| `NunaDrLagging`, `NunaDrVerifierNotPassing` | page | worker-metrics.md, "Alerts": a commit not whole in the DR store for 15 minutes, or no DR verifier pass for 15 minutes (D37, item 28) |
 
 - **Burn rates.** Each latency SLO allows 1% of its answers past the bound: that is its error budget. The windows and
   factors are the Google SRE workbook's multiwindow alerts for a 30-day budget: 14.4 spends 2% of the month's budget
@@ -127,6 +128,9 @@ The series the files read, 56 in all from 44 meters:
   to set at work. `NunaPurgesFailing` and `NunaDeletionsFailing` wait two scan intervals (`for: 20m`; D43, item 80),
   so a failure the next scan's retry clears opens no ticket. `NunaWorkerGone` fires only when no worker reports at
   all.
+- **The DR rules** (item 28) fire only for a worker with a DR replica named. `NunaDrLagging`'s 15 minutes is S3
+  Replication Time Control's 99.9% bound, until PLT-4 gives the replication SLA; its `for: 5m` rides out one slow
+  pass.
 
 ## Not covered
 
@@ -157,6 +161,10 @@ p99 panel, checked the same way):
 - Every series name in an expression maps back, by the translation above, to a meter named in these docs and in the
   main code, with the unit its type gives (a timer `_milliseconds`, a counter `_total`); every label maps back to a
   documented tag. All 56 series and 17 labels did. A misspelt name and a wrong label put in by hand were both caught.
+
+Item 28 added `NunaDrLagging` and `NunaDrVerifierNotPassing` (2026-11-20), 19 rules in all: both parse as rule
+files with a `severity` of `page`, `NunaDrLagging` has a `for: 5m`, and their two series map back to the DR
+verifier's meters in worker-metrics.md.
 
 Not checked: that the translation above is what work's Prometheus does (item 43), that Grafana imports the files,
 and that Prometheus loads the rules. Item 44 is done at work when the dashboards show live data and each alert has

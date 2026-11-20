@@ -3,16 +3,16 @@ Module: catalog-core
 Test: ReconcileOutageTest#shortOutageIsWaitedOut+timedOutageNotLanded+outageLongerThanTheBudget+lookupsStopAtTheTimeBudget+eachStepHasItsOwnBudget
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index c1c9174..edfd344 100644
+index a8867d9..f6a4417 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -193,8 +193,7 @@ public final class Reconcile {
-                 }
-                 committed = result instanceof CommitResult.Committed;
-             } catch (CommitOutcomeUnknownException e) {
--                committed = CommitEngine.decide(settings, clock, sleeper, () -> store.findCommit(commitId,
--                        table.mainKey()), at, "reconcile step " + commitId) == CommitLookup.COMMITTED;
-+                committed = store.findCommit(commitId, table.mainKey()) == CommitLookup.COMMITTED;
+@@ -428,8 +428,7 @@ public final class Reconcile {
              }
-             if (!committed) {
-                 return new Applied(plan, applied, Optional.of("the pointer is no longer at version " + before.version()
+             committed = result instanceof CommitResult.Committed;
+         } catch (CommitOutcomeUnknownException e) {
+-            committed = CommitEngine.decide(settings, clock, sleeper, () -> store.findCommit(commitId,
+-                    table.mainKey()), at, what + " " + commitId) == CommitLookup.COMMITTED;
++            committed = store.findCommit(commitId, table.mainKey()) == CommitLookup.COMMITTED;
+         }
+         return committed ? Optional.empty() : Optional.of("the pointer is no longer at version " + before.version()
+                 + "; plan again");
