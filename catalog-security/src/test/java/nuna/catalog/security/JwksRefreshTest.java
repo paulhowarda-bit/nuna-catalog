@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.RSAKey;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -74,6 +75,21 @@ class JwksRefreshTest {
         // The first fetch, then the one refetch the 30-second window allows.
         assertThat(entra.fetches()).isEqualTo(2);
         assertThat(authenticate(signedBy(key))).isEqualTo("alice@corp.example");
+    }
+
+    /**
+     * Nimbus gives up on a JWKS fetch after 500 ms by default. The overnight run of 2026-11-18 refused a valid
+     * token with "Couldn't retrieve JWK set from URL: Read timed out" when its in-JVM IdP was that slow under load
+     * (backlog 60); a slow IdP at work would do the same to every caller of a fresh node.
+     */
+    @Test
+    void aSlowJwksIsWaitedForNotTakenForAnInvalidToken() throws Exception {
+        RSAKey key = TestIdp.rsaKey("entra-1");
+        entra.publish(key);
+        entra.slowFetches(Duration.ofSeconds(1));
+
+        assertThat(authenticate(signedBy(key))).isEqualTo("alice@corp.example");
+        assertThat(entra.fetches()).isEqualTo(1);
     }
 
     @Test

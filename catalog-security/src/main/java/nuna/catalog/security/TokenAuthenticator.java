@@ -3,6 +3,7 @@ package nuna.catalog.security;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.jwk.source.JWKSourceBuilder;
 import com.nimbusds.jose.proc.SecurityContext;
+import com.nimbusds.jose.util.DefaultResourceRetriever;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.JWTParser;
 import nuna.catalog.core.principal.Caller;
@@ -39,12 +40,22 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
  * <p>Each issuer's JWKS is fetched on first use and cached. A token signed with a key the cache
  * does not hold forces one refetch, which is how key rotation is picked up. Fetches use Nimbus's
  * defaults: cache for 5 minutes, refresh ahead of expiry, and at most two fetches per 30 seconds,
- * so tokens with made-up key ids cannot hammer the IdP.
+ * so tokens with made-up key ids cannot hammer the IdP. The one exception is how long a fetch waits
+ * for the IdP's answer: {@link #JWKS_READ_TIMEOUT}, not Nimbus's 500 ms.
  */
 public final class TokenAuthenticator {
 
     /** OIDC Core 5.6.2: a claim moved out of the token (Entra's group overage) is named here. */
     private static final String MOVED_CLAIMS = "_claim_names";
+
+    /**
+     * How long a JWKS fetch waits for the IdP to answer. A fetch that times out refuses the token as invalid
+     * (401), so the caller is told to get a new token when its own is good. Nimbus's 500 ms did that in the
+     * overnight run of 2026-11-18, where the test JVM, slowed by the build beside it, served its in-JVM IdP's
+     * keys late (backlog 60). Fetches are rare (first use, rotation, refresh ahead of the cache's expiry) and
+     * rate-limited, so a longer wait costs a request little; connecting keeps Nimbus's 500 ms.
+     */
+    private static final Duration JWKS_READ_TIMEOUT = Duration.ofSeconds(5);
 
     private final Map<String, Issuer> issuers;
 
@@ -131,7 +142,9 @@ public final class TokenAuthenticator {
     private static JwtDecoder decoder(IssuerPolicy policy, Duration clockSkew, Clock clock) {
         JWKSource<SecurityContext> keys;
         try {
-            keys = JWKSourceBuilder.<SecurityContext>create(policy.jwksUri().toURL()).build();
+            keys = JWKSourceBuilder.<SecurityContext>create(policy.jwksUri().toURL(), new DefaultResourceRetriever(
+                    JWKSourceBuilder.DEFAULT_HTTP_CONNECT_TIMEOUT, (int) JWKS_READ_TIMEOUT.toMillis(),
+                    JWKSourceBuilder.DEFAULT_HTTP_SIZE_LIMIT)).build();
         } catch (MalformedURLException e) {
             throw new IllegalArgumentException("issuer " + policy.issuer() + " has a malformed JWKS URI", e);
         }
