@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 
 class MaintenancePolicyTest {
 
-    private static final GovernanceSettings SETTINGS = new GovernanceSettings(10, Map.of(),
+    private static final GovernanceSettings SETTINGS = new GovernanceSettings(10, 60, Map.of(),
             Duration.ofDays(7), Duration.ofHours(1), Map.of(EXPIRY_ENABLED, "true", ORPHAN_ENABLED, "true"));
 
     @Test
