@@ -32,7 +32,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
-| [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | the deadlock check needs the same room for one transient; then an overnight run | 2026-11-16 |
+| [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
 | [68](backlog/68.md) | M | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | four lookups answer before any guard, each with a test; after Paul decides | 2026-11-19 |
 | [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
@@ -362,9 +362,10 @@ each alert fired once in a test. The item stays open for those, which are its do
 
 ### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
 
+- Decided: 2026-11-19, D31
 - Added: 2026-11-16 by overnight run 2026-11-16
 - Touches: catalog-store-api/src/test/java/nuna/catalog/store/suite/CommitSuite.java, catalog-tests-load/src/test/java/nuna/catalog/load/ConcurrentWritersTest.java
-- Effort: S, the deadlock check needs the same room for one transient; then an overnight run
+- Effort: S, waits on an overnight run in which both tests pass
 
 The Nightly leg of the overnight run of 2026-11-16 (testing 30bab53) failed two tests, each on one request that went
 unanswered between about 05:45:57 and 05:46:13 UTC, while `catalog-tests-load` started `ConcurrentWritersTest`'s stack
@@ -414,6 +415,25 @@ place. After the case's writers ran, its `SELECT deadlocks FROM pg_stat_database
 `SocketTimeoutException: Read timed out`: a read reaching a container timed out, as in the stall above, met
 this time by the test's own check rather than by a writer. 8 and 16 writers at v2, and 8 and 32 at v3, passed. Logs:
 `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\nightly.log` and `nightly-results/` (run before the rename to nuna).
+
+Fixed on 2026-11-19 (Paul, 2026-11-19: "Fix the check"), not yet run; open until both tests pass in an overnight run:
+
+- `ConcurrentWritersTest` reads the deadlock count again after 1 s when the read fails, three tries at most, both
+  before the writers start and after they finish; a third failure in a row still fails the case, and what it asserts
+  is unchanged (the count after equals the count before). Each repeat prints a line (`[m8] deadlock count not read,
+  repeating in 1 s: …` and `[m8] deadlock count read after n repeat(s)`), so the overnight log shows any. The read is
+  the test's own instrument, and no writer runs while it reads, so it repeats on any failure.
+- The same exposure in the CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`): after each round it reads the
+  pointer and the winner's outcome through the store (`readPointer`, `findCommit`: 2,000 reads in 1,000 rounds), and
+  at the end the journal directly (`journalVersions`). The store's two reads are now asked again on
+  `StoreUnavailableException` alone, as the commits are (one helper, `repeating`, serves all three: three tries, 1 s
+  apart); the journal read, the suite's own instrument over four drivers that fail in their own types, on any
+  failure. It prints how many reads it repeated beside how many commits.
+- Left as they were: `ConcurrentWritersTest`'s other requests go to the catalog servers, whose answers the case
+  holds to no 5xx (the item's rule), and `Stack.grantWriters` is a write in the stack's setup, not a check.
+
+Not run: both are `-Pnightly` tests (`overnight`, `cas`), and the heavy and nightly builds were off on 2026-11-19. The
+fast build compiled both.
 
 ### 60. CredentialExpiryTest's first request answered 401
 
@@ -544,6 +564,7 @@ job that cannot run refuse the start, as the other findings do, or only be repor
 
 ### 73. Namespace, table and view names still leak through the management API
 
+- Decided: 2026-11-19, D18
 - Added: 2026-11-19 by agent-a3d0c67abbd88cfb2, from item 14
 - Touches: catalog-server/src/main/java/nuna/catalog/server/governance/ catalog-server/src/main/java/nuna/catalog/server/security/ catalog-server/src/test/
 - Effort: M, a dozen routes in two packages that share two lookups (`Management.target`, `Securables.resolve`), with tests; after Paul decides
@@ -569,6 +590,8 @@ rule and `Guard`'s check of grants inside a namespace (the catalog list's rule, 
 refusal is audited as every refusal is.
 
 Done when Paul has decided, and the management routes answer as he decided, with tests.
+
+**Decided 2026-11-19 (D18, amended again):** hide names on the management API too ("Hide there too"): a caller that holds nothing on a namespace, table or view gets the 404 a missing one gets, as on the Iceberg routes since item 14. Platform operators see no namespace, table or view name there unless granted ("Catalogs, not objects").
 
 ## Done and dropped
 
