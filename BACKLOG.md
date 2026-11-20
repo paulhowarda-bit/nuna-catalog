@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**29 open:** 6 S, 15 M, 4 L, 4 XL.
+**28 open:** 5 S, 15 M, 4 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -18,7 +18,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [6](backlog/6.md) | M | The server runs the store's self-check at startup (ask Paul before wiring it) | one startup call, tested on four backends with a bite; after Paul decides | 2026-11-14 |
 | [9](backlog/9.md) | M | Extend the journal horizon with a job, not only at migration | check four backends and add a job where one is missing, with a test | 2026-11-14 |
 | [10](backlog/10.md) | L | DR reconcile: prove the accepted tips from the audit archive | read the audit archive, a new reconcile option, and the DR drill updated | 2026-11-14 |
-| [11](backlog/11.md) | S | The purge rate limit is per replica | per replica is kept (D30); the docs say so | 2026-11-14 |
 | [13](backlog/13.md) | M | The separation-of-duties check and the grant write are not atomic | confirm it still holds, then one transaction and a race test | 2026-11-14 |
 | [14](backlog/14.md) | M | HEAD and loads answer 404 before 403, so names leak to signed-in callers | three routes reordered, with tests; after Paul decides | 2026-11-14 |
 | [15](backlog/15.md) | M | ETags do not survive a change of server (Paul decides) | a shared issuance window for the epoch, or sticky routing in the chart; after Paul chooses | 2026-11-14 |
@@ -127,20 +126,6 @@ Done when every backend that partitions the journal keeps its horizon ahead with
 assembled by hand. The audit archive could prove which tips were acknowledged.
 
 Done when the operator can have the archive supply or check the accepted tips, and the DR drill uses it.
-
-### 11. The purge rate limit is per replica
-
-- Decided: 2026-11-19, D30
-- Added: 2026-11-14 by Change Manager, from build-plan.md at Paul's request
-- Effort: S, per replica is kept (D30); the docs say so
-
-`build-plan.md`, maintenance worker, catalog side (2026-11-13): `nuna.governance.purges-per-minute` is kept per
-replica, so three replicas accept three times the configured rate.
-
-Done when the limit holds across replicas (or Paul decides the per-replica reading is what he wants and the docs
-say so).
-
-**Decided 2026-11-19 (D30):** the limit stays per replica ("Per replica, documented"). What is left: the docs say so, so operators divide it by the replica count.
 
 ### 13. The separation-of-duties check and the grant write are not atomic
 
@@ -572,6 +557,7 @@ buckets arrive over OTLP, and the dashboard's panel shows the p99 with `histogra
 | [3](backlog/3.md) | bites/run.sh counts a setup failure as a bite | done | 2026-11-14 |
 | [7](backlog/7.md) | Oracle and MongoDB stores answer an outage with 503, not 500 | done | 2026-11-19 |
 | [8](backlog/8.md) | findCommit waits within the retry budget when the store is down | done | 2026-11-19 |
+| [11](backlog/11.md) | The purge rate limit is per replica | done | 2026-11-19 |
 | [12](backlog/12.md) | A revive can bring an object back in a namespace it later left | done | 2026-11-19 |
 | [16](backlog/16.md) | May the console decline vended credentials? (Paul decides, D21) | done | 2026-11-19 |
 | [18](backlog/18.md) | Browser end-to-end tests for the console | done | 2026-11-15 |
