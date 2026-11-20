@@ -21,6 +21,8 @@ import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Pointer;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.TrustedEngine;
@@ -146,6 +148,24 @@ public abstract class MutationSuite extends GroupSuite {
                     TrustedEngine engine = new TrustedEngine("https://idp.suite/" + UUID.randomUUID(), "trino", "sub", Set.of());
                     assertApplied(store.putTrustedEngine(engine, change()));
                     return (target, change) -> target.removeTrustedEngine(engine.issuer(), engine.clientId(), change);
+                }),
+                new Mutation("createRef", () -> {
+                    UUID catalog = newCatalog();
+                    newTable(newNamespace(catalog, "ns"), "t");
+                    return (target, change) -> target.createRef(Refs.branch(catalog, "b", change.at()), RefLimits.P11,
+                            change);
+                }),
+                new Mutation("renewRef", () -> {
+                    Ref branch = Refs.branch(newCatalog(), "b", now());
+                    assertApplied(store.createRef(branch, RefLimits.P11, change()));
+                    return (target, change) -> target.renewRef(branch.id(), change.at().plus(Duration.ofDays(60)), change);
+                }),
+                new Mutation("deleteRef", () -> {
+                    UUID catalog = newCatalog();
+                    newTable(newNamespace(catalog, "ns"), "t");
+                    Ref branch = Refs.branch(catalog, "b", now());
+                    assertApplied(store.createRef(branch, RefLimits.P11, change()));
+                    return (target, change) -> target.deleteRef(branch.id(), change);
                 }));
     }
 

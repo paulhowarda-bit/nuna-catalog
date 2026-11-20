@@ -36,7 +36,7 @@ public sealed interface WriteResult {
     record Refused(Reason reason) implements WriteResult {
     }
 
-    enum Subject { CATALOG, NAMESPACE, OBJECT, GRANT, STORAGE_PROFILE, ATTRIBUTE, HOLD, ENGINE, KEY }
+    enum Subject { CATALOG, NAMESPACE, OBJECT, GRANT, STORAGE_PROFILE, ATTRIBUTE, HOLD, ENGINE, KEY, REF }
 
     enum Reason {
         /** The namespace still has child namespaces or active objects. */
@@ -59,6 +59,10 @@ public sealed interface WriteResult {
         /** A higher DR watermark is kept, and a watermark never moves back ({@link DrStore#recordDrWatermark}). */
         WATERMARK_BEHIND,
         /** The DR watermark is above the version of the object's main pointer ({@link DrStore#recordDrWatermark}). */
-        WATERMARK_AHEAD
+        WATERMARK_AHEAD,
+        /** The catalog holds as many open refs of the kind as P11 allows ({@link RefStore#createRef}, D33). */
+        REF_LIMIT,
+        /** The ref is a tag, and only a branch can be renewed ({@link RefStore#renewRef}, D33). */
+        NOT_A_BRANCH
     }
 }

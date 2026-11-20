@@ -1,0 +1,264 @@
+package nuna.catalog.store.sql;
+
+import static nuna.catalog.store.sql.Jdbc.exists;
+import static nuna.catalog.store.sql.Jdbc.first;
+import static nuna.catalog.store.sql.Jdbc.instant;
+import static nuna.catalog.store.sql.Jdbc.query;
+import static nuna.catalog.store.sql.Jdbc.update;
+
+import nuna.catalog.store.CatalogObject;
+import nuna.catalog.store.Change;
+import nuna.catalog.store.Name;
+import nuna.catalog.store.Page;
+import nuna.catalog.store.PageRequest;
+import nuna.catalog.store.PageToken;
+import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.WriteResult;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * A catalog's branches and tags (D33): the ref record and its cut, {@code ref_entry}. A create locks the catalog's
+ * record for update, the lock on the catalog's refs, so two creates take turns counting P11's limit; it share-locks the
+ * ref it is made from, so a deletion of that ref waits. The cut is one INSERT ... SELECT: under READ COMMITTED a
+ * statement reads one snapshot on PostgreSQL and CockroachDB alike, so the cut holds every multi-table transaction
+ * whole, and every table with the namespace that held it. Renewal and deletion lock the ref for update; a deletion
+ * then deletes the ref's own pointers, their pieces, its cut and the record.
+ */
+final class SqlRefs {
+
+    private static final String COLUMNS = "id, catalog_id, name_norm, name, kind, created_at, created_by, from_ref,"
+            + " from_name, expires_at";
+    private static final String ENTRY_COLUMNS = "ref_id, object_id, kind, parent_id, name_norm, name, version,"
+            + " metadata_location, sha256";
+    private static final WriteResult MISSING = new WriteResult.Missing(WriteResult.Subject.REF);
+    /** Every namespace, and every active table and view with its main pointer, of one catalog. */
+    private static final String CUT_OF_MAIN = "INSERT INTO ref_entry (" + ENTRY_COLUMNS + ")"
+            + " SELECT CAST(? AS UUID), n.id, 'NAMESPACE', n.parent_id, n.name_norm, n.name, CAST(NULL AS BIGINT),"
+            + " CAST(NULL AS TEXT), CAST(NULL AS TEXT) FROM namespace n WHERE n.catalog_id = ?"
+            + " UNION ALL SELECT CAST(? AS UUID), o.id, o.kind, o.namespace_id, o.name_norm, o.name, p.version,"
+            + " p.metadata_location, p.sha256 FROM catalog_object o JOIN pointer p ON p.object_id = o.id AND p.branch = ?"
+            + " WHERE o.catalog_id = ? AND o.state = 'ACTIVE'";
+    /** Another ref's cut, with that ref's own pointer where it has one. */
+    private static final String CUT_OF_REF = "INSERT INTO ref_entry (" + ENTRY_COLUMNS + ")"
+            + " SELECT CAST(? AS UUID), e.object_id, e.kind, e.parent_id, e.name_norm, e.name,"
+            + " COALESCE(p.version, e.version), COALESCE(p.metadata_location, e.metadata_location),"
+            + " COALESCE(p.sha256, e.sha256) FROM ref_entry e"
+            + " LEFT JOIN pointer p ON p.object_id = e.object_id AND p.branch = ? WHERE e.ref_id = ?";
+    /** The objects of a ref's cut, which are the only objects a ref's own pointers can name (D33, question 1). */
+    private static final String CUT_OBJECTS = "SELECT object_id FROM ref_entry WHERE ref_id = ?";
+
+    private final Transactions transactions;
+
+    SqlRefs(Transactions transactions) {
+        this.transactions = transactions;
+    }
+
+    WriteResult create(Ref ref, RefLimits limits, Change change) {
+        return transactions.change(change, "ref create", connection -> {
+            if (!exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", ref.catalogId())) {
+                return new WriteResult.Missing(WriteResult.Subject.CATALOG);
+            }
+            long held = first(connection, "SELECT count(*) FROM ref WHERE catalog_id = ? AND kind = ?"
+                    + " AND (expires_at IS NULL OR expires_at > ?)", row -> row.getLong(1), ref.catalogId(),
+                    ref.kind().name(), change.at()).orElseThrow();
+            int inserted = update(connection, "INSERT INTO ref (catalog_id, name_norm, name, kind, expires_at, id,"
+                            + " created_at, created_by, from_ref, from_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                            + " ON CONFLICT (catalog_id, name_norm) DO NOTHING", ref.catalogId(), ref.name().normalized(),
+                    ref.name().display(), ref.kind().name(), ref.expiresAt().orElse(null), ref.id(), ref.createdAt(),
+                    ref.createdBy(), ref.fromRef().orElse(null), ref.fromName());
+            if (inserted == 0) {
+                return Guards.nameTaken(connection, "SELECT id FROM ref WHERE catalog_id = ? AND name_norm = ?",
+                        ref.catalogId(), ref.name().normalized());
+            }
+            if (ref.fromRef().isPresent() && !open(connection, ref.fromRef().get(), ref.catalogId(), change.at())) {
+                return MISSING;
+            }
+            if (!limits.admitsAnother(ref.kind(), held)) {
+                return new WriteResult.Refused(WriteResult.Reason.REF_LIMIT);
+            }
+            if (ref.fromRef().isEmpty()) {
+                update(connection, CUT_OF_MAIN, ref.id(), ref.catalogId(), ref.id(), PointerKey.MAIN, ref.catalogId());
+            } else {
+                update(connection, CUT_OF_REF, ref.id(), ref.fromRef().get().toString(), ref.fromRef().get());
+            }
+            return WriteResult.APPLIED;
+        });
+    }
+
+    /** Share-locks the ref a new one is made from; whether it is a ref of the catalog not past its expiry. */
+    private static boolean open(Connection connection, UUID refId, UUID catalogId, Instant now) throws SQLException {
+        return exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ?"
+                + " AND (expires_at IS NULL OR expires_at > ?) FOR SHARE", refId, catalogId, now);
+    }
+
+    Optional<Ref> read(UUID refId) {
+        return transactions.autocommit("ref read", connection -> first(connection,
+                "SELECT " + COLUMNS + " FROM ref WHERE id = ?", SqlRefs::ref, refId));
+    }
+
+    Optional<Ref> find(UUID catalogId, String normalizedName) {
+        return transactions.autocommit("ref lookup", connection -> first(connection,
+                "SELECT " + COLUMNS + " FROM ref WHERE catalog_id = ? AND name_norm = ?", SqlRefs::ref, catalogId,
+                normalizedName));
+    }
+
+    Page<Ref> list(UUID catalogId, PageRequest page) {
+        Optional<String> after = Jdbc.after(page, 1, List::getFirst);
+        return transactions.autocommit("ref listing", connection -> {
+            List<Object> parameters = new ArrayList<>(List.of(catalogId));
+            String keyset = "";
+            if (after.isPresent()) {
+                keyset = " AND name_norm > ?";
+                parameters.add(after.get());
+            }
+            parameters.add(page.size() + 1);
+            List<Ref> refs = query(connection, "SELECT " + COLUMNS + " FROM ref WHERE catalog_id = ?" + keyset
+                    + " ORDER BY name_norm LIMIT ?", SqlRefs::ref, parameters.toArray());
+            return Jdbc.page(refs, page, ref -> PageToken.encode(ref.name().normalized()));
+        });
+    }
+
+    private record Locked(Ref.Kind kind, Instant expiresAt) {
+    }
+
+    WriteResult renew(UUID refId, Instant expiresAt, Change change) {
+        return transactions.change(change, "ref renewal", connection -> {
+            Optional<Locked> locked = first(connection, "SELECT kind, expires_at FROM ref WHERE id = ? FOR UPDATE",
+                    row -> new Locked(Ref.Kind.valueOf(row.getString("kind")), instant(row, "expires_at")), refId);
+            if (locked.isEmpty()) {
+                return MISSING;
+            }
+            if (locked.get().kind() == Ref.Kind.TAG) {
+                return new WriteResult.Refused(WriteResult.Reason.NOT_A_BRANCH);
+            }
+            if (!locked.get().expiresAt().isAfter(change.at())) {
+                return MISSING;
+            }
+            if (locked.get().expiresAt().equals(expiresAt)) {
+                return WriteResult.UNCHANGED;
+            }
+            update(connection, "UPDATE ref SET expires_at = ? WHERE id = ?", expiresAt, refId);
+            return WriteResult.APPLIED;
+        });
+    }
+
+    WriteResult delete(UUID refId, Change change) {
+        return transactions.change(change, "ref delete", connection -> {
+            if (!exists(connection, "SELECT 1 FROM ref WHERE id = ? FOR UPDATE", refId)) {
+                return MISSING;
+            }
+            String branch = refId.toString();
+            update(connection, "DELETE FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")", branch, refId);
+            update(connection, "DELETE FROM projection_piece WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+                    branch, refId);
+            update(connection, "DELETE FROM ref_entry WHERE ref_id = ?", refId);
+            update(connection, "DELETE FROM ref WHERE id = ?", refId);
+            return WriteResult.APPLIED;
+        });
+    }
+
+    Optional<RefEntry> findNamespace(UUID refId, List<String> normalizedPath) {
+        if (normalizedPath.isEmpty()) {
+            return Optional.empty();
+        }
+        return transactions.snapshot("ref namespace lookup", connection -> namespace(connection, refId, normalizedPath));
+    }
+
+    Optional<RefEntry> resolve(UUID refId, List<String> normalizedNamespacePath, String normalizedName) {
+        if (normalizedNamespacePath.isEmpty()) {
+            return Optional.empty();
+        }
+        return transactions.snapshot("ref name lookup", connection -> {
+            Optional<RefEntry> namespace = namespace(connection, refId, normalizedNamespacePath);
+            if (namespace.isEmpty()) {
+                return Optional.empty();
+            }
+            return first(connection, "SELECT " + ENTRY_COLUMNS + " FROM ref_entry WHERE ref_id = ? AND parent_id = ?"
+                    + " AND kind IN ('TABLE', 'VIEW') AND name_norm = ?", SqlRefs::entry, refId, namespace.get().id(),
+                    normalizedName);
+        });
+    }
+
+    /** The namespace at the end of {@code path} in the ref's cut, walked down from its catalog. */
+    private static Optional<RefEntry> namespace(Connection connection, UUID refId, List<String> path)
+            throws SQLException {
+        Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM ref WHERE id = ?",
+                row -> Jdbc.uuid(row, "catalog_id"), refId);
+        if (catalog.isEmpty()) {
+            return Optional.empty();
+        }
+        UUID parent = catalog.get();
+        Optional<RefEntry> found = Optional.empty();
+        for (String name : path) {
+            found = first(connection, "SELECT " + ENTRY_COLUMNS + " FROM ref_entry WHERE ref_id = ? AND parent_id = ?"
+                    + " AND kind = 'NAMESPACE' AND name_norm = ?", SqlRefs::entry, refId, parent, name);
+            if (found.isEmpty()) {
+                return found;
+            }
+            parent = found.get().id();
+        }
+        return found;
+    }
+
+    Page<RefEntry> listNamespaces(UUID refId, UUID parentId, PageRequest page) {
+        Optional<String> after = Jdbc.after(page, 1, List::getFirst);
+        return transactions.autocommit("ref namespace listing", connection -> {
+            List<Object> parameters = new ArrayList<>(List.of(refId, parentId));
+            String keyset = "";
+            if (after.isPresent()) {
+                keyset = " AND name_norm > ?";
+                parameters.add(after.get());
+            }
+            parameters.add(page.size() + 1);
+            List<RefEntry> entries = query(connection, "SELECT " + ENTRY_COLUMNS + " FROM ref_entry WHERE ref_id = ?"
+                    + " AND parent_id = ? AND kind = 'NAMESPACE'" + keyset + " ORDER BY name_norm LIMIT ?",
+                    SqlRefs::entry, parameters.toArray());
+            return Jdbc.page(entries, page, entry -> PageToken.encode(entry.name().normalized()));
+        });
+    }
+
+    Page<RefEntry> listObjects(UUID refId, UUID namespaceId, CatalogObject.Kind kind, PageRequest page) {
+        Optional<List<Object>> after = Jdbc.after(page, 2,
+                parts -> List.of(parts.get(0), UUID.fromString(parts.get(1))));
+        return transactions.autocommit("ref object listing", connection -> {
+            List<Object> parameters = new ArrayList<>(List.of(refId, namespaceId, RefEntry.of(kind).name()));
+            String keyset = "";
+            if (after.isPresent()) {
+                keyset = " AND (name_norm, object_id) > (?, ?)";
+                parameters.addAll(after.get());
+            }
+            parameters.add(page.size() + 1);
+            List<RefEntry> entries = query(connection, "SELECT " + ENTRY_COLUMNS + " FROM ref_entry WHERE ref_id = ?"
+                    + " AND parent_id = ? AND kind = ?" + keyset + " ORDER BY name_norm, object_id LIMIT ?",
+                    SqlRefs::entry, parameters.toArray());
+            return Jdbc.page(entries, page,
+                    entry -> PageToken.encode(entry.name().normalized(), entry.id().toString()));
+        });
+    }
+
+    private static Ref ref(ResultSet row) throws SQLException {
+        return new Ref(Jdbc.uuid(row, "catalog_id"), Jdbc.uuid(row, "id"),
+                new Name(row.getString("name_norm"), row.getString("name")), Ref.Kind.valueOf(row.getString("kind")),
+                instant(row, "created_at"), row.getString("created_by"), Optional.ofNullable(Jdbc.uuid(row, "from_ref")),
+                row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")));
+    }
+
+    private static RefEntry entry(ResultSet row) throws SQLException {
+        long version = row.getLong("version");
+        Optional<RefEntry.At> pointer = row.wasNull() ? Optional.empty()
+                : Optional.of(new RefEntry.At(version, row.getString("metadata_location"), row.getString("sha256")));
+        return new RefEntry(Jdbc.uuid(row, "ref_id"), Jdbc.uuid(row, "object_id"),
+                RefEntry.Kind.valueOf(row.getString("kind")), Jdbc.uuid(row, "parent_id"),
+                new Name(row.getString("name_norm"), row.getString("name")), pointer);
+    }
+}

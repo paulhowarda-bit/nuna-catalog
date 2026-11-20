@@ -28,6 +28,9 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
 import nuna.catalog.store.Securable;
@@ -78,6 +81,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlDeletions deletions;
     private final SqlHealth health;
     private final SqlDr dr;
+    private final SqlRefs refs;
     private final JournalHorizon horizon;
 
     public SqlCatalogStore(DataSource dataSource) {
@@ -105,6 +109,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.deletions = new SqlDeletions(transactions);
         this.health = new SqlHealth(transactions);
         this.dr = new SqlDr(transactions);
+        this.refs = new SqlRefs(transactions);
     }
 
     // ---- commit core (sections 4 and 5.1) ----
@@ -591,5 +596,57 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public List<TrustedEngine> listTrustedEngines() {
         return governance.listTrustedEngines();
+    }
+
+    // ---- refs (D33) ----
+
+    @Override
+    public WriteResult createRef(Ref ref, RefLimits limits, Change change) {
+        return refs.create(ref, limits, change);
+    }
+
+    @Override
+    public Optional<Ref> readRef(UUID refId) {
+        return refs.read(refId);
+    }
+
+    @Override
+    public Optional<Ref> findRef(UUID catalogId, String normalizedName) {
+        return refs.find(catalogId, normalizedName);
+    }
+
+    @Override
+    public Page<Ref> listRefs(UUID catalogId, PageRequest page) {
+        return refs.list(catalogId, page);
+    }
+
+    @Override
+    public WriteResult renewRef(UUID refId, Instant expiresAt, Change change) {
+        return refs.renew(refId, expiresAt, change);
+    }
+
+    @Override
+    public WriteResult deleteRef(UUID refId, Change change) {
+        return refs.delete(refId, change);
+    }
+
+    @Override
+    public Optional<RefEntry> findRefNamespace(UUID refId, List<String> normalizedPath) {
+        return refs.findNamespace(refId, normalizedPath);
+    }
+
+    @Override
+    public Optional<RefEntry> resolveOnRef(UUID refId, List<String> normalizedNamespacePath, String normalizedName) {
+        return refs.resolve(refId, normalizedNamespacePath, normalizedName);
+    }
+
+    @Override
+    public Page<RefEntry> listRefNamespaces(UUID refId, UUID parentId, PageRequest page) {
+        return refs.listNamespaces(refId, parentId, page);
+    }
+
+    @Override
+    public Page<RefEntry> listRefObjects(UUID refId, UUID namespaceId, CatalogObject.Kind kind, PageRequest page) {
+        return refs.listObjects(refId, namespaceId, kind, page);
     }
 }
