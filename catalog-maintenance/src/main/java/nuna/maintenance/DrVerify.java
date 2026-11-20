@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -25,9 +26,11 @@ import org.apache.iceberg.io.SupportsPrefixOperations;
  * version is safe when its metadata file is there.
  *
  * <p>A table or view with no watermark, or whose journaled versions do not follow its watermark one by one, is checked
- * whole at its pointer's version: every file every snapshot of that version reaches, found in one listing of its
- * location. Files are only read, never written. What a version adds is counted by catalog-iceberg's
- * {@link AddedFiles}, which the reconcile's walk counts with too.
+ * whole: the newest of its pointer's version and the older versions the work list names whose every file every
+ * snapshot reaches is found in one listing of its location (D37, amended again 2026-11-20, item 99), so a table that
+ * commits faster than its newest files reach the DR store still gets a first watermark. Files are only read, never
+ * written. What a version adds is counted by catalog-iceberg's {@link AddedFiles}, which the reconcile's walk counts
+ * with too.
  */
 final class DrVerify {
 
@@ -38,14 +41,14 @@ final class DrVerify {
     /**
      * One object of the catalog's DR work list ({@code GET /management/v1/maintenance/dr-work}).
      *
-     * @param versions           the journaled versions above the watermark, oldest first, at most 100; none without
-     *                           a watermark
+     * @param versions           the journaled versions above the watermark, oldest first, at most 100: without a
+     *                           watermark, the newest, up to the pointer's
      * @param oldestUnverifiedAt when the oldest version above the watermark was committed, when the journal says
      */
     record Item(UUID id, String kind, String location, Version pointer, Optional<Version> watermark,
                 List<Version> versions, Optional<Instant> oldestUnverifiedAt) {
 
-        /** Whether it is checked whole at its pointer, not version by version from its watermark. */
+        /** Whether it is checked whole, not version by version from its watermark. */
         boolean whole() {
             if (watermark.isEmpty() || versions.isEmpty()) {
                 return true;
@@ -83,7 +86,7 @@ final class DrVerify {
         }
         Version watermark = item.watermark().orElseThrow();
         if (!exists(watermark.metadataLocation())) {
-            // The watermark's own file is gone from the DR store: nothing builds on it, so check the pointer whole.
+            // The watermark's own file is gone from the DR store: nothing builds on it, so check the versions whole.
             return whole(item);
         }
         AddedFiles.TableVersion safeMetadata = AddedFiles.read(watermark.metadataLocation(), this::bytes);
@@ -120,7 +123,7 @@ final class DrVerify {
 
     /** A view's versions: each is safe once its metadata file is in the DR store. */
     private Result view(Item item) {
-        List<Version> versions = item.whole() ? List.of(item.pointer()) : item.versions();
+        List<Version> versions = item.whole() ? candidates(item).reversed() : item.versions();
         Optional<Version> safe = Optional.empty();
         Optional<String> missing = Optional.empty();
         for (Version version : versions) {
@@ -134,9 +137,16 @@ final class DrVerify {
         return new Result(safe, missing);
     }
 
-    /** The pointer's version, whole: every file its snapshots reach, found in one listing of the table's location. */
+    /**
+     * The newest whole version, newest first from the pointer's: every file its snapshots reach, found in one listing
+     * of the table's location. A version whose metadata file the listing lacks is passed over unread; each other is
+     * read once and passed over, without a walk of everything it reaches, when a file it adds to the next older one
+     * held is missing, or when it reaches a file a newer one lacks (one missing but not among what the newer one adds
+     * to it). So a walk of the whole table is made only for a version whose own files are all there: in-flight
+     * versions fail on their own files, and a file lost long ago costs one walk, not one a version. What is missing is
+     * the pointer's first gap.
+     */
     private Result whole(Item item) {
-        Version pointer = item.pointer();
         String root = Storage.normalize(item.location().endsWith("/") ? item.location() : item.location() + "/");
         Set<String> listed = new HashSet<>();
         for (FileInfo file : dr.listPrefix(item.location())) {
@@ -146,12 +156,48 @@ final class DrVerify {
             String normalized = Storage.normalize(location);
             return normalized.startsWith(root) ? listed.contains(normalized) : exists(location);
         };
-        if (!present.test(pointer.metadataLocation())) {
-            return new Result(Optional.empty(), Optional.of(pointer.metadataLocation()));
+        List<Version> held = candidates(item).stream().filter(version -> present.test(version.metadataLocation()))
+                .toList();
+        Optional<String> missing = present.test(item.pointer().metadataLocation()) ? Optional.empty()
+                : Optional.of(item.pointer().metadataLocation());
+        Optional<String> carried = Optional.empty();
+        AddedFiles.TableVersion metadata = held.isEmpty() ? null
+                : AddedFiles.read(held.getFirst().metadataLocation(), this::bytes);
+        for (int i = 0; i < held.size(); i++) {
+            AddedFiles.TableVersion older = i + 1 < held.size()
+                    ? AddedFiles.read(held.get(i + 1).metadataLocation(), this::bytes) : null;
+            Optional<String> gap = older == null ? Optional.empty()
+                    : AddedFiles.firstMissing(older, metadata, this::bytes, present);
+            boolean addsAll = gap.isEmpty();
+            if (gap.isEmpty()) {
+                gap = carried;
+            }
+            if (gap.isEmpty()) {
+                gap = AddedFiles.firstMissing(null, metadata, this::bytes, present);
+                if (gap.isEmpty()) {
+                    return new Result(Optional.of(held.get(i)), missing);
+                }
+            }
+            if (missing.isEmpty()) {
+                missing = gap;
+            }
+            // A missing file it reaches but does not add to the older version, the older version reaches too.
+            carried = addsAll ? gap : Optional.empty();
+            metadata = older;
         }
-        AddedFiles.TableVersion metadata = AddedFiles.read(pointer.metadataLocation(), this::bytes);
-        Optional<String> gap = AddedFiles.firstMissing(null, metadata, this::bytes, present);
-        return gap.isPresent() ? new Result(Optional.empty(), gap) : new Result(Optional.of(pointer), Optional.empty());
+        return new Result(Optional.empty(), missing);
+    }
+
+    /**
+     * The versions a whole check tests, newest first: the pointer's, then the versions the work list names below it, at
+     * most 100.
+     */
+    private static List<Version> candidates(Item item) {
+        List<Version> candidates = new ArrayList<>();
+        candidates.add(item.pointer());
+        item.versions().reversed().stream().filter(version -> version.version() < item.pointer().version())
+                .forEach(candidates::add);
+        return candidates;
     }
 
     private boolean exists(String location) {

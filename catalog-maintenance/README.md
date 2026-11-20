@@ -142,8 +142,11 @@ so it reaches the DR region with the database. It only lists and reads the DR st
 before a disaster, and in the DR region, its replicas naming the DR store itself, before the rewind
 (`deploy/README.md`, "Recovering in the DR region"). How it checks, its routes and the readout are in
 `docs/observability/dr-watermark.md`; its meters (`nuna.maintenance.dr.*`) and alerts in
-`docs/observability/worker-metrics.md`. It logs a check that failed at WARN, and each pass's tally
-(`DR pass done`) only at DEBUG.
+`docs/observability/worker-metrics.md`. It logs each pass's tally at INFO, one line a pass:
+`DR pass done: Pass[objects=.., reported=.., verified=.., behind=.., maxLag=.., failed=.., deferred=..] in .. ms`, the
+tables and views checked, the watermarks moved, the versions they moved past, those still behind, the largest lag,
+the checks that failed and the whole checks put off, and how long the pass took. It logs a check that failed at WARN,
+and what a check found missing at DEBUG.
 
 ## Running it
 
