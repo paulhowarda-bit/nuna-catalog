@@ -2,6 +2,7 @@ package nuna.catalog.load;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import nuna.catalog.tests.s3.TestS3;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -25,9 +27,12 @@ import tools.jackson.databind.JsonNode;
  * The reconcile-from-storage DR drill (D37, M8). The DR region's database stops receiving WAL while writers
  * keep committing (with contention, so storage also holds the orphan files of lost swaps), then the primary
  * region is lost and the DR database is promoted, behind its storage. The runbook: start servers in DR,
- * freeze the catalog (writes and cleanup stop), dry-run the reconcile, apply it accepting the tips the
- * writers were told committed, lift the freeze, register the table the DR database never heard of. Every
- * acknowledged commit is then in its table's history, and commits resume.
+ * freeze the catalog (writes and cleanup stop), dry-run the reconcile, apply it with the tips the audit
+ * archive records as committed ({@code accept-archived}, backlog 10), lift the freeze, register the table the
+ * DR database never heard of. Every acknowledged commit is then in its table's history, and commits resume.
+ *
+ * <p>Not on {@code -Ps3=aws}: the servers lock the archive in COMPLIANCE mode, as they always do (D23), and an AWS
+ * bucket so locked could not be deleted for five years.
  */
 @Tag("overnight")
 class DrDrillTest {
@@ -42,6 +47,8 @@ class DrDrillTest {
 
     @BeforeAll
     static void start() {
+        Assumptions.assumeFalse(TestS3.kindFromSystemProperty() == TestS3.Kind.AWS,
+                "the archive's COMPLIANCE lock would keep an AWS bucket for five years");
         stack = new Stack(true);
     }
 
@@ -156,15 +163,29 @@ class DrDrillTest {
         assertThat(unknown).as("table locations the DR database does not know").hasSize(1);
         assertThat(acknowledgedTips.get(LATE)).startsWith(unknown.getFirst());
 
-        // Apply, accepting the tips the writers were told committed.
-        StringBuilder accept = new StringBuilder();
-        for (String table : TABLES) {
-            accept.append(accept.isEmpty() ? "" : ",").append('"').append(acknowledgedTips.get(table)).append('"');
+        // The archive proves each tip once the DR server's archive consumer has the audit topic's last records: it
+        // takes the primary servers' partitions when Kafka drops them, up to a session timeout after they died.
+        JsonNode proven = null;
+        long deadline = System.nanoTime() + Duration.ofMinutes(3).toNanos();
+        while (System.nanoTime() < deadline) {
+            proven = expect(operator.send("POST", MANAGE + "/dr-reconcile", "{\"apply\":false,\"accept-archived\":true}",
+                    Map.of()), 200).json();
+            if (archiveProves(proven, acknowledgedTips)) {
+                break;
+            }
+            ServerProcess.pause(Duration.ofSeconds(2));
         }
+        Latencies.report("dr-drill.txt", "dry run with the archive: " + summary(proven));
+        assertThat(archiveProves(proven, acknowledgedTips)).as("the archive proves each acknowledged tip: " + proven)
+                .isTrue();
+        assertThat(proven.get("contradicted-accepts")).isEmpty();
+
+        // Apply, with the tips the archive records as committed.
         JsonNode applied = expect(operator.send("POST", MANAGE + "/dr-reconcile",
-                "{\"apply\":true,\"accept\":[" + accept + "]}", Map.of()), 200).json();
+                "{\"apply\":true,\"accept-archived\":true}", Map.of()), 200).json();
         Latencies.report("dr-drill.txt", "apply: " + summary(applied));
-        assertThat(applied.get("unused-accepts")).isEmpty();
+        assertThat(archiveProves(applied, acknowledgedTips)).as("the applied plan ends at each acknowledged tip").isTrue();
+        assertThat(applied.get("contradicted-accepts")).isEmpty();
         for (JsonNode table : applied.get("tables")) {
             assertThat(table.has("apply-problem")).as("apply problem: " + table).isFalse();
         }
@@ -215,6 +236,23 @@ class DrDrillTest {
         return answer;
     }
 
+    /** Whether each drill table's plan in {@code report} ends at its acknowledged tip, taken on the archive's proof. */
+    private static boolean archiveProves(JsonNode report, Map<String, String> acknowledgedTips) {
+        Map<String, JsonNode> planned = byTable(report);
+        for (String table : TABLES) {
+            JsonNode plan = planned.get(table);
+            if (plan == null || plan.has("problem") || plan.get("steps").isEmpty()) {
+                return false;
+            }
+            JsonNode last = plan.get("steps").get(plan.get("steps").size() - 1);
+            if (!last.get("metadata-location").asString().equals(acknowledgedTips.get(table))
+                    || !last.get("proof").asString().equals("archived")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static Map<String, JsonNode> byTable(JsonNode report) {
         Map<String, JsonNode> tables = new HashMap<>();
         for (JsonNode table : report.get("tables")) {
@@ -231,6 +269,13 @@ class DrDrillTest {
             text.append(" | ").append(path.get(path.size() - 1).asString()).append(": from v")
                     .append(table.get("from").get("version")).append(", steps=").append(table.get("steps").size())
                     .append(", tips=").append(table.get("tips").size());
+            int archived = 0;
+            for (JsonNode step : table.get("steps")) {
+                archived += step.get("proof").asString().equals("archived") ? 1 : 0;
+            }
+            if (archived > 0) {
+                text.append(", archived=").append(archived);
+            }
             if (table.has("steps-applied")) {
                 text.append(", applied=").append(table.get("steps-applied"));
             }
