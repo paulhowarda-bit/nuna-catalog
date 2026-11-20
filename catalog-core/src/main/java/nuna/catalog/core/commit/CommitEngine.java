@@ -998,19 +998,24 @@ public final class CommitEngine {
                 + " was not applied and the retry bound is spent"));
     }
 
+    private <T> T decide(Supplier<T> ask, Instant started, String what) {
+        return decide(settings, clock, sleeper, ask, started, what);
+    }
+
     /**
      * Asks the store what became of a write whose outcome was unknown (D9). A store that cannot be reached
      * is asked again within the retry bounds (P10): at most {@code maxAttempts} times, with the commit loop's
      * backoff, and never after the request's retry budget, counted from {@code started}. Throws the last
      * failure once those are spent, and any other {@link StoreException} (the store answers but cannot
-     * say) at once.
+     * say) at once. The DR reconcile ({@link Reconcile}) decides its steps the same way.
      */
-    private <T> T decide(Supplier<T> ask, Instant started, String what) {
+    static <T> T decide(CommitSettings settings, Clock clock, Sleeper sleeper, Supplier<T> ask, Instant started,
+                        String what) {
         for (int asked = 1; ; asked++) {
             try {
                 return ask.get();
             } catch (StoreUnavailableException e) {
-                if (!backOff(asked, started)) {
+                if (!backOff(settings, clock, sleeper, asked, started)) {
                     throw e;
                 }
                 LOG.log(System.Logger.Level.DEBUG, "store unavailable deciding " + what, e);
@@ -1032,6 +1037,11 @@ public final class CommitEngine {
      * would start after the retry budget. The wait doubles per attempt, with up to 10% jitter.
      */
     private boolean backOff(int attempt, Instant started) {
+        return backOff(settings, clock, sleeper, attempt, started);
+    }
+
+    private static boolean backOff(CommitSettings settings, Clock clock, Sleeper sleeper, int attempt,
+                                   Instant started) {
         if (attempt >= settings.maxAttempts()) {
             return false;
         }

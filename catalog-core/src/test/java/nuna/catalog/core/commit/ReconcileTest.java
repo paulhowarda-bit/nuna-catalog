@@ -35,7 +35,7 @@ class ReconcileTest {
             "dr-runbook", false, Optional.empty());
 
     private final Harness h = new Harness();
-    private final Reconcile reconcile = new Reconcile(h.store, h.files, h.clock);
+    private final Reconcile reconcile = new Reconcile(h.store, h.files, h.settings, h.clock, h.sleeper);
     private final List<CommitEvents.Commit> published = Collections.synchronizedList(new ArrayList<>());
     private final CommitEvents events = commit -> {
         published.add(commit);

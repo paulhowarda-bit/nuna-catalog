@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**22 open:** 6 S, 8 M, 3 L, 5 XL.
+**21 open:** 5 S, 8 M, 3 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,7 +30,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
 | [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | M | CredentialExpiryTest's first request answered 401 | the cause is unknown: the test records no reason for the 401 | 2026-11-18 |
-| [69](backlog/69.md) | S | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | one call in Reconcile, its construction in one route, and a test with a store double | 2026-11-19 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut | 2026-11-19 |
 | [79](backlog/79.md) | S | deploy/local runs the catalog as its own non-root S3 user, so the except delete policy is applied and checked | one S3 user, its policies and the catalog's keys in deploy/local, checked by a local install | 2026-11-20 |
 | [84](backlog/84.md) | S | An engine whose own principal holds nothing can no longer read /v1/config: the demo's Trino among them (Paul decides, D17, D18) | either a grant in two setup scripts and their docs, or one rule in `Holdings.inCatalog` with tests and a bite; after Paul decides | 2026-11-20 |
@@ -536,29 +535,6 @@ before the rename to nuna).
 Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
 passes in the overnight run.
 
-### 69. The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does
-
-- Added: 2026-11-19 by the agent on item 67
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java, catalog-core/src/test/, catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
-- Effort: S, one call in Reconcile, its construction in one route, and a test with a store double
-
-Items 8 and 67 made the commit engine wait within the retry budget (P10: at most 4 asks, none starting more than 2 s
-after the request started, with the commit loop's backoff) when the store cannot be reached while it decides an
-unknown outcome. `Reconcile.apply` (the DR runbook's reconcile, D37) does not: when `store.commit` throws
-`CommitOutcomeUnknownException` it asks `findCommit` once (`catalog-core/src/main/java/nuna/catalog/core/commit/
-Reconcile.java`, about line 185), so a store outage there throws `StoreUnavailableException` out of the apply to the
-operator's route at once. Nothing is lost (a second run plans again from the pointer), but the count of steps already
-applied is not reported.
-
-Giving it the wait means passing the engine's `CommitSettings` and sleeper to `Reconcile`, which
-`catalog-server`'s `ReconcileRoutes` constructs (`new Reconcile(store, files, clock)`), and sharing the engine's
-asking loop (`CommitEngine.decide`, private today) rather than copying it. Item 67 left it, as its brief kept it out
-of scope (`catalog-server` was held by another agent).
-
-Done when a reconcile step whose outcome is unknown during a short outage is settled within the budget, shown by a
-test with a store double that needs no database (as `UnregisterOutageTest` does), and an outage longer than the
-budget answers as today.
-
 ### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
 
 - Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
@@ -738,6 +714,7 @@ item 68's branch: `demo/` and `deploy/` are outside its claim.
 | [66](backlog/66.md) | The overnight run of 2026-11-19 started at 07:09, when the PC woke, not at midnight | dropped | 2026-11-19 |
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
 | [68](backlog/68.md) | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | done | 2026-11-20 |
+| [69](backlog/69.md) | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | done | 2026-11-20 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [72](backlog/72.md) | Oracle's self-check does not notice a journal-partition job that cannot run | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
