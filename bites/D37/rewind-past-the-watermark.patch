@@ -3,16 +3,16 @@ Module: catalog-core
 Test: ReconcileWatermarkTest#theRewindMovesBackToTheWatermark
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-index a8867d9..14a5906 100644
+index 08c5025..da77f86 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
-@@ -321,7 +321,8 @@ public final class Reconcile {
-             return new Rewind(table, from, watermark, "", List.of(), Optional.of("the table has no DR watermark: the"
-                     + " verifier has found none of its versions whole in the DR store, so there is none to rewind to"));
+@@ -337,7 +337,8 @@ public final class Reconcile {
+                     + " the verifier has found none of its versions whole in the DR store, so there is none to rewind"
+                     + " to"));
          }
 -        DrWatermark to = watermark.get();
-+        DrWatermark to = lost(table, watermark.get().version()).stream().findFirst().map(next -> new DrWatermark(
++        DrWatermark to = lost(object, watermark.get().version()).stream().findFirst().map(next -> new DrWatermark(
 +                next.version(), next.metadataLocation(), watermark.get().recordedAt())).orElse(watermark.get());
          if (to.version() >= from.version()) {
-             return new Rewind(table, from, watermark, "", List.of(), Optional.of("the pointer is at the DR watermark,"
+             return new Rewind(object, from, watermark, "", List.of(), Optional.of("the pointer is at the DR watermark,"
                      + " version " + to.version() + "; there is nothing to rewind"));

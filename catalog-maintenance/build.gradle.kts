@@ -21,6 +21,8 @@ dependencies {
     implementation("software.amazon.awssdk:apache-client")
     // A storage profile's CA bundle, read and given to the S3 clients as the catalog's own profiles do (backlog 21).
     implementation(project(":catalog-objectstore"))
+    // What a version adds, counted for the DR verifier as the catalog's reconcile counts it (AddedFiles; D37).
+    implementation(project(":catalog-iceberg"))
     // Metrics, traces and logs over OTLP when an endpoint is set (docs/observability/README.md); the root build
     // swaps the exporter's OkHttp sender for the JDK's.
     implementation("org.springframework.boot:spring-boot-starter-opentelemetry")

@@ -10,6 +10,8 @@ dependencies {
     api("software.amazon.awssdk:s3") {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }
+    // Named, so the clients of a store serving TLS can trust its private CA (TestS3.siloBehindTls).
+    implementation("software.amazon.awssdk:apache5-client")
     implementation("software.amazon.awssdk:sts") {
         exclude(group = "software.amazon.awssdk", module = "netty-nio-client")
     }

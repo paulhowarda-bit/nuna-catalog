@@ -1,33 +1,18 @@
 package nuna.maintenance;
 
+import nuna.catalog.iceberg.AddedFiles;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import org.apache.iceberg.ContentFile;
-import org.apache.iceberg.ManifestContent;
-import org.apache.iceberg.ManifestFile;
-import org.apache.iceberg.ManifestFiles;
-import org.apache.iceberg.ManifestReader;
-import org.apache.iceberg.PartitionSpec;
-import org.apache.iceberg.PartitionStatisticsFile;
-import org.apache.iceberg.Snapshot;
-import org.apache.iceberg.StatisticsFile;
-import org.apache.iceberg.TableMetadata;
-import org.apache.iceberg.TableMetadataParser;
 import org.apache.iceberg.io.FileInfo;
 import org.apache.iceberg.io.SupportsPrefixOperations;
-import org.apache.iceberg.util.Tasks;
-import org.apache.iceberg.util.ThreadPools;
 
 /**
  * One table's or view's check in the DR store (D37, amended 2026-11-20; docs/observability/dr-watermark.md): how far
@@ -41,7 +26,8 @@ import org.apache.iceberg.util.ThreadPools;
  *
  * <p>A table or view with no watermark, or whose journaled versions do not follow its watermark one by one, is checked
  * whole at its pointer's version: every file every snapshot of that version reaches, found in one listing of its
- * location. Files are only read, never written.
+ * location. Files are only read, never written. What a version adds is counted by catalog-iceberg's
+ * {@link AddedFiles}, which the reconcile's walk counts with too.
  */
 final class DrVerify {
 
@@ -100,19 +86,19 @@ final class DrVerify {
             // The watermark's own file is gone from the DR store: nothing builds on it, so check the pointer whole.
             return whole(item);
         }
-        TableMetadata safeMetadata = TableMetadataParser.read(dr, watermark.metadataLocation());
+        AddedFiles.TableVersion safeMetadata = AddedFiles.read(watermark.metadataLocation(), this::bytes);
         boolean previousSafe = true;
         Optional<Version> safe = Optional.empty();
         Optional<String> missing = Optional.empty();
         for (Version version : item.versions()) {
             Optional<String> gap;
-            TableMetadata metadata = null;
+            AddedFiles.TableVersion metadata = null;
             if (!exists(version.metadataLocation())) {
                 gap = Optional.of(version.metadataLocation());
             } else {
-                metadata = TableMetadataParser.read(dr, version.metadataLocation());
-                gap = previousSafe ? added(safeMetadata, metadata, this::exists)
-                        : addsNothing(safeMetadata, metadata) ? Optional.empty()
+                metadata = AddedFiles.read(version.metadataLocation(), this::bytes);
+                gap = previousSafe ? AddedFiles.firstMissing(safeMetadata, metadata, this::bytes, this::exists)
+                        : AddedFiles.addsNothing(safeMetadata, metadata) ? Optional.empty()
                         : Optional.of("version " + version.version() + " adds files to version "
                                 + safe.map(Version::version).orElse(watermark.version()) + " after a version not"
                                 + " whole in the DR store");
@@ -163,101 +149,20 @@ final class DrVerify {
         if (!present.test(pointer.metadataLocation())) {
             return new Result(Optional.empty(), Optional.of(pointer.metadataLocation()));
         }
-        TableMetadata metadata = TableMetadataParser.read(dr, pointer.metadataLocation());
-        Optional<String> gap = added(null, metadata, present);
+        AddedFiles.TableVersion metadata = AddedFiles.read(pointer.metadataLocation(), this::bytes);
+        Optional<String> gap = AddedFiles.firstMissing(null, metadata, this::bytes, present);
         return gap.isPresent() ? new Result(Optional.empty(), gap) : new Result(Optional.of(pointer), Optional.empty());
-    }
-
-    /**
-     * The first file {@code metadata} adds to {@code base} (everything it reaches, when there is no base) that
-     * {@code present} does not find; none when every one is there. A manifest a snapshot of the base added, and a file
-     * a snapshot of the base added, were checked with that snapshot.
-     */
-    private Optional<String> added(TableMetadata base, TableMetadata metadata, Predicate<String> present) {
-        Set<Long> baseSnapshots = base == null ? Set.of()
-                : base.snapshots().stream().map(Snapshot::snapshotId).collect(Collectors.toSet());
-        // Sequence numbers tell which snapshot added a file only from format version 2: in version 1 they are all 0.
-        Set<Long> baseSequences = base == null || metadata.formatVersion() < 2 ? Set.of()
-                : base.snapshots().stream().map(Snapshot::sequenceNumber).collect(Collectors.toSet());
-        Set<String> manifestsRead = new HashSet<>();
-        Set<String> files = ConcurrentHashMap.newKeySet();
-        Map<Integer, PartitionSpec> specs = metadata.specsById();
-        for (Snapshot snapshot : metadata.snapshots()) {
-            if (baseSnapshots.contains(snapshot.snapshotId())) {
-                continue;
-            }
-            if (!present.test(snapshot.manifestListLocation())) {
-                return Optional.of(snapshot.manifestListLocation());
-            }
-            List<ManifestFile> unread = new ArrayList<>();
-            for (ManifestFile manifest : snapshot.allManifests(dr)) {
-                if (manifest.snapshotId() != null && baseSnapshots.contains(manifest.snapshotId())
-                        || !manifestsRead.add(manifest.path())) {
-                    continue;
-                }
-                if (!present.test(manifest.path())) {
-                    return Optional.of(manifest.path());
-                }
-                unread.add(manifest);
-            }
-            Tasks.foreach(unread).executeWith(ThreadPools.getWorkerPool()).stopOnFailure().throwFailureWhenFinished()
-                    .run(manifest -> read(manifest, specs, baseSequences, files));
-        }
-        Set<String> statistics = base == null ? Set.of() : statistics(base);
-        statistics(metadata).stream().filter(path -> !statistics.contains(path)).forEach(files::add);
-        List<String> absent = new ArrayList<>();
-        Tasks.foreach(files).executeWith(ThreadPools.getWorkerPool()).stopOnFailure().throwFailureWhenFinished()
-                .run(location -> {
-                    if (!present.test(location)) {
-                        synchronized (absent) {
-                            absent.add(location);
-                        }
-                    }
-                });
-        return absent.stream().sorted().findFirst();
-    }
-
-    /** The data and delete files a manifest lists live, but those a snapshot of the base added. */
-    private void read(ManifestFile manifest, Map<Integer, PartitionSpec> specs, Set<Long> baseSequences,
-                      Set<String> files) {
-        try {
-            if (manifest.content() == ManifestContent.DATA) {
-                try (ManifestReader<org.apache.iceberg.DataFile> reader = ManifestFiles.read(manifest, dr, specs)) {
-                    reader.forEach(file -> keep(file, baseSequences, files));
-                }
-            } else {
-                try (ManifestReader<org.apache.iceberg.DeleteFile> reader = ManifestFiles.readDeleteManifest(manifest,
-                        dr, specs)) {
-                    reader.forEach(file -> keep(file, baseSequences, files));
-                }
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("cannot read manifest " + manifest.path() + " in the DR store", e);
-        }
-    }
-
-    private static void keep(ContentFile<?> file, Set<Long> baseSequences, Set<String> files) {
-        Long added = file.fileSequenceNumber();
-        if (added == null || !baseSequences.contains(added)) {
-            files.add(file.location());
-        }
-    }
-
-    /** Whether a version adds nothing to the base: no snapshot and no statistics file the base lacks. */
-    private static boolean addsNothing(TableMetadata base, TableMetadata metadata) {
-        Set<Long> snapshots = base.snapshots().stream().map(Snapshot::snapshotId).collect(Collectors.toSet());
-        return metadata.snapshots().stream().allMatch(snapshot -> snapshots.contains(snapshot.snapshotId()))
-                && statistics(base).containsAll(statistics(metadata));
-    }
-
-    private static Set<String> statistics(TableMetadata metadata) {
-        Set<String> paths = new HashSet<>();
-        metadata.statisticsFiles().stream().map(StatisticsFile::path).forEach(paths::add);
-        metadata.partitionStatisticsFiles().stream().map(PartitionStatisticsFile::path).forEach(paths::add);
-        return paths;
     }
 
     private boolean exists(String location) {
         return dr.newInputFile(location).exists();
+    }
+
+    private byte[] bytes(String location) {
+        try (InputStream in = dr.newInputFile(location).newStream()) {
+            return in.readAllBytes();
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot read " + location + " in the DR store", e);
+        }
     }
 }

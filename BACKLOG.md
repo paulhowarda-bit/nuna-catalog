@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**18 open:** 4 S, 8 M, 2 L, 4 XL.
+**19 open:** 5 S, 8 M, 2 L, 4 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,6 +30,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [86](backlog/86.md) | M | The DR reconcile's archive proof reads each audit-archive chain whole into memory | a streamed verify-and-filter pass in the archive package and a test over a large chain in memory | 2026-11-20 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
+| [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
 
 ## Open items in full
 
@@ -266,6 +267,37 @@ at d176a3b:
    with a Java-only test and a bite.
 4. "Owner decides": a table still without a watermark is reported and left alone, as built.
 Done when 1 and 3 are built with Java-only tests and bites, and the heavy and overnight tests named above pass.
+
+**Built, 2026-11-20 (worktree-agent-a34b673c32ed6d84d): answers 1 and 3; open until the heavy and overnight tests
+pass.**
+- "Walk with a file check": `Reconcile.plan` walks every table as before, then checks each step in the store the
+  server runs on (the DR store, in DR): every file it adds to the version before it, data included, must be there; it
+  keeps the steps before the first that lacks one, takes no tip, and names the missing file. The watermark plays no
+  part in the walk any more. What a version adds is counted once, by `AddedFiles` in catalog-iceberg, for the worker's
+  `DrVerify` and for the walk: catalog-iceberg is the one catalog module that may import iceberg-core (D2,
+  `IcebergImportBoundaryTest`), so the worker (an Iceberg client, D30) and catalog-core both use it, and no boundary
+  changed. `TableFiles` gains `exists` and `bytes` (one `HEAD`; a whole read), in catalog-objectstore and the server's
+  traced wrapper (spans.md lists both). Tests: `ReconcileFileCheckTest` (new, Java-only, an Iceberg client's table in
+  memory), `ReconcileWatermarkTest`'s walk cases rewritten; `MetadataFilesTest#anyFileIsFoundAndRead` (heavy).
+- "Rewind views too": `dr-reconcile`'s rewind lists and moves views as tables, under `views` (`views-checked`),
+  reading each as its kind's metadata (`Metadata.viewFacts`). Tests: `ReconcileWatermarkTest#aFrozenViewIsRewoundToItsWatermark`
+  (Java-only); `DrRewindRouteTest#aFrozenViewAboveItsWatermarkIsRewoundToIt` (heavy).
+- Bites in `bites/D37/` recorded again against the moved code with the same breaks (`data-files-left-out` now in
+  `AddedFiles`, `rewind-past-the-watermark`, `rewind-without-freeze`), `walk-past-the-watermark` recorded again for
+  the file check, and `views-not-rewound` added.
+- Docs: `docs/observability/dr-watermark.md`, the runbook in `deploy/README.md` (rewind before walking; the walk now
+  covers every table), spans.md, build-plan.md.
+
+Left: the heavy tests (`DrRewindRouteTest`, `MetadataFilesTest`, `DrSuite`, `ManagementAuthorizationTest`,
+`MutatingRoutesAuditTest`, `DrReconcileRouteTest`) and the overnight `DrDrillTest` have not run; the overnight run takes them once this is on
+`main`. `DrDrillTest` will fail its dry run until item 93 makes its appender write the manifest lists its snapshots
+name; item 92 still holds the drill's leg with the DR store behind.
+
+**Paul, 2026-11-20, on the walk's start (D37, amended again):** "Check from the watermark". The file check landed at
+9d801ee starts at the DR database's pointer, which may sit above the watermark on a version whose own files never
+reached DR. Left: the walk checks every version from the table's watermark up, those at or below the pointer
+included; if any between the watermark and the pointer is missing a file, it takes nothing for that table and
+reports it for the rewind. A table with no watermark walks from its pointer, as built. Java-only tests and a bite (the check starting at the pointer).
 
 ### 29. M9: carry nuna to work (at work)
 
@@ -603,7 +635,7 @@ memory (`MemoryS3`) whose chain is larger than the reader holds at once.
 
 - Decided: 2026-11-20, D21
 - Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-maintenance/src/test/ catalog-tests-s3/ bites/M6/
+- Touches: catalog-maintenance/src/test/ catalog-maintenance/README.md catalog-tests-s3/ bites/M6/
 - Effort: M, a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job
 
 Items 21 and 88 made a storage profile's `ca-bundle` reach every S3 client the server and the worker build, and
@@ -620,6 +652,38 @@ Done when an overnight test (`@Tag("overnight")`) starts the S3 store with TLS f
 one), declares a storage profile naming that `ca-bundle`, runs a compaction Job on Docker Desktop's Kubernetes in the
 real Spark image, and checks the Job finished and committed; and a bite (the bundle left out of the Job) makes it
 fail on an assertion, not on fixture start-up.
+
+Worked on 2026-11-20 (worktree-agent-a0c19fa4b1e97ee01); open until the test passes in an overnight run and its bite
+bites. **Nothing of it has run**: the test is tagged overnight, Docker Desktop's Kubernetes has no room for its Jobs
+beside the nuna-demo stack, and no container was started. The fast build compiles it and passes.
+
+- `PrivateCaCompactionTest` (catalog-maintenance, `@Tag("overnight")`): Silo serving TLS from a private CA, a catalog
+  of its own on it whose storage profile names the CA's bundle, the worker's profile naming it too, and the chart's
+  Role as the chart renders it for a profile with a `ca-bundle` (create on ConfigMaps). First a control: the Job
+  launched without the bundle must fail with `PKIX path building failed` in its log and leave the table's snapshot.
+  Then the worker's own scan launches the Job with the bundle, which must succeed (`COMPACTED`, no PKIX error), with
+  the bundle's ConfigMap owned by that Job, and the table must end with one data file of 60 rows in a `replace`
+  snapshot.
+- How the pods reach the store's TLS name: the catalog's twin for pods (`TestCatalog.twinForPods`) names the store
+  `https://host.docker.internal:<port>`, which Docker's DNS resolves for pods and `HostDockerInternal` resolves to
+  loopback in the test JVM. The store's certificate (`PrivateCa.issue`) holds `localhost`, `127.0.0.1`, the Docker
+  host's address and `host.docker.internal` as subject alternative names, so the pod's TLS client, the twin's own STS
+  and S3 clients and the test's all find their host in it.
+- `TestS3.siloBehindTls(ca)`: a second Silo, for this test alone, apart from the run's store and whatever `-Ps3`
+  names, with the issued certificate and key in `--certs-dir /certs` and a TLS health check. Its own S3 clients trust
+  the CA; `serverProperties` leaves `require-tls` on and names the `ca-bundle`. The run's store is unchanged.
+- `TestCatalog.onStore(s3)`: a catalog server on that store and on a new database in the shared PostgreSQL, so its
+  work list holds this test's table alone. The writer's S3 clients and the worker's `Catalogs` now trust what the
+  worker's storage trusts (`TrustedS3Clients.register`, `Storage.clientProperties`): nothing changes without a bundle.
+- `KubernetesCompactionTest`'s harness (the image build, the two namespaces, the chart's service account and Role, the
+  worker's service-account folder, kubectl and helm) moved unchanged into `CompactionCluster`, which both tests use;
+  its `avro` moved to `TestCatalog`. `KubernetesCompactionTest` checks what it did before.
+- Bite, recorded and checked with `git apply --check`, not run: `bites/M6/job-storage-ca-left-out` (`storageCa`
+  finds no bundle, so the Job gets no ConfigMap, mount or trust store). The control is unaffected, and the worker's
+  Job then fails as the control does, on the assertion of its status.
+- Unchecked until it runs: that Silo serves TLS from `--certs-dir` with this EC key in PKCS #8 (read in Silo's
+  source, `cmd/common-main.go`, not run); that the Spark image's `$JAVA_HOME/bin/keytool` and its cacerts work as item
+  88's command expects; the wording of the TLS error in the Spark log.
 
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
@@ -643,6 +707,28 @@ the watermark. Three parts were left:
   stores and a replicator the test pauses: region lost, DR promoted, a verifier pass in DR, freeze, rewind, thaw;
   every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived. Done when the
   leg is in and an overnight run has passed it.
+
+### 93. The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit
+
+- Added: 2026-11-20 by agent on item 28
+- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/Appender.java catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java
+- Effort: S, the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest
+
+Item 28 (D37, amended 2026-11-20: "Walk with a file check") made the DR reconcile's walk take a step only when
+storage holds every file it adds: for each snapshot, its manifest list, the manifests and data files it adds. The
+overnight DR drill (`DrDrillTest`, catalog-tests-load) writes its tables through `Appender`, whose commits add
+snapshots naming `<table>/metadata/snap-<id>.avro` as their manifest list (`Appender.body`, the `add-snapshot`
+update) without ever writing that file. So the walk now stops before the first appended version, with
+"storage does not hold .../snap-<id>.avro, which version n adds", and the drill's dry run fails its
+`assertThat(plan.has("problem")).isFalse()`, as do the steps it expects after.
+
+Found while building item 28 on 2026-11-20 (worktree-agent-a34b673c32ed6d84d); not run, since the drill is an
+`overnight` test, so this is read from the code, not from a failure. `Appender` is also used by the other load tests
+(`ConcurrentWritersTest`, `KillPrimaryTest`, `SloTest`, `RollingUpgradeTest`, `TenThousandSnapshotsTest`), which never
+call the reconcile, so they are unaffected either way.
+
+Done when the drill's appended snapshots name manifest lists that exist and parse (an empty manifest list is enough:
+it adds no manifest and no data file), and `DrDrillTest` passes in the overnight run with the item 28 walk.
 
 ## Done and dropped
 
