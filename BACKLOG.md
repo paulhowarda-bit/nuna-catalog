@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**35 open:** 7 S, 12 M, 12 L, 4 XL.
+**36 open:** 7 S, 12 M, 12 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -47,6 +47,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [116](backlog/116.md) | S | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | one test's server settings: name the test database's two findings in nuna.database.allow-unsafe as the other server tests do | 2026-11-21 |
 | [117](backlog/117.md) | M | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | cause not known yet: finding why the derived storage profile id differs between the releases, then either a real upgrade fix in the server or a fix to the test's settings | 2026-11-21 |
+| [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 
 ## Open items in full
 
@@ -1791,6 +1792,50 @@ Logs: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-21\nightly.log`,
 (overwritten by the next run).
 
 Done when the cause is known and fixed, and the test passes in the overnight run's nightly.
+
+### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
+
+- Decided: 2026-11-21, D20
+- Added: 2026-11-21 by Paul
+- Touches: catalog-server/ catalog-security/ catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-objectstore/ catalog-maintenance/ deploy/helm/ demo/
+- Effort: XL, the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115
+
+Paul decided on 2026-11-21 (D20, amended) that clients which are no trusted engine will read tables flagged with a
+row/column policy the way Databricks Unity Catalog serves them: the engine never gets the table's files. A fleet nuna
+controls reads them, keeps only the rows and columns the caller may see, and writes filtered temporary files, and
+the engine gets credentials for those alone. It is a separate item from 115 because Paul may build 115 first.
+Today such a client gets 403 on a flagged table's storage access (`Authorizer`, rule D20).
+
+The delivery is the spec's server-side scan planning (`spec/rest-catalog-open-api.yaml`: `planTableScan`,
+`fetchPlanningResult`, `cancelPlanning`):
+
+1. A flagged table's config tells a client that is no trusted engine to plan on the server
+   (`scan-planning-mode=server`), and nuna advertises the plan routes.
+2. The plan request carries the query's `filter` and `select`, so the fleet copies only what the query needs.
+3. nuna answers `submitted` with a plan id and starts a job. The job reads the real files, applies the caller's row
+   filter and column masks (item 115's rules, so this item waits on it), and writes Parquet files with the table's
+   field ids to a temporary prefix.
+4. When the client polls, the answer lists only the temporary files, with a credential scoped to that prefix.
+
+What the work settles:
+
+- **The fleet.** Its own identity, which alone reads flagged tables for this purpose and is audited each time (as the
+  maintenance exemption is, D20/D30). The maintenance worker already launches Spark as Kubernetes Jobs
+  (`catalog-maintenance/.../KubernetesJobs.java`); at work that presumes Kubernetes compute for Spark (PLT-7, open).
+- **The copies.** Written with the table's storage profile KMS key (D26), deleted once their credentials expire,
+  audited (D23), read-only: an untrusted engine still gets 403 on a write to a flagged table.
+- **Latency.** A cold copy takes seconds to minutes. Cache copies by snapshot and by the caller's set of rules, so
+  callers in the same groups share one.
+- **Clients.** Per `research_notes/Enterprise Iceberg REST catalog plan/rest_catalog_spec.md` (client matrix): Java
+  1.12 and Spark, PyIceberg, DuckDB and iceberg-go plan on the server; Trino 484 and Snowflake do not; SingleStore
+  depends on the Iceberg Java version it carries. A client that cannot plan on the server still gets 403, unless Paul
+  asks for a fallback (`loadTable` answering with a filtered copy of the whole table).
+
+Done when, in the demo, a client that is no trusted engine (PyIceberg or Spark with a user's own token) reads a
+flagged table and gets only the rows and unmasked columns that user's groups allow, never a credential for the
+table's own files; two users in different groups get different results; the copies are gone after their credentials
+expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
+table's own prefix.
 
 ## Done and dropped
 
