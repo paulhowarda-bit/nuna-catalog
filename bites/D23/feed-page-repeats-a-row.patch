@@ -1,0 +1,16 @@
+Breaks: the next page starts at the last row of the page before, not after it, so the feed gives that row twice.
+Module: catalog-audit-tables
+Test: EventsReaderTest#pagesGiveEveryRowOnceAndInOrderWhileTheBudgetLasts
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+index 4c287a0..9e43196 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+@@ -339,7 +339,7 @@ public final class EventsReader {
+             }
+         }
+         return query.after().map(after -> NEWEST_FIRST.compare(row,
+-                new Candidate(after.timeMicros(), after.partition(), after.offset(), null)) > 0).orElse(true);
++                new Candidate(after.timeMicros(), after.partition(), after.offset(), null)) >= 0).orElse(true);
+     }
+ 
+     private Candidate candidate(Record record, Split split) {

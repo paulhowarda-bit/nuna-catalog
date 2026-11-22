@@ -77,7 +77,7 @@ public final class ArchiveVerifier {
     }
 
     /** The next line including its line feed, the unterminated rest of the stream, or null at its end. */
-    private static byte[] nextLine(InputStream in) throws IOException {
+    static byte[] nextLine(InputStream in) throws IOException {
         ByteArrayOutputStream line = new ByteArrayOutputStream();
         int b;
         while ((b = in.read()) != -1) {

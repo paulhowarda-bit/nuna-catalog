@@ -1,9 +1,21 @@
+import io.spring.gradle.dependencymanagement.dsl.DependencyManagementExtension
+
 plugins {
     `java-library`
     id("org.springframework.boot")
 }
 
 description = "The Spring Boot server: REST routes, config, error mapping, self-checks."
+
+// The audit table reader brings Iceberg's Parquet and Hadoop beside the server's Kafka client; their compression
+// libraries are pinned as the audit table writer pins them (catalog-audit-tables/build.gradle.kts).
+configure<DependencyManagementExtension> {
+    dependencies {
+        dependency("io.airlift:aircompressor:2.0.3")
+        dependency("org.xerial.snappy:snappy-java:1.1.10.7")
+        dependency("com.github.luben:zstd-jni:1.5.7-3")
+    }
+}
 
 dependencies {
     api(project(":catalog-core"))
@@ -15,6 +27,12 @@ dependencies {
     api(project(":catalog-objectstore"))
     api(project(":catalog-audit"))
     api(project(":catalog-security"))
+    // The console's audit feed reads the audit table events through the writer's own reader (EventsReader; D23,
+    // amended 2026-11-22: "Yes, link them"). No server code imports Iceberg. The writer's KMS client stays out: the
+    // server never calls KMS (D26; NoKmsBoundaryTest), and the reader is handed its S3 client, so builds no other.
+    implementation(project(":catalog-audit-tables")) {
+        exclude(group = "software.amazon.awssdk", module = "kms")
+    }
     api("org.springframework.boot:spring-boot-starter-webmvc")
     api("org.springframework.boot:spring-boot-starter-jdbc")
     // Metrics, traces and logs over OTLP when an endpoint is set (docs/observability/README.md); the root build
