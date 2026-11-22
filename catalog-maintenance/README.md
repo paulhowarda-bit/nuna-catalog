@@ -123,7 +123,11 @@ own, one certificate per key, named like the Job's Secret, owned by the Job and 
 (`$JAVA_HOME/lib/security/cacerts`, password `changeit`) and the bundle's with the JDK's `keytool`, and Spark's
 driver trusts that store (`-Djavax.net.ssl.trustStore` in `spark.driver.extraJavaOptions`, on spark-submit's command
 line). So the image needs `JAVA_HOME` and `keytool`, as the apache/spark images have; a `keytool` failure stops the
-Job with keytool's output. A table on a profile without a bundle gets the Job as before.
+Job with keytool's output. A table on a profile without a bundle gets the Job as before. A Job that does not trust
+the store's certificate logs `PKIX path building failed` only when the store's name has one address: the S3
+client's HttpClient handshakes TLS inside its loop over a name's addresses and reports the last address's error, so
+where the name also has an IPv6 address the pod cannot route (Docker Desktop's `host.docker.internal`), a missing or
+wrong bundle shows as `Unable to execute HTTP request: Network is unreachable` (backlog 89).
 
 The worker's meters count the tables assessed, the needs by reason, the Jobs started and cut off and the tables
 left over, and give each needy table a series of its own (`docs/observability/worker-metrics.md`). The catalog keeps
@@ -315,7 +319,7 @@ day (`TestCatalog.allDay`).
 | `KubernetesCompactionTest` | `heavy` | Compaction as a Job in Docker Desktop's cluster, the worker and its Jobs each in a namespace of their own that it deletes; the Job's deadline no later than the window's end; the next night the compacted table needs none; a Job naming the table by an id it no longer has stops without compacting; a Job whose window closes at once is stopped by Kubernetes and read as cut off. Needs `kubectl`, `helm` and the `docker-desktop` context. |
 | `LargeExpiryTest` | `overnight` | One scan expires 9,999 of 10,000 snapshots. |
 | `LargeOrphanScanTest` | `overnight` | The orphan scan's heap per reachable file, at 250,000 to 1,000,000 files. |
-| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails on the store's certificate and leaves the table alone; the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
+| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails its S3 request and leaves the table alone (its log shows the unroutable IPv6 address's error, not the PKIX one); the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
 | `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (in `catalog-tests-load`) | `overnight` | The worker's runnable jar as the DR verifier, on two Silo stores, the DR one fed by a replicator the test pauses: in the primary region the watermarks stop at the DR store's edge; in DR, a pass under the freeze leaves them there, and the rewind records each rewound table's watermark in its own commit, so the walk right after it checks the table at once, with no second verifier pass (backlog 92, 100). |
 | `EngineMatrixTest#compaction` (in `catalog-tests-engines`) | `overnight` | The worker's own Job in the engine matrix's cluster: 32 small files compacted into 4, the same rows, the replaced files left in place, no pending deletion. |
 

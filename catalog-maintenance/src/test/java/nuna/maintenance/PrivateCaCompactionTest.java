@@ -32,8 +32,15 @@ import org.junit.jupiter.api.io.TempDir;
  * the catalog.
  *
  * <p>First, as a control, the same Job without the bundle (the worker's Jobs as a worker whose storage profiles name
- * none launches them) fails on the store's certificate and leaves the table as it was: the store is behind a CA that
- * neither the image nor its JDK trusts, so the second Job's success is the bundle's doing. The bite
+ * none launches them) fails to reach the store and leaves the table as it was: the store is behind a CA that neither
+ * the image nor its JDK trusts, so the second Job, the same but for the bundle, succeeding against the same address
+ * is the bundle's doing. The control's log cannot show the certificate refused: Docker Desktop gives pods an IPv4 and
+ * an IPv6 address for {@code host.docker.internal}, and pods have no route for IPv6 (checked 2026-11-21 with
+ * {@code nslookup} and {@code ip -6 route} in a pod). The S3 client's HttpClient (5.6.4 in iceberg-aws-bundle 1.12.0)
+ * handshakes TLS inside its loop over a host's addresses, so a refused certificate on the IPv4 address sends it on to
+ * the IPv6 one, and it reports only that last error: {@code Network is unreachable}, never the PKIX error. So the
+ * control asserts that every attempt at the S3 request failed, which with the IPv4 address reachable (the second Job
+ * reaches it) is the handshake failing. The bite
  * {@code bites/M6/job-storage-ca-left-out} leaves the bundle out of every Job, and the worker's Job then fails as the
  * control does, on this test's assertion of its outcome.
  *
@@ -45,8 +52,10 @@ import org.junit.jupiter.api.io.TempDir;
 @Tag("overnight")
 class PrivateCaCompactionTest {
 
-    /** Where the JDK says it cannot trust a certificate: the error a Spark without the bundle logs. */
+    /** Where the JDK says it cannot trust a certificate; a pod reports it only when the store has no other address. */
     private static final String UNTRUSTED = "PKIX path building failed";
+    /** How the AWS SDK reports an S3 request whose every attempt failed, whatever the last address's error. */
+    private static final String UNREACHED = "Unable to execute HTTP request";
 
     @TempDir
     Path serviceAccount;
@@ -94,8 +103,8 @@ class PrivateCaCompactionTest {
                 String controlStatus = await(jobs, control);
                 String controlLog = kubectl(Duration.ofMinutes(1), null, "logs", "-n", jobs, "job/" + control);
                 assertThat(controlStatus).as("the Job without the bundle; its log:%n%s", controlLog).isEqualTo(",1");
-                assertThat(controlLog).as("refused by the store's certificate").contains(UNTRUSTED)
-                        .doesNotContain("COMPACTED");
+                assertThat(controlLog).as("the S3 request failed: the store's certificate refused on its IPv4"
+                        + " address, the IPv6 one unroutable").contains(UNREACHED).doesNotContain("COMPACTED");
                 assertThat(writer.loadTable(id).currentSnapshot().snapshotId()).as("not compacted")
                         .isEqualTo(written);
 
