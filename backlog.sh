@@ -147,7 +147,7 @@ claiming_turn() {
 }
 
 cmd_claim() {
-    local n=$1 st blob ref=refs/backlog/claims/$1 areas c other
+    local n=$1 st blob ref=refs/backlog/claims/$1 areas c other old= verb=claimed a
     shift
     st=$(status_of "$n")
     [ -n "$st" ] || die "there is no item $n on main or in this worktree"
@@ -155,6 +155,15 @@ cmd_claim() {
     areas=${*:-$(touches_of "$n")}
     [ -n "$areas" ] || die "item $n has no Touches: line: name the folders and files it will change, ./backlog.sh claim $n <area>... (none: only its item file and a status/ entry)"
     claiming_turn
+    # The holder may widen its own claim: the areas it holds plus the ones named now (or the item's Touches: line),
+    # checked against every other claim as a new claim is. The ref moves only from the claim read here.
+    if holds "$n"; then
+        old=$(git rev-parse -q --verify "$ref")
+        for a in $(field "$ref" touches); do
+            case " $areas " in *" $a "*) ;; *) areas="$areas $a" ;; esac
+        done
+        verb=widened
+    fi
     for c in $(refs claims); do
         [ "$c" = "$n" ] && continue
         case $(diagnose "$c") in finished*|abandoned*) continue ;; esac
@@ -163,8 +172,8 @@ cmd_claim() {
     done
     blob=$(printf 'item: %s\nsession: %s\nbranch: %s\nworktree: %s\nclaimed: %s\ntouches: %s\n' "$n" "$session" "$branch" "$top" "$now" "$areas" \
         | git hash-object -w --stdin)
-    if git update-ref "$ref" "$blob" "" 2>/dev/null; then
-        echo "claimed item $n: $session on $branch"
+    if git update-ref "$ref" "$blob" "$old" 2>/dev/null; then
+        echo "$verb item $n: $session on $branch"
     else
         echo "backlog.sh: item $n is already claimed:" >&2
         git cat-file -p "$ref" | sed 's/^/  /' >&2
