@@ -53,7 +53,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Grant administration (D18, D19): grant and revoke to groups, list by principal (its groups), list by object,
- * the batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
+ * the effective grants on an object (D45), the batch check, and the export for access certification. Every refusal is audited; one on a namespace, table
  * or view the caller holds nothing on is answered as if it did not exist (D18, item 73), as is every route on a
  * catalog the caller holds nothing on ({@link Holdings#catalog}, item 68). Every grant change goes
  * through the outbox in the same transaction (D23). The separation-of-duties check runs inside the store's write
@@ -69,6 +69,7 @@ class GrantRoutes {
     private static final Operation REVOKE = new Operation("revoke", Privilege.MANAGE_GRANTS, false);
     private static final Operation LIST = new Operation("listGrants", Privilege.MANAGE_GRANTS, false);
     private static final Operation EXPORT = new Operation("exportGrants", Privilege.MANAGE_GRANTS, false);
+    private static final Operation EFFECTIVE = new Operation("listEffectiveGrants", Privilege.MANAGE_GRANTS, false);
     private static final int EXPORT_PAGE = 500;
 
     record GrantSpec(Securables.Spec securable, String group, String privilege) {
@@ -160,6 +161,35 @@ class GrantRoutes {
         require(request, on, LIST);
         Page<GrantRecord> page = paged(() -> store.listGrantsOn(on.stored(), page(pageToken, pageSize)));
         return json(listing(page, securables));
+    }
+
+    /**
+     * The effective grants on one securable (D45): every grant that reaches it, on its catalog, on each namespace
+     * above it and on it, in that order from the catalog down, each with the securable it was granted on. Named as
+     * {@code /on} names it: {@code ?type=table&namespace=a&namespace=b&name=t}. The authorizer resolves them along
+     * the chain it decides on ({@link Authorizer#effectiveGrants}), so the answer never disagrees with an access
+     * decision; a privilege this version does not know gives nothing and is left out. {@code grant-admin-groups}
+     * names the deployment's grant admins, who hold {@code manage-grants} on every catalog by configuration, not
+     * by a grant. One answer, not paged: only the grants on one chain of securables. Needs {@code manage-grants} on
+     * the securable or above it, as list by object does; a refusal is answered as there.
+     */
+    @GetMapping(GRANTS + "/effective")
+    ResponseEntity<String> listEffective(@PathVariable String catalog,
+                                         @RequestParam String type,
+                                         @RequestParam(required = false) List<String> namespace,
+                                         @RequestParam(required = false) String name,
+                                         HttpServletRequest http) {
+        RequestContext request = RequestContext.of(http, callers);
+        CatalogRecord record = holdings.catalog(catalog, request.caller(), request.actor(), EFFECTIVE.name(),
+                EFFECTIVE.privilege());
+        Securables securables = new Securables(store, record);
+        Securables.Resolved on = securables.resolve(new Securables.Spec(type, namespace, name));
+        require(request, on, EFFECTIVE);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("securable", securables.render(on.stored()));
+        out.put("grants", authorizer.effectiveGrants(on.target()).stream().map(g -> render(g, securables)).toList());
+        out.put("grant-admin-groups", separation.grantAdminGroups().stream().sorted().toList());
+        return json(out);
     }
 
     /**
