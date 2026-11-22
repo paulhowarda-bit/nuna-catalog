@@ -563,6 +563,48 @@ class SecurityGateTest {
                 Integer.class)).as("grants went through the outbox").isGreaterThanOrEqualTo(3);
     }
 
+    /**
+     * D45 (backlog 129): the effective grants on a table, every grant that reaches it from the catalog down, each
+     * with the securable it was granted on. A grant on a namespace above it appears and a revoke removes it. The
+     * steward, who manages grants on sales, may read them there; the analyst, who only reads, is refused, and on hr,
+     * where she holds nothing, answered as for a missing table.
+     */
+    @Test
+    void theEffectiveGrantsOnATableIncludeEveryGrantAboveIt() throws Exception {
+        String orders = GRANTS + "/effective?type=table&namespace=sales&namespace=eu&name=orders";
+        HttpResponse<String> effective = send(GINA, "GET", orders, null);
+        ok(effective);
+        assertThat(JsonPath.<String>read(effective.body(), "$.securable.name")).isEqualTo("orders");
+        assertThat(JsonPath.<List<String>>read(effective.body(),
+                "$.grants[?(@.securable.type == 'catalog')].group")).contains("data-admins", "loaders");
+        assertThat(JsonPath.<List<String>>read(effective.body(),
+                "$.grants[?(@.group == 'analysts')].securable.namespace[0]")).contains("sales");
+        List<String> types = JsonPath.read(effective.body(), "$.grants[*].securable.type");
+        assertThat(types.getFirst()).as("from the catalog down").isEqualTo("catalog");
+        assertThat(types.indexOf("namespace")).isGreaterThan(types.lastIndexOf("catalog"));
+        assertThat(JsonPath.<List<String>>read(effective.body(), "$.grant-admin-groups"))
+                .containsExactly("grant-admins");
+
+        String euReaders = "eu-readers-" + UUID.randomUUID().toString().substring(0, 8);
+        String onEu = grantBody(namespaceSpec("sales", "eu"), euReaders, "select");
+        noContent(send(GINA, "POST", GRANTS, onEu));
+        HttpResponse<String> granted = send(GINA, "GET", orders, null);
+        ok(granted);
+        assertThat(JsonPath.<List<List<String>>>read(granted.body(),
+                "$.grants[?(@.group == '" + euReaders + "')].securable.namespace"))
+                .containsExactly(List.of("sales", "eu"));
+        noContent(send(GINA, "POST", GRANTS + "/revoke", onEu));
+        HttpResponse<String> revoked = send(GINA, "GET", orders, null);
+        ok(revoked);
+        assertThat(JsonPath.<List<String>>read(revoked.body(), "$.grants[*].group")).doesNotContain(euReaders);
+
+        ok(send(SAM, "GET", orders, null));
+        assertDenied(send(ANN, "GET", orders, null), "listEffectiveGrants", "no_privilege");
+        assertAnsweredAsMissing(send(ANN, "GET", GRANTS + "/effective?type=table&namespace=hr&name=staff", null),
+                send(ANN, "GET", GRANTS + "/effective?type=table&namespace=hr&name=none", null), "staff", "none",
+                "listEffectiveGrants");
+    }
+
     private HttpResponse<String> grant(String token, String securable, String group, String privilege)
             throws Exception {
         return send(token, "POST", GRANTS, grantBody(securable, group, privilege));
