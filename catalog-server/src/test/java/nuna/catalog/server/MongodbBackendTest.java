@@ -67,8 +67,8 @@ class MongodbBackendTest {
     /**
      * A one-member replica set (transactions need a replica set, not three members) and the server's URI for it,
      * through {@link LinkForTests}; the set is initiated directly. An initializer, as IssuerForTests is: the store
-     * is made while the web server starts, before property registrar beans run. One container for the JVM;
-     * Testcontainers removes it at exit.
+     * is made while the web server starts, before property registrar beans run. One container for the context,
+     * stopped with it ({@link StopWithContext}).
      */
     static class Mongodb implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
@@ -81,6 +81,7 @@ class MongodbBackendTest {
         @Override
         public void initialize(ConfigurableApplicationContext context) {
             started();
+            StopWithContext.register(context, "mongodb-for-tests", Mongodb::stop);
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("mongodb-for-tests",
                     Map.of("nuna.database.mongodb.uri", uri(link.host(), link.port(), "catalog"))));
         }
@@ -113,6 +114,13 @@ class MongodbBackendTest {
             }
             link.to(ALIAS, PORT);
             return mongodb;
+        }
+
+        private static synchronized void stop() {
+            mongodb.stop();
+            link.close();
+            mongodb = null;
+            link = null;
         }
 
         /** Direct to the one member: its configured host is the container's own name for itself. */

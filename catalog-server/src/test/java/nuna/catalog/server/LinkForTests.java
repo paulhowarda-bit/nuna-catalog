@@ -13,8 +13,7 @@ import org.testcontainers.utility.DockerImageName;
  * put it between their stores and theirs: the database joins {@link #network()} under an alias, the server connects
  * to {@link #host()}:{@link #port()}, and {@link #cut()} disables the proxy, which closes every open connection and
  * refuses new ones, until {@link #heal()} resets it. The fixtures themselves are package-private to their store
- * modules' tests, which nothing shares; this is their proxy, made the same way. One per container; Testcontainers
- * removes it at exit.
+ * modules' tests, which nothing shares; this is their proxy, made the same way. One per container, closed after it.
  */
 final class LinkForTests {
 
@@ -62,6 +61,12 @@ final class LinkForTests {
             client.reset();
             return null;
         });
+    }
+
+    /** Stops the proxy and removes the network; after the database has left it. */
+    void close() {
+        toxiproxy.stop();
+        network.close();
     }
 
     private interface ToxiproxyCall<T> {
