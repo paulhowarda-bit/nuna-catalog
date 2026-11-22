@@ -1,0 +1,16 @@
+Breaks: a record's place in its chain says its link holds without hashing it, so a changed record looks sound.
+Module: catalog-audit
+Test: ArchiveCheckTest#aPlacedRecordWhoseHashNoLongerHoldsSaysSo
+diff --git a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+index b491a77..c50a07b 100644
+--- a/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
++++ b/catalog-audit/src/main/java/nuna/catalog/audit/archive/ObjectLockArchive.java
+@@ -244,7 +244,7 @@ public final class ObjectLockArchive {
+                 byte[] body = Arrays.copyOfRange(line, Chain.HASH_HEX_LENGTH + 1,
+                         line.length - (line[line.length - 1] == '\n' ? 1 : 0));
+                 if (contains(body, id)) {
+-                    boolean holds = Chain.HEX.formatHex(Chain.link(previous, body)).equals(stored);
++                    boolean holds = true;
+                     byte[] after = ArchiveVerifier.nextLine(in);
+                     Optional<String> next = after != null && after.length >= Chain.HASH_HEX_LENGTH
+                             ? Optional.of(new String(after, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII))
