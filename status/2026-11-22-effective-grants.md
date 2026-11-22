@@ -21,3 +21,4 @@
   `./backlog.sh claim` cannot widen while it is held; releasing and claiming again was refused here. The item's
   `Touches:` line now names both paths. The item stays open until they are in.
 - Fast build after merging main (4fc7960, already merged): `./gradlew build` green, BUILD SUCCESSFUL in 6m 44s.
+- Merged main again at 7593e49 (item 130): `./gradlew build` green, BUILD SUCCESSFUL in 4m 44s.
