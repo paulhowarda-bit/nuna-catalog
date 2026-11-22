@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 9 S, 14 M, 12 L, 6 XL.
+**40 open:** 8 S, 14 M, 12 L, 6 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -50,7 +50,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [127](backlog/127.md) | M | Maintenance: one row per table for the overview's ice line (D45) | one read over the assessments the catalog already keeps, filtered to what the caller may select, with tests | 2026-11-22 |
 | [128](backlog/128.md) | M | Governance: a summary per catalog, and every hold and freeze with its history (D45) | two reads over the governance attributes the catalog keeps, with history from the audit, with tests | 2026-11-22 |
 | [129](backlog/129.md) | M | Grants: the effective grants on an object, inherited ones included (D45) | a read that resolves a securable's grants through its namespaces and catalog, with tests | 2026-11-22 |
-| [130](backlog/130.md) | S | A table's metadata log, a page at a time (D45) | a paged read over the commit journal the export already returns, with tests | 2026-11-22 |
 | [131](backlog/131.md) | S | Catalog and namespace properties for the console (D45) | a read of properties the catalog already holds, with tests; the Iceberg REST namespace properties may already cover the namespace half | 2026-11-22 |
 | [132](backlog/132.md) | S | A refusal under a DR freeze is not audited | the refusal published as other refusals are, with a test and a bite | 2026-11-22 |
 
@@ -1762,7 +1761,7 @@ What done looks like:
 ### 129. Grants: the effective grants on an object, inherited ones included (D45)
 
 - Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/, catalog-server/src/test/java/nuna/catalog/server/SecurityGateTest.java, bites/D45/
 - Effort: M, a read that resolves a securable's grants through its namespaces and catalog, with tests
 
 Each table's Grants tab in the prototype lists who may do what on it, inherited grants included, and says where
@@ -1773,16 +1772,17 @@ What done looks like:
 - A read of the effective grants on a catalog, namespace, table or view, each with the securable it was granted on.
 - Tests that a grant on a parent namespace or on the catalog appears, and that a revoke removes it.
 
-### 130. A table's metadata log, a page at a time (D45)
+Who may read it (settled on the recommendation, 2026-11-22): whoever holds `manage-grants` on the securable or
+above it, as for `GET /grants/on`, the read by object, with a refusal answered as there (403 and a `Denial`, or the
+404 of a missing name to a caller that holds nothing on it, D18 as amended for item 73). The grants on the namespaces
+and catalog above an object decide who may use it, so they belong to what its grant admin reviews, and the
+prototype's Grants tab shows them to such a caller. Holding `manage-grants` on the catalog was the other reading;
+it would close the tab to a namespace's own grant admins.
 
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
-- Effort: S, a paged read over the commit journal the export already returns, with tests
-
-Each table's Metadata log tab lists its metadata versions, newest first, a page at a time (D45). Today the only
-way to get the journal is whole, from `GET .../objects/{id}/export`.
-
-What done looks like: a paged read of a table's or view's metadata log, with a page token, and a route test.
+Progress, 2026-11-22: `Authorizer.effectiveGrants` and `GET .../grants/effective`, with unit tests in
+catalog-security (`EffectiveGrantsTest`, fast build), are on branch `worktree-agent-a07328ae508ee4400`. The route
+test in `SecurityGateTest` and the bite `bites/D45/effective-grants-own-only.patch` are written but not in the
+branch: they lie outside this item's claim, and the claim could not be widened (`status/2026-11-22-effective-grants.md`).
 
 ### 131. Catalog and namespace properties for the console (D45)
 
@@ -1907,3 +1907,4 @@ What done looks like:
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
 | [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
