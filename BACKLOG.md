@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**40 open:** 8 S, 14 M, 12 L, 6 XL.
+**40 open:** 8 S, 13 M, 13 L, 6 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -48,10 +48,10 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [125](backlog/125.md) | L | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | a new feed over the queryable audit tables with filters and a cursor, chain positions and verification, the archive check's status and the last day's counts, with tests and bites | 2026-11-22 |
 | [126](backlog/126.md) | L | Maintenance: each night's summary and each job's run on its worker slot (D45) | the worker reports what each job did, the catalog keeps it on all four stores, and two reads for the console, with tests | 2026-11-22 |
 | [127](backlog/127.md) | M | Maintenance: one row per table for the overview's ice line (D45) | one read over the assessments the catalog already keeps, filtered to what the caller may select, with tests | 2026-11-22 |
-| [128](backlog/128.md) | M | Governance: a summary per catalog, and every hold and freeze with its history (D45) | two reads over the governance attributes the catalog keeps, with history from the audit, with tests | 2026-11-22 |
 | [129](backlog/129.md) | M | Grants: the effective grants on an object, inherited ones included (D45) | a read that resolves a securable's grants through its namespaces and catalog, with tests | 2026-11-22 |
 | [131](backlog/131.md) | S | Catalog and namespace properties for the console (D45) | a read of properties the catalog already holds, with tests; the Iceberg REST namespace properties may already cover the namespace half | 2026-11-22 |
 | [132](backlog/132.md) | S | A refusal under a DR freeze is not audited | the refusal published as other refusals are, with a test and a bite | 2026-11-22 |
+| [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 
 ## Open items in full
 
@@ -1737,31 +1737,10 @@ What done looks like:
   The read is paged, for a large catalog.
 - Route tests, including that a table the caller may not select is not counted.
 
-### 128. Governance: a summary per catalog, and every hold and freeze with its history (D45)
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
-- Effort: M, two reads over the governance attributes the catalog keeps, with history from the audit, with tests
-
-The prototype's governance summary shows, for each catalog (D45):
-- how many tables are classified;
-- the holds and the DR freezes;
-- the tables closed until classified.
-
-It lists every hold and freeze with who placed it, when, why and when it was lifted.
-
-Today governance is read one object at a time, so a summary would take one call per table. Holds and freezes are
-placed and released one target at a time (`POST` and `DELETE .../holds`, `PUT` and `DELETE .../dr-freeze`).
-
-What done looks like:
-- `GET /management/v1/catalogs/{catalog}/governance/summary`, with those counts.
-- A list of the catalog's holds and freezes, current and lifted, each with its reason as recorded.
-- Route tests, including who may read it.
-
 ### 129. Grants: the effective grants on an object, inherited ones included (D45)
 
 - Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/, catalog-server/src/test/java/nuna/catalog/server/SecurityGateTest.java, bites/D45/
 - Effort: M, a read that resolves a securable's grants through its namespaces and catalog, with tests
 
 Each table's Grants tab in the prototype lists who may do what on it, inherited grants included, and says where
@@ -1771,6 +1750,18 @@ namespaces and catalog.
 What done looks like:
 - A read of the effective grants on a catalog, namespace, table or view, each with the securable it was granted on.
 - Tests that a grant on a parent namespace or on the catalog appears, and that a revoke removes it.
+
+Who may read it (settled on the recommendation, 2026-11-22): whoever holds `manage-grants` on the securable or
+above it, as for `GET /grants/on`, the read by object, with a refusal answered as there (403 and a `Denial`, or the
+404 of a missing name to a caller that holds nothing on it, D18 as amended for item 73). The grants on the namespaces
+and catalog above an object decide who may use it, so they belong to what its grant admin reviews, and the
+prototype's Grants tab shows them to such a caller. Holding `manage-grants` on the catalog was the other reading;
+it would close the tab to a namespace's own grant admins.
+
+Progress, 2026-11-22: `Authorizer.effectiveGrants` and `GET .../grants/effective`, with unit tests in
+catalog-security (`EffectiveGrantsTest`, fast build), are on branch `worktree-agent-a07328ae508ee4400`. The route
+test in `SecurityGateTest` and the bite `bites/D45/effective-grants-own-only.patch` are written but not in the
+branch: they lie outside this item's claim, and the claim could not be widened (`status/2026-11-22-effective-grants.md`).
 
 ### 131. Catalog and namespace properties for the console (D45)
 
@@ -1799,6 +1790,29 @@ What done looks like:
 - The refusal published as a `nuna.catalog.denial` record with its reason.
 - A route test.
 - A bite that drops the publish.
+
+### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
+
+- Added: 2026-11-22 by item 128
+- Touches: catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java, catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+- Effort: L, a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests
+
+What is missing: `GET /management/v1/catalogs/{catalog}/governance/holds` (item 128) lists the holds released and
+DR freezes lifted from the audit topic, because the store deletes a hold's row when it is released
+(`GovernanceStore.releaseHold`) and a freeze's attribute when it is lifted (`removeAttribute`). The read is bounded as
+`GET .../audit` is: the last 20,000 offsets of each partition. Every load and denial is audited to the same topic,
+so in a busy deployment those offsets cover minutes, not the 30 days the console's prototype shows ("Lifted in the
+last 30 days"). The route says how far back it read (`history.since`), so it never claims more than it holds, but the
+console's list of lifted holds will usually stop short at work.
+
+Item 128 took the audit topic because keeping the history in the store is a schema step on all four stores, and
+item 126 held those modules when 128 was built; the queryable audit tables (D23) are read by one named group and
+need item 125's reader.
+
+What done looks like: a hold's release and a freeze's lift recorded in the store with who and when (a released and
+lifted record, or the row kept with `released_at` and `released_by`), on all four stores with a suite in the shared
+test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
+its tests. The audit topic read goes.
 
 ## Done and dropped
 
@@ -1895,4 +1909,5 @@ What done looks like:
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
 | [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [128](backlog/128.md) | Governance: a summary per catalog, and every hold and freeze with its history (D45) | done | 2026-11-22 |
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
