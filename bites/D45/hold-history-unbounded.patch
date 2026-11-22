@@ -1,0 +1,17 @@
+Breaks: The hold history reads every partition from its earliest record, however many there are.
+Module: catalog-server
+Test: HoldHistoryTest#aReadThatStopsShortSaysSinceWhenAndLeavesOutWhatWasPlacedBefore
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java b/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java
+index e6fe50e..77bebf8 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java
+@@ -128,7 +128,7 @@ class HoldHistory {
+             Set<TopicPartition> open = new HashSet<>();
+             List<Partition> read = new ArrayList<>();
+             for (TopicPartition partition : partitions) {
+-                long from = Math.max(earliest.get(partition), end.get(partition) - SCAN_LIMIT);
++                long from = earliest.get(partition);
+                 read.add(new Partition(partition.partition(), earliest.get(partition), from, end.get(partition)));
+                 if (from < end.get(partition)) {
+                     consumer.seek(partition, from);

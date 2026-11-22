@@ -9,6 +9,7 @@ import nuna.catalog.audit.EventType;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,7 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * Soft drop, undrop within the window, purge after it by a maintenance principal only, as a claim then its
- * completion (D25, D30), and export.
+ * completion (D25, D30), export, and the metadata log a page at a time (D45).
  */
 @Tag("heavy")
 @GovernanceServer
@@ -147,6 +148,60 @@ class LifecycleTest {
         assertThat(JsonPath.<List<String>>read(export.body(), "$.journal[*].new-location"))
                 .containsExactly(location, current);
         expectError(api.manage("GET", "/objects/" + UUID.randomUUID() + "/export", null), 404, "NoSuchObjectException");
+    }
+
+    @Test
+    void theMetadataLogComesNewestFirstAPageAtATime() {
+        String ns = api.namespace();
+        String table = "/namespaces/" + ns + "/tables/t";
+        api.table(ns, "t");
+        for (int i = 0; i < 4; i++) {
+            expect(api.rest("POST", table, Api.SET_PROPERTY.formatted("v" + i)), 200);
+        }
+        String id = api.id(ns, "tables", "t");
+        String log = "/objects/" + id + "/metadata-log";
+        List<String> whole = JsonPath.read(expect(api.manage("GET", "/objects/" + id + "/export", null), 200).body(),
+                "$.journal[*].new-location");
+        assertThat(whole).hasSize(5);
+
+        HttpResponse<String> first = expect(api.manage("GET", log + "?pageSize=2", null), 200);
+        String current = JsonPath.read(expect(api.rest("GET", table, null), 200).body(), "$.metadata-location");
+        assertThat(JsonPath.<String>read(first.body(), "$.pointer.metadata-location")).isEqualTo(current);
+        assertThat(JsonPath.<Integer>read(first.body(), "$.pointer.version")).isEqualTo(5);
+        assertThat(JsonPath.<List<Integer>>read(first.body(), "$.journal[*].new-version")).containsExactly(5, 4);
+        assertThat(JsonPath.<List<String>>read(first.body(), "$.journal[*].new-location"))
+                .containsExactly(whole.get(4), whole.get(3));
+        assertThat(JsonPath.<String>read(first.body(), "$.journal[0].principal")).isEqualTo("tester");
+        assertThat(JsonPath.<String>read(first.body(), "$.journal[0].updates[0].action")).isEqualTo("set-properties");
+
+        // A commit after the first page shifts none of the pages after it.
+        expect(api.rest("POST", table, Api.SET_PROPERTY.formatted("later")), 200);
+        HttpResponse<String> second = expect(api.manage("GET", log + "?pageSize=2&pageToken="
+                + JsonPath.<String>read(first.body(), "$.next-page-token"), null), 200);
+        assertThat(JsonPath.<List<Integer>>read(second.body(), "$.journal[*].new-version")).containsExactly(3, 2);
+        HttpResponse<String> last = expect(api.manage("GET", log + "?pageSize=2&pageToken="
+                + JsonPath.<String>read(second.body(), "$.next-page-token"), null), 200);
+        assertThat(JsonPath.<List<Integer>>read(last.body(), "$.journal[*].new-version")).containsExactly(1);
+        assertThat(JsonPath.<Map<String, Object>>read(last.body(), "$")).doesNotContainKey("next-page-token");
+
+        HttpResponse<String> all = expect(api.manage("GET", log, null), 200);
+        assertThat(JsonPath.<List<Integer>>read(all.body(), "$.journal[*].new-version"))
+                .containsExactly(6, 5, 4, 3, 2, 1);
+        assertThat(JsonPath.<Map<String, Object>>read(all.body(), "$")).doesNotContainKey("next-page-token");
+
+        expectError(api.manage("GET", log + "?pageToken=not-a-token", null), 400, "BadRequestException");
+        expectError(api.manage("GET", "/objects/" + UUID.randomUUID() + "/metadata-log", null), 404,
+                "NoSuchObjectException");
+    }
+
+    @Test
+    void aDroppedTableKeepsItsMetadataLog() {
+        String ns = api.namespace();
+        String location = api.table(ns, "t");
+        String id = api.id(ns, "tables", "t");
+        expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
+        HttpResponse<String> log = expect(api.manage("GET", "/objects/" + id + "/metadata-log", null), 200);
+        assertThat(JsonPath.<List<String>>read(log.body(), "$.journal[*].new-location")).containsExactly(location);
     }
 
     private HttpResponse<String> claim(String id, String principal) {
