@@ -41,16 +41,18 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * The console's health page in a real browser (D38, backlog 48), for the three people it treats differently.
+ * The console's Health and Maintenance pages in a real browser (D38, backlog 48; redesigned in D45, backlog 124),
+ * for the three people they treat differently.
  *
  * <ul>
- *   <li>A platform operator sees catalog health for the whole deployment: this server's figures added to another
- *       server's, a third server named as not answering, and the worker's scans. Holding no grant, they see no table
- *       that needs compaction.</li>
- *   <li>A reader sees no catalog health, and of the tables that need compaction only those they may select, neediest
- *       first, each linking to its table's health: the latest assessment, why it is needy and its last compaction. A
- *       table they may not read is refused there as the catalog answers.</li>
- *   <li>Someone with no grant sees no catalog health and no table, and their token never reaches another server.</li>
+ *   <li>A platform operator sees catalog health for the whole deployment on Health: this server's figures added to
+ *       another server's, a third server named as not answering, and the worker's scans. Holding no grant, they see
+ *       no table in tonight's queue on Maintenance.</li>
+ *   <li>A reader sees no catalog health and no worker scans, and in tonight's queue only the tables they may select,
+ *       neediest first, each linking to its table's Health tab: the latest assessment, why it is needy and its last
+ *       compaction. A table they may not read is refused there as the catalog answers.</li>
+ *   <li>Someone with no grant sees no catalog health and no catalog, and their token never reaches another
+ *       server.</li>
  * </ul>
  *
  * <p>The other servers are stand-ins on this host: one answers {@code GET /management/v1/health/server} as a server
@@ -165,7 +167,7 @@ class ConsoleHealthTest {
         WebElement gathered = browser.await(By.id("health-gathered"));
         assertThat(gathered.getText()).isEqualTo("Gathered from 2 servers; 1 did not answer, so their figures are "
                 + "missing.");
-        List<WebElement> servers = driver.findElements(By.cssSelector("#health-servers tbody tr"));
+        List<WebElement> servers = driver.findElements(By.cssSelector("#health-servers > div[data-server]"));
         assertThat(servers).hasSize(3);
         assertThat(servers.get(0).getText()).contains("this server", "answered");
         assertThat(servers).extracting(WebElement::getText).anySatisfy(row -> assertThat(row)
@@ -198,26 +200,37 @@ class ConsoleHealthTest {
                 .contains("orphan-scan 2", "table-load 4");
         assertThat(fact("Latest failed scan")).endsWith(": console health test: the catalog was down");
 
-        // Platform operators hold no grant, so no table is listed for them.
-        assertThat(browser.await(By.id("neediest-none")).getText()).startsWith("No table you may read");
+        // Platform operators hold no grant, so tonight's queue lists no table for them; the worker is there too.
+        browser.open("/ui/#p=maintenance&c=trading");
+        assertThat(browser.await(By.id("neediest-none")).getText()).contains("No table you may read");
         assertThat(driver.findElements(By.cssSelector("#neediest tbody tr"))).isEmpty();
+        assertThat(browser.await(By.cssSelector("#maintenance #health-last-success")).getText())
+                .isEqualTo(local(lastSuccess) + " by maintenance");
     }
 
     @Test
     void aReaderSeesOnlyTheTablesTheyMayReadAndEachOnesHealth() {
         browser.signIn(token("rita", readers));
         browser.open("/ui/#p=health");
-
         assertNoCatalogHealth();
+
+        browser.open("/ui/#p=maintenance&c=trading");
         browser.await(By.cssSelector("#neediest tbody tr"));
         assertThat(driver.findElements(By.cssSelector("#neediest tbody tr"))).extracting(row -> row.getDomAttribute(
                 "data-table")).containsExactly("trading." + readable + ".events", "trading." + readable + ".orders");
-        assertThat(driver.getPageSource()).doesNotContain(hidden, "secret");
         WebElement orders = driver.findElement(By.cssSelector("#neediest tr[data-table='trading." + readable
                 + ".orders']"));
-        assertThat(orders.getText()).contains("small-files", "succeeded");
+        assertThat(orders.getDomAttribute("data-reasons")).isEqualTo("small-files");
+        assertThat(orders.getText()).contains("Small files", "succeeded");
+        // The worker's scans are for platform operators: the catalog's refusal stands in their place.
+        assertThat(browser.await(By.cssSelector("#maintenance .health-refused")).getText())
+                .contains("platform operators only");
+        assertThat(driver.findElements(By.id("health-worker"))).isEmpty();
+        browser.await("the page has not loaded", d -> d.findElements(By.cssSelector("#maintenance [data-loading]"))
+                .isEmpty());
+        assertThat(driver.getPageSource()).doesNotContain(hidden, "secret");
 
-        orders.findElement(By.cssSelector("button.link")).click();
+        orders.findElement(By.cssSelector("td.name a")).click();
         assertThat(browser.awaitText(By.id("table-health-verdict"), "Needs compaction").getText())
                 .contains("Score 3");
         assertThat(driver.getCurrentUrl()).contains("k=table", "n=orders", "tab=health");
@@ -248,9 +261,12 @@ class ConsoleHealthTest {
         String outsider = token("otto", "outsiders");
         browser.signIn(outsider);
         browser.open("/ui/#p=health");
-
         assertNoCatalogHealth();
-        assertThat(browser.await(By.id("neediest-none")).getText()).startsWith("No table you may read");
+
+        // Holding nothing, they are shown no catalog: the console has none to name.
+        browser.open("/ui/#p=maintenance&c=trading");
+        assertThat(browser.awaitText(By.cssSelector(".nc-main .empty h3"), "Your groups hold nothing in any catalog"))
+                .isNotNull();
         assertThat(driver.findElements(By.cssSelector("#neediest tbody tr"))).isEmpty();
 
         // The server refuses before it gathers anything: their token never reaches another server.
@@ -264,8 +280,11 @@ class ConsoleHealthTest {
     private void assertNoCatalogHealth() {
         WebElement refused = browser.await(By.cssSelector("#catalog-health .health-refused"));
         assertThat(refused.getText()).startsWith("Catalog health is shown to platform operators only.");
-        assertThat(browser.await(By.cssSelector("#catalog-health .alert-refused")).getText())
-                .contains("403 ForbiddenException");
+        WebElement refusal = browser.await(By.cssSelector("#catalog-health .refusal"));
+        assertThat(refusal.getDomAttribute("role")).isEqualTo("alert");
+        assertThat(ConsoleBrowser.textContent(refusal.findElement(By.cssSelector(".refusal-code"))))
+                .isEqualTo("403 ForbiddenException");
+        assertThat(refusal.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
         assertThat(driver.findElements(By.cssSelector("#catalog-health .health-figures"))).isEmpty();
         assertThat(driver.findElements(By.id("health-alerts"))).isEmpty();
         assertThat(driver.findElements(By.id("health-slos"))).isEmpty();
@@ -303,8 +322,8 @@ class ConsoleHealthTest {
     }
 
     private long alert(String kind) {
-        WebElement row = browser.await(By.cssSelector("#health-alerts tr[data-alert='" + kind + "']"));
-        return Long.parseLong(cell(row, 2));
+        return Long.parseLong(browser.await(By.cssSelector("#health-alerts [data-alert='" + kind + "'] [data-count]"))
+                .getText());
     }
 
     /** The value beside {@code label} in the first list of facts on the page that has it. */
@@ -318,11 +337,11 @@ class ConsoleHealthTest {
                 .map(row -> row.findElements(By.xpath("./td")).stream().map(WebElement::getText).toList()).toList();
     }
 
-    /** The pane's tab body once its tab has loaded, whatever it shows. */
+    /** The table page's tab body once its tab has loaded, whatever it shows. */
     private WebElement loadedTab() {
-        return browser.await("the tab has not loaded", d -> d.findElements(By.cssSelector("section.pane .tab-body"))
+        return browser.await("the tab has not loaded", d -> d.findElements(By.cssSelector("#table-page .tab-body"))
                 .stream().filter(body -> body.isDisplayed() && !body.getText().isBlank()
-                        && body.findElements(By.cssSelector("p.loading")).isEmpty()).findFirst().orElse(null));
+                        && body.findElements(By.cssSelector("[data-loading]")).isEmpty()).findFirst().orElse(null));
     }
 
     private static String cell(WebElement row, int n) {

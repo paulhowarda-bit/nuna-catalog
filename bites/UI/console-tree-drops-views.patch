@@ -2,15 +2,15 @@ Breaks: The console's tree lists a namespace's tables but not its views.
 Module: catalog-server
 Test: ConsoleBrowserTest#theTreeOpensDownToTablesAndViews
 
-diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index f63ff72..e819e7f 100644
---- a/catalog-server/src/main/resources/nuna/ui/app.js
-+++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -243,7 +243,6 @@ function children(levels) {
-   const items = [
-     ...c.namespaces.map(n => namespaceItem([...levels, n])),
-     ...c.tables.map(t => leaf('table', levels, t)),
--    ...c.views.map(v => leaf('view', levels, v)),
-   ];
-   if (!items.length) return h('ul', {role: 'group'}, h('li', {class: 'muted empty'}, 'empty'));
-   return h('ul', {role: 'group'}, items);
+diff --git a/catalog-server/src/main/resources/nuna/ui/tree.js b/catalog-server/src/main/resources/nuna/ui/tree.js
+--- a/catalog-server/src/main/resources/nuna/ui/tree.js
++++ b/catalog-server/src/main/resources/nuna/ui/tree.js
+@@ -138,7 +138,7 @@
+       tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), markOf(st, key, true, 'namespace:' + n.join('.')))));
+       if (open) walk(n, depth + 1);
+     }
+-    for (const [kind, names] of [['table', kids.tables], ['view', kids.views]]) {
++    for (const [kind, names] of [['table', kids.tables]]) {
+       for (const name of names) {
+         if (!nameHit(name)) continue;
+         const key = keyOf([...levels, name]);
