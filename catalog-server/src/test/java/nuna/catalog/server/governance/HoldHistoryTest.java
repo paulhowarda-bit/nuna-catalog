@@ -95,7 +95,9 @@ class HoldHistoryTest {
                 actor("stella")));
         send(0, minutes(4), new HoldChange(HoldChange.Action.PLACED, hold, STAFF, "ours", actor("stella")));
 
-        assertThat(history().lifted("gate").lifted()).as("a standing hold is the store's to list").isEmpty();
+        assertThat(history().lifted("gate").lifted())
+                .as("another catalog's release and gate's classification are not listed, nor a standing hold")
+                .isEmpty();
     }
 
     @Test
