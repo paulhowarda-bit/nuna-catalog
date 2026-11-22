@@ -18,8 +18,8 @@
   have nothing behind them: the catalog holds no free-form properties. A catalog's owner is a governance attribute.
 - `GovernanceWiring.java` is unchanged: the route is a `@RestController`, found by component scanning like every
   route in `governance/`.
-- Claims: item 128 held `build-plan.md` and `bites/D45/`, so the route is not yet in `build-plan.md`'s M7 table, and
-  the bite is in `bites/D18/`, the rule it guards.
+- Claims: item 128 held `build-plan.md` and `bites/D45/` at first, so the bite is in `bites/D18/`, the rule it
+  guards. Once 128 landed, the claim was widened to `build-plan.md` and the route got its row in the M7 table.
 - Tests:
   - `CatalogPropertiesTest` runs in the fast build: 4 tests, all passing. It checks the whole answer, that no
     configured secret or account id appears in it, grant admins and platform operators, and the hidden, audited
@@ -28,5 +28,5 @@
 - Bite: `bites/D18/catalog-properties-open.patch` replaces the holdings check with a plain lookup. Run by hand in this
   worktree, `CatalogPropertiesTest#aCallerWhoHoldsNothingInTheCatalogIsAnsweredAsForOneThatDoesNotExist` failed on
   its assertion (1 of 4 failed); restored, the tree matched HEAD and the patch passes `git apply --check`.
-- Fast build: `./gradlew build` passed after merging main (c077676), with `:bitesApply` and the new bite included.
+- Fast build: `./gradlew build` passed after merging main (c077676), and again after merging 47836a8 (`catalog-server` 200 tests, no failures), with `:bitesApply` and the new bite included.
   `catalog-server` ran 187 tests with no failures.
