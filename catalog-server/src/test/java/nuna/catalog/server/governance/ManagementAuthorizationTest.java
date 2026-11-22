@@ -165,6 +165,14 @@ class ManagementAuthorizationTest {
     }
 
     @Test
+    void theMetadataLogNeedsSelect() {
+        String id = api.id(ns, "tables", "t");
+        refused(api.manage("GET", "/objects/" + id + "/metadata-log", null, AUTH, api.steward()));
+        HttpResponse<String> log = expect(api.manage("GET", "/objects/" + id + "/metadata-log", null), 200);
+        assertThat(JsonPath.<List<Integer>>read(log.body(), "$.journal[*].new-version")).containsExactly(1);
+    }
+
+    @Test
     void thePurgeQueueIsForTheMaintenancePrincipal() {
         refused(api.manage("GET", "/maintenance/purge-eligible", null));
         expect(api.manage("GET", "/maintenance/purge-eligible", null, AUTH, api.maintenance()), 200);
