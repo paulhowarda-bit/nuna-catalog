@@ -19,8 +19,8 @@
 #   running          present while a run is going: Docker belongs to the run until it is gone
 #
 # The legs, each logged, each run whatever the one before did:
-#   1. ./gradlew build -Pheavy
-#   2. the Ceph leg: :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph
+#   1. ./gradlew build -Pheavy, with --continue, so one failing module does not hide the others (backlog 122)
+#   2. the Ceph leg: :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph, with --continue too
 #   3. ./nightly.sh: the overnight tests and the CAS test
 #   4. bites/run.sh, one bite at a time, only if leg 1 passed (a bite run against a failing build proves
 #      nothing)
@@ -247,9 +247,9 @@ main() {
     dry_args=()
     nightly_dry=()
     $dry && dry_args=(-m) && nightly_dry=(--test-dry-run)
-    leg heavy "Heavy build" heavy.log ./gradlew --console=plain build -Pheavy "${dry_args[@]}"
+    leg heavy "Heavy build" heavy.log ./gradlew --console=plain --continue build -Pheavy "${dry_args[@]}"
     heavy_ok=$?
-    leg ceph "Ceph leg" ceph.log ./gradlew --console=plain :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph "${dry_args[@]}"
+    leg ceph "Ceph leg" ceph.log ./gradlew --console=plain --continue :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph "${dry_args[@]}"
     leg nightly "Nightly" nightly.log ./nightly.sh "${nightly_dry[@]}"
 
     # --- the bites, rotating ------------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**36 open:** 8 S, 11 M, 12 L, 5 XL.
+**35 open:** 7 S, 11 M, 12 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -47,7 +47,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [121](backlog/121.md) | S | ConsoleBrowserTest could not start its browser session | one wait in the test's browser fixture, shown by an overnight heavy build; finding out whether the container's readiness check is the cause comes first | 2026-11-22 |
-| [122](backlog/122.md) | S | The overnight heavy build stops at its first failing module | one flag in the heavy leg's command and its comment, shown by the next overnight run | 2026-11-22 |
 
 ## Open items in full
 
@@ -1871,30 +1870,6 @@ theViewTabsShowEveryVersionWithItsSql() FAILED`) and
 Done looks like: the fixture does not hand a test a session before the hub can create one (for example, a first
 session retried until the hub answers, within a limit), and `ConsoleBrowserTest` passes in an overnight heavy build.
 
-### 122. The overnight heavy build stops at its first failing module
-
-- Added: 2026-11-22 by overnight run 2026-11-22
-- Touches: overnight.sh
-- Effort: S, one flag in the heavy leg's command and its comment, shown by the next overnight run
-
-`overnight.sh` runs the heavy leg as `./gradlew --console=plain build -Pheavy` (line 250), without `--continue`. When a
-test task fails, Gradle starts no further task and lets only those already running finish, so one module's failure
-hides every module not yet tested. `nightly.sh` already passes `--continue` to both its steps for this reason (its
-lines 14, 26 and 28).
-
-Evidence, the overnight run of 2026-11-22 (testing b1f073d): `catalog-store-mongo:test` failed 7 tests while
-`catalog-server:test` ran beside it; Gradle let that one finish and stopped, "75 actionable tasks: 52 executed". The
-heavy tests of `catalog-store-oracle`, `catalog-store-sql`, `catalog-store-sql-raft`, `catalog-tests-conformance`,
-`catalog-tests-s3` and `singlestore-change-feed` never ran, so the four stores' ref, branch-commit and DR suites
-(items 28, 100, 102, 103) were shown on MongoDB alone. The night before, the heavy build stopped after 4 minutes on
-`AuditTablesTest` (item 116), with only three modules tested.
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`.
-
-The bites still run only when the heavy build passes; `--continue` changes what the build tests, not that rule.
-
-Done looks like: the heavy leg runs with `--continue`, and the next overnight run whose heavy build fails a test still
-reports the test results of every module.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1985,3 +1960,4 @@ reports the test results of every module.
 | [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
 | [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
+| [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
