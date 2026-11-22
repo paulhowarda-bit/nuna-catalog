@@ -1,0 +1,16 @@
+Breaks: each run of a table's round-the-clock work is reported as a job of its own, under a new id, not added to the night's sum.
+Module: catalog-maintenance
+Test: NightJobsTest#aTablesWorkRoundTheClockAddsUpOverTheNight
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/HealthReports.java b/catalog-maintenance/src/main/java/nuna/maintenance/HealthReports.java
+index 425d748..6f40aaf 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/HealthReports.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/HealthReports.java
+@@ -170,7 +170,7 @@ final class HealthReports {
+         }
+         CleanupWindow.Night night = window.last(started);
+         tallies.keySet().removeIf(key -> !key.night().equals(night.date()));
+-        Tally tally = tallies.computeIfAbsent(new Key(night.date(), object, kind, failed), key -> new Tally(started));
++        Tally tally = new Tally(started);
+         tally.last = ended.isAfter(tally.last) ? ended : tally.last;
+         tally.counts = tally.counts.plus(counts);
+         job(tally.id, night, kind, object, Optional.empty(), tally.first, Optional.of(tally.last),

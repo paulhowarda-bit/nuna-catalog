@@ -10,6 +10,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Collection;
@@ -190,6 +191,14 @@ class NightlyCleanupTest {
             assertAbout(health(many).at("/last-compaction/ended-at"), CLOSES);
             assertThat(health(some).at("/assessment/needs-compaction").asBoolean()).isTrue();
             assertThat(health(some).has("last-compaction")).as("never compacted").isFalse();
+            // And each as a job of the night, on the one slot by turns (backlog 126).
+            LocalDate tonight = LocalDate.parse("2027-03-27");
+            assertThat(catalog.jobs(tonight, equality)).filteredOn(job -> job.startsWith("COMPACTION"))
+                    .containsExactly("COMPACTION 1 SUCCEEDED");
+            assertThat(catalog.jobs(tonight, many)).filteredOn(job -> job.startsWith("COMPACTION"))
+                    .containsExactly("COMPACTION 1 CUT_OFF");
+            assertThat(catalog.jobs(tonight, some)).filteredOn(job -> job.startsWith("COMPACTION"))
+                    .isEmpty();
 
             ScanReport next = at(NEXT_OPENS, worker);
             assertThat(next.tablesAssessed).as("the next night, assessed again").isEqualTo(4);
@@ -246,6 +255,13 @@ class NightlyCleanupTest {
             ScanReport next = at(NEXT_OPENS, worker);
             assertThat(next.orphanScans).as("not recorded: scanned again the next night").isEqualTo(1);
             assertThat(catalog.pending(object)).containsExactly(orphan);
+            // Each a job of its night (backlog 126).
+            assertThat(catalog.jobs(LocalDate.parse("2027-03-27"), UUID.fromString(object)))
+                    .filteredOn(job -> job.startsWith("ORPHAN"))
+                    .containsExactly("ORPHAN_SCAN none CUT_OFF");
+            assertThat(catalog.jobs(LocalDate.parse("2027-03-28"), UUID.fromString(object)))
+                    .filteredOn(job -> job.startsWith("ORPHAN"))
+                    .containsExactly("ORPHAN_SCAN none SUCCEEDED");
             assertThat(at(NEXT_OPENS.plus(Duration.ofDays(1)), worker).orphanScans).as("an orphan interval of two"
                     + " nights").isZero();
             assertThat(at(NEXT_OPENS.plus(Duration.ofDays(2)), worker).orphanScans).isEqualTo(1);

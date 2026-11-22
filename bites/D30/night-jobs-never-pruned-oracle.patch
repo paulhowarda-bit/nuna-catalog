@@ -1,0 +1,15 @@
+Breaks: on Oracle the jobs of nights older than the catalog keeps are never deleted.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Nights#oldNightsAreDeleted
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java
+index 3cccc2a..e9b384c 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java
+@@ -53,7 +53,6 @@ final class OracleNights {
+                     job.id(), job.worker(), job.night(), job.opens(), job.closes(), job.kind().name(), job.objectId(),
+                     job.slot().orElse(null), job.startedAt(), job.endedAt().orElse(null), job.outcome().name(),
+                     job.filesIn(), job.filesOut(), job.snapshotsExpired(), job.filesDeleted(), job.bytesDeleted());
+-            update(connection, "DELETE FROM maintenance_job WHERE night < ?", keepFrom);
+             return true;
+         }, written -> true);
+     }
