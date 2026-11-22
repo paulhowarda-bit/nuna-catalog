@@ -237,3 +237,25 @@ export async function queue() {
 
 /** A table's health: its latest assessment and last compaction, with select on it. */
 export const tableHealth = target => call(managed(target) + '/health');
+
+/** The maintenance nights, newest first: `days` of totals, the newest `jobs` of them with their jobs (item 126). */
+export const nights = (days, jobs) => call(`/management/v1/maintenance/nights?days=${days}&jobs=${jobs}`);
+
+// ---- the audit feed (item 125): audit readers only ----
+
+/** A page of a catalog's audit feed from the audit tables, newest first; `q` holds type, principal, path, to, pageToken. */
+export function auditFeed(catalog, q) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(q)) if (value) query.set(key, value);
+  return call(`/management/v1/catalogs/${enc(catalog)}/audit/feed?${query}`);
+}
+
+/** The last day's audit counts in a catalog: by type, the busiest objects, and the deployment's by type. */
+export const auditSummary = catalog => call(`/management/v1/catalogs/${enc(catalog)}/audit/summary`);
+
+/** The archive check's status: how far each chain is verified, and this server's last run. */
+export const auditArchive = () => call('/management/v1/audit/archive');
+
+/** One record's place in its hash chain, from the archive. */
+export const auditChain = (partition, offset, eventId) =>
+  call(`/management/v1/audit/chains/${enc(partition)}/records/${enc(offset)}?event-id=${enc(eventId)}`);

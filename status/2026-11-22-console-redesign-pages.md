@@ -15,10 +15,8 @@
     (deployment figures, servers, the worker, which is on Health too since operators may hold no catalog).
   - Refusals show the status and type, the server's message word for word and its `X-Request-ID`.
   - `detail.js` is gone: its parts are in `browse.js`, `table.js`, `panels.js` and `tree.js`.
-- Left out, each waiting on its item: the catalog-wide audit feed with its chain and archive checks (125); last
-  night's maintenance, the gantt and the 30-night sparklines (126); the ice line's tables in shape and Contents'
-  snapshots and last commit (127); Compact now (114). The DR replication and Store panels on Health have no route at
-  all.
+- Left out, each waiting on its item: the ice line's tables in shape and Contents' snapshots and last commit (127);
+  Compact now (114). The DR replication and Store panels on Health have no route at all.
 - The panels of items 128 to 131, which landed on `main` while the branch was built, added after merging it (at
   2e7e640):
   - 128: Governance opens on a Summary (classified, held, frozen and regulated figures; the holds and freezes standing,
@@ -42,10 +40,28 @@
   - Checked against the local stand-in in a browser, extended with these routes: every new panel, the next page of the
     journal, no console errors and no sideways scroll at 390 px. No build or test was run for this part: the
     coordinator held builds while a by-hand nightly ran.
-- Fonts not done: Instrument Sans and Geist Mono were not downloaded (no download was approved in this run). The
-  console uses the system font stacks already in the tokens, and the policy has no `font-src`. To add them: the woff2
-  files and `OFL.txt` under `/ui/`, `woff2|txt` in `UiWiring`'s file pattern, `font-src 'self'` in its policy, and
-  `@font-face` rules in `style.css`.
+- Fonts: Instrument Sans and Geist Mono, with their licences, under `/ui/`, `woff2|txt` in `UiWiring`'s file
+  pattern, `font-src 'self'` in its policy and `@font-face` rules in `style.css`: committed on this branch by the
+  coordinator (1224021) with Paul's approval of the downloads. `bites/UI/csp-allows-inline-script.patch` is recorded
+  again against the new policy line, with the same break.
+- The panels of items 125 and 126, added after merging `main` at fc4d7aa:
+  - 125: the Audit page is the catalog's feed from the audit tables, newest first, filtered by kind (with the last
+    day's counts on each chip), person, table or namespace and time, 50 a page. Each record opens to its request id,
+    its partition and offset, whether its chain is verified past it, its link in the archive (checked on asking) and
+    the event itself. Beside it: the hash chain and the archive check's last run, the last day's counts by type and
+    the most recorded objects. The overview has an audit figure. These routes are for audit readers only; anyone
+    else, or a server without the audit tables, gets the answer verbatim in the feed, and below it the catalog's own
+    records from the audit topic as before.
+  - 126: the Maintenance page leads with the newest night's figures, each with a sparkline over the last 30 nights,
+    and draws the night's compaction Jobs on their slots and its orphan scans in a lane of their own, with the window's
+    end dashed. A job links to its table's Health tab only for a caller who may read the table. The overview has
+    "Maintenance, last night" and the same chart. The totals are the whole deployment's, as the route answers them,
+    and the page says so.
+  - `sizeWords` moved from `table.js` to `dom.js`; `nights.js` is new (and in `ConsoleTest`'s list of files).
+  - Tests: `ConsoleBrowserTest` reports a compaction Job and an orphan scan as the worker for a night no other test
+    uses, and checks the chart, the figures and the overview; and checks that the Audit page shows the feed's 503 as
+    answered (this test server has no audit tables) with the catalog's own trail below. The feed with real records is
+    checked only against the local stand-in; the route tests cover the routes.
 - Tests: `ConsoleBrowserTest` and `ConsoleHealthTest` (heavy) rewritten for the new pages, with a theme test and a
   phone-width test (drawer, no sideways scroll on six pages); `ConsoleSignInTest` and `ConsoleTest` follow the new
   files. The five console bites in `bites/UI/` are recorded again against the new code, with the same breaks.

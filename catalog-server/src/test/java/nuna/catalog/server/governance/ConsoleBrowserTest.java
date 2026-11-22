@@ -10,11 +10,14 @@ import nuna.catalog.server.IssuerForTests;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -425,6 +428,63 @@ class ConsoleBrowserTest {
     }
 
     @Test
+    void theNewestNightIsDrawnOnItsSlotsWithThirtyNightsOfFigures() {
+        // A night no other test reports: tomorrow's, the newest the route answers.
+        LocalDate night = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC).plusDays(1);
+        Instant opens = night.atTime(1, 0).toInstant(ZoneOffset.UTC);
+        String trades = api.id(String.join("\u001f", eu), "tables", "trades");
+        UUID compaction = UUID.randomUUID();
+        UUID scan = UUID.randomUUID();
+        expect(reportJob(compaction, night, opens, "compaction", trades, 2, opens.plusSeconds(60),
+                opens.plusSeconds(1_800), "succeeded", 40, 3), 204);
+        expect(reportJob(scan, night, opens, "orphan-scan", trades, null, opens.plusSeconds(120),
+                opens.plusSeconds(4 * 3600), "cut-off", 0, 0), 204);
+
+        signIn(tester());
+        browser.open("/ui/#p=maintenance&c=trading");
+        WebElement lastNight = browser.await(By.cssSelector("#last-night[data-night='" + night + "']"));
+        WebElement job = browser.await(By.cssSelector("#last-night a.gj[data-job='" + compaction + "']"));
+        assertThat(job.getDomAttribute("href")).contains("k=table", "n=trades", "tab=health");
+        assertThat(job.getDomAttribute("aria-label")).startsWith("Compaction of " + top + ".equities.eu.trades: ")
+                .endsWith("succeeded, 40 files into 3");
+        browser.await(By.cssSelector("#last-night a.gj[data-job='" + scan + "'] rect.scan"));
+        assertThat(lastNight.findElements(By.cssSelector("svg text.axis"))).extracting(WebElement::getText)
+                .contains("Slot 1", "Slot 2", "Orphans");
+        assertThat(Integer.parseInt(browser.await(By.cssSelector(
+                "#night-kpis .kpi[data-kpi='tables-compacted'] .kpi-v")).getText())).isPositive();
+        assertThat(driver.findElements(By.cssSelector("#night-kpis svg.spark"))).hasSize(4);
+
+        browser.open("/ui/#p=overview&c=trading");
+        assertThat(browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='maintenance']")).getText())
+                .contains("Maintenance, last night", "tables compacted", "Snapshots expired");
+        browser.await(By.cssSelector("#overview #last-night a.gj[data-job='" + compaction + "']"));
+    }
+
+    @Test
+    void theAuditPageShowsTheFeedsAnswerVerbatimAndTheCatalogsOwnTrail() {
+        // This server has no audit tables, so the feed answers 503, and the page says so as it was answered.
+        signIn(api.grantAdmin());
+        browser.open("/ui/#p=audit&c=trading");
+        WebElement refusal = browser.await(By.cssSelector("#audit-feed .refusal"));
+        HttpResponse<String> answer = api.manage("GET", "/audit/feed", null, AUTH, api.grantAdmin());
+        assertThat(answer.statusCode()).as(answer.body()).isEqualTo(503);
+        assertThat(textContent(refusal.findElement(By.cssSelector(".refusal-code"))))
+                .isEqualTo("503 " + JsonPath.read(answer.body(), "$.error.type"));
+        assertThat(textContent(refusal.findElement(By.cssSelector(".refusal-msg"))))
+                .isEqualTo(JsonPath.<String>read(answer.body(), "$.error.message"));
+        assertThat(refusal.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
+        // The catalog's own records, from the audit topic, for whoever manages its grants.
+        browser.await(By.cssSelector("#audit-page #audit p.window"));
+        browser.await("the audit figures are shown without the audit tables",
+                d -> d.findElements(By.id("audit-kpis")).isEmpty());
+
+        // Nor does the overview show an audit figure.
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='maintenance']"));
+        assertThat(driver.findElements(By.cssSelector("#overview-kpis .kpi[data-kpi='audit']"))).isEmpty();
+    }
+
+    @Test
     void theCatalogsPropertiesAreShownAsDeclared() {
         signIn(tester());
         browser.open("/ui/#c=trading&tab=properties");
@@ -659,6 +719,18 @@ class ConsoleBrowserTest {
     /** A node of the tree: {@code catalog}, or a kind and a dotted path, such as {@code table:a.b.t}. */
     private static By node(String id) {
         return By.cssSelector(".tree a.node[data-node='" + id + "']");
+    }
+
+    /** The worker's report of one job of a night whose window opens at {@code opens} and lasts four hours. */
+    private HttpResponse<String> reportJob(UUID id, LocalDate night, Instant opens, String kind, String object,
+                                           Integer slot, Instant started, Instant ended, String outcome, long in,
+                                           long out) {
+        String body = "{\"night\":\"" + night + "\",\"opens\":\"" + opens + "\",\"closes\":\""
+                + opens.plusSeconds(4 * 3600) + "\",\"kind\":\"" + kind + "\",\"object-id\":\"" + object + "\""
+                + (slot == null ? "" : ",\"slot\":" + slot) + ",\"started-at\":\"" + started + "\",\"ended-at\":\""
+                + ended + "\",\"outcome\":\"" + outcome + "\",\"files-in\":" + in + ",\"files-out\":" + out
+                + ",\"snapshots-expired\":0,\"files-deleted\":0,\"bytes-deleted\":0}";
+        return api.manage("PUT", "/maintenance/jobs/" + id, body, GovernanceServer.PRINCIPAL, "maintenance");
     }
 
     /** A governance mark on a node of the tree: {@code m-held}, {@code m-frozen} or {@code m-reg}. */

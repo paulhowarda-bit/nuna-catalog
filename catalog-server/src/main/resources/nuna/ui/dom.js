@@ -72,6 +72,20 @@ export function icon(id, cls = 'ic') {
 
 export const fmt = n => Number(n).toLocaleString('en-GB');
 export const plural = (n, word, words) => `${fmt(n)} ${n === 1 ? word : words || word + 's'}`;
+
+/** A size in bytes, in the largest unit that keeps it at 1 or more. */
+export function sizeWords(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n)) return null;
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  let i = 0;
+  let v = n;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${i ? v.toFixed(v < 10 ? 1 : 0) : v} ${units[i]}`;
+}
 export const ordinal = n => n + (n % 10 === 1 && n % 100 !== 11 ? 'st' : n % 10 === 2 && n % 100 !== 12 ? 'nd'
   : n % 10 === 3 && n % 100 !== 13 ? 'rd' : 'th');
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

@@ -1,10 +1,11 @@
-// The overview: one catalog at a glance. Today's routes give tonight's queue (drawn below the ice line), the
-// governance figures for those who may describe the catalog (item 128) and, for platform operators, the latency
-// objectives. Waiting on other items, and left out until they land: the tables in shape above the line (127), last
-// night's maintenance and its gantt (126), and the last day's audit counts (125).
+// The overview: one catalog at a glance. Tonight's queue (drawn below the ice line); last night's maintenance with
+// its jobs on their slots (item 126); for platform operators, the latency objectives; for audit readers, the last
+// day's audit counts (item 125); and the governance figures for those who may describe the catalog (item 128).
+// Waiting on another item, and left out until it lands: the tables in shape above the line (127).
 
 import * as api from './api.js';
-import {failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
+import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
+import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {pageHref} from './route.js';
 import {iceLegend, iceQueue, lastAssessed, queue, queueOf, queueTable} from './queue.js';
 import {sloFigures} from './health.js';
@@ -32,15 +33,19 @@ export function overviewPage(catalog) {
     }
     const kpis = h('div', {class: 'kpis', id: 'overview-kpis'});
     out.push(kpis);
-    Promise.all([governanceKpi(catalog), latencyKpi()]).then(([gov, latency]) => {
-      kpis.append(...[gov, latency].flat().filter(Boolean));
+    const nights = thirtyNights();
+    Promise.all([nights.then(list => lastNightKpi(catalog, list), error => h('div', {class: 'kpi'}, failure(error, {compact: true}))),
+      latencyKpi(), auditKpi(catalog), governanceKpi(catalog)]).then(list => {
+      kpis.append(...list.flat().filter(Boolean));
       if (!kpis.children.length) kpis.remove();
     });
+    const lastNight = h('div');
+    load(lastNight, async () => lastNightPanel(await nights));
     out.push(h('div', {class: 'grid-21'}, panel('Queued for tonight', 'neediest first, as the worker will start them',
       rows.length ? [queueTable(rows.slice(0, 8), {numbered: false, cls: 'stack-sm'}),
         h('p', {class: 'fine'}, rows.length > 8 ? `${rows.length - 8} more in the queue. ` : '',
           h('a', {href: pageHref('maintenance', catalog)}, 'Open the maintenance queue'))]
-        : h('p', {class: 'muted'}, 'No table you may read needs compaction.'))));
+        : h('p', {class: 'muted'}, 'No table you may read needs compaction.')), lastNight));
     return out;
   });
   return main;
@@ -63,6 +68,29 @@ async function governanceKpi(catalog) {
       h('div', null, h('span', null, 'Legal holds'), h('b', null, fmt(f.holds))),
       h('div', null, h('span', null, 'DR freezes'), h('b', null, fmt(f.freezes))),
       h('div', null, h('span', null, 'Closed until classified'), h('b', null, fmt(f.closed)))));
+}
+
+/** The catalog's audit, last day: for audit readers; anyone else, or a server without the audit tables, shows nothing. */
+async function auditKpi(catalog) {
+  let sum;
+  try {
+    sum = await api.auditSummary(catalog);
+  } catch (error) {
+    if (error.status === 403 || error.status === 404 || error.status === 503) return null;
+    return h('div', {class: 'kpi'}, failure(error, {compact: true}));
+  }
+  const check = await api.auditArchive().then(a => a.configured ? a.check : undefined, () => undefined);
+  const byType = sum['by-type'] || {};
+  const count = types => Object.entries(byType).filter(([t]) => !types || types.includes(t)).reduce((a, [, x]) => a + Number(x || 0), 0);
+  return h('div', {class: 'kpi', 'data-kpi': 'audit'},
+    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('audit', catalog)}, icon('audit'), 'Audit, last day')),
+    h('p', {class: 'kpi-v'}, fmt(count(null)), h('small', null, 'records')),
+    h('div', {class: 'kpi-list'},
+      h('div', null, h('span', null, 'Refusals'), h('b', null, fmt(count(['nuna.catalog.denial', 'nuna.catalog.auth-failure'])))),
+      h('div', null, h('span', null, 'In the deployment'), h('b', null, fmt(Object.values(sum['deployment-by-type'] || {})
+        .reduce((a, x) => a + Number(x || 0), 0)))),
+      h('div', null, h('span', null, 'Archive chain checked'), h('b', null, check === undefined ? 'no archive'
+        : check ? (check.intact ? at(check['ended-at']) : 'broken') : 'not yet'))));
 }
 
 /** Latency objectives, last day: platform operators only; anyone else sees nothing here, not a refusal. */

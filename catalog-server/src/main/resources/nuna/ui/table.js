@@ -5,7 +5,7 @@
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
-  load, muted, panel, pill, plural, s, tabsNav, tbl, when} from './dom.js';
+  load, muted, panel, pill, plural, s, sizeWords, tabsNav, tbl, when} from './dom.js';
 import {objectHref} from './route.js';
 import {keyOfRow, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
@@ -121,18 +121,6 @@ function headMarks(target, title) {
 const snapshotsOf = m => (m.snapshots || []).slice().sort((a, b) => b['timestamp-ms'] - a['timestamp-ms']);
 const currentOf = m => (m.snapshots || []).find(sn => sn['snapshot-id'] === m['current-snapshot-id']) || null;
 
-function sizeWords(bytes) {
-  const n = Number(bytes);
-  if (!Number.isFinite(n)) return null;
-  const units = ['bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
-  let i = 0;
-  let v = n;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${i ? v.toFixed(v < 10 ? 1 : 0) : v} ${units[i]}`;
-}
 
 function rowsWords(n) {
   const v = Number(n);

@@ -1,8 +1,10 @@
-// Maintenance: tonight's queue in one catalog, the catalog's maintenance policy (read, and set by those who may
-// modify the catalog), and the worker's scans for platform operators. Waiting on other items, and left out until
-// they land: last night's figures with their 30-night sparklines (126) and "Compact a table now" (114).
+// Maintenance: last night's figures with their 30-night sparklines and its jobs on their slots (item 126), tonight's
+// queue in one catalog, the catalog's maintenance policy (read, and set by those who may modify the catalog), and
+// the worker's scans for platform operators. Waiting on another item, and left out until it lands: "Compact a table
+// now" (114).
 
 import * as api from './api.js';
+import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
 import {dialogForm, failure, field, fill, granted, h, icon, load, openDialog, pageHead, panel, pill, plural, tbl, text}
   from './dom.js';
 import {emptyQueue, lastAssessed, queue, queueChips, queueOf, queueTable} from './queue.js';
@@ -20,8 +22,13 @@ export function maintenancePage(catalog) {
     const assessed = lastAssessed(rows);
     const policy = h('div');
     const worker = h('div');
+    const figures = h('div');
+    const lastNight = h('div');
     load(policy, () => policyPanel(catalog, policy));
     load(worker, workerPanel);
+    const nights = thirtyNights();
+    load(figures, async () => nightKpis(await nights));
+    load(lastNight, async () => lastNightPanel(await nights));
     let queuePanel;
     if (rows.length) {
       const table = queueTable(rows, {id: 'neediest'});
@@ -37,8 +44,10 @@ export function maintenancePage(catalog) {
           + 'each one\'s assessment is on its Health tab.',
         side: assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
       }),
+      figures,
       queuePanel,
-      h('div', {class: 'grid-2'}, policy, worker),
+      h('div', {class: 'grid-2'}, lastNight, policy),
+      worker,
     ];
   });
   return main;
