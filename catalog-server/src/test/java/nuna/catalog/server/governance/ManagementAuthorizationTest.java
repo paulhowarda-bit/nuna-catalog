@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.jayway.jsonpath.JsonPath;
 import nuna.catalog.audit.Denial;
 import nuna.catalog.audit.EventType;
+import nuna.catalog.server.S3ForTests;
 import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.UUID;
@@ -43,6 +44,18 @@ class ManagementAuthorizationTest {
 
     @Value("${local.server.port}")
     private int port;
+
+    @Value("${nuna.storage.profiles." + S3ForTests.PROFILE + ".access-key-id:}")
+    private String accessKey;
+
+    @Value("${nuna.storage.profiles." + S3ForTests.PROFILE + ".secret-access-key:}")
+    private String secretKey;
+
+    @Value("${nuna.storage.profiles." + S3ForTests.PROFILE + ".sts-role:}")
+    private String stsRole;
+
+    @Value("${nuna.storage.profiles." + S3ForTests.PROFILE + ".maintenance-principal:}")
+    private String maintenancePrincipal;
 
     private Api api;
     private String ns;
@@ -233,6 +246,28 @@ class ManagementAuthorizationTest {
                 .containsExactly(Api.CATALOG);
         expect(api.manage("POST", "/grants/revoke", grant, AUTH, api.grantAdmin()), 204);
         assertThat(catalogs(null, GovernanceServer.PRINCIPAL, "rita", GovernanceServer.GROUPS, readers)).isEmpty();
+    }
+
+    @Test
+    void readingACatalogsPropertiesNeedsSomethingInIt() {
+        // Item 131: the outsider holds nothing in the catalog and is answered as for a missing one.
+        hidden(api.manage("GET", "/properties", null, AUTH, api.outsider()), "NoSuchWarehouseException");
+        for (String holder : java.util.Arrays.asList(null, api.steward(), api.operator())) {
+            String[] auth = holder == null ? new String[0] : new String[] {AUTH, holder};
+            String body = expect(api.manage("GET", "/properties", null, auth), 200).body();
+            assertThat(JsonPath.<String>read(body, "$.name")).isEqualTo(Api.CATALOG);
+            assertThat(JsonPath.<String>read(body, "$.kms-key-set")).isEqualTo("test-keys");
+            assertThat(JsonPath.<String>read(body, "$.legal-entity")).isEqualTo("Test Entity");
+            assertThat(JsonPath.<String>read(body, "$.storage-profile.name")).isEqualTo(S3ForTests.PROFILE);
+            assertThat(JsonPath.<String>read(body, "$.storage-profile.table-root"))
+                    .isEqualTo("s3://" + S3ForTests.bucket() + "/tables");
+            // The profile's keys, role and maintenance principal stay out.
+            for (String kept : new String[] {accessKey, secretKey, stsRole, maintenancePrincipal}) {
+                if (!kept.isEmpty()) {
+                    assertThat(body).doesNotContain(kept);
+                }
+            }
+        }
     }
 
     @Test

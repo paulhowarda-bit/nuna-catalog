@@ -1,0 +1,18 @@
+Breaks: a drop or rename a DR freeze refuses is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: FrozenObjectRefusalTest
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
+index abc4e70..bbaefda 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
+@@ -258,8 +258,7 @@ class ObjectRoutes {
+     private void requireUnfrozen(RequestContext request, CatalogRecord catalog, CatalogObject object,
+                                  List<String> path, Operation operation, GovernanceChain chain, String what) {
+         chain.nearest(GovernanceAttribute.Kind.DR_FREEZE).ifPresent(freeze -> {
+-            throw guard.refuse(request, catalog, object, path, operation, "dr_freeze",
+-                    what + " is frozen for DR reconcile: " + freeze.value());
++            throw new AccessDenied(what + " is frozen for DR reconcile: " + freeze.value());
+         });
+     }
+
