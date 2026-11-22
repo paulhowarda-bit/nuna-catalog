@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.openqa.selenium.By;
+import org.openqa.selenium.SessionNotCreatedException;
 import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -60,13 +61,33 @@ public final class ConsoleBrowser implements AutoCloseable {
         return origin;
     }
 
-    /** Ends the open session, if any, and starts a new one with an empty profile. */
+    /**
+     * Ends the open session, if any, and starts a new one with an empty profile. A session Selenium could not create
+     * is asked for again, up to three times in all: once, the first session of a class found the container started
+     * but Selenium resetting the connection (backlog 121), with nothing of the console yet under test.
+     */
     public RemoteWebDriver session() {
         quit();
         ChromeOptions options = new ChromeOptions()
                 .addArguments("--unsafely-treat-insecure-origin-as-secure=" + origin, "--window-size=1600,1000");
-        driver = new RemoteWebDriver(chrome.getSeleniumAddress(), options);
-        return driver;
+        for (int attempt = 1; ; attempt++) {
+            try {
+                driver = new RemoteWebDriver(chrome.getSeleniumAddress(), options);
+                return driver;
+            } catch (SessionNotCreatedException notCreated) {
+                if (attempt == 3) {
+                    throw notCreated;
+                }
+                System.out.println("ConsoleBrowser: session not created (attempt " + attempt + "), asking again: "
+                        + notCreated.getMessage().lines().findFirst().orElse(""));
+                try {
+                    Thread.sleep(2_000);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw notCreated;
+                }
+            }
+        }
     }
 
     public RemoteWebDriver driver() {

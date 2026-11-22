@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**35 open:** 7 S, 11 M, 12 L, 5 XL.
+**32 open:** 6 S, 11 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,9 +30,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | S | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails | 2026-11-20 |
-| [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
-| [102](backlog/102.md) | L | Refs in the store: the ref record and its cut on four stores (item 26) | a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them | 2026-11-20 |
-| [103](backlog/103.md) | L | Branch commits and the merge transaction in the store (item 26) | a change to the commit core on four stores (a ref held by every branch commit, a batch that ends a ref) and the purge claim's ref check, each with suite cases and bites; waits on item 102 | 2026-11-20 |
 | [104](backlog/104.md) | L | Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26) | every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102 | 2026-11-20 |
 | [105](backlog/105.md) | L | Commits on a branch write its own pointer (item 26) | the engine's twelve reads and swaps of main's key become the ref's, for tables, views and transactions, with the merge cap and the unknown-outcome path on a branch; most tests need only Java; waits on items 103 and 104 | 2026-11-20 |
 | [106](backlog/106.md) | L | Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26) | five routes with their rights, idempotency, limits, audit and meters, and the work list's expiry section, with route tests; waits on item 102 | 2026-11-20 |
@@ -46,7 +43,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [114](backlog/114.md) | L | Run a table's maintenance now, from the console, outside the cleanup window too | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites | 2026-11-20 |
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
-| [121](backlog/121.md) | S | ConsoleBrowserTest could not start its browser session | one wait in the test's browser fixture, shown by an overnight heavy build; finding out whether the container's readiness check is the cause comes first | 2026-11-22 |
+| [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 
 ## Open items in full
 
@@ -581,6 +578,11 @@ of its cases failed (`MongoStoreSuiteTest$Dr`):
 PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item 122).
 `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
 
+2026-11-22: `DrSuite` was fixed on `worktree-heavy-fixes` (its versions now count the one creating an object commits;
+item 100 says how) and passed on all four stores in two full heavy builds. The third, clean in every module, also passed
+`DrRewindRouteTest`, `MetadataFilesTest`, `ManagementAuthorizationTest`, `MutatingRoutesAuditTest` and
+`DrReconcileRouteTest`. Left: item 92 and the overnight `DrDrillTest`.
+
 ### 29. M9: carry nuna to work (at work)
 
 - Decided: 2026-11-20, D8
@@ -1103,284 +1105,6 @@ on all four stores, as items 28 and 100 are.**
 Left: the heavy and overnight tests above have not run; agents ran no container tests on 2026-11-20. The overnight
 run's heavy build runs them.
 
-### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
-
-- Decided: 2026-11-20, D37
-- Added: 2026-11-20 by agent on item 92
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/DrRoutes.java catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java docs/observability/dr-watermark.md deploy/README.md
-- Effort: M, one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first
-
-The DR rewind (D37, amended 2026-11-20; `Reconcile.rewind`) moves a table back to its watermark in one commit: the
-next version, `pointer + 1`, holding the watermark's metadata again. The commits it gives up stay in the journal. The
-verifier's work list (`GET /management/v1/maintenance/dr-work`, `DrRoutes`) names at most 100 journaled versions
-above the watermark, oldest first (`DrRoutes.MAX_VERSIONS`). So when a rewind gives up 100 versions or more, every
-version the work list names is a lost one, none of them whole in the DR store, and the rewound version is never
-named. The table is not checked whole either, since its versions follow the watermark one by one (`DrVerify.Item.whole`).
-Each pass checks the same lost versions, and the table stays behind its watermark for good:
-
-- the readout lists it and `NunaDrLagging` pages for it from 15 minutes after its oldest lost commit, which is
-  already older than that;
-- the walk (D37 "Check from the watermark", item 28) finds the lost versions between its watermark and its pointer
-  not whole and takes nothing for it, saying to rewind it;
-- the rewind refuses: "the pointer ... already holds the DR watermark's metadata ...; there is nothing to rewind until
-  the verifier passes it" (`Reconcile.planRewind`).
-
-A table that lost fewer than 100 versions is fine: the verifier's next pass reaches the rewound version, which adds
-nothing beyond the watermark and passes on its metadata file. Item 92's drill leg keeps its lost tails under 100 for
-this reason.
-
-Read from the code on 2026-11-20 while writing item 92's drill leg; not seen in a run. A region lost behind a
-store that is minutes behind a busy table loses more than 100 commits easily.
-
-Ways out, each Paul's to choose since each touches D37: the rewind records the watermark at the version it writes,
-in the same transaction (the version is the watermark's metadata, whole by construction); or the work list names
-the versions after the last rewind only, or always the pointer's too; or the verifier checks a version with no
-journaled commit of its own after a rewind against the watermark directly. Done when a table that gave up more than
-100 versions is at its watermark after the rewind and the next pass, in a route test on each store, and the runbook
-in `deploy/README.md` says nothing about a limit.
-
-**Decided 2026-11-20 (D37, amended again):** "Rewind sets watermark": the rewind records the watermark at the
-version it writes, in the same transaction.
-
-**Built, 2026-11-20 (worktree-agent-a5f1bf763c08126f3): "Rewind sets watermark"; open until its heavy tests run.**
-- `PointerSwap` gains `drWatermark`: a swap that sets it records its next pointer as the object's DR watermark in the
-  commit's transaction, by `recordDrWatermark`'s rule (it only rises). `Reconcile.rewind`'s swap sets it, for tables
-  and views; every other commit leaves it unset. The stores raise the watermark after writing the journal:
-  PostgreSQL and CockroachDB (`SqlDr.raise`, the upsert `recordDrWatermark` runs), Oracle (`OracleDr.raise`, its
-  MERGE), MongoDB (`MongoDr.raise`). No schema step.
-- Tests: `ReconcileWatermarkTest` (Java only; its store double records the watermark as the stores do): the rewind's
-  swap records it at the version it writes, after which the plan has nothing to rewind and the walk nothing to report;
-  a rewind giving up 150 versions ends at its watermark; the view's rewind records it too. Heavy, compiled, not run:
-  `DrSuite#aRewindsCommitRecordsTheWatermark` on all four stores (a rewind past 101 versions records it and the object
-  is not behind; a conflicting swap records nothing; a later commit leaves it) and `DrRewindRouteTest` (after the
-  rewind the table is out of the work list and its watermark refuses a lower report; a rewind giving up 101 versions).
-- Bite `bites/D37/rewind-leaves-the-watermark`. `lower-watermark-accepted` and the M8
-  `reconcile-apply-ignores-moved-pointer` recorded again at their moved lines, same breaks.
-- The runbook and `docs/observability/dr-watermark.md` say the rewind records the watermark; neither mentions a
-  limit. `dr-watermark.md`'s "(at most 100 a pass)" describes the verifier's work-list page and stays.
-
-Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only (the governance server's harness), so
-"a route test on each store" is `DrSuite`'s store-level test on all four plus the route test on PostgreSQL.
-
-**Decided 2026-11-20 (D37, amended):** "a route test on each store" is met by `DrSuite` on all four stores plus `DrRewindRouteTest` on PostgreSQL; the item closes when the heavy build passes them. Paul: "Yes, that's enough".
-
-Seen in the overnight run of 2026-11-22 (testing b1f073d): on MongoDB, `DrSuite`'s "a swap that records the
-watermark, a DR rewind's, records it at the version it writes in its own commit ..." failed at `DrSuite.java:104`,
-expected 103 but was 104, with four other `DrSuite` cases (item 28). PostgreSQL, Oracle and CockroachDB did not run:
-the heavy build stopped after this module (item 122), and `DrRewindRouteTest` in `catalog-server` passed.
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
-
-### 102. Refs in the store: the ref record and its cut on four stores (item 26)
-
-- Decided: 2026-11-20, D33
-- Added: 2026-11-20 by agent on item 26
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/ docs/storage-design.md build-plan.md
-- Effort: L, a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them
-
-Part of item 26 (D33). Its design section says why, in choices 1 to 4 and question 1; this item is written for
-question 1's recommended answer (a ref keeps names too). Answer (a) leaves the names out of the cut; (c) needs more.
-
-What is missing: PostgreSQL, CockroachDB and Oracle have had a `ref` table since V3 (`V3__whole_contract.sql` in each:
-catalog id, name, kind, `base_position` as text, expires-at), with no Java type and no operation; MongoDB has no
-collection for it (`docs/storage-design.md` 9 (f) 5). `base_position` waited for a tag protocol that was never fixed
-(storage-design 8): the journal's `seq` is drawn at insert, so it is not in commit order, and MongoDB's journal has
-none.
-
-Build:
-- A schema step on each store, after item 98's (PostgreSQL V10, CockroachDB V9, Oracle V11 and MongoDB's newest
-  step): the ref gains an id (UUID), created-at, created-by and what it was made from; `base_position` stays unused. A new record, the ref's cut (`ref_entry`): ref id, object id, kind,
-  namespace path and name (normalized and display), and the object's main pointer as of the ref's point (version,
-  metadata location, SHA-256). MongoDB gets both as collections with the same unique keys. Additions only
-  (storage-design 9 (f) 6).
-- `RefStore` in `catalog-store-api`, joined to `CatalogStore`: `createRef` (from main, or from another ref's current
-  head: that ref's own pointer for a table where it has one, else its cut), `readRef`, `listRefs` (paged),
-  `renewRef`, `deleteRef` (its cut and every pointer keyed by its id go in the same transaction), `resolveOnRef` (an
-  object by namespace path and name, through the cut), and paged listings of a ref's namespaces, tables and views.
-  Each write takes a `Change` (outbox, idempotency), as every mutation does (storage-design 9).
-- The cut is read in one consistent read. On the SQL stores one `INSERT … SELECT`, whose statement snapshot holds
-  every multi-table transaction whole. On MongoDB a snapshot read at one cluster time, written in batches; the ref is
-  visible only once its whole cut is written. P11's counts (open branches, tags) are checked in the create's
-  transaction under a lock on the catalog's refs, so two creates cannot pass a limit together.
-- A shared `RefSuite`, tagged `heavy`, run inside each store's suite as the other groups are: a cut never holds half
-  of a multi-table transaction committed while it is read; names compare as every name does (D8.6); the limits hold
-  under concurrent creates; a deletion leaves no cut row and no pointer of the ref; paging. `MutationSuite` drives the
-  new mutations (overnight).
-- `docs/storage-design.md` section 8 rewritten as built, and `build-plan.md`'s ref row (2.4) with it.
-
-Done when `RefSuite` passes on all four stores in the heavy build, the fast build is green, and the guards' bites are
-recorded in `bites/D33/`. Items 103, 104, 106 and 111 wait on this one.
-
-**Decided 2026-11-20 (D33, amended):** a ref's cut keeps each table's and view's name as well as its pointer (question 1 (b), "Names too").
-
-**Progress, 2026-11-20 (worktree-agent-a59232ac18259ccb8): built; open until the heavy build passes `RefSuite` on
-all four stores, as items 98 and 100 are.**
-- Schema steps, additions only: PostgreSQL `V11__refs.sql`, CockroachDB `V10__refs.sql` (its own folder in
-  `catalog-store-sql`), Oracle `V12__refs.sql`, MongoDB step 10 ("refs and their cuts"). `ref` gains `id` (unique
-  index `ref_id`), `created_at`, `created_by`, `from_ref` (the source ref's id, NULL for main) and `from_name` (its
-  name then, `main` for main); no release before writes `ref`, so the columns are NOT NULL where they must be. New
-  `ref_entry`, the cut: `ref_id`, `object_id`, `kind` (NAMESPACE, TABLE, VIEW), `parent_id`, `name_norm`, `name`,
-  `version`, `metadata_location`, `sha256` (all three NULL for a namespace), keyed (ref_id, object_id), with
-  `ref_entry_listing` (ref_id, parent_id, kind, name_norm, object_id) and `ref_entry_object` (object_id). MongoDB:
-  collections `ref` (unique `ref_name` on catalogId, nameNorm) and `ref_entry` with the same three indexes.
-- API (`catalog-store-api`): `Ref` (its name rules: no `@`, no `/`, not `main`; a branch expires, a tag never;
-  `key(objectId)` is (object, ref id); `expiredAt`), `RefEntry`, `RefLimits` (`P11` = 50 branches, 1,000 tags) and
-  `RefStore`, which `CatalogStore` now extends: `createRef`, `readRef`, `findRef`, `listRefs`, `renewRef`,
-  `deleteRef`, `findRefNamespace`, `resolveOnRef`, `listRefNamespaces`, `listRefObjects`. `WriteResult` gains
-  `Subject.REF` and the reasons `REF_LIMIT` and `NOT_A_BRANCH`. The javadoc gives each method's outcomes.
-- Stores: `SqlRefs` (PostgreSQL and CockroachDB), `OracleRefs`, `MongoRefs`. The SQL cut is one `INSERT … SELECT`;
-  MongoDB's is read in a snapshot session, written in batches of 1,000, and its ref inserted last in one transaction
-  (`docs/storage-design.md` section 8, rewritten as built, with 9 (c), (d), (f) 5 and (g); `build-plan.md` 2.3 and
-  2.4).
-- Tests: `RefSuite` (11 tests, heavy), run as `@Nested class Refs` in `PostgresStoreSuiteTest`,
-  `CockroachStoreSuiteTest`, `OracleStoreSuiteTest` and `MongoStoreSuiteTest`: the cut of main with names kept after a
-  rename and a drop on main; a ref from a branch takes its own pointers; names (case, per catalog, order); the order
-  of a create's outcomes; P11 under 12 concurrent creates; an expired branch frees its place, not its name; renewal;
-  a deletion leaves no cut, pointer or piece and frees the name; two races (a multi-table commit appears whole in
-  every cut; every table in a cut has its namespace); paging. `MutationSuite` drives `createRef`, `renewRef` and
-  `deleteRef`. Java-only and run: `RefTypesTest` (8 tests). `SchemaAtStartupTest` (heavy) and `RollingUpgradeTest`
-  (overnight) expect PostgreSQL V11.
-- Bites in `bites/D33/`: four Java-only, seen to bite `RefTypesTest` on assertions (`ref-name-at-sign-accepted`,
-  `ref-name-main-accepted`, `ref-branch-alive-at-its-expiry`, `ref-limit-one-over`); seven on the heavy `RefSuite`,
-  checked with `git apply --check` only (`sql-cut-in-separate-reads`, `sql-ref-limit-unlocked`,
-  `sql-ref-delete-keeps-pointers`, `sql-ref-from-branch-takes-its-cut`, `oracle-ref-delete-keeps-pieces`,
-  `mongo-ref-limit-unmarked`, `mongo-cut-read-outside-the-snapshot`).
-
-Choices made (Paul may overrule):
-- The cut keeps namespaces as entries too (kind NAMESPACE, parent and name, no pointer), so the "namespace path" is
-  the chain of parents through the cut, as `namespace.parent_id` is on main. Why: a ref then lists and resolves
-  namespaces as main does, empty ones included.
-- The lock on the catalog's refs is the catalog's own record: `FOR UPDATE` on the SQL stores (as a grant on the
-  catalog takes it), a mark on MongoDB. Why: no new lock record. Cost: on the SQL stores a top-level namespace create
-  in that catalog waits for a ref create's cut statement.
-- A branch past its expiry keeps its name until it is deleted (`NameTaken`), is not counted against P11, and cannot
-  be renewed or made from (`Missing(REF)`); read, find and list still return it, and callers check
-  `Ref.expiredAt`. Why: the store keeps a record until a write removes it, as it keeps dropped objects; ending
-  expired branches is item 108's.
-- A ref keeps its source both by id (`from_ref`) and by name then (`from_name`). Why: the id survives the name's
-  reuse; the name still reads after the source is deleted.
-- A tag's renewal answers `Refused(NOT_A_BRANCH)`, a new reason. Why: other writes refuse with a reason too.
-- `findRef(catalog, normalized name)` beside `readRef(id)`. Why: item 104 resolves `catalog@ref` by name.
-- A create answers in a fixed order: `Missing(CATALOG)`, `NameTaken`, `Missing(REF)`, `Refused(REF_LIMIT)`. Why: a
-  retried create then always names its own id (storage-design 9), even after its source is gone.
-- No index by catalog on `namespace` or `catalog_object`: the cut reads the catalog's rows by scan. Why: refs are
-  made rarely, and an index on those tables would cost every write.
-- A deletion finds the ref's own pointers and pieces through its cut (`branch = ref id AND object_id IN` the cut),
-  by their primary keys, since nothing indexes `branch`. Why: no new index on the commit path's tables. It holds
-  because creates, drops and renames are refused on a branch (question 1 (b)), so a branch's own pointers are of
-  objects in its cut.
-- `ref_entry_object` (by object) is built now for items 103 and 108. Why: one schema step instead of two.
-- On MongoDB a deletion is one transaction over the whole cut, as the item asks; a very large cut makes a large
-  transaction there, which the heavy suite's sizes do not test.
-
-Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach this suite: on MongoDB,
-`MongoStoreSuiteTest$Refs` "a deletion leaves no cut, no pointer of the ref and no projection piece, and frees the
-name" failed at `RefSuite.java:277`, `projectionPieces(own)` expected 0 but was 1: the branch's own pointer kept one
-projection piece after the ref was deleted. Item 103's merge fails on the same check (`BranchCommitSuite.java:290`),
-so the cause is likely shared. PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this
-module (item 122). `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
-
-### 103. Branch commits and the merge transaction in the store (item 26)
-
-- Added: 2026-11-20 by agent on item 26
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/
-- Effort: L, a change to the commit core on four stores (a ref held by every branch commit, a batch that ends a ref) and the purge claim's ref check, each with suite cases and bites; waits on item 102
-
-Part of item 26 (D33); its design section says why (choices 3, 9, 10 and 14).
-
-What is missing: `CommitBatch` swaps and holds pointers in one transaction (D15) but knows no ref. A commit on a
-branch must not land once the branch is merged, deleted or expired, and a merge must move main's pointers and end
-the branch in one transaction (D33). A purge claim checks holds and freezes (`claimPurge`, storage-design 9 (f) 3),
-not refs, so a dropped table that a tag still names would lose its files (P11).
-
-Build:
-- `CommitBatch` gains an optional ref hold: the branch must exist, be a branch and not be past its expiry. The store
-  locks the ref record for share where it can (PostgreSQL and CockroachDB `FOR SHARE`; Oracle and MongoDB as their
-  object checks do, storage-design 9 (f) 8), so a merge or a deletion waits for a branch commit or refuses it. A
-  branch's pointer for a table is created by the first swap of its key (expected empty).
-- A ref end, for the merge: one transaction locks the ref record for update, then swaps main's pointers, holds the
-  branch's own pointers as the merge read them, and deletes the branch, its cut and its pointers. The ref is locked
-  before any pointer, in a fixed order, so a merge and a branch commit cannot deadlock.
-- `claimPurge` answers `Refused(REFERENCED)` while a ref's cut names the object, read under the object's lock, and
-  the purge queue leaves such objects out.
-- Suite cases on all four stores (heavy): a branch commit racing a merge or a deletion lands before it or is refused,
-  never after it; a merge whose expected main pointer moved writes nothing; a ref end and its swaps are one
-  transaction (the cut repeated in `MutationSuite`, overnight); a purge claim is refused under a ref.
-
-Done when those cases pass on all four stores in the heavy build, the fast build is green and the bites are recorded
-in `bites/D33/`. Waits on item 102. Items 105 and 107 wait on this one.
-
-**Progress, 2026-11-20 (worktree-agent-a3407b3f55b4afd72): built; open until the heavy build passes
-`BranchCommitSuite` and `MutationSuite`'s two new mutations on all four stores.**
-- API (`catalog-store-api`): `RefLock`, sealed, `Hold(refId)` for a commit on the branch and `End(refId)` for a merge.
-  `CommitBatch` gains `Optional<RefLock> ref` (seven arguments; the six- and five-argument forms are a batch on no
-  ref, so every caller compiles unchanged) and `refKey()`; the batch refuses a `Hold` that swaps or holds anything but
-  the branch's own pointers, and an `End` that swaps anything but main's or holds anything but the branch's.
-  `CommitResult.Inactive` gains a `Subject`, `OBJECT` (as before; `new Inactive(key)` still means it) or `REF`.
-  `WriteResult.Reason.REFERENCED`. Javadoc of `CommitStore.commit`, `RefStore.deleteRef`,
-  `CatalogObjectStore.listPurgeEligible` and `claimPurge` gives the outcomes.
-- Stores: the ref is locked before any pointer and checked first (`SqlRefs.lock`, `OracleRefs.lock`,
-  `MongoRefs.openBranch`): gone, a tag, or a branch not after its expiry at `committedAt` answers `Inactive(REF)`; a
-  branch commit's swap outside the cut answers `Inactive(OBJECT)`; a merge that does not hold an own pointer of the
-  branch answers `Conflict` on it. PostgreSQL and CockroachDB lock the ref `FOR SHARE` for a branch commit and
-  `FOR UPDATE` for a merge; Oracle `FOR UPDATE` for both; MongoDB marks it on a branch commit and deletes it on a
-  merge. A merge ends the branch after its swaps with the code `deleteRef` now shares (`SqlRefs.end`,
-  `OracleRefs.end`, `MongoRefs.end`). `claimPurge` answers `Refused(REFERENCED)` while any ref's cut names the object,
-  read under the object's lock after the freeze check; `listPurgeEligible` leaves such objects out
-  (`docs/storage-design.md` sections 3, 8, 9 (f) 3 and 8, (g)).
-- Tests: `BranchCommitSuite` (11 tests, heavy), run as `@Nested class BranchCommits` in the four store suites: a
-  branch commit writes only own pointers and every record; a commit on a deleted, expired, unknown branch or a tag
-  writes nothing; outside the cut, or on an object dropped since, writes nothing; a deletion waits for a branch commit
-  held before COMMIT and deletes what it wrote; 20 rounds of a commit racing a deletion; a merge moves main and ends
-  the branch, cut, own pointers and pieces, keeps its journal and frees the name; a merge whose main or branch pointer
-  moved, or that leaves an own pointer unheld, writes nothing; a merge of a gone branch writes nothing; 20 rounds of a
-  merge racing a branch commit, never both landing; a lost merge COMMIT wrote nothing and a lost answer landed whole;
-  a tag, an expired branch and a cut copied after the drop keep a dropped table's files until deleted.
-  `MutationSuite` drives "commit on a branch" and "merge" (heavy in test 2, overnight in the lost-answer and
-  cut-link sweeps). Java only and run: `RefLockTest` (5 tests). `RefSuite#aDeletionLeavesNothing` built its first
-  own pointer at version 2, which `PointerSwap` refuses; it is version 1 now.
-- Bites in `bites/D33/`: two Java-only, seen to bite `RefLockTest` on assertions (`commit-batch-hold-on-main`,
-  `commit-batch-merge-swaps-the-branch`); 16 on the heavy `BranchCommitSuite`, checked with `git apply --check`
-  only (`sql-branch-commit-ignores-the-ref`, `sql-branch-commit-unlocked-ref`, `sql-branch-commit-outside-the-cut`,
-  `sql-merge-keeps-the-branch`, `sql-merge-ignores-an-unheld-pointer`, `sql-purge-claim-ignores-refs`,
-  `sql-purge-queue-ignores-refs`, `oracle-branch-commit-ignores-the-ref`, `oracle-merge-keeps-the-branch`,
-  `oracle-purge-claim-ignores-refs`, `mongo-branch-commit-ignores-the-ref`, `mongo-branch-commit-unmarked-ref`,
-  `mongo-merge-keeps-the-branch`, `mongo-merge-ignores-an-unheld-pointer`, `mongo-purge-claim-ignores-refs`,
-  `mongo-purge-queue-ignores-refs`). Five older bites recorded again with the same break, since their lines moved:
-  `D30/purge-claim-ignores-freeze-sql`, `-oracle` and `-mongo`, `D33/sql-ref-delete-keeps-pointers` and
-  `D33/oracle-ref-delete-keeps-pieces` (the deletion's statements are now in the `end` a merge shares).
-
-Choices made (Paul may overrule):
-- `CommitResult.Inactive(key, subject)` instead of a new result type. Why: `CommitEngine` switches over
-  `CommitResult` exhaustively; a new subject keeps every switch compiling and lets item 105 tell a gone branch from a
-  dropped table.
-- `RefLock` names the branch once per batch, as `Hold` or `End`, and the batch checks its keys fit. Why: the store
-  then locks one ref, first, and a batch cannot mix a branch commit with a merge.
-- A merge must hold every own pointer of the branch; one it does not hold answers `Conflict` on that pointer. Why:
-  the design's "holds the branch's own pointers as the merge read them" would otherwise let a commit on another table
-  of the branch, landing after the merge read the branch, be deleted with it.
-- A merge that moves no table is not a batch (a batch swaps at least one pointer): the server ends the branch with
-  `deleteRef`. Why: nothing to swap, and the deletion already locks the ref as a merge would.
-- A branch commit's swap of an object outside the cut answers `Inactive(OBJECT)`, as a dropped object does. Why: no
-  retry can succeed, and the server already maps it.
-- A branch commit does not push the branch's expiry in its batch (choice 11): the server renews it after the commit
-  (items 105 and 106). Why: two commits holding the ref for share would deadlock upgrading it to write the expiry;
-  on Oracle and MongoDB it would also turn every commit into a write of the ref.
-- `REFERENCED` counts any ref whose cut names the object, a tag or a branch past its expiry alike, until the ref is
-  deleted (item 108 deletes expired branches). Why: the store keeps a ref until a write removes it (item 102's
-  choice), and P11 says a ref keeps its files.
-- The purge claim's ref check comes after the hold and freeze checks. Why: the existing reasons keep their order.
-- On Oracle, commits on one branch take turns on the ref's lock; on MongoDB they conflict on its mark and one retries.
-  Why: neither has a shared row lock, as their object checks already do (9 (f) 8).
-- The cut-link case for the merge runs in `MutationSuite` (overnight) as the item asks, and also once in
-  `BranchCommitSuite` (heavy), which checks the branch and main as well as the records.
-
-Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach this suite: on MongoDB,
-`MongoStoreSuiteTest$BranchCommits` "Merge: a merge moves main and ends the branch with its cut, own pointers and
-pieces; its journal stays and its name is free" failed at `BranchCommitSuite.java:290`, `projectionPieces(own)`
-expected 0 but was 1: ending the branch left one projection piece of its own pointer, as item 102's ref deletion does
-(`RefSuite.java:277`). PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item
-122). `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
-
 ### 104. Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26)
 
 - Decided: 2026-11-20, D33
@@ -1844,31 +1568,35 @@ table's own files; two users in different groups get different results; the copi
 expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
 table's own prefix.
 
-### 121. ConsoleBrowserTest could not start its browser session
+### 123. Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker
 
-- Added: 2026-11-22 by overnight run 2026-11-22
-- Touches: catalog-server/src/test/java/nuna/catalog/server/ConsoleBrowser.java
-- Effort: S, one wait in the test's browser fixture, shown by an overnight heavy build; finding out whether the container's readiness check is the cause comes first
+- Added: 2026-11-22 by heavy runs 2026-11-22
+- Touches: gradle.properties build.gradle.kts catalog-server/src/test/ catalog-maintenance/src/test/
+- Effort: M, finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs
 
-The heavy build of the overnight run of 2026-11-22 (testing b1f073d) failed one of `ConsoleBrowserTest`'s seven tests,
-the first to run in the class: `theViewTabsShowEveryVersionWithItsSql` could not open its browser session.
-`ConsoleBrowser.session()` posted `http://localhost:54488/wd/hub/session` to the Chrome container
-(`BrowserWebDriverContainer`, started in the constructor) and got `SessionNotCreatedException: Could not start a new
-session ... HTTP/1.1 header parser received no bytes`, caused by `SocketException: Connection reset`, after 30 s. The
-other six tests, each opening its own session on the same container, passed. The class passed 7 of 7 in the heavy
-build of 2026-11-19, and no earlier overnight heavy log holds `SessionNotCreated`.
+Of three full heavy builds run on 2026-11-22 with the nuna-demo stack down (`./gradlew --continue build -Pheavy`, two
+modules under test at a time by `org.gradle.workers.max=2`), the second lost five tests to waits that ran out, and
+the first and third lost none of them. Each failed beside another Docker-heavy module and passed when its classes
+were run alone straight after (`AuditReadRouteTest` 6/6, `ManagementAuthorizationTest` 23/23, `WorkerTraceTest` 1/1).
 
-Nothing of the console was under test when it failed: the first session found Selenium in the container not yet
-answering, though the container counted as started. Two causes fit, not told apart yet: the container's wait strategy
-lets the test in before the hub takes sessions, or the Docker VM was short of memory or CPU while
-`catalog-store-mongo`'s suite ran beside it (`org.gradle.workers.max=2`).
+- `AuditReadRouteTest` (three cases, 16:00 to 16:02 UTC, beside `catalog-store-mongo`) and
+  `ManagementAuthorizationTest#aRefusalIsAuditedAsADenialOfTheRoute` (16:06, beside `catalog-store-oracle`): the test
+  JVM's Kafka clients sent requests to the shared broker that went unanswered for the whole 30 s request timeout ("due
+  to node -1 being disconnected (elapsed time since send: 30017ms ... request timeout: 30000ms)", and the same for the
+  group coordinator). The audit route answered 503 "The audit topic cannot be read now" (`RecentAudit`'s 10 s
+  metadata wait: "Timeout expired while fetching topic metadata"), and the test's own consumer read no record in its
+  30 s (`Api.awaitRecord`: "no matching audit record among 0 read").
+- `WorkerTraceTest#aScanAndTheCatalogsSpansForItsCallsAreOneTrace` (15:53, beside `catalog-server`): the worker's scan
+  loaded the test's empty table at 15:53:37 and logged nothing more until the test gave up at 15:54:07, 30 s
+  (`ARRIVAL`) later; its expiry of a table with no snapshots should have taken milliseconds.
 
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log` (`ConsoleBrowserTest >
-theViewTabsShowEveryVersionWithItsSql() FAILED`) and
-`heavy-results\catalog-server\build\test-results\test\TEST-nuna.catalog.server.governance.ConsoleBrowserTest.xml`.
+Item 55 is the same kind in the nightly (one 15 s stall reaching Docker's containers, beside the CockroachDB cluster),
+and the overnight run of 2026-11-19 lost `TelemetryTest#theStandardVariablesAloneTurnExportOn` to a 20 s metric wait.
+The logs were in the session's scratch folder and the worktree's build folders, which are gone; the quotes above are
+from them.
 
-Done looks like: the fixture does not hand a test a session before the hub can create one (for example, a first
-session retried until the hub answers, within a limit), and `ConsoleBrowserTest` passes in an overnight heavy build.
+Done looks like: what stalls is known, and either the heavy build keeps such modules apart or the waits that meet it
+outlast it; ten overnight heavy builds in a row lose no test to a wait running out.
 
 ## Done and dropped
 
@@ -1955,9 +1683,13 @@ session retried until the hub answers, within a limit), and `ConsoleBrowserTest`
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
 | [96](backlog/96.md) | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | dropped | 2026-11-20 |
 | [99](backlog/99.md) | A table that commits faster than the DR store replicates never gets a first DR watermark | done | 2026-11-20 |
+| [100](backlog/100.md) | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | done | 2026-11-22 |
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |
+| [102](backlog/102.md) | Refs in the store: the ref record and its cut on four stores (item 26) | done | 2026-11-22 |
+| [103](backlog/103.md) | Branch commits and the merge transaction in the store (item 26) | done | 2026-11-22 |
 | [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
 | [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
 | [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
+| [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |

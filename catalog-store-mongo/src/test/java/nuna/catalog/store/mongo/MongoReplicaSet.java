@@ -330,7 +330,9 @@ final class MongoReplicaSet implements CatalogStoreUnderTest, Faults {
 
     @Override
     public int projectionPieces(PointerKey key) {
-        return 1 + (int) primary().direct.getDatabase(DATABASE).getCollection(PROJECTION_PIECE).countDocuments(keyFilter(key));
+        var database = primary().direct.getDatabase(DATABASE);
+        return (int) (database.getCollection(POINTER).countDocuments(keyFilter(key))
+                + database.getCollection(PROJECTION_PIECE).countDocuments(keyFilter(key)));
     }
 
     /** A fresh database at the previous release's schema version, reached through the link. */

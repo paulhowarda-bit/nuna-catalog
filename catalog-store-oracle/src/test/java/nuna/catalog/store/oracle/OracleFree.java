@@ -293,8 +293,10 @@ final class OracleFree implements CatalogStoreUnderTest, Faults {
 
     @Override
     public int projectionPieces(PointerKey key) {
-        return 1 + Integer.parseInt(value(directPool, "SELECT count(*) FROM projection_piece WHERE object_id = ?"
-                + " AND branch = ?", key.objectId(), key.branch()));
+        return Integer.parseInt(value(directPool, "SELECT count(*) FROM pointer WHERE object_id = ? AND branch = ?",
+                key.objectId(), key.branch()))
+                + Integer.parseInt(value(directPool, "SELECT count(*) FROM projection_piece WHERE object_id = ?"
+                        + " AND branch = ?", key.objectId(), key.branch()));
     }
 
     /**
