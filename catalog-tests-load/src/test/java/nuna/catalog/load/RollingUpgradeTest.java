@@ -19,11 +19,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A rolling upgrade across schema changes (M8). Two servers of the previous release, whose PostgreSQL schema
- * stops at V4 (the journal partitioned), take traffic; servers of this release replace them one at a time, the
- * first of them migrating to V11 (V5: objects can be unregistered; V6: purges are claimed and expired files wait
- * in pending_deletion; V7: a file is pending once; V8: the worker's reports of table health and scans are kept;
- * V9: each table's DR watermark is kept; V10: a storage profile records its KMS key; V11: refs and their cuts)
- * while previous-release servers still commit. Each server leaves only after the balancer has drained it. No request fails and no commit
+ * stops at V8 (the worker's reports of table health and scans are kept), take traffic; servers of this release
+ * replace them one at a time, the first of them migrating to V11 (V9: each table's DR watermark is kept; V10: a
+ * storage profile records its KMS key; V11: refs and their cuts) while previous-release servers still commit. Each server leaves only after the balancer has drained it. No request fails and no commit
  * is lost or doubled.
  */
 @Tag("overnight")
@@ -50,12 +48,12 @@ class RollingUpgradeTest {
     }
 
     @Test
-    void upgradingOneServerAtATimeAcrossV5ToV11LosesNothing() throws Exception {
+    void upgradingOneServerAtATimeAcrossV9ToV11LosesNothing() throws Exception {
         String url = stack.postgres.serverUrl();
         ServerProcess old1 = stack.server("upgrade-old-1", previous, url);
         stack.grantWriters();
         ServerProcess old2 = stack.server("upgrade-old-2", previous, url);
-        assertThat(schemaVersion()).as("the previous release's schema").isEqualTo("4");
+        assertThat(schemaVersion()).as("the previous release's schema").isEqualTo("8");
 
         Catalog catalog = new Catalog(stack.token("m8-writer", Stack.WRITERS), old1.uri(), old2.uri());
         catalog.createNamespace(NAMESPACE);

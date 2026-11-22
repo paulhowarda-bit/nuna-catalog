@@ -4,9 +4,11 @@ plugins {
 
 description = "M8 hardening gates: load, contention, resilience and SLO runs against running servers. Every test runs overnight only (tagged overnight)."
 
-// The release before this one, for the rolling upgrade: main as the heavy pass left it, after the rename
-// to nuna and before v1.x's phase 1. Its PostgreSQL schema stops at V4; this release adds V5 to V7.
-val previousRelease = "2b1af36"
+// The release before this one, for the rolling upgrade: main as the rename to nuna landed it (backlog 59), the
+// first release any install can be running. Releases before it derive other storage profile ids, since the id is
+// made from "<project>-storage-profile:<name>" (backlog 117). Its PostgreSQL schema stops at V8; this release adds
+// V9 to V11.
+val previousRelease = "a60daba"
 
 // The server under test runs as its own process, from the runnable jar this build just made; so does the maintenance
 // worker, whose DR verifier the DR drill runs (D37).

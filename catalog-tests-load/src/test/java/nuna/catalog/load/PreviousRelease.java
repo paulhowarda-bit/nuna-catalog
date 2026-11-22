@@ -5,7 +5,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
@@ -49,27 +48,6 @@ final class PreviousRelease {
         } catch (IOException e) {
             throw new IllegalStateException("could not build the previous release " + commit, e);
         }
-    }
-
-    /**
-     * A server's {@code properties}, for one of the previous release. It predates the rename to nuna, so it reads its
-     * settings under {@code keel.}; and it is told this release's topics, whose defaults the rename changed too, so old
-     * and new servers write one audit stream and one change stream, as in a real rolling upgrade.
-     */
-    static List<String> settings(List<String> properties) {
-        List<String> settings = new ArrayList<>();
-        for (String property : properties) {
-            if (property.startsWith("--nuna.")) {
-                settings.add("--keel." + property.substring("--nuna.".length()));
-            } else if (property.startsWith("--logging.level.nuna.")) {
-                settings.add("--logging.level.keel." + property.substring("--logging.level.nuna.".length()));
-            } else {
-                settings.add(property);
-            }
-        }
-        settings.add("--keel.audit.audit-topic=nuna.catalog.audit");
-        settings.add("--keel.audit.change-topic=nuna.catalog.changes");
-        return settings;
     }
 
     private static void run(Path directory, Path log, List<String> command) throws IOException {

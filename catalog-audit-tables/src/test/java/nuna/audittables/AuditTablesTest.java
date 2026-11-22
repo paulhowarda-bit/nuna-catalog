@@ -123,6 +123,9 @@ class AuditTablesTest {
         properties.put("spring.datasource.url", postgres.getJdbcUrl());
         properties.put("spring.datasource.username", postgres.getUsername());
         properties.put("spring.datasource.password", postgres.getPassword());
+        // One node with fsync off (Testcontainers' default): the self-check's findings would otherwise refuse to
+        // start the server (D8.2).
+        properties.put("nuna.database.allow-unsafe", "pg.no-sync-standby,pg.fsync-off");
         for (String catalog : List.of(LAKE, AUDIT)) {
             properties.put("nuna.storage.catalogs." + catalog + ".profile", PROFILE);
             properties.put("nuna.storage.catalogs." + catalog + ".kms-key-set", "test-keys");
