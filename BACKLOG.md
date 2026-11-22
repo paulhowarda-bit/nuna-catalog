@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**38 open:** 7 S, 12 M, 13 L, 6 XL.
+**38 open:** 6 S, 13 M, 13 L, 6 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -48,8 +48,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [125](backlog/125.md) | L | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | a new feed over the queryable audit tables with filters and a cursor, chain positions and verification, the archive check's status and the last day's counts, with tests and bites | 2026-11-22 |
 | [126](backlog/126.md) | L | Maintenance: each night's summary and each job's run on its worker slot (D45) | the worker reports what each job did, the catalog keeps it on all four stores, and two reads for the console, with tests | 2026-11-22 |
 | [127](backlog/127.md) | M | Maintenance: one row per table for the overview's ice line (D45) | one read over the assessments the catalog already keeps, filtered to what the caller may select, with tests | 2026-11-22 |
-| [132](backlog/132.md) | S | A refusal under a DR freeze is not audited | the refusal published as other refusals are, with a test and a bite | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
+| [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 
 ## Open items in full
 
@@ -1735,22 +1735,6 @@ What done looks like:
   The read is paged, for a large catalog.
 - Route tests, including that a table the caller may not select is not counted.
 
-### 132. A refusal under a DR freeze is not audited
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/Management.java, catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
-- Effort: S, the refusal published as other refusals are, with a test and a bite
-
-A request refused because a DR freeze covers its target answers 403, "... is frozen for DR reconcile: ...". The
-refusal comes from `Management.requireUnfrozen` (Management.java, line 237), which `LifecycleRoutes` and
-`ObjectRoutes` call. Unlike every other refusal, no denial record is published for it. Atelier found this while
-building the prototype's audit feed, which shows the refusal as unaudited to match the server.
-
-What done looks like:
-- The refusal published as a `nuna.catalog.denial` record with its reason.
-- A route test.
-- A bite that drops the publish.
-
 ### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
 
 - Added: 2026-11-22 by item 128
@@ -1773,6 +1757,34 @@ What done looks like: a hold's release and a freeze's lift recorded in the store
 lifted record, or the row kept with `released_at` and `released_by`), on all four stores with a suite in the shared
 test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
 its tests. The audit topic read goes.
+
+### 134. Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited
+
+- Added: 2026-11-22 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java, catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/java/nuna/catalog/server/rest/, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/D18/
+- Effort: M, four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them
+
+Item 132 made a drop, rename, undrop or purge claim refused by a DR freeze publish a `nuna.catalog.denial` record, as
+every refusal must (D18). Working on it found four more refusals that answer 403 and publish nothing:
+
+- A commit refused by a DR freeze: `Rules.java`, line 92, "Writes to ... are frozen for DR reconcile: ...". It returns
+  a `Rejection.forbidden`, which reaches the client as a `CommitReply.Failure` (`ObjectRoutes.reply`). The same rule
+  set refuses a snapshot removal under a legal hold (`Rules.java`, line 83) the same way, also unaudited.
+- An unregister refused by a DR freeze: `CommitEngine.java`, line 693, "... is frozen for DR reconcile and cannot be
+  unregistered". Its legal-hold refusal beside it (line 689) is unaudited too. `TableRoutes.unregister` audits the
+  regulated and flagged-table refusals through `Guard.refuse`, but not these.
+- A drop refused by a legal hold: `ObjectRoutes.java`, line 157, `Http.forbidden(... "is under a legal hold and cannot
+  be dropped")`, a `CatalogError` with no denial.
+- A purge claim refused by a legal hold: `LifecycleRoutes.java`, line 219, `CatalogError.of(403, ...)` with no denial.
+
+Evidence: read from the code on 2026-11-22 (branch of item 132). No test checks for a denial on any of them.
+
+What done looks like:
+- Each refusal above publishes a `nuna.catalog.denial` record through `Denials`, naming the operation and the table
+  or view, with reason `dr_freeze` or `legal_hold` and the message the caller gets. The answer stays the same 403.
+- A fast test per refusal, or per route, that checks the denial, in the form of `FrozenObjectRefusalTest` and
+  `FrozenLifecycleRefusalTest` (item 132).
+- A bite per publish site, in `bites/D18/`, that drops the publish and fails its test.
 
 ## Done and dropped
 
@@ -1873,3 +1885,4 @@ its tests. The audit topic read goes.
 | [129](backlog/129.md) | Grants: the effective grants on an object, inherited ones included (D45) | done | 2026-11-22 |
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
+| [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
