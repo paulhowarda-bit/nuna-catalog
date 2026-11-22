@@ -34,6 +34,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
+import org.apache.kafka.common.KafkaException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -50,7 +53,8 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * The governance management API (D24, D27, D30, D37) on a catalog, namespace, table or view: the
  * attributes the governance tool pushes, with their provenance; legal holds; the maintenance policy;
- * and the DR freeze. Every change writes its audit record to the outbox with the change itself.
+ * and the DR freeze; and, for the console, a catalog's summary and every hold and freeze in it (D45). Every change
+ * writes its audit record to the outbox with the change itself.
  * Each route asks {@link ManagementGuard} once its target is resolved, before reading the body.
  */
 @RestController
@@ -62,6 +66,9 @@ class GovernanceRoutes {
     private static final String HOLD = "/holds/{holdId}";
     private static final String POLICY = "/maintenance-policy";
     private static final String FREEZE = "/dr-freeze";
+    private static final String SUMMARY = "/governance/summary";
+    private static final String HOLDS_AND_FREEZES = "/governance/holds";
+    private static final Logger LOG = LoggerFactory.getLogger(GovernanceRoutes.class);
 
     /** The attributes the governance tool pushes (D27), by their path name. */
     static final Map<String, GovernanceAttribute.Kind> PUSHED = Map.of(
@@ -80,15 +87,91 @@ class GovernanceRoutes {
     private final Management management;
     private final ManagementGuard guard;
     private final GovernanceSettings settings;
+    private final HoldHistory history;
     private final Clock clock;
 
     GovernanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
-                     Clock clock) {
+                     HoldHistory history, Clock clock) {
         this.store = store;
         this.management = management;
         this.guard = guard;
         this.settings = settings;
+        this.history = history;
         this.clock = clock;
+    }
+
+    /**
+     * The catalog's governance in one read (D45, item 128): its tables, how many are classified, closed until
+     * classified, held and frozen; its standing holds and freezes; its regulated areas; and its closed tables, by
+     * name. Needs describe on the catalog, which covers every name under it (D18).
+     */
+    @GetMapping(path = CATALOG + SUMMARY, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> summary(@PathVariable("catalog") String prefix, HttpServletRequest http) {
+        Request request = management.request(http);
+        Target target = management.target(request, "loadGovernanceSummary", Privilege.DESCRIBE,
+                prefix, null, null, null);
+        guard.require(request, target, "loadGovernanceSummary", Privilege.DESCRIBE);
+        return json(200, GovernanceSummary.read(store, target.catalog()).summary());
+    }
+
+    /**
+     * Every hold and DR freeze in the catalog: those standing now, from the store, the newest first; and those
+     * released or lifted, from the audit topic's recent records, the most recent first, with the offsets read
+     * ({@link HoldHistory}). Each with what it is on, the reason as recorded, who placed it and when, and for a
+     * lifted one who lifted it and when. Without the audit topic the standing ones are still listed. Needs describe
+     * on the catalog.
+     */
+    @GetMapping(path = CATALOG + HOLDS_AND_FREEZES, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> holdsAndFreezes(@PathVariable("catalog") String prefix, HttpServletRequest http) {
+        Request request = management.request(http);
+        Target target = management.target(request, "listHoldsAndFreezes", Privilege.DESCRIBE,
+                prefix, null, null, null);
+        guard.require(request, target, "listHoldsAndFreezes", Privilege.DESCRIBE);
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.put("catalog", target.catalog().name());
+        body.set("standing", GovernanceSummary.read(store, target.catalog()).standing());
+        ArrayNode lifted = body.putArray("lifted");
+        ObjectNode window = body.putObject("history");
+        if (!history.configured()) {
+            window.put("available", false);
+            window.put("reason", "The audit topic is not configured on this server (nuna.audit.kafka-bootstrap-servers)");
+            return json(200, body);
+        }
+        HoldHistory.Result result;
+        try {
+            result = history.lifted(target.catalog().name());
+        } catch (KafkaException | IllegalStateException e) {
+            LOG.warn("audit topic could not be read for the holds of {}: {}", target.catalog().name(), e.getMessage());
+            window.put("available", false);
+            window.put("reason", "The audit topic cannot be read now; retry later");
+            return json(200, body);
+        }
+        for (HoldHistory.Lifted each : result.lifted()) {
+            ObjectNode node = lifted.addObject();
+            node.put("kind", each.kind());
+            if (each.holdId() != null) {
+                node.put("id", each.holdId().toString());
+            }
+            node.set("on", GovernanceSummary.on(each.on()));
+            node.put("reason", each.reason());
+            node.put("placed-by", each.placedBy());
+            node.put("placed-at", each.placedAt() == null ? null : each.placedAt().toString());
+            node.put("lifted-by", each.liftedBy());
+            node.put("lifted-at", each.liftedAt().toString());
+        }
+        window.put("available", true);
+        window.put("complete", result.complete());
+        window.put("since", result.since() == null ? null : result.since().toString());
+        window.put("scan-limit", HoldHistory.SCAN_LIMIT);
+        ArrayNode partitions = window.putArray("partitions");
+        for (HoldHistory.Partition partition : result.partitions()) {
+            ObjectNode node = partitions.addObject();
+            node.put("partition", partition.partition());
+            node.put("earliest-offset", partition.earliest());
+            node.put("from-offset", partition.from());
+            node.put("to-offset", partition.to());
+        }
+        return json(200, body);
     }
 
     @GetMapping(path = {CATALOG + GOVERNANCE, NAMESPACE + GOVERNANCE, TABLE + GOVERNANCE, VIEW + GOVERNANCE},
