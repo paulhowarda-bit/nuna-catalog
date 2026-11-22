@@ -72,8 +72,8 @@ class FailedOrphanScanTest {
         };
         try (Worker worker = new Worker(new Management(uri, tokens, HttpClient.newHttpClient(), 100),
                 new Catalogs(uri, tokens, Map.of(), TraceHeaders.NONE), new FailingOnce(), Compactor.NONE, clock,
-                new CleanupWindow(turn, turn, ZoneOffset.UTC), Duration.ofDays(1), 2, new SimpleMeterRegistry(),
-                ObservationRegistry.NOOP)) {
+                new CleanupWindow(turn, turn, ZoneOffset.UTC), Duration.ofDays(1), Duration.ofHours(2), 2,
+                new SimpleMeterRegistry(), ObservationRegistry.NOOP)) {
             ScanReport failed = worker.runOnce();
             assertThat(failed.failures).as("the store failed the listing").hasSize(1);
             assertThat(failed.failuresByKind).containsEntry(ScanReport.Failure.ORPHAN_SCAN, 1);

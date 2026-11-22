@@ -141,7 +141,7 @@ class NightlyCleanupTest {
                     entry(CompactionNeed.Reason.EQUALITY_DELETES, 1));
             assertThat(opened.compactionsStarted).isEqualTo(1);
             assertThat(compactor.order()).as("equality deletes first, whatever the score").containsExactly(equality);
-            assertThat(compactor.launched.getFirst().night().closes()).as("the Job's deadline: the window's end, the"
+            assertThat(compactor.launched.getFirst().run().deadline()).as("the Job's deadline: the window's end, the"
                     + " clocks gone forward").isEqualTo(CLOSES);
             assertThat(tableNeed(meters, "many_small")).as("ten small files at a threshold of five").isEqualTo(2.0);
             assertThat(tableNeed(meters, "some_small")).isEqualTo(1.2);

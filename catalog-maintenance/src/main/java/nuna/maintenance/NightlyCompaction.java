@@ -27,8 +27,9 @@ import org.slf4j.LoggerFactory;
  * One night's compaction (D30, amended 2026-11-15). In the cleanup window each table whose policy turns compaction on
  * is assessed once, from its current manifests ({@link CompactionNeed}); a table that needs compaction joins the
  * night's queue. Jobs start from the queue's head, tables with equality deletes first and then the furthest past
- * their thresholds, at most {@code maxJobs} running at once, and only while the window is open; each runs to the
- * window's end at the latest. Once the window has closed, {@link #close} counts the Jobs its end cut off and the
+ * their thresholds, while one of the compaction slots is free ({@link Slots}, shared with the requested Jobs of backlog
+ * 114) and the window is open; each runs to the window's end at the latest. A table whose requested Job runs waits in
+ * the queue until it ends. Once the window has closed, {@link #close} counts the Jobs its end cut off and the
  * needy tables that got none, which are assessed again the next night.
  *
  * <p>Kept in memory: a worker restarted in the window assesses its tables again, and a table whose Job ran before the
@@ -39,7 +40,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Each Job is also reported as a job of the night (backlog 126), under an id made from its Job's name, so a worker
  * restarted reports it again under the same id: with its slot, the lowest of {@code 1..maxJobs} no other running Job
- * holds, and once it has ended, the data files it replaced and those it wrote ({@link #compacted}).
+ * holds, requested ones included, and once it has ended, the data files it replaced and those it wrote
+ * ({@link #compacted}).
  */
 final class NightlyCompaction {
 
@@ -68,7 +70,7 @@ final class NightlyCompaction {
 
     final CleanupWindow.Night night;
     private final Compactor compactor;
-    private final int maxJobs;
+    private final Slots slots;
     private final WorkerMetrics metrics;
     private final ScanSpans spans;
     private final HealthReports health;
@@ -82,12 +84,12 @@ final class NightlyCompaction {
     /**
      * @param loader loads a table afresh, to count what its Job committed; none when it cannot, which it reports
      */
-    NightlyCompaction(CleanupWindow.Night night, Compactor compactor, int maxJobs, WorkerMetrics metrics,
+    NightlyCompaction(CleanupWindow.Night night, Compactor compactor, Slots slots, WorkerMetrics metrics,
                       ScanSpans spans, HealthReports health, Clock clock,
                       BiFunction<Management.TableWork, ScanReport, Optional<Table>> loader) {
         this.night = night;
         this.compactor = compactor;
-        this.maxJobs = maxJobs;
+        this.slots = slots;
         this.metrics = metrics;
         this.spans = spans;
         this.health = health;
@@ -117,17 +119,23 @@ final class NightlyCompaction {
     }
 
     /**
-     * Starts Jobs from the head of the queue while fewer than {@code maxJobs} run and the window is open. A Job
-     * that cannot be started is counted as a {@code compaction} failure and stays queued, to be tried again. Each
-     * launch is a part of the scan ({@link ScanSpans}): {@code started}, {@code exists} or {@code off}.
+     * Starts Jobs from the head of the queue while a slot is free and the window is open, passing over a table whose
+     * requested Job holds a slot. A Job that cannot be started is counted as a {@code compaction} failure and stays
+     * queued, to be tried again. Each launch is a part of the scan ({@link ScanSpans}): {@code started},
+     * {@code exists} or {@code off}.
      */
     void launch(Clock clock, ScanReport report) {
         running.values().removeIf(job -> finished(job, report));
         queue.sort(ORDER);
         List<Queued> failed = new ArrayList<>();
-        while (running.size() < maxJobs && !queue.isEmpty() && night.contains(clock.instant())) {
+        List<Queued> busy = new ArrayList<>();
+        while (slots.free() && !queue.isEmpty() && night.contains(clock.instant())) {
             Queued next = queue.removeFirst();
             Management.TableWork table = next.table();
+            if (slots.holds(table.id())) {
+                busy.add(next);
+                continue;
+            }
             try {
                 Compactor.Launch launch = spans.part(ScanSpans.Part.COMPACTION_LAUNCH, KeyValues.empty(),
                         () -> compactor.launch(table, next.need(), night),
@@ -150,6 +158,7 @@ final class NightlyCompaction {
             }
         }
         queue.addAll(failed);
+        queue.addAll(busy);
     }
 
     /**
@@ -176,6 +185,7 @@ final class NightlyCompaction {
             }
             case SUCCEEDED -> LOG.info("The compaction Job of table {} ({}) succeeded", table.name(), table.id());
         }
+        slots.release(job.slot());
         ended(job, state, report);
         return true;
     }
@@ -183,12 +193,7 @@ final class NightlyCompaction {
     /** Notes a Job running, started or found at {@code at}, in the lowest free slot, and reports it. */
     private void started(Queued queued, Instant at, ScanReport report) {
         Management.TableWork table = queued.table();
-        Set<Integer> taken = new HashSet<>();
-        running.values().forEach(job -> taken.add(job.slot()));
-        int slot = 1;
-        while (taken.contains(slot)) {
-            slot++;
-        }
+        int slot = slots.take(table.id());
         running.put(table.id(), new Running(table, at, slot, queued.assessed()));
         health.compaction(table, at, Optional.empty(), Compactor.State.RUNNING, report);
         health.job(id(table, night), night, HealthReports.Job.COMPACTION, table.id(), Optional.of(slot), at,
@@ -212,7 +217,7 @@ final class NightlyCompaction {
         return UUID.nameUUIDFromBytes(KubernetesJobs.jobName(table, night).getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String label(Compactor.State state) {
+    static String label(Compactor.State state) {
         return state.name().toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
@@ -248,6 +253,7 @@ final class NightlyCompaction {
      */
     void close(ScanReport report) {
         for (Running job : running.values()) {
+            slots.release(job.slot());
             Management.TableWork table = job.table();
             Compactor.State state;
             try {

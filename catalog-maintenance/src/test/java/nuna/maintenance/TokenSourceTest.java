@@ -111,7 +111,8 @@ class TokenSourceTest {
         return new WorkerSettings(URI.create("http://nuna-catalog:8181/"), Duration.ofMinutes(10),
                 new CleanupWindow(LocalTime.of(1, 0), LocalTime.of(5, 0), ZoneId.of("Europe/London")),
                 Duration.ofDays(1), 100, token, Map.of("s3", new WorkerSettings.StorageProfile(
-                        List.of("s3://lake/tables"), null, "us-east-1", false, null, null, null)), compaction);
+                        List.of("s3://lake/tables"), null, "us-east-1", false, null, null, null)), compaction,
+                Duration.ofHours(2));
     }
 
     private static WorkerSettings.Compaction compaction(String image, String namespace) {

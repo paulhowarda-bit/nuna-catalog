@@ -54,7 +54,8 @@ public final class PurgeProcess {
         };
         try (Worker worker = new Worker(new Management(catalog, tokens, HttpClient.newHttpClient(), 100),
                 new Catalogs(catalog, tokens, Map.of(), TraceHeaders.NONE), slow, Compactor.NONE, Clock.systemUTC(),
-                new CleanupWindow(LocalTime.MIDNIGHT, LocalTime.MIDNIGHT, ZoneOffset.UTC), Duration.ofDays(1), 1, new SimpleMeterRegistry(),
+                new CleanupWindow(LocalTime.MIDNIGHT, LocalTime.MIDNIGHT, ZoneOffset.UTC), Duration.ofDays(1),
+                Duration.ofHours(2), 1, new SimpleMeterRegistry(),
                 ObservationRegistry.NOOP)) {
             System.out.println("SCANNED " + worker.runOnce());
         }

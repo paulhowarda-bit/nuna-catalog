@@ -448,7 +448,7 @@ final class TestCatalog {
                   CleanupWindow window, Duration orphanInterval, int maxJobs) {
         return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens,
                 storage.clientProperties(), TraceHeaders.NONE), storage, compactor, clock, window, orphanInterval,
-                maxJobs, meters, ObservationRegistry.NOOP);
+                Duration.ofHours(2), maxJobs, meters, ObservationRegistry.NOOP);
     }
 
     /**

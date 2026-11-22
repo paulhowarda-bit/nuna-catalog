@@ -41,7 +41,7 @@ final class Management {
             Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     /** One section of the work list, as the catalog names it. */
-    enum Section { TABLES, PURGES, DELETIONS }
+    enum Section { TABLES, PURGES, DELETIONS, REQUESTS }
 
     /** An active table whose resolved maintenance policy runs a job, with that policy (guardrails applied). */
     record TableWork(String catalog, UUID id, List<String> namespace, String name, String location,
@@ -58,6 +58,16 @@ final class Management {
         long count(String key) {
             return Long.parseLong(policy.get(key));
         }
+    }
+
+    /**
+     * A requested job waiting (backlog 114): its table as the tables section shows it, the job ({@code compaction} or
+     * {@code orphan-scan}), and when and by whom it was asked.
+     */
+    record RequestWork(TableWork table, String job, Instant requestedAt, String requestedBy) {
+
+        static final String COMPACTION = "compaction";
+        static final String ORPHAN_SCAN = "orphan-scan";
     }
 
     /** A dropped object past its window, or one claimed for purge. */
@@ -109,9 +119,18 @@ final class Management {
     }
 
     Page<TableWork> tables(Optional<String> token) {
-        return page(Section.TABLES, token, node -> new TableWork(node.path("catalog").asText(),
-                UUID.fromString(node.path("id").asText()), strings(node.path("namespace")), node.path("name").asText(),
-                node.path("location").asText(), policy(node.path("policy"))));
+        return page(Section.TABLES, token, Management::table);
+    }
+
+    Page<RequestWork> requests(Optional<String> token) {
+        return page(Section.REQUESTS, token, node -> new RequestWork(table(node), node.path("job").asText(),
+                Instant.parse(node.path("requested-at").asText()), node.path("requested-by").asText()));
+    }
+
+    private static TableWork table(JsonNode node) {
+        return new TableWork(node.path("catalog").asText(), UUID.fromString(node.path("id").asText()),
+                strings(node.path("namespace")), node.path("name").asText(), node.path("location").asText(),
+                policy(node.path("policy")));
     }
 
     Page<PurgeWork> purges(Optional<String> token) {
@@ -224,11 +243,13 @@ final class Management {
 
     /**
      * Reports a job of the night (backlog 126; docs/observability/maintenance-nights.md): {@code running}, or once
-     * {@code ended}, {@code succeeded}, {@code failed} or {@code cut-off}, with what it did. False when the catalog
-     * refused it, the object being one it never had (404).
+     * {@code ended}, {@code succeeded}, {@code failed} or {@code cut-off}, with what it did. A job run on request
+     * names the request by {@code requested}, the time it was asked, which the catalog then clears (backlog 114).
+     * False when the catalog refused it, the object being one it never had (404).
      */
     boolean reportJob(UUID id, CleanupWindow.Night night, HealthReports.Job kind, UUID object, Optional<Integer> slot,
-                      Instant started, Optional<Instant> ended, String outcome, HealthReports.Counts counts) {
+                      Instant started, Optional<Instant> ended, String outcome, HealthReports.Counts counts,
+                      Optional<Instant> requested) {
         ObjectNode body = JSON.createObjectNode();
         body.put("night", night.date().toString());
         body.put("opens", night.opens().toString());
@@ -244,6 +265,7 @@ final class Management {
         body.put("snapshots-expired", counts.snapshotsExpired());
         body.put("files-deleted", counts.filesDeleted());
         body.put("bytes-deleted", counts.bytesDeleted());
+        requested.ifPresent(at -> body.put("requested-at", at.toString()));
         return reported("the report of job " + id, send("PUT", "management/v1/maintenance/jobs/" + id, body));
     }
 

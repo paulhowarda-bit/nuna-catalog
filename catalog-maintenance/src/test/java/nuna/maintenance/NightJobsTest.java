@@ -113,7 +113,7 @@ class NightJobsTest {
         append(a, 5);
         StubCompactor compactor = new StubCompactor(Compactor.State.RUNNING);
         CleanupWindow.Night night = window.night(clock.instant()).orElseThrow();
-        NightlyCompaction tonight = new NightlyCompaction(night, compactor, 2,
+        NightlyCompaction tonight = new NightlyCompaction(night, compactor, new Slots(2),
                 new WorkerMetrics(new SimpleMeterRegistry(), clock), new ScanSpans(ObservationRegistry.NOOP), health,
                 clock, (work, report) -> Optional.of(catalog.loadTable(TableIdentifier.of("ns", work.name()))));
         ScanReport report = new ScanReport();
