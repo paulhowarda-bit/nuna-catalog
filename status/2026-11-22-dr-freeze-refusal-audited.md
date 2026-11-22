@@ -12,6 +12,8 @@
   They run the real routes, guard and authorizer over a store double.
 - Bites, both run with `bites/run.sh`: `bites/D18/dr-freeze-object-refusal-unaudited.patch` and
   `bites/D18/dr-freeze-lifecycle-refusal-unaudited.patch`, each BITES (3 of 3 failed), tree restored.
+  `bites/M7/frozen-drop.patch` no longer applied and is recorded again, the same break against the new call; it passes
+  `git apply --check`, and its test (`HeldTablesTest`, heavy) has not run here.
 - Claim: `ManagementGuard.java`, the tests and the bites were outside the item's Touches line. `./backlog.sh claim 132
   <path>` cannot extend a claim already held and failed with "already claimed", after its overlap check passed. The
   item's Touches line now names them.
