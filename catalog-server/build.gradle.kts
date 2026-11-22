@@ -28,8 +28,11 @@ dependencies {
     api(project(":catalog-audit"))
     api(project(":catalog-security"))
     // The console's audit feed reads the audit table events through the writer's own reader (EventsReader; D23,
-    // amended 2026-11-22: "Yes, link them"). No server code imports Iceberg.
-    implementation(project(":catalog-audit-tables"))
+    // amended 2026-11-22: "Yes, link them"). No server code imports Iceberg. The writer's KMS client stays out: the
+    // server never calls KMS (D26; NoKmsBoundaryTest), and the reader is handed its S3 client, so builds no other.
+    implementation(project(":catalog-audit-tables")) {
+        exclude(group = "software.amazon.awssdk", module = "kms")
+    }
     api("org.springframework.boot:spring-boot-starter-webmvc")
     api("org.springframework.boot:spring-boot-starter-jdbc")
     // Metrics, traces and logs over OTLP when an endpoint is set (docs/observability/README.md); the root build
