@@ -55,6 +55,21 @@ and each table's assessment and compaction Job as it makes or starts and ends th
 logged and counted as a `report` failure, and the work goes on; one for a table dropped or replaced since the work list
 was read is refused, and left at that.
 
+It also reports each job of the night, which the catalog keeps for a month for the console's overview and maintenance
+pages (D45, backlog 126, `docs/observability/maintenance-nights.md`; `PUT /management/v1/maintenance/jobs/{id}`).
+A night is one opening of the cleanup window and the day that follows it. Each report gives the job's start, end,
+outcome and counts:
+
+- **Compaction Jobs.** Each Job is reported as it starts, on its slot, and again as it ends. The slot is the lowest
+  of 1 to `compaction.max-jobs` that no other running Job holds. The Job's id is made from its name, so a worker
+  restarted reports it under the same id. Once a Job has ended, the worker loads its table and counts the data files
+  that its `replace` commits on main took out and wrote, back to the snapshot the table had when it was assessed.
+- **Orphan scans and purges.** Each is reported once it has ended. A purge reports the files and bytes it deleted,
+  with sizes from the listing it already makes.
+- **Round-the-clock work.** Expiry, manifest rewrite and deletions are added up for each table, kind and night,
+  failures apart, and each sum is reported under one id as it grows. Deletions report their bytes. The worker's
+  identity cannot read an object, so it sizes each file by listing it under its own key before deleting it.
+
 The worker relies on the catalog's guards rather than repeating them. The work list leaves out held tables'
 expiry and orphan scans, frozen namespaces, unregistered tables and everything that is not active. The
 catalog refuses to remove a snapshot younger than its minimum age, refuses a purge claim under a hold or a
@@ -302,7 +317,8 @@ day (`TestCatalog.allDay`).
 |---|---|---|
 | `CleanupWindowTest` | | The window without a catalog: its edges, across midnight, the nights the clocks go forward and back, all day. |
 | `CompactionNeedTest` | | The need from a table's manifests, on an in-memory catalog: small files per partition, delete files past their share (position deletes and deletion vectors), any equality delete, the policy's thresholds; the order; the Job's options. |
-| `NightlyCleanupTest` | | The worker across a window that closes early as the clocks go forward: nothing heavy outside it or after a restart in the day; one Job a table a night; equality deletes first, then the neediest; each Job's deadline at the window's end; the Job cut off and the table left over; an orphan scan cut short scanned again the next night; the catalog keeps each assessment, Job and scan as the worker reports them. |
+| `NightlyCleanupTest` | | The worker across a window that closes early as the clocks go forward: nothing heavy outside it or after a restart in the day; one Job a table a night; equality deletes first, then the neediest; each Job's deadline at the window's end; the Job cut off and the table left over; an orphan scan cut short scanned again the next night; the catalog keeps each assessment, Job and scan as the worker reports them, and each Job on its slot and each orphan scan as a job of its night. |
+| `NightJobsTest` | | The jobs of the night as the worker reports them, to a stand-in catalog on the JDK's HTTP server, on an in-memory Iceberg catalog, no Docker: each compaction Job on the lowest free slot, counting only its own `replace` commits since its table's assessment; round-the-clock work added up over the night, failures apart, the next night's under a new id. |
 | `SnapshotExpiryTest` | | Expiry queues only unreachable files; branch and tag files survive expiry and the orphan scan. |
 | `OrphanScanTest` | | Young orphans are kept; old ones are queued; a sibling location (`t` and `t-twin`) is never touched. |
 | `GuardrailsTest` | | Held, frozen and unregistered tables are untouched until the hold and freeze go; a table no longer the one the work list named is neither assessed nor compacted. |
@@ -331,6 +347,15 @@ day (`TestCatalog.allDay`).
   window closed, before a scan ended the night, does not count that night's cut-off Jobs and left-over tables,
   and the catalog shows those Jobs running until the table's next Job. The catalog keeps each assessment and Job the worker reports (item 47, D38), but only for the console: the worker
   does not read them back.
+- The night's sums of round-the-clock work are kept in memory too: a worker restarted reports what it does from then
+  on under new ids, so the night shows two jobs for a table and kind where it would have shown one. The totals are
+  the same.
+- A compaction Job's files in and out are read from the table's snapshots once the worker sees the Job end. Another
+  writer's own `replace` commit on the table in that time counts as the Job's. A Job found already running after a
+  restart is counted from the table's snapshot at the restart's assessment, so its commits before the restart are
+  missed. The counts stop at snapshots more than an hour older than the Job's start, and at an ancestor that expiry
+  has removed.
+- Sizing a deletion's files costs one LIST request a file, beside the one DELETE request for each 1,000 files.
 - Assessing a table reads its current manifests, every one, once a night. A table of very many manifests takes
   that long to assess; manifest rewrite keeps their number down.
 - The orphan scan holds every file a table reaches in memory. Size the worker for the largest table;

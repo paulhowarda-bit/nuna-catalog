@@ -30,7 +30,7 @@ The parts, each a child of the scan's span, save an assessment's report, a child
 | `orphan-scan` | table scanned for orphans in the cleanup window | `ok`, also when the window's end cut it short |
 | `purge` | dropped object: claim, delete its files, complete | `purged`, or `skipped` when another worker holds it or the catalog refused or rate-limited the claim |
 | `deletion` | object whose due files are deleted and reported done | `ok` |
-| `report` | report to the catalog of the worker's own work (table-health.md); `report` is `scan-start`, `scan-end`, `assessment` or `compaction` | `kept`, or `refused` when the table is gone or now another |
+| `report` | report to the catalog of the worker's own work (table-health.md); `report` is `scan-start`, `scan-end`, `assessment`, `compaction` or `job` (a job of the night, maintenance-nights.md) | `kept`, or `refused` when the table is gone or now another, or a job's object one the catalog never had |
 
 Every part's `outcome` is `error` when it threw, and `exception` the simple name of what it threw (else `none`). A
 scan's `outcome` is its timer's (worker-metrics.md): `success` when it read the whole work list, else `failure`.

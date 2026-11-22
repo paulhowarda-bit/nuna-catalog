@@ -1,0 +1,16 @@
+Breaks: on MongoDB a job's report replaces the one kept even when that one ended later, or ended and this one has not.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Nights#aJobIsKeptByItsId
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java
+index 1d69807..57de9a4 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java
+@@ -46,7 +46,7 @@ final class MongoNights {
+         transactions.writeWithoutId("maintenance job record", tx -> {
+             MongoCollection<BsonDocument> jobs = tx.collection(MAINTENANCE_JOB);
+             Optional<MaintenanceJob> kept = tx.find(MAINTENANCE_JOB, byId(uuid(job.id()))).map(MongoNights::job);
+-            if (kept.isEmpty() || job.replaces(kept.get())) {
++            if (true) {
+                 BsonDocument set = new BsonDocument("worker", new BsonString(job.worker()))
+                         .append("opens", time(job.opens()))
+                         .append("closes", time(job.closes()))

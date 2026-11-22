@@ -222,6 +222,31 @@ final class Management {
                 + table.id() + "/compaction", body));
     }
 
+    /**
+     * Reports a job of the night (backlog 126; docs/observability/maintenance-nights.md): {@code running}, or once
+     * {@code ended}, {@code succeeded}, {@code failed} or {@code cut-off}, with what it did. False when the catalog
+     * refused it, the object being one it never had (404).
+     */
+    boolean reportJob(UUID id, CleanupWindow.Night night, HealthReports.Job kind, UUID object, Optional<Integer> slot,
+                      Instant started, Optional<Instant> ended, String outcome, HealthReports.Counts counts) {
+        ObjectNode body = JSON.createObjectNode();
+        body.put("night", night.date().toString());
+        body.put("opens", night.opens().toString());
+        body.put("closes", night.closes().toString());
+        body.put("kind", kind.label);
+        body.put("object-id", object.toString());
+        slot.ifPresent(number -> body.put("slot", number));
+        body.put("started-at", started.toString());
+        ended.ifPresent(at -> body.put("ended-at", at.toString()));
+        body.put("outcome", outcome);
+        body.put("files-in", counts.filesIn());
+        body.put("files-out", counts.filesOut());
+        body.put("snapshots-expired", counts.snapshotsExpired());
+        body.put("files-deleted", counts.filesDeleted());
+        body.put("bytes-deleted", counts.bytesDeleted());
+        return reported("the report of job " + id, send("PUT", "management/v1/maintenance/jobs/" + id, body));
+    }
+
     // ---- the DR watermark (D37, amended 2026-11-20; docs/observability/dr-watermark.md) ----
 
     /** One page of the DR work list: the tables and views behind their DR watermark, by id. */

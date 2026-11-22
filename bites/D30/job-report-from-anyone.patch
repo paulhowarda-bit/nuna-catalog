@@ -1,0 +1,15 @@
+Breaks: the catalog takes a job of the night from anyone, not only the maintenance worker acting as itself.
+Module: catalog-server
+Test: MaintenanceNightsRoutesTest#onlyTheWorkerReportsAJob
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+index d0f854f..78e8386 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+@@ -239,7 +239,6 @@ class MaintenanceRoutes {
+     ResponseEntity<Void> reportJob(@PathVariable String id, @RequestBody(required = false) String body,
+                                    HttpServletRequest http) {
+         Request request = management.request(http);
+-        guard.requireMaintenance(request, null, "reportMaintenanceJob");
+         UUID jobId;
+         try {
+             jobId = UUID.fromString(id);

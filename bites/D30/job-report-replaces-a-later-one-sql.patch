@@ -1,0 +1,16 @@
+Breaks: on PostgreSQL and CockroachDB a job's report replaces the one kept even when that one ended later, or ended and this one has not.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Nights#aJobIsKeptByItsId
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNights.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNights.java
+index 6e283e4..b8f012e 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNights.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNights.java
+@@ -38,7 +38,7 @@ final class SqlNights {
+                             + " ended_at = excluded.ended_at, outcome = excluded.outcome, files_in = excluded.files_in,"
+                             + " files_out = excluded.files_out, snapshots_expired = excluded.snapshots_expired,"
+                             + " files_deleted = excluded.files_deleted, bytes_deleted = excluded.bytes_deleted"
+-                            + " WHERE j.ended_at IS NULL OR excluded.ended_at >= j.ended_at",
++                            + "",
+                     job.id(), job.worker(), job.night(), job.opens(), job.closes(), job.kind().name(), job.objectId(),
+                     job.slot().orElse(null), job.startedAt(), job.endedAt().orElse(null), job.outcome().name(),
+                     job.filesIn(), job.filesOut(), job.snapshotsExpired(), job.filesDeleted(), job.bytesDeleted());

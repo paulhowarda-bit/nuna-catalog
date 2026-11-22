@@ -5,6 +5,7 @@ import static nuna.catalog.server.governance.Management.ROOT;
 
 import nuna.catalog.audit.FileDeletion;
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.security.Authorizer;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
@@ -32,6 +33,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,6 +46,10 @@ import tools.jackson.databind.node.ObjectNode;
  * work list it scans, and the files it records for deletion and reports deleted. Every file the worker deletes
  * waits out the database's PITR window as a pending deletion first, so a database restored to any point it
  * still holds never names a deleted file. Each route asks {@link ManagementGuard} before any other work.
+ *
+ * <p>Also the worker's nights (D45, backlog 126; {@link MaintenanceNights}): the worker reports each job it runs, and
+ * anyone signed in reads each night's totals and the jobs on its slots, a job's table named only to a caller who may
+ * select it.
  */
 @RestController
 class MaintenanceRoutes {
@@ -51,6 +57,8 @@ class MaintenanceRoutes {
     static final String WORK = ROOT + "/maintenance/work";
     static final String DELETIONS = CATALOG + "/objects/{id}/pending-deletions";
     static final String DELETIONS_DONE = DELETIONS + "/complete";
+    static final String JOB = ROOT + "/maintenance/jobs/{id}";
+    static final String NIGHTS = ROOT + "/maintenance/nights";
 
     private static final int PAGE = 100;
     private static final int MAX_FILES = 1000;
@@ -66,15 +74,17 @@ class MaintenanceRoutes {
     private final GovernanceSettings settings;
     private final CatalogNames catalogs;
     private final Clock clock;
+    private final MaintenanceNights nights;
 
     MaintenanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
-                      CatalogNames catalogs, Clock clock) {
+                      CatalogNames catalogs, Clock clock, Authorizer authorizer) {
         this.store = store;
         this.management = management;
         this.guard = guard;
         this.settings = settings;
         this.catalogs = catalogs;
         this.clock = clock;
+        this.nights = new MaintenanceNights(store, management, authorizer, catalogs, clock);
     }
 
     /**
@@ -216,6 +226,42 @@ class MaintenanceRoutes {
             case WriteResult.Unchanged unchanged -> ResponseEntity.noContent().build();
             default -> throw new IllegalStateException("completeDeletions answered " + result);
         };
+    }
+
+    /**
+     * A job of the worker's night, as the worker reports it (docs/observability/maintenance-nights.md): {@code {"night",
+     * "opens", "closes", "kind", "object-id", "slot", "started-at", "ended-at", "outcome", "files-in", "files-out",
+     * "snapshots-expired", "files-deleted", "bytes-deleted"}}. The worker is the caller. A report repeated late, or a
+     * running report of a job that has ended, changes nothing. Answers 204; 404 when the catalog never had the object.
+     * The report is the worker's bookkeeping and writes no audit record; a refusal is audited.
+     */
+    @PutMapping(path = JOB)
+    ResponseEntity<Void> reportJob(@PathVariable String id, @RequestBody(required = false) String body,
+                                   HttpServletRequest http) {
+        Request request = management.request(http);
+        guard.requireMaintenance(request, null, "reportMaintenanceJob");
+        UUID jobId;
+        try {
+            jobId = UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Not a job id: " + id);
+        }
+        nights.record(MaintenanceNights.job(jobId, request.caller().principal().id(), Management.body(body)));
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * The worker's last nights, newest first, for anyone signed in: the newest {@code days} nights that have a job (30
+     * by default, 1 to 32), each with its totals, and the first {@code jobs} of them (1 by default, 0 to {@code days})
+     * with their compaction Jobs and orphan scans, by start. A job names its table only when the caller may select it.
+     */
+    @GetMapping(path = NIGHTS, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> nights(@RequestParam(required = false) Integer days,
+                                  @RequestParam(required = false) Integer jobs, HttpServletRequest http) {
+        Request request = management.request(http);
+        int asked = days == null ? MaintenanceNights.DAYS : Math.clamp(days, 1, MaintenanceNights.KEEP_NIGHTS);
+        int withJobs = jobs == null ? 1 : Math.clamp(jobs, 0, asked);
+        return GovernanceRoutes.json(200, nights.nights(request.caller(), asked, withJobs));
     }
 
     /** The table as the work list shows it, when its resolved policy runs a job. */

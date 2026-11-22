@@ -31,8 +31,8 @@ final class ScanSpans {
     static final String EXCEPTION = "exception";
     /** On a work list read's span only: the section read, {@code tables}, {@code purges} or {@code deletions}. */
     static final String SECTION = "section";
-    /** On a report's span only: what was reported, {@code scan-start}, {@code scan-end}, {@code assessment} or
-     * {@code compaction}. */
+    /** On a report's span only: what was reported, {@code scan-start}, {@code scan-end}, {@code assessment},
+     * {@code compaction} or {@code job}. */
     static final String REPORT = "report";
     static final String OK = "ok";
     static final String ERROR = "error";

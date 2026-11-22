@@ -9,6 +9,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
+import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_JOB;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_SCAN;
 import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
@@ -173,6 +174,15 @@ final class MongoSchema {
                 index(database, REF_ENTRY, "ref_entry_listing", false, null, "refId", "parentId", "kind", "nameNorm",
                         "objectId");
                 index(database, REF_ENTRY, "ref_entry_object", false, null, "objectId");
+            }),
+            // v1.x (D45, backlog 126): each job of the maintenance worker's nights, by the job's id, for the console's
+            // overview and maintenance pages: a night's totals and its jobs of a kind, by start, and the deletion of
+            // nights more than 31 days old, all by night first. The collection is new, made here outside any
+            // transaction, and no server of the previous release touches it, so building its index locks nothing it
+            // uses.
+            new Step(11, "maintenance nights", database -> {
+                index(database, MAINTENANCE_JOB, "maintenance_job_night", false, null, "night", "kind", "startedAt",
+                        "_id");
             }));
 
     private MongoSchema() {
