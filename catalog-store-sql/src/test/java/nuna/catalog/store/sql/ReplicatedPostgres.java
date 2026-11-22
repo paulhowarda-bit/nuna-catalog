@@ -205,8 +205,10 @@ final class ReplicatedPostgres implements CatalogStoreUnderTest, Faults {
 
     @Override
     public int projectionPieces(PointerKey key) {
-        return 1 + Integer.parseInt(value(primaryDirect, "SELECT count(*) FROM projection_piece WHERE object_id = ?"
-                + " AND branch = ?", key.objectId(), key.branch()));
+        return Integer.parseInt(value(primaryDirect, "SELECT count(*) FROM pointer WHERE object_id = ? AND branch = ?",
+                key.objectId(), key.branch()))
+                + Integer.parseInt(value(primaryDirect, "SELECT count(*) FROM projection_piece WHERE object_id = ?"
+                        + " AND branch = ?", key.objectId(), key.branch()));
     }
 
     /** A fresh, empty database on the primary, reached through the link. */

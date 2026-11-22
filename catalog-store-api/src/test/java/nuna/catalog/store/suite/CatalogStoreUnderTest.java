@@ -24,7 +24,10 @@ public interface CatalogStoreUnderTest extends StoreUnderTest {
     /** The size budget of one stored projection piece (suite test 7). */
     int projectionPieceBytes();
 
-    /** How many pieces the stored projections of {@code key} occupy, over every version still stored. */
+    /**
+     * How many pieces the stored projections of {@code key} occupy, over every version still stored: the pointer holds
+     * the first, so a key with no pointer occupies none.
+     */
     int projectionPieces(PointerKey key);
 
     /** A fresh database at the previous release's schema version (suite test 10). */
