@@ -18,6 +18,8 @@ import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
+import nuna.catalog.store.MaintenanceJob;
+import nuna.catalog.store.MaintenanceNight;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -47,6 +49,7 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -80,6 +83,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlGovernance governance;
     private final SqlDeletions deletions;
     private final SqlHealth health;
+    private final SqlNights nights;
     private final SqlDr dr;
     private final SqlRefs refs;
     private final JournalHorizon horizon;
@@ -108,6 +112,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.governance = new SqlGovernance(transactions);
         this.deletions = new SqlDeletions(transactions);
         this.health = new SqlHealth(transactions);
+        this.nights = new SqlNights(transactions);
         this.dr = new SqlDr(transactions);
         this.refs = new SqlRefs(transactions);
     }
@@ -426,6 +431,23 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public List<MaintenanceScan> listScans() {
         return health.listScans();
+    }
+
+    // ---- the worker's nights (D45, backlog 126) ----
+
+    @Override
+    public void recordMaintenanceJob(MaintenanceJob job, LocalDate keepFrom) {
+        nights.record(job, keepFrom);
+    }
+
+    @Override
+    public List<MaintenanceNight> listMaintenanceNights(LocalDate through, int limit) {
+        return nights.nights(through, limit);
+    }
+
+    @Override
+    public List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds) {
+        return nights.jobs(night, kinds);
     }
 
     // ---- the DR watermark (D37) ----

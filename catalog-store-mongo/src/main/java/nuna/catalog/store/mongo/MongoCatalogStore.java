@@ -32,6 +32,8 @@ import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
+import nuna.catalog.store.MaintenanceJob;
+import nuna.catalog.store.MaintenanceNight;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -59,6 +61,7 @@ import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -106,6 +109,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String PENDING_DELETION = "pending_deletion";
     static final String TABLE_HEALTH = "table_health";
     static final String MAINTENANCE_SCAN = "maintenance_scan";
+    static final String MAINTENANCE_JOB = "maintenance_job";
     static final String DR_WATERMARK = "dr_watermark";
     static final String REF = "ref";
     static final String REF_ENTRY = "ref_entry";
@@ -135,6 +139,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoGovernance governance;
     private final MongoDeletions deletions;
     private final MongoHealth health;
+    private final MongoNights nights;
     private final MongoDr dr;
     private final MongoRefs refs;
 
@@ -167,6 +172,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.governance = new MongoGovernance(transactions);
         this.deletions = new MongoDeletions(transactions);
         this.health = new MongoHealth(transactions);
+        this.nights = new MongoNights(transactions);
         this.dr = new MongoDr(transactions);
         this.refs = new MongoRefs(transactions);
     }
@@ -502,6 +508,23 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public List<MaintenanceScan> listScans() {
         return health.listScans();
+    }
+
+    // ---- the worker's nights (D45, backlog 126) ----
+
+    @Override
+    public void recordMaintenanceJob(MaintenanceJob job, LocalDate keepFrom) {
+        nights.record(job, keepFrom);
+    }
+
+    @Override
+    public List<MaintenanceNight> listMaintenanceNights(LocalDate through, int limit) {
+        return nights.nights(through, limit);
+    }
+
+    @Override
+    public List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds) {
+        return nights.jobs(night, kinds);
     }
 
     // ---- the DR watermark (D37) ----

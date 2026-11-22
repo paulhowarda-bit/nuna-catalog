@@ -60,6 +60,15 @@ public record CleanupWindow(LocalTime start, LocalTime end, ZoneId zone) {
         return Optional.empty();
     }
 
+    /**
+     * The last opening at or before {@code instant}, open or closed then: the night that work round the clock counts
+     * to, from one opening until the next (backlog 126).
+     */
+    Night last(Instant instant) {
+        Night today = on(LocalDate.ofInstant(instant, zone));
+        return today.opens().isAfter(instant) ? on(today.date().minusDays(1)) : today;
+    }
+
     /** The opening that begins on {@code date}. */
     Night on(LocalDate date) {
         Instant opens = ZonedDateTime.of(date, start, zone).toInstant();
