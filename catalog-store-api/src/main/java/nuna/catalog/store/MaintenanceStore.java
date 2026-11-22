@@ -1,8 +1,10 @@
 package nuna.catalog.store;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -87,4 +89,23 @@ public interface MaintenanceStore {
 
     /** The scans kept, the last started first. */
     List<MaintenanceScan> listScans();
+
+    // ---- the worker's nights, kept for the console's overview and maintenance pages (D45, backlog 126) ----
+
+    /**
+     * Keeps a job's report by its id ({@link MaintenanceJob#replaces}: a report repeated late, or a running report of a
+     * job that has ended, changes nothing; the job keeps its earlier start). The report's other fields replace the
+     * kept ones, but for its night, kind and object, which stay as first reported. Then deletes every job of a night
+     * before {@code keepFrom}. Like the other reports, it carries no change id and writes no audit record.
+     */
+    void recordMaintenanceJob(MaintenanceJob job, LocalDate keepFrom);
+
+    /**
+     * The nights on or before {@code through} that have a job, newest first, at most {@code limit}, each with its
+     * totals summed over its jobs.
+     */
+    List<MaintenanceNight> listMaintenanceNights(LocalDate through, int limit);
+
+    /** The night's jobs of these kinds, by start, then id. */
+    List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds);
 }

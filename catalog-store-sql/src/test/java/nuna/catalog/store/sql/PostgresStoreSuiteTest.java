@@ -27,6 +27,7 @@ import nuna.catalog.store.suite.CommitSuite;
 import nuna.catalog.store.suite.GovernanceSuite;
 import nuna.catalog.store.suite.DrSuite;
 import nuna.catalog.store.suite.HealthSuite;
+import nuna.catalog.store.suite.NightSuite;
 import nuna.catalog.store.suite.GrantSuite;
 import nuna.catalog.store.suite.IdempotencySuite;
 import nuna.catalog.store.suite.JournalSuite;
@@ -117,6 +118,14 @@ class PostgresStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Health extends HealthSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return postgres;
+        }
+    }
+
+    @Nested
+    class Nights extends NightSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return postgres;

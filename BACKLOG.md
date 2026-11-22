@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**38 open:** 7 S, 12 M, 13 L, 6 XL.
+**37 open:** 7 S, 13 M, 11 L, 6 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -22,7 +22,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
-| [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
 | [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
@@ -45,11 +44,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [124](backlog/124.md) | XL | Console: rebuild every page to the redesign prototype (D45) | every page of the console rebuilt, a typeface pair served by the console, a policy change for fonts, and the console's browser tests; panels whose route is in items 114 and 125 to 131 appear as those land | 2026-11-22 |
-| [125](backlog/125.md) | L | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | a new feed over the queryable audit tables with filters and a cursor, chain positions and verification, the archive check's status and the last day's counts, with tests and bites | 2026-11-22 |
-| [126](backlog/126.md) | L | Maintenance: each night's summary and each job's run on its worker slot (D45) | the worker reports what each job did, the catalog keeps it on all four stores, and two reads for the console, with tests | 2026-11-22 |
 | [127](backlog/127.md) | M | Maintenance: one row per table for the overview's ice line (D45) | one read over the assessments the catalog already keeps, filtered to what the caller may select, with tests | 2026-11-22 |
-| [132](backlog/132.md) | S | A refusal under a DR freeze is not audited | the refusal published as other refusals are, with a test and a bite | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
+| [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
+| [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
+| [136](backlog/136.md) | S | A nightly or heavy run by hand does not hold other sessions' builds | two scripts take and drop one lock file, and one CLAUDE.md line | 2026-11-22 |
 
 ## Open items in full
 
@@ -675,88 +674,6 @@ each alert fired once in a test. The item stays open for those, which are its do
 
 **Paul's answer, 2026-11-20 (D43, amended):** the 500 commits a second target stays a panel with no alert ("Panel only").
 
-### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
-
-- Decided: 2026-11-19, D31
-- Added: 2026-11-16 by overnight run 2026-11-16
-- Touches: catalog-store-api/src/test/java/nuna/catalog/store/suite/CommitSuite.java, catalog-tests-load/src/test/java/nuna/catalog/load/ConcurrentWritersTest.java
-- Effort: S, waits on an overnight run in which both tests pass
-
-The Nightly leg of the overnight run of 2026-11-16 (testing 30bab53) failed two tests, each on one request that went
-unanswered between about 05:45:57 and 05:46:13 UTC, while `catalog-tests-load` started `ConcurrentWritersTest`'s stack
-(two PostgreSQL, Kafka, the S3 store, two server JVMs) beside `catalog-store-sql-raft`'s CockroachDB cluster:
-
-- `CockroachStoreSuiteTest` "1 CAS" (1,000 rounds, 339 s in): `StoreUnavailableException: commit … could not connect`,
-  caused by `PSQLException: The connection attempt failed` and `SocketTimeoutException: Read timed out`: one
-  connection through the link waited out its 15 s socket timeout, ending about 05:46:12.
-- `ConcurrentWritersTest` "8 writers, format v2": `[5xx answers]` held two `503 GET …/tables/hot` "Storage
-  credentials cannot be issued now". The server started last, `writers-b`, logged "Bootstrap broker localhost:…
-  disconnected" at 05:45:59, then failed two vends at 05:46:08 and 05:46:13: "the credential issue could not be
-  audited", caused by "Topic nuna.catalog.audit not present in metadata after 5000 ms". The other server's producer
-  had the topic's metadata; 16 and 32 writers, and format v3, passed.
-
-Docker Desktop's VM logs (`dockerd.log`, `containerd.log`, `init.log.0`) and Windows' System and Application logs
-show nothing between 05:45:30 and 05:46:30 to explain the stall. Logs:
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-16\nightly.log`, `nightly-results/`, and the server logs in
-`C:\Users\paulh\code\nuna-catalog\.overnight\clone\catalog-tests-load\build\m8\logs\writers-*.log` (until the next run).
-
-Neither failure is in the code under test: the store's answer is its contract (`StoreUnavailableException`: nothing
-applied, the caller repeats), and a vend that cannot be audited fails closed (D23). Each test failed because it had
-no room for one transient.
-
-Done looks like: both tests pass in an overnight run.
-
-Fixed on 2026-11-16, not yet run; open until both pass in an overnight run:
-
-- `CommitSuite#exactlyOneWriterWinsEachRound` commits a writer's batch again, after 1 s, when the store answers
-  `StoreUnavailableException` (nothing applied: the contract says the caller repeats), up to three tries; a third such
-  answer still fails the round. It prints how many commits it repeated, so the overnight log shows any.
-- `ConcurrentWritersTest` warms each server up before the first case: it creates `load.warm-up.t` and loads it through
-  each server until one load returns 200 (two minutes at most), printing how long each took. The measured cases still
-  allow no 5xx.
-
-Neither was run here: both are `-Pnightly` tests (`cas`, `overnight`), which run only in the overnight run unless Paul
-asks. The fast build compiled both.
-
-Run by hand on 2026-11-16 at Paul's word, on adad94c, Docker otherwise idle: `ConcurrentWritersTest` passed, 5 of 5
-(the warm-up took 0.1 s on `writers-a` and 0.9 s on `writers-b`, one 200 each; no 5xx in any case), and
-`CockroachStoreSuiteTest#exactlyOneWriterWinsEachRound` passed, 1,000 rounds in 342 s, repeating no commit. Neither run
-met a stall, so neither shows the new handling working; the item stays open for the overnight run.
-
-Seen again in the overnight run of 2026-11-18 (testing 2dee958, the first with both fixes): the CAS test passed on
-all four backends, and `ConcurrentWritersTest` failed one case of five, "32 writers, format v2" (301 s), in a new
-place. After the case's writers ran, its `SELECT deadlocks FROM pg_stat_database WHERE datname = 'catalog'`
-(`ConcurrentWritersTest.java:115`) failed: `PSQLException: The connection attempt failed`, caused by
-`SocketTimeoutException: Read timed out`: a read reaching a container timed out, as in the stall above, met
-this time by the test's own check rather than by a writer. 8 and 16 writers at v2, and 8 and 32 at v3, passed. Logs:
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\nightly.log` and `nightly-results/` (run before the rename to nuna).
-
-Fixed on 2026-11-19 (Paul, 2026-11-19: "Fix the check"), not yet run; open until both tests pass in an overnight run:
-
-- `ConcurrentWritersTest` reads the deadlock count again after 1 s when the read fails, three tries at most, both
-  before the writers start and after they finish; a third failure in a row still fails the case, and what it asserts
-  is unchanged (the count after equals the count before). Each repeat prints a line (`[m8] deadlock count not read,
-  repeating in 1 s: …` and `[m8] deadlock count read after n repeat(s)`), so the overnight log shows any. The read is
-  the test's own instrument, and no writer runs while it reads, so it repeats on any failure.
-- The same exposure in the CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`): after each round it reads the
-  pointer and the winner's outcome through the store (`readPointer`, `findCommit`: 2,000 reads in 1,000 rounds), and
-  at the end the journal directly (`journalVersions`). The store's two reads are now asked again on
-  `StoreUnavailableException` alone, as the commits are (one helper, `repeating`, serves all three: three tries, 1 s
-  apart); the journal read, the suite's own instrument over four drivers that fail in their own types, on any
-  failure. It prints how many reads it repeated beside how many commits.
-- Left as they were: `ConcurrentWritersTest`'s other requests go to the catalog servers, whose answers the case
-  holds to no 5xx (the item's rule), and `Stack.grantWriters` is a write in the stack's setup, not a check.
-
-Not run: both are `-Pnightly` tests (`overnight`, `cas`), and the heavy and nightly builds were off on 2026-11-19. The
-fast build compiled both.
-
-Seen again in the overnight run of 2026-11-22 (testing b1f073d): `ConcurrentWritersTest` passed, but
-`CockroachStoreSuiteTest` "1 CAS" failed after 348 s: `StoreUnavailableException: commit 7e0f4d16-... could not
-connect`, caused by `PSQLException: The connection attempt failed` and `SocketTimeoutException`. The test had
-repeated 7 commits after the store could not reach the database ("CAS: 7 commits repeated ..."), and one commit
-failed all three tries. `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\nightly.log`,
-`nightly-results\catalog-store-sql-raft\`.
-
 ### 60. CredentialExpiryTest's first request answered 401
 
 - Added: 2026-11-18 by overnight run 2026-11-18
@@ -935,6 +852,11 @@ Seen in the overnight run of 2026-11-22 (testing b1f073d, which holds the fix): 
 test, 0 failures, 122 s (`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\nightly-results\catalog-maintenance\`).
 Its bite, `bites/M6/job-storage-ca-left-out`, did not run: the bites run only after a passing heavy build, and that
 build failed (items 28, 100, 102, 103, 121). Close this item when an overnight run's bites show the bite bites.
+
+Run in two nightlies by hand on 2026-11-22 (`status/2026-11-22-nightly-2026-11-22.md`): `PrivateCaCompactionTest`
+passed in the second (257 s). In the first, its body passed and its cleanup failed: `kubectl delete namespace ...
+--wait=true` lost the API server (`http2: client connection lost`) while Windows was paging the Docker VM out (item
+135). The bite has still not run; the item still closes when an overnight run's bites show it biting.
 
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
@@ -1630,6 +1552,14 @@ a time, the demo down) ran twice with a sampler logging, each second, the Docker
 
 The item stays open for its last test: ten overnight heavy builds in a row that lose no test to a wait running out.
 
+A second cause, found on 2026-11-22 by two nightlies run by hand (`status/2026-11-22-nightly-2026-11-22.md`): Windows
+out of RAM. With other sessions' fast builds running, Windows had 241 to 760 MB available and paged in a median 22,700
+pages a second, and the Docker VM was resident at as little as 991 MB of its 8 GB; containers took 44 to 95 s to
+start, a Kafka never did, and the VM's own pressure stalls stayed near 0, since a guest stalled on a host page fault
+counts it as CPU. This hits the heavy build as it hit the nightly, so a heavy build that loses a wait should be
+read beside Windows' numbers, not only the VM's. Item 135 is the host's memory (Paul decides the remedy); item 136
+keeps other sessions' builds off a run by hand.
+
 ### 124. Console: rebuild every page to the redesign prototype (D45)
 
 - Added: 2026-11-22 by Paul
@@ -1665,56 +1595,6 @@ What done looks like:
 - A panel whose route has not landed yet is left out, not faked. It appears when its item lands.
 - The console's browser tests (`heavy`) cover each page, the theme switch, phone width and a refused grant.
 
-### 125. Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45)
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java, catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java, catalog-audit-tables/
-- Effort: L, a new feed over the queryable audit tables with filters and a cursor, chain positions and verification, the archive check's status and the last day's counts, with tests and bites
-
-The prototype's Audit page is a feed across the whole catalog (D45). Today `GET .../audit` (`AuditReadRoutes`):
-- returns one subject's own records, from one partition;
-- reaches at most 20,000 offsets back and returns at most 200 per call;
-- needs `manage-grants`.
-
-Searching across objects or people was the SIEM's job (build-plan.md, UI v1). Since item 27, the queryable audit
-tables (D23) can do it too.
-
-What done looks like:
-- A feed per catalog:
-  - newest first;
-  - filtered by kind, principal, path prefix (a namespace with its tables and views) and time;
-  - paged with a cursor;
-  - read from the audit tables, so about a minute behind, and the feed says so.
-- Each record with its request id, its partition and offset, its neighbours in the hash chain, and whether that link
-  was verified.
-- The archive check's last result and time.
-- The last day's counts by kind and the busiest objects, matching the health page's figures for the same day.
-- Who may read it is settled as for the audit tables (D23, item 85). Route tests for each refusal.
-
-### 126. Maintenance: each night's summary and each job's run on its worker slot (D45)
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-maintenance/, catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java, catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceNights.java, catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/
-- Effort: L, the worker reports what each job did, the catalog keeps it on all four stores, and two reads for the console, with tests
-
-The prototype's overview and maintenance pages lead with last night's result (D45):
-- tables compacted;
-- small files merged, and into how many;
-- snapshots expired;
-- bytes deleted;
-- jobs cut off at the window's end, and jobs failed.
-
-They show these over 30 nights, with a chart of each job's run on its worker slot.
-
-Today the worker reports only each job's outcome, and the catalog keeps only each table's last compaction. So
-neither a night's totals nor a full night can be drawn (wireframes.html, overview notes 2, 4 and 10).
-
-What done looks like:
-- The worker reports, for each job: start, end, slot, outcome, files in and out, snapshots expired and bytes deleted.
-- The catalog keeps those reports for at least 30 nights, by an add-only schema step on all four stores.
-- `GET /management/v1/maintenance/nights?days=` answers each night's totals, and each night's jobs with their slots.
-- Store suite and route tests. The worker's report is tested the way `NightlyCleanupTest` tests the window.
-
 ### 127. Maintenance: one row per table for the overview's ice line (D45)
 
 - Added: 2026-11-22 by Paul
@@ -1734,22 +1614,6 @@ What done looks like:
 
   The read is paged, for a large catalog.
 - Route tests, including that a table the caller may not select is not counted.
-
-### 132. A refusal under a DR freeze is not audited
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/Management.java, catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/main/java/nuna/catalog/server/rest/ObjectRoutes.java
-- Effort: S, the refusal published as other refusals are, with a test and a bite
-
-A request refused because a DR freeze covers its target answers 403, "... is frozen for DR reconcile: ...". The
-refusal comes from `Management.requireUnfrozen` (Management.java, line 237), which `LifecycleRoutes` and
-`ObjectRoutes` call. Unlike every other refusal, no denial record is published for it. Atelier found this while
-building the prototype's audit feed, which shows the refusal as unaudited to match the server.
-
-What done looks like:
-- The refusal published as a `nuna.catalog.denial` record with its reason.
-- A route test.
-- A bite that drops the publish.
 
 ### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
 
@@ -1773,6 +1637,91 @@ What done looks like: a hold's release and a freeze's lift recorded in the store
 lifted record, or the row kept with `released_at` and `released_by`), on all four stores with a suite in the shared
 test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
 its tests. The audit topic read goes.
+
+### 134. Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited
+
+- Added: 2026-11-22 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java, catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/java/nuna/catalog/server/rest/, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/D18/
+- Effort: M, four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them
+
+Item 132 made a drop, rename, undrop or purge claim refused by a DR freeze publish a `nuna.catalog.denial` record, as
+every refusal must (D18). Working on it found four more refusals that answer 403 and publish nothing:
+
+- A commit refused by a DR freeze: `Rules.java`, line 92, "Writes to ... are frozen for DR reconcile: ...". It returns
+  a `Rejection.forbidden`, which reaches the client as a `CommitReply.Failure` (`ObjectRoutes.reply`). The same rule
+  set refuses a snapshot removal under a legal hold (`Rules.java`, line 83) the same way, also unaudited.
+- An unregister refused by a DR freeze: `CommitEngine.java`, line 693, "... is frozen for DR reconcile and cannot be
+  unregistered". Its legal-hold refusal beside it (line 689) is unaudited too. `TableRoutes.unregister` audits the
+  regulated and flagged-table refusals through `Guard.refuse`, but not these.
+- A drop refused by a legal hold: `ObjectRoutes.java`, line 157, `Http.forbidden(... "is under a legal hold and cannot
+  be dropped")`, a `CatalogError` with no denial.
+- A purge claim refused by a legal hold: `LifecycleRoutes.java`, line 219, `CatalogError.of(403, ...)` with no denial.
+
+Evidence: read from the code on 2026-11-22 (branch of item 132). No test checks for a denial on any of them.
+
+What done looks like:
+- Each refusal above publishes a `nuna.catalog.denial` record through `Denials`, naming the operation and the table
+  or view, with reason `dr_freeze` or `legal_hold` and the message the caller gets. The answer stays the same 403.
+- A fast test per refusal, or per route, that checks the denial, in the form of `FrozenObjectRefusalTest` and
+  `FrozenLifecycleRefusalTest` (item 132).
+- A bite per publish site, in `bites/D18/`, that drops the publish and fails its test.
+
+### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
+
+- Added: 2026-11-22 by nightly by hand 2026-11-22
+- Touches: none
+- Effort: S, once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul
+
+The machine has 15.7 GB, and during both nightlies of 2026-11-22 Windows was paging the Docker VM's memory out
+(`status/2026-11-22-nightly-2026-11-22.md`). A container whose memory is in Windows' page file stalls on every touch
+of it, and inside the VM that shows as CPU, never as memory pressure, so the VM's own numbers look healthy.
+
+Evidence, from `Get-Counter` and `Get-Process` every 10 s:
+
+- With other sessions' fast builds running (nightly 1, 16:10 to 16:30): 241 to 760 MB available, a median 22,700
+  page-ins a second, peak 160,000; the VM resident at 991 MB of 8 GB at worst. Thirteen tests lost a wait: PostgreSQL
+  and Kafka not started in 60 to 90 s, CockroachDB statements past their 15 s, the CAS on PostgreSQL and CockroachDB.
+- With no other build (nightly 2, 16:30 to 17:58): 65 to 1,700 MB available (median 655), a median 16,800 page-ins a
+  second, peak 136,000; the VM resident at a median 2.9 GB. Every test passed, but the CockroachDB CAS took 1,277 s
+  for 1,000 rounds, against 342 s on an idle host on 2026-11-16.
+- Who holds the memory: the Docker VM commits 8 GB, 27 Claude processes 5.8 GB, Edge WebView and ChatGPT 2 GB
+  each, VS Code 1.1 GB, Chrome 0.8 GB. Windows' non-paged pool was 1.76 GB (a few hundred MB is usual) and WUDFHost,
+  a host for user-mode drivers, had 3.2 GB committed: both look like a driver leaking, which a restart clears.
+
+The remedies are changes to Paul's machine, so Paul picks:
+
+1. Before midnight, close what the run does not need (ChatGPT, Chrome, VS Code, idle Claude sessions), and restart
+   Windows now and then to clear the non-paged pool and WUDFHost.
+2. Let WSL give the VM's idle memory back to Windows: WSL's `autoMemoryReclaim` setting in
+   `%UserProfile%\.wslconfig` (none exists now; check the installed WSL version's documentation for its section),
+   which needs `wsl --shutdown` once, so Docker Desktop restarts.
+3. Fewer containers at once in the nightly's step 1 (`--max-workers=1`): a smaller peak for the VM, and a longer run.
+
+Done looks like: the remedy Paul picks is in place, and an overnight run's nightly passes with Windows above 1.5 GB
+available and the VM resident at its working size throughout (sampled as `status/2026-11-22-nightly-2026-11-22.md`
+says).
+
+### 136. A nightly or heavy run by hand does not hold other sessions' builds
+
+- Added: 2026-11-22 by nightly by hand 2026-11-22
+- Touches: nightly.sh heavy.sh CLAUDE.md
+- Effort: S, two scripts take and drop one lock file, and one CLAUDE.md line
+
+CLAUDE.md tells every agent to start no build while `.overnight/running` exists in the main checkout, and
+`overnight.sh` writes that file for its whole run. A nightly or heavy pass run by hand (`./nightly.sh`, `./heavy.sh`
+in a worktree, at Paul's word) writes nothing, so other sessions' agents keep building beside it.
+
+Evidence: the first nightly by hand on 2026-11-22 failed 13 tests on waits that ran out while five agent worktrees ran
+fast builds (test results written from 15:20 to 16:10, four at once at 16:10) and Windows paged in a median 22,700
+pages a second. The second, with those agents asked by message to hold their builds, passed all 233
+(`status/2026-11-22-nightly-2026-11-22.md`). The session running it could not write `.overnight/running` itself: its
+worktree guard refuses writes to the main checkout.
+
+Done looks like: `nightly.sh` and `heavy.sh` write `.overnight/running` in the main checkout (found with
+`git rev-parse --git-common-dir`) with their pid when it is absent, remove it on exit (a trap) only if it is still
+theirs, and leave a run that already holds it alone; `overnight.sh` keeps working as now (it finds its own lock, or a
+dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too. Checked by running `./nightly.sh
+--test-dry-run` and seeing the file appear and go.
 
 ## Done and dropped
 
@@ -1822,6 +1771,7 @@ its tests. The audit topic read goes.
 | [52](backlog/52.md) | backlog.sh done fails on a branch name with a slash | dropped | 2026-11-15 |
 | [53](backlog/53.md) | Count credential vends served from the cache apart from new issues (after 41) | done | 2026-11-15 |
 | [54](backlog/54.md) | KubernetesCompactionTest: kubectl's jsonpath filter loses its quotes on Windows | done | 2026-11-16 |
+| [55](backlog/55.md) | The nightly lost two tests to one 15 s stall reaching Docker's containers | done | 2026-11-22 |
 | [56](backlog/56.md) | WorkerTraceTest takes the expiry's table load for the scan's | done | 2026-11-16 |
 | [57](backlog/57.md) | Publish Silo's console on localhost:8184 | done | 2026-11-16 |
 | [58](backlog/58.md) | Demo: TLS at one front door, with a certificate that work's can replace | done | 2026-11-17 |
@@ -1869,7 +1819,10 @@ its tests. The audit topic read goes.
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
 | [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [125](backlog/125.md) | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | done | 2026-11-22 |
+| [126](backlog/126.md) | Maintenance: each night's summary and each job's run on its worker slot (D45) | done | 2026-11-22 |
 | [128](backlog/128.md) | Governance: a summary per catalog, and every hold and freeze with its history (D45) | done | 2026-11-22 |
 | [129](backlog/129.md) | Grants: the effective grants on an object, inherited ones included (D45) | done | 2026-11-22 |
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
+| [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |

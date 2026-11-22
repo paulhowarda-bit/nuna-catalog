@@ -2,15 +2,15 @@ Breaks: a failed purge is counted as a failed deletion, so the purges-failing al
 Module: catalog-maintenance
 Test: ScanMetricsTest
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index 62b16e8..7e7c8b9 100644
+index 5251272..e2d8b03 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -388,7 +388,7 @@ final class Worker implements AutoCloseable {
-             spans.part(ScanSpans.Part.PURGE, KeyValues.empty(), () -> purged(purge, report), outcome -> outcome);
+@@ -426,7 +426,7 @@ final class Worker implements AutoCloseable {
+                     outcome -> outcome);
          } catch (RuntimeException e) {
              LOG.warn("Failed purging {} ({})", purge.name(), purge.id(), e);
 -            report.failed(ScanReport.Failure.PURGE, "purging " + purge.id(), e);
 +            report.failed(ScanReport.Failure.DELETION, "purging " + purge.id(), e);
+             purging.failed = true;
          }
-     }
- 
+         if (purging.claimed) {

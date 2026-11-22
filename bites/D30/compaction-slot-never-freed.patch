@@ -1,0 +1,19 @@
+Breaks: a compaction Job takes the slot after the running Jobs' count, not the lowest free one, so two Jobs share a slot once one has finished.
+Module: catalog-maintenance
+Test: NightJobsTest#eachJobTakesTheLowestFreeSlotAndCountsItsOwnReplaces
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java b/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
+index 1d50768..970b529 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
+@@ -185,10 +185,7 @@ final class NightlyCompaction {
+         Management.TableWork table = queued.table();
+         Set<Integer> taken = new HashSet<>();
+         running.values().forEach(job -> taken.add(job.slot()));
+-        int slot = 1;
+-        while (taken.contains(slot)) {
+-            slot++;
+-        }
++        int slot = running.size() + 1;
+         running.put(table.id(), new Running(table, at, slot, queued.assessed()));
+         health.compaction(table, at, Optional.empty(), Compactor.State.RUNNING, report);
+         health.job(id(table, night), night, HealthReports.Job.COMPACTION, table.id(), Optional.of(slot), at,

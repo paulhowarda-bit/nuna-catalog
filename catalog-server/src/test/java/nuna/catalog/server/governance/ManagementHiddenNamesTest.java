@@ -122,7 +122,7 @@ class ManagementHiddenNamesTest {
         ManagementGuard guard = new ManagementGuard(authorizer, separation, null, denials, holdings);
         // No governance settings, audit topic, storage or catalog names: every case is answered before them.
         governance = new GovernanceRoutes(store, management, guard, null, null, clock);
-        trail = new AuditReadRoutes(management, guard, null, null, null, clock);
+        trail = new AuditReadRoutes(management, guard, null, null, null, null, null, clock);
         health = new HealthRoutes(store, management, guard, authorizer, null);
         lifecycle = new LifecycleRoutes(store, management, guard, null, null, null, null, clock);
     }
