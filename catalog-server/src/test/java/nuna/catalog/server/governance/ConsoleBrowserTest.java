@@ -22,6 +22,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.openqa.selenium.By;
+import org.openqa.selenium.Dimension;
+import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.Select;
@@ -31,10 +33,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The web console in a real browser, on the server the M7 tests share: the screens UI v1 checked by hand against
- * the demo on 2026-11-10 (build-plan.md). The tree down to tables and views; a table's overview, schemas, partition
- * specs and sort orders, snapshots with their refs, and metadata history; a view's versions with their SQL;
- * governance with the level each value comes from; grants made and revoked; every refusal shown as the catalog
- * answered it; and an object's audit trail.
+ * the demo on 2026-11-10 (build-plan.md), in the redesigned console (D45, backlog 124). The tree down to tables and
+ * views; a table's overview, schemas compared, partition specs and sort orders, snapshots with their refs, and
+ * metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
+ * revoked; every refusal shown as the catalog answered it, with its request id; an object's audit trail; the theme
+ * picked and kept; and the phone layout, its menu a drawer and no page wider than the screen.
  *
  * <p>The fixtures are made through the API before the browser looks: a namespace three levels deep with a v2 table
  * whose schema, partitioning and sort order evolved and which has three snapshots, a tag and a branch, a v3 table and
@@ -126,175 +129,181 @@ class ConsoleBrowserTest {
     void theTreeOpensDownToTablesAndViews() {
         signIn(tester());
         browser.open("/ui/#c=trading");
-        browser.await(By.cssSelector("nav.tree button[aria-label='catalog trading']"));
-        assertThat(new Select(driver.findElement(By.id("catalog-select"))).getFirstSelectedOption().getText())
-                .isEqualTo("trading");
-        assertThat(driver.findElement(By.id("who")).getText()).contains("tester", IssuerForTests.GROUP);
+        browser.await(node("catalog"));
+        assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
+        assertThat(textContent(driver.findElement(By.id("who")))).contains("tester", IssuerForTests.GROUP);
+        browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
 
-        expand(top);
-        expand("equities");
-        browser.await(leaf("view", "daily"));
-        expand("ledger");
-        browser.await(leaf("table", "accounts"));
-        expand("eu");
-        browser.await(leaf("table", "positions"));
-        browser.await(leaf("table", "trades")).click();
+        // Opening a namespace in the tree opens its page and lists what is in it.
+        browser.await(node("namespace:" + top)).click();
+        browser.await(node("namespace:" + top + ".equities")).click();
+        browser.await(node("view:" + top + ".equities.daily"));
+        browser.await(node("namespace:" + top + ".ledger")).click();
+        browser.await(node("table:" + top + ".ledger.accounts"));
+        browser.await(node("namespace:" + top + ".equities.eu")).click();
+        browser.await(node("table:" + top + ".equities.eu.positions"));
+        browser.await(node("table:" + top + ".equities.eu.trades")).click();
 
-        WebElement head = browser.awaitText(By.cssSelector("section.pane .pane-head"), "trades");
-        assertThat(head.findElement(By.cssSelector(".badge")).getText()).isEqualTo("table");
-        assertThat(head.findElements(By.cssSelector(".crumb"))).extracting(WebElement::getText)
-                .containsExactly("trading", top, "equities", "eu", "trades");
+        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        assertThat(driver.findElements(By.cssSelector("#table-page nav.crumbs > a, #table-page nav.crumbs > span.cur")))
+                .extracting(ConsoleBrowser::textContent).containsExactly("trading", top, "equities", "eu", "trades");
         assertThat(driver.getCurrentUrl()).contains("k=table", "n=trades", "ns=" + top + "%1Fequities%1Feu");
-        assertThat(browser.await(leaf("table", "trades")).getAttribute("class")).contains("selected");
+        browser.await("trades is not marked as the page shown", d -> "true".equals(
+                d.findElement(node("table:" + top + ".equities.eu.trades")).getDomAttribute("aria-current")));
 
         // The filter keeps what matches and the namespaces above it.
-        driver.findElement(By.cssSelector("nav.tree input[type='search']")).sendKeys("positi");
-        browser.await("trades is still listed", d -> d.findElements(leaf("table", "trades")).stream()
-                .noneMatch(WebElement::isDisplayed));
-        assertThat(browser.displayed(leaf("table", "positions"))).hasSize(1);
-        assertThat(browser.displayed(By.cssSelector("nav.tree button.node[title='" + top + "']"))).hasSize(1);
-        assertThat(browser.displayed(leaf("view", "daily"))).isEmpty();
+        driver.findElement(By.cssSelector(".tree input[aria-label='Filter names in the tree']")).sendKeys("positi");
+        browser.await("trades is still listed", d -> d.findElements(node("table:" + top + ".equities.eu.trades"))
+                .stream().noneMatch(WebElement::isDisplayed));
+        assertThat(browser.displayed(node("table:" + top + ".equities.eu.positions"))).hasSize(1);
+        assertThat(browser.displayed(node("namespace:" + top))).hasSize(1);
+        assertThat(browser.displayed(node("view:" + top + ".equities.daily"))).isEmpty();
     }
 
     @Test
     void theTableTabsShowSchemasSpecsSnapshotsAndHistory() {
         signIn(tester());
-        browser.open("/ui/#" + at("table", eu, "trades", "overview"));
-        assertThat(fact("Format version")).isEqualTo("v2");
-        assertThat(fact("Current schema")).isEqualTo("id 2 (3 in all)");
-        assertThat(fact("Default partition spec")).isEqualTo("id 1");
-        assertThat(fact("Default sort order")).isEqualTo("id 1");
-        assertThat(fact("Snapshots")).isEqualTo("3");
-        assertThat(fact("Current snapshot")).startsWith(S3 + " · ").endsWith("append");
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.awaitText(By.cssSelector("#table-page .title-row .badge"), "iceberg v2");
+        assertThat(fact("Schema, spec, order")).isEqualTo("schema 2 of 3 · partition spec 1 of 2 · sort order 1");
+        assertThat(fact("Current snapshot")).startsWith(S3 + " · append · ");
+        assertThat(kpi("Snapshots")).isEqualTo("3");
+        assertThat(kpi("Schemas")).isEqualTo("3");
         // The console asks for no storage credentials, and the catalog honours that from any caller (D21, amended
-        // 2026-11-19): there is nothing to discard, and nothing of them reaches the page or the tab's storage.
-        assertThat(driver.findElements(By.cssSelector("section.pane .notice"))).isEmpty();
+        // 2026-11-19): nothing of them reaches the page or the tab's storage.
         assertThat(driver.getPageSource()).doesNotContain("storage-credentials", "secret-access-key",
                 "session-token");
         assertThat(storageKeys()).containsExactly("nuna.token");
 
-        tab("Schema");
-        Select schemas = new Select(browser.await(By.cssSelector("section.pane select[aria-label='Schema']")));
-        assertThat(schemas.getOptions()).extracting(WebElement::getText)
-                .containsExactly("schema 2 (current)", "schema 1", "schema 0");
-        assertThat(addedFields()).containsExactly("venue");
+        // Schemas: the current one beside the one before it, then any two picked on the timeline.
+        tab("schema");
+        assertThat(driver.findElements(By.cssSelector(".schema-tl button.node"))).extracting(WebElement::getText)
+                .containsExactly("0", "1", "2");
+        browser.awaitText(By.cssSelector("#schema-diff h2"), "Schema 1 → schema 2");
         assertThat(schemaFields()).containsExactly("id", "symbol", "price", "venue");
-        schemas.selectByVisibleText("schema 1");
-        browser.await("schema 1 is not shown", d -> schemaFields().equals(List.of("id", "symbol", "price")));
+        assertThat(addedFields()).containsExactly("venue");
+        schemaNode("0").click();
+        browser.awaitText(By.cssSelector("#schema-diff h2"), "Schema 0 → schema 2");
+        assertThat(addedFields()).containsExactly("price", "venue");
+        schemaNode("1").click();
+        browser.awaitText(By.cssSelector("#schema-diff h2"), "Schema 0 → schema 1");
+        assertThat(schemaFields()).containsExactly("id", "symbol", "price");
         assertThat(addedFields()).containsExactly("price");
-        schemas.selectByVisibleText("schema 0");
-        browser.await("schema 0 is not shown", d -> schemaFields().equals(List.of("id", "symbol")));
-        assertThat(addedFields()).isEmpty();
 
-        tab("Partitioning & sort");
-        WebElement specs = section("Partition specs");
-        assertThat(specs.findElements(By.tagName("h4"))).extracting(ConsoleBrowser::textContent)
-                .containsExactly("Spec 1default", "Spec 0");
-        assertThat(rows(specs)).containsExactly(List.of("1000", "symbol", "symbol", "identity"));
-        assertThat(specs.getText()).contains("Unpartitioned.");
-        WebElement orders = section("Sort orders");
-        assertThat(orders.findElements(By.tagName("h4"))).extracting(ConsoleBrowser::textContent)
-                .containsExactly("Order 1default", "Order 0");
-        assertThat(rows(orders)).containsExactly(List.of("id", "identity", "asc", "nulls-first"));
+        tab("partitioning");
+        List<WebElement> specs = driver.findElements(By.cssSelector("#table-page [data-spec]"));
+        assertThat(specs).extracting(spec -> spec.getDomAttribute("data-spec")).containsExactly("1", "0");
+        assertThat(specs.get(0).findElement(By.tagName("h2")).getText()).contains("Spec 1", "Default");
+        assertThat(specs.get(0).findElements(By.cssSelector(".xf")))
+                .extracting(xf -> xf.findElement(By.cssSelector(".src")).getText() + " " + xf.findElement(
+                        By.cssSelector(".fn")).getText() + " " + xf.findElement(By.cssSelector(".out")).getText())
+                .containsExactly("symbol · 2 identity symbol · 1000");
+        assertThat(specs.get(1).getText()).contains("Every data file sits in one partition.");
+        assertThat(panel("Sort order 1").getText()).contains("default");
+        assertThat(fact("1st")).isEqualTo("id · identity · ascending · nulls first");
+        assertThat(panel("Sort order 0").getText()).contains("Unsorted");
 
-        tab("Snapshots");
-        assertThat(rows(section("Refs: branches and tags"))).containsExactly(
-                List.of("main", "branch", String.valueOf(S3), ""),
-                List.of("close-day-1", "tag", String.valueOf(S1), ""),
-                List.of("review", "branch", String.valueOf(S2), ""));
-        List<WebElement> snapshots = section("Snapshots, newest first").findElements(OUTER_ROWS);
-        assertThat(snapshots).hasSize(3);
-        assertThat(cell(snapshots.get(0), 1)).isEqualTo("current");
-        assertThat(cell(snapshots.get(0), 2)).isEqualTo(S3 + "main");
-        assertThat(cell(snapshots.get(1), 1)).isEmpty();
-        assertThat(cell(snapshots.get(1), 2)).isEqualTo(S2 + "review");
-        assertThat(cell(snapshots.get(1), 3)).isEqualTo(String.valueOf(S1));
-        assertThat(cell(snapshots.get(2), 2)).isEqualTo(S1 + "close-day-1");
-        assertThat(cell(snapshots.get(2), 3)).isEqualTo("–");
+        tab("snapshots");
+        List<WebElement> snapshots = driver.findElements(By.cssSelector("table.snaps tbody tr"));
+        assertThat(snapshots).extracting(row -> row.getDomAttribute("data-id"))
+                .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
+        assertThat(snapshots.get(0).getDomAttribute("class")).contains("is-cur");
+        assertThat(cell(snapshots.get(0), 3)).startsWith("append");
+        assertThat(cell(snapshots.get(0), 6)).isEqualTo("main");
+        assertThat(cell(snapshots.get(1), 6)).isEqualTo("review");
+        assertThat(cell(snapshots.get(2), 6)).isEqualTo("close-day-1");
+        assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]"))).hasSize(3);
+        snapshots.get(2).findElement(By.cssSelector("button.row-pick")).click();
+        browser.await("the oldest snapshot is not selected", d -> d.findElement(
+                By.cssSelector("table.snaps tr[data-id='" + S1 + "']")).getDomAttribute("class").contains("is-sel"));
+        String summary = textContent(browser.await(By.cssSelector("#selected-snapshot pre.raw")));
+        assertThat(JsonPath.<String>read(summary, "$.operation")).isEqualTo("append");
+        assertThat(JsonPath.<String>read(summary, "$.total-records")).isEqualTo("10");
 
-        tab("Metadata history");
+        tab("metadata-log");
         HttpResponse<String> loaded = expect(api.rest("GET", "/namespaces/" + ns(eu) + "/tables/trades", null), 200);
         List<String> earlier = JsonPath.read(loaded.body(), "$.metadata.metadata-log[*].metadata-file");
-        List<WebElement> files = section("Metadata files, newest first").findElements(OUTER_ROWS);
+        List<WebElement> files = panel("Metadata files").findElements(OUTER_ROWS);
         assertThat(files).hasSize(earlier.size() + 1);
-        assertThat(cell(files.get(0), 2)).isEqualTo(JsonPath.<String>read(loaded.body(), "$.metadata-location"));
-        assertThat(cell(files.get(0), 1)).endsWith("current");
-        assertThat(rows(section("Snapshot log (main), newest first"))).extracting(row -> row.get(1))
+        String location = JsonPath.read(loaded.body(), "$.metadata-location");
+        assertThat(cell(files.get(0), 3)).isEqualTo(location.substring(location.lastIndexOf('/') + 1) + " Current");
+        assertThat(driver.findElements(By.cssSelector("#snapshot-log tbody tr")))
+                .extracting(row -> row.getDomAttribute("data-id"))
                 .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
 
-        browser.open("/ui/#" + at("table", eu, "positions", "overview"));
-        assertThat(fact("Format version")).isEqualTo("v3");
+        browser.open("/ui/#" + at("table", eu, "positions", null));
+        browser.awaitText(By.cssSelector("#table-page .title-row .badge"), "iceberg v3");
         assertThat(fact("Next row id")).isNotBlank();
     }
 
     @Test
     void theViewTabsShowEveryVersionWithItsSql() {
         signIn(tester());
-        browser.open("/ui/#" + at("view", equities, "daily", "overview"));
-        assertThat(fact("Current version")).isEqualTo("id 2 (2 in all)");
+        browser.open("/ui/#" + at("view", equities, "daily", null));
+        assertThat(fact("Current version")).startsWith("2 · ");
+        assertThat(sql(panel("Definition"))).containsExactly("spark select 2 as x, venue",
+                "trino SELECT 2 AS x, venue");
+        assertThat(rows(panel("Schema"))).extracting(row -> row.get(1)).containsExactly("x", "venue");
 
-        tab("Versions & SQL");
+        tab("versions");
         List<WebElement> versions = browser.await("no view versions", d -> {
-            List<WebElement> found = d.findElements(By.cssSelector("section.pane article.version"));
+            List<WebElement> found = d.findElements(By.cssSelector("#view-page article.version"));
             return found.size() == 2 ? found : null;
         });
-        assertThat(textContent(versions.get(0).findElement(By.tagName("h4")))).startsWith("Version 2current ·");
-        assertThat(versions.get(0).getAttribute("class")).contains("current-version");
+        assertThat(versions).extracting(v -> v.getDomAttribute("data-version")).containsExactly("2", "1");
+        assertThat(versions.get(0).findElement(By.tagName("h2")).getText()).startsWith("Version 2").contains("Current");
         assertThat(sql(versions.get(0))).containsExactly("spark select 2 as x, venue", "trino SELECT 2 AS x, venue");
-        assertThat(textContent(versions.get(1).findElement(By.tagName("h4")))).startsWith("Version 1 ·");
+        assertThat(versions.get(1).findElement(By.tagName("h2")).getText()).startsWith("Version 1")
+                .doesNotContain("Current");
         assertThat(sql(versions.get(1))).containsExactly("spark select 1 as x, venue");
-
-        tab("Schema");
-        assertThat(new Select(browser.await(By.cssSelector("section.pane select[aria-label='Schema']")))
-                .getFirstSelectedOption().getText()).isEqualTo("schema 0 (current)");
-        assertThat(schemaFields()).containsExactly("x", "venue");
     }
 
     @Test
     void governanceShowsTheFreezeTheHoldAndWhereEachValueComesFrom() {
         signIn(tester());
         browser.open("/ui/#" + at("table", eu, "trades", "governance"));
-        WebElement frozen = browser.await(By.cssSelector("section.pane .status-frozen"));
+        WebElement frozen = browser.await(By.cssSelector("#governance .status-frozen"));
         assertThat(frozen.getText()).contains("DR freeze in force", FREEZE_REASON);
-        assertThat(browser.await(By.cssSelector("section.pane .status-held")).getText()).startsWith("1 legal hold");
+        assertThat(browser.await(By.cssSelector("#governance .status-held")).getText()).startsWith("1 legal hold");
 
-        assertThat(fact("owner")).isEqualTo("desk-a");
-        assertThat(fact("classification")).isEqualTo("internal");
+        assertThat(fact("owner")).startsWith("desk-a ").contains("inherited from namespace " + top);
+        assertThat(fact("classification")).startsWith("internal ").contains("this table");
         assertThat(fact("retention-class")).isEqualTo("–");
 
-        List<List<String>> holds = rows(section("Legal holds"));
+        List<WebElement> holds = driver.findElements(By.cssSelector("#table-page tr[data-hold]"));
         assertThat(holds).hasSize(1);
-        assertThat(holds.get(0).subList(0, 3)).containsExactly(HOLD_REASON,
-                "inherited from namespace " + top + ".equities", "stella");
-        List<List<String>> attributes = rows(section("Attributes, nearest level first"));
-        assertThat(attributes).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
+        assertThat(cell(holds.get(0), 1)).isEqualTo(HOLD_REASON);
+        assertThat(cell(holds.get(0), 2)).isEqualTo("inherited from namespace " + top + ".equities");
+        assertThat(cell(holds.get(0), 3)).endsWith("stella");
+        assertThat(rows(panel("Attributes"))).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
                 .contains("classification = internal @ this table",
                         "owner = desk-a @ inherited from namespace " + top);
 
-        // The level above sees the same hold as its own.
+        // The level above sees the same hold as its own, and no freeze.
         browser.open("/ui/#" + at("namespace", equities, null, "governance"));
-        browser.await(By.cssSelector("section.pane .status-held"));
-        assertThat(rows(section("Legal holds")).get(0).get(1)).isEqualTo("this namespace");
-        assertThat(browser.await(By.cssSelector("section.pane .status-row")).getText()).contains("No DR freeze");
+        WebElement hold = browser.await(By.cssSelector("#namespace-page tr[data-hold]"));
+        assertThat(cell(hold, 2)).isEqualTo("this namespace");
+        assertThat(browser.await(By.cssSelector("#governance .status-row")).getText()).contains("No DR freeze");
+        assertThat(driver.findElements(By.cssSelector("#governance .status-frozen"))).isEmpty();
     }
 
     @Test
     void refusalsAreShownExactlyAsTheCatalogAnswered() {
         // D27: an unclassified table in a regulated namespace is refused everything but describe.
         signIn(tester());
-        browser.open("/ui/#" + at("table", ledger, "accounts", "overview"));
-        assertShownVerbatim(refusal(), api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
+        browser.open("/ui/#" + at("table", ledger, "accounts", null));
+        assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
                 + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"));
 
         // Reading an object's audit trail needs manage-grants.
         browser.open("/ui/#" + at("table", eu, "trades", "audit"));
-        assertShownVerbatim(refusal(), api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null,
+        assertShownVerbatim(refusal("#audit"), api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null,
                 AUTH, tester()));
 
         // Grant administrators are kept away from the data itself (D18).
         signIn(api.grantAdmin());
-        browser.open("/ui/#" + at("table", eu, "trades", "overview"));
-        assertShownVerbatim(refusal(), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(eu)
                 + "/tables/trades?snapshots=all", null, AUTH, api.grantAdmin(), "X-Iceberg-Access-Delegation", "none"));
     }
 
@@ -304,34 +313,37 @@ class ConsoleBrowserTest {
         signIn(api.grantAdmin());
         browser.open("/ui/#" + at("namespace", equities, null, "grants"));
         grant("select", group);
-        browser.awaitText(By.cssSelector("section.pane .status-line .ok"), "Granted select to " + group + ".");
-        WebElement row = browser.awaitText(By.cssSelector("section.pane tr"), group);
-        assertThat(row.findElements(By.tagName("td"))).extracting(WebElement::getText).startsWith(
-                "namespace " + top + ".equities", group, "select", "gina");
+        browser.awaitText(By.cssSelector("#grant-result .granted"), "Granted select to " + group + ".");
+        WebElement row = browser.await(grantRow(group, "select"));
+        assertThat(cell(row, 1)).isEqualTo(group);
+        assertThat(cell(row, 2)).isEqualTo("select");
+        assertThat(cell(row, 3)).endsWith("gina");
 
         row.findElement(By.xpath(".//button[normalize-space()='Revoke']")).click();
-        assertThat(driver.switchTo().alert().getText()).isEqualTo("Revoke select from " + group + "?");
-        driver.switchTo().alert().accept();
-        browser.awaitText(By.cssSelector("section.pane .status-line .ok"), "Revoked select from " + group + ".");
-        browser.await(group + " is still listed", d -> d.findElements(By.cssSelector("section.pane tr")).stream()
-                .noneMatch(r -> r.getText().contains(group)));
-        assertThat(section("Grants on this namespace").getText()).contains("No grants on this namespace itself.");
+        WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(dialog.findElement(By.tagName("h2")).getText()).isEqualTo("Revoke select from " + group);
+        dialog.findElement(By.cssSelector("button[type='submit']")).click();
+        browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Revoked select from " + group + ".");
+        dialog.findElement(By.cssSelector("button.dlg-x")).click();
+        browser.await(group + " is still listed", d -> d.findElements(grantRow(group, "select")).isEmpty()
+                && d.findElements(By.cssSelector("dialog.dlg")).isEmpty());
+        browser.awaitText(By.cssSelector("#namespace-page .tab-body"), "No grant is made on this namespace itself.");
 
         // Stewards hold manage-tags, a duty that write must stay apart from (D18).
         grant("write", GovernanceServer.STEWARDS);
-        WebElement refusal = browser.await(By.cssSelector("section.pane .status-line .alert-refused"));
+        WebElement refusal = browser.await(By.cssSelector("#grant-result .refusal"));
         assertShownVerbatim(refusal, api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\","
                 + "\"namespace\":" + json(equities) + "},\"group\":\"" + GovernanceServer.STEWARDS
                 + "\",\"privilege\":\"write\"}", AUTH, api.grantAdmin()));
         assertThat(textContent(refusal)).contains("separate");
 
-        // Grants by group, on the catalog's own page.
-        browser.open("/ui/#" + at("catalog", List.of(), null, "grants"));
-        browser.await(By.cssSelector("section.pane input[aria-label='Groups']")).sendKeys(GovernanceServer.STEWARDS);
-        section("Grants by group").findElement(By.xpath(".//button[normalize-space()='List']")).click();
-        browser.await("no grants listed for stewards", d -> rows(section("Grants by group")).stream()
-                .anyMatch(r -> r.subList(0, 3).equals(List.of("catalog whole catalog", GovernanceServer.STEWARDS,
-                        "manage-tags"))));
+        // Grants by group, on the governance page, from a link that names the group.
+        browser.open("/ui/#p=governance&c=trading&tab=grants&g=" + GovernanceServer.STEWARDS);
+        WebElement stewards = browser.await(grantRow(GovernanceServer.STEWARDS, "manage-tags"));
+        assertThat(cell(stewards, 3)).isEqualTo("the whole catalog");
+        assertThat(browser.await(By.cssSelector("#governance-grants input[aria-label='Group']")).getDomProperty("value"))
+                .isEqualTo(GovernanceServer.STEWARDS);
+        assertThat(browser.await(By.cssSelector(".duty[data-duty='tags']")).getText()).contains("granted");
     }
 
     @Test
@@ -347,33 +359,96 @@ class ConsoleBrowserTest {
         Set<String> seen = new TreeSet<>();
         long deadline = System.nanoTime() + ConsoleBrowser.WAIT.toNanos();
         while (true) {
-            browser.await(By.cssSelector("section.pane p.window"));
+            auditLoaded();
             seen.clear();
-            for (List<String> record : rows(section())) {
-                seen.add(record.get(1));
+            for (WebElement record : driver.findElements(By.cssSelector("#audit .feed-row"))) {
+                seen.add(record.getDomAttribute("data-type"));
             }
             if (seen.containsAll(wanted) || System.nanoTime() > deadline) {
                 break;
             }
             // The relay publishes commits a moment after they are made: ask again.
-            driver.findElement(By.xpath("//section[contains(@class,'pane')]//button[normalize-space()='Refresh']"))
-                    .click();
-            browser.await("the trail did not reload", d -> d.findElements(By.cssSelector("section.pane p.window"))
-                    .isEmpty() || d.findElements(By.cssSelector("section.pane p.loading")).isEmpty());
+            driver.findElement(By.xpath("//div[@id='audit']//button[normalize-space()='Refresh']")).click();
         }
         assertThat(seen).containsAll(wanted);
 
-        WebElement denied = browser.await(By.cssSelector("section.pane tr.denied-row"));
-        assertThat(cell(denied, 2)).isEqualTo("denial");
-        assertThat(cell(denied, 3)).startsWith("gina");
-        assertThat(cell(denied, 4)).startsWith("refused loadTable");
+        WebElement denied = driver.findElements(By.cssSelector("#audit .feed-row.is-refused")).stream()
+                .filter(r -> textContent(r.findElement(By.cssSelector(".w"))).startsWith("gina")
+                        && textContent(r.findElement(By.cssSelector(".what"))).startsWith("refused loadTable"))
+                .findFirst().orElseThrow();
+        assertThat(denied.getDomAttribute("data-type")).isEqualTo("denial");
+        denied.findElement(By.xpath(".//button[normalize-space()='Show record']")).click();
+        String raw = textContent(browser.await(By.cssSelector("#audit .feed-row.is-refused .rec pre.raw")));
         String table = api.id(String.join("\u001f", eu), "tables", "trades");
-        denied.findElement(By.tagName("summary")).click();
-        WebElement raw = browser.await(By.cssSelector("section.pane tr.denied-row pre.raw"));
-        assertThat(JsonPath.<String>read(raw.getText(), "$.subject")).isEqualTo(table);
-        assertThat(JsonPath.<String>read(raw.getText(), "$.type")).isEqualTo("nuna.catalog.denial");
-        assertThat(browser.await(By.cssSelector("section.pane p.window")).getText())
+        assertThat(JsonPath.<String>read(raw, "$.subject")).isEqualTo(table);
+        assertThat(JsonPath.<String>read(raw, "$.type")).isEqualTo("nuna.catalog.denial");
+        assertThat(browser.await(By.cssSelector("#audit p.window")).getText())
                 .startsWith("Read from nuna.catalog.audit, partition ");
+
+        // The kind chips keep only the refusals.
+        browser.await(By.cssSelector("#audit .chip[data-f='refusal']")).click();
+        browser.await("rows other than refusals are shown", d -> d.findElements(By.cssSelector("#audit .feed-row"))
+                .stream().filter(WebElement::isDisplayed)
+                .allMatch(r -> "denial".equals(r.getDomAttribute("data-type"))));
+    }
+
+    @Test
+    void theThemeIsPickedAndKeptInThisBrowser() {
+        signIn(tester());
+        browser.open("/ui/#c=trading");
+        browser.await(node("catalog"));
+        assertThat(theme()).isNull();
+        String light = background();
+
+        browser.await(By.cssSelector("[data-theme-pick='dark']")).click();
+        assertThat(theme()).isEqualTo("dark");
+        assertThat(driver.executeScript("return localStorage.getItem('nuna.theme')")).isEqualTo("dark");
+        assertThat(background()).isNotEqualTo(light);
+        assertThat(storageKeys()).containsExactly("nuna.token");
+
+        browser.open("/ui/#c=trading");
+        browser.await(node("catalog"));
+        assertThat(theme()).isEqualTo("dark");
+        assertThat(browser.await(By.cssSelector("[data-theme-pick='dark']")).getDomAttribute("aria-pressed"))
+                .isEqualTo("true");
+
+        browser.await(By.cssSelector("[data-theme-pick='light']")).click();
+        assertThat(theme()).isEqualTo("light");
+        assertThat(background()).isEqualTo(light);
+        browser.await(By.cssSelector("[data-theme-pick='auto']")).click();
+        assertThat(theme()).isNull();
+        assertThat(driver.executeScript("return localStorage.getItem('nuna.theme')")).isNull();
+    }
+
+    @Test
+    void onAPhoneTheMenuIsADrawerAndNoPageScrollsSideways() {
+        signIn(tester());
+        driver.manage().window().setSize(new Dimension(390, 844));
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        browser.await("the console is wider than a phone", d -> ((Number) driver.executeScript(
+                "return document.getElementById('console').clientWidth")).intValue() <= 760);
+        assertThat(browser.displayed(By.cssSelector(".tree"))).isEmpty();
+        assertThat(sideways()).isFalse();
+
+        WebElement menu = browser.await(By.cssSelector(".nc-menu"));
+        menu.click();
+        browser.await("the drawer did not open", d -> d.findElement(By.id("console")).getDomAttribute("class")
+                .contains("menu-open"));
+        assertThat(browser.displayed(By.cssSelector("#nav a[data-k]"))).isNotEmpty();
+        driver.switchTo().activeElement().sendKeys(Keys.ESCAPE);
+        browser.await("the drawer did not close", d -> !d.findElement(By.id("console")).getDomAttribute("class")
+                .contains("menu-open"));
+
+        for (String page : List.of(at("table", eu, "trades", "snapshots"), at("table", eu, "trades", "schema"),
+                at("namespace", equities, null, "governance"), at("namespace", equities, null, "grants"),
+                "p=governance&c=trading&tab=grants", "c=trading")) {
+            browser.open("/ui/#" + page);
+            browser.await("the page did not load: " + page, d -> d.findElements(
+                    By.cssSelector(".nc-main [data-loading]")).isEmpty() && !d.findElements(
+                    By.cssSelector(".nc-main h1")).isEmpty());
+            assertThat(sideways()).as(page).isFalse();
+        }
     }
 
     // ---- fixtures ----
@@ -474,7 +549,7 @@ class ConsoleBrowserTest {
 
     // ---- reading the page ----
 
-    /** A deep link's fragment, as the console writes it: levels joined by 0x1F. */
+    /** A deep link's fragment, as the console writes it: levels joined by 0x1F, no tab for the overview. */
     private static String at(String kind, List<String> levels, String name, String tab) {
         StringBuilder fragment = new StringBuilder("c=trading");
         if (!kind.equals("catalog")) {
@@ -486,41 +561,42 @@ class ConsoleBrowserTest {
         if (name != null) {
             fragment.append("&n=").append(name);
         }
-        return fragment.append("&tab=").append(tab).toString();
+        if (tab != null) {
+            fragment.append("&tab=").append(tab);
+        }
+        return fragment.toString();
     }
 
-    private void expand(String namespace) {
-        browser.await(By.cssSelector("nav.tree button.twisty[aria-label='Expand " + namespace + "']")).click();
-        browser.await(By.cssSelector("nav.tree button.twisty[aria-label='Collapse " + namespace + "']"));
+    /** A node of the tree: {@code catalog}, or a kind and a dotted path, such as {@code table:a.b.t}. */
+    private static By node(String id) {
+        return By.cssSelector(".tree a.node[data-node='" + id + "']");
     }
 
-    private static By leaf(String kind, String name) {
-        return By.cssSelector("nav.tree button.node[aria-label='" + kind + " " + name + "']");
+    /** Opens a tab of the page shown and waits for its body to load. */
+    private void tab(String key) {
+        By link = By.cssSelector(".nc-main nav.tabs a[data-tab='" + key + "']");
+        browser.await(link).click();
+        browser.await("tab " + key + " is not shown", d -> d.findElements(link).stream()
+                .anyMatch(a -> "page".equals(a.getDomAttribute("aria-current")))
+                && d.findElements(By.cssSelector(".nc-main .tab-body [data-loading]")).isEmpty());
     }
 
-    private void tab(String label) {
-        browser.await(By.xpath("//section[contains(@class,'pane')]//button[@role='tab'][normalize-space()='"
-                + label + "']")).click();
-        browser.await("tab " + label + " is not selected", d -> d.findElements(By.xpath(
-                "//button[@role='tab'][@aria-selected='true'][normalize-space()='" + label + "']")).size() == 1
-                && d.findElements(By.cssSelector("section.pane .tab-body > p.loading")).isEmpty());
-    }
-
-    /** The value beside {@code label} in the pane's first list of facts that has it. */
+    /** The value beside {@code label} in the page's first list of facts that has it. */
     private String fact(String label) {
-        return browser.await(By.xpath("//section[contains(@class,'pane')]//dl[contains(@class,'facts')]"
+        return browser.await(By.xpath("//div[contains(@class,'nc-main')]//dl[contains(@class,'facts')]"
                 + "/dt[normalize-space()='" + label + "']/following-sibling::dd[1]")).getText();
     }
 
-    /** A titled section of the pane. */
-    private WebElement section(String title) {
-        return browser.await(By.xpath("//section[contains(@class,'pane')]//section[h3[normalize-space()='"
-                + title + "']]"));
+    /** A key figure's value. */
+    private String kpi(String label) {
+        return browser.await(By.xpath("//div[contains(@class,'nc-main')]//div[@class='kpi'][p[contains(@class,"
+                + "'kpi-l')][normalize-space()='" + label + "']]/p[contains(@class,'kpi-v')]")).getText();
     }
 
-    /** The pane's tab body. */
-    private WebElement section() {
-        return browser.await(By.cssSelector("section.pane .tab-body"));
+    /** A panel of the page, by the start of its title. */
+    private WebElement panel(String title) {
+        return browser.await(By.xpath("//div[contains(@class,'nc-main')]//*[contains(concat(' ',@class,' '),"
+                + "' panel ')][h2[starts-with(normalize-space(),'" + title + "')]]"));
     }
 
     /** The cells' text of each row of the tables under {@code within}, nested tables left out. */
@@ -537,57 +613,91 @@ class ConsoleBrowserTest {
         return row.findElement(By.xpath("./td[" + n + "]")).getText();
     }
 
+    private WebElement schemaNode(String id) {
+        return browser.await(By.xpath("//div[contains(@class,'schema-tl')]//button[contains(@class,'node')]"
+                + "[normalize-space()='" + id + "']"));
+    }
+
+    /** The fields of the schema compared, by name, without the word on what changed. */
+    @SuppressWarnings("unchecked")
     private List<String> schemaFields() {
-        return driver.findElements(By.cssSelector("section.pane table.schema .field-name")).stream()
-                .map(WebElement::getText).toList();
+        return (List<String>) driver.executeScript("return [...document.querySelectorAll("
+                + "'#schema-diff tr[data-field]:not(.removed) .field-name')].map(td => td.firstChild.textContent)");
     }
 
+    @SuppressWarnings("unchecked")
     private List<String> addedFields() {
-        return driver.findElements(By.cssSelector("section.pane table.schema tbody tr")).stream()
-                .filter(row -> row.findElements(By.cssSelector(".badge-new")).stream()
-                        .anyMatch(b -> b.getText().equals("added")))
-                .map(row -> row.findElement(By.cssSelector(".field-name")).getText()).toList();
+        return (List<String>) driver.executeScript("return [...document.querySelectorAll("
+                + "'#schema-diff tr.added .field-name')].map(td => td.firstChild.textContent)");
     }
 
-    /** Each SQL representation of a view version: its dialect, a space, its SQL. */
-    private static List<String> sql(WebElement version) {
-        return version.findElements(By.cssSelector(".sql")).stream()
-                .map(sql -> sql.findElement(By.cssSelector(".sql-head")).getText().replace("sql ", "").trim()
-                        + " " + textContent(sql.findElement(By.tagName("pre"))))
+    /** Each SQL representation under {@code within}: its dialect, a space, its SQL. */
+    private static List<String> sql(WebElement within) {
+        return within.findElements(By.cssSelector(".sql")).stream()
+                .map(sql -> sql.getDomAttribute("data-dialect") + " " + textContent(sql.findElement(By.tagName("pre"))))
                 .toList();
     }
 
+    private static By grantRow(String group, String privilege) {
+        return By.cssSelector(".nc-main tr[data-group='" + group + "'][data-privilege='" + privilege + "']");
+    }
+
     private void grant(String privilege, String group) {
-        WebElement input = browser.await(By.cssSelector("section.pane input[aria-label='Group']"));
+        WebElement input = browser.await(By.cssSelector(".nc-main form input[aria-label='Group']"));
         input.clear();
         input.sendKeys(group);
-        new Select(driver.findElement(By.cssSelector("section.pane select[aria-label='Privilege']")))
+        new Select(driver.findElement(By.cssSelector(".nc-main form select[aria-label='Privilege']")))
                 .selectByValue(privilege);
-        driver.findElement(By.xpath("//section[contains(@class,'pane')]//form//button[@type='submit']"
+        driver.findElement(By.xpath("//div[contains(@class,'nc-main')]//form//button[@type='submit']"
                 + "[normalize-space()='Grant']")).click();
     }
 
-    private WebElement refusal() {
-        return browser.await(By.cssSelector("section.pane .alert-refused"));
+    /** The audit tab once its records and the window it read are shown. */
+    private void auditLoaded() {
+        browser.await("the trail did not load", d -> !d.findElements(By.cssSelector("#audit p.window")).isEmpty()
+                && d.findElements(By.cssSelector("#audit .feed [data-loading]")).isEmpty());
     }
 
-    /** The refusal on the page says exactly what the catalog answers to the same request: status, type, message. */
+    private WebElement refusal(String within) {
+        return browser.await(By.cssSelector(within + " .refusal"));
+    }
+
+    /**
+     * The refusal on the page says exactly what the catalog answers to the same request: status, type and message,
+     * with the request id the server stamped on the console's own answer.
+     */
     private static void assertShownVerbatim(WebElement alert, HttpResponse<String> answer) {
         assertThat(answer.statusCode()).as(answer.body()).isEqualTo(403);
         String type = JsonPath.read(answer.body(), "$.error.type");
         String message = JsonPath.read(answer.body(), "$.error.message");
         assertThat(message).isNotBlank();
         assertThat(alert.getDomAttribute("role")).isEqualTo("alert");
-        assertThat(alert.findElement(By.tagName("strong")).getText()).isEqualTo("Refused by the catalog");
-        List<WebElement> lines = alert.findElements(By.cssSelector(".alert-line"));
-        assertThat(lines).hasSize(2);
-        assertThat(textContent(lines.get(0))).isEqualTo("403 " + type);
-        assertThat(textContent(lines.get(1))).isEqualTo(message);
+        assertThat(textContent(alert.findElement(By.cssSelector(".refusal-h"))).trim())
+                .isEqualTo("Refused by the catalog");
+        assertThat(textContent(alert.findElement(By.cssSelector(".refusal-code")))).isEqualTo("403 " + type);
+        assertThat(textContent(alert.findElement(By.cssSelector(".refusal-msg")))).isEqualTo(message);
+        WebElement id = alert.findElement(By.cssSelector("[data-rid]"));
+        assertThat(id.getDomAttribute("data-rid")).isNotBlank();
+        assertThat(textContent(id)).isEqualTo("X-Request-ID " + id.getDomAttribute("data-rid"));
     }
 
     @SuppressWarnings("unchecked")
     private List<String> storageKeys() {
         return (List<String>) driver.executeScript("return Object.keys(sessionStorage)");
+    }
+
+    private String theme() {
+        return (String) driver.executeScript("return document.documentElement.getAttribute('data-theme')");
+    }
+
+    private String background() {
+        return (String) driver.executeScript("return getComputedStyle(document.body).backgroundColor");
+    }
+
+    /** Whether the page is wider than the window, so it scrolls sideways. */
+    private boolean sideways() {
+        return (Boolean) driver.executeScript(
+                "return document.documentElement.scrollWidth > document.documentElement.clientWidth");
     }
 
     // ---- paths ----

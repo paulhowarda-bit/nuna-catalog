@@ -3,15 +3,14 @@ Module: catalog-server
 Test: ConsoleBrowserTest#refusalsAreShownExactlyAsTheCatalogAnswered+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/dom.js b/catalog-server/src/main/resources/nuna/ui/dom.js
-index f37b16d..e36ff6e 100644
 --- a/catalog-server/src/main/resources/nuna/ui/dom.js
 +++ b/catalog-server/src/main/resources/nuna/ui/dom.js
-@@ -78,7 +78,7 @@ export function failure(error) {
-     return h('div', {class: 'alert' + (refused ? ' alert-refused' : ''), role: 'alert'},
-       h('strong', null, refused ? 'Refused by the catalog' : 'The catalog answered with an error'),
-       h('div', {class: 'alert-line'}, mono(`${error.status} ${error.type || ''}`.trim())),
--      h('div', {class: 'alert-line'}, error.message || ''));
-+      h('div', {class: 'alert-line'}, refused ? 'You are not allowed to do that.' : error.message || ''));
-   }
-   return h('div', {class: 'alert', role: 'alert'}, h('strong', null, 'Request failed'),
-     h('div', {class: 'alert-line'}, String(error && error.message || error)));
+@@ -187,7 +187,7 @@
+       h('p', {class: 'refusal-h'}, icon(refused ? 'x' : 'alert'),
+         refused ? 'Refused by the catalog' : 'The catalog answered with an error'),
+       h('p', {class: 'refusal-code'}, `${error.status} ${error.type || ''}`.trim()),
+-      h('p', {class: 'refusal-msg'}, error.message || ''),
++      h('p', {class: 'refusal-msg'}, refused ? 'You are not allowed to do that.' : error.message || ''),
+       h('p', {class: 'refusal-meta'},
+         h('span', {'data-rid': rid || ''}, rid ? 'X-Request-ID ' + rid : 'No request id came back'),
+         h('span', null, at(error.at || Date.now(), true)),
