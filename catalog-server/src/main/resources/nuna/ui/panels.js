@@ -1,7 +1,8 @@
 // The tabs every catalog object shares, each one its own render function on its own route: governance (with
-// holds, a classification and a DR freeze), grants (made and revoked here), the audit trail, and the dialogs
-// those open. Waiting on other items, and left out until they land: the grants that reach an object from above
-// (129) and the catalog-wide audit feed with its hash chain (125).
+// holds, a classification and a DR freeze), grants (every grant that reaches the object, made and revoked here,
+// and who may use it), the audit trail, and the dialogs those open; and the catalog's holds, freezes and regulated
+// areas as marks on the tree and in Contents (item 128). Waiting on another item, and left out until it lands: the
+// catalog-wide audit feed with its hash chain (125).
 
 import * as api from './api.js';
 import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
@@ -16,6 +17,53 @@ const what = target => target.kind === 'catalog' ? target.catalog : dotted(targe
 const lastWord = target => target.name || (target.namespace.length ? target.namespace[target.namespace.length - 1] : target.catalog);
 
 // ---- governance ----
+
+/** A level as the governance summary and the holds list name it, {kind, id, path}, as a console target. */
+export function targetOfOn(catalog, on) {
+  const path = on.path || [];
+  if (on.kind === 'catalog') return {catalog, kind: 'catalog', namespace: []};
+  if (on.kind === 'namespace') return {catalog, kind: 'namespace', namespace: path};
+  return {catalog, kind: on.kind, namespace: path.slice(0, -1), name: path[path.length - 1]};
+}
+
+/** The key the tree gives a node: `catalog`, or a kind and a dotted path, such as `table:a.b.t`. */
+export const keyOfOn = on => on.kind === 'catalog' ? 'catalog' : on.kind + ':' + (on.path || []).join('.');
+
+const marks = new Map();
+
+/**
+ * The catalog's holds, freezes, regulated areas and closed tables, by tree key: {held, frozen, regulated, closed}.
+ * Read once a minute at most; empty when the caller may not read them (they need describe on the catalog).
+ */
+export function governanceMarks(catalog) {
+  const hit = marks.get(catalog);
+  if (hit && Date.now() - hit.at < 60_000) return hit.promise;
+  const promise = Promise.all([api.holdsAndFreezes(catalog), api.governanceSummary(catalog)]).then(([hf, sum]) => {
+    const by = new Map();
+    const mark = (on, k) => {
+      const key = keyOfOn(on);
+      if (!by.has(key)) by.set(key, {});
+      by.get(key)[k] = true;
+    };
+    for (const x of hf.standing || []) mark(x.on, x.kind === 'freeze' ? 'frozen' : 'held');
+    for (const r of sum.regulated || []) mark(r.on, 'regulated');
+    for (const on of sum.closed || []) mark(on, 'closed');
+    return by;
+  }, () => new Map());
+  marks.set(catalog, {at: Date.now(), promise});
+  return promise;
+}
+
+/** Forgets the marks, so the next look reads them again (after a hold or freeze changes). */
+export const forgetMarks = catalog => marks.delete(catalog);
+
+/** The pills of one object's marks, for Contents. */
+export function markPills(m) {
+  if (!m) return null;
+  const out = [m.held ? heldPill() : null, m.frozen ? frozenPill() : null, m.regulated ? badge('regulated') : null,
+    m.closed ? pill('bad', 'Closed until classified') : null].filter(Boolean);
+  return out.length ? out.flatMap((x, i) => i ? [' ', x] : [x]) : null;
+}
 
 /** The catalog and each namespace above `target`, each with its governance answer, by level id. */
 async function levelsAbove(target) {
@@ -141,23 +189,27 @@ export function placeHold(target, reload) {
           return;
         }
         const answer = await api.placeHold(target, reason);
+        forgetMarks(target.catalog);
         fill(out, granted(`Held: ${what(target)}`, answer));
         reload();
       })));
 }
 
-function releaseHold(level, hold, reload) {
+/** Releases a hold, after a word in a dialog, on the level it was placed on. */
+export function releaseHold(level, hold, reload) {
   openDialog('Release a hold', h('div', null,
     h('p', null, 'Releasing ', h('b', null, hold.reason), ' on ', code(what(level)), ' lets the worker expire snapshots and '
       + 'remove files there again. The hold and its release stay in the audit trail.'),
     dialogForm(null, 'Release the hold', async (form, out) => {
       const answer = await api.releaseHold(level, hold.id);
+      forgetMarks(level.catalog);
       fill(out, granted('Released', answer));
       reload();
     })));
 }
 
-function drFreeze(target, frozen, reload) {
+/** Sets or lifts a DR freeze, after a word in a dialog: platform operators only. */
+export function drFreeze(target, frozen, reload) {
   openDialog(frozen ? `Lift the DR freeze on ${lastWord(target)}` : `Freeze ${lastWord(target)} for DR`, h('div', null,
     h('p', null, frozen ? 'Lifting the freeze lets commits and cleanup run again beneath this namespace.'
       : 'A DR freeze stops every commit and cleanup beneath this namespace until it is lifted. Platform operators set it.'),
@@ -169,6 +221,7 @@ function drFreeze(target, frozen, reload) {
           return;
         }
         const answer = frozen ? await api.unfreeze(target) : await api.freeze(target, reason);
+        forgetMarks(target.catalog);
         fill(out, granted(frozen ? 'Freeze lifted' : `Frozen: ${what(target)}`, answer));
         reload();
       })));
@@ -223,25 +276,57 @@ export function revokeDialog(catalog, g, after) {
     })));
 }
 
-function grantRow(catalog, g, after, withOn) {
-  return h('tr', {'data-group': g.group, 'data-privilege': g.privilege},
-    h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege),
-    withOn ? h('td', null, onWords(g.securable)) : null,
-    h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])),
-    h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, g, after)}, 'Revoke')));
+/** Where a grant that reaches `target` was made: here, on the catalog, or on a namespace above. */
+function grantedOn(target, securable) {
+  const path = [...(securable.namespace || []), ...(securable.name ? [securable.name] : [])];
+  const mine = [...target.namespace, ...(target.name ? [target.name] : [])];
+  if (securable.type === target.kind && path.join('\u001f') === mine.join('\u001f')) return ['here', h('b', null, 'here')];
+  if (securable.type === 'catalog') return ['catalog', `catalog ${target.catalog}`];
+  return [securable.type, [securable.type + ' ', h('a', {href: objectHref({catalog: target.catalog, kind: securable.type,
+    namespace: securable.namespace || [], name: securable.name}, 'grants')}, path.join('.'))]];
 }
 
-/** The grants tab of a catalog object: grants made on it, a grant form, and the caller's own groups' grants. */
+const READS = ['select', 'write', 'modify'];
+const WRITES = ['write', 'modify'];
+
+/**
+ * The grants tab of a catalog object: every grant that reaches it from the catalog down, who may read it, change
+ * its data and manage its grants, a grant form, and the caller's own groups' grants.
+ */
 export function grantsTab(target) {
   const out = h('div', {class: 'dlg-out', 'aria-live': 'polite', id: 'grant-result'});
-  const here = h('div');
+  const reach = h('div');
+  const who = h('div');
   const mine = h('div');
   const refresh = () => {
-    load(here, async () => {
-      const list = await api.grantsOn(target);
-      return list.length ? tbl('stack-line grants-here', ['Group', 'Privilege', 'Granted', ''],
-        list.map(g => grantRow(target.catalog, g, refresh, false)))
-        : h('p', {class: 'muted'}, `No grant is made on this ${target.kind} itself.`);
+    const effective = api.effectiveGrants(target);
+    load(reach, async () => {
+      const list = (await effective).grants || [];
+      return panel(`Grants that reach this ${target.kind}`, `${plural(list.length, 'grant')} · from the catalog down`,
+        list.length ? tbl('stack-line grants-reach', ['Group', 'Privilege', 'Granted on', 'Granted', ''], list.map(g => {
+          const [on, words] = grantedOn(target, g.securable);
+          return h('tr', {'data-group': g.group, 'data-privilege': g.privilege, 'data-on': on},
+            h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, words),
+            h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])),
+            h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(target.catalog, g, refresh)}, 'Revoke')));
+        })) : h('p', {class: 'muted'}, `No grant reaches this ${target.kind}.`),
+        h('p', {class: 'fine'}, 'A grant on the catalog or a namespace reaches everything beneath it. The ladder is describe, '
+          + 'select, write, modify: each gives the ones before it. Revoke takes a grant away where it was made.'));
+    });
+    load(who, async () => {
+      const answer = await effective;
+      const list = answer.grants || [];
+      const groups = ps => [...new Set(list.filter(g => ps.includes(g.privilege)).map(g => g.group))].sort();
+      const names = ps => groups(ps).length ? groups(ps).join(', ') : muted('no group');
+      const admins = answer['grant-admin-groups'] || [];
+      const managers = groups(['manage-grants']);
+      const manage = [managers.join(', '), admins.length ? `${admins.join(', ')}, on every catalog` : ''].filter(Boolean).join('; ');
+      return panel('Who may', null, facts([
+        ['Read', names(READS)],
+        ['Change data', names(WRITES)],
+        ['Manage tags', names(['manage-tags'])],
+        ['Manage grants', manage || muted('no group')],
+      ], 'who-may'));
     });
     load(mine, async () => {
       const list = await api.grantsOfGroups(target.catalog, []);
@@ -275,11 +360,8 @@ export function grantsTab(target) {
       fill(out, failure(error));
     }
   });
-  return h('div', {class: 'grid-21 grants-here'},
-    panel(`Grants on this ${target.kind}`, 'made here; those above it reach it too', here,
-      h('p', {class: 'fine'}, 'A grant on the catalog or a namespace reaches everything beneath it. The ladder is describe, '
-        + 'select, write, modify: each gives the ones before it.')),
-    h('div', {class: 'stack'},
+  return h('div', {class: 'grid-21 grants-here'}, reach,
+    h('div', {class: 'stack'}, who,
       panel(`Grant on this ${target.kind}`, null, form, out,
         h('p', {class: 'fine'}, 'Needs ', code('manage-grants'), '. A group that manages grants holds no other duty, and data and tags '
           + 'never share a group: the catalog refuses a grant that would break that, and the refusal shows here as it answered.')),

@@ -1,21 +1,124 @@
-// Governance in one catalog: grants (made, listed by group, revoked and exported for an access review), and the
-// catalog's own holds and freezes. Waiting on other items, and left out until they land: the summary with its
-// classified, held and frozen figures, and the catalog-wide list of holds and freezes with what was lifted (128).
+// Governance in one catalog: the summary (tables classified, closed, held and frozen; the holds and freezes
+// standing; each regulated area), grants (made, listed by group, revoked and exported for an access review), and
+// every hold and freeze, standing and lifted, with the catalog's own governance (item 128).
 
 import * as api from './api.js';
-import {at, code, failure, fill, granted, h, icon, load, muted, openDialog, pageHead, select, tabsNav, tbl, text,
-  dialogForm, field, copyButton, jsonPre} from './dom.js';
-import {href, pageHref} from './route.js';
-import {governanceTab, PRIVILEGES, placeHold, revokeDialog} from './panels.js';
+import {at, code, failure, fill, fmt, frozenPill, granted, h, heldPill, icon, load, muted, openDialog, pageHead, panel,
+  pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre} from './dom.js';
+import {href, objectHref, pageHref} from './route.js';
+import {drFreeze, governanceTab, PRIVILEGES, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
 
 const DUTY = {describe: 'read', select: 'read', write: 'data', modify: 'data', create: 'data', 'manage-grants': 'grants', 'manage-tags': 'tags'};
 const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write, modify, create'], ['grants', 'Grants', 'manage-grants'],
   ['tags', 'Tags', 'manage-tags']];
 
 export function governancePage(catalog, tab, group) {
-  const key = tab === 'holds' ? 'holds' : 'grants';
-  const tabs = tabsNav('Governance', [['grants', 'Grants'], ['holds', 'Holds and freezes']], key, k => pageHref('governance', catalog, k));
-  return key === 'holds' ? holdsPage(catalog, tabs) : grantsPage(catalog, tabs, group);
+  const key = tab === 'holds' || tab === 'grants' ? tab : '';
+  const tabs = tabsNav('Governance', [['', 'Summary'], ['grants', 'Grants'], ['holds', 'Holds and freezes']], key,
+    k => pageHref('governance', catalog, k || null));
+  if (key === 'holds') return holdsPage(catalog, tabs);
+  if (key === 'grants') return grantsPage(catalog, tabs, group);
+  return summaryPage(catalog, tabs);
+}
+
+// ---- the summary ----
+
+/** A level named by the summary or the holds list, as a link to its own page. */
+function onLink(catalog, on) {
+  if (on.kind === 'catalog') return [code(catalog), ' ', muted('· catalog')];
+  const t = targetOfOn(catalog, on);
+  return [h('a', {href: objectHref(t, 'governance')}, (on.path || []).join('.')), ' ', muted('· ' + on.kind)];
+}
+
+const pct = (n, of) => of ? Math.floor(100 * n / of) + '%' : '–';
+
+/** The figures of the governance summary, for the summary page and the overview. */
+export function governanceFigures(sum) {
+  const t = sum.tables || {};
+  return {classified: t.classified || 0, total: t.total || 0, closed: t.closed || 0, held: t.held || 0, frozen: t.frozen || 0,
+    holds: sum.holds || 0, freezes: sum.freezes || 0, regulated: (sum.regulated || []).length};
+}
+
+function summaryPage(catalog, tabs) {
+  const main = h('div', {class: 'nc-main', id: 'governance-summary'});
+  const show = () => load(main, async () => {
+    const [sum, hf] = await Promise.all([api.governanceSummary(catalog), api.holdsAndFreezes(catalog)]);
+    const f = governanceFigures(sum);
+    const standing = hf.standing || [];
+    const regulated = sum.regulated || [];
+    const closed = sum.closed || [];
+    const kpi = (key, ic, label, value, more) => h('div', {class: 'kpi', 'data-kpi': key}, h('p', {class: 'kpi-l'}, icon(ic), label),
+      h('p', {class: 'kpi-v'}, value), h('p', {class: 'kpi-d'}, more));
+    return [
+      pageHead({
+        eyebrow: `${catalog} · governance`,
+        title: [`${fmt(f.classified)} of ${plural(f.total, 'table')} classified. `, f.closed
+          ? h('span', {class: 'q'}, `${plural(f.closed, 'table')} closed until a steward classifies ${f.closed === 1 ? 'it' : 'them'}.`)
+          : 'None closed.'],
+        sub: 'Classification arrives from the data catalogue and owners from the HR feed, each with where it was set. The catalog '
+          + 'enforces them, with holds and freezes, on every load, commit and maintenance job.',
+      }),
+      tabs,
+      h('div', {class: 'kpis', id: 'governance-kpis'},
+        kpi('classified', 'check', 'Classified', pct(f.classified, f.total), [h('b', null, fmt(f.classified)), ` of ${plural(f.total, 'table')}`]),
+        kpi('holds', 'lock', 'Legal holds', String(f.holds), f.holds ? `on ${plural(f.held, 'table')} · nothing may be removed` : 'nothing held'),
+        kpi('freezes', 'snow', 'DR freezes', String(f.freezes), f.freezes ? `${plural(f.frozen, 'table')} beneath` : 'none standing'),
+        kpi('regulated', 'reg', 'Regulated areas', String(f.regulated), f.regulated
+          ? `${plural(regulated.reduce((n, r) => n + (r.tables || 0), 0), 'table')}, ${fmt(f.closed)} closed` : 'none in this catalog')),
+      h('div', {class: 'grid-2'},
+        panel('Holds and freezes', 'standing now', standingTable(catalog, standing, show),
+          h('p', {class: 'fine'}, 'A hold stops snapshot expiry, orphan removal, drops and purges. A freeze stops every cleanup and write '
+            + 'beneath it until it is lifted. ', h('a', {href: pageHref('governance', catalog, 'holds')}, 'With what was lifted'))),
+        h('div', {class: 'panel', id: 'regulated'}, h('h2', null, 'Regulated areas ', h('span', {class: 'meta'}, 'closed until classified')),
+          regulated.length ? tbl('stack-line', ['Area', ['Tables', 'num'], ['Closed', 'num']], regulated.map(r => h('tr', {'data-on': (r.on.path || []).join('.')},
+            h('td', {class: 'name'}, onLink(catalog, r.on)), h('td', {class: 'num'}, fmt(r.tables || 0)), h('td', {class: 'num'}, fmt(r.closed || 0)))))
+            : h('p', {class: 'muted'}, 'No regulated area in this catalog: an unclassified table stays open.'),
+          closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
+            h('li', {'data-on': (on.path || []).join('.')}, onLink(catalog, on))))] : null,
+          h('p', {class: 'fine'}, 'A table in a regulated area is refused everything but describe until it has a classification of its own.'))),
+    ];
+  });
+  show();
+  return main;
+}
+
+/** The holds and freezes standing, each with what it is on, its reason as recorded, and a release or a lift. */
+function standingTable(catalog, standing, reload) {
+  if (!standing.length) return h('p', {class: 'muted'}, `No hold or freeze stands in ${catalog}.`);
+  return tbl('holds', ['Kind', 'On', 'Reason, as recorded', 'Placed', ''], standing.map(x => {
+    const level = targetOfOn(catalog, x.on);
+    return h('tr', {'data-kind': x.kind, 'data-on': (x.on.path || []).join('.')},
+      h('td', null, x.kind === 'hold' ? heldPill('Hold') : frozenPill('Freeze')),
+      h('td', {class: 'name'}, onLink(catalog, x.on)),
+      h('td', {class: 'wrap'}, x.reason || muted('–')),
+      h('td', null, h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')),
+      h('td', null, x.kind === 'hold'
+        ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => releaseHold(level, x, reload)}, 'Release')
+        : h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift')));
+  }));
+}
+
+/** The holds released and freezes lifted, as far as the audit topic reaches. */
+function liftedTable(catalog, lifted) {
+  return tbl('holds', ['Kind', 'On', 'Reason, as recorded', 'Placed', 'Lifted'], lifted.map(x => h('tr', {'data-kind': x.kind,
+    'data-on': (x.on.path || []).join('.')},
+  h('td', null, pill('', icon(x.kind === 'hold' ? 'lock' : 'snow'), x.kind === 'hold' ? 'Hold' : 'Freeze')),
+  h('td', {class: 'name'}, onLink(catalog, x.on)),
+  h('td', {class: 'wrap'}, x.reason || muted('not in the window read')),
+  h('td', null, x['placed-at'] ? [h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')] : muted('before the window read')),
+  h('td', null, h('span', {class: 'tnum'}, at(x['lifted-at'])), h('br'), muted(x['lifted-by'] || '')))));
+}
+
+/** What the read of the audit topic reached, said plainly. */
+function historyWords(history) {
+  if (!history || history.available === false) {
+    return h('p', {class: 'notice', id: 'lifted-window'}, icon('info'), h('span', null, h('b', null, 'What was lifted cannot be listed now. '),
+      (history && history.reason) || ''));
+  }
+  return h('p', {class: 'fine', id: 'lifted-window'}, history.complete
+    ? 'The read reached the oldest record the audit topic holds, so every lift it keeps is listed.'
+    : `Read from the newest ${fmt(history['scan-limit'])} records of each audit partition${history.since
+      ? `, back to ${at(history.since)}` : ''}: an older lift is in the SIEM.`);
 }
 
 // ---- grants ----
@@ -140,20 +243,29 @@ function exportGrants(catalog) {
 function holdsPage(catalog, tabs) {
   const main = h('div', {class: 'nc-main', id: 'governance-holds'});
   const target = {catalog, kind: 'catalog', namespace: []};
-  const body = h('div', {class: 'tab-body'});
-  const reload = () => load(body, () => governanceTab(target, reload));
+  const lists = h('div', {class: 'stack'});
+  const own = h('div', {class: 'tab-body'});
+  const reload = () => {
+    load(lists, async () => {
+      const hf = await api.holdsAndFreezes(catalog);
+      const standing = hf.standing || [];
+      const lifted = hf.lifted || [];
+      return [h('div', {class: 'panel', id: 'holds-standing'}, h('h2', null, 'Standing ', h('span', {class: 'meta'}, 'newest first')),
+        standingTable(catalog, standing, reload)),
+      h('div', {class: 'panel', id: 'holds-lifted'}, h('h2', null, 'Lifted and released ', h('span', {class: 'meta'}, 'most recent first')),
+        lifted.length ? liftedTable(catalog, lifted) : h('p', {class: 'muted'}, 'Nothing lifted or released in the window read.'),
+        historyWords(hf.history))];
+    });
+    load(own, () => governanceTab(target, reload));
+  };
   reload();
   main.append(pageHead({
     eyebrow: `${catalog} · governance`,
-    title: `Holds and freezes on ${catalog}`,
+    title: `Holds and freezes in ${catalog}`,
     sub: 'A hold stops snapshot expiry, orphan removal, drops and purges on what it covers. A freeze stops every cleanup and write '
       + 'in its namespace until it is lifted.',
     side: h('button', {class: 'btn sm', type: 'button', onclick: () => holdOnPath(catalog)}, icon('lock'), 'Place a hold on a path'),
-  }), tabs,
-  h('div', {class: 'notice waiting'}, icon('info'), h('span', null, h('b', null, 'Below: the catalog\'s own governance.'),
-    ' Each namespace\'s and table\'s Governance tab lists the holds on it and above it. The list of every hold and freeze in ',
-    catalog, ', with what was lifted, comes with backlog 128.')),
-  body);
+  }), tabs, lists, h('h2', {class: 'section-h'}, `${catalog} itself`), own);
   return main;
 }
 

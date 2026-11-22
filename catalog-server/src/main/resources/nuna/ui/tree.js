@@ -1,11 +1,12 @@
 // The catalog's tree, on the left of every browse page: namespaces, tables and views, each level listed from
-// Iceberg REST when it is first opened. A table in tonight's queue carries a mark. The held, frozen and regulated
-// marks wait on backlog 128, which says them for every object in one answer.
+// Iceberg REST when it is first opened. A table in tonight's queue carries a mark, and so does whatever a hold, a DR
+// freeze or a regulated flag is set on, from the catalog's governance summary and holds list (item 128).
 
 import * as api from './api.js';
 import {$, failure, h, icon} from './dom.js';
 import {SEP, catalogHref, objectHref, remember} from './route.js';
 import {queue, queueOf} from './queue.js';
+import {governanceMarks} from './panels.js';
 
 const trees = new Map();
 
@@ -20,9 +21,10 @@ export function treeOf(catalog) {
   const ul = h('ul', {'aria-label': 'Namespaces and tables'});
   const el = h('div', {class: 'tree', 'data-catalog': catalog}, h('div', {class: 'tree-in'},
     h('label', {class: 'field'}, icon('search'), input), ul,
-    h('p', {class: 'tree-key'}, [['m-bad', 'equality deletes'], ['m-warn', 'small files or deletes']]
+    h('p', {class: 'tree-key'}, [['m-bad', 'equality deletes'], ['m-warn', 'small files or deletes'], ['m-held', 'held'],
+      ['m-frozen', 'DR freeze'], ['m-reg', 'regulated']]
       .map(([c, w]) => h('span', null, h('i', {class: c}), w)))));
-  st = {catalog, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map()};
+  st = {catalog, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map(), gov: new Map()};
   trees.set(catalog, st);
   input.addEventListener('input', () => draw(st));
   queue().then(rows => {
@@ -58,31 +60,46 @@ export async function reveal(st, target) {
   const upTo = target.kind === 'namespace' ? target.namespace.length : target.kind === 'catalog' ? 0 : target.namespace.length;
   for (let i = 1; i <= upTo; i++) st.open.add(keyOf(target.namespace.slice(0, i)));
   draw(st);
+  governanceMarks(st.catalog).then(gov => {
+    if (gov === st.gov) return;
+    st.gov = gov;
+    draw(st);
+  });
   for (let i = 0; i <= upTo; i++) await ask(st, target.namespace.slice(0, i));
   const cur = $('[aria-current="true"]', st.el);
   if (cur && cur.scrollIntoView) cur.scrollIntoView({block: 'nearest'});
 }
 
-/** The marks of a table, or of everything queued beneath a namespace. */
-function markOf(st, key, isNamespace) {
+/**
+ * The marks of a node: tonight's queue for a table, or for everything queued beneath a namespace; and a hold, a DR
+ * freeze or a regulated flag set on the node itself. `node` is the tree's key for it, such as `table:a.b.t`.
+ */
+function markOf(st, key, isNamespace, node) {
   let eq = false;
   let other = false;
-  for (const [k, reasons] of st.marks) {
-    if (isNamespace ? !k.startsWith(key + SEP) : k !== key) continue;
-    if (reasons.includes('equality-deletes')) eq = true;
-    if (reasons.some(r => r !== 'equality-deletes')) other = true;
+  if (key !== null) {
+    for (const [k, reasons] of st.marks) {
+      if (isNamespace ? !k.startsWith(key + SEP) : k !== key) continue;
+      if (reasons.includes('equality-deletes')) eq = true;
+      if (reasons.some(r => r !== 'equality-deletes')) other = true;
+    }
   }
-  if (!eq && !other) return null;
-  const label = 'Queued: ' + [eq && 'equality deletes', other && 'small files or deletes'].filter(Boolean).join(', ') + '.';
+  const g = st.gov.get(node) || {};
+  const words = [eq && 'queued with equality deletes', other && 'queued with small files or deletes', g.held && 'held',
+    g.frozen && 'DR freeze', g.regulated && 'regulated'].filter(Boolean);
+  if (!words.length) return null;
+  const label = words.join(', ').replace(/^./, c => c.toUpperCase()) + '.';
   return h('span', {class: 'mk', role: 'img', 'aria-label': label, title: label},
-    eq ? h('i', {class: 'm-bad'}) : null, other ? h('i', {class: 'm-warn'}) : null);
+    eq ? h('i', {class: 'm-bad'}) : null, other ? h('i', {class: 'm-warn'}) : null, g.held ? h('i', {class: 'm-held'}) : null,
+    g.frozen ? h('i', {class: 'm-frozen'}) : null, g.regulated ? h('i', {class: 'm-reg'}) : null);
 }
 
 function draw(st) {
   const f = st.input.value.trim().toLowerCase();
   const c = st.catalog;
   const items = [h('li', null, h('a', {class: 'node', href: catalogHref(c), 'aria-current': st.cur === 'catalog' ? 'true' : null,
-    'data-node': 'catalog'}, h('span', {class: 'tw'}), icon('db', 'ic ico-n'), h('span', {class: 'nm'}, c)))];
+    'data-node': 'catalog'}, h('span', {class: 'tw'}), icon('db', 'ic ico-n'), h('span', {class: 'nm'}, c),
+    markOf(st, null, false, 'catalog')))];
   const nameHit = name => !f || name.toLowerCase().includes(f);
   const deepHit = levels => {
     if (nameHit(levels[levels.length - 1])) return true;
@@ -118,7 +135,7 @@ function draw(st) {
       });
       items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind: 'namespace', namespace: n}),
         'aria-current': st.cur === 'namespace:' + key ? 'true' : null, 'aria-expanded': String(open), 'data-node': 'namespace:' + n.join('.')},
-      tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), markOf(st, key, true))));
+      tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), markOf(st, key, true, 'namespace:' + n.join('.')))));
       if (open) walk(n, depth + 1);
     }
     for (const [kind, names] of [['table', kids.tables], ['view', kids.views]]) {
@@ -128,7 +145,7 @@ function draw(st) {
         items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind, namespace: levels, name}),
           'aria-current': st.cur === kind + ':' + key ? 'true' : null, 'data-node': kind + ':' + [...levels, name].join('.')},
         h('span', {class: 'tw'}), icon(kind, 'ic ' + (kind === 'view' ? 'ico-v' : 'ico-t')), h('span', {class: 'nm'}, name),
-        kind === 'table' ? markOf(st, key, false) : null)));
+        markOf(st, kind === 'table' ? key : null, false, kind + ':' + [...levels, name].join('.')))));
       }
     }
   };

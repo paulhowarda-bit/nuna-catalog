@@ -140,8 +140,13 @@ class ConsoleBrowserTest {
         browser.await(node("view:" + top + ".equities.daily"));
         browser.await(node("namespace:" + top + ".ledger")).click();
         browser.await(node("table:" + top + ".ledger.accounts"));
+
+        // The tree marks what is held, frozen and regulated.
+        browser.await(mark("namespace:" + top + ".equities", "m-held"));
+        browser.await(mark("namespace:" + top + ".ledger", "m-reg"));
         browser.await(node("namespace:" + top + ".equities.eu")).click();
         browser.await(node("table:" + top + ".equities.eu.positions"));
+        browser.await(mark("namespace:" + top + ".equities.eu", "m-frozen"));
         browser.await(node("table:" + top + ".equities.eu.trades")).click();
 
         browser.awaitText(By.cssSelector("#table-page h1"), "trades");
@@ -158,6 +163,11 @@ class ConsoleBrowserTest {
         assertThat(browser.displayed(node("table:" + top + ".equities.eu.positions"))).hasSize(1);
         assertThat(browser.displayed(node("namespace:" + top))).hasSize(1);
         assertThat(browser.displayed(node("view:" + top + ".equities.daily"))).isEmpty();
+
+        // A namespace's Contents marks the same.
+        browser.open("/ui/#" + at("namespace", List.of(top), null, null));
+        browser.awaitText(contentsGovernance("equities"), "Held");
+        browser.awaitText(contentsGovernance("ledger"), "regulated");
     }
 
     @Test
@@ -221,12 +231,21 @@ class ConsoleBrowserTest {
         assertThat(JsonPath.<String>read(summary, "$.total-records")).isEqualTo("10");
 
         tab("metadata-log");
-        HttpResponse<String> loaded = expect(api.rest("GET", "/namespaces/" + ns(eu) + "/tables/trades", null), 200);
-        List<String> earlier = JsonPath.read(loaded.body(), "$.metadata.metadata-log[*].metadata-file");
-        List<WebElement> files = panel("Metadata files").findElements(OUTER_ROWS);
-        assertThat(files).hasSize(earlier.size() + 1);
-        String location = JsonPath.read(loaded.body(), "$.metadata-location");
-        assertThat(cell(files.get(0), 3)).isEqualTo(location.substring(location.lastIndexOf('/') + 1) + " Current");
+        String id = api.id(String.join("\u001f", eu), "tables", "trades");
+        HttpResponse<String> log = expect(api.manage("GET", "/objects/" + id + "/metadata-log", null), 200);
+        List<Integer> versions = JsonPath.read(log.body(), "$.journal[*].new-version");
+        List<String> principals = JsonPath.read(log.body(), "$.journal[*].principal");
+        List<WebElement> commits = browser.await("the metadata log is not shown", d -> {
+            List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-version]"));
+            return found.size() == versions.size() ? found : null;
+        });
+        assertThat(commits).extracting(row -> row.getDomAttribute("data-version"))
+                .containsExactlyElementsOf(versions.stream().map(String::valueOf).toList());
+        assertThat(commits.get(0).getDomAttribute("class")).contains("is-cur");
+        assertThat(cell(commits.get(0), 4)).startsWith(principals.get(0));
+        commits.get(0).findElement(By.tagName("button")).click();
+        String location = JsonPath.read(log.body(), "$.pointer.metadata-location");
+        browser.awaitText(By.cssSelector("#metadata-log tr.mlog-det"), location);
         assertThat(driver.findElements(By.cssSelector("#snapshot-log tbody tr")))
                 .extracting(row -> row.getDomAttribute("data-id"))
                 .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
@@ -315,9 +334,20 @@ class ConsoleBrowserTest {
         grant("select", group);
         browser.awaitText(By.cssSelector("#grant-result .granted"), "Granted select to " + group + ".");
         WebElement row = browser.await(grantRow(group, "select"));
+        assertThat(row.getDomAttribute("data-on")).isEqualTo("here");
         assertThat(cell(row, 1)).isEqualTo(group);
         assertThat(cell(row, 2)).isEqualTo("select");
-        assertThat(cell(row, 3)).endsWith("gina");
+        assertThat(cell(row, 3)).isEqualTo("here");
+        assertThat(cell(row, 4)).endsWith("gina");
+        browser.awaitText(whoMay("Read"), group);
+
+        // The grants made above reach it too, each with where it was made, and "Who may" adds them up.
+        WebElement fromAbove = browser.await(By.cssSelector(".grants-reach tr[data-group='" + GovernanceServer.STEWARDS
+                + "'][data-privilege='manage-tags'][data-on='catalog']"));
+        assertThat(cell(fromAbove, 3)).isEqualTo("catalog trading");
+        assertThat(browser.await(whoMay("Manage tags")).getText()).contains(GovernanceServer.STEWARDS);
+        assertThat(browser.await(whoMay("Manage grants")).getText())
+                .contains(GovernanceServer.GRANT_ADMINS + ", on every catalog");
 
         row.findElement(By.xpath(".//button[normalize-space()='Revoke']")).click();
         WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
@@ -327,7 +357,7 @@ class ConsoleBrowserTest {
         dialog.findElement(By.cssSelector("button.dlg-x")).click();
         browser.await(group + " is still listed", d -> d.findElements(grantRow(group, "select")).isEmpty()
                 && d.findElements(By.cssSelector("dialog.dlg")).isEmpty());
-        browser.awaitText(By.cssSelector("#namespace-page .tab-body"), "No grant is made on this namespace itself.");
+        browser.await(group + " may still read", d -> !d.findElement(whoMay("Read")).getText().contains(group));
 
         // Stewards hold manage-tags, a duty that write must stay apart from (D18).
         grant("write", GovernanceServer.STEWARDS);
@@ -344,6 +374,65 @@ class ConsoleBrowserTest {
         assertThat(browser.await(By.cssSelector("#governance-grants input[aria-label='Group']")).getDomProperty("value"))
                 .isEqualTo(GovernanceServer.STEWARDS);
         assertThat(browser.await(By.cssSelector(".duty[data-duty='tags']")).getText()).contains("granted");
+    }
+
+    @Test
+    void theGovernanceSummaryCountsAndListsTheHoldTheFreezeAndTheRegulatedNamespace() {
+        signIn(tester());
+        browser.open("/ui/#p=governance&c=trading");
+        WebElement held = browser.await(By.cssSelector("#governance-summary tr[data-kind='hold'][data-on='" + top
+                + ".equities']"));
+        assertThat(cell(held, 3)).isEqualTo(HOLD_REASON);
+        WebElement frozen = browser.await(By.cssSelector("#governance-summary tr[data-kind='freeze'][data-on='" + top
+                + ".equities.eu']"));
+        assertThat(cell(frozen, 3)).isEqualTo(FREEZE_REASON);
+        assertThat(Integer.parseInt(governanceKpi("holds"))).isPositive();
+        assertThat(Integer.parseInt(governanceKpi("freezes"))).isPositive();
+        assertThat(Integer.parseInt(governanceKpi("regulated"))).isPositive();
+        WebElement regulated = browser.await(By.cssSelector("#regulated tr[data-on='" + top + ".ledger']"));
+        assertThat(cell(regulated, 2)).isEqualTo("1");
+        assertThat(cell(regulated, 3)).isEqualTo("1");
+        browser.await(By.cssSelector("#regulated .closed-list li[data-on='" + top + ".ledger.accounts']"));
+
+        // A hold released is listed as lifted, once the relay has put the release on the audit topic.
+        List<String> archive = List.of(top, "archive_" + Api.suffix());
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(archive) + "}"), 200);
+        String reason = "console test: matter closed " + Api.suffix();
+        String holdId = JsonPath.read(expect(api.manage("POST", "/namespaces/" + ns(archive) + "/holds",
+                "{\"reason\":\"" + reason + "\"}", AUTH, api.steward()), 201).body(), "$.id");
+        expect(api.manage("DELETE", "/namespaces/" + ns(archive) + "/holds/" + holdId, null, AUTH, api.steward()), 204);
+        browser.open("/ui/#p=governance&c=trading&tab=holds");
+        browser.await(By.cssSelector("#holds-standing tr[data-kind='freeze'][data-on='" + top + ".equities.eu']"));
+        WebElement lifted = browser.await("the release is not listed as lifted", d -> {
+            if (d.findElements(By.id("lifted-window")).isEmpty()) {
+                return null;
+            }
+            List<WebElement> found = d.findElements(By.cssSelector("#holds-lifted tr[data-kind='hold'][data-on='"
+                    + String.join(".", archive) + "']"));
+            if (found.isEmpty()) {
+                d.navigate().refresh();
+                return null;
+            }
+            return found.getFirst();
+        });
+        assertThat(cell(lifted, 3)).isEqualTo(reason);
+        assertThat(cell(lifted, 5)).endsWith("stella");
+
+        // The overview carries the same figures, for whoever may describe the catalog.
+        browser.open("/ui/#p=overview&c=trading");
+        assertThat(browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='governance']")).getText())
+                .contains("Legal holds", "DR freezes", "Closed until classified");
+    }
+
+    @Test
+    void theCatalogsPropertiesAreShownAsDeclared() {
+        signIn(tester());
+        browser.open("/ui/#c=trading&tab=properties");
+        browser.await(By.id("catalog-properties"));
+        HttpResponse<String> declared = expect(api.manage("GET", "/properties", null), 200);
+        assertThat(fact("Name")).isEqualTo(JsonPath.<String>read(declared.body(), "$.name"));
+        assertThat(fact("Legal entity")).isEqualTo(JsonPath.<String>read(declared.body(), "$.legal-entity"));
+        assertThat(fact("Table root")).isEqualTo(JsonPath.<String>read(declared.body(), "$.storage-profile.table-root"));
     }
 
     @Test
@@ -570,6 +659,27 @@ class ConsoleBrowserTest {
     /** A node of the tree: {@code catalog}, or a kind and a dotted path, such as {@code table:a.b.t}. */
     private static By node(String id) {
         return By.cssSelector(".tree a.node[data-node='" + id + "']");
+    }
+
+    /** A governance mark on a node of the tree: {@code m-held}, {@code m-frozen} or {@code m-reg}. */
+    private static By mark(String id, String cls) {
+        return By.cssSelector(".tree a.node[data-node='" + id + "'] .mk i." + cls);
+    }
+
+    /** The governance cell of a namespace's row in the Contents shown. */
+    private static By contentsGovernance(String name) {
+        return By.cssSelector(".nc-main table.contents tr[data-name='" + name + "'] td.gov");
+    }
+
+    /** The groups beside {@code label} in the grants tab's "Who may". */
+    private static By whoMay(String label) {
+        return By.xpath("//dl[contains(@class,'who-may')]/dt[normalize-space()='" + label
+                + "']/following-sibling::dd[1]");
+    }
+
+    /** A figure of the governance summary, by its key. */
+    private String governanceKpi(String key) {
+        return browser.await(By.cssSelector("#governance-kpis .kpi[data-kpi='" + key + "'] .kpi-v")).getText();
     }
 
     /** Opens a tab of the page shown and waits for its body to load. */

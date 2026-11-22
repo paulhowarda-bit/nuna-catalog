@@ -1,7 +1,7 @@
 // A table's and a view's pages, each tab on its own route. The table's metadata comes from loadTable (with every
-// snapshot, and no storage credentials), asked once a minute at most: every load is audited. Waiting on other
-// items, and left out until they land: who made each metadata change (130), the grants that reach a table from
-// above (129), and "Compact now" with its requested state (114).
+// snapshot, and no storage credentials), asked once a minute at most: every load is audited. Its metadata log is the
+// catalog's commit journal, with who made each change (item 130). Waiting on another item, and left out until it
+// lands: "Compact now" with its requested state (114).
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
@@ -542,33 +542,81 @@ function partitionTab(target, t) {
 
 // ---- metadata log ----
 
+/** What one commit changed, in a few words: its update actions, each once, in order. */
+function changeWords(updates) {
+  const actions = [...new Set((updates || []).map(u => u.action))];
+  return actions.length ? actions.join(', ') : muted('no update');
+}
+
+/** Who made a commit: the principal, the person an engine acted for, and the engine. */
+function byWords(e) {
+  return [h('b', null, e.principal || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
+    e.engine ? [' ', muted('via ' + e.engine)] : null];
+}
+
 function metadataLogTab(target, t) {
   const m = t.metadata;
   const props = m.properties || {};
-  const log = (m['metadata-log'] || []).slice().sort((a, b) => b['timestamp-ms'] - a['timestamp-ms']);
-  const entries = [{file: t['metadata-location'], at: m['last-updated-ms'], cur: true}, ...log.map(e => ({file: e['metadata-file'], at: e['timestamp-ms']}))];
-  const base = f => String(f || '').split('/').pop();
   const snapLog = (m['snapshot-log'] || []).slice().sort((a, b) => b['timestamp-ms'] - a['timestamp-ms']);
+  const kept = (m['metadata-log'] || []).length + 1;
+  const tbody = h('tbody');
+  const more = h('p', {class: 'fine'});
+  const meta = h('span', {class: 'meta'}, 'newest first');
+  let shown = 0;
+  const row = e => {
+    const btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false',
+      'aria-label': `Version ${e['new-version']}, what it changed`}, 'Show');
+    const tr = h('tr', {class: e['new-location'] === t['metadata-location'] ? 'is-cur' : null, 'data-version': String(e['new-version'])},
+      h('td', {class: 'num'}, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
+      h('td', {class: 'wrap'}, changeWords(e.updates)), h('td', {class: 'by'}, byWords(e)), h('td', null, btn));
+    const det = h('tr', {class: 'mlog-det', hidden: true}, h('td', {colspan: '5'},
+      h('p', {class: 'fine'}, code(e['new-location'] || '')), jsonPre({'commit-id': e['commit-id'], updates: e.updates || []})));
+    btn.addEventListener('click', () => {
+      const open = det.hidden;
+      det.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.textContent = open ? 'Hide' : 'Show';
+    });
+    return [tr, det];
+  };
+  let id = null;
+  const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token)).then(answer => {
+    const entries = answer.journal || [];
+    tbody.append(...entries.flatMap(row));
+    shown += entries.length;
+    const next = answer['next-page-token'];
+    meta.textContent = `${plural(shown, 'commit')} shown · newest first`;
+    more.replaceChildren(next ? `Older commits follow. ` : `Every commit the journal keeps is shown. `);
+    if (next) {
+      more.append(h('button', {class: 'linkish', type: 'button', onclick: e => {
+        e.currentTarget.disabled = true;
+        page(next).catch(error => more.replaceChildren(failure(error, {compact: true})));
+      }}, 'Show the next 25'));
+    }
+  });
+  const log = h('div', {class: 'panel', id: 'metadata-log'});
+  load(log, async () => {
+    await page(null);
+    return [h('h2', null, 'Metadata files ', meta),
+      tbl('stack-line mlog', [['Version', 'num'], 'Written', 'Change', 'By', ''], tbody), more,
+      h('p', {class: 'fine'}, 'Each row is the commit that wrote one metadata file, from the catalog\'s commit journal, with who made it. '
+        + 'The journal keeps every commit; the table keeps the files listed under Kept.')];
+  });
   return h('div', {class: 'grid-21'},
-    h('div', {class: 'stack'}, panel('Metadata files', `${plural(entries.length, 'file')} kept · newest first`,
-      tbl('stack-line mlog', [['#', 'num'], 'Written', 'File'], entries.map((e, i) => h('tr', {class: e.cur ? 'is-cur' : null},
-        h('td', {class: 'num'}, String(entries.length - i)), h('td', {class: 'tnum'}, when(e.at)),
-        h('td', {class: 'name wrap', title: e.file}, code(base(e.file)), e.cur ? [' ', pill('accent', 'Current')] : null)))),
-      h('p', {class: 'fine'}, 'Iceberg keeps each file\'s time. What each one changed, and who made it, come with the commit journal\'s page (backlog 130); '
-        + 'Export metadata gives the whole journal now.')),
-    h('div', {class: 'panel', id: 'snapshot-log'}, h('h2', null, 'Snapshot log ', h('span', {class: 'meta'}, 'main, newest first')),
-      snapLog.length ? tbl('stack-line', ['When', 'Snapshot'], snapLog.map(e => h('tr', {'data-id': String(e['snapshot-id'])},
-        h('td', {class: 'tnum'}, when(e['timestamp-ms'])), h('td', {class: 'name'}, String(e['snapshot-id'])))))
-        : h('p', {class: 'muted'}, 'Main has pointed at no snapshot yet.'))),
+    h('div', {class: 'stack'}, log,
+      h('div', {class: 'panel', id: 'snapshot-log'}, h('h2', null, 'Snapshot log ', h('span', {class: 'meta'}, 'main, newest first')),
+        snapLog.length ? tbl('stack-line', ['When', 'Snapshot'], snapLog.map(e => h('tr', {'data-id': String(e['snapshot-id'])},
+          h('td', {class: 'tnum'}, when(e['timestamp-ms'])), h('td', {class: 'name'}, String(e['snapshot-id'])))))
+          : h('p', {class: 'muted'}, 'Main has pointed at no snapshot yet.'))),
     h('div', {class: 'stack'},
       panel('Current file', null, facts([['File', code(t['metadata-location'] || '')], ['Written', when(m['last-updated-ms'])],
         ['Format version', String(m['format-version'])]])),
-      panel('Kept', null, facts([
+      panel('Kept', `${plural(kept, 'file')} in the table's metadata`, facts([
         [code('write.metadata.previous-versions-max'), props['write.metadata.previous-versions-max']
           ? [props['write.metadata.previous-versions-max'], ' · table'] : '100 · built-in'],
         [code('write.metadata.delete-after-commit.enabled'), props['write.metadata.delete-after-commit.enabled']
           ? [props['write.metadata.delete-after-commit.enabled'], ' · table'] : 'false · built-in'],
-      ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the ones listed here.'))));
+      ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the current one and those before it, up to the limit.'))));
 }
 
 // ---- the view page ----

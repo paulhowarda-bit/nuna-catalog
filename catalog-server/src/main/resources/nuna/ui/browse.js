@@ -1,15 +1,16 @@
 // The catalog's browse pages: the tree on the left, and on the right the catalog, a namespace, a table or a view.
-// A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit; the catalog's own Governance,
-// Grants and Audit are the Governance and Audit pages. Waiting on other items, and left out until they land: the
-// catalog's properties (131); each row's governance, snapshots and last commit in Contents (127, 128).
+// The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the Governance and Audit
+// pages. A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit. Contents marks what is
+// held, frozen, regulated or closed until classified (item 128). Waiting on another item, and left out until it
+// lands: each row's snapshots and last commit in Contents (127).
 
 import * as api from './api.js';
-import {$, badge, code, copyButton, copyText, dialogForm, field, fill, granted, h, icon, load, muted, openDialog, pill,
-  plural, tabsNav, tbl, text} from './dom.js';
+import {$, badge, code, copyButton, copyText, dialogForm, facts, field, fill, granted, h, icon, load, muted, openDialog,
+  pill, plural, tabsNav, tbl, text} from './dom.js';
 import {catalogHref, objectHref, pageHref} from './route.js';
 import {queue, queueOf} from './queue.js';
 import {reveal, treeOf} from './tree.js';
-import {auditTab, governanceTab, grantsTab} from './panels.js';
+import {auditTab, governanceMarks, governanceTab, grantsTab, markPills} from './panels.js';
 import {tablePage, viewPage} from './table.js';
 
 /** The path above a page: the catalog, then each namespace; a long one folds its far end on a phone. */
@@ -55,7 +56,7 @@ export function browse(slot, r) {
   if (r.k === 'table' && r.n) main = tablePage(target, r.tab);
   else if (r.k === 'view' && r.n) main = viewPage(target, r.tab);
   else if (r.k === 'namespace' && r.ns.length) main = namespacePage(target, r.tab);
-  else if (r.k === 'catalog') main = catalogPage(r.c);
+  else if (r.k === 'catalog') main = catalogPage(r.c, r.tab);
   else main = notFound();
   const old = $(':scope > .nc-main', box);
   if (old) old.replaceWith(main);
@@ -77,9 +78,9 @@ function queuePill(rows) {
 }
 
 async function contents(catalog, levels) {
-  const [ns, tables, views, q] = await Promise.all([api.namespaces(catalog, levels), levels.length ? api.tables(catalog, levels) : [],
-    levels.length ? api.views(catalog, levels) : [], queue().catch(() => [])]);
-  return {ns, tables: tables.map(t => t.name), views: views.map(v => v.name), q: queueOf(q, catalog)};
+  const [ns, tables, views, q, gov] = await Promise.all([api.namespaces(catalog, levels), levels.length ? api.tables(catalog, levels) : [],
+    levels.length ? api.views(catalog, levels) : [], queue().catch(() => []), governanceMarks(catalog)]);
+  return {ns, tables: tables.map(t => t.name), views: views.map(v => v.name), q: queueOf(q, catalog), gov};
 }
 
 function contentsTable(catalog, levels, x) {
@@ -87,22 +88,25 @@ function contentsTable(catalog, levels, x) {
     ...x.ns.map(n => h('tr', {'data-kind': 'namespace', 'data-name': n[n.length - 1]},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n})}, n[n.length - 1])),
       h('td', null, badge([icon('ns'), 'namespace'])),
-      h('td', null, queuePill(queuedUnder(x.q, n))))),
+      h('td', null, queuePill(queuedUnder(x.q, n))),
+      h('td', {class: 'gov'}, markPills(x.gov.get('namespace:' + n.join('.'))) || muted('–')))),
     ...x.tables.map(name => {
       const mine = x.q.filter(r => r.name === name && r.namespace.join('.') === levels.join('.'));
       return h('tr', {'data-kind': 'table', 'data-name': name},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name})}, name)),
         h('td', null, badge([icon('table'), 'table'])),
         h('td', null, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name}, 'health')}, queuePill(mine))
-          : muted('–')));
+          : muted('–')),
+        h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')));
     }),
     ...x.views.map(name => h('tr', {'data-kind': 'view', 'data-name': name},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'view', namespace: levels, name})}, name)),
-      h('td', null, badge([icon('view'), 'view'])), h('td', null, muted('–')))),
+      h('td', null, badge([icon('view'), 'view'])), h('td', null, muted('–')),
+      h('td', {class: 'gov'}, markPills(x.gov.get('view:' + [...levels, name].join('.'))) || muted('–')))),
   ];
   if (!rows.length) return h('div', {class: 'empty'}, h('h3', null, levels.length ? 'Nothing in this namespace' : 'No namespace in this catalog'),
     h('p', null, 'Or nothing you may describe: the catalog lists only what your groups may see.'));
-  return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', ['Name', 'Kind', 'Tonight\'s queue'], rows),
+  return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', ['Name', 'Kind', 'Tonight\'s queue', 'Governance'], rows),
     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. A table\'s health, governance and snapshots are on its own page.'));
 }
 
@@ -110,8 +114,11 @@ const countWords = (n, w) => n ? plural(n, w) : `no ${w}s`;
 
 // ---- the catalog ----
 
-function catalogPage(catalog) {
+const CATALOG_TABS = ['', 'properties'];
+
+function catalogPage(catalog, tab) {
   const main = h('div', {class: 'nc-main', id: 'catalog-page'});
+  const key = CATALOG_TABS.includes(tab || '') ? tab || '' : null;
   load(main, async () => {
     const x = await contents(catalog, []);
     return [
@@ -120,13 +127,38 @@ function catalogPage(catalog) {
         h('p', {class: 'sub'}, `${countWords(x.ns.length, 'namespace')} · `,
           x.q.length ? `${plural(x.q.length, 'table')} queued for tonight` : 'nothing you may read is queued for tonight'),
         h('div', {class: 'side'}, copyButton(catalog, 'Copy name'), copyLinkButton())),
-      tabsNav('Catalog', [['', 'Contents', x.ns.length], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit']], '',
-        k => ({governance: pageHref('governance', catalog, 'holds'), grants: pageHref('governance', catalog, 'grants'),
-          audit: pageHref('audit', catalog)})[k] || catalogHref(catalog)),
-      contentsTable(catalog, [], x),
+      tabsNav('Catalog', [['', 'Contents', x.ns.length], ['properties', 'Properties'], ['governance', 'Governance'], ['grants', 'Grants'],
+        ['audit', 'Audit']], key,
+      k => ({governance: pageHref('governance', catalog), grants: pageHref('governance', catalog, 'grants'),
+        audit: pageHref('audit', catalog)})[k] || catalogHref(catalog, k || null)),
+      key === null ? h('div', {class: 'empty'}, h('h3', null, 'A catalog has no such tab'))
+        : key === 'properties' ? loading(() => catalogProperties(catalog)) : contentsTable(catalog, [], x),
     ];
   });
   return main;
+}
+
+/** A catalog's properties: the boundary it was declared with and where its tables live (item 131). */
+async function catalogProperties(catalog) {
+  const p = await api.catalogProperties(catalog);
+  const sp = p['storage-profile'] || {};
+  return h('div', {class: 'grid-21'},
+    h('div', {class: 'panel', id: 'catalog-properties'}, h('h2', null, 'Properties ', h('span', {class: 'meta'}, 'as the catalog was declared')),
+      facts([
+        ['Name', code(p.name || catalog)],
+        ['Legal entity', p['legal-entity'] || null],
+        ['Storage profile', sp.name ? [code(sp.name), sp.kind ? muted(' · ' + sp.kind) : null] : null],
+        ['Endpoint', sp.endpoint ? code(sp.endpoint) : muted('the provider\'s default')],
+        ['Region', sp.region || null],
+        ['Table root', sp['table-root'] ? code(sp['table-root']) : null],
+        ['Allowed prefixes', (sp['allowed-prefixes'] || []).length ? sp['allowed-prefixes'].flatMap((x, i) => [i ? h('br') : null, code(x)]) : null],
+        ['Encryption', sp.encryption === 'sse-kms' ? 'SSE-KMS, with a key of its own' : sp.encryption === 'bucket-default'
+          ? 'the bucket\'s default' : sp.encryption || null],
+        ['KMS key set', p['kms-key-set'] ? code(p['kms-key-set']) : null],
+      ])),
+    h('div', {class: 'stack'}, h('div', {class: 'notice'}, icon('info'), h('span', null, h('b', null, 'Set in the deployment\'s configuration.'),
+      ' The Iceberg REST API has no catalog properties of its own; a catalog\'s owner and classification are on its ',
+      h('a', {href: pageHref('governance', catalog, 'holds')}, 'governance'), '. The profile\'s keys and role are never shown.'))));
 }
 
 // ---- a namespace ----

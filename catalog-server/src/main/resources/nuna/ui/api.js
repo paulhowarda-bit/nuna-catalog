@@ -160,6 +160,22 @@ export const removePolicy = target => send(managed(target) + '/maintenance-polic
 
 export const recentAudit = (target, limit) => call(managed(target) + '/audit?limit=' + limit);
 
+/**
+ * A table's or view's metadata log, newest first, a page at a time (item 130): {pointer, journal, next-page-token},
+ * each journal entry the commit that wrote one metadata file, with who made it. Needs select on the object.
+ */
+export const metadataLog = (catalog, id, pageToken) => call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}`
+  + `/metadata-log?pageSize=25${pageToken ? '&pageToken=' + enc(pageToken) : ''}`);
+
+/** A catalog's properties (item 131): its name, legal entity, whether a KMS key is set, and its storage profile. */
+export const catalogProperties = catalog => call(`/management/v1/catalogs/${enc(catalog)}/properties`);
+
+/** A catalog's governance in figures (item 128): tables classified, closed, held and frozen; regulated areas. */
+export const governanceSummary = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/summary`);
+
+/** Every hold and freeze in a catalog (item 128): those standing, and those lifted as far as the audit topic reaches. */
+export const holdsAndFreezes = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/holds`);
+
 /** An object's export: its pointer, current metadata and commit journal, by the object's id. */
 export const exportObject = (catalog, id) =>
   call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}/export`);
@@ -172,11 +188,16 @@ export function securable(target) {
   return out;
 }
 
-export function grantsOn(target) {
+/**
+ * Every grant that reaches an object (item 129): on its catalog, each namespace above it and on it, from the catalog
+ * down, each with the securable it was granted on, and the deployment's grant-admin groups. Needs manage-grants on
+ * the object or above it.
+ */
+export function effectiveGrants(target) {
   const query = new URLSearchParams({type: target.kind});
   for (const level of target.kind === 'catalog' ? [] : target.namespace) query.append('namespace', level);
   if (target.kind === 'table' || target.kind === 'view') query.set('name', target.name);
-  return all(`/management/v1/catalogs/${enc(target.catalog)}/grants/on?${query}`, 'grants');
+  return call(`/management/v1/catalogs/${enc(target.catalog)}/grants/effective?${query}`);
 }
 
 /** The grants of the named groups, or of the caller's own groups when none is named. */
