@@ -1,3 +1,10 @@
+/* Instrument Sans and Geist Mono, served by the console itself (font-src 'self'), under the SIL Open Font
+   License 1.1: instrument-sans-ofl.txt and geist-mono-ofl.txt beside them. */
+@font-face { font-family: 'Instrument Sans'; src: url('instrument-sans.woff2') format('woff2');
+  font-weight: 400 700; font-stretch: 75% 100%; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Geist Mono'; src: url('geist-mono.woff2') format('woff2');
+  font-weight: 100 900; font-style: normal; font-display: swap; }
+
 /* =====================================================================================================
    The nuna console's styles, ported from Atelier's prototype (docs/design/console/prototype.html, D45).
    Tokens: :root holds the light theme; dark comes on request (data-theme) or from the system. Primitives carry

@@ -127,8 +127,8 @@ class ConsoleTest {
     private static void assertStrictPolicy(HttpResponse<String> response, String connect) {
         assertThat(response.headers().firstValue("Content-Security-Policy")).as(response.uri().toString())
                 .hasValueSatisfying(policy -> assertThat(policy)
-                        .contains("default-src 'none'", "script-src 'self';", "style-src 'self';", connect,
-                                "frame-ancestors 'none'", "base-uri 'none'")
+                        .contains("default-src 'none'", "script-src 'self';", "style-src 'self';", "font-src 'self';",
+                                connect, "frame-ancestors 'none'", "base-uri 'none'")
                         .doesNotContain("unsafe-inline", "unsafe-eval", "*"));
     }
 
