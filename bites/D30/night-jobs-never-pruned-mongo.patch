@@ -1,0 +1,16 @@
+Breaks: on MongoDB the jobs of nights older than the catalog keeps are never deleted.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Nights#oldNightsAreDeleted
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java
+index 1d69807..53230c6 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNights.java
+@@ -67,8 +67,6 @@ final class MongoNights {
+                 jobs.updateOne(tx.session, byId(uuid(job.id())), new BsonDocument("$set", set)
+                         .append("$setOnInsert", first), new UpdateOptions().upsert(true));
+             }
+-            jobs.deleteMany(tx.session, new BsonDocument("night", new BsonDocument("$lt",
+-                    new BsonString(keepFrom.toString()))));
+             return true;
+         }, written -> true);
+     }

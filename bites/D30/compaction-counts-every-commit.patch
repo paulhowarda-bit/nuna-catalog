@@ -1,0 +1,16 @@
+Breaks: a compaction's files in and out count every commit since its table was assessed, a writer's appends too, not only replace snapshots.
+Module: catalog-maintenance
+Test: NightJobsTest#eachJobTakesTheLowestFreeSlotAndCountsItsOwnReplaces
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java b/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
+index 1d50768..4a7ff35 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
+@@ -228,7 +228,7 @@ final class NightlyCompaction {
+         Snapshot snapshot = table.currentSnapshot();
+         while (snapshot != null && !assessed.equals(Optional.of(snapshot.snapshotId()))
+                 && snapshot.timestampMillis() >= floor) {
+-            if (DataOperations.REPLACE.equals(snapshot.operation())) {
++            if (snapshot.operation() != null) {
+                 in += count(snapshot, SnapshotSummary.DELETED_FILES_PROP);
+                 out += count(snapshot, SnapshotSummary.ADDED_FILES_PROP);
+             }

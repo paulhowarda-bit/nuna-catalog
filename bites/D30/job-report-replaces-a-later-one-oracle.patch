@@ -1,0 +1,15 @@
+Breaks: on Oracle a job's report replaces the one kept even when that one ended later, or ended and this one has not.
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Nights#aJobIsKeptByItsId
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java
+index 3cccc2a..cd800d2 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNights.java
+@@ -45,7 +45,6 @@ final class OracleNights {
+                             + " t.outcome = s.outcome, t.files_in = s.files_in, t.files_out = s.files_out,"
+                             + " t.snapshots_expired = s.snapshots_expired, t.files_deleted = s.files_deleted,"
+                             + " t.bytes_deleted = s.bytes_deleted"
+-                            + " WHERE t.ended_at IS NULL OR s.ended_at >= t.ended_at"
+                             + " WHEN NOT MATCHED THEN INSERT (" + JOB + ") VALUES (s.id, s.worker, s.night,"
+                             + " s.night_opens, s.night_closes, s.kind, s.object_id, s.slot, s.started_at, s.ended_at,"
+                             + " s.outcome, s.files_in, s.files_out, s.snapshots_expired, s.files_deleted,"
