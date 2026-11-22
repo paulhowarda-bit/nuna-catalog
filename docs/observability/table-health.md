@@ -11,11 +11,12 @@ D13 keeps out of the database (the catalog turns them into meters, catalog-metri
 
 ## The reads
 
-Three routes, all answering JSON. Times are ISO-8601 instants, kept to the millisecond.
+Four routes, all answering JSON. Times are ISO-8601 instants, kept to the millisecond.
 
 | Route | Who may call | Returns |
 |---|---|---|
 | `GET /management/v1/maintenance/tables` | Anyone; each table is shown only to a caller with `select` on it | The neediest tables, a page at a time |
+| `GET /management/v1/maintenance/estate` | Anyone; each table is shown only to a caller with `select` on it | Every table, one row each, a page at a time |
 | `GET /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/health` | `select` on the table | One table's health |
 | `GET /management/v1/maintenance/scans` | Platform operators (`nuna.security.platform-operator-groups`) | The worker's recent scans and its last successful one |
 
@@ -42,6 +43,62 @@ by id. Only tables the caller may `select` are listed; the others are skipped, n
   keep reading while there is a token.
 - The order is the order the worker starts Jobs in, so the head of the list is what the next night compacts first,
   window and Job slots permitting.
+
+### Every table
+
+`GET /management/v1/maintenance/estate?pageSize=200&pageToken=...` gives one row for every active table the caller
+may `select`, across every catalog, by id. It is for the console's ice line and the tree's marks (D45, backlog 127). The
+neediest list leaves out the tables in shape, so it cannot draw them above the line. A table the caller may not select
+is skipped: it is neither named nor counted.
+
+```json
+{
+  "night": "2026-11-21",
+  "tables": [
+    {
+      "id": "6c1d...",
+      "catalog": "lake",
+      "namespace": ["sales"],
+      "name": "orders",
+      "assessment": {
+        "assessed-at": "2026-11-22T06:50:00.123Z",
+        "needs-compaction": true,
+        "reasons": ["small-files"],
+        "score": 3.4,
+        "data-files": 2316
+      },
+      "held": true,
+      "frozen": false,
+      "closed": false,
+      "fixed-last-night": false
+    }
+  ],
+  "next-page-token": "..."
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `night` | Last night: the newest night that has a job, as `GET /management/v1/maintenance/nights` counts them (maintenance-nights.md). Absent before the worker has reported any job. |
+| `assessment` | The latest assessment's verdict, reasons and score, and the data-file count, as in a table's health (below). Absent until the worker has assessed the table. A table with no reason is in shape. |
+| `held` | A legal hold is on the table, or on a namespace or catalog above it. |
+| `frozen` | A DR freeze is on the table, or on a namespace or catalog above it. |
+| `closed` | The table is closed until classified (D27): it lies in a regulated area and has no classification of its own. |
+| `fixed-last-night` | Last night's compaction Job of the table succeeded. A Job cut off, failed or still running fixed nothing. |
+
+- **Who counts.** A table counts when the authorizer allows the caller `select` on it. It also counts when the
+  authorizer refuses only because the table is closed until classified: the caller holds the grant, and the closure
+  keeps the data closed, not the name. Such a row has `closed` set. A caller whose grants give no `select` on a table
+  never sees it, closed or not.
+- **Paging.** `pageSize` is 200 by default, from 1 to 500. A page may hold fewer rows than `pageSize`, even none,
+  when the caller may select few of the tables it looked at. It looks at 2,000 tables at most. `next-page-token` is
+  there while more tables may follow, so keep reading while there is a token. A token the route did not issue is 400
+  `BadRequestException`.
+- **No totals.** The route counts nothing across pages, since that would read every table on every call. The console
+  counts the rows it has read: in shape, queued, held, frozen, closed and fixed.
+- **The cost of a page.** The active tables are read in batches no larger than the rows the page still wants, and
+  each batch is authorized in one call. Then each row's health is read on its own, holds and attributes are read once
+  for every 500 levels, and last night's compaction Jobs are read once.
 
 ### One table's health
 
@@ -163,6 +220,14 @@ keep serving while the first new one migrates, and the rolling upgrade stays saf
 | `HealthSuite` (catalog-store-api, run on each store) | The latest assessment kept; reports for gone tables refused; the last compaction kept; the neediest order and paging; a purge deletes the health; recent scans and the last success kept. |
 | `catalog-server` `HealthRoutesTest` | The worker's reports make a table's health; only the worker reports; a report for a table gone or now another is refused; a reader sees only the neediest tables they may select; operators read the scans. |
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
+| `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
+| `catalog-server` `MaintenanceEstateRoutesTest` (heavy) | Every table through the server, with real reports, holds, freezes, grants and classifications; a caller who may select nothing gets no row. |
 
 The bites are in `bites/D38/`: a report taken from someone other than the worker, and the neediest list unfiltered by
-grants.
+grants. The estate's bites are in `bites/D45/`, each against `MaintenanceEstateTest`:
+
+- `estate-names-unselectable-tables`: every table is a row, whether the caller may select it or not.
+- `estate-closed-for-any-refusal`: a table refused for any reason counts as closed.
+- `estate-examines-without-bound`: a page looks at every table until it is full.
+- `estate-fixed-by-any-compaction`: a compaction cut off or failed counts as fixing its table.
+- `estate-page-unbounded`: a page holds as many rows as it is asked for.

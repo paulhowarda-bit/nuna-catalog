@@ -1,0 +1,17 @@
+Breaks: a page holds as many rows as it is asked for, with no upper bound.
+Module: catalog-server
+Test: MaintenanceEstateTest#aPageHoldsAtMostFiveHundredRows
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+index 4f1f74a..72e3556 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+@@ -284,7 +284,7 @@ class MaintenanceRoutes {
+     ResponseEntity<String> estate(@RequestParam(required = false) String pageToken,
+                                   @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+         Request request = management.request(http);
+-        int size = pageSize == null ? MaintenanceEstate.PAGE : Math.clamp(pageSize, 1, MaintenanceEstate.MAX_PAGE);
++        int size = pageSize == null ? MaintenanceEstate.PAGE : Math.max(pageSize, 1);
+         try {
+             return GovernanceRoutes.json(200, estate.tables(request.caller(),
+                     Optional.ofNullable(pageToken).filter(token -> !token.isEmpty()), size));

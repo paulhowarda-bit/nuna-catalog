@@ -50,6 +50,9 @@ import tools.jackson.databind.node.ObjectNode;
  * <p>Also the worker's nights (D45, backlog 126; {@link MaintenanceNights}): the worker reports each job it runs, and
  * anyone signed in reads each night's totals and the jobs on its slots, a job's table named only to a caller who may
  * select it.
+ *
+ * <p>And every table, one row each, for the console's ice line (D45, backlog 127; {@link MaintenanceEstate}): anyone
+ * signed in reads the tables they may select, never counting or naming another.
  */
 @RestController
 class MaintenanceRoutes {
@@ -59,6 +62,7 @@ class MaintenanceRoutes {
     static final String DELETIONS_DONE = DELETIONS + "/complete";
     static final String JOB = ROOT + "/maintenance/jobs/{id}";
     static final String NIGHTS = ROOT + "/maintenance/nights";
+    static final String ESTATE = ROOT + "/maintenance/estate";
 
     private static final int PAGE = 100;
     private static final int MAX_FILES = 1000;
@@ -75,6 +79,7 @@ class MaintenanceRoutes {
     private final CatalogNames catalogs;
     private final Clock clock;
     private final MaintenanceNights nights;
+    private final MaintenanceEstate estate;
 
     MaintenanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
                       CatalogNames catalogs, Clock clock, Authorizer authorizer) {
@@ -85,6 +90,7 @@ class MaintenanceRoutes {
         this.catalogs = catalogs;
         this.clock = clock;
         this.nights = new MaintenanceNights(store, management, authorizer, catalogs, clock);
+        this.estate = new MaintenanceEstate(store, authorizer, catalogs, clock);
     }
 
     /**
@@ -262,6 +268,29 @@ class MaintenanceRoutes {
         int asked = days == null ? MaintenanceNights.DAYS : Math.clamp(days, 1, MaintenanceNights.KEEP_NIGHTS);
         int withJobs = jobs == null ? 1 : Math.clamp(jobs, 0, asked);
         return GovernanceRoutes.json(200, nights.nights(request.caller(), asked, withJobs));
+    }
+
+    /**
+     * Every active table the caller may {@code select}, in every catalog, by id (docs/observability/table-health.md,
+     * "Every table"): {@code {"night", "tables": [{"id", "catalog", "namespace", "name", "assessment": {"assessed-at",
+     * "needs-compaction", "reasons", "score", "data-files"}, "held", "frozen", "closed", "fixed-last-night"}],
+     * "next-page-token"}}. {@code night} is the newest night that has a job, the one {@code fixed-last-night} speaks
+     * of; {@code assessment} is absent until the worker has assessed the table. A table closed until classified (D27)
+     * counts for a caller whose grants give select on it, with {@code closed} true. Each page holds at most
+     * {@code pageSize} rows (200 by default, 1 to 500), and fewer when the caller may select few of the tables it
+     * looks at (2,000 at most); {@code next-page-token} is there while more may follow.
+     */
+    @GetMapping(path = ESTATE, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> estate(@RequestParam(required = false) String pageToken,
+                                  @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+        Request request = management.request(http);
+        int size = pageSize == null ? MaintenanceEstate.PAGE : Math.clamp(pageSize, 1, MaintenanceEstate.MAX_PAGE);
+        try {
+            return GovernanceRoutes.json(200, estate.tables(request.caller(),
+                    Optional.ofNullable(pageToken).filter(token -> !token.isEmpty()), size));
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Invalid page token: " + pageToken);
+        }
     }
 
     /** The table as the work list shows it, when its resolved policy runs a job. */
