@@ -1,5 +1,0 @@
-# vendor/manifest_v1.json checksums every vendored file, and the example sources and fixtures are golden
-# inputs: git must never change their bytes.
-vendor/** binary
-examples/** -text
-tools/tests/fixtures/** -text
