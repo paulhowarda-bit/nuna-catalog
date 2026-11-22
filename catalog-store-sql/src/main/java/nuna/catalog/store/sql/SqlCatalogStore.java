@@ -20,6 +20,7 @@ import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.MaintenanceJob;
 import nuna.catalog.store.MaintenanceNight;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -84,6 +85,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlDeletions deletions;
     private final SqlHealth health;
     private final SqlNights nights;
+    private final SqlRequests requests;
     private final SqlDr dr;
     private final SqlRefs refs;
     private final JournalHorizon horizon;
@@ -113,6 +115,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.deletions = new SqlDeletions(transactions);
         this.health = new SqlHealth(transactions);
         this.nights = new SqlNights(transactions);
+        this.requests = new SqlRequests(transactions);
         this.dr = new SqlDr(transactions);
         this.refs = new SqlRefs(transactions);
     }
@@ -448,6 +451,29 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds) {
         return nights.jobs(night, kinds);
+    }
+
+    // ---- maintenance on request (D30, amended 2026-11-20; backlog 114) ----
+
+    @Override
+    public WriteResult requestMaintenance(MaintenanceRequest request, Change change) {
+        return requests.request(request, change);
+    }
+
+    @Override
+    public List<MaintenanceRequest> listMaintenanceRequests(UUID objectId) {
+        return requests.list(objectId);
+    }
+
+    @Override
+    public Page<MaintenanceRequest> listWaitingRequests(PageRequest page) {
+        return requests.listWaiting(page);
+    }
+
+    @Override
+    public WriteResult startMaintenanceRequest(UUID objectId, MaintenanceRequest.Job job, Instant requestedAt,
+                                               Instant startedAt) {
+        return requests.start(objectId, job, requestedAt, startedAt);
     }
 
     // ---- the DR watermark (D37) ----

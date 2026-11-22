@@ -10,6 +10,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_JOB;
+import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_REQUEST;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_SCAN;
 import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
@@ -183,6 +184,23 @@ final class MongoSchema {
             new Step(11, "maintenance nights", database -> {
                 index(database, MAINTENANCE_JOB, "maintenance_job_night", false, null, "night", "kind", "startedAt",
                         "_id");
+            }),
+            // v1.x (D30, amended 2026-11-20; backlog 114): a request to run one of a table's heavy maintenance jobs now,
+            // one per table and job, waiting (startedAt null) until the worker reports the job started; and the work
+            // list's waiting requests, by the time asked. The collection is new, made here outside any transaction, since
+            // a purge deletes from it inside one, and no server of the previous release touches it, so building its
+            // indexes locks nothing it uses.
+            new Step(12, "maintenance requests", database -> {
+                try {
+                    database.createCollection(MAINTENANCE_REQUEST);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
+                index(database, MAINTENANCE_REQUEST, "maintenance_request_key", true, null, "objectId", "job");
+                index(database, MAINTENANCE_REQUEST, "maintenance_request_waiting", false, null, "requestedAt",
+                        "objectId", "job");
             }));
 
     private MongoSchema() {
