@@ -7,8 +7,10 @@
 #   ./nightly.sh --test-dry-run               lists what would run and runs nothing
 #
 # 1. Every module but the engine matrix: the CAS test at 1,000 rounds and the per-mutation fault sweeps on all
-#    four databases, the load, resilience and SLO runs, and the maintenance worker's large runs. Two modules at
-#    a time, as in every build.
+#    four databases, the load, resilience and SLO runs, and the maintenance worker's large runs. One module at a
+#    time (--max-workers=1; every build runs two): with two, the Docker VM's peak and two test JVMs outgrew
+#    Windows' free memory and Windows paged the VM out, and waits ran out (Paul, 2026-11-22; backlog 135). It takes
+#    about 2 h 15 min instead of 1 h 15 min.
 # 2. The engine matrix on its own. Its Kubernetes stack (SingleStore alone asks for 1.5 to 3 GiB) does not fit in
 #    Docker's 8 GB beside a three-node cluster or a load stack, and in one Gradle run it could start beside one.
 # Each step runs whatever the other did, with --continue, so one failure does not hide the rest. Exits 0 only
@@ -23,7 +25,7 @@ mkdir -p build
 marker=build/nightly.started
 touch "$marker"
 
-./gradlew --console=plain --continue -Pnightly -x :catalog-tests-engines:test test "$@"
+./gradlew --console=plain --continue --max-workers=1 -Pnightly -x :catalog-tests-engines:test test "$@"
 step1=$?
 ./gradlew --console=plain --continue -Pnightly :catalog-tests-engines:test "$@"
 step2=$?
