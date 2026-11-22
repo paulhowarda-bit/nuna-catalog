@@ -1,0 +1,16 @@
+Breaks: A catalog's governance summary is read without describe on the catalog.
+Module: catalog-server
+Test: GovernanceSummaryTest#aCallerWithoutDescribeOnTheCatalogIsRefusedAndTheRefusalAudited
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+index e782457..871a3b1 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+@@ -110,7 +110,6 @@ class GovernanceRoutes {
+         Request request = management.request(http);
+         Target target = management.target(request, "loadGovernanceSummary", Privilege.DESCRIBE,
+                 prefix, null, null, null);
+-        guard.require(request, target, "loadGovernanceSummary", Privilege.DESCRIBE);
+         return json(200, GovernanceSummary.read(store, target.catalog()).summary());
+     }
+ 

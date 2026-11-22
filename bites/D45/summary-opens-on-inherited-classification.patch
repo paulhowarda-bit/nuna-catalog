@@ -1,0 +1,17 @@
+Breaks: The summary counts a table with only an inherited classification as open, though the authorizer keeps it closed.
+Module: catalog-server
+Test: GovernanceSummaryTest#aTableIsClosedInTheSummaryExactlyWhenTheAuthorizerClosesIt
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
+index 50d4ea7..568ac7b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
+@@ -127,7 +127,7 @@ final class GovernanceSummary {
+                 frozen++;
+             }
+             boolean isClosed = chain.stream().anyMatch(regulated::containsKey)
+-                    && own(level.securable(), GovernanceAttribute.Kind.CLASSIFICATION).isEmpty();
++                    && chain.stream().noneMatch(on -> own(on, GovernanceAttribute.Kind.CLASSIFICATION).isPresent());
+             if (isClosed) {
+                 closed.add(level);
+             }
