@@ -22,8 +22,8 @@ What was checked:
 - `MaintenanceEstateRoutesTest` (heavy) was written and not run here; the overnight run runs it.
 - Five bites are recorded in `bites/D45/` and were run with `bites/run.sh`: "5 bites, 0 not biting or not restored
   (0 of them SETUP)".
-- The fast build, `./gradlew build`, passed after main was merged at fc4d7aa: BUILD SUCCESSFUL in 2m 33s, with
-  `:bitesApply`.
+- The fast build, `./gradlew build`, passed after main was merged at fc4d7aa (BUILD SUCCESSFUL in 2m 33s, with
+  `:bitesApply`), and again after main was merged at a918c96 (BUILD SUCCESSFUL in 1m 37s).
 
 Not covered: each row's health is one store read, since no store reads health for many tables at once. A joined
 store read would make a page one query, at the cost of a new method on all four stores.
