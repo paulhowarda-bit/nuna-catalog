@@ -29,6 +29,9 @@ dependencies {
     implementation("org.apache.iceberg:iceberg-core")
     implementation("org.apache.iceberg:iceberg-data:$icebergVersion")
     implementation("org.apache.iceberg:iceberg-parquet:$icebergVersion")
+    // The feed's reader (EventsReader) names Parquet's file schema when it builds a row reader; iceberg-parquet does
+    // not export it. The version iceberg-parquet 1.12 brings.
+    implementation("org.apache.parquet:parquet-column:1.17.1")
     implementation("org.apache.iceberg:iceberg-aws:$icebergVersion")
     // The synchronous S3 client on Apache HttpClient (Iceberg's default http-client.type).
     implementation("software.amazon.awssdk:s3") {

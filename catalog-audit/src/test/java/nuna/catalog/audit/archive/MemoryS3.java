@@ -173,7 +173,10 @@ final class MemoryS3 {
 
     private ListObjectVersionsResponse versions(ListObjectVersionsRequest request) {
         return ListObjectVersionsResponse.builder().isTruncated(false)
+                // As S3 lists them: by key, only keys after the key marker when one is given.
                 .versions(versions.stream().filter(v -> v.key().startsWith(request.prefix()))
+                        .filter(v -> request.keyMarker() == null || v.key().compareTo(request.keyMarker()) > 0)
+                        .sorted(java.util.Comparator.comparing(Version::key))
                         .map(v -> ObjectVersion.builder().key(v.key()).versionId(v.id()).lastModified(v.at()).build())
                         .toList())
                 .build();

@@ -62,6 +62,24 @@ public final class AuditRows {
                 partition, offset);
     }
 
+    /**
+     * The record a row holds, rebuilt from its envelope columns and its payload: the event as the topic and the archive
+     * carry it, which {@link EventCodec#encode} writes back out. The row's time is kept to the microsecond.
+     *
+     * @throws IllegalArgumentException if the row's type is unknown or its payload is not that type's
+     */
+    public static CatalogEvent event(AuditRow row) {
+        EventType type = EventType.fromTypeName(row.type());
+        try {
+            EventData data = EventCodec.MAPPER.readValue(row.data(), type.dataClass());
+            return new CatalogEvent(java.util.UUID.fromString(row.eventId()), java.net.URI.create(row.source()),
+                    row.time(), data);
+        } catch (tools.jackson.core.JacksonException e) {
+            throw new IllegalArgumentException("the row of " + row.eventId() + " holds no " + row.type() + " payload: "
+                    + e.getMessage(), e);
+        }
+    }
+
     private static Parts on(Actor actor, Securable object) {
         return new Parts(actor, actor.requestId(), object, null, null, null);
     }

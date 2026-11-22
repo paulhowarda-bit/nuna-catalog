@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**38 open:** 7 S, 13 M, 12 L, 6 XL.
+**37 open:** 7 S, 13 M, 11 L, 6 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -44,7 +44,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [124](backlog/124.md) | XL | Console: rebuild every page to the redesign prototype (D45) | every page of the console rebuilt, a typeface pair served by the console, a policy change for fonts, and the console's browser tests; panels whose route is in items 114 and 125 to 131 appear as those land | 2026-11-22 |
-| [125](backlog/125.md) | L | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | a new feed over the queryable audit tables with filters and a cursor, chain positions and verification, the archive check's status and the last day's counts, with tests and bites | 2026-11-22 |
 | [127](backlog/127.md) | M | Maintenance: one row per table for the overview's ice line (D45) | one read over the assessments the catalog already keeps, filtered to what the caller may select, with tests | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
@@ -1596,32 +1595,6 @@ What done looks like:
 - A panel whose route has not landed yet is left out, not faked. It appears when its item lands.
 - The console's browser tests (`heavy`) cover each page, the theme switch, phone width and a refused grant.
 
-### 125. Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45)
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java, catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java, catalog-audit-tables/
-- Effort: L, a new feed over the queryable audit tables with filters and a cursor, chain positions and verification, the archive check's status and the last day's counts, with tests and bites
-
-The prototype's Audit page is a feed across the whole catalog (D45). Today `GET .../audit` (`AuditReadRoutes`):
-- returns one subject's own records, from one partition;
-- reaches at most 20,000 offsets back and returns at most 200 per call;
-- needs `manage-grants`.
-
-Searching across objects or people was the SIEM's job (build-plan.md, UI v1). Since item 27, the queryable audit
-tables (D23) can do it too.
-
-What done looks like:
-- A feed per catalog:
-  - newest first;
-  - filtered by kind, principal, path prefix (a namespace with its tables and views) and time;
-  - paged with a cursor;
-  - read from the audit tables, so about a minute behind, and the feed says so.
-- Each record with its request id, its partition and offset, its neighbours in the hash chain, and whether that link
-  was verified.
-- The archive check's last result and time.
-- The last day's counts by kind and the busiest objects, matching the health page's figures for the same day.
-- Who may read it is settled as for the audit tables (D23, item 85). Route tests for each refusal.
-
 ### 127. Maintenance: one row per table for the overview's ice line (D45)
 
 - Added: 2026-11-22 by Paul
@@ -1846,6 +1819,7 @@ dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too.
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
 | [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [125](backlog/125.md) | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | done | 2026-11-22 |
 | [126](backlog/126.md) | Maintenance: each night's summary and each job's run on its worker slot (D45) | done | 2026-11-22 |
 | [128](backlog/128.md) | Governance: a summary per catalog, and every hold and freeze with its history (D45) | done | 2026-11-22 |
 | [129](backlog/129.md) | Grants: the effective grants on an object, inherited ones included (D45) | done | 2026-11-22 |
