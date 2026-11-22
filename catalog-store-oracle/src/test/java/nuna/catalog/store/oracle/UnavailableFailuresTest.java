@@ -46,6 +46,7 @@ class UnavailableFailuresTest {
             12514, 12521, 12528,            // listener: service or instance not registered, instances blocking logons
             12516, 12519, 12520,            // listener: no handler free (the database is out of processes)
             12537, 12541, 12170,            // connection closed, no listener, connect timeout
+            17800,                          // got minus one from a read call: the connection was closed
             16000, 16456})                  // database open read-only (a standby), switchover in progress
     void anUnreachableOrFailingOverDatabaseIsUnavailable(int code) {
         assertThat(Transactions.failed("x failed", ora(code))).isInstanceOf(StoreUnavailableException.class);
