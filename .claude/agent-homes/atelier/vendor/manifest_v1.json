@@ -1,0 +1,236 @@
+{
+  "generated_for": "demo_designer",
+  "license_allow_list": [
+    "MIT",
+    "Apache-2.0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "Zlib",
+    "OFL-1.1"
+  ],
+  "libraries": [
+    {
+      "name": "anime",
+      "version": "4.5.0",
+      "license": "MIT",
+      "global": "anime",
+      "js": [
+        "js/anime.min.js"
+      ],
+      "css": [],
+      "use_when": "Timelines, staggers, SVG path drawing, spring easing, number tweening. Default motion engine when CSS alone is not enough. API: const {animate, createTimeline, stagger, utils, svg} = anime;",
+      "sha256": {
+        "js/anime.min.js": "8d5b3a58a1f64023a04a4cedeef135a2263b18da04b35177ac13438a0bad033b"
+      }
+    },
+    {
+      "name": "lenis",
+      "version": "1.3.27",
+      "license": "MIT",
+      "global": "Lenis",
+      "js": [
+        "js/lenis.min.js"
+      ],
+      "css": [
+        "css/lenis.css"
+      ],
+      "use_when": "Smooth, inertial page scroll for scroll stories. Skip when prefers-reduced-motion is set.",
+      "sha256": {
+        "js/lenis.min.js": "80f53e77f1c13e379fc246d2b5e299188e20bcb2b2fe7ebb13e8e8c7563a6da7",
+        "css/lenis.css": "2f668ae84a668327f246faf8a770383a2bf69196d214290fbc4d5548910606c5"
+      }
+    },
+    {
+      "name": "echarts",
+      "version": "6.1.0",
+      "license": "Apache-2.0",
+      "global": "echarts",
+      "js": [
+        "js/echarts.min.js"
+      ],
+      "css": [],
+      "use_when": "Rich interactive charts: candlestick, heatmap, treemap, sankey, gauge, graph, large streaming series. Canvas or SVG renderer. Heavy (~1.1 MB) - use only when charts are central.",
+      "sha256": {
+        "js/echarts.min.js": "b66b25aeb4df84e33199dc21694014d336d222cbd9deb0e5a7c14bd6aa0d0fd0"
+      }
+    },
+    {
+      "name": "d3",
+      "version": "7.9.0",
+      "license": "ISC",
+      "global": "d3",
+      "js": [
+        "js/d3.min.js"
+      ],
+      "css": [],
+      "use_when": "Bespoke data visuals, scales, shapes, force layouts, transitions on SVG. Use for custom storytelling visuals that ECharts cannot express.",
+      "sha256": {
+        "js/d3.min.js": "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
+      }
+    },
+    {
+      "name": "three",
+      "version": "0.186.1",
+      "license": "MIT",
+      "global": "THREE",
+      "js": [
+        "js/three.min.js"
+      ],
+      "css": [],
+      "use_when": "3D/WebGL hero scenes, particle fields, glowing networks. Bundled with OrbitControls, EffectComposer, RenderPass, UnrealBloomPass, OutputPass, RoomEnvironment on THREE.*.",
+      "sha256": {
+        "js/three.min.js": "e22a683c83a2ec285bbf7df32ee2c96c11cb3363b5828c3ea2f986ecdbec083f"
+      }
+    },
+    {
+      "name": "three-webgpu",
+      "version": "0.186.1",
+      "license": "MIT",
+      "global": "THREE + TSL",
+      "js": [
+        "js/three-webgpu.min.js"
+      ],
+      "css": [],
+      "use_when": "WebGPURenderer (auto-falls back to WebGL2) + TSL node shaders + compute particles. Exposes THREE (webgpu build, incl. OrbitControls) and TSL. Never load together with 'three'.",
+      "sha256": {
+        "js/three-webgpu.min.js": "af9fd31e5e7ff256bedbfc10e88e591cd36fc92a06ff2420ca43296b3dd648dd"
+      }
+    }
+  ],
+  "fonts": [
+    {
+      "name": "space-grotesk",
+      "family": "Space Grotesk",
+      "file": "space-grotesk.woff2",
+      "weight": "300 700",
+      "style": "normal",
+      "category": "grotesk",
+      "personality": "techy, geometric quirks, confident",
+      "sha256": "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "file": "jetbrains-mono.woff2",
+      "weight": "100 800",
+      "style": "normal",
+      "category": "mono",
+      "personality": "engineering, terminals, tabular data",
+      "sha256": "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "geist-mono",
+      "family": "Geist Mono",
+      "file": "geist-mono.woff2",
+      "weight": "100 900",
+      "style": "normal",
+      "category": "mono",
+      "personality": "crisp modern mono, very clean numerals",
+      "sha256": "684ad5b531f81d43c1e8c7038262d5db7cdc1f68006e04d6c7769efa8d33c8cc",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "fraunces",
+      "family": "Fraunces",
+      "file": "fraunces.woff2",
+      "weight": "100 900",
+      "style": "normal",
+      "category": "display serif",
+      "personality": "editorial, warm, expressive; variable axes opsz 9-144, SOFT 0-100, WONK 0-1",
+      "sha256": "7e744849028e2219e2aa1bc467dc4032980dc4487c9c3da3010081cd72d3b103",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "fraunces-italic",
+      "family": "Fraunces",
+      "file": "fraunces-italic.woff2",
+      "weight": "100 900",
+      "style": "italic",
+      "category": "display serif",
+      "personality": "pair with fraunces for italic emphasis",
+      "sha256": "bceec2ef4d549efbc8df0194a8d5280b6a64c3e399244dffccd9ea1bd9ad6db7",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "instrument-serif",
+      "family": "Instrument Serif",
+      "file": "instrument-serif.woff2",
+      "weight": "400",
+      "style": "normal",
+      "category": "condensed display serif",
+      "personality": "fashion/editorial headlines",
+      "sha256": "5eb09b5ac0e28b67c2f041c8ba6d244604ca0c0980d65912ab2d47fed84ddc31",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "instrument-serif-italic",
+      "family": "Instrument Serif",
+      "file": "instrument-serif-italic.woff2",
+      "weight": "400",
+      "style": "italic",
+      "category": "condensed display serif",
+      "personality": "elegant italics",
+      "sha256": "5a51946dfffa82972bc98745359c46761515641fda557c25116459a9f83da4a7",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "instrument-sans",
+      "family": "Instrument Sans",
+      "file": "instrument-sans.woff2",
+      "weight": "400 700",
+      "style": "normal",
+      "category": "neo-grotesk",
+      "personality": "neutral, precise body text",
+      "sha256": "2ee17598a98d8a59e4df8152d015bec9ab8e4d5672cc0ab42bef806b568e3971",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "inter-tight",
+      "family": "Inter Tight",
+      "file": "inter-tight.woff2",
+      "weight": "100 900",
+      "style": "normal",
+      "category": "neo-grotesk",
+      "personality": "dense UI labels, tight display",
+      "sha256": "77fefe8ca19b9f69b5284832c519e0493127c1f091f0a8936884be7721c4e618",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "sora",
+      "family": "Sora",
+      "file": "sora.woff2",
+      "weight": "100 800",
+      "style": "normal",
+      "category": "geometric sans",
+      "personality": "friendly-futuristic, fintech",
+      "sha256": "fa26406eeda9a3c6ec3d9ea8813c3045d6dc755e30c716d5c094e8ef43be5a7f",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "bricolage-grotesque",
+      "family": "Bricolage Grotesque",
+      "file": "bricolage-grotesque.woff2",
+      "weight": "200 800",
+      "style": "normal",
+      "category": "expressive grotesk",
+      "personality": "characterful, poster-like; opsz + wdth axes",
+      "sha256": "a756882d8a7802ebd4663b4544a62ebedafc7227c1c159ab95eea61393af3f8e",
+      "license": "OFL-1.1"
+    },
+    {
+      "name": "unbounded",
+      "family": "Unbounded",
+      "file": "unbounded.woff2",
+      "weight": "200 900",
+      "style": "normal",
+      "category": "wide display",
+      "personality": "loud, wide, futuristic headlines",
+      "sha256": "22f9b928aa3928a896340422b54d690fbb5875c30eae4c106f029c61f2289fd6",
+      "license": "OFL-1.1"
+    }
+  ]
+}
