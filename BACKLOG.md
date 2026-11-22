@@ -1692,6 +1692,23 @@ Done looks like: the remedy Paul picks is in place, and an overnight run's night
 available and the VM resident at its working size throughout (sampled as `status/2026-11-22-nightly-2026-11-22.md`
 says).
 
+Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-135):
+
+1. Closing ChatGPT, Chrome, VS Code and idle Claude sessions before midnight, and restarting Windows now and then,
+   are Paul's to do: nothing in the repo does them.
+2. `%UserProfile%\.wslconfig` now sets `autoMemoryReclaim=dropCache` under `[experimental]`. WSL 3.0.5 is installed,
+   and Microsoft's page on `.wslconfig` (dated 2026-10-16) gives `dropCache` as the default already: the VM's cached
+   memory goes back to Windows as soon as the VM is idle. So the file pins the behaviour rather than changing it, and
+   WSL was not restarted for it. It returns nothing while the VM is busy, which is the whole of a nightly.
+3. `nightly.sh` runs its first step with `--max-workers=1`: one module's containers and one test JVM at a time. From
+   the second nightly's module times, step 1 takes about 2 h 15 min instead of 1 h 15 min, which still leaves the
+   overnight run hours for its bites before 06:30. `./nightly.sh --test-dry-run` passes. CLAUDE.md (Builds) says so,
+   and says to check Windows' memory when a container-backed test loses a wait.
+
+The decision goes into `decision-ledger.md` with this item's `Decided:` line in one branch once item 114, which
+holds the ledger, lands. The item stays open until an overnight run's nightly passes with Windows above 1.5 GB
+available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to be taken by hand.
+
 ### 136. A nightly or heavy run by hand does not hold other sessions' builds
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22
