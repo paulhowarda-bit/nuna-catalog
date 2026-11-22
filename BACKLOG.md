@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**35 open:** 6 S, 12 M, 12 L, 5 XL.
+**36 open:** 8 S, 11 M, 12 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -45,8 +45,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
 | [114](backlog/114.md) | L | Run a table's maintenance now, from the console, outside the cleanup window too | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites | 2026-11-20 |
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
-| [117](backlog/117.md) | M | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | cause not known yet: finding why the derived storage profile id differs between the releases, then either a real upgrade fix in the server or a fix to the test's settings | 2026-11-21 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
+| [121](backlog/121.md) | S | ConsoleBrowserTest could not start its browser session | one wait in the test's browser fixture, shown by an overnight heavy build; finding out whether the container's readiness check is the cause comes first | 2026-11-22 |
+| [122](backlog/122.md) | S | The overnight heavy build stops at its first failing module | one flag in the heavy leg's command and its comment, shown by the next overnight run | 2026-11-22 |
 
 ## Open items in full
 
@@ -567,6 +568,20 @@ Left: the heavy tests named above and the overnight `DrDrillTest` have not run. 
 
 **Decided 2026-11-20 (D37, amended):** both DR alerts stay severity `page`. Paul: "Both page".
 
+Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach `DrSuite`: on MongoDB, five
+of its cases failed (`MongoStoreSuiteTest$Dr`):
+
+- "a watermark is kept, rises, never moves back, and never passes the pointer" (`DrSuite.java:79`): [one above the
+  pointer] expected `Refused[WATERMARK_AHEAD]` but was `Unchanged[]`.
+- "a view keeps a watermark; a dropped table, an object with no pointer or an unknown id is Missing"
+  (`DrSuite.java:133`): expected `Missing[OBJECT]` but was `Refused[WATERMARK_AHEAD]`.
+- "the tables and views behind are listed by id ..." (`DrSuite.java:161`): one id more than expected in the list.
+- "a journal page can start after any version ..." (`DrSuite.java:200`): expected empty but held a main journal record.
+- the rewind swap's watermark (`DrSuite.java:104`): expected 103 but was 104 (item 100's case).
+
+PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item 122).
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
+
 ### 29. M9: carry nuna to work (at work)
 
 - Decided: 2026-11-20, D8
@@ -727,6 +742,13 @@ Fixed on 2026-11-19 (Paul, 2026-11-19: "Fix the check"), not yet run; open until
 
 Not run: both are `-Pnightly` tests (`overnight`, `cas`), and the heavy and nightly builds were off on 2026-11-19. The
 fast build compiled both.
+
+Seen again in the overnight run of 2026-11-22 (testing b1f073d): `ConcurrentWritersTest` passed, but
+`CockroachStoreSuiteTest` "1 CAS" failed after 348 s: `StoreUnavailableException: commit 7e0f4d16-... could not
+connect`, caused by `PSQLException: The connection attempt failed` and `SocketTimeoutException`. The test had
+repeated 7 commits after the store could not reach the database ("CAS: 7 commits repeated ..."), and one commit
+failed all three tries. `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\nightly.log`,
+`nightly-results\catalog-store-sql-raft\`.
 
 ### 60. CredentialExpiryTest's first request answered 401
 
@@ -901,6 +923,11 @@ nothing; the worker's Job, the same but for the bundle, must then succeed agains
 how a missing bundle shows on such a network. The test could not run here: the cluster has 6 GiB of 7.5 GiB
 requested with the nuna-demo stack up, and the Job asks for 2 GiB. Close this item when the overnight run of
 2026-11-22 passes the test and its bite bites.
+
+Seen in the overnight run of 2026-11-22 (testing b1f073d, which holds the fix): `PrivateCaCompactionTest` passed, 1
+test, 0 failures, 122 s (`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\nightly-results\catalog-maintenance\`).
+Its bite, `bites/M6/job-storage-ca-left-out`, did not run: the bites run only after a passing heavy build, and that
+build failed (items 28, 100, 102, 103, 121). Close this item when an overnight run's bites show the bite bites.
 
 ### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
 
@@ -1138,6 +1165,12 @@ Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only 
 
 **Decided 2026-11-20 (D37, amended):** "a route test on each store" is met by `DrSuite` on all four stores plus `DrRewindRouteTest` on PostgreSQL; the item closes when the heavy build passes them. Paul: "Yes, that's enough".
 
+Seen in the overnight run of 2026-11-22 (testing b1f073d): on MongoDB, `DrSuite`'s "a swap that records the
+watermark, a DR rewind's, records it at the version it writes in its own commit ..." failed at `DrSuite.java:104`,
+expected 103 but was 104, with four other `DrSuite` cases (item 28). PostgreSQL, Oracle and CockroachDB did not run:
+the heavy build stopped after this module (item 122), and `DrRewindRouteTest` in `catalog-server` passed.
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
+
 ### 102. Refs in the store: the ref record and its cut on four stores (item 26)
 
 - Decided: 2026-11-20, D33
@@ -1240,6 +1273,13 @@ Choices made (Paul may overrule):
 - On MongoDB a deletion is one transaction over the whole cut, as the item asks; a very large cut makes a large
   transaction there, which the heavy suite's sizes do not test.
 
+Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach this suite: on MongoDB,
+`MongoStoreSuiteTest$Refs` "a deletion leaves no cut, no pointer of the ref and no projection piece, and frees the
+name" failed at `RefSuite.java:277`, `projectionPieces(own)` expected 0 but was 1: the branch's own pointer kept one
+projection piece after the ref was deleted. Item 103's merge fails on the same check (`BranchCommitSuite.java:290`),
+so the cause is likely shared. PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this
+module (item 122). `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
+
 ### 103. Branch commits and the merge transaction in the store (item 26)
 
 - Added: 2026-11-20 by agent on item 26
@@ -1334,6 +1374,13 @@ Choices made (Paul may overrule):
   Why: neither has a shared row lock, as their object checks already do (9 (f) 8).
 - The cut-link case for the merge runs in `MutationSuite` (overnight) as the item asks, and also once in
   `BranchCommitSuite` (heavy), which checks the branch and main as well as the records.
+
+Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach this suite: on MongoDB,
+`MongoStoreSuiteTest$BranchCommits` "Merge: a merge moves main and ends the branch with its cut, own pointers and
+pieces; its journal stays and its name is free" failed at `BranchCommitSuite.java:290`, `projectionPieces(own)`
+expected 0 but was 1: ending the branch left one projection piece of its own pointer, as item 102's ref deletion does
+(`RefSuite.java:277`). PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item
+122). `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
 
 ### 104. Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26)
 
@@ -1754,46 +1801,6 @@ through the management API; in the demo, two users in different groups run the s
 and get different rows and masked columns; a client that is no trusted engine still gets 403 on that table's storage
 access; and a bite that drops the filter from nuna's answer to Trino makes a test fail.
 
-### 117. RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one
-
-- Added: 2026-11-21 by overnight run 2026-11-21
-- Touches: catalog-tests-load/src/test/ catalog-server/src/main/java/nuna/catalog/server/storage/
-- Effort: M, cause not known yet: finding why the derived storage profile id differs between the releases, then either a real upgrade fix in the server or a fix to the test's settings
-
-The nightly of the overnight run of 2026-11-21 (commit 9813b9f) failed one test:
-`nuna.catalog.load.RollingUpgradeTest#upgradingOneServerAtATimeAcrossV5ToV11LosesNothing`, with
-`IllegalStateException: server upgrade-new-1 exited with 1`. The first new-release server refused to start:
-
-    IllegalStateException: catalog m8 is bound to CatalogSettings[storageProfileId=20f6730e-c930-3940-9265-b8bf0274fd4c,
-    kmsKeySet=test-keys, legalEntity=Test Entity] in the store, but configured as
-    CatalogSettings[storageProfileId=cee40642-fb00-30d6-8291-93bd91ffcec3, kmsKeySet=test-keys,
-    legalEntity=Test Entity]; a catalog's boundary never changes (D28)
-
-So the previous release and this one derive different ids for the same configured storage profile. If that holds
-for a real install, upgrading stops every catalog's servers at startup; a lead is V10 (a storage profile records its
-KMS key) or another change to what the id is made from. On 2026-11-19 the test (then V5 to V8) failed on item 65's
-cause, now fixed, so this is the first run to reach this point.
-
-Logs: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-21\nightly.log`,
-`nightly-results\catalog-tests-load\`, and the server's own log
-`C:\Users\paulh\code\nuna-catalog\.overnight\clone\catalog-tests-load\build\m8\logs\upgrade-new-1.log`
-(overwritten by the next run).
-
-Done when the cause is known and fixed, and the test passes in the overnight run's nightly.
-
-
-Fixed on `worktree-items-116-117` (2026-11-21), not yet shown by running. The cause: a storage profile's id is
-`UUID.nameUUIDFromBytes("<project>-storage-profile:<name>")`, and the rename to nuna (item 59, c9e82a9) changed
-`keel-` to `nuna-`, so 2b1af36 derives `20f6730e-…` for profile `s3` and this release `cee40642-…`, the two ids in
-the failure. No install holds a keel-era id (the work install has not happened; the demo starts from nothing every
-night), so the rolling upgrade now starts from a60daba, the rename's landing, by the rule Paul used choosing 2b1af36
-("after the rename"). Choice made (Paul may overrule): the test crosses V9 to V11, no longer V5 to V8, and is renamed
-`upgradingOneServerAtATimeAcrossV9ToV11LosesNothing`. Item 65's `PreviousRelease.settings`, which gave a keel-era
-release `keel.` settings, is gone. `ProfileIdTest` (fast build) pins profile `s3`'s id. Three local runs with the
-nuna-demo stack up never reached the new release: the last two lost connections to the test PostgreSQL ("Read timed
-out"), the demo holding Docker. Close this item when the overnight run of 2026-11-22 passes the test; if it fails,
-the failure is new.
-
 ### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
 
 - Decided: 2026-11-21, D20
@@ -1837,6 +1844,56 @@ flagged table and gets only the rows and unmasked columns that user's groups all
 table's own files; two users in different groups get different results; the copies are gone after their credentials
 expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
 table's own prefix.
+
+### 121. ConsoleBrowserTest could not start its browser session
+
+- Added: 2026-11-22 by overnight run 2026-11-22
+- Touches: catalog-server/src/test/java/nuna/catalog/server/ConsoleBrowser.java
+- Effort: S, one wait in the test's browser fixture, shown by an overnight heavy build; finding out whether the container's readiness check is the cause comes first
+
+The heavy build of the overnight run of 2026-11-22 (testing b1f073d) failed one of `ConsoleBrowserTest`'s seven tests,
+the first to run in the class: `theViewTabsShowEveryVersionWithItsSql` could not open its browser session.
+`ConsoleBrowser.session()` posted `http://localhost:54488/wd/hub/session` to the Chrome container
+(`BrowserWebDriverContainer`, started in the constructor) and got `SessionNotCreatedException: Could not start a new
+session ... HTTP/1.1 header parser received no bytes`, caused by `SocketException: Connection reset`, after 30 s. The
+other six tests, each opening its own session on the same container, passed. The class passed 7 of 7 in the heavy
+build of 2026-11-19, and no earlier overnight heavy log holds `SessionNotCreated`.
+
+Nothing of the console was under test when it failed: the first session found Selenium in the container not yet
+answering, though the container counted as started. Two causes fit, not told apart yet: the container's wait strategy
+lets the test in before the hub takes sessions, or the Docker VM was short of memory or CPU while
+`catalog-store-mongo`'s suite ran beside it (`org.gradle.workers.max=2`).
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log` (`ConsoleBrowserTest >
+theViewTabsShowEveryVersionWithItsSql() FAILED`) and
+`heavy-results\catalog-server\build\test-results\test\TEST-nuna.catalog.server.governance.ConsoleBrowserTest.xml`.
+
+Done looks like: the fixture does not hand a test a session before the hub can create one (for example, a first
+session retried until the hub answers, within a limit), and `ConsoleBrowserTest` passes in an overnight heavy build.
+
+### 122. The overnight heavy build stops at its first failing module
+
+- Added: 2026-11-22 by overnight run 2026-11-22
+- Touches: overnight.sh
+- Effort: S, one flag in the heavy leg's command and its comment, shown by the next overnight run
+
+`overnight.sh` runs the heavy leg as `./gradlew --console=plain build -Pheavy` (line 250), without `--continue`. When a
+test task fails, Gradle starts no further task and lets only those already running finish, so one module's failure
+hides every module not yet tested. `nightly.sh` already passes `--continue` to both its steps for this reason (its
+lines 14, 26 and 28).
+
+Evidence, the overnight run of 2026-11-22 (testing b1f073d): `catalog-store-mongo:test` failed 7 tests while
+`catalog-server:test` ran beside it; Gradle let that one finish and stopped, "75 actionable tasks: 52 executed". The
+heavy tests of `catalog-store-oracle`, `catalog-store-sql`, `catalog-store-sql-raft`, `catalog-tests-conformance`,
+`catalog-tests-s3` and `singlestore-change-feed` never ran, so the four stores' ref, branch-commit and DR suites
+(items 28, 100, 102, 103) were shown on MongoDB alone. The night before, the heavy build stopped after 4 minutes on
+`AuditTablesTest` (item 116), with only three modules tested.
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`.
+
+The bites still run only when the heavy build passes; `--continue` changes what the build tests, not that rule.
+
+Done looks like: the heavy leg runs with `--continue`, and the next overnight run whose heavy build fails a test still
+reports the test results of every module.
 
 ## Done and dropped
 
@@ -1925,5 +1982,6 @@ table's own prefix.
 | [99](backlog/99.md) | A table that commits faster than the DR store replicates never gets a first DR watermark | done | 2026-11-20 |
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |
 | [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
+| [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
 | [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
