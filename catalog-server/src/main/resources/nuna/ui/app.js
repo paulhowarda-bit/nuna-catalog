@@ -1,358 +1,552 @@
-// The console: sign-in, the catalog tree on the left, the selected object on the right.
+// The console: sign-in, the shell (top bar, menu, catalog picker, theme, Go to a path) and the router. Each page
+// lives in its own module and asks the catalog's own routes for what it shows; the server decides every permission.
 
-import * as api from './api.js';
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startSignIn, useToken, whenSignedOut}
   from './auth.js';
-import {fill, h, failure} from './dom.js';
-import {detail} from './detail.js';
+import * as api from './api.js';
+import {$, $$, failure, fill, h, icon, pill} from './dom.js';
+import {href, objectHref, pageHref, parse, remembered, SEP} from './route.js';
+import {keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
+import {overviewPage} from './overview.js';
+import {maintenancePage} from './maintenance.js';
 import {healthPage} from './health.js';
+import {governancePage} from './governance.js';
+import {auditPage} from './audit.js';
+import {browse, notFound} from './browse.js';
 
-const SEP = '\u001f';
-const main = document.getElementById('main');
-const catalogPick = document.getElementById('catalog-pick');
-const catalogSelect = document.getElementById('catalog-select');
-const who = document.getElementById('who');
-const signOutButton = document.getElementById('sign-out');
-const healthButton = document.getElementById('health-link');
+const root = document.documentElement;
+const consoleEl = $('#console');
+const slot = $('#slot');
+const navEl = $('#nav');
+const signinEl = $('#signin');
+const gotoDlg = $('#goto');
+const gotoIn = $('#goto-in');
+const gotoList = $('#goto-list');
+const gotoH = $('#goto-h');
 
 let config = {'dev-token-login': false, oidc: null};
+let catalogs = null;
+let cat = null;
+let prev = null;
 
-// ---- theme: light, dark, or the system's; the choice is a display preference, not a credential ----
+// ---- theme: light, dark, or the system's; the choice is kept in this browser ----
 
-function applyTheme(theme) {
-  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-  else delete document.documentElement.dataset.theme;
+const THEME = 'nuna.theme';
+let theme = 'auto';
+try {
+  theme = ['light', 'dark', 'auto'].includes(localStorage.getItem(THEME)) ? localStorage.getItem(THEME) : 'auto';
+} catch {
+  theme = 'auto';
 }
 
-function storedTheme() {
+function applyTheme() {
+  if (theme === 'auto') root.removeAttribute('data-theme');
+  else root.setAttribute('data-theme', theme);
+  for (const b of $$('[data-theme-pick]')) b.setAttribute('aria-pressed', String(b.dataset.themePick === theme));
+}
+
+function pickTheme(value) {
+  theme = value;
   try {
-    return localStorage.getItem('nuna.theme');
+    if (value === 'auto') localStorage.removeItem(THEME);
+    else localStorage.setItem(THEME, value);
   } catch {
-    return null;
+    // the choice then lasts this page only
+  }
+  applyTheme();
+}
+
+// ---- the menu: a rail on a wide screen, a drawer on a phone ----
+
+let railPick = null;
+const narrow = () => consoleEl.clientWidth <= 760;
+
+function syncMenuButton() {
+  if (narrow()) return;
+  const rail = consoleEl.classList.contains('rail');
+  const btn = $('.nc-menu');
+  btn.setAttribute('aria-expanded', String(!rail));
+  btn.setAttribute('aria-label', rail ? 'Show the menu labels' : 'Fold the menu to icons');
+}
+
+function menu(open) {
+  const btn = $('.nc-menu');
+  if (!narrow() && !consoleEl.classList.contains('menu-open')) {
+    if (open === false) return;
+    railPick = !consoleEl.classList.contains('rail');
+    consoleEl.classList.toggle('rail', railPick);
+    syncMenuButton();
+    return;
+  }
+  const on = open ?? !consoleEl.classList.contains('menu-open');
+  consoleEl.classList.toggle('menu-open', on);
+  $('.scrim').hidden = !on;
+  btn.setAttribute('aria-expanded', String(on));
+  btn.setAttribute('aria-label', on ? 'Close the menu' : 'Open the menu');
+  if (on) ($('a[aria-current="page"]', navEl) || $('a:not([hidden])', navEl)).focus();
+}
+
+function catMenu(open) {
+  const btn = $('#catalog-pick');
+  const m = $('#cat-menu');
+  const on = open ?? m.hidden;
+  m.hidden = !on;
+  btn.setAttribute('aria-expanded', String(on));
+  if (on) ($('[aria-checked="true"]', m) || $('button', m)).focus();
+}
+
+function closeMenus() {
+  catMenu(false);
+  if (consoleEl.classList.contains('menu-open')) menu(false);
+}
+
+function setChrome(navKey, rail) {
+  consoleEl.classList.toggle('rail', railPick ?? !!rail);
+  syncMenuButton();
+  for (const b of $$('[data-cat]')) b.textContent = cat || '–';
+  for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
+  const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat}), maintenance: pageHref('maintenance', cat),
+    governance: pageHref('governance', cat), audit: pageHref('audit', cat), health: pageHref('health')};
+  for (const a of $$('a[data-k]', navEl)) {
+    const k = a.dataset.k;
+    a.href = hrefs[k];
+    a.setAttribute('aria-label', $('.nl', a).textContent);
+    if (k === navKey) a.setAttribute('aria-current', 'page');
+    else a.removeAttribute('aria-current');
+  }
+  $('[data-brand]').href = pageHref('overview', cat);
+  const count = $('.count', navEl);
+  queue().then(rows => {
+    const n = queueOf(rows, cat).length;
+    count.textContent = String(n);
+    count.hidden = !n;
+    count.setAttribute('aria-label', `${n} queued for tonight`);
+  }, () => { count.hidden = true; });
+}
+
+/** Where switching to another catalog goes: the same page there; a table's or namespace's page goes to the catalog's. */
+function switchHref(c) {
+  const r = parse();
+  if (r.page === 'health') return pageHref('overview', c);
+  if (r.page) return pageHref(r.page, c, r.page === 'governance' ? r.tab : null);
+  return href({c});
+}
+
+// ---- who is signed in ----
+
+function showWho() {
+  const c = claims() || {};
+  const name = c.preferred_username || c.sub || c.oid || 'signed in';
+  const groups = Array.isArray(c.groups) ? c.groups : [];
+  const until = typeof c.exp === 'number' ? new Date(c.exp * 1000) : null;
+  const initials = String(name).split(/[^A-Za-z0-9]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
+  for (const n of $$('[data-initials]')) n.textContent = initials;
+  const who = $('#who');
+  who.title = 'From the token, as the browser reads it; the server decides what it allows.'
+    + (until ? ' The token lasts until ' + until.toLocaleString() + '.' : '');
+  fill($('.who-text', who), h('b', null, h('strong', null, name)), groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null);
+  for (const p of $$('p[data-who]', navEl)) {
+    p.textContent = `Signed in as ${name}${groups.length ? ' · ' + groups.join(', ') : ''}${until ? ' · until ' + until.toLocaleString() : ''}`;
   }
 }
 
-applyTheme(storedTheme());
-document.getElementById('theme-toggle').addEventListener('click', () => {
-  const dark = document.documentElement.dataset.theme
-    ? document.documentElement.dataset.theme === 'dark'
-    : matchMedia('(prefers-color-scheme: dark)').matches;
-  const next = dark ? 'light' : 'dark';
-  applyTheme(next);
-  try {
-    localStorage.setItem('nuna.theme', next);
-  } catch {
-    // a display preference only
-  }
-});
-
-// ---- where we are: kept in the URL fragment so a view can be reloaded or shared ----
-
-/** {page: health | null, catalog, kind: catalog|namespace|table|view, namespace: [], name, tab} */
-function route() {
-  const p = new URLSearchParams(location.hash.slice(1));
-  const namespace = p.get('ns') ? p.get('ns').split(SEP) : [];
-  return {
-    page: p.get('p') || null,
-    catalog: p.get('c') || null,
-    kind: p.get('k') || (namespace.length ? 'namespace' : 'catalog'),
-    namespace,
-    name: p.get('n') || null,
-    tab: p.get('tab') || null,
-  };
-}
-
-healthButton.addEventListener('click', () => {
-  if (location.hash === '#p=health') show();
-  else location.hash = '#p=health';
-});
-
-export function go(target, tab) {
-  const p = new URLSearchParams();
-  p.set('c', target.catalog);
-  if (target.kind !== 'catalog') p.set('k', target.kind);
-  if (target.namespace && target.namespace.length) p.set('ns', target.namespace.join(SEP));
-  if (target.name) p.set('n', target.name);
-  if (tab) p.set('tab', tab);
-  const hash = '#' + p.toString();
-  if (location.hash !== hash) location.hash = hash;
-  else show();
-}
-
-/** Records the selected tab without re-rendering. */
-export function rememberTab(tab) {
-  const p = new URLSearchParams(location.hash.slice(1));
-  if (p.get('tab') === tab) return;
-  p.set('tab', tab);
-  history.replaceState(null, '', '#' + p.toString());
+function clearWho() {
+  for (const n of $$('[data-initials], [data-who]')) n.replaceChildren();
 }
 
 // ---- sign-in ----
 
-whenSignedOut(reason => signInScreen(reason));
+const brand = cls => h('span', {class: 'nc-brand' + (cls ? ' ' + cls : ''), 'aria-hidden': 'true'}, peak(), 'nuna');
 
-// Forgets the token at once, then ends the IdP's session: the IdP sends the browser back here, to boot().
-signOutButton.addEventListener('click', async () => {
-  location.hash = '';
-  signOutButton.hidden = true;
-  fill(main, h('p', {class: 'loading'}, 'Signing out…'));
-  const message = await signOut(config.oidc);
-  if (message) signInScreen(message);
-});
+function peak() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'peak');
+  svg.setAttribute('viewBox', '0 0 24 18');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [cls, d] of [['rock', 'M3 14 9.5 4l3.2 4.8 2.3-2.8L21 14'], ['ice', 'M1 14h22']]) {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('class', cls);
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
+  return svg;
+}
 
-function signInScreen(message) {
-  catalogPick.hidden = true;
-  signOutButton.hidden = true;
-  healthButton.hidden = true;
-  layoutShown = false;
-  fill(who);
-  const parts = [h('h1', null, 'Sign in'),
-    message ? h('p', {class: 'notice'}, message) : null];
+function horizon() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('class', 'horizon');
+  svg.setAttribute('viewBox', '0 0 600 150');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMax slice');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const [cls, d] of [['sea', 'M0 92 H600 V150 H0 Z'], ['berg', 'M330 92 L392 30 L414 52 L432 38 L480 92 Z'],
+    ['berg-under', 'M352 92 L458 92 L440 128 L372 132 Z'], ['wl', 'M0 92 H600']]) {
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('class', cls);
+    p.setAttribute('d', d);
+    svg.append(p);
+  }
+  return svg;
+}
+
+const CLAIM = 'The Iceberg catalog that keeps every table in shape and every change on record.';
+
+function signInPage(message) {
+  consoleEl.hidden = true;
+  $('#booting').hidden = true;
+  signinEl.hidden = false;
+  clearWho();
+  catalogs = null;
+  prev = null;
+  document.title = 'Sign in · nuna';
+  const form = h('div', {class: 'signin-form'}, brand('only-sm'), h('p', {class: 'claim only-sm'}, CLAIM),
+    h('h1', null, 'Sign in to nuna'),
+    message ? h('p', {class: 'notice', role: 'status'}, icon('info'), h('span', null, message)) : null);
   if (config.oidc) {
     const host = new URL(config.oidc.issuer).host;
-    const status = h('div');
-    parts.push(h('p', null, h('button', {type: 'button', class: 'primary', onclick: async () => {
-      fill(status, h('p', {class: 'loading'}, 'Going to ' + host + '…'));
+    const status = h('div', {'aria-live': 'polite'});
+    form.append(h('p', {class: 'muted'}, 'Your organisation\'s sign-in page opens. The console keeps the token in this tab only, and the '
+      + 'catalog checks it on every call.'),
+    h('button', {class: 'btn primary lg', type: 'button', 'data-act': 'signin', onclick: async () => {
+      fill(status, h('p', {class: 'loading-line'}, 'Going to ' + host + '…'));
       try {
         await startSignIn(config.oidc);
       } catch (error) {
         fill(status, failure(error));
       }
-    }}, 'Sign in with ' + host)), status);
+    }}, icon('key'), 'Sign in with ' + host), status);
   }
   if (config['dev-token-login']) {
-    const box = h('textarea', {rows: 6, spellcheck: 'false', placeholder: 'eyJhbGciOi…', 'aria-label': 'Bearer token'});
-    const status = h('div');
-    parts.push(h('section', {class: 'dev-login'},
-      h('h2', null, 'Development: paste a bearer token'),
-      h('p', {class: 'muted'}, 'Shown because this server sets nuna.ui.dev-token-login=true. '
-        + 'The token is kept in this tab only and sent as a bearer token; the server checks it on every call.'),
-      box,
-      h('p', null, h('button', {type: 'button', class: 'primary', onclick: () => {
-        try {
-          useToken(box.value);
-          start();
-        } catch (error) {
-          fill(status, failure(error));
-        }
-      }}, 'Use this token')), status));
+    const box = h('textarea', {class: 'tokenbox', rows: 4, spellcheck: 'false', placeholder: 'eyJhbGciOi…', 'aria-label': 'Bearer token'});
+    const status = h('div', {'aria-live': 'polite'});
+    if (config.oidc) form.append(h('div', {class: 'or'}, 'development only'));
+    form.append(h('div', null,
+      h('p', {class: 'fine'}, h('b', null, 'Paste a bearer token.'), ' Shown because this server sets ', h('code', null, 'nuna.ui.dev-token-login=true'), '.'),
+      box, h('p', {class: 'fine'}, 'Kept in this tab only and sent as a bearer token; the server checks it on every call.')),
+    h('button', {class: 'btn' + (config.oidc ? '' : ' primary'), type: 'button', 'data-act': 'signin-token', onclick: () => {
+      try {
+        useToken(box.value);
+        start();
+      } catch (error) {
+        fill(status, failure(error));
+      }
+    }}, 'Use this token'), status);
   }
   if (!config.oidc && !config['dev-token-login']) {
-    parts.push(h('p', null, 'No sign-in is configured on this server. An operator sets nuna.ui.oidc.issuer '
-      + 'and nuna.ui.oidc.client-id (or, for local development only, nuna.ui.dev-token-login=true).'));
+    form.append(h('p', {class: 'notice'}, icon('info'), h('span', null, 'No sign-in is configured on this server. An operator sets ',
+      h('code', null, 'nuna.ui.oidc.issuer'), ' and ', h('code', null, 'nuna.ui.oidc.client-id'), ' (or, for local development only, ',
+      h('code', null, 'nuna.ui.dev-token-login=true'), ').')));
   }
-  fill(main, h('div', {class: 'signin'}, parts));
+  fill(signinEl, h('main', {class: 'signin', id: 'signin-page'},
+    h('div', {class: 'signin-side'}, brand(), h('h2', null, CLAIM),
+      h('ul', {class: 'pts'}, [
+        ['db', 'Four interchangeable stores.', 'PostgreSQL, Oracle, MongoDB or CockroachDB, each passing the same fault-injection suite.'],
+        ['maint', 'Maintenance that respects the rules.', 'Snapshot expiry, orphan-file removal and compaction run under holds, freezes and recovery windows.'],
+        ['audit', 'Every read, change and access refusal audited.', 'Changes reach a hash-chained archive kept at least five years.'],
+        ['key', 'Credentials per table.', 'Short-lived storage credentials, scoped to the table\'s own prefix, only to callers allowed to read it.'],
+      ].map(([ic, b, t]) => h('li', null, icon(ic), h('span', null, h('b', null, b), ' ', t)))),
+      horizon()),
+    form));
 }
 
-function showWho() {
-  const c = claims() || {};
-  const groups = Array.isArray(c.groups) ? c.groups : [];
-  const expires = typeof c.exp === 'number' ? new Date(c.exp * 1000) : null;
-  fill(who, h('span', {title: 'From the token, as the browser reads it; the server decides what it allows.'},
-    // A person's name before an IdP's opaque ids: Keycloak's and Entra ID's sub are not meant to be read.
-    h('strong', null, c.preferred_username || c.sub || c.oid || 'signed in'),
-    groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null,
-    expires ? h('span', {class: 'muted'}, ' · until ' + expires.toLocaleString()) : null));
-  signOutButton.hidden = false;
-  healthButton.hidden = false;
+whenSignedOut(reason => signInPage(reason));
+
+async function doSignOut() {
+  history.replaceState(null, '', location.pathname);
+  consoleEl.hidden = true;
+  $('#booting').hidden = false;
+  $('#booting').textContent = 'Signing out…';
+  const message = await signOut(config.oidc);
+  if (message) signInPage(message);
 }
 
-// ---- the tree ----
+// ---- Go to a path ----
 
-const nodes = new Map(); // key -> {expanded, children: {namespaces, tables, views} | null, error, li}
-let currentCatalog = null;
-/** Whether main holds the tree and pane, rather than the sign-in screen or the health page. */
-let layoutShown = false;
+let gotoItems = [];
+let gotoAt = 0;
+let gotoTab = null;
+let queued = [];
 
-function key(levels) {
-  return levels.join(SEP);
-}
-
-function nodeState(levels) {
-  const k = key(levels);
-  if (!nodes.has(k)) nodes.set(k, {expanded: false, children: null, error: null});
-  return nodes.get(k);
-}
-
-async function expand(levels) {
-  const state = nodeState(levels);
-  state.expanded = true;
-  if (!state.children) {
-    try {
-      const [namespaces, tables, views] = await Promise.all([
-        api.namespaces(currentCatalog, levels),
-        levels.length ? api.tables(currentCatalog, levels) : Promise.resolve([]),
-        levels.length ? api.views(currentCatalog, levels) : Promise.resolve([]),
-      ]);
-      const byName = (a, b) => a.localeCompare(b, undefined, {sensitivity: 'base'});
-      state.children = {
-        namespaces: namespaces.map(n => n[n.length - 1]).sort(byName),
-        tables: tables.map(t => t.name).sort(byName),
-        views: views.map(v => v.name).sort(byName),
-      };
-      state.error = null;
-    } catch (error) {
-      state.error = error;
-    }
+function gotoCandidates() {
+  const seen = remembered(cat).map(x => ({target: x, path: [...x.namespace, ...(x.name ? [x.name] : [])].join('.')}));
+  for (const r of queued) {
+    const path = [...r.namespace, r.name].join('.');
+    if (!seen.some(x => x.target.kind === 'table' && x.path === path)) seen.push({target: targetOfRow(r), path});
   }
+  return seen;
 }
 
-function selected() {
-  return route();
+function gotoDraw() {
+  const words = gotoIn.value.trim().toLowerCase().split(/[\s./]+/).filter(Boolean);
+  const all = gotoCandidates();
+  const marks = new Map(queued.map(r => [keyOfRow(r), r]));
+  if (!words.length) {
+    const q = queued.map(r => ({target: targetOfRow(r), path: [...r.namespace, r.name].join('.')}));
+    gotoH.textContent = q.length ? 'Queued for tonight, neediest first' : `Listed so far in ${cat}; type to find a path`;
+    gotoItems = (q.length ? q : all).slice(0, 9);
+  } else {
+    gotoItems = all.filter(x => words.every(w => x.path.toLowerCase().includes(w)))
+      .sort((a, b) => (a.target.kind === 'namespace') - (b.target.kind === 'namespace') || a.path.length - b.path.length).slice(0, 9);
+    gotoH.textContent = gotoItems.length ? `${gotoItems.length === 9 ? 'First 9' : gotoItems.length} match${gotoItems.length === 1 ? '' : 'es'}`
+      : 'No path matches';
+  }
+  gotoAt = Math.min(gotoAt, Math.max(0, gotoItems.length - 1));
+  gotoList.replaceChildren(...gotoItems.map((it, i) => {
+    const parts = it.path.split('.');
+    const kind = it.target.kind;
+    const row = kind === 'table' ? marks.get([cat, it.path].join('.')) : null;
+    const reasons = row ? row.assessment.reasons || [] : [];
+    const extra = kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
+      : row ? [pill(reasons.includes('equality-deletes') ? 'bad' : 'warn', (REASONS[reasons[0]] || [null, 'Queued'])[1])] : [];
+    const li = h('li', {role: 'option', id: 'goto-o' + i, 'aria-selected': String(i === gotoAt)},
+      icon(kind === 'namespace' ? 'ns' : kind, 'ic ' + (kind === 'namespace' ? 'ico-n' : kind === 'view' ? 'ico-v' : 'ico-t')),
+      h('span', {class: 'gp'}, parts.slice(0, -1).map(x => [x + '.', h('wbr')]), h('b', null, parts[parts.length - 1])), h('span', {class: 'gx'}, extra));
+    li.addEventListener('click', () => gotoOpen(i));
+    li.addEventListener('pointermove', () => {
+      if (gotoAt !== i) {
+        gotoAt = i;
+        gotoMark();
+      }
+    });
+    return li;
+  }));
+  if (!gotoItems.length) {
+    gotoList.append(h('li', {class: 'none'}, 'Try fewer words. Go to a path finds the paths the console has listed so far: open a '
+      + 'namespace in the tree to list what is in it.'));
+  }
+  gotoMark();
 }
 
-function isSelected(kind, levels, name) {
-  const r = selected();
-  return r.kind === kind && key(r.namespace) === key(levels) && (r.name || null) === (name || null);
-}
-
-function leaf(kind, levels, name) {
-  const target = {catalog: currentCatalog, kind, namespace: levels, name};
-  return h('li', {role: 'treeitem', class: 'leaf'},
-    h('button', {type: 'button', class: 'node' + (isSelected(kind, levels, name) ? ' selected' : ''),
-      'data-label': name.toLowerCase(), 'aria-label': kind + ' ' + name, onclick: () => go(target)},
-    h('span', {class: 'icon icon-' + kind, 'aria-hidden': 'true'}, kind === 'table' ? 'T' : 'V'),
-    h('span', {class: 'label'}, name)));
-}
-
-function namespaceItem(levels) {
-  const state = nodeState(levels);
-  const name = levels[levels.length - 1];
-  const li = h('li', {role: 'treeitem', 'aria-expanded': String(state.expanded)});
-  const toggle = h('button', {type: 'button', class: 'twisty', 'aria-label': (state.expanded ? 'Collapse ' : 'Expand ') + name,
-    onclick: async () => {
-      if (state.expanded) state.expanded = false;
-      else await expand(levels);
-      li.replaceWith(namespaceItem(levels));
-    }}, state.expanded ? '▾' : '▸');
-  li.appendChild(h('div', {class: 'row'}, toggle,
-    h('button', {type: 'button', class: 'node' + (isSelected('namespace', levels, null) ? ' selected' : ''),
-      'data-label': name.toLowerCase(), title: levels.join('.'),
-      onclick: () => go({catalog: currentCatalog, kind: 'namespace', namespace: levels})},
-    h('span', {class: 'icon icon-namespace', 'aria-hidden': 'true'}, '▪'),
-    h('span', {class: 'label'}, name))));
-  if (state.expanded) li.appendChild(children(levels));
-  return li;
-}
-
-function children(levels) {
-  const state = nodeState(levels);
-  if (state.error) return h('div', {class: 'tree-error'}, failure(state.error));
-  const c = state.children;
-  if (!c) return h('p', {class: 'loading'}, 'Loading…');
-  const items = [
-    ...c.namespaces.map(n => namespaceItem([...levels, n])),
-    ...c.tables.map(t => leaf('table', levels, t)),
-    ...c.views.map(v => leaf('view', levels, v)),
-  ];
-  if (!items.length) return h('ul', {role: 'group'}, h('li', {class: 'muted empty'}, 'empty'));
-  return h('ul', {role: 'group'}, items);
-}
-
-const treeBody = h('div', {class: 'tree-body'});
-const filterBox = h('input', {type: 'search', placeholder: 'Filter loaded names', 'aria-label': 'Filter the tree',
-  oninput: () => applyFilter()});
-
-function applyFilter() {
-  const text = filterBox.value.trim().toLowerCase();
-  for (const li of treeBody.querySelectorAll('li')) li.classList.remove('filtered-out');
-  if (!text) return;
-  // Hide an item unless it or something below it matches.
-  const items = [...treeBody.querySelectorAll('li')].reverse();
-  for (const li of items) {
-    const own = li.querySelector(':scope > .node, :scope > .row > .node');
-    const matches = own && own.dataset.label.includes(text);
-    const below = [...li.querySelectorAll(':scope > ul > li')].some(child => !child.classList.contains('filtered-out'));
-    if (!matches && !below) li.classList.add('filtered-out');
+function gotoMark() {
+  $$('li[role="option"]', gotoList).forEach((li, i) => li.setAttribute('aria-selected', String(i === gotoAt)));
+  const cur = $('#goto-o' + gotoAt);
+  if (cur) {
+    gotoIn.setAttribute('aria-activedescendant', cur.id);
+    cur.scrollIntoView({block: 'nearest'});
+  } else {
+    gotoIn.removeAttribute('aria-activedescendant');
   }
 }
 
-async function renderTree() {
-  fill(treeBody, h('div', {class: 'row root-row'},
-    h('button', {type: 'button', class: 'node' + (isSelected('catalog', [], null) ? ' selected' : ''),
-      'aria-label': 'catalog ' + currentCatalog, onclick: () => go({catalog: currentCatalog, kind: 'catalog', namespace: []})},
-    h('span', {class: 'icon icon-catalog', 'aria-hidden': 'true'}, '◆'),
-    h('span', {class: 'label'}, currentCatalog))),
-  children([]));
-  applyFilter();
+function gotoOpen(i) {
+  const it = gotoItems[i];
+  if (!it) return;
+  gotoDlg.close();
+  location.hash = objectHref(it.target, gotoTab === 'audit' ? 'audit' : null);
 }
 
-/** Opens every namespace above the selection, so a deep link shows where it is. */
-async function reveal(levels) {
-  await expand([]);
-  for (let i = 1; i <= levels.length; i++) await expand(levels.slice(0, i));
-}
-
-// ---- layout ----
-
-const tree = h('nav', {class: 'tree', 'aria-label': 'Catalog tree'},
-  h('div', {class: 'tree-head'}, filterBox,
-    h('button', {type: 'button', class: 'ghost small', title: 'Reload the tree', onclick: async () => {
-      nodes.clear();
-      await reveal(route().namespace);
-      await renderTree();
-    }}, 'Reload')),
-  treeBody);
-const pane = h('section', {class: 'pane', 'aria-live': 'polite'});
-
-async function show() {
-  if (!signedIn()) {
-    signInScreen(claims() ? 'The token has expired. Sign in again.' : null);
-    return;
-  }
-  const r = route();
-  if (r.page === 'health') {
-    layoutShown = false;
-    healthButton.setAttribute('aria-current', 'page');
-    fill(main, healthPage());
-    return;
-  }
-  healthButton.removeAttribute('aria-current');
-  if (!r.catalog || r.catalog !== currentCatalog || !layoutShown) {
-    await chooseCatalog(r.catalog);
-    return;
-  }
-  await reveal(r.namespace);
-  await renderTree();
-  detail(pane, r);
-}
-
-async function chooseCatalog(wanted) {
-  let names;
+async function openGoto(tab = null) {
+  if (!catalogs) return;
+  closeMenus();
+  gotoTab = tab;
+  gotoIn.value = '';
+  gotoAt = 0;
+  queued = [];
+  gotoDraw();
+  if (!gotoDlg.open) gotoDlg.showModal();
+  gotoIn.focus();
   try {
-    names = await api.catalogs();
-  } catch (error) {
-    fill(main, failure(error));
-    return;
+    queued = queueOf(await queue(), cat);
+    if (gotoDlg.open) gotoDraw();
+  } catch {
+    // the queue is a help here, not a need
   }
-  if (!names.length) {
-    fill(main, h('p', null, 'No catalog to show: this deployment declares none, or you hold no privilege on any.'));
-    return;
-  }
-  const chosen = names.find(n => n.toLowerCase() === (wanted || '').toLowerCase()) || names[0];
-  fill(catalogSelect, names.map(n => h('option', {value: n, selected: n === chosen}, n)));
-  catalogPick.hidden = false;
-  if (currentCatalog !== chosen) {
-    currentCatalog = chosen;
-    nodes.clear();
-  }
-  fill(main, h('div', {class: 'layout'}, tree, pane));
-  layoutShown = true;
-  if (route().catalog !== chosen) go({catalog: chosen, kind: 'catalog', namespace: []});
-  else show();
 }
 
-catalogSelect.addEventListener('change', () => go({catalog: catalogSelect.value, kind: 'catalog', namespace: []}));
-window.addEventListener('hashchange', () => {
-  if (signedIn()) show();
+gotoIn.addEventListener('input', () => {
+  gotoAt = 0;
+  gotoDraw();
 });
+gotoIn.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    gotoAt = Math.min(gotoItems.length - 1, gotoAt + 1);
+    gotoMark();
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    gotoAt = Math.max(0, gotoAt - 1);
+    gotoMark();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    gotoOpen(gotoAt);
+  }
+});
+$('[data-goto-form]').addEventListener('submit', e => e.preventDefault());
+gotoDlg.addEventListener('click', e => { if (e.target === gotoDlg) gotoDlg.close(); });
+
+// ---- the router ----
+
+const same = (a, b) => a && b && a.page === b.page && a.c === b.c && a.k === b.k && a.ns.join(SEP) === b.ns.join(SEP) && a.n === b.n;
+
+function noCatalog() {
+  return h('div', {class: 'nc-main'}, h('div', {class: 'ph'}, h('h1', {tabindex: '-1'}, 'No catalog to show')),
+    h('div', {class: 'empty'}, h('h3', null, 'Your groups hold nothing in any catalog'),
+      h('p', null, 'The catalog lists only the catalogs where your groups hold a grant. Ask a grant admin for one.')));
+}
+
+function render() {
+  if (!catalogs) return;
+  closeMenus();
+  if (gotoDlg.open) gotoDlg.close();
+  for (const d of $$('dialog.dlg')) d.close();
+  const r = parse();
+  const names = catalogs.map(c => c.name);
+  const fallback = cat && names.includes(cat) ? cat : names[0] || null;
+  if (!r.page && !r.c) {
+    if (names.length) location.replace(pageHref('overview', fallback));
+    else location.replace(pageHref('health'));
+    return;
+  }
+  // Health is the whole deployment's: platform operators see it though they may hold nothing in any catalog.
+  if (r.page !== 'health' && !names.length) {
+    cat = null;
+    setChrome(null, false);
+    slot.replaceChildren(noCatalog());
+    document.title = 'No catalog · nuna';
+    prev = r;
+    return;
+  }
+  if (r.c && !names.includes(r.c)) {
+    cat = fallback;
+    setChrome(null, false);
+    slot.replaceChildren(notFound(`No catalog named ${r.c} that your groups may see`));
+    document.title = 'Not found · nuna';
+    prev = r;
+    return;
+  }
+  cat = r.c || fallback;
+  const tabOnly = same(prev, r);
+  let content;
+  let navKey;
+  let rail = false;
+  let title;
+  if (r.page === 'overview') {
+    navKey = 'overview';
+    title = 'Overview';
+    content = overviewPage(cat);
+  } else if (r.page === 'maintenance') {
+    navKey = 'maintenance';
+    title = 'Maintenance';
+    content = maintenancePage(cat);
+  } else if (r.page === 'governance') {
+    navKey = 'governance';
+    title = 'Governance';
+    content = governancePage(cat, r.tab, r.g);
+  } else if (r.page === 'audit') {
+    navKey = 'audit';
+    title = 'Audit';
+    content = auditPage(cat);
+  } else if (r.page === 'health') {
+    navKey = 'health';
+    title = 'Health';
+    content = healthPage();
+  } else if (!r.page && r.c) {
+    navKey = 'catalog';
+    rail = true;
+    content = browse(slot, r);
+    title = r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
+  } else {
+    navKey = null;
+    title = 'Not found';
+    content = notFound();
+  }
+  setChrome(navKey, rail);
+  if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
+  document.title = `${title} · ${r.page === 'health' ? 'all catalogs' : cat} · nuna`;
+  if (tabOnly && prev.tab !== r.tab) {
+    const t = $('.nc-main .tabs a[aria-current="page"]', slot);
+    if (t) t.focus({preventScroll: true});
+  } else if (!tabOnly) {
+    window.scrollTo(0, 0);
+    const h1 = $('h1', slot);
+    if (h1 && prev) h1.focus({preventScroll: true});
+  }
+  prev = r;
+}
 
 async function start() {
+  signinEl.hidden = true;
+  signinEl.replaceChildren();
+  consoleEl.hidden = false;
+  $('#booting').hidden = true;
   showWho();
-  currentCatalog = null;
-  layoutShown = false;
-  await show();
+  fill(slot, h('p', {class: 'loading-line'}, 'Loading…'));
+  try {
+    catalogs = await api.catalogs();
+  } catch (error) {
+    fill(slot, h('div', {class: 'nc-main'}, failure(error, {big: true})));
+    return;
+  }
+  fill($('#cat-menu'), catalogs.map(c => h('button', {type: 'button', role: 'menuitemradio', 'aria-checked': 'false', 'data-cat-pick': c.name}, c.name)));
+  render();
 }
+
+// ---- wiring ----
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act], [data-cat-pick], [data-theme-pick]');
+  if (!t) {
+    if (!e.target.closest('.pick-wrap')) catMenu(false);
+    return;
+  }
+  if (t.dataset.catPick) {
+    catMenu(false);
+    const c = t.dataset.catPick;
+    if (c !== cat || parse().page === 'health') location.hash = switchHref(c);
+    $('#catalog-pick').focus();
+    return;
+  }
+  if (t.dataset.themePick) {
+    pickTheme(t.dataset.themePick);
+    return;
+  }
+  const act = t.dataset.act;
+  if (act === 'signout') doSignOut();
+  else if (act === 'menu') menu();
+  else if (act === 'menu-close') menu(false);
+  else if (act === 'pick') catMenu();
+  else if (act === 'goto') openGoto();
+  else if (act === 'goto-audit') openGoto('audit');
+});
+
+$('#cat-menu').addEventListener('keydown', e => {
+  const items = $$('button', e.currentTarget);
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+  }
+});
+
+navEl.addEventListener('click', e => { if (e.target.closest('a') && consoleEl.classList.contains('menu-open')) menu(false); });
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (!$('#cat-menu').hidden) {
+      catMenu(false);
+      $('#catalog-pick').focus();
+    }
+    if (consoleEl.classList.contains('menu-open')) {
+      menu(false);
+      $('.nc-menu').focus();
+    }
+    return;
+  }
+  if (!catalogs || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+  if ((e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable]')) || $('dialog[open]')) return;
+  if (e.key === '/') {
+    e.preventDefault();
+    openGoto();
+  } else if (e.key === '?') {
+    e.preventDefault();
+    $('#keys').showModal();
+  }
+});
+
+addEventListener('hashchange', () => { if (signedIn()) render(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+applyTheme();
 
 async function boot() {
   const signingOut = backFromSignOut();
@@ -360,14 +554,16 @@ async function boot() {
     const response = await fetch('/ui/config.json', {cache: 'no-store', credentials: 'omit'});
     config = await response.json();
   } catch (error) {
-    fill(main, failure(error));
+    $('#booting').hidden = true;
+    signinEl.hidden = false;
+    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true})));
     return;
   }
   if (config.oidc) {
     try {
       await finishSignIn(config.oidc);
     } catch (error) {
-      signInScreen(error.message);
+      signInPage(error.message);
       return;
     }
   }

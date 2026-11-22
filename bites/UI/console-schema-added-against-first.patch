@@ -2,16 +2,15 @@ Breaks: The console marks fields added since the first schema, not since the one
 Module: catalog-server
 Test: ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory
 
-diff --git a/catalog-server/src/main/resources/nuna/ui/detail.js b/catalog-server/src/main/resources/nuna/ui/detail.js
-index fe4a6a1..e8f414a 100644
---- a/catalog-server/src/main/resources/nuna/ui/detail.js
-+++ b/catalog-server/src/main/resources/nuna/ui/detail.js
-@@ -200,7 +200,7 @@ function schemaRows(type, depth, rows, previousIds, identifiers) {
- function schemaTable(schemas, schema) {
-   const ordered = [...schemas].sort((a, b) => a['schema-id'] - b['schema-id']);
-   const index = ordered.findIndex(s => s['schema-id'] === schema['schema-id']);
--  const previousIds = index > 0 ? fieldIds(ordered[index - 1]) : null;
-+  const previousIds = index > 0 ? fieldIds(ordered[0]) : null;
-   const rows = [];
-   schemaRows(schema, 0, rows, previousIds, new Set(schema['identifier-field-ids'] || []));
-   return table(['Id', 'Field', 'Type', 'Required', 'Doc'], rows, {class: 'grid schema'});
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -292,7 +292,7 @@
+           id === curId ? [' ', pill('accent', 'Current')] : null), body);
+     }));
+     const [a, b] = sel;
+-    const before = a === b ? null : new Map(fieldsOf(a).map(f => [f.id, f]));
++    const before = a === b ? null : new Map(fieldsOf(all[0]['schema-id']).map(f => [f.id, f]));
+     const rows = fieldsOf(b);
+     const after = new Set(rows.map(f => f.id));
+     const removed = before ? [...before.values()].filter(f => !after.has(f.id)) : [];

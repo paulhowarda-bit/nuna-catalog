@@ -1,26 +1,33 @@
-// Calls to the catalog's own APIs, as any client makes them: a bearer token, nothing else. The server
-// decides every permission; this module only reports what it answered.
+// Calls to the catalog's own APIs, as any client makes them: a bearer token, nothing else. The server decides
+// every permission; this module only reports what it answered, with the request id it stamped on the answer.
 
 import {token, signedOut} from './auth.js';
 
 export class ApiError extends Error {
-  constructor(status, type, message) {
+  constructor(status, type, message, requestId) {
     super(message);
     this.status = status;
     this.type = type;
+    this.requestId = requestId;
+    this.at = Date.now();
   }
 }
 
-/** A JSON request; resolves to the parsed body (null for 204), rejects with ApiError on any non-2xx. */
-export async function call(path, {method = 'GET', body, headers = {}} = {}) {
+const STATUS_TEXT = {200: 'OK', 201: 'Created', 204: 'No Content'};
+
+/**
+ * A JSON request. Resolves to {status, statusText, requestId, body} (body null for 204); rejects with ApiError on
+ * any non-2xx, carrying the server's own type and message and its X-Request-ID.
+ */
+export async function send(path, {method = 'GET', body, headers = {}} = {}) {
   const sent = Object.assign({Accept: 'application/json', Authorization: 'Bearer ' + token()}, headers);
   if (body !== undefined) sent['Content-Type'] = 'application/json';
   const response = await fetch(path, {
     method, headers: sent, body: body === undefined ? undefined : JSON.stringify(body),
     cache: 'no-store', credentials: 'omit', redirect: 'error',
   });
-  if (response.status === 204) return null;
-  const text = await response.text();
+  const requestId = response.headers.get('X-Request-ID');
+  const text = response.status === 204 ? '' : await response.text();
   let json = null;
   try {
     json = text ? JSON.parse(text) : null;
@@ -31,9 +38,14 @@ export async function call(path, {method = 'GET', body, headers = {}} = {}) {
     const error = json && json.error;
     if (response.status === 401) signedOut('The catalog did not accept the token (401). Sign in again.');
     throw new ApiError(response.status, error ? error.type : response.statusText,
-      error ? error.message : text.slice(0, 500));
+      error ? error.message : text.slice(0, 500), requestId);
   }
-  return json;
+  return {status: response.status, statusText: STATUS_TEXT[response.status] || response.statusText, requestId, body: json};
+}
+
+/** A JSON request that resolves to the parsed body. */
+export async function call(path, options) {
+  return (await send(path, options)).body;
 }
 
 /** A namespace as a path segment: levels joined by the unit separator 0x1F, each URL-encoded. */
@@ -41,11 +53,11 @@ export function ns(levels) {
   return levels.map(encodeURIComponent).join('%1F');
 }
 
-/** Every page of an Iceberg REST listing; `field` names the array in each page. */
-export async function all(path, field) {
+/** Every page of a listing; `field` names the array in each page. */
+export async function all(path, field, maxPages = 100) {
   const items = [];
   let pageToken = null;
-  for (let page = 0; page < 100; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const sep = path.includes('?') ? '&' : '?';
     const body = await call(path + (pageToken ? sep + 'pageToken=' + encodeURIComponent(pageToken) : ''));
     items.push(...(body[field] || []));
@@ -55,7 +67,7 @@ export async function all(path, field) {
   return items;
 }
 
-// ---- the catalog, by its REST prefix ----
+// ---- Iceberg REST, by the catalog's prefix ----
 
 const prefixes = new Map();
 
@@ -68,29 +80,36 @@ export async function prefix(warehouse) {
   return prefixes.get(warehouse);
 }
 
+async function rest(catalog) {
+  return '/v1/' + encodeURIComponent(await prefix(catalog));
+}
+
+/** The catalogs the caller holds something on: [{name, ...}]. */
 export async function catalogs() {
-  return (await call('/management/v1/catalogs')).catalogs.map(c => c.name);
+  return (await call('/management/v1/catalogs')).catalogs;
 }
 
 export async function namespaces(catalog, parent) {
-  const p = await prefix(catalog);
   const query = parent.length ? '?parent=' + ns(parent) : '';
-  return all(`/v1/${encodeURIComponent(p)}/namespaces${query}`, 'namespaces');
+  return all(`${await rest(catalog)}/namespaces${query}`, 'namespaces');
 }
 
 export async function namespace(catalog, levels) {
-  const p = await prefix(catalog);
-  return call(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}`);
+  return call(`${await rest(catalog)}/namespaces/${ns(levels)}`);
+}
+
+/** Sets and removes a namespace's properties through Iceberg REST. */
+export async function namespaceProperties(catalog, levels, updates, removals) {
+  return send(`${await rest(catalog)}/namespaces/${ns(levels)}/properties`,
+    {method: 'POST', body: {updates: updates || {}, removals: removals || []}});
 }
 
 export async function tables(catalog, levels) {
-  const p = await prefix(catalog);
-  return all(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}/tables`, 'identifiers');
+  return all(`${await rest(catalog)}/namespaces/${ns(levels)}/tables`, 'identifiers');
 }
 
 export async function views(catalog, levels) {
-  const p = await prefix(catalog);
-  return all(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}/views`, 'identifiers');
+  return all(`${await rest(catalog)}/namespaces/${ns(levels)}/views`, 'identifiers');
 }
 
 /**
@@ -98,34 +117,68 @@ export async function views(catalog, levels) {
  * any caller (D21, amended 2026-11-19), so no storage keys reach the browser.
  */
 export async function table(catalog, levels, name) {
-  const p = await prefix(catalog);
-  return call(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}/tables/`
-    + `${encodeURIComponent(name)}?snapshots=all`, {headers: {'X-Iceberg-Access-Delegation': 'none'}});
+  return call(`${await rest(catalog)}/namespaces/${ns(levels)}/tables/${encodeURIComponent(name)}?snapshots=all`,
+    {headers: {'X-Iceberg-Access-Delegation': 'none'}});
 }
 
 export async function view(catalog, levels, name) {
-  const p = await prefix(catalog);
-  return call(`/v1/${encodeURIComponent(p)}/namespaces/${ns(levels)}/views/${encodeURIComponent(name)}`);
+  return call(`${await rest(catalog)}/namespaces/${ns(levels)}/views/${encodeURIComponent(name)}`);
 }
 
-// ---- management API ----
+// ---- the management API ----
+
+const enc = encodeURIComponent;
 
 /** The management path of a catalog, namespace, table or view. */
 export function managed(target) {
-  let path = '/management/v1/catalogs/' + encodeURIComponent(target.catalog);
+  let path = '/management/v1/catalogs/' + enc(target.catalog);
   if (target.namespace && target.namespace.length) path += '/namespaces/' + ns(target.namespace);
-  if (target.kind === 'table') path += '/tables/' + encodeURIComponent(target.name);
-  if (target.kind === 'view') path += '/views/' + encodeURIComponent(target.name);
+  if (target.kind === 'table') path += '/tables/' + enc(target.name);
+  if (target.kind === 'view') path += '/views/' + enc(target.name);
   return path;
 }
 
-export function governance(target) {
-  return call(managed(target) + '/governance');
-}
+export const governance = target => call(managed(target) + '/governance');
 
-export function recentAudit(target, limit) {
-  return call(managed(target) + '/audit?limit=' + limit);
-}
+export const setAttribute = (target, attribute, value, provenance) =>
+  send(managed(target) + '/attributes/' + enc(attribute), {method: 'PUT', body: {value, provenance}});
+
+export const placeHold = (target, reason) => send(managed(target) + '/holds', {method: 'POST', body: {reason}});
+
+/** Releases a hold on the level it was placed on. */
+export const releaseHold = (target, id) => send(managed(target) + '/holds/' + enc(id), {method: 'DELETE'});
+
+export const freeze = (target, reason) => send(managed(target) + '/dr-freeze', {method: 'PUT', body: {reason}});
+
+export const unfreeze = target => send(managed(target) + '/dr-freeze', {method: 'DELETE'});
+
+export const policy = target => call(managed(target) + '/maintenance-policy');
+
+export const setPolicy = (target, keys) => send(managed(target) + '/maintenance-policy', {method: 'PUT', body: keys});
+
+export const removePolicy = target => send(managed(target) + '/maintenance-policy', {method: 'DELETE'});
+
+export const recentAudit = (target, limit) => call(managed(target) + '/audit?limit=' + limit);
+
+/**
+ * A table's or view's metadata log, newest first, a page at a time (item 130): {pointer, journal, next-page-token},
+ * each journal entry the commit that wrote one metadata file, with who made it. Needs select on the object.
+ */
+export const metadataLog = (catalog, id, pageToken) => call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}`
+  + `/metadata-log?pageSize=25${pageToken ? '&pageToken=' + enc(pageToken) : ''}`);
+
+/** A catalog's properties (item 131): its name, legal entity, whether a KMS key is set, and its storage profile. */
+export const catalogProperties = catalog => call(`/management/v1/catalogs/${enc(catalog)}/properties`);
+
+/** A catalog's governance in figures (item 128): tables classified, closed, held and frozen; regulated areas. */
+export const governanceSummary = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/summary`);
+
+/** Every hold and freeze in a catalog (item 128): those standing, and those lifted as far as the audit topic reaches. */
+export const holdsAndFreezes = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/holds`);
+
+/** An object's export: its pointer, current metadata and commit journal, by the object's id. */
+export const exportObject = (catalog, id) =>
+  call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}/export`);
 
 /** The management API's securable: {"type", "namespace", "name"}. */
 export function securable(target) {
@@ -135,49 +188,74 @@ export function securable(target) {
   return out;
 }
 
-export function grantsOn(target) {
+/**
+ * Every grant that reaches an object (item 129): on its catalog, each namespace above it and on it, from the catalog
+ * down, each with the securable it was granted on, and the deployment's grant-admin groups. Needs manage-grants on
+ * the object or above it.
+ */
+export function effectiveGrants(target) {
   const query = new URLSearchParams({type: target.kind});
   for (const level of target.kind === 'catalog' ? [] : target.namespace) query.append('namespace', level);
   if (target.kind === 'table' || target.kind === 'view') query.set('name', target.name);
-  return all(`/management/v1/catalogs/${encodeURIComponent(target.catalog)}/grants/on?${query}`, 'grants');
+  return call(`/management/v1/catalogs/${enc(target.catalog)}/grants/effective?${query}`);
 }
 
+/** The grants of the named groups, or of the caller's own groups when none is named. */
 export function grantsOfGroups(catalog, groups) {
   const query = new URLSearchParams();
   for (const group of groups) query.append('group', group);
   const q = query.toString();
-  return all(`/management/v1/catalogs/${encodeURIComponent(catalog)}/grants${q ? '?' + q : ''}`, 'grants');
+  return all(`/management/v1/catalogs/${enc(catalog)}/grants${q ? '?' + q : ''}`, 'grants');
 }
 
-export function grant(target, group, privilege) {
-  return call(`/management/v1/catalogs/${encodeURIComponent(target.catalog)}/grants`,
-    {method: 'POST', body: {securable: securable(target), group, privilege}});
-}
+export const grant = (target, group, privilege) => send(`/management/v1/catalogs/${enc(target.catalog)}/grants`,
+  {method: 'POST', body: {securable: securable(target), group, privilege}});
 
-export function revoke(catalog, securableSpec, group, privilege) {
-  return call(`/management/v1/catalogs/${encodeURIComponent(catalog)}/grants/revoke`,
+export const revoke = (catalog, securableSpec, group, privilege) =>
+  send(`/management/v1/catalogs/${enc(catalog)}/grants/revoke`,
     {method: 'POST', body: {securable: securableSpec, group, privilege}});
-}
 
-// ---- health (D38) ----
+/** Every grant in a catalog, for an access review; needs manage-grants on the catalog. */
+export const exportGrants = catalog => call(`/management/v1/catalogs/${enc(catalog)}/grants/export`);
 
-/** The whole deployment's catalog health over the last day, gathered from every server; platform operators only. */
-export function catalogHealth() {
-  return call('/management/v1/health/catalog');
-}
+// ---- health and maintenance (D38) ----
+
+/** The whole deployment's catalog health over the last day; platform operators only. */
+export const catalogHealth = () => call('/management/v1/health/catalog');
 
 /** The maintenance worker's recent scans and its last successful one; platform operators only. */
-export function scans() {
-  return call('/management/v1/maintenance/scans');
-}
+export const scans = () => call('/management/v1/maintenance/scans');
 
-/** One page of the neediest tables the caller may read, neediest first. */
-export function neediest(pageToken) {
-  return call('/management/v1/maintenance/tables?pageSize=50'
-    + (pageToken ? '&pageToken=' + encodeURIComponent(pageToken) : ''));
+/** One page of the neediest tables the caller may read, in every catalog, neediest first. */
+export const neediest = pageToken => call('/management/v1/maintenance/tables?pageSize=200'
+  + (pageToken ? '&pageToken=' + enc(pageToken) : ''));
+
+/** Every table the caller may read that needs compaction, neediest first (up to 2,000). */
+export async function queue() {
+  return all('/management/v1/maintenance/tables?pageSize=200', 'tables', 10);
 }
 
 /** A table's health: its latest assessment and last compaction, with select on it. */
-export function tableHealth(target) {
-  return call(managed(target) + '/health');
+export const tableHealth = target => call(managed(target) + '/health');
+
+/** The maintenance nights, newest first: `days` of totals, the newest `jobs` of them with their jobs (item 126). */
+export const nights = (days, jobs) => call(`/management/v1/maintenance/nights?days=${days}&jobs=${jobs}`);
+
+// ---- the audit feed (item 125): audit readers only ----
+
+/** A page of a catalog's audit feed from the audit tables, newest first; `q` holds type, principal, path, to, pageToken. */
+export function auditFeed(catalog, q) {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(q)) if (value) query.set(key, value);
+  return call(`/management/v1/catalogs/${enc(catalog)}/audit/feed?${query}`);
 }
+
+/** The last day's audit counts in a catalog: by type, the busiest objects, and the deployment's by type. */
+export const auditSummary = catalog => call(`/management/v1/catalogs/${enc(catalog)}/audit/summary`);
+
+/** The archive check's status: how far each chain is verified, and this server's last run. */
+export const auditArchive = () => call('/management/v1/audit/archive');
+
+/** One record's place in its hash chain, from the archive. */
+export const auditChain = (partition, offset, eventId) =>
+  call(`/management/v1/audit/chains/${enc(partition)}/records/${enc(offset)}?event-id=${enc(eventId)}`);

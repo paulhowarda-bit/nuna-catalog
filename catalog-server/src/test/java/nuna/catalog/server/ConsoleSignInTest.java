@@ -134,8 +134,8 @@ class ConsoleSignInTest {
         // Back in the console with a token the catalog accepts: the catalog's own answers fill the page.
         browser.awaitText(By.id("who"), "ana");
         assertThat(driver.findElement(By.id("who")).getText()).contains(GROUP);
-        browser.awaitText(By.cssSelector("section.pane"), "REST prefix");
-        browser.await(By.cssSelector("nav.tree button[aria-label='catalog trading']"));
+        browser.awaitText(By.cssSelector("#catalog-pick [data-cat]"), "trading");
+        browser.awaitText(By.cssSelector("#overview .ph .eyebrow"), "trading · ");
         assertThat(driver.getCurrentUrl()).as("the code and state leave the address bar")
                 .startsWith(browser.origin() + "/ui/").doesNotContain("code=", "state=");
 
