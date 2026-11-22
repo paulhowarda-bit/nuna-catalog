@@ -189,9 +189,7 @@ final class Stack implements AutoCloseable {
             properties.add("--nuna.security.maintenance-principals=" + WORKER);
         }
         properties.addAll(List.of(more));
-        boolean thisRelease = jar.equals(Path.of(System.getProperty("m8.server-jar")));
-        ServerProcess server = ServerProcess.start(name, jar, store.jvmOptions(),
-                thisRelease ? properties : PreviousRelease.settings(properties));
+        ServerProcess server = ServerProcess.start(name, jar, store.jvmOptions(), properties);
         servers.add(server);
         server.awaitReady(token("m8-writer", WRITERS), CATALOG);
         return server;

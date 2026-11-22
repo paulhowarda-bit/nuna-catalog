@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**36 open:** 7 S, 12 M, 12 L, 5 XL.
+**35 open:** 6 S, 12 M, 12 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -45,7 +45,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
 | [114](backlog/114.md) | L | Run a table's maintenance now, from the console, outside the cleanup window too | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites | 2026-11-20 |
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
-| [116](backlog/116.md) | S | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | one test's server settings: name the test database's two findings in nuna.database.allow-unsafe as the other server tests do | 2026-11-21 |
 | [117](backlog/117.md) | M | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | cause not known yet: finding why the derived storage profile id differs between the releases, then either a real upgrade fix in the server or a fix to the test's settings | 2026-11-21 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 
@@ -1742,30 +1741,6 @@ through the management API; in the demo, two users in different groups run the s
 and get different rows and masked columns; a client that is no trusted engine still gets 403 on that table's storage
 access; and a bite that drops the filter from nuna's answer to Trino makes a test fail.
 
-### 116. AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check
-
-- Added: 2026-11-21 by overnight run 2026-11-21
-- Touches: catalog-audit-tables/src/test/
-- Effort: S, one test's server settings: name the test database's two findings in nuna.database.allow-unsafe as the other server tests do
-
-The heavy build of the overnight run of 2026-11-21 (commit 9813b9f) failed in its first module under test:
-`nuna.audittables.AuditTablesTest#initializationError`, so no other module's heavy tests ran. The test's catalog
-server would not start: since item 6 (32134ee) the server runs the store's self-check at startup and refuses on any
-finding not named in `nuna.database.allow-unsafe`, and the test's single-node PostgreSQL has two:
-
-    IllegalStateException: The catalog's database is unsafe, so the server does not start (D8.2):
-    pg.no-sync-standby: synchronous_standby_names is '' and 0 standbys stream in sync or quorum state ...;
-    pg.fsync-off: fsync is off and full_page_writes is on; both must be on.
-      at nuna.catalog.server.StoreWiring.ready(StoreWiring.java:74)
-
-AuditTablesTest is heavy and new since the last tested commit (d34547f), so this is its first heavy run since the
-self-check landed. Logs: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-21\heavy.log` and
-`heavy-results\catalog-audit-tables\`.
-
-Done when AuditTablesTest's server names `pg.no-sync-standby,pg.fsync-off` (or whatever its fixture's database
-reports) in `nuna.database.allow-unsafe`, and the test passes in the overnight run's heavy build. Check the other
-heavy tests that start a server on the shared test PostgreSQL for the same gap while there.
-
 ### 117. RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one
 
 - Added: 2026-11-21 by overnight run 2026-11-21
@@ -1792,6 +1767,19 @@ Logs: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-21\nightly.log`,
 (overwritten by the next run).
 
 Done when the cause is known and fixed, and the test passes in the overnight run's nightly.
+
+
+Fixed on `worktree-items-116-117` (2026-11-21), not yet shown by running. The cause: a storage profile's id is
+`UUID.nameUUIDFromBytes("<project>-storage-profile:<name>")`, and the rename to nuna (item 59, c9e82a9) changed
+`keel-` to `nuna-`, so 2b1af36 derives `20f6730e-…` for profile `s3` and this release `cee40642-…`, the two ids in
+the failure. No install holds a keel-era id (the work install has not happened; the demo starts from nothing every
+night), so the rolling upgrade now starts from a60daba, the rename's landing, by the rule Paul used choosing 2b1af36
+("after the rename"). Choice made (Paul may overrule): the test crosses V9 to V11, no longer V5 to V8, and is renamed
+`upgradingOneServerAtATimeAcrossV9ToV11LosesNothing`. Item 65's `PreviousRelease.settings`, which gave a keel-era
+release `keel.` settings, is gone. `ProfileIdTest` (fast build) pins profile `s3`'s id. Three local runs with the
+nuna-demo stack up never reached the new release: the last two lost connections to the test PostgreSQL ("Read timed
+out"), the demo holding Docker. Close this item when the overnight run of 2026-11-22 passes the test; if it fails,
+the failure is new.
 
 ### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
 
@@ -1923,3 +1911,4 @@ table's own prefix.
 | [96](backlog/96.md) | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | dropped | 2026-11-20 |
 | [99](backlog/99.md) | A table that commits faster than the DR store replicates never gets a first DR watermark | done | 2026-11-20 |
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |
+| [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
