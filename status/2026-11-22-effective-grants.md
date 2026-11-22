@@ -16,9 +16,13 @@
   every privilege (441 decisions). All 8 pass.
 - Bite: making `effectiveGrants` read only the target's own grants failed 6 of the 8 tests; the file was restored and
   its hash matched HEAD's.
-- Not in this branch: the route test (`SecurityGateTest#theEffectiveGrantsOnATableIncludeEveryGrantAboveIt`, heavy)
-  and the bite file `bites/D45/effective-grants-own-only.patch`. Both lie outside the item's claim, which
-  `./backlog.sh claim` cannot widen while it is held; releasing and claiming again was refused here. The item's
-  `Touches:` line now names both paths. The item stays open until they are in.
 - Fast build after merging main (4fc7960, already merged): `./gradlew build` green, BUILD SUCCESSFUL in 6m 44s.
-- Merged main again at 7593e49 (item 130): `./gradlew build` green, BUILD SUCCESSFUL in 4m 44s.
+- Merged main again at 7593e49 (item 130): `./gradlew build` green, BUILD SUCCESSFUL in 4m 44s. This much landed as
+  c077676, without the route test and the bite: they lay outside the item's claim, which `./backlog.sh claim` could
+  not then widen while it was held.
+- After main's `backlog.sh` let a holder widen its claim (47836a8), the claim took `SecurityGateTest.java` and
+  `bites/D45/`. Added `SecurityGateTest#theEffectiveGrantsOnATableIncludeEveryGrantAboveIt` (heavy; compiled, not
+  run here): a grant on sales.eu appears among the effective grants on sales.eu.orders and a revoke removes it, the
+  steward (manage-grants on sales) may read them, the analyst is refused with 403 and a `Denial`, and on hr.staff
+  answered as for a missing table. Added `bites/D45/effective-grants-own-only.patch`; `git apply --check` passes.
+  `./gradlew build` green, BUILD SUCCESSFUL in 4m 28s. Item 129 done.
