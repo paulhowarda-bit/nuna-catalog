@@ -66,7 +66,9 @@ its own branch, and it lands with that branch.
 2. `./backlog.sh claim <n>` in that worktree. The claim fails if the item is already claimed, or if another agent
    holds an item whose area overlaps this one's; it prints the holder: take another item. An item with no `Touches:`
    line needs its areas named, `./backlog.sh claim <n> demo/ CLAUDE.md`. Never work on an item you have not claimed,
-   and claim only what you are about to start.
+   and claim only what you are about to start. When the work turns out to need more, the holder widens its own claim
+   with `./backlog.sh claim <n> <area>...`: the areas it holds plus the new ones, checked against every other claim
+   as a new claim is. No release in between, so no other agent can take the item meanwhile.
 3. Do the work, changing only the area you claimed, and commit it. Record what you did in `status/`
    (`status/README.md`).
 4. `./backlog.sh done <n>`: it sets `Status: done` and adds the `Done:` line. Write what was done beneath it, add a new
