@@ -1,0 +1,74 @@
+[
+  {
+    "id": "OFF001",
+    "severity": "error",
+    "message": "external resource reference(s): <script src=https://cdn.example.com/lib.js>",
+    "fix": "Inline it (vendor marker / data URI) - the work network has no internet."
+  },
+  {
+    "id": "OFF002",
+    "severity": "error",
+    "message": "script makes network requests.",
+    "fix": "Generate data locally (seeded PRNG) so the demo runs offline and repeats exactly."
+  },
+  {
+    "id": "OFF002",
+    "severity": "warn",
+    "message": "script calls fetch() - blocked offline and by the page's CSP.",
+    "fix": "Embed data in the page instead."
+  },
+  {
+    "id": "MOT001",
+    "severity": "error",
+    "message": "motion present but no prefers-reduced-motion handling.",
+    "fix": "Add @media (prefers-reduced-motion: reduce) and a JS matchMedia check that swaps movement for crossfades and stops loops."
+  },
+  {
+    "id": "TYP001",
+    "severity": "warn",
+    "message": "generic primary font(s): ['arial']",
+    "fix": "Lead with a characterful vendored family; keep generics only as fallbacks."
+  },
+  {
+    "id": "CPY001",
+    "severity": "warn",
+    "message": "placeholder/generic copy: ['submit']",
+    "fix": "Replace with specific, verb-led labels that say what happens or what it means."
+  },
+  {
+    "id": "DATA001",
+    "severity": "warn",
+    "message": "financial figures shown without an 'illustrative data' label.",
+    "fix": "Add a visible, persistent disclosure, e.g. 'Illustrative data - not actual client accounts or results.'"
+  },
+  {
+    "id": "A11Y001",
+    "severity": "warn",
+    "message": "<html> has no lang attribute.",
+    "fix": "<html lang=\"en\">"
+  },
+  {
+    "id": "A11Y002",
+    "severity": "warn",
+    "message": "missing <title>.",
+    "fix": "A 2-5 word title."
+  },
+  {
+    "id": "A11Y003",
+    "severity": "warn",
+    "message": "missing viewport meta.",
+    "fix": "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+  },
+  {
+    "id": "A11Y004",
+    "severity": "warn",
+    "message": "1 <img> without alt.",
+    "fix": "alt=\"\" if decorative."
+  },
+  {
+    "id": "CLR001",
+    "severity": "error",
+    "message": "contrast --text on --bg = 1.26:1",
+    "fix": "Body text needs >= 4.5:1, large text >= 3:1. Adjust OKLCH lightness."
+  }
+]

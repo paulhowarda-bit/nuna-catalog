@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en" data-mode="guided">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger, live</title>
+<meta name="description" content="Reference demo: selling a real-time ledger. All data simulated.">
+<!-- @font space-grotesk -->
+<!-- @font instrument-sans -->
+<!-- @font jetbrains-mono -->
+<style>
+:root {
+  --bg: oklch(14.5% 0.02 250);
+  --surface: oklch(19.5% 0.022 250);
+  --line: oklch(31% 0.025 250);
+  --text: oklch(96.5% 0.008 250);
+  --muted: oklch(76% 0.02 250);
+  --accent: oklch(83% 0.16 165);
+  --accent-2: oklch(81% 0.14 75);
+  --down: oklch(68% 0.19 25);
+  --accent-soft: oklch(83% 0.16 165 / .14);
+  --accent-soft: oklch(from var(--accent) l c h / .14);
+  --legacy-soft: oklch(81% 0.14 75 / .16);
+  --display: 'Space Grotesk', 'Instrument Sans', sans-serif;
+  --body: 'Instrument Sans', 'Space Grotesk', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+  --step--1: clamp(0.8rem, 0.78rem + 0.1vw, 0.875rem);
+  --step-0: clamp(1rem, 0.96rem + 0.25vw, 1.2rem);
+  --step-2: clamp(1.5rem, 1.1rem + 1.4vw, 2.4rem);
+  --step-5: clamp(2.6rem, 1rem + 6.2vw, 7.4rem);
+  --dur-2: 240ms; --dur-3: 420ms; --dur-4: 700ms;
+  --ease-out: cubic-bezier(.16, 1, .3, 1);
+  --ease-in: cubic-bezier(.7, 0, .84, 0);
+  --gutter: max(16px, 4vw);
+}
+html[data-mode="present"] { font-size: 118%; }
+html[data-mode="present"] .guided-only { display: none !important; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--bg); color: var(--text); }
+body { margin: 0; } /* no body background: it would paint over z-index:-1 layers (aurora, canvas) */
+body { font: 400 var(--step-0)/1.55 var(--body); min-height: 100dvh; overflow-x: hidden;
+  -webkit-font-smoothing: antialiased; }
+.grain::after { content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 40; opacity: .06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+.aurora { position: fixed; inset: -20vmax; z-index: -1; filter: blur(90px); opacity: .32; pointer-events: none; }
+.aurora i { position: absolute; width: 42vmax; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(circle, var(--c) 0%, transparent 65%); animation: drift var(--t) cubic-bezier(.65,0,.35,1) infinite alternate; }
+.aurora i:nth-child(1) { --c: var(--accent); --t: 19s; left: 8%; top: 4%; }
+.aurora i:nth-child(2) { --c: oklch(62% 0.13 250); --t: 25s; left: 58%; top: 32%; }
+@keyframes drift { to { transform: translate(7vmax, -5vmax) scale(1.12); } }
+
+/* frame */
+.frame-top { position: fixed; inset: 0 0 auto 0; z-index: 30; display: flex; justify-content: space-between;
+  align-items: center; padding: 18px var(--gutter); pointer-events: none; }
+.frame-top > * { pointer-events: auto; }
+.mark { font: 600 var(--step--1)/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.mark b { color: var(--accent); font-weight: 600; }
+.dots { display: flex; gap: 8px; align-items: center; }
+.dots button { width: 28px; height: 28px; border: 0; background: transparent; padding: 0; cursor: pointer;
+  display: grid; place-items: center; border-radius: 50%; }
+.dots button::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line);
+  transition: transform var(--dur-2) var(--ease-out), background-color var(--dur-2); }
+.dots button[aria-current="true"]::before { background: var(--accent); transform: scale(1.5); }
+.dots button:hover::before { background: var(--muted); }
+.count { font: 500 var(--step--1)/1 var(--mono); color: var(--muted); margin-left: 6px; font-variant-numeric: tabular-nums; }
+.frame-bottom { position: fixed; inset: auto 0 0 0; z-index: 30; display: flex; justify-content: space-between;
+  align-items: end; gap: 16px; padding: 14px var(--gutter); pointer-events: none; }
+.disclosure { margin: 0; font-size: var(--step--1); color: var(--muted); }
+.disclosure::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent-2); margin-right: 8px; vertical-align: 1px; }
+.hint { margin: 0; font: 500 var(--step--1)/1.4 var(--mono); color: var(--muted); background: oklch(19.5% 0.022 250 / .85);
+  padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line); }
+.nav-guided { pointer-events: auto; display: flex; gap: 8px; }
+.btn { font: 600 var(--step--1)/1 var(--body); color: var(--text); background: var(--surface); border: 1px solid var(--line);
+  padding: 12px 18px; border-radius: 999px; cursor: pointer; min-height: 44px;
+  transition: background-color var(--dur-2), border-color var(--dur-2), transform var(--dur-2) var(--ease-out); }
+.btn:hover { border-color: var(--muted); }
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .35; cursor: default; }
+.btn.primary { background: var(--accent); color: oklch(20% 0.05 165); border-color: transparent; }
+.btn.primary:hover { background: oklch(88% 0.15 165); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.blackout { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: grid; place-items: center; }
+.blackout span { font: 600 var(--step-2)/1 var(--display); color: var(--line); letter-spacing: -.02em; }
+
+/* stage */
+main { min-height: 100dvh; }
+.beat { min-height: 100dvh; display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); column-gap: 24px;
+  align-content: center; padding: 96px var(--gutter) 110px; }
+.kicker { grid-column: 1 / -1; font: 600 var(--step--1)/1 var(--display); letter-spacing: .1em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 20px; }
+h1, h2 { font-family: var(--display); font-weight: 600; letter-spacing: -.035em; line-height: 1.02; margin: 0; text-wrap: balance; }
+h1 { font-size: var(--step-5); grid-column: 1 / span 10; }
+h2 { font-size: clamp(2.1rem, 0.9rem + 4vw, 5.2rem); grid-column: 1 / span 9; }
+.lede { grid-column: 1 / span 6; color: var(--muted); font-size: var(--step-0); margin: 22px 0 0; max-width: 46ch; text-wrap: pretty; }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.accent { color: var(--accent); }
+.legacy { color: var(--accent-2); }
+
+/* beat 1 */
+.hero-line { grid-column: 1 / -1; margin-top: clamp(20px, 4vh, 44px); width: 100%; height: clamp(90px, 16vh, 170px); overflow: visible; }
+.stats { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: clamp(20px, 5vw, 72px); margin-top: 10px; }
+.stat .v { font: 500 clamp(1.8rem, 1rem + 2.6vw, 3.4rem)/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.stat .l { font-size: var(--step--1); color: var(--muted); margin-top: 8px; }
+
+/* beat 2 */
+.day { grid-column: 1 / -1; margin-top: 44px; }
+.track { position: relative; height: 84px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+.track .seg { position: absolute; top: 0; bottom: 0; }
+.seg.trading { background: linear-gradient(90deg, var(--accent-soft), oklch(83% 0.16 165 / .3)); border-inline: 1px solid var(--accent); }
+.seg.batch { background: repeating-linear-gradient(135deg, var(--legacy-soft) 0 8px, transparent 8px 16px);
+  border-inline: 1px solid var(--accent-2); }
+.seg span { position: absolute; left: 12px; top: 12px; font: 600 var(--step--1)/1.2 var(--body); }
+.ticks { display: flex; justify-content: space-between; font: 500 .75rem/1 var(--mono); color: var(--muted); margin-top: 10px; }
+.queue { grid-column: 1 / span 7; margin-top: 36px; display: flex; flex-wrap: wrap; gap: 5px; max-width: 520px; }
+.queue i { width: 9px; height: 9px; border-radius: 2px; background: var(--accent-2); opacity: 0; }
+.queue-meta { grid-column: 8 / -1; margin-top: 36px; }
+.why { margin-top: 16px; background: none; border: 0; color: var(--accent-2); font: 600 var(--step--1)/1.4 var(--body);
+  text-decoration: underline dotted; text-underline-offset: 4px; cursor: help; padding: 0; }
+.pop { max-width: 340px; background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+  padding: 16px 18px; font-size: var(--step--1); line-height: 1.5; margin: 0; inset: auto; position: fixed; bottom: 90px; right: var(--gutter); }
+
+/* beat 3 */
+.sentence { grid-column: 1 / span 10; font: 500 clamp(1.5rem, 0.9rem + 2.4vw, 3.2rem)/1.3 var(--display); letter-spacing: -.02em; margin: 34px 0 0; }
+.scrub { color: var(--accent); border-bottom: 2px dotted var(--accent); cursor: ew-resize; touch-action: none; user-select: none;
+  font-family: var(--mono); font-variant-numeric: tabular-nums; padding: 0 2px; }
+.total { grid-column: 1 / -1; margin-top: 32px; display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+.total .v { font: 600 clamp(3rem, 1rem + 7vw, 8rem)/.9 var(--mono); letter-spacing: -.05em; font-variant-numeric: tabular-nums; color: var(--accent-2); }
+.assume { grid-column: 1 / span 8; margin-top: 18px; color: var(--muted); font-size: var(--step--1); }
+.assume summary { cursor: pointer; color: var(--text); }
+
+/* beat 4 */
+.wipe { grid-column: 1 / -1; position: relative; margin-top: 36px; border-radius: 18px; overflow: hidden; border: 1px solid var(--line);
+  background: var(--surface); --pos: 50%; height: clamp(220px, 44vh, 420px); }
+.wipe svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wipe .after { clip-path: inset(0 0 0 var(--pos)); background: var(--surface); position: absolute; inset: 0; }
+.wipe input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+.wipe .handle { position: absolute; top: 0; bottom: 0; left: var(--pos); width: 2px; background: var(--text); pointer-events: none; }
+.wipe .handle::after { content: "\2194"; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 40px; height: 40px; border-radius: 50%; background: var(--text); color: var(--bg); display: grid; place-items: center; font-size: 18px; }
+.wipe .tag { position: absolute; top: 16px; font: 600 var(--step--1)/1 var(--body); padding: 8px 12px; border-radius: 999px; background: oklch(14.5% 0.02 250 / .8); }
+.wipe .tag.l { left: 16px; color: var(--accent-2); } .wipe .tag.r { right: 16px; color: var(--accent); }
+
+/* beat 5 */
+.drill { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 32px; margin-top: 34px; align-items: center; }
+.map { width: 100%; height: auto; overflow: visible; }
+.node circle.core { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.node.dead circle.core { stroke: var(--down); }
+.node text { fill: var(--text); font: 600 15px var(--display); text-anchor: middle; }
+.node .sub { fill: var(--muted); font: 500 12px var(--mono); }
+.flow { fill: none; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 3 9; animation: flow 1.4s linear infinite; }
+.flow.off { stroke: var(--line); animation: none; opacity: .5; }
+@keyframes flow { to { stroke-dashoffset: -24; } }
+.counters { display: grid; gap: 22px; }
+.counter .v { font: 600 clamp(2.2rem, 1rem + 3.5vw, 4.4rem)/1 var(--mono); letter-spacing: -.04em; font-variant-numeric: tabular-nums; }
+.counter .l { color: var(--muted); font-size: var(--step--1); margin-top: 6px; }
+.plug { justify-self: start; }
+.btn.danger { background: transparent; border-color: var(--down); color: var(--down); }
+.btn.danger:hover { background: oklch(68% 0.19 25 / .12); }
+
+/* beat 6 */
+#beat-6 { justify-items: center; text-align: center; }
+#beat-6 h2 { grid-column: 2 / span 10; }
+@property --angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+.ask { grid-column: 3 / span 8; margin-top: 40px; padding: clamp(24px, 4vw, 44px); border-radius: 24px; border: 1.5px solid transparent;
+  background: linear-gradient(var(--surface), var(--surface)) padding-box,
+    conic-gradient(from var(--angle), var(--line) 0 55%, var(--accent) 70%, var(--accent-2) 80%, var(--line) 95%) border-box;
+  box-shadow: 0 0 60px -14px oklch(83% 0.16 165 / .55); animation: spin 6s linear infinite; }
+@keyframes spin { to { --angle: 360deg; } }
+.reasons { list-style: none; padding: 0; margin: 0 0 30px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; text-align: left; }
+.reasons li { border-top: 1px solid var(--line); padding-top: 14px; font-size: var(--step--1); color: var(--muted); }
+.reasons b { display: block; font: 600 var(--step-0)/1.25 var(--display); color: var(--text); margin-bottom: 6px; letter-spacing: -.01em; }
+.ask .btn.primary { font-size: var(--step-0); padding: 18px 30px; }
+.next-step { margin: 14px 0 0; color: var(--muted); font-size: var(--step--1); }
+.next-step:empty { display: none; }
+
+@media (max-width: 760px) {
+  h1, h2, .lede, .sentence, .queue, .queue-meta, .ask, #beat-6 h2 { grid-column: 1 / -1; }
+  .drill { grid-template-columns: 1fr; }
+  .reasons { grid-template-columns: 1fr; }
+  .frame-bottom { position: relative; flex-direction: column; align-items: stretch; gap: 10px; }
+  .beat { min-height: auto; padding-bottom: 32px; }
+  .count { display: none; }
+  .dots button { width: 22px; height: 22px; }
+}
+@media (hover: none) { .hint { display: none !important; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+::view-transition-old(root) { animation: 220ms var(--ease-in) both vtOut; }
+::view-transition-new(root) { animation: 460ms var(--ease-out) both vtIn; }
+@keyframes vtOut { to { opacity: 0; transform: translateY(-14px); } }
+@keyframes vtIn { from { opacity: 0; transform: translateY(18px); } }
+</style>
+</head>
+<body class="grain">
+<div class="aurora" aria-hidden="true"><i></i><i></i></div>
+
+<header class="frame-top">
+  <span class="mark">Ledger<b>/</b>live</span>
+  <nav class="dots" aria-label="Chapters"></nav>
+</header>
+
+<main id="stage">
+  <section class="beat" id="beat-1" data-title="The answer" aria-labelledby="h-1">
+    <p class="kicker">Platform modernization &middot; decision brief</p>
+    <h1 id="h-1">Every trade, booked the moment it happens.</h1>
+    <p class="lede">A real-time ledger replaces the overnight batch. Positions stay current to the second, and no trade is lost when a data center fails.</p>
+    <svg class="hero-line" viewBox="0 0 1200 200" preserveAspectRatio="none" role="img" aria-label="Simulated booked trades rising through the trading day">
+      <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#43d6a8" stop-opacity=".1"/><stop offset="1" stop-color="#43d6a8"/></linearGradient></defs>
+      <path id="sig" d="" fill="none" stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>
+      <circle id="sig-dot" r="6" fill="#4be0b0" cx="-20" cy="-20"/>
+    </svg>
+    <div class="stats">
+      <div class="stat"><div class="v num" id="booked" aria-live="off">0</div><div class="l">Trades booked today (simulated)</div></div>
+      <div class="stat"><div class="v num accent" id="lag">0.0 s</div><div class="l">Median time to book</div></div>
+      <div class="stat"><div class="v num">0</div><div class="l">Trades lost</div></div>
+    </div>
+  </section>
+
+  <section class="beat" id="beat-2" data-title="Today" aria-labelledby="h-2" hidden>
+    <p class="kicker legacy">What is &middot; today</p>
+    <h2 id="h-2">Every night, positions go dark for six hours.</h2>
+    <div class="day" role="img" aria-label="Illustrative 24-hour timeline: trading 9:30 AM to 4:00 PM ET, batch processing 6:00 PM to midnight ET">
+      <div class="track">
+        <div class="seg trading" style="left:39.6%;width:27.1%"><span class="accent">Trading 9:30 AM&ndash;4:00 PM ET</span></div>
+        <div class="seg batch" style="left:75%;width:25%"><span class="legacy">Batch: positions frozen</span></div>
+      </div>
+      <div class="ticks"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div>
+    </div>
+    <div class="queue" id="queue" aria-hidden="true"></div>
+    <div class="queue-meta">
+      <div class="stat"><div class="v num legacy" id="unbooked">0</div><div class="l">Trades waiting for the batch (simulated)</div></div>
+      <button class="why" popovertarget="why-4pm" type="button">Why does it break at 4 PM?</button>
+    </div>
+    <p class="pop" id="why-4pm" popover>Every trade after the close waits for one nightly run. If that run is late, every downstream report is late too: risk, margin and client statements all wait on the same window. (Illustrative timeline.)</p>
+  </section>
+
+  <section class="beat" id="beat-3" data-title="Cost of waiting" aria-labelledby="h-3" hidden>
+    <p class="kicker legacy">Cost of waiting</p>
+    <h2 id="h-3">Waiting has a price. Here is ours.</h2>
+    <p class="sentence">Each day brings <span class="scrub" id="s-breaks" data-min="200" data-max="4000" data-step="20" data-v="1240">1,240</span> booking breaks.
+      Fixing one costs <span class="scrub" id="s-cost" data-min="10" data-max="200" data-step="5" data-v="55">55</span>&nbsp;dollars. If we wait
+      <span class="scrub" id="s-months" data-min="0" data-max="36" data-step="1" data-v="12">12</span>&nbsp;months:</p>
+    <div class="total"><div class="v" id="total" aria-live="polite">$0</div><div class="l" style="color:var(--muted)">modeled break-handling cost</div></div>
+    <details class="assume guided-only"><summary>Show assumptions</summary>
+      <p>Cost = breaks per day &times; cost per break &times; 21 trading days per month &times; months waited. Inputs are illustrative, not measured. Drag or use arrow keys on any underlined number. Excludes migration cost, which appears on the decision card.</p></details>
+  </section>
+
+  <section class="beat" id="beat-4" data-title="What could be" aria-labelledby="h-4" hidden>
+    <p class="kicker">What could be</p>
+    <h2 id="h-4">Same day. The ledger never goes dark.</h2>
+    <div class="wipe" id="wipe">
+      <svg viewBox="0 0 1200 460" preserveAspectRatio="none" aria-hidden="true"><path id="before" fill="none" stroke="#e6b45c" stroke-width="3"/></svg>
+      <div class="after"><svg viewBox="0 0 1200 460" preserveAspectRatio="none" aria-hidden="true"><path id="after-area" fill="#43d6a8" fill-opacity=".12"/><path id="after" fill="none" stroke="#4be0b0" stroke-width="3"/></svg></div>
+      <span class="tag l">Batch: booked once, overnight</span>
+      <span class="tag r">Real time: booked as it trades</span>
+      <div class="handle"></div>
+      <input type="range" min="0" max="100" value="50" aria-label="Compare batch and real-time booking for the same simulated day">
+    </div>
+    <p class="lede">Both views use the same simulated trading day and the same scale. Drag to compare.</p>
+  </section>
+
+  <section class="beat" id="beat-5" data-title="Proof" aria-labelledby="h-5" hidden>
+    <p class="kicker">Proof you can trigger</p>
+    <h2 id="h-5">Lose a data center. Lose zero trades.</h2>
+    <div class="drill">
+      <svg class="map" viewBox="0 0 640 360" role="img" aria-label="Three simulated data centers replicating orders; one can be taken offline">
+        <path class="flow" id="f-ec" d="M140 110 C 260 40, 380 40, 500 110"/>
+        <path class="flow" id="f-cw" d="M500 110 C 520 200, 420 280, 320 290"/>
+        <path class="flow" id="f-we" d="M320 290 C 220 280, 120 200, 140 110"/>
+        <g class="node" id="n-east" transform="translate(140 110)"><circle class="core" r="46"/><text y="2">East</text><text class="sub" y="22" id="n-east-s">primary</text></g>
+        <g class="node" id="n-central" transform="translate(500 110)"><circle class="core" r="46"/><text y="2">Central</text><text class="sub" y="22">replica</text></g>
+        <g class="node" id="n-west" transform="translate(320 290)"><circle class="core" r="46"/><text y="2">West</text><text class="sub" y="22">replica</text></g>
+      </svg>
+      <div class="counters">
+        <div class="counter"><div class="v num" id="inflight">18,442</div><div class="l">Orders in flight</div></div>
+        <div class="counter"><div class="v num accent" id="lost">0</div><div class="l">Orders lost</div></div>
+        <div class="counter"><div class="v num" id="recover">&ndash;</div><div class="l">Time to recover</div></div>
+        <button class="btn danger plug" id="plug" type="button">Take East offline</button>
+      </div>
+    </div>
+    <p class="lede">Simulated replay of a failover test. Illustrative figures, not production results.</p>
+  </section>
+
+  <section class="beat" id="beat-6" data-title="The ask" aria-labelledby="h-6" hidden>
+    <p class="kicker">The decision</p>
+    <h2 id="h-6">Approve phase 1: real&#8209;time booking for equities.</h2>
+    <div class="ask">
+      <ul class="reasons">
+        <li><b>Positions current to the second</b>No overnight blind spot for risk, margin or statements.</li>
+        <li><b>Zero trades lost in failover</b>Shown in a simulated three-site replay.</li>
+        <li><b>$17M a year in break handling</b>Modeled from illustrative inputs; migration cost not included.</li>
+      </ul>
+      <button class="btn primary" id="approve" type="button">Approve phase 1</button>
+      <p class="next-step" id="next-step" aria-live="polite"></p>
+    </div>
+  </section>
+</main>
+
+<footer class="frame-bottom">
+  <p class="disclosure">Simulated data &middot; not real customers, accounts or results</p>
+  <p class="hint" hidden>&rarr; next &nbsp; &larr; back &nbsp; B blackout &nbsp; R restart &nbsp; F full screen</p>
+  <div class="nav-guided guided-only">
+    <button class="btn" id="prev" type="button">Back</button>
+    <button class="btn primary" id="next" type="button">Next</button>
+  </div>
+</footer>
+<div class="blackout" hidden><span>Ledger/live</span></div>
+
+<!-- @vendor anime -->
+<script>
+(() => {
+  const { animate, createTimeline, stagger, splitText, svg, utils } = window.anime || {};
+  const $ = s => document.querySelector(s);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const fmt = v => Math.round(v).toLocaleString('en-US');
+  const money = v => v >= 1e6 ? '$' + (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + 'M' : '$' + fmt(v);
+
+  // ---------- deterministic simulated data
+  function mulberry32(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  const rnd = mulberry32(20261028);
+  // intraday trade intensity: U-shaped (busy open and close)
+  const N = 120, intensity = Array.from({ length: N }, (_, i) => { const x = i / (N - 1);
+    return 0.35 + 1.6 * Math.pow(x - 0.5, 2) * 4 * 0.5 + rnd() * 0.25; });
+  const cum = []; intensity.reduce((s, v, i) => (cum[i] = s + v), 0);
+  const total = cum[N - 1];
+
+  // ---------- beat 1: the signature line (a line that becomes the ledger)
+  function sigPath(w = 1200, h = 200) {
+    return cum.map((c, i) => `${i ? 'L' : 'M'}${(i / (N - 1) * w).toFixed(1)} ${(h - 12 - c / total * (h - 30)).toFixed(1)}`).join(' ');
+  }
+  $('#sig').setAttribute('d', sigPath());
+  let heroRan = false;
+  function runHero() {
+    const booked = $('#booked'), lag = $('#lag'), TARGET = 1248302;
+    if (!animate || reduce || heroRan) { booked.textContent = fmt(TARGET); lag.textContent = '0.8 s'; return; }
+    heroRan = true;
+    try {
+      const { chars } = splitText('#h-1', { chars: true });
+      animate(chars, { y: ['105%', '0%'], opacity: [0, 1], delay: stagger(16), duration: 650, ease: 'outExpo' });
+    } catch (e) {}
+    const draw = svg.createDrawable('#sig');
+    const dot = $('#sig-dot'), path = $('#sig'), len = path.getTotalLength();
+    const o = { p: 0 };
+    createTimeline({ defaults: { ease: 'inOut(3)' } })
+      .add(draw, { draw: ['0 0', '0 1'], duration: 1500 }, 250)
+      .add(o, { p: 1, duration: 1500, onUpdate: () => {
+        const pt = path.getPointAtLength(o.p * len); dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+        booked.textContent = fmt(o.p * TARGET); lag.textContent = (0.8 * Math.min(1, o.p * 3)).toFixed(1) + ' s'; } }, 250);
+  }
+
+  // ---------- beat 2: the queue piles up
+  const queue = $('#queue');
+  for (let i = 0; i < 220; i++) queue.appendChild(document.createElement('i'));
+  function runQueue() {
+    const target = 412880;
+    if (!animate || reduce) { queue.querySelectorAll('i').forEach(i => i.style.opacity = 1); $('#unbooked').textContent = fmt(target); return; }
+    utils.set('#queue i', { opacity: 0, scale: 0.4 });
+    animate('#queue i', { opacity: [0, 1], scale: [0.4, 1], delay: stagger(9, { from: 'first' }), duration: 260, ease: 'outQuad' });
+    const o = { v: 0 };
+    animate(o, { v: target, duration: 2200, ease: 'outQuad', onUpdate: () => $('#unbooked').textContent = fmt(o.v) });
+  }
+
+  // ---------- beat 3: scrubbable numbers (Bret Victor) drive a modeled total
+  const s = { breaks: $('#s-breaks'), cost: $('#s-cost'), months: $('#s-months') };
+  let shown = 0;
+  function recompute(instant) {
+    const v = +s.breaks.dataset.v * +s.cost.dataset.v * 21 * +s.months.dataset.v;
+    const el = $('#total');
+    if (!animate || reduce || instant) { el.textContent = money(v); shown = v; return; }
+    const o = { v: shown }; shown = v;
+    animate(o, { v, duration: 500, ease: 'outExpo', onUpdate: () => el.textContent = money(o.v) });
+  }
+  Object.values(s).forEach(el => {
+    const min = +el.dataset.min, max = +el.dataset.max, step = +el.dataset.step;
+    el.tabIndex = 0; el.setAttribute('role', 'slider'); el.setAttribute('aria-valuemin', min); el.setAttribute('aria-valuemax', max);
+    el.setAttribute('aria-valuenow', el.dataset.v);
+    const set = v => { v = Math.min(max, Math.max(min, Math.round(v / step) * step)); if (+el.dataset.v === v) return;
+      el.dataset.v = v; el.textContent = v.toLocaleString('en-US'); el.setAttribute('aria-valuenow', v); recompute(); };
+    let x0 = null, v0 = 0;
+    el.addEventListener('pointerdown', e => { x0 = e.clientX; v0 = +el.dataset.v; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointermove', e => { if (x0 !== null) set(v0 + (e.clientX - x0) / 3 * step); });
+    el.addEventListener('pointerup', () => x0 = null);
+    el.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); e.stopPropagation(); set(+el.dataset.v + step); }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { e.preventDefault(); e.stopPropagation(); set(+el.dataset.v - step); }
+    });
+  });
+
+  // ---------- beat 4: before/after on the same day, same scale
+  (function wipe() {
+    const W = 1200, H = 460, pad = 40;
+    const y = c => (H - pad - c / total * (H - 2 * pad)).toFixed(1);
+    const x = i => (i / (N - 1) * W).toFixed(1);
+    const after = cum.map((c, i) => `${i ? 'L' : 'M'}${x(i)} ${y(c)}`).join(' ');
+    $('#after').setAttribute('d', after);
+    $('#after-area').setAttribute('d', after + ` L${W} ${H} L0 ${H} Z`);
+    // batch: nothing booked until the nightly run (last 12% of the axis), then a step
+    const cut = Math.floor(N * 0.88);
+    const before = `M0 ${y(0)} L${x(cut)} ${y(0)} L${x(cut)} ${y(total)} L${W} ${y(total)}`;
+    $('#before').setAttribute('d', before);
+    const box = $('#wipe'), input = box.querySelector('input');
+    input.addEventListener('input', () => box.style.setProperty('--pos', input.value + '%'));
+  })();
+  function runWipe() {
+    const box = $('#wipe'), input = box.querySelector('input');
+    if (!animate || reduce) return;
+    const o = { p: 92 };
+    animate(o, { p: [92, 50], duration: 1100, ease: 'outExpo', onUpdate: () => { box.style.setProperty('--pos', o.p + '%'); input.value = o.p; } });
+  }
+
+  // ---------- beat 5: pull the plug (the peak)
+  let pulled = false;
+  function resetDrill() { pulled = false; $('#n-east').classList.remove('dead'); $('#n-east-s').textContent = 'primary';
+    ['#f-ec', '#f-we'].forEach(f => $(f).classList.remove('off')); $('#recover').textContent = '–';
+    $('#plug').disabled = false; $('#plug').textContent = 'Take East offline'; $('#inflight').textContent = '18,442'; }
+  $('#plug').addEventListener('click', () => {
+    if (pulled) { resetDrill(); return; }
+    pulled = true;
+    $('#n-east').classList.add('dead'); $('#n-east-s').textContent = 'offline';
+    ['#f-ec', '#f-we'].forEach(f => $(f).classList.add('off'));
+    $('#plug').textContent = 'Bring East back';
+    const rec = $('#recover'), inflight = $('#inflight');
+    if (!animate || reduce) { rec.textContent = '0.8 s'; return; }
+    animate('#n-east .core', { scale: [1, 0.86, 1], duration: 600, ease: 'outBack' });
+    const o = { t: 0, f: 18442 };
+    animate(o, { t: 0.8, f: 19105, duration: 1200, ease: 'outExpo', onUpdate: () => {
+      rec.textContent = o.t.toFixed(1) + ' s'; inflight.textContent = fmt(o.f); } });
+    animate('#lost', { scale: [1, 1.18, 1], duration: 700, delay: 900, ease: 'outBack' });
+  });
+
+  // ---------- beat 6: the ask
+  $('#approve').addEventListener('click', () => {
+    $('#next-step').textContent = 'Recorded for this session only. Next step: a 30-minute decision review with the platform and risk owners.';
+    if (animate && !reduce) animate('#approve', { scale: [0.96, 1], duration: 400, ease: 'outBack' });
+  });
+  (function magnetic(btn) { if (reduce || !matchMedia('(hover: hover)').matches) return;
+    btn.addEventListener('pointermove', e => { const r = btn.getBoundingClientRect();
+      btn.style.transform = `translate(${(e.clientX - r.left - r.width / 2) * .2}px, ${(e.clientY - r.top - r.height / 2) * .3}px)`; });
+    btn.addEventListener('pointerleave', () => btn.style.transform = ''); })($('#approve'));
+
+  // ---------- beat engine (presenter + guided)
+  const beats = [...document.querySelectorAll('.beat')];
+  const enter = { 'beat-1': runHero, 'beat-2': runQueue, 'beat-3': () => recompute(false), 'beat-4': runWipe, 'beat-5': resetDrill };
+  const params = new URLSearchParams(location.search);
+  if (params.get('mode') === 'present') document.documentElement.dataset.mode = 'present';
+  const dots = $('.dots');
+  beats.forEach((b, k) => { const d = document.createElement('button'); d.type = 'button';
+    d.setAttribute('aria-label', `${k + 1}. ${b.dataset.title}`); d.addEventListener('click', () => show(k)); dots.appendChild(d); });
+  const count = document.createElement('span'); count.className = 'count'; dots.appendChild(count);
+  let i = Math.max(0, beats.findIndex(b => '#' + b.id === location.hash));
+  function show(n, push = true) {
+    n = Math.max(0, Math.min(beats.length - 1, n));
+    const swap = () => {
+      beats.forEach((b, k) => { b.hidden = k !== n; });
+      [...dots.querySelectorAll('button')].forEach((d, k) => d.setAttribute('aria-current', k === n));
+      count.textContent = `${n + 1} / ${beats.length}`;
+      i = n; if (push) history.replaceState(null, '', '#' + beats[n].id);
+      $('#prev').disabled = n === 0; $('#next').textContent = n === beats.length - 1 ? 'Start over' : 'Next';
+      try { (enter[beats[n].id] || (() => {}))(); } catch (e) { console.warn(e); }
+    };
+    (document.startViewTransition && !reduce && push) ? document.startViewTransition(swap) : swap();
+  }
+  $('#prev').addEventListener('click', () => show(i - 1));
+  $('#next').addEventListener('click', () => show(i === beats.length - 1 ? 0 : i + 1));
+  addEventListener('keydown', e => {
+    if (e.target.closest('input, textarea, [contenteditable], [role=slider]')) return;
+    const k = e.key;
+    if (k === 'ArrowRight' || k === ' ' || k === 'PageDown') { e.preventDefault(); show(i + 1); }
+    else if (k === 'ArrowLeft' || k === 'PageUp') show(i - 1);
+    else if (k === 'Home' || k === 'Escape') show(0);
+    else if (k === 'End') show(beats.length - 1);
+    else if (/^[1-9]$/.test(k)) show(+k - 1);
+    else if (k === 'r' || k === 'R') { location.hash = ''; location.reload(); }
+    else if (k === 'f' || k === 'F') { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.(); }
+    else if (k === 'b' || k === 'B') { const b = $('.blackout'); b.hidden = !b.hidden; }
+    else if (k === 'h' || k === 'H') { const h = $('.hint'); h.hidden = !h.hidden; }
+    else if (k === 'p' || k === 'P') { const r = document.documentElement; r.dataset.mode = r.dataset.mode === 'present' ? 'guided' : 'present'; }
+  });
+  recompute(true);
+  show(i, false);
+  const hint = $('.hint'); hint.hidden = false; setTimeout(() => hint.hidden = true, 4000);
+  if (document.documentElement.dataset.mode === 'present') {
+    let idle; addEventListener('pointermove', () => { document.body.style.cursor = ''; clearTimeout(idle);
+      idle = setTimeout(() => document.body.style.cursor = 'none', 2000); });
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+:root { --bg: oklch(0.30 0 0); --text: oklch(0.36 0 0); }
+body { font-family: Arial, sans-serif; background: var(--bg); color: var(--text); }
+.pulse { animation: pulse 1s infinite; }
+@keyframes pulse { from { opacity: 1; } to { opacity: .4; } }
+</style>
+</head>
+<body>
+<main>
+<h1 class="pulse">Revenue up</h1>
+<p>Quarterly revenue reached $1.2M across every desk in the region.</p>
+<img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=">
+<button>Submit</button>
+</main>
+<script src="https://cdn.example.com/lib.js"></script>
+<script>fetch('https://api.example.com/prices').then(r => r.json());</script>
+</body>
+</html>
