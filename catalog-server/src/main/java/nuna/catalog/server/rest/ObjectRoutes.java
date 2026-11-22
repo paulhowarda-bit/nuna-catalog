@@ -11,6 +11,7 @@ import nuna.catalog.core.commit.ObjectName;
 import nuna.catalog.iceberg.RestRequest;
 import nuna.catalog.iceberg.RestRequest.Identifier;
 import nuna.catalog.iceberg.RestResponse;
+import nuna.catalog.security.Authorizer.Operation;
 import nuna.catalog.server.rest.Idempotency.Reply;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogObject.Kind;
@@ -131,7 +132,9 @@ class ObjectRoutes {
             CatalogObject object = existing(catalog, levels, name, kind);
             guard.onObject(request, catalog, object, AuditEvents.path(levels, name),
                     kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW, noSuch(kind, qualified));
-            requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + qualified);
+            requireUnfrozen(request, catalog, object, AuditEvents.path(levels, name),
+                    kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW, GovernanceChain.of(store, object),
+                    word(kind) + " " + qualified);
             Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
             Instant purgeAfter = now.plus(settings.dropRetention());
             Change change = ticket.change(now, List.of(audit.event(now, new Drop(
@@ -177,8 +180,12 @@ class ObjectRoutes {
             guard.onNamespace(request, catalog, target, to.namespace(),
                     kind == Kind.TABLE ? Guard.RENAME_TABLE_INTO : Guard.RENAME_VIEW_INTO,
                     Http.noSuchNamespace(to.namespace()));
-            requireUnfrozen(GovernanceChain.of(store, object), word(kind) + " " + fromName);
-            requireUnfrozen(GovernanceChain.of(store, target), "Namespace " + Http.dotted(to.namespace()));
+            List<String> fromPath = AuditEvents.path(from.namespace(), from.name());
+            Operation renaming = kind == Kind.TABLE ? Guard.RENAME_TABLE : Guard.RENAME_VIEW;
+            requireUnfrozen(request, catalog, object, fromPath, renaming, GovernanceChain.of(store, object),
+                    word(kind) + " " + fromName);
+            requireUnfrozen(request, catalog, object, fromPath, renaming, GovernanceChain.of(store, target),
+                    "Namespace " + Http.dotted(to.namespace()));
             Optional<CatalogObject> holder = store.findObject(target.id(), Names.normalize(to.name()))
                     .filter(o -> !o.id().equals(object.id()));
             if (holder.isPresent()) {
@@ -244,10 +251,15 @@ class ObjectRoutes {
         };
     }
 
-    /** A DR freeze on any level above refuses drops and renames as it refuses commits (D37, M7). */
-    private static void requireUnfrozen(GovernanceChain chain, String what) {
+    /**
+     * A DR freeze on any level above refuses drops and renames as it refuses commits (D37, M7): audited as a denial
+     * of the operation on the object, with reason {@code dr_freeze} (D18), and answered 403.
+     */
+    private void requireUnfrozen(RequestContext request, CatalogRecord catalog, CatalogObject object,
+                                 List<String> path, Operation operation, GovernanceChain chain, String what) {
         chain.nearest(GovernanceAttribute.Kind.DR_FREEZE).ifPresent(freeze -> {
-            throw Http.forbidden(what + " is frozen for DR reconcile: " + freeze.value());
+            throw guard.refuse(request, catalog, object, path, operation, "dr_freeze",
+                    what + " is frozen for DR reconcile: " + freeze.value());
         });
     }
 

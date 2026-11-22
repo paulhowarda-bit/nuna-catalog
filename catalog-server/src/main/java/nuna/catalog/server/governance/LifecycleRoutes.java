@@ -150,7 +150,9 @@ class LifecycleRoutes {
             throw CatalogError.of(409, "UndropWindowClosedException", "The undrop window of " + id + " closed at "
                     + object.purgeAfter().get() + "; it is waiting to be purged");
         }
-        Management.requireUnfrozen(GovernanceChain.of(store, object), "The namespace of " + id);
+        guard.requireUnfrozen(request, GovernanceChain.of(store, object),
+                Management.audit(catalog, levels, object.name().display(), object), "undropObject",
+                "The namespace of " + id);
         WriteResult result = Management.write("Undropping " + id, () -> store.undropObject(object.id(),
                         object.namespaceId(), name, management.change(now, new Undrop(
                                 Management.audit(catalog, levels, name.display(), object), request.actor()))),
@@ -195,7 +197,8 @@ class LifecycleRoutes {
         if (object.state() != CatalogObject.State.DROPPED) {
             throw notDropped(id);
         }
-        Management.requireUnfrozen(GovernanceChain.of(store, object), "The namespace of " + id);
+        guard.requireUnfrozen(request, GovernanceChain.of(store, object), audit, "claimPurge",
+                "The namespace of " + id);
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         if (!takePurgeSlot(now)) {
             return ResponseEntity.status(429).header("Retry-After", "60").contentType(MediaType.APPLICATION_JSON)
@@ -215,7 +218,7 @@ class LifecycleRoutes {
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
                     throw CatalogError.of(403, "ForbiddenException", id + " is under a legal hold and cannot be purged");
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN ->
-                    throw CatalogError.of(403, "ForbiddenException", "The namespace of " + id
+                    throw guard.frozen(request, audit, "claimPurge", "The namespace of " + id
                             + " is frozen for DR reconcile");
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_DUE ->
                     throw CatalogError.of(409, "PurgeNotDueException", id + " may not be purged before "

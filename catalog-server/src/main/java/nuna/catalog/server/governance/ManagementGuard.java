@@ -1,5 +1,6 @@
 package nuna.catalog.server.governance;
 
+import nuna.catalog.core.commit.GovernanceChain;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Authorizer.Decision;
 import nuna.catalog.security.Authorizer.Operation;
@@ -11,6 +12,7 @@ import nuna.catalog.server.rest.AccessDenied;
 import nuna.catalog.server.security.Denials;
 import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.security.SecuritySettings;
+import nuna.catalog.store.GovernanceAttribute;
 import java.util.Locale;
 import org.springframework.stereotype.Component;
 
@@ -86,6 +88,22 @@ class ManagementGuard {
             throw denials.refuse(request.actor(), operation, target, null, "not_maintenance",
                     "only a maintenance principal may call " + operation);
         }
+    }
+
+    /**
+     * Refuses {@code operation} on {@code target} when a DR freeze covers the chain (D37), whatever the caller holds:
+     * audited as a denial with reason {@code dr_freeze} (D18), and answered 403 with the freeze's reason.
+     */
+    void requireUnfrozen(Request request, GovernanceChain chain, nuna.catalog.audit.Securable target,
+                         String operation, String what) {
+        chain.nearest(GovernanceAttribute.Kind.DR_FREEZE).ifPresent(freeze -> {
+            throw frozen(request, target, operation, what + " is frozen for DR reconcile: " + freeze.value());
+        });
+    }
+
+    /** A refusal under a DR freeze, audited as a denial with reason {@code dr_freeze} (D18, D37). */
+    AccessDenied frozen(Request request, nuna.catalog.audit.Securable target, String operation, String message) {
+        return denials.refuse(request.actor(), operation, target, null, "dr_freeze", message);
     }
 
     private boolean operator(Request request) {
