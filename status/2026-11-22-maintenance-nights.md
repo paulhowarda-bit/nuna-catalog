@@ -36,7 +36,7 @@ What was checked:
   were run with `bites/run.sh` here, and each bites. The eight against heavy tests were not run.
 - Four older bites that break `Worker.java` were re-recorded against the new code with the same breaks. All 450
   bites pass `git apply --check`.
-- The fast build, `./gradlew build`, after merging main at 51303f9, stopped at `:bitesApply` on those four bites,
-  before they were re-recorded. It has not run again: a nightly run by hand was holding the machine.
+- The fast build, `./gradlew build`, after merging main at 51303f9, first stopped at `:bitesApply` on those four
+  bites. Once they were re-recorded and main was merged again at 8c84f67, it passed: BUILD SUCCESSFUL in 2m 38s.
 
 Not covered: the console's pages themselves (items 124 to 132).
