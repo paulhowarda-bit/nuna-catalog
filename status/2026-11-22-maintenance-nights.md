@@ -34,6 +34,9 @@ What was checked:
   - `SchemaAtStartupTest` and `RollingUpgradeTest`, moved to PostgreSQL V12.
 - Twelve bites are recorded in `bites/D30/`, each checked with `git apply --check`. The four in catalog-maintenance
   were run with `bites/run.sh` here, and each bites. The eight against heavy tests were not run.
-- The fast build, `./gradlew build`, after merging main: see the item.
+- Four older bites that break `Worker.java` were re-recorded against the new code with the same breaks. All 450
+  bites pass `git apply --check`.
+- The fast build, `./gradlew build`, after merging main at 51303f9, stopped at `:bitesApply` on those four bites,
+  before they were re-recorded. It has not run again: a nightly run by hand was holding the machine.
 
 Not covered: the console's pages themselves (items 124 to 132).

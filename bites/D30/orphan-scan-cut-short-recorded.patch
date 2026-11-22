@@ -2,14 +2,14 @@ Breaks: an orphan scan the window's end cut short is recorded as tonight's, so i
 Module: catalog-maintenance
 Test: NightlyCleanupTest#anOrphanScanTheWindowsEndCutsShortIsScannedAgainTheNextNight
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-index 7e414a6..0be1aad 100644
+index 5251272..6f46186 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
-@@ -318,6 +318,7 @@ final class Worker implements AutoCloseable {
+@@ -346,6 +346,7 @@ final class Worker implements AutoCloseable {
                              () -> night.contains(clock.instant()), () -> { });
                  } catch (OrphanScan.CutShort e) {
                      // Not recorded: the table is scanned again the next night.
 +                    orphanScans.put(work.id(), night.date());
                      report.orphanScansCutShort++;
+                     cutShort[0] = true;
                      LOG.info("The window's end cut short the orphan scan of table {} ({})", work.name(), work.id());
-                     return;
