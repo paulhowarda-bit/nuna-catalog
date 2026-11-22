@@ -20,7 +20,6 @@ import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitOutcomeUnknownException;
-import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
@@ -231,12 +230,5 @@ class Management {
             throw CatalogError.badRequest("Field " + field + " is longer than " + maxLength + " characters");
         }
         return value.asString();
-    }
-
-    /** Whether a DR freeze covers the chain; throws 403 when it does. */
-    static void requireUnfrozen(GovernanceChain chain, String what) {
-        chain.nearest(GovernanceAttribute.Kind.DR_FREEZE).ifPresent(freeze -> {
-            throw CatalogError.of(403, "ForbiddenException", what + " is frozen for DR reconcile: " + freeze.value());
-        });
     }
 }

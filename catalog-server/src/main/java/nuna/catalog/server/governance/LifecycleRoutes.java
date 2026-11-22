@@ -20,9 +20,11 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.JournalRecord;
+import nuna.catalog.store.JournalStore;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
+import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.WriteResult;
@@ -32,10 +34,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -50,7 +55,8 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Dropped tables and views (D25): listing them, undrop within the window, purge after it by a maintenance
- * principal only and at a bounded rate, and the snapshot-and-journal export of any object. A purge is a claim,
+ * principal only and at a bounded rate, the snapshot-and-journal export of any object, and its metadata log a page
+ * at a time. A purge is a claim,
  * the deletion of the object's files by the maintenance worker with its own storage identity, then its
  * completion (D30). Each route asks {@link ManagementGuard} once the object or namespace it names is found.
  */
@@ -63,9 +69,12 @@ class LifecycleRoutes {
     static final String PURGE_CLAIM = OBJECT + "/purge-claim";
     static final String PURGE = OBJECT + "/purge";
     static final String EXPORT = OBJECT + "/export";
+    static final String METADATA_LOG = OBJECT + "/metadata-log";
     static final String PURGE_ELIGIBLE = ROOT + "/maintenance/purge-eligible";
 
     private static final int PAGE = 200;
+    private static final int LOG_PAGE = 25;
+    private static final int LOG_PAGE_MAX = 100;
     private static final Duration RATE_WINDOW = Duration.ofMinutes(1);
 
     private final CatalogStore store;
@@ -141,7 +150,9 @@ class LifecycleRoutes {
             throw CatalogError.of(409, "UndropWindowClosedException", "The undrop window of " + id + " closed at "
                     + object.purgeAfter().get() + "; it is waiting to be purged");
         }
-        Management.requireUnfrozen(GovernanceChain.of(store, object), "The namespace of " + id);
+        guard.requireUnfrozen(request, GovernanceChain.of(store, object),
+                Management.audit(catalog, levels, object.name().display(), object), "undropObject",
+                "The namespace of " + id);
         WriteResult result = Management.write("Undropping " + id, () -> store.undropObject(object.id(),
                         object.namespaceId(), name, management.change(now, new Undrop(
                                 Management.audit(catalog, levels, name.display(), object), request.actor()))),
@@ -186,7 +197,8 @@ class LifecycleRoutes {
         if (object.state() != CatalogObject.State.DROPPED) {
             throw notDropped(id);
         }
-        Management.requireUnfrozen(GovernanceChain.of(store, object), "The namespace of " + id);
+        guard.requireUnfrozen(request, GovernanceChain.of(store, object), audit, "claimPurge",
+                "The namespace of " + id);
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         if (!takePurgeSlot(now)) {
             return ResponseEntity.status(429).header("Retry-After", "60").contentType(MediaType.APPLICATION_JSON)
@@ -206,7 +218,7 @@ class LifecycleRoutes {
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
                     throw CatalogError.of(403, "ForbiddenException", id + " is under a legal hold and cannot be purged");
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN ->
-                    throw CatalogError.of(403, "ForbiddenException", "The namespace of " + id
+                    throw guard.frozen(request, audit, "claimPurge", "The namespace of " + id
                             + " is frozen for DR reconcile");
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_DUE ->
                     throw CatalogError.of(409, "PurgeNotDueException", id + " may not be purged before "
@@ -316,6 +328,74 @@ class LifecycleRoutes {
             page = page.after(entries);
         }
         return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * The object's metadata log, newest first, a page at a time (D45): its commit journal entries in the export's
+     * form, each the metadata file one commit wrote, and the pointer the newest leads to. Needs select on the object,
+     * as the export does, and works for dropped objects too. {@code pageSize} is 25 by default, at most 100. A page's
+     * token names the version it stopped before, so commits made meanwhile never shift the pages after the first; a
+     * page holds fewer entries only where versions are missing, and the log goes on while {@code next-page-token} is
+     * present.
+     */
+    @GetMapping(path = METADATA_LOG, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> metadataLog(@PathVariable("catalog") String prefix, @PathVariable String id,
+                                       @RequestParam(required = false) String pageToken,
+                                       @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+        Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, "readMetadataLog", Privilege.SELECT);
+        CatalogObject object = existing(catalog, id);
+        List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
+        guard.require(request, Authorizer.Target.of(object),
+                Management.audit(catalog, levels, object.name().display(), object), "readMetadataLog", Privilege.SELECT);
+        int size = pageSize == null ? LOG_PAGE : Math.clamp(pageSize, 1, LOG_PAGE_MAX);
+        Optional<Long> before = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()).map(LifecycleRoutes::before);
+        ObjectNode body = Management.JSON.createObjectNode();
+        Optional<Pointer> pointer = store.readPointer(object.mainKey());
+        pointer.ifPresent(p -> {
+            ObjectNode node = body.putObject("pointer");
+            node.put("metadata-location", p.metadataLocation());
+            node.put("version", p.version());
+            node.put("sha256", p.sha256());
+        });
+        ArrayNode journal = body.putArray("journal");
+        Optional<Long> top = before.or(() -> pointer.map(p -> p.version() + 1));
+        if (top.isPresent()) {
+            LogPage page = logPage(top.get(), size, next -> store.readJournal(object.mainKey(), JournalStore.EARLIEST,
+                    JournalStore.LATEST, next));
+            page.entries().forEach(entry -> journal.add(journal(entry)));
+            page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
+        }
+        return GovernanceRoutes.json(200, body);
+    }
+
+    /** A page of the metadata log, newest first, and the version the page after it stops before, if there is one. */
+    record LogPage(List<JournalRecord> entries, Optional<Long> before) {
+    }
+
+    /**
+     * The log's entries below version {@code before} and at or above {@code before - size}, newest first: one read of
+     * at most {@code size} entries, in the ascending pages the store keeps ({@link JournalStore#readJournal}).
+     */
+    static LogPage logPage(long before, int size, Function<PageRequest, Page<JournalRecord>> read) {
+        long low = Math.max(1, before - size);
+        List<JournalRecord> entries = new ArrayList<>(read.apply(JournalStore.afterVersion(low - 1, size)).items()
+                .stream().filter(entry -> entry.newVersion() < before).toList());
+        Collections.reverse(entries);
+        return new LogPage(entries, low > 1 ? Optional.of(low) : Optional.empty());
+    }
+
+    private static long before(String token) {
+        long version;
+        try {
+            version = Long.parseLong(PageToken.decode(token, 1).getFirst());
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Invalid page token: " + token);
+        }
+        if (version < 1) {
+            throw CatalogError.badRequest("Invalid page token: " + token);
+        }
+        return version;
     }
 
     /** Takes one purge from this minute's allowance; false when it is spent. */

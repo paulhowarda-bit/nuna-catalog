@@ -1,0 +1,17 @@
+Breaks: the effective grants on a securable read only its own grants, none inherited from its namespaces or catalog.
+Module: catalog-security
+Test: EffectiveGrantsTest#aGrantOnTheCatalogOrOnANamespaceAboveReachesATableFromTheCatalogDown+theReadAgreesWithEveryAccessDecision
+
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
+index 4b11fc3..90f44d7 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/Authorizer.java
+@@ -218,7 +218,7 @@ public final class Authorizer {
+      */
+     public List<GrantRecord> effectiveGrants(Target target) {
+         List<GrantRecord> reaching = new ArrayList<>();
+-        for (Securable securable : chain(target).reversed()) {
++        for (Securable securable : chain(target).subList(0, 1)) {
+             PageRequest request = PageRequest.first(GRANT_PAGE);
+             while (true) {
+                 Page<GrantRecord> page = grants.listGrantsOn(securable, request);

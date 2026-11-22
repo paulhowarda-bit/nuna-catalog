@@ -9,6 +9,8 @@ import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.GrantStore;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.NamespaceStore;
+import nuna.catalog.store.Page;
+import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Securable;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -131,6 +133,7 @@ public final class Authorizer {
 
     private static final Decision ALLOWED = new Decision.Allowed();
     private static final int PARENT_CACHE_LIMIT = 100_000;
+    private static final int GRANT_PAGE = 500;
 
     private final GrantStore grants;
     private final GovernanceStore governance;
@@ -203,6 +206,30 @@ public final class Authorizer {
             grants.grantsFor(Set.copyOf(chain), groups).forEach(g -> known(g).ifPresent(privileges::add));
         }
         return privileges;
+    }
+
+    /**
+     * The effective grants on the target: every grant that reaches it, on its catalog, on each namespace above it and
+     * on the target itself, in that order from the catalog down, each with the securable it was granted on (D18,
+     * D45). It walks the chain {@link #decide} walks and keeps the grants {@link #decide} counts, so it never shows a
+     * grant a decision ignores nor leaves out one a decision counts: a privilege this version does not know gives
+     * nothing and is left out. The deployment's grant-admin groups hold {@code manage-grants} on every catalog by
+     * configuration, not by a grant, so they are not among them ({@link Separation#grantAdminGroups}).
+     */
+    public List<GrantRecord> effectiveGrants(Target target) {
+        List<GrantRecord> reaching = new ArrayList<>();
+        for (Securable securable : chain(target).reversed()) {
+            PageRequest request = PageRequest.first(GRANT_PAGE);
+            while (true) {
+                Page<GrantRecord> page = grants.listGrantsOn(securable, request);
+                page.items().stream().filter(g -> known(g).isPresent()).forEach(reaching::add);
+                if (page.nextToken().isEmpty()) {
+                    break;
+                }
+                request = request.after(page);
+            }
+        }
+        return reaching;
     }
 
     private Decision decide(Caller caller, Request request, List<Securable> chain, List<GrantRecord> held,
