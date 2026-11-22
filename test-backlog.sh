@@ -46,5 +46,33 @@ for stub in 'exec cat "$2"' 'exit 1'; do
     fi
 done
 
+# Widening a claim (backlog 125, 129): the holder adds areas; another session cannot; an overlap still refuses.
+printf '# 2. Two\n\nStatus: open\nAdded: 2026-11-22 by test\nTouches: a/\n' > backlog/2.md
+printf '# 3. Three\n\nStatus: open\nAdded: 2026-11-22 by test\nTouches: c/\n' > backlog/3.md
+"$here/backlog.sh" claim 2 >/dev/null || exit 2
+git checkout -q -b other && CLAUDE_CODE_HOST_SESSION_ID=other "$here/backlog.sh" claim 3 >/dev/null || exit 2
+git checkout -q "$branch" || exit 2
+touches() { git cat-file -p "refs/backlog/claims/$1" | sed -n 's/^touches: //p'; }
+if out=$("$here/backlog.sh" claim 2 b/ 2>&1) && [[ $out == widened* ]] && [[ " $(touches 2) " == *" a/ "* ]] &&
+    [[ " $(touches 2) " == *" b/ "* ]]; then
+    ok "the holder widens its claim: $(touches 2)"
+else
+    bad "widening item 2: $out; touches: $(touches 2)"
+fi
+if out=$("$here/backlog.sh" claim 2 c/ 2>&1); then
+    bad "widening into another claim's area went on: $out"
+elif [[ " $(touches 2) " == *" c/ "* ]]; then
+    bad "a refused widening changed the claim: $(touches 2)"
+else
+    ok "widening into another claim's area refuses"
+fi
+if out=$(CLAUDE_CODE_HOST_SESSION_ID=third "$here/backlog.sh" claim 3 d/ 2>&1); then
+    bad "another session widened item 3: $out"
+elif [ "$(touches 3)" != c/ ]; then
+    bad "another session's refused claim changed item 3: $(touches 3)"
+else
+    ok "another session cannot widen a claim it does not hold"
+fi
+
 [ $fails -eq 0 ] && echo "all checks pass" || echo "$fails check(s) failed"
 [ $fails -eq 0 ]
