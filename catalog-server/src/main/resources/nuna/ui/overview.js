@@ -4,10 +4,10 @@
 // 125); and the governance figures for those who may describe the catalog (item 128).
 
 import * as api from './api.js';
-import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
+import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {pageHref} from './route.js';
-import {estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable} from './queue.js';
+import {estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable, shapeWords} from './queue.js';
 import {sloFigures} from './health.js';
 import {governanceFigures} from './governance.js';
 
@@ -18,14 +18,17 @@ export function overviewPage(catalog) {
       estate(true).then(all => all.filter(t => t.catalog === catalog))]);
     const assessed = lastAssessed(rows);
     const c = estateCounts(tables);
+    // Before the worker reports, no table is assessed: none is in shape or queued, and the page says so.
+    const none = c.total > 0 && c.unassessed === c.total;
     const now = new Date();
     const out = [pageHead({
       hero: true,
       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
       title: !c.total ? `No table in ${catalog} is yours to select.`
-        : [`${fmt(c.inShape)} of ${plural(c.total, 'table')} in shape. `, c.queued
-          ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
+        : none ? shapeWords(c)
+          : [shapeWords(c) + ' ', c.queued
+            ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
       sub: 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s health is on its own page.',
       side: assessed ? pill('ok', icon('check'), 'Last assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
     })];
@@ -38,9 +41,11 @@ export function overviewPage(catalog) {
     const kpis = h('div', {class: 'kpis', id: 'overview-kpis'});
     kpis.append(h('div', {class: 'kpi', 'data-kpi': 'shape'},
       h('p', {class: 'kpi-l'}, icon('check'), 'In shape'),
-      h('p', {class: 'kpi-v'}, `${fmt(c.inShape)} of ${fmt(c.total)}`),
-      h('p', {class: 'kpi-d'}, c.queued ? `${fmt(c.queued)} queued for tonight` : 'none queued for tonight',
-        c.unassessed ? `, ${fmt(c.unassessed)} not yet assessed` : '')));
+      none ? h('p', {class: 'kpi-v'}, '–', h('small', null, 'none assessed yet'))
+        : h('p', {class: 'kpi-v'}, `${fmt(c.inShape)} of ${fmt(c.total - c.unassessed)}`, c.unassessed ? h('small', null, 'assessed') : null),
+      h('p', {class: 'kpi-d'}, none ? `${fmt(c.unassessed)} not assessed yet: the maintenance worker has not reported`
+        : [c.queued ? `${fmt(c.queued)} queued for tonight` : 'none queued for tonight',
+          c.unassessed ? `, ${fmt(c.unassessed)} not assessed yet` : ''])));
     out.push(kpis);
     const nights = thirtyNights();
     Promise.all([nights.then(list => lastNightKpi(catalog, list), error => h('div', {class: 'kpi'}, failure(error, {compact: true}))),
@@ -53,7 +58,9 @@ export function overviewPage(catalog) {
       rows.length ? [queueTable(rows.slice(0, 8), {numbered: false, cls: 'stack-sm'}),
         h('p', {class: 'fine'}, rows.length > 8 ? `${rows.length - 8} more in the queue. ` : '',
           h('a', {href: pageHref('maintenance', catalog)}, 'Open the maintenance queue'))]
-        : h('p', {class: 'muted'}, 'No table you may read needs compaction.')), lastNight));
+        : h('p', {class: 'muted'}, none ? 'Nothing queued: the maintenance worker has not assessed any table you may read yet.'
+          : c.unassessed ? `No assessed table you may read needs compaction; ${fmt(c.unassessed)} not assessed yet.`
+            : 'No table you may read needs compaction.')), lastNight));
     return out;
   });
   return main;
