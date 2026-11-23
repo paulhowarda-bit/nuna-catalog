@@ -343,9 +343,10 @@ class LifecycleRoutes {
      * present.
      *
      * <p>With {@code ref}, the log as the catalog's branch or tag of that name reads the object (D33, backlog 109): the
-     * versions a branch committed of its own, from its own journal, above the cut's version, and main's below and at
-     * it; {@code pointer} is the one the ref reads, and {@code ref} names it with the cut's version. 404 when no live
-     * ref has the name, or the ref's cut does not hold the object.
+     * versions a branch committed of its own, from its own journal, above the cut's version; below and at it, the log
+     * of what the ref was made from ({@link #stretches}); {@code pointer} is the one the ref reads, and {@code ref}
+     * names it with the cut's version, and with {@code log-stops-at-cut} when the versions below came from a ref that
+     * has ended. 404 when no live ref has the name, or the ref's cut does not hold the object.
      */
     @GetMapping(path = METADATA_LOG, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> metadataLog(@PathVariable("catalog") String prefix, @PathVariable String id,
@@ -367,7 +368,8 @@ class LifecycleRoutes {
             Instant now = clock.instant();
             Ref on = store.findRef(catalog.id(), Names.normalize(ref)).filter(r -> !r.expiredAt(now))
                     .orElseThrow(() -> CatalogError.of(404, "NoSuchRefException", "Ref does not exist: " + ref));
-            RefPointers held = store.listRefPointers(object.id()).stream()
+            List<RefPointers> holding = store.listRefPointers(object.id());
+            RefPointers held = holding.stream()
                     .filter(pointers -> pointers.ref().id().equals(on.id())).findFirst()
                     .orElseThrow(() -> CatalogError.of(404, "NoSuchObjectException", "No table or view " + id
                             + " on ref " + on.name().display() + " of " + catalog.name()));
@@ -380,10 +382,12 @@ class LifecycleRoutes {
             named.put("name", on.name().display());
             named.put("kind", on.kind().name().toLowerCase(Locale.ROOT));
             named.put("cut-version", held.cut().version());
+            List<Stretch> stretches = stretches(held, holding, now, object.id(), mains);
+            if (stretches.getLast().floor() > 0) {
+                named.put("log-stops-at-cut", true);
+            }
             ArrayNode journal = body.putArray("journal");
-            LogPage page = refLogPage(before.orElse(reads.version() + 1), size, held.cut().version(),
-                    next -> store.readJournal(on.key(object.id()), JournalStore.EARLIEST, JournalStore.LATEST, next),
-                    mains);
+            LogPage page = refLogPage(before.orElse(reads.version() + 1), size, stretches);
             page.entries().forEach(entry -> journal.add(journal(entry)));
             page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
             return GovernanceRoutes.json(200, body);
@@ -406,26 +410,68 @@ class LifecycleRoutes {
     }
 
     /**
-     * A page of the log as a ref reads it, newest first: versions above {@code cut} from the branch's own journal
-     * ({@code own}), the rest from main's ({@code main}), as {@link #logPage} pages one journal. A branch's versions
-     * go on from the cut's, one a commit, so the two never share a version.
+     * The journals a ref's log reads, newest first (backlog 109). The ref's own, above its cut. Then, while the ref it
+     * was made from is live, that ref's own versions down to its cut, which a ref made from a branch took from the
+     * branch's journal; and so on back. Then main's, at and below the last cut, when main's entry at that version
+     * wrote the cut's file: always so for a cut taken from main. Otherwise the log stops at that cut, whose versions
+     * came from a ref that has ended.
      */
-    static LogPage refLogPage(long before, int size, long cut, Function<PageRequest, Page<JournalRecord>> own,
-                              Function<PageRequest, Page<JournalRecord>> main) {
+    private List<Stretch> stretches(RefPointers held, List<RefPointers> holding, Instant now, UUID objectId,
+                                    Function<PageRequest, Page<JournalRecord>> mains) {
+        List<Stretch> stretches = new ArrayList<>();
+        stretches.add(new Stretch(held.cut().version(), journalOf(held.ref().key(objectId))));
+        RefPointers at = held;
+        while (at.ref().fromRef().isPresent()) {
+            UUID from = at.ref().fromRef().get();
+            Optional<RefPointers> source = holding.stream()
+                    .filter(pointers -> pointers.ref().id().equals(from) && !pointers.ref().expiredAt(now)).findFirst();
+            if (source.isEmpty()) {
+                break;
+            }
+            if (at.cut().version() > source.get().cut().version()) {
+                stretches.add(new Stretch(source.get().cut().version(), journalOf(source.get().ref().key(objectId))));
+            }
+            at = source.get();
+        }
+        RefEntry.At cut = at.cut();
+        boolean mainWroteIt = mains.apply(JournalStore.afterVersion(cut.version() - 1, 1)).items().stream()
+                .anyMatch(entry -> entry.newVersion() == cut.version() && entry.newLocation().equals(cut.metadataLocation()));
+        if (mainWroteIt) {
+            stretches.add(new Stretch(0, mains));
+        }
+        return stretches;
+    }
+
+    private Function<PageRequest, Page<JournalRecord>> journalOf(PointerKey key) {
+        return next -> store.readJournal(key, JournalStore.EARLIEST, JournalStore.LATEST, next);
+    }
+
+    /** One journal's part of a ref's log: its versions above {@code floor}, up to the floor of the part above it. */
+    record Stretch(long floor, Function<PageRequest, Page<JournalRecord>> read) {
+    }
+
+    /**
+     * A page of the log as a ref reads it, newest first, from {@code stretches} ({@link #stretches}), each paged as
+     * {@link #logPage} pages one journal. Each journal's versions go on from the floor below them, one a commit, so two
+     * never share a version; the log ends above the last floor.
+     */
+    static LogPage refLogPage(long before, int size, List<Stretch> stretches) {
         List<JournalRecord> entries = new ArrayList<>();
         long top = before;
-        if (top > cut + 1) {
-            int mine = (int) Math.min(size, top - cut - 1);
-            entries.addAll(logPage(top, mine, own).entries());
-            top -= mine;
+        int left = size;
+        for (Stretch stretch : stretches) {
+            if (left == 0) {
+                break;
+            }
+            if (top <= stretch.floor() + 1) {
+                continue;
+            }
+            int take = (int) Math.min(left, top - stretch.floor() - 1);
+            entries.addAll(logPage(top, take, stretch.read()).entries());
+            top -= take;
+            left -= take;
         }
-        int left = size - (int) (before - top);
-        if (left > 0 && top > 1) {
-            LogPage rest = logPage(top, left, main);
-            entries.addAll(rest.entries());
-            return new LogPage(entries, rest.before());
-        }
-        return new LogPage(entries, top > 1 ? Optional.of(top) : Optional.empty());
+        return new LogPage(entries, top > stretches.getLast().floor() + 1 ? Optional.of(top) : Optional.empty());
     }
 
     /** A page of the metadata log, newest first, and the version the page after it stops before, if there is one. */
