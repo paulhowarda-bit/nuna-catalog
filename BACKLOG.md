@@ -1261,6 +1261,26 @@ lifted record, or the row kept with `released_at` and `released_by`), on all fou
 test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
 its tests. The audit topic read goes.
 
+**Progress, 2026-11-22 (worktree-agent-a776179e2fcd3c868): built; open until the heavy build passes `GovernanceSuite`
+on all four stores.**
+- The record: `GovernanceLift` (kind `HOLD` or `DR_FREEZE`, the hold's id, the target, reason, placed by and at,
+  lifted by and at). `releaseHold` and `removeAttribute` take who lifts; a release, and a DR freeze's removal, write
+  one in the change's own transaction, with the catalog the level was in, so it outlives the level.
+  `liftedIn(catalog, since)` lists a catalog's lifts at or after `since`, the most recent first.
+- Schema steps, additions only: PostgreSQL `V14__governance_lifts.sql`, CockroachDB `V13__governance_lifts.sql`,
+  Oracle `V15__governance_lifts.sql`, MongoDB step 13 ("governance lifts"): a `governance_lift` table or collection
+  indexed by catalog and lift time. A separate table, not the hold row kept with `released_at`: a server of the
+  previous release would still read a kept row as a standing hold. Its releases during a rolling upgrade are kept
+  only in the audit record of the change.
+- Shared suite: `GovernanceSuite#releasesAndLiftsAreKept` (who and when, repeats `Missing`, the window, one catalog
+  only, the change rows) and `#releasesAndLiftsOutliveTheirLevel` (a dropped namespace, a purged table).
+- The route: `HoldHistory` reads the store for the last 30 days; the audit-topic read is gone. `history` is
+  `{days, since}`; a lift on a level dropped since has a null `path`, and the console names it by kind and id.
+- Not covered: dropping a namespace removes its attributes, a DR freeze among them, without keeping a lift (a frozen
+  namespace's drop is not refused today).
+
+Left: the overnight heavy build's run of the store suites on the four stores.
+
 ### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22

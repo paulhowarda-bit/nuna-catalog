@@ -16,6 +16,7 @@ import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.governance.Management.Target;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
@@ -34,9 +35,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
-import org.apache.kafka.common.KafkaException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -68,7 +66,6 @@ class GovernanceRoutes {
     private static final String FREEZE = "/dr-freeze";
     private static final String SUMMARY = "/governance/summary";
     private static final String HOLDS_AND_FREEZES = "/governance/holds";
-    private static final Logger LOG = LoggerFactory.getLogger(GovernanceRoutes.class);
 
     /** The attributes set through this API, from the console or an outside tool (D27), by their path name. */
     static final Map<String, GovernanceAttribute.Kind> PUSHED = Map.of(
@@ -115,11 +112,13 @@ class GovernanceRoutes {
     }
 
     /**
-     * Every hold and DR freeze in the catalog: those standing now, from the store, the newest first; and those
-     * released or lifted, from the audit topic's recent records, the most recent first, with the offsets read
-     * ({@link HoldHistory}). Each with what it is on, the reason as recorded, who placed it and when, and for a
-     * lifted one who lifted it and when. Without the audit topic the standing ones are still listed. Needs describe
-     * on the catalog.
+     * Every hold and DR freeze in the catalog: those standing now, the newest placed first; and every one released
+     * or lifted in the last {@value HoldHistory#DAYS} days, the most recent first, as the store keeps each release
+     * and lift ({@link HoldHistory}, item 133). Each with what it is on, the reason as recorded, who placed it and
+     * when, and for a lifted one who lifted it and when; a lift on a level dropped since names it by kind and id,
+     * with a null path. {@code history} gives the window: its days, and {@code since}, the time it starts. The
+     * standing ones are read first, so a hold released between the two reads is listed twice, never missed. Needs
+     * describe on the catalog.
      */
     @GetMapping(path = CATALOG + HOLDS_AND_FREEZES, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> holdsAndFreezes(@PathVariable("catalog") String prefix, HttpServletRequest http) {
@@ -127,50 +126,26 @@ class GovernanceRoutes {
         Target target = management.target(request, "listHoldsAndFreezes", Privilege.DESCRIBE,
                 prefix, null, null, null);
         guard.require(request, target, "listHoldsAndFreezes", Privilege.DESCRIBE);
+        GovernanceSummary governance = GovernanceSummary.read(store, target.catalog());
         ObjectNode body = Management.JSON.createObjectNode();
         body.put("catalog", target.catalog().name());
-        body.set("standing", GovernanceSummary.read(store, target.catalog()).standing());
+        body.set("standing", governance.standing());
+        HoldHistory.Result result = history.lifted(target.catalog());
         ArrayNode lifted = body.putArray("lifted");
-        ObjectNode window = body.putObject("history");
-        if (!history.configured()) {
-            window.put("available", false);
-            window.put("reason", "The audit topic is not configured on this server (nuna.audit.kafka-bootstrap-servers)");
-            return json(200, body);
-        }
-        HoldHistory.Result result;
-        try {
-            result = history.lifted(target.catalog().name());
-        } catch (KafkaException | IllegalStateException e) {
-            LOG.warn("audit topic could not be read for the holds of {}: {}", target.catalog().name(), e.getMessage());
-            window.put("available", false);
-            window.put("reason", "The audit topic cannot be read now; retry later");
-            return json(200, body);
-        }
-        for (HoldHistory.Lifted each : result.lifted()) {
+        for (GovernanceLift each : result.lifted()) {
             ObjectNode node = lifted.addObject();
-            node.put("kind", each.kind());
-            if (each.holdId() != null) {
-                node.put("id", each.holdId().toString());
-            }
-            node.set("on", GovernanceSummary.on(each.on()));
+            node.put("kind", each.kind() == GovernanceLift.Kind.HOLD ? "hold" : "freeze");
+            each.holdId().ifPresent(id -> node.put("id", id.toString()));
+            node.set("on", governance.on(each.target()));
             node.put("reason", each.reason());
             node.put("placed-by", each.placedBy());
-            node.put("placed-at", each.placedAt() == null ? null : each.placedAt().toString());
+            node.put("placed-at", each.placedAt().toString());
             node.put("lifted-by", each.liftedBy());
             node.put("lifted-at", each.liftedAt().toString());
         }
-        window.put("available", true);
-        window.put("complete", result.complete());
-        window.put("since", result.since() == null ? null : result.since().toString());
-        window.put("scan-limit", HoldHistory.SCAN_LIMIT);
-        ArrayNode partitions = window.putArray("partitions");
-        for (HoldHistory.Partition partition : result.partitions()) {
-            ObjectNode node = partitions.addObject();
-            node.put("partition", partition.partition());
-            node.put("earliest-offset", partition.earliest());
-            node.put("from-offset", partition.from());
-            node.put("to-offset", partition.to());
-        }
+        ObjectNode window = body.putObject("history");
+        window.put("days", HoldHistory.DAYS);
+        window.put("since", result.since().toString());
         return json(200, body);
     }
 
@@ -281,8 +256,9 @@ class GovernanceRoutes {
                 .orElseThrow(() -> CatalogError.of(404, "NoSuchHoldException",
                         "No hold " + holdId + " on this " + kind(target.securable())));
         Instant now = now();
-        WriteResult result = Management.write("Releasing a hold", () -> store.releaseHold(id, management.change(now,
-                        new HoldChange(HoldChange.Action.RELEASED, id, target.audit(), hold.reason(), request.actor()))),
+        WriteResult result = Management.write("Releasing a hold", () -> store.releaseHold(id,
+                        request.actor().principal(), management.change(now, new HoldChange(HoldChange.Action.RELEASED,
+                                id, target.audit(), hold.reason(), request.actor()))),
                 () -> store.holdsOn(java.util.Set.of(target.securable())).stream().noneMatch(h -> h.id().equals(id)));
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
@@ -441,8 +417,9 @@ class GovernanceRoutes {
         }
         Instant now = now();
         WriteResult result = Management.write("Removing " + attribute, () -> store.removeAttribute(target.securable(),
-                        kind, management.change(now, events(new GovernanceChange(GovernanceChange.Action.REMOVED,
-                                target.audit(), attribute, null, null, request.actor()), kind, null))),
+                        kind, request.actor().principal(), management.change(now, events(new GovernanceChange(
+                                GovernanceChange.Action.REMOVED, target.audit(), attribute, null, null,
+                                request.actor()), kind, null))),
                 () -> own(target, kind).isEmpty());
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();

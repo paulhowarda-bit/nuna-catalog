@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
 import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -19,9 +18,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * The governance summary and the holds and freezes on the wire (D45, item 128), on PostgreSQL with a Kafka broker:
- * a hold and a freeze placed, counted and listed from the store, then released and lifted, and listed again from the
- * audit topic once the relay has published them. The test catalog is shared with every M7 test, so this looks only
- * at its own namespace. {@link GovernanceSummaryTest} checks the counts and refusals case by case.
+ * a hold and a freeze placed, counted and listed from the store, then released and lifted, and listed at once as
+ * lifted, with who lifted them, from what the store keeps of each (item 133). The test catalog is shared with every
+ * M7 test, so this looks only at its own namespace. {@link GovernanceSummaryTest} checks the counts and refusals case
+ * by case.
  */
 @Tag("heavy")
 @GovernanceServer
@@ -52,7 +52,7 @@ class GovernanceSummaryRouteTest {
     }
 
     @Test
-    void aHoldAndAFreezeAreCountedListedAndOnceLiftedListedFromTheAuditTopic() {
+    void aHoldAndAFreezeAreCountedListedAndOnceLiftedListedAsLifted() {
         String ns = api.namespace();
         api.table(ns, "closed_one");
         api.table(ns, "held_one");
@@ -93,7 +93,7 @@ class GovernanceSummaryRouteTest {
                 "Authorization", api.steward()), 204);
         expect(api.manage("DELETE", "/namespaces/" + ns + "/dr-freeze", null, "Authorization", api.operator()), 204);
 
-        HttpResponse<String> lifted = awaitLifted(holdId, nsId);
+        HttpResponse<String> lifted = expect(api.manage("GET", "/governance/holds", null), 200);
         Map<String, Object> hold = JsonPath.<List<Map<String, Object>>>read(lifted.body(),
                 "$.lifted[?(@.id == '" + holdId + "')]").getFirst();
         assertThat(hold).containsEntry("kind", "hold").containsEntry("reason", reason)
@@ -103,7 +103,7 @@ class GovernanceSummaryRouteTest {
         assertThat(freeze).containsEntry("reason", drill).containsEntry("placed-by", "ops")
                 .containsEntry("lifted-by", "ops");
         assertThat(JsonPath.<List<String>>read(lifted.body(), "$.standing[*].reason")).doesNotContain(reason, drill);
-        assertThat(JsonPath.<Boolean>read(lifted.body(), "$.history.available")).isTrue();
+        assertThat(JsonPath.<Integer>read(lifted.body(), "$.history.days")).isEqualTo(30);
     }
 
     @Test
@@ -114,26 +114,5 @@ class GovernanceSummaryRouteTest {
                 "ForbiddenException");
         expectError(api.manage("GET", "/governance/summary", null, "Authorization", api.operator()), 403,
                 "ForbiddenException");
-    }
-
-    /** The holds and freezes, once the relay has published the release and the lift; up to 30 seconds. */
-    private HttpResponse<String> awaitLifted(String holdId, String nsId) {
-        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-        while (true) {
-            HttpResponse<String> holds = expect(api.manage("GET", "/governance/holds", null), 200);
-            if (!JsonPath.<List<Object>>read(holds.body(), "$.lifted[?(@.id == '" + holdId + "')]").isEmpty()
-                    && !JsonPath.<List<Object>>read(holds.body(),
-                    "$.lifted[?(@.kind == 'freeze' && @.on.id == '" + nsId + "')]").isEmpty()) {
-                return holds;
-            }
-            assertThat(System.nanoTime()).as("the release and lift reached the audit topic: " + holds.body())
-                    .isLessThan(deadline);
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException(e);
-            }
-        }
     }
 }

@@ -25,6 +25,7 @@ import nuna.catalog.store.CommitLookup;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
@@ -106,6 +107,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String STORAGE_PROFILE = "storage_profile";
     static final String ATTRIBUTE = "governance_attribute";
     static final String HOLD = "legal_hold";
+    static final String LIFT = "governance_lift";
     static final String ENGINE = "trusted_engine";
     static final String PENDING_DELETION = "pending_deletion";
     static final String TABLE_HEALTH = "table_health";
@@ -680,8 +682,9 @@ public final class MongoCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, Change change) {
-        return governance.removeAttribute(target, kind, change);
+    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy,
+                                       Change change) {
+        return governance.removeAttribute(target, kind, removedBy, change);
     }
 
     @Override
@@ -695,13 +698,18 @@ public final class MongoCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult releaseHold(UUID holdId, Change change) {
-        return governance.releaseHold(holdId, change);
+    public WriteResult releaseHold(UUID holdId, String releasedBy, Change change) {
+        return governance.releaseHold(holdId, releasedBy, change);
     }
 
     @Override
     public List<LegalHold> holdsOn(Set<Securable> targets) {
         return governance.holdsOn(targets);
+    }
+
+    @Override
+    public List<GovernanceLift> liftedIn(UUID catalogId, Instant since) {
+        return governance.liftedIn(catalogId, since);
     }
 
     @Override

@@ -1,6 +1,7 @@
 package nuna.catalog.store.suite;
 
 import static nuna.catalog.store.suite.Changes.change;
+import static nuna.catalog.store.suite.Changes.changeAt;
 import static nuna.catalog.store.suite.Changes.fullChange;
 import static nuna.catalog.store.suite.Changes.name;
 import static nuna.catalog.store.suite.Changes.now;
@@ -11,6 +12,7 @@ import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogSettings;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -18,6 +20,7 @@ import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -29,7 +32,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** Catalogs, storage profiles, governance attributes, legal holds and trusted engines. */
+/** Catalogs, storage profiles, governance attributes, legal holds, their releases and lifts, and trusted engines. */
 public abstract class GovernanceSuite extends GroupSuite {
 
     private StorageProfile newProfile(List<String> locations) {
@@ -146,9 +149,9 @@ public abstract class GovernanceSuite extends GroupSuite {
 
         assertThat(store.attributesOf(Set.of(table.securable(), onNamespace)))
                 .containsExactlyInAnyOrder(replaced, classification, owner);
-        assertThat(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.CLASSIFICATION, remove))
+        assertThat(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.CLASSIFICATION, "steward", remove))
                 .isEqualTo(WriteResult.APPLIED);
-        assertThat(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.CLASSIFICATION, removeAgain))
+        assertThat(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.CLASSIFICATION, "steward", removeAgain))
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.ATTRIBUTE));
         assertThat(store.attributesOf(Set.of(table.securable()))).containsExactly(replaced);
         assertThat(underTest().changeRows(replace)).isEqualTo(WrittenRows.allOf(replace));
@@ -207,12 +210,101 @@ public abstract class GovernanceSuite extends GroupSuite {
         assertApplied(store.placeHold(wide, change()));
 
         assertThat(store.holdsOn(Set.of(onNamespace, onCatalog))).containsExactlyInAnyOrder(first, second, wide);
-        assertThat(store.releaseHold(first.id(), release)).isEqualTo(WriteResult.APPLIED);
-        assertThat(store.releaseHold(first.id(), releaseAgain)).isEqualTo(new WriteResult.Missing(WriteResult.Subject.HOLD));
+        assertThat(store.releaseHold(first.id(), "counsel", release)).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.releaseHold(first.id(), "counsel", releaseAgain)).isEqualTo(new WriteResult.Missing(WriteResult.Subject.HOLD));
         assertThat(store.holdsOn(Set.of(onNamespace))).containsExactly(second);
         assertThat(underTest().changeRows(place)).isEqualTo(WrittenRows.allOf(place));
         assertThat(underTest().changeRows(release)).isEqualTo(WrittenRows.allOf(release));
         assertThat(underTest().changeRows(releaseAgain)).isEqualTo(WrittenRows.NONE);
+    }
+
+    @Test
+    @DisplayName("Governance: a hold's release and a DR freeze's lift are kept once, with who lifted them and when, and"
+            + " listed for their catalog from a time on, the most recent first; another attribute's removal is not"
+            + " (backlog 133)")
+    void releasesAndLiftsAreKept() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Securable onCatalog = new Securable(Securable.Kind.CATALOG, catalog);
+        Securable onNamespace = new Securable(Securable.Kind.NAMESPACE, namespace.id());
+        Instant placed = now().minusSeconds(3600);
+        LegalHold onTable = new LegalHold(UUID.randomUUID(), table.securable(), "matter 7", "counsel", placed);
+        LegalHold wide = new LegalHold(UUID.randomUUID(), onCatalog, "regulator", "counsel-2", placed.plusSeconds(1));
+        GovernanceAttribute freeze = new GovernanceAttribute(onNamespace, GovernanceAttribute.Kind.DR_FREEZE,
+                "DR drill 4", "management-api", "olga", placed.plusSeconds(2));
+        GovernanceAttribute owner = new GovernanceAttribute(table.securable(), GovernanceAttribute.Kind.OWNER, "team-a",
+                "catalog-api", "admin", placed);
+        UUID other = newCatalog();
+        LegalHold elsewhere = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.CATALOG, other), "matter 8",
+                "counsel", placed);
+        for (LegalHold hold : List.of(onTable, wide, elsewhere)) {
+            assertApplied(store.placeHold(hold, change()));
+        }
+        assertApplied(store.putAttribute(owner, change()));
+        assertApplied(store.putAttribute(freeze, change()));
+        Instant at = now();
+        Change release = changeAt(at.minusSeconds(30));
+        Change releaseAgain = changeAt(at.minusSeconds(25));
+        Change lift = changeAt(at.minusSeconds(20));
+        Change liftAgain = changeAt(at.minusSeconds(15));
+
+        assertThat(store.releaseHold(onTable.id(), "stella", release)).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.releaseHold(onTable.id(), "sam", releaseAgain))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.HOLD));
+        assertThat(store.removeAttribute(onNamespace, GovernanceAttribute.Kind.DR_FREEZE, "oscar", lift))
+                .isEqualTo(WriteResult.APPLIED);
+        assertThat(store.removeAttribute(onNamespace, GovernanceAttribute.Kind.DR_FREEZE, "otto", liftAgain))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.ATTRIBUTE));
+        assertApplied(store.releaseHold(wide.id(), "sam", changeAt(at.minusSeconds(10))));
+        assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.OWNER, "admin",
+                changeAt(at.minusSeconds(5))));
+        assertApplied(store.releaseHold(elsewhere.id(), "sam", changeAt(at.minusSeconds(5))));
+
+        GovernanceLift wideReleased = GovernanceLift.released(wide, "sam", at.minusSeconds(10));
+        GovernanceLift thawed = GovernanceLift.lifted(freeze, "oscar", at.minusSeconds(20));
+        GovernanceLift tableReleased = GovernanceLift.released(onTable, "stella", at.minusSeconds(30));
+        assertThat(store.liftedIn(catalog, at.minusSeconds(3600))).containsExactly(wideReleased, thawed, tableReleased);
+        assertThat(store.liftedIn(catalog, at.minusSeconds(20))).as("from the time of a lift on, that lift included")
+                .containsExactly(wideReleased, thawed);
+        assertThat(store.liftedIn(catalog, at)).isEmpty();
+        assertThat(store.liftedIn(other, at.minusSeconds(3600)))
+                .containsExactly(GovernanceLift.released(elsewhere, "sam", at.minusSeconds(5)));
+        assertThat(store.liftedIn(UUID.randomUUID(), at.minusSeconds(3600))).isEmpty();
+        assertThat(underTest().changeRows(release)).isEqualTo(WrittenRows.allOf(release));
+        assertThat(underTest().changeRows(lift)).isEqualTo(WrittenRows.allOf(lift));
+        assertThat(underTest().changeRows(releaseAgain)).isEqualTo(WrittenRows.NONE);
+        assertThat(underTest().changeRows(liftAgain)).isEqualTo(WrittenRows.NONE);
+    }
+
+    @Test
+    @DisplayName("Governance: a release and a lift stay listed for their catalog once the namespace they were on is"
+            + " dropped and the table they were on is purged (backlog 133)")
+    void releasesAndLiftsOutliveTheirLevel() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        NamespaceRecord empty = newNamespace(catalog, "empty");
+        CatalogObject table = newTable(namespace, "t");
+        Securable onEmpty = new Securable(Securable.Kind.NAMESPACE, empty.id());
+        Instant placed = now().minusSeconds(3600);
+        LegalHold onTable = new LegalHold(UUID.randomUUID(), table.securable(), "matter 7", "counsel", placed);
+        GovernanceAttribute freeze = new GovernanceAttribute(onEmpty, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                "management-api", "olga", placed);
+        assertApplied(store.placeHold(onTable, change()));
+        assertApplied(store.putAttribute(freeze, change()));
+        Instant at = now();
+
+        assertApplied(store.releaseHold(onTable.id(), "stella", changeAt(at.minusSeconds(20))));
+        assertApplied(store.removeAttribute(onEmpty, GovernanceAttribute.Kind.DR_FREEZE, "oscar",
+                changeAt(at.minusSeconds(10))));
+        assertApplied(store.dropNamespace(empty.id(), change()));
+        assertApplied(store.dropObject(table.id(), now().minusSeconds(60), change()));
+        assertApplied(store.claimPurge(table.id(), "worker", change()));
+        assertApplied(store.completePurge(table.id(), "worker", change()));
+
+        assertThat(store.liftedIn(catalog, at.minusSeconds(3600))).containsExactly(
+                GovernanceLift.lifted(freeze, "oscar", at.minusSeconds(10)),
+                GovernanceLift.released(onTable, "stella", at.minusSeconds(20)));
     }
 
     @Test
