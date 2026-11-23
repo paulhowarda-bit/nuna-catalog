@@ -29,10 +29,14 @@ demo/demo.sh up
   - The catalog: the Helm chart `deploy/helm/nuna-catalog`, release `nuna-catalog`, one server, image
     `nuna-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
-    issuers, the console's sign-in, and Silo).
+    issuers, the console's sign-in, Silo, and the audit catalog `nuna_audit` with its two groups).
+  - The audit table writer (`catalog-audit-tables`, D23): the chart `deploy/helm/nuna-audit-tables`, release
+    `nuna-audit-tables`, image `nuna-audit-tables:demo` (`deploy/image/audit-tables.Dockerfile`), values
+    `audit-tables-values.yaml`. It writes the audit topic to `nuna_audit.audit.events`, which the console's
+    Audit page reads (below).
   - `keycloak.yaml`: Keycloak in development mode, with realm `nuna` (`keycloak-realm.json`): the people
-    below, their groups, and the clients of the console, kafbat, CloudBeaver and Studio. Its signing key and
-    CloudBeaver's secrets come from Secret `keycloak-keys`, which `up` makes once per machine in
+    below, their groups, and the clients of the console, kafbat, CloudBeaver, Studio and the audit table
+    writer. Its signing key and the secrets of CloudBeaver and the writer come from Secret `keycloak-keys`, which `up` makes once per machine in
     `~/.nuna-demo/keycloak` (with `openssl`) and keeps. Only the demo runs it; the engine matrix on its own
     does not.
   - `singlestore.yaml`: image `nuna-demo-singlestore:<connector hash>`, the dev image with the change-feed
@@ -59,11 +63,12 @@ demo/demo.sh up
 - Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
-  768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
+  768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus the audit
+  table writer's 384 MB, of up to 512 MB (6.4 GB in all), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
   Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
-  CloudBeaver while it runs to make room for Spark. The CDC leg asks for 2.25 GB (Oracle 1.25 GB, Kafka
+  CloudBeaver while it runs to make room for Spark (7.25 GB asked with Spark). The CDC leg asks for 2.25 GB (Oracle 1.25 GB, Kafka
   Connect 512 MB, CockroachDB 384 MB, using about 450 MB of up to 768 MB, its PostgreSQL 128 MB), so `cdc`
-  stops Trino, and `engines` and `rate` refuse to run beside it. With the leg up, the stack's requests fill
+  stops Trino and the audit table writer, and `engines` and `rate` refuse to run beside it. With the leg up, the stack's requests fill
   Kubernetes to within about 20 MB, so CloudBeaver is replaced by stopping the old pod first.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
@@ -119,14 +124,15 @@ The console offers two ways in:
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
 | `ana` | `ana-demo` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them |
-| `gary` | `gary-demo` | `demo-grant-admins` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused |
+| `gary` | `gary-demo` | `demo-grant-admins`, `demo-auditors` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused. As an auditor, the console's Audit page, and the audit table itself (below) |
 | `stella` | `stella-demo` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
 | `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
-| `presenter` | `presenter-demo` | all four of the above | everything the four people may do, in one sign-in, for showing the demo |
+| `presenter` | `presenter-demo` | all five groups above | everything the four people may do, in one sign-in, for showing the demo |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
+| `service-account-nuna-audit-tables` | Keycloak client `nuna-audit-tables`, client-credentials grant | `demo-audit-writers` | create and write on `nuna_audit` only: the audit table writer |
 | `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them |
 
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
@@ -141,8 +147,8 @@ signed in there; its users hold the realm's default roles (`default-roles-nuna` 
 `k8s/keycloak-realm.json`), without which that page fails with "Something went wrong". Keycloak's users and
 sessions go with its pod.
 
-`presenter` is for showing the demo without changing user: Keycloak puts them in all four groups, so the
-console shows data, grants, the audit trail, governance and the DR freeze together. Separation of duties is
+`presenter` is for showing the demo without changing user: Keycloak puts them in all five groups, so the
+console shows data, grants, the audit trail and the Audit page, governance and the DR freeze together. Separation of duties is
 checked on grants to groups, so nothing in the catalog refuses one person in every group; at work that is
 the directory's to prevent. In kafbat `presenter` administers, as `demo-operators`. Studio and CloudBeaver
 have no `presenter`: Keycloak signs them in, and both refuse them; use `oscar` there. CloudBeaver shows its
@@ -252,6 +258,27 @@ vended credentials, as any engine would):
 - Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`.
 
 Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the copy of `ops.orders`.
+
+### The audit tables and the Audit page
+
+Catalog `nuna_audit` holds the queryable audit table `audit.events` (D23, `catalog-audit-tables/README.md`): one row
+per record of the audit topic `nuna.catalog.audit`, every catalog's, since Kafka's pod started. The audit
+table writer fills it, committing every minute, so it runs about a minute behind; the console's Audit page (the
+feed, its filters and the last day's counts, D45) reads it back and says how far it reaches.
+
+- Readers: group `demo-auditors`, which holds `select` on `nuna_audit` and nothing that changes data: `gary` and
+  `presenter`. The Audit page needs that (Paul, 2026-11-22: "Audit readers only"), so it refuses `ana`, `stella`
+  and `oscar`, and catalog `nuna_audit` is listed to no one else. The readers' group may not be
+  `demo-grant-admins` itself: the catalog grants a grant admin group nothing (D18), so `gary` is in both.
+- Writer: Keycloak's service account of client `nuna-audit-tables`, `service-account-nuna-audit-tables`, in
+  group `demo-audit-writers`, which holds `create` and `write` on `nuna_audit` only. It signs in with the
+  client-credentials grant and a client secret `up` makes once in `~/.nuna-demo/keycloak`. Its own requests are
+  left out of the table.
+- The catalog makes both grants as it starts (`nuna.audit.tables.*` in `demo-values.yaml`).
+- While the CDC leg runs, the writer is stopped for its memory and the Audit page shows what it wrote before;
+  `cdc stop` starts it again, and it writes the leg's records then, from where its last commit ended.
+- Nothing prunes the table's snapshots: the demo has no maintenance worker, and its data lasts as long as Silo's
+  pod.
 
 ## SingleStore
 
@@ -372,7 +399,7 @@ storage credentials the catalog vends them:
 demo/demo.sh cdc
 ```
 
-starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino to make room for it:
+starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino and the audit table writer to make room for it:
 
 - `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
 - `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
@@ -478,7 +505,7 @@ ORDER BY "_cdc"."offset";
 demo/demo.sh cdc stop
 ```
 
-deletes the leg, its Kafka topics and consumer groups, and starts Trino again. The history tables stay, for
+deletes the leg, its Kafka topics and consumer groups, and starts Trino and the audit table writer again. The history tables stay, for
 Trino to read.
 
 ## The engines
