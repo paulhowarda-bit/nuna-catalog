@@ -1,0 +1,18 @@
+Breaks: a branch's metadata log takes every version from the branch's own journal, losing main's below the cut.
+Module: catalog-server
+Test: MetadataLogRefTest#throughABranchItsOwnVersionsComeFromItsJournalAndTheRestFromMainsAtTheCut
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index c74b00a9..493b44a5 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -414,8 +414,8 @@ class LifecycleRoutes {
+                               Function<PageRequest, Page<JournalRecord>> main) {
+         List<JournalRecord> entries = new ArrayList<>();
+         long top = before;
+-        if (top > cut + 1) {
+-            int mine = (int) Math.min(size, top - cut - 1);
++        if (top > 1) {
++            int mine = (int) Math.min(size, top - 1);
+             entries.addAll(logPage(top, mine, own).entries());
+             top -= mine;
+         }
