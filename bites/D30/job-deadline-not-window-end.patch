@@ -2,15 +2,19 @@ Breaks: a compaction Job's deadline is the window's whole length, not the time l
 Module: catalog-maintenance
 Test: KubernetesJobsTest#oneJobPerTableSignedInThroughASecretItOwns
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
-index 6182e77..0183727 100644
+index 8d10b42..8600ea8 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
-@@ -174,7 +174,7 @@ final class KubernetesJobs implements Compactor {
- 
-     /** Seconds from now to the window's end, rounded up: at least one, which Kubernetes requires. */
-     private long deadline(CleanupWindow.Night night) {
--        return Math.max(1, (Duration.between(clock.instant(), night.closes()).toMillis() + 999) / 1000);
-+        return Math.max(1, (Duration.between(night.opens(), night.closes()).toMillis() + 999) / 1000);
+@@ -140,6 +140,12 @@ final class KubernetesJobs implements Compactor {
+         return "nuna-compact-" + table.id() + "-" + run.key();
      }
  
-     private ObjectNode sparkConf(Management.TableWork table) {
++    @Override
++    public Launch launch(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night) {
++        return launch(table, need, new Run(Run.of(night).key(), clock.instant().plus(Duration.between(night.opens(),
++                night.closes()))));
++    }
++
+     @Override
+     public Launch launch(Management.TableWork table, CompactionNeed need, Run run) {
+         String name = jobName(table, run);

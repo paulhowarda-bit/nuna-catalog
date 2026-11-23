@@ -1,0 +1,16 @@
+Breaks: a requested compaction Job's deadline is the cleanup window's end, not the request's deadline (backlog 114).
+Module: catalog-maintenance
+Test: RequestedWorkTest#aRequestedCompactionStartsInTheDayAndStopsAtTheRequestsDeadline
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java b/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java
+index eebac3e..f64a7c0 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java
+@@ -111,7 +111,7 @@ final class RequestedWork {
+             return;
+         }
+         Table table = loaded.get();
+-        Compactor.Run run = Compactor.Run.requested(request.requestedAt(), clock.instant().plus(deadline));
++        Compactor.Run run = Compactor.Run.requested(request.requestedAt(), window.last(clock.instant()).closes());
+         Compactor.Launch launch;
+         CompactionNeed need;
+         try {
