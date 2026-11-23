@@ -3,15 +3,15 @@ Module: catalog-server
 Test: SpanTreeTest#aCommitsSpanTree
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
-index b11c9d3..0f82c34 100644
+index 656e633..d43ab1e 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/StoreWiring.java
-@@ -38,7 +38,7 @@ class StoreWiring {
-     CatalogStore catalogStore(DatabaseSettings settings, ObjectProvider<DataSource> dataSource,
-                               ObjectProvider<MongoClient> mongoClient, ObservationRegistry observations) {
-         CatalogStore store = ready(store(settings, dataSource, mongoClient), settings.allowUnsafe());
--        return ObservedStore.of(store, settings.backend().name().toLowerCase(Locale.ROOT), observations);
-+        return store;
+@@ -51,7 +51,7 @@ class StoreWiring {
+ 
+     @Bean
+     CatalogStore catalogStore(Started started, DatabaseSettings settings, ObservationRegistry observations) {
+-        return ObservedStore.of(started.store(), settings.backend().name().toLowerCase(Locale.ROOT), observations);
++        return started.store();
      }
  
-     /** The store for the backend {@code settings} names, not yet migrated: making one reaches no database. */
+     @Bean

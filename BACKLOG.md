@@ -1696,3 +1696,5 @@ dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too.
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
+| [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
+| [139](backlog/139.md) | Console Health: the Store panel, the catalog database's backend, version and self-check | done | 2026-11-22 |

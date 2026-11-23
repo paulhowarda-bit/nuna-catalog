@@ -104,7 +104,8 @@ class StoreWiringTest {
     void eachFindingAllowedIsLoggedAsAWarningAndTheServerStarts() {
         StoreDouble store = new StoreDouble(NO_STANDBY, FSYNC_OFF);
 
-        assertThat(StoreWiring.ready(store.store, Set.of(NO_STANDBY.code(), FSYNC_OFF.code()))).isSameAs(store.store);
+        assertThat(StoreWiring.ready(store.store, Set.of(NO_STANDBY.code(), FSYNC_OFF.code())))
+                .as("the findings allowed, for Health's Store panel").containsExactly(NO_STANDBY, FSYNC_OFF);
         assertThat(store.calls).containsExactly("selfCheck", "migrate");
         assertThat(logged.list).allSatisfy(event -> assertThat(event.getLevel()).isEqualTo(Level.WARN))
                 .extracting(ILoggingEvent::getFormattedMessage)
@@ -119,7 +120,7 @@ class StoreWiringTest {
     void aSafeDatabaseStartsEitherWay() {
         for (Set<String> allowUnsafe : List.of(Set.<String>of(), Set.of(NO_STANDBY.code()))) {
             StoreDouble store = new StoreDouble();
-            assertThat(StoreWiring.ready(store.store, allowUnsafe)).isSameAs(store.store);
+            assertThat(StoreWiring.ready(store.store, allowUnsafe)).isEmpty();
             assertThat(store.calls).containsExactly("selfCheck", "migrate");
         }
         assertThat(logged.list).isEmpty();
