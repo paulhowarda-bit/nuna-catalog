@@ -1,0 +1,17 @@
+Breaks: the merge's dry run names every table and view the branch changed, and every conflict, to a caller who cannot describe them (security finding 2).
+Module: catalog-server
+Test: RefMergeRoutesTest#theDryRunNamesOnlyWhatTheCallerCanDescribe
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index e913b81..fa6fa0e 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -539,7 +539,7 @@ class RefRoutes {
+         List<Boolean> visible = new ArrayList<>();
+         List<Authorizer.Decision> move = new ArrayList<>();
+         for (int i = 0; i < plan.tables().size(); i++) {
+-            visible.add(decided.get(1 + 2 * i).allowed());
++            visible.add(true);
+             Authorizer.Decision decision = decided.get(2 + 2 * i);
+             move.add(decision instanceof Authorizer.Decision.Exempted ? new Authorizer.Decision.Denied(
+                     Authorizer.Reason.FLAGGED_TABLE, null, "table " + name(plan.tables().get(i)) + " has a row/column"

@@ -1,0 +1,26 @@
+Breaks: every snapshot main added since the cut counts as its maintenance, so the merge rebases over main's data commits and drops their rows (Paul, 2026-11-22: only compaction and expiry are maintenance).
+Module: catalog-iceberg
+Test: MergeMetadataTest#dataOnMainConflicts
+
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
+index 1823d81..06aa55c 100644
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
+@@ -45,7 +45,7 @@ public final class MergeMetadata {
+         }
+         for (Snapshot snapshot : main.snapshots()) {
+             if (cut.snapshot(snapshot.snapshotId()) == null
+-                    && !DataOperations.REPLACE.equals(snapshot.operation())) {
++                    && false) {
+                 return Optional.of("main committed snapshot " + snapshot.snapshotId() + " (" + snapshot.operation()
+                         + ")");
+             }
+@@ -176,7 +176,7 @@ public final class MergeMetadata {
+         while (at != null && at != from) {
+             Snapshot snapshot = main.snapshot(at);
+             if (snapshot == null || cut.snapshot(at) != null
+-                    || !DataOperations.REPLACE.equals(snapshot.operation())) {
++                    || false) {
+                 return false;
+             }
+             at = snapshot.parentId();

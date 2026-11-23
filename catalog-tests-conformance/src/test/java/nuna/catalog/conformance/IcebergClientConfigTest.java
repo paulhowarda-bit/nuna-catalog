@@ -208,6 +208,80 @@ class IcebergClientConfigTest {
         }
     }
 
+    /**
+     * D33 (item 107): two stock writers, one on {@code catalog@branch} and one on main. The merge moves only the table
+     * only the branch changed: main's writer then reads the branch's rows there, from main's own metadata file, and the
+     * table main changed keeps main's change; the branch is gone. A steward, who holds no create on the catalog, may
+     * ask the dry run but not merge. A branch whose table main also changed answers 409 and moves nothing.
+     */
+    @Test
+    void stockWritersMergeABranchIntoMain() throws Exception {
+        try (RESTCatalog client = client()) {
+            Namespace namespace = Namespace.of("merge_" + System.nanoTime());
+            client.createNamespace(namespace);
+            Schema schema = new Schema(Types.NestedField.required(1, "id", Types.LongType.get()));
+            TableIdentifier orders = TableIdentifier.of(namespace, "orders");
+            TableIdentifier lines = TableIdentifier.of(namespace, "lines");
+            client.createTable(orders, schema);
+            client.createTable(lines, schema);
+            String branch = "m" + System.nanoTime();
+            makeRef(branch, "branch");
+            String onBranch;
+            try (RESTCatalog writer = client(ConformanceServer.WAREHOUSE + "@" + branch)) {
+                Table branched = writer.loadTable(orders);
+                onBranch = branched.location() + "/data/rows-" + System.nanoTime() + ".parquet";
+                branched.newAppend().appendFile(rows(onBranch, 3)).commit();
+            }
+            Table mainLines = client.loadTable(lines);
+            String onMain = mainLines.location() + "/data/rows-" + System.nanoTime() + ".parquet";
+            mainLines.newAppend().appendFile(rows(onMain, 2)).commit();
+
+            HttpResponse<String> dry = merge(branch, true, ConformanceServer.stewardToken());
+            assertThat(dry.statusCode()).as(dry.body()).isEqualTo(200);
+            assertThat(dry.body()).contains("\"answer\":{\"code\":200}", "\"may-merge\":false");
+            assertThat(merge(branch, false, ConformanceServer.stewardToken()).statusCode()).isEqualTo(403);
+
+            HttpResponse<String> merged = merge(branch, false, ConformanceServer.token());
+
+            assertThat(merged.statusCode()).as(merged.body()).isEqualTo(200);
+            assertThat(merged.body()).contains("\"name\":\"orders\"").doesNotContain("\"name\":\"lines\"");
+            assertThat(files(client.loadTable(orders))).singleElement().satisfies(file -> {
+                assertThat(file.location()).isEqualTo(onBranch);
+                assertThat(file.recordCount()).isEqualTo(3);
+            });
+            assertThat(current(client, orders).metadataFileLocation()).doesNotContain(".branch-");
+            assertThat(files(client.loadTable(lines))).singleElement()
+                    .satisfies(file -> assertThat(file.location()).isEqualTo(onMain));
+            assertThat(merge(branch, false, ConformanceServer.token()).statusCode()).as("the merge ended the branch")
+                    .isEqualTo(404);
+
+            String both = "c" + System.nanoTime();
+            makeRef(both, "branch");
+            try (RESTCatalog writer = client(ConformanceServer.WAREHOUSE + "@" + both)) {
+                writer.loadTable(lines).updateProperties().set("batch", "branch").commit();
+            }
+            client.loadTable(lines).updateProperties().set("batch", "main").commit();
+            HttpResponse<String> conflict = merge(both, false, ConformanceServer.token());
+            assertThat(conflict.statusCode()).as(conflict.body()).isEqualTo(409);
+            assertThat(conflict.body()).contains("RefMergeConflictException", namespace.level(0) + ".lines (cut");
+            assertThat(client.loadTable(lines).properties()).containsEntry("batch", "main");
+        }
+    }
+
+    /** Merges a branch into main through the management route (item 107). */
+    private static HttpResponse<String> merge(String branch, boolean dryRun, String token) throws Exception {
+        return HTTP.send(HttpRequest.newBuilder(ConformanceServer.start().resolve("management/v1/catalogs/"
+                        + ConformanceServer.WAREHOUSE + "/refs/" + branch + "/merge" + (dryRun ? "?dry-run=true" : "")))
+                .header("Authorization", "Bearer " + token)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static DataFile rows(String path, long count) {
+        return DataFiles.builder(PartitionSpec.unpartitioned()).withPath(path).withFormat(FileFormat.PARQUET)
+                .withFileSizeInBytes(1024).withRecordCount(count).build();
+    }
+
     /** Makes a ref of the catalog through the management route (item 106). */
     private static void makeRef(String name, String kind) throws Exception {
         HttpResponse<String> made = HTTP.send(HttpRequest.newBuilder(ConformanceServer.start()

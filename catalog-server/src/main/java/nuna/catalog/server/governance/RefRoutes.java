@@ -7,11 +7,15 @@ import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.RefChange;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.core.commit.CommitReply;
+import nuna.catalog.core.commit.Merge;
+import nuna.catalog.iceberg.Wire;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.governance.Management.Target;
 import nuna.catalog.server.governance.ManagementIdempotency.Reply;
+import nuna.catalog.server.rest.AuditEvents;
 import nuna.catalog.server.rest.RestSettings;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
@@ -61,8 +65,9 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * A catalog's branches and tags (D33, item 26's choices 6, 11, 12 and 13; item 106): list, create, read, renew and
  * delete under {@code /management/v1/catalogs/{catalog}/refs}, and the maintenance worker's two routes, which warn of a
- * branch about to expire and end one past its expiry. Making, renewing and deleting a ref needs {@code create} on the
- * catalog; listing and reading need any holding in the catalog (D18 as amended), and show who made a ref only to a
+ * branch about to expire and end one past its expiry, and the merge of a branch into main (backlog 107). Making,
+ * renewing, deleting and merging a ref needs {@code create} on the catalog; listing, reading and a merge's dry run need
+ * any holding in the catalog (D18 as amended), and show who made a ref only to a
  * caller holding {@code create} there (item 106, security finding 9). Every write takes an Idempotency-Key
  * (D10) and writes its {@code ref} audit record to the outbox with the change. P11's limits and expiry are
  * {@link RefSettings}: the store refuses a create past a limit, and a renewal sets a branch's expiry
@@ -75,6 +80,7 @@ class RefRoutes {
     static final String REFS = CATALOG + "/refs";
     static final String REF = REFS + "/{ref}";
     static final String RENEW = REF + "/renew";
+    static final String MERGE = REF + "/merge";
     static final String WARN = ROOT + "/maintenance/refs/{id}/warn";
     static final String END = ROOT + "/maintenance/refs/{id}/end";
 
@@ -87,6 +93,8 @@ class RefRoutes {
     private static final int WALK_PAGE = 1000;
     private static final int MAX_NAME = 1000;
     private static final Duration WARNING_LEASE = Duration.ofMinutes(1);
+    /** What a merge is authorized and audited as. */
+    private static final String MERGE_OP = "mergeRef";
 
     /**
      * Where a record goes that changes nothing in the store and so cannot ride the outbox: the audit topic and the
@@ -106,11 +114,13 @@ class RefRoutes {
     private final CatalogNames catalogs;
     private final Notices notices;
     private final RestSettings rest;
+    private final Merge.Factory merges;
+    private final AuditEvents audit;
     private final Clock clock;
 
     RefRoutes(CatalogStore store, Management management, ManagementGuard guard, ManagementIdempotency idempotency,
               Authorizer authorizer, RefSettings settings, CatalogNames catalogs, Notices notices, RestSettings rest,
-              Clock clock) {
+              Merge.Factory merges, AuditEvents audit, Clock clock) {
         this.store = store;
         this.management = management;
         this.guard = guard;
@@ -120,6 +130,8 @@ class RefRoutes {
         this.catalogs = catalogs;
         this.notices = notices;
         this.rest = rest;
+        this.merges = merges;
+        this.audit = audit;
         this.clock = clock;
     }
 
@@ -284,6 +296,299 @@ class RefRoutes {
             case WriteResult.Missing missing -> throw noSuchRef(name);
             default -> throw new IllegalStateException("deleteRef answered " + result);
         };
+    }
+
+    /**
+     * Merges a branch into main (D33, backlog 107): every table and view the branch changed moves onto main in one
+     * transaction that ends the branch, or nothing moves ({@link Merge}). It needs {@code create} on the catalog, and on
+     * each table or view what a commit of the change from main's metadata to the branch's needs on main: {@code write}
+     * for data alone, {@code modify} for a definition change, asked in one batch as a commit asks it, so D27, D20 and
+     * D17 hold (item 26's choices 8 and 12; security finding 3). Answers 200 with main's new version of each; 409
+     * {@code RefMergeConflictException} listing every table or view main also changed or dropped, or
+     * {@code RefLimitException} past {@code nuna.refs.max-merge-tables}; 403 when a right or main's rules refuse one,
+     * audited as a denial; 404 for a branch gone. {@code create} on the catalog lets the caller describe every table and
+     * view in it, so every answer names what it is about. The {@code ref} event (merged) names the tables moved, and
+     * each has its {@code Commit} event on main.
+     *
+     * <p>With {@code dry-run=true} it writes nothing and needs any holding in the catalog: 200 with what a merge would
+     * do now, the answer it would get, and whether the caller may merge, naming only the tables and views the caller
+     * can describe and counting the rest (security finding 2).
+     */
+    @PostMapping(path = MERGE, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> merge(@PathVariable("catalog") String prefix, @PathVariable("ref") String name,
+                                 @RequestParam(name = "dry-run", defaultValue = "false") boolean dryRun,
+                                 @RequestHeader(name = ManagementIdempotency.HEADER, required = false) String key,
+                                 HttpServletRequest http) {
+        Request request = management.request(http);
+        if (dryRun) {
+            CatalogRecord catalog = management.catalog(prefix, request, MERGE_OP, null);
+            Instant now = now();
+            Ref ref = branch(catalog, name, now);
+            return GovernanceRoutes.json(200, dryRun(request, catalog, merging(catalog, request)
+                    .plan(ref, settings.maxMergeTables()), now));
+        }
+        Target target = management.target(request, MERGE_OP, Privilege.CREATE, prefix, null, null, null);
+        guard.require(request, target, MERGE_OP, Privilege.CREATE);
+        return idempotency.run(Optional.ofNullable(key), request.caller(), "MERGE_REF",
+                target.catalog().id() + "/" + Names.normalize(name), "", ticket -> merge(target, request, name, ticket));
+    }
+
+    private Reply merge(Target target, Request request, String name, ManagementIdempotency.Ticket ticket) {
+        CatalogRecord catalog = target.catalog();
+        Instant now = now();
+        Ref ref = branch(catalog, name, now);
+        String[] answer = new String[1];
+        Merge.Outcome outcome = merging(catalog, request).merge(ref, settings.maxMergeTables(), request.caller(),
+                plan -> require(request, catalog, plan), merged -> {
+                    answer[0] = Management.JSON.writeValueAsString(merged(merged, now));
+                    RefChange event = event(RefChange.Action.MERGED, ref, ref.expiresAt(), target.audit(), request,
+                            merged.moved().stream().map(moved -> securable(catalog, moved.table())).toList());
+                    return ticket.change(management.change(now, event), 200, answer[0]);
+                });
+        return switch (outcome) {
+            case Merge.Outcome.Merged merged -> new Reply(200, answer[0], true);
+            case Merge.Outcome.Refused refused when refused.plan().overCap() -> throw tooMany(refused.plan());
+            case Merge.Outcome.Refused refused when !refused.plan().conflicts().isEmpty() ->
+                    Reply.of(409, Management.JSON.writeValueAsString(conflicts(refused.plan(), now)));
+            case Merge.Outcome.Refused refused -> throw ruled(request, catalog, refused.plan().refused().orElseThrow());
+            case Merge.Outcome.Gone gone -> throw noSuchRef(name);
+            case Merge.Outcome.Failed failed -> throw switch (failed.reply()) {
+                case CommitReply.Failure failure -> CatalogError.of(failure.status(), failure.type(), failure.message());
+                case CommitReply.ServerError error -> CatalogError.of(500, error.type(), error.message());
+                default -> new IllegalStateException("a merge failed with " + failed.reply());
+            };
+        };
+    }
+
+    /** The caller's right to move each table and view of the plan, refused as the authorizer refuses it. */
+    private void require(Request request, CatalogRecord catalog, Merge.Plan plan) {
+        Rights rights = rights(request, catalog, plan);
+        for (int i = 0; i < plan.tables().size(); i++) {
+            if (rights.move().get(i) instanceof Authorizer.Decision.Denied denied) {
+                throw guard.refuse(request, securable(catalog, plan.tables().get(i)), MERGE_OP, denied);
+            }
+        }
+    }
+
+    /** Main's rules refusing a table or view: audited as a commit's refusal is when it has a reason of governance. */
+    private RuntimeException ruled(Request request, CatalogRecord catalog, Merge.Table table) {
+        CommitReply.Failure failure = table.verdict().orElseThrow();
+        return failure.refusal().<RuntimeException>map(refusal -> guard.ruled(request, securable(catalog, table),
+                        MERGE_OP, operation(table).privilege(), refusal.reason(), failure.message()))
+                .orElse(CatalogError.of(failure.status(), failure.type(), failure.message()));
+    }
+
+    /**
+     * What a merge would do now, writing nothing: the answer it would get ({@code answer}), whether the caller holds
+     * what it needs ({@code may-merge}), and each table and view the caller can describe, with what main did to it
+     * since the cut, its conflict or main's verdict on its change, and the right it needs. The rest are counted
+     * ({@code hidden}). Who committed on main is shown only to a caller holding {@code create} on the catalog.
+     */
+    private ObjectNode dryRun(Request request, CatalogRecord catalog, Merge.Plan plan, Instant now) {
+        Rights rights = rights(request, catalog, plan);
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.put("dry-run", true);
+        body.set("ref", ref(plan.ref(), now, rights.create()));
+        body.put("changed", plan.changed());
+        body.put("max-tables", plan.maxTables());
+        ObjectNode answer = body.putObject("answer");
+        if (plan.overCap()) {
+            error(answer, tooMany(plan));
+        } else if (!plan.conflicts().isEmpty()) {
+            List<Merge.Table> seen = new ArrayList<>();
+            for (int i = 0; i < plan.tables().size(); i++) {
+                if (!plan.tables().get(i).moves() && rights.visible().get(i)) {
+                    seen.add(plan.tables().get(i));
+                }
+            }
+            error(answer, conflict(plan, seen));
+        } else if (plan.refused().isPresent()) {
+            CommitReply.Failure failure = plan.refused().get().verdict().orElseThrow();
+            error(answer, CatalogError.of(failure.status(), failure.type(), failure.message()));
+        } else {
+            answer.put("code", 200);
+        }
+        boolean may = rights.create();
+        int hidden = 0;
+        ArrayNode tables = body.putArray("tables");
+        for (int i = 0; i < plan.tables().size(); i++) {
+            Merge.Table table = plan.tables().get(i);
+            Authorizer.Decision move = rights.move().get(i);
+            may &= !table.moves() || move.allowed();
+            if (!rights.visible().get(i)) {
+                hidden++;
+                continue;
+            }
+            ObjectNode item = table(tables.addObject(), table);
+            ObjectNode since = item.putObject("main-commits");
+            since.put("count", table.since().commits());
+            if (rights.create()) {
+                table.since().by().forEach(since.putArray("by")::add);
+            }
+            if (table.moves()) {
+                ObjectNode verdict = item.putObject("verdict");
+                verdict.put("allowed", table.verdict().isEmpty());
+                table.verdict().ifPresent(failure -> {
+                    verdict.put("type", failure.type());
+                    verdict.put("message", failure.message());
+                    failure.refusal().ifPresent(refusal -> verdict.put("reason", refusal.reason()));
+                });
+                ObjectNode right = item.putObject("right");
+                right.put("needs", operation(table).privilege().wireName());
+                right.put("allowed", move.allowed());
+            }
+        }
+        body.put("hidden", hidden);
+        body.put("may-merge", may);
+        return body;
+    }
+
+    /** A merge's answer: the branch it ended and main's new version of each table and view it moved. */
+    private ObjectNode merged(Merge.Outcome.Merged merged, Instant now) {
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.set("ref", ref(merged.plan().ref(), now));
+        ArrayNode tables = body.putArray("tables");
+        for (Merge.Moved moved : merged.moved()) {
+            table(tables.addObject(), moved.table()).put("metadata-location", moved.after().metadataLocation());
+        }
+        return body;
+    }
+
+    /** The 409 of a merge that conflicts: the error, and every table and view in conflict. */
+    private ObjectNode conflicts(Merge.Plan plan, Instant now) {
+        ObjectNode body = (ObjectNode) Management.JSON.readTree(Wire.error(409, "RefMergeConflictException",
+                conflict(plan, plan.conflicts()).getMessage()));
+        body.set("ref", ref(plan.ref(), now));
+        ArrayNode tables = body.putArray("conflicts");
+        plan.conflicts().forEach(table -> table(tables.addObject(), table));
+        return body;
+    }
+
+    /**
+     * A table or view of a merge: its name on main (the cut's, once purged), the cut's, main's and the branch's
+     * versions, and main's new one if it moves; else its conflict, and when main dropped it.
+     */
+    private ObjectNode table(ObjectNode item, Merge.Table table) {
+        levels(table).forEach(item.putArray("namespace")::add);
+        item.put("name", name(table));
+        item.put("kind", table.entry().kind().name().toLowerCase(Locale.ROOT));
+        item.put("cut-version", table.cut().version());
+        table.main().ifPresent(main -> item.put("main-version", main.version()));
+        item.put("branch-version", table.branch().version());
+        item.put("moves", table.moves());
+        if (table.moves()) {
+            item.put("version", table.main().orElseThrow().version() + 1);
+            item.put("rebased", table.rebased());
+            table.definition().ifPresent(change -> item.put("definition-change", change));
+        }
+        table.conflict().ifPresent(conflict -> item.put("conflict", conflict));
+        table.object().filter(object -> object.state() != CatalogObject.State.ACTIVE)
+                .flatMap(CatalogObject::droppedAt).ifPresent(at -> item.put("dropped-at", at.toString()));
+        return item;
+    }
+
+    private static void error(ObjectNode answer, CatalogError error) {
+        answer.put("code", error.status());
+        answer.put("type", error.type());
+        answer.put("message", error.getMessage());
+    }
+
+    /**
+     * The 409 of a merge that conflicts, naming {@code named} of its conflicts, each with the cut's, main's and the
+     * branch's versions, and counting the others.
+     */
+    private CatalogError conflict(Merge.Plan plan, List<Merge.Table> named) {
+        List<String> each = new ArrayList<>();
+        for (Merge.Table table : named) {
+            boolean dropped = table.object().map(object -> object.state() != CatalogObject.State.ACTIVE).orElse(true);
+            each.add(String.join(".", levels(table)) + "." + name(table) + " (cut version " + table.cut().version()
+                    + ", main " + (dropped ? "dropped" : "version " + table.main().orElseThrow().version())
+                    + ", branch version " + table.branch().version() + "): " + table.conflict().orElseThrow());
+        }
+        int others = plan.conflicts().size() - named.size();
+        return CatalogError.of(409, "RefMergeConflictException", "Branch " + plan.ref().name().display()
+                + " conflicts with main in " + plan.conflicts().size() + " of the " + plan.changed()
+                + " tables and views it changed, so nothing moved: " + String.join("; ", each)
+                + (others == 0 ? "" : (each.isEmpty() ? "" : "; and ") + others + " the caller cannot describe"));
+    }
+
+    private static CatalogError tooMany(Merge.Plan plan) {
+        return CatalogError.of(409, "RefLimitException", "Branch " + plan.ref().name().display() + " changed "
+                + plan.changed() + " tables and views, and one merge moves at most " + plan.maxTables()
+                + " (nuna.refs.max-merge-tables)");
+    }
+
+    /**
+     * What the caller holds for a plan, decided in one batch as a transaction's tables are: {@code create} on the
+     * catalog; and for each table and view, whether it can describe it, and the right to move it.
+     */
+    private record Rights(boolean create, List<Boolean> visible, List<Authorizer.Decision> move) {
+    }
+
+    private Rights rights(Request request, CatalogRecord catalog, Merge.Plan plan) {
+        List<Authorizer.Request> asks = new ArrayList<>();
+        asks.add(new Authorizer.Request(new Authorizer.Target.Catalog(catalog.id()),
+                new Authorizer.Operation(MERGE_OP, Privilege.CREATE, false)));
+        for (Merge.Table table : plan.tables()) {
+            Authorizer.Target on = table.object().<Authorizer.Target>map(Authorizer.Target.TableOrView::new)
+                    .orElse(new Authorizer.Target.Catalog(catalog.id()));
+            asks.add(new Authorizer.Request(on, new Authorizer.Operation(MERGE_OP, Privilege.DESCRIBE, false)));
+            asks.add(new Authorizer.Request(on, operation(table)));
+        }
+        List<Authorizer.Decision> decided = authorizer.decide(request.caller(), asks);
+        List<Boolean> visible = new ArrayList<>();
+        List<Authorizer.Decision> move = new ArrayList<>();
+        for (int i = 0; i < plan.tables().size(); i++) {
+            visible.add(decided.get(1 + 2 * i).allowed());
+            Authorizer.Decision decision = decided.get(2 + 2 * i);
+            move.add(decision instanceof Authorizer.Decision.Exempted ? new Authorizer.Decision.Denied(
+                    Authorizer.Reason.FLAGGED_TABLE, null, "table " + name(plan.tables().get(i)) + " has a row/column"
+                    + " policy; the maintenance exemption is for maintenance, so only a trusted engine that enforces it"
+                    + " may merge it") : decision);
+        }
+        return new Rights(decided.getFirst().allowed(), visible, move);
+    }
+
+    /**
+     * What moving a table or view asks of the caller on main, as a commit of its change would (D18): {@code write}
+     * for data alone, {@code modify} for a definition change, a view's always; storage access for a table (D20).
+     */
+    private static Authorizer.Operation operation(Merge.Table table) {
+        return new Authorizer.Operation(MERGE_OP, table.definition().isPresent() ? Privilege.MODIFY : Privilege.WRITE,
+                table.entry().kind() == RefEntry.Kind.TABLE);
+    }
+
+    /** A catalog's merge, whose {@code Commit} events name each table and view by its path on main. */
+    private Merge merging(CatalogRecord catalog, Request request) {
+        return merges.of(catalog, audit.commits(catalog.name(), object -> {
+            List<String> path = new ArrayList<>(management.levels(object.catalogId(), object.namespaceId())
+                    .orElseThrow());
+            path.add(object.name().display());
+            return path;
+        }, request.actor()));
+    }
+
+    /** A table's or view's namespace on main; the cut's once main has no such namespace. */
+    private List<String> levels(Merge.Table table) {
+        return table.object().flatMap(object -> management.levels(object.catalogId(), object.namespaceId()))
+                .orElse(table.namespace());
+    }
+
+    private static String name(Merge.Table table) {
+        return table.object().map(object -> object.name().display()).orElse(table.entry().name().display());
+    }
+
+    private nuna.catalog.audit.Securable securable(CatalogRecord catalog, Merge.Table table) {
+        return Management.audit(catalog, levels(table), name(table), table.object().orElseThrow());
+    }
+
+    /** The catalog's branch of that name, live; a tag never merges. */
+    private Ref branch(CatalogRecord catalog, String name, Instant now) {
+        Ref ref = live(catalog, name, now);
+        if (ref.kind() == Ref.Kind.TAG) {
+            throw CatalogError.badRequest("Ref " + ref.name().display() + " is a tag; only a branch merges");
+        }
+        return ref;
     }
 
     /**
@@ -490,9 +795,15 @@ class RefRoutes {
 
     private static RefChange event(RefChange.Action action, Ref ref, Optional<Instant> expiresAt,
                                    nuna.catalog.audit.Securable catalog, Request request) {
+        return event(action, ref, expiresAt, catalog, request, List.of());
+    }
+
+    private static RefChange event(RefChange.Action action, Ref ref, Optional<Instant> expiresAt,
+                                   nuna.catalog.audit.Securable catalog, Request request,
+                                   List<nuna.catalog.audit.Securable> tables) {
         return new RefChange(action, ref.id(), ref.name().display(), ref.kind() == Ref.Kind.BRANCH
                 ? RefChange.Kind.BRANCH : RefChange.Kind.TAG, catalog, ref.fromName(), expiresAt.orElse(null),
-                List.of(), request.actor());
+                tables, request.actor());
     }
 
     /** A ref as the create and renew routes answer it, to a caller holding create on the catalog. */
