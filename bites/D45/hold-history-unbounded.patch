@@ -1,17 +1,17 @@
-Breaks: The hold history reads every partition from its earliest record, however many there are.
+Breaks: The holds page lists every lift the store has ever kept, not the last 30 days it names.
 Module: catalog-server
-Test: HoldHistoryTest#aReadThatStopsShortSaysSinceWhenAndLeavesOutWhatWasPlacedBefore
+Test: HoldHistoryTest#theWindowIsTheLastThirtyDaysAndEveryLiftTheStoreKeepsInItIsListedAsKept
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java b/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java
-index e6fe50e..77bebf8 100644
+index ac5ce0e..9c50451 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java
-@@ -128,7 +128,7 @@ class HoldHistory {
-             Set<TopicPartition> open = new HashSet<>();
-             List<Partition> read = new ArrayList<>();
-             for (TopicPartition partition : partitions) {
--                long from = Math.max(earliest.get(partition), end.get(partition) - SCAN_LIMIT);
-+                long from = earliest.get(partition);
-                 read.add(new Partition(partition.partition(), earliest.get(partition), from, end.get(partition)));
-                 if (from < end.get(partition)) {
-                     consumer.seek(partition, from);
+@@ -34,7 +34,7 @@ class HoldHistory {
+     }
+
+     Result lifted(CatalogRecord catalog) {
+-        Instant since = clock.instant().truncatedTo(ChronoUnit.MILLIS).minus(DAYS, ChronoUnit.DAYS);
++        Instant since = Instant.EPOCH;
+         return new Result(since, store.liftedIn(catalog.id(), since));
+     }
+ }

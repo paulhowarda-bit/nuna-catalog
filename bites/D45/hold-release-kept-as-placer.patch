@@ -1,0 +1,17 @@
+Breaks: A hold's release is kept as made by whoever placed the hold, not by the caller who released it.
+Module: catalog-server
+Test: GovernanceSummaryTest#aHoldReleasedAndAFreezeLiftedThroughTheRoutesAreListedWithWhoLiftedThem
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+index ed27c0f..c58792e 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+@@ -257,7 +257,7 @@ class GovernanceRoutes {
+                         "No hold " + holdId + " on this " + kind(target.securable())));
+         Instant now = now();
+         WriteResult result = Management.write("Releasing a hold", () -> store.releaseHold(id,
+-                        request.actor().principal(), management.change(now, new HoldChange(HoldChange.Action.RELEASED,
++                        hold.placedBy(), management.change(now, new HoldChange(HoldChange.Action.RELEASED,
+                                 id, target.audit(), hold.reason(), request.actor()))),
+                 () -> store.holdsOn(java.util.Set.of(target.securable())).stream().noneMatch(h -> h.id().equals(id)));
+         return switch (result) {
