@@ -152,6 +152,14 @@ public final class CommitEngine {
                 Optional.of(branch));
     }
 
+    /**
+     * The merge of a branch into main (backlog 107), judged by this engine's rules as a commit on main is and writing
+     * through its files; its commit events are this engine's.
+     */
+    public Merge merging() {
+        return new Merge(this, store, files, events, settings, clock, sleeper);
+    }
+
     /** {@code POST .../tables} without stage-create. */
     public CommitReply createTable(ObjectName name, String requestJson, Caller caller, Optional<String> idempotencyKey) {
         return run(Operation.CREATE_TABLE, one(name, requestJson), requestJson, caller, idempotencyKey);
@@ -1096,8 +1104,8 @@ public final class CommitEngine {
         }
     }
 
-    private CommitReply committed(CatalogObject object, Pointer pointer, String json, boolean regulatedChange,
-                                  UUID commitId) {
+    CommitReply committed(CatalogObject object, Pointer pointer, String json, boolean regulatedChange,
+                          UUID commitId) {
         cache.put(pointer.metadataLocation(), json);
         if (regulatedChange) {
             alerts.regulatedSchemaChange(object.id(), commitId);
@@ -1113,8 +1121,7 @@ public final class CommitEngine {
         return backOff(settings, clock, sleeper, attempt, started);
     }
 
-    private static boolean backOff(CommitSettings settings, Clock clock, Sleeper sleeper, int attempt,
-                                   Instant started) {
+    static boolean backOff(CommitSettings settings, Clock clock, Sleeper sleeper, int attempt, Instant started) {
         if (attempt >= settings.maxAttempts()) {
             return false;
         }
@@ -1128,7 +1135,7 @@ public final class CommitEngine {
         return true;
     }
 
-    private Optional<Failure> judge(CatalogObject object, Facts before, Facts after, CommitRule.Governance governance) {
+    Optional<Failure> judge(CatalogObject object, Facts before, Facts after, CommitRule.Governance governance) {
         CommitRule.Change change = new CommitRule.Change(object, before, after, clock.instant(),
                 branch.isPresent() ? unfrozen(governance) : governance);
         for (CommitRule rule : rules) {
@@ -1146,7 +1153,7 @@ public final class CommitEngine {
      * The metadata a pointer names, from the cache or the store. A file that no longer matches its
      * hash is alerted; a regulated object then fails closed (empty), any other goes on with it (D26).
      */
-    private Optional<String> load(CatalogObject object, Pointer pointer, CommitRule.Governance governance) {
+    Optional<String> load(CatalogObject object, Pointer pointer, CommitRule.Governance governance) {
         String cached = cache.get(pointer.metadataLocation());
         if (cached != null) {
             return Optional.of(cached);

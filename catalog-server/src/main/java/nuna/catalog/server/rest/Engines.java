@@ -6,6 +6,7 @@ import nuna.catalog.core.commit.CommitEngine;
 import nuna.catalog.core.commit.CommitEvents;
 import nuna.catalog.core.commit.CommitRule;
 import nuna.catalog.core.commit.CommitSettings;
+import nuna.catalog.core.commit.Merge;
 import nuna.catalog.core.commit.CommitReply;
 import nuna.catalog.core.commit.MetadataCache;
 import nuna.catalog.core.commit.ObjectName;
@@ -38,9 +39,10 @@ import org.springframework.stereotype.Component;
  * Each catalog's engine writes through its own storage profile (D28) and also applies that profile's rules.
  * Construction is cheap; the metadata cache and the rules are shared. An engine for a commit through a branch commits on
  * the branch's own pointers (D33), and the branch's expiry moves after each commit that lands (item 26's choice 11).
+ * A catalog's merges of a branch into main take its profile's files and rules as its commits do (backlog 107).
  */
 @Component
-class Engines {
+class Engines implements Merge.Factory {
 
     /** D9: a commit whose timestamps are further than this ahead of the server clock is refused. */
     private static final Duration CLOCK_SKEW = Duration.ofMinutes(1);
@@ -138,6 +140,11 @@ class Engines {
         Profile profile = profile(catalog);
         return new CommitEngine(store, profile.bound().files(), cache, profile.rules(), events, alerts,
                 CommitSettings.DEFAULTS, clock, CommitEngine.Sleeper.THREAD);
+    }
+
+    @Override
+    public Merge of(CatalogRecord catalog, CommitEvents events) {
+        return forRequest(catalog, events).merging();
     }
 
     /** For reading current metadata only. */

@@ -33,6 +33,7 @@ import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
 import nuna.catalog.server.rest.AccessDenied;
+import nuna.catalog.server.rest.AuditEvents;
 import nuna.catalog.server.rest.AuditPublisher;
 import nuna.catalog.server.rest.RestSettings;
 import nuna.catalog.server.security.Denials;
@@ -155,8 +156,11 @@ class RefRoutesTest {
             }
             notices.add(event);
         };
+        // Merges are RefMergeRoutesTest's.
         routes = new RefRoutes(store, management, guard, new ManagementIdempotency(store, clock), authorizer, SETTINGS,
-                names, sent, rest, clock);
+                names, sent, rest, (merged, events) -> {
+                    throw new AssertionError("no merge here");
+                }, new AuditEvents(rest), clock);
         StorageSettings storage = new StorageSettings(Map.of(), Map.of("gate", new StorageSettings.Catalog(
                 "warehouse", null, null)), Duration.ofHours(1), 100, false);
         // No governance settings: only the refs section is asked for.
