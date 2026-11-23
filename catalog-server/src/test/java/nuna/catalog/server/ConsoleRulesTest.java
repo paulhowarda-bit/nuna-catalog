@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test;
  */
 class ConsoleRulesTest {
 
-    static final List<String> FILES = List.of("index.html", "app.js", "api.js", "audit.js", "auth.js", "browse.js",
-            "dom.js", "governance.js", "health.js", "maintenance.js", "nights.js", "overview.js", "panels.js", "queue.js",
+    static final List<String> FILES = List.of("index.html", "access.js", "app.js", "api.js", "audit.js", "auth.js",
+            "browse.js", "dom.js", "governance.js", "health.js", "maintenance.js", "nights.js", "overview.js", "panels.js", "queue.js",
             "refs.js", "requests.js", "route.js", "settings.js", "table.js", "tree.js", "style.css", "favicon.svg");
 
     @Test
