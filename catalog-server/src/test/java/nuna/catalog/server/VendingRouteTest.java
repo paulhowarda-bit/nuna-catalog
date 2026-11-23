@@ -49,10 +49,10 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 
 /**
  * Real STS credentials through the REST routes (D21, D23, D14), on the run's S3 store: what a load vends, that the
- * credentials reach the table's prefix and nothing else, that every new set is audited before it is handed
- * out and nothing is handed out when the audit fails, that no credentials delete (D30), the delegation rules, and the 304 rule
- * with real expiry. Callers sign in with tokens from the local test issuer; {@code trino-prod} is registered
- * as a trusted engine.
+ * credentials reach the table's prefix and nothing else, that a tag's only read (D33), that every new set is audited
+ * before it is handed out and nothing is handed out when the audit fails, that no credentials delete (D30), the
+ * delegation rules, and the 304 rule with real expiry. Callers sign in with tokens from the local test issuer;
+ * {@code trino-prod} is registered as a trusted engine.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "nuna.security.maintenance-principals=svc-maintenance",
@@ -209,6 +209,55 @@ class VendingRouteTest {
         assertThat(ISSUED).filteredOn(issue -> issue.actor().principal().equals("alice"))
                 .as("the create's set, which the load reuses").singleElement()
                 .extracting(CredentialIssue::access).isEqualTo(CredentialIssue.Access.READ_WRITE);
+    }
+
+    /**
+     * A tag is read-only (D33, item 26's choice 5), so its credentials refuse PutObject on the store itself, to a caller
+     * who may write the table, while the same caller's credentials on main write (backlog 112).
+     */
+    @Test
+    @DisplayName("a tag's credentials read the table but refuse PutObject, to a caller who may write it on main")
+    void aTagsCredentialsRefusePutObject() throws Exception {
+        String location = createTable("t", "alice");
+        String rows = key(location) + "/data/00000-0.parquet";
+        try (S3Client root = objectStore.client()) {
+            root.putObject(b -> b.bucket(S3ForTests.bucket()).key(rows), RequestBody.fromString("rows"));
+        }
+        String alice = IssuerForTests.bearer("alice", IssuerForTests.GROUP);
+        String tag = namespace + "-eod";
+        HttpResponse<String> made = request("POST", "/management/v1/catalogs/trading/refs",
+                "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}", alice);
+        assertThat(made.statusCode()).as(made.body()).isEqualTo(201);
+        try {
+            int before = ISSUED.size();
+            for (String path : List.of(table("t"), table("t") + "/credentials")) {
+                HttpResponse<String> load = request("GET", "/v1/trading@" + tag + path, null, alice);
+                assertThat(load.statusCode()).as(load.body()).isEqualTo(200);
+                try (S3Client s3 = client(JsonPath.read(load.body(), "$.storage-credentials[0].config"))) {
+                    assertThat(s3.getObjectAsBytes(b -> b.bucket(S3ForTests.bucket()).key(rows)).asUtf8String())
+                            .isEqualTo("rows");
+                    assertDenied(() -> s3.putObject(b -> b.bucket(S3ForTests.bucket())
+                            .key(key(location) + "/data/00001-tag.parquet"), RequestBody.fromString("x")));
+                    assertDenied(() -> s3.putObject(b -> b.bucket(S3ForTests.bucket())
+                            .key(key(location) + "/metadata/snap-1-tag.avro"), RequestBody.fromString("x")));
+                    assertDenied(() -> s3.createMultipartUpload(b -> b.bucket(S3ForTests.bucket())
+                            .key(key(location) + "/data/big.parquet")));
+                    assertDenied(() -> s3.deleteObject(b -> b.bucket(S3ForTests.bucket()).key(rows)));
+                }
+            }
+            assertThat(ISSUED.subList(before, ISSUED.size())).as("the tag's sets").isNotEmpty()
+                    .allSatisfy(issue -> assertThat(issue.access()).isEqualTo(CredentialIssue.Access.READ));
+
+            HttpResponse<String> main = send("GET", table("t"), null, "alice");
+            try (S3Client s3 = client(JsonPath.read(main.body(), "$.config"))) {
+                s3.putObject(b -> b.bucket(S3ForTests.bucket()).key(key(location) + "/data/00001-main.parquet"),
+                        RequestBody.fromString("more"));
+            }
+        } finally {
+            HttpResponse<String> deleted = request("DELETE", "/management/v1/catalogs/trading/refs/" + tag, null,
+                    alice);
+            assertThat(deleted.statusCode()).as(deleted.body()).isEqualTo(204);
+        }
     }
 
     @Test

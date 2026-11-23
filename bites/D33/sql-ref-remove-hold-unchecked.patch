@@ -1,0 +1,18 @@
+Breaks: taking a table out of refs on the SQL stores reads no legal hold in its transaction, so a hold placed after the route looked does not keep the table in its tags (D24; backlog 156).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Refs#removalOutcomesComeInOrder
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 185d2a5e..7a44ffc7 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -230,9 +230,6 @@ final class SqlRefs {
+             if (path.isEmpty()) {
+                 return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+             }
+-            if (Guards.held(connection, objectId, catalog.get(), path.get())) {
+-                return new WriteResult.Refused(WriteResult.Reason.HELD);
+-            }
+             if (Guards.frozen(connection, objectId, catalog.get(), path.get())) {
+                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+             }

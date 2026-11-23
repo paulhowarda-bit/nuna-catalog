@@ -78,6 +78,20 @@ class IcebergLakeTest {
     }
 
     @Test
+    void theSettingsGoOnABrokerageNamespaceSomethingElseMade() {
+        // SingleStore's change feed makes brokerage, with no properties, when it first makes brokerage.trading.
+        InMemoryCatalog fresh = new InMemoryCatalog();
+        fresh.initialize("lake", Map.of());
+        fresh.createNamespace(Namespace.of("brokerage"));
+        fresh.createNamespace(Namespace.of("brokerage", "trading"));
+        IcebergLake other = new IcebergLake(fresh, Duration.ZERO, Duration.ofSeconds(1));
+        other.bootstrap(KIT, SETTINGS, LocalDate.of(2026, 11, 22), Map.of(Feed.JOURNAL_LINES, 40L));
+        assertThat(other.settings()).isEqualTo(SETTINGS);
+        assertThat(other.pacedFrom()).isEqualTo(LocalDate.of(2026, 11, 22));
+        assertThat(other.startOffsets()).containsEntry(Feed.JOURNAL_LINES, 40L);
+    }
+
+    @Test
     void locateIdIsAddedOnce() {
         lake.ensureLocateId();
         lake.ensureLocateId();

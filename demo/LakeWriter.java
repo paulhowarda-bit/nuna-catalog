@@ -38,6 +38,8 @@ import org.apache.iceberg.types.Types;
  * LakeWriter seed   the sample tables, each with a history: appends, added columns, a row deleted, a changed
  *                   partition spec, a tag and a branch, v2 and v3 tables, and a view with two versions
  * LakeWriter rate   one more EURUSD rate, appended to markets.fx.rates
+ * LakeWriter dev    the next day, 2026-11-11, on the catalog's branch dev (D33): two trades and two rates,
+ *                   committed through the warehouse lakehouse@dev, so main has neither until dev is merged
  * </pre>
  */
 public class LakeWriter {
@@ -48,17 +50,20 @@ public class LakeWriter {
     static final Namespace REFERENCE = Namespace.of("reference");
 
     public static void main(String[] args) throws Exception {
+        String mode = args.length == 0 ? "" : args[0];
         try (RESTCatalog catalog = new RESTCatalog()) {
             catalog.initialize("lake", Map.of(
                     "uri", "http://nuna-catalog:8181",
-                    "warehouse", "lakehouse",
+                    // An engine commits on a branch by naming it in the warehouse, catalog@branch (D33).
+                    "warehouse", mode.equals("dev") ? "lakehouse@dev" : "lakehouse",
                     "token", System.getenv("NUNA_TOKEN"),
                     "header.X-Iceberg-Access-Delegation", "vended-credentials"));
-            switch (args.length == 0 ? "" : args[0]) {
+            switch (mode) {
                 case "seed" -> seed(catalog);
                 case "rate" -> rate(catalog);
+                case "dev" -> dev(catalog);
                 default -> {
-                    System.err.println("usage: LakeWriter seed | rate");
+                    System.err.println("usage: LakeWriter seed | rate | dev");
                     System.exit(2);
                 }
             }
@@ -168,6 +173,29 @@ public class LakeWriter {
         double rate = 1.08 + Math.round(Math.random() * 100) / 10_000.0;
         append(rates, row(rates, "EURUSD", rate, now, "demo"));
         System.out.println("appended EURUSD " + rate + " as of " + now + " to markets.fx.rates");
+    }
+
+    /**
+     * The next day's trades and rates, staged on the branch dev for review: demo.sh makes the branch first, and a
+     * merge releases both tables to main in one transaction.
+     */
+    static void dev(RESTCatalog catalog) {
+        Table trades = catalog.loadTable(TableIdentifier.of(XETRA, "trades"));
+        Types.StructType feeType = trades.schema().findField("fees").type().asStructType();
+        Record fees9 = GenericRecord.create(feeType);
+        fees9.setField("commission", dec("1.4000"));
+        fees9.setField("tax", dec("0.1200"));
+        Record fees10 = GenericRecord.create(feeType);
+        fees10.setField("commission", dec("0.8000"));
+        fees10.setField("tax", dec("0.0400"));
+        append(trades,
+                row(trades, 9L, "SAP", dec("183.020000"), 400L, utc("2026-11-11T09:00:03"), "XETR", fees9),
+                row(trades, 10L, "ALV", dec("270.150000"), 60L, utc("2026-11-11T09:01:40"), "XETR", fees10));
+        Table rates = catalog.loadTable(TableIdentifier.of(FX, "rates"));
+        append(rates, row(rates, "EURUSD", 1.0862, utc("2026-11-11T16:00:00"), "ECB"),
+                row(rates, "GBPUSD", 1.2731, utc("2026-11-11T16:00:00"), "ECB"));
+        System.out.println("committed 2026-11-11 on lakehouse@dev: trades 9 and 10 to markets.equities.eu.xetra.trades,"
+                + " EURUSD and GBPUSD to markets.fx.rates");
     }
 
     static Table create(RESTCatalog catalog, TableIdentifier id, int formatVersion, Schema schema, String partition) {

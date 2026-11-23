@@ -15,6 +15,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
@@ -38,9 +39,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * The web console in a real browser, on the server the M7 tests share: the screens UI v1 checked by hand against
  * the demo on 2026-11-10 (build-plan.md), in the redesigned console (D45, backlog 124). The tree down to tables and
  * views; a namespace's Contents with each table's format, snapshots and last commit (backlog 137); a table's
- * overview, schemas compared, partition specs and sort orders, snapshots with their refs, and metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
+ * overview, schemas compared, partition specs and sort orders, snapshots with their Iceberg refs, and metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
  * revoked; every refusal shown as the catalog answered it, with its request id; an object's audit trail; the theme
- * picked and kept; and the phone layout, its menu a drawer and no page wider than the screen.
+ * picked and kept; the phone layout, its menu a drawer and no page wider than the screen; and the catalog's branches
+ * and tags (backlog 109): a branch made, committed on, previewed and merged, and a table read as of a tag.
  *
  * <p>The fixtures are made through the API before the browser looks: a namespace three levels deep with a v2 table
  * whose schema, partitioning and sort order evolved and which has three snapshots, a tag and a branch, a v3 table and
@@ -661,6 +663,120 @@ class ConsoleBrowserTest {
         }
     }
 
+    /**
+     * A catalog branch made in the console, committed on through the REST API as any engine commits to a warehouse,
+     * then previewed and merged in the console (D33, backlog 109). Read through the branch, a table's page names it in
+     * the band, the top chip, the first crumb and the selector; the merge tab and its dialog show the dry run's plan;
+     * the merge moves main to the file the branch wrote and ends the branch.
+     */
+    @Test
+    void aBranchIsMadeCommittedOnPreviewedAndMerged() {
+        String ns = "refs_" + Api.suffix();
+        String branch = "dev_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+
+        signIn(tester());
+        browser.open("/ui/#c=trading&tab=refs");
+        browser.await(By.cssSelector("button[data-act='ref-new']")).click();
+        WebElement make = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(textContent(make.findElement(By.id("dlg-h")))).isEqualTo("Make a branch or tag");
+        assertThat(make.findElement(By.cssSelector("button[data-k='branch']")).getDomAttribute("aria-pressed"))
+                .isEqualTo("true");
+        make.findElement(By.cssSelector("input[name='name']")).sendKeys(branch);
+        make.findElement(By.cssSelector("button[type='submit']")).click();
+        browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Made the branch @" + branch);
+        HttpResponse<String> made = expect(api.manage("GET", "/refs/" + branch, null), 200);
+        assertThat(JsonPath.<String>read(made.body(), "$.kind")).isEqualTo("branch");
+        assertThat(JsonPath.<String>read(made.body(), "$.from")).isEqualTo("main");
+
+        // An engine commits on the branch as on any warehouse, trading@<branch>; main keeps its own version.
+        HttpResponse<String> committed = expect(api.send("POST", "/v1/" + Api.CATALOG + "@" + branch + "/namespaces/"
+                + ns + "/tables/orders", Api.SET_PROPERTY.formatted("on-branch")), 200);
+        assertThat(JsonPath.<String>read(committed.body(), "$.metadata-location")).contains(".branch-");
+        assertThat(properties(ns)).doesNotContainKey("k");
+
+        // Read through the branch, the table's page says so wherever the catalog is named.
+        browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + branch);
+        browser.awaitText(By.cssSelector("#table-page h1"), "orders");
+        assertThat(browser.awaitText(By.cssSelector("[data-ref-band='" + branch + "']"), "Reading the branch").getText())
+                .contains("1 table changed on it");
+        assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading@" + branch);
+        assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
+                .isEqualTo("trading@" + branch);
+        assertThat(browser.await(By.cssSelector("[data-ref-pick]")).getDomAttribute("aria-label"))
+                .isEqualTo("Reading branch " + branch + ". Choose a branch or tag");
+
+        // The merge tab shows the dry run: the table moves from main's version to the next one.
+        HttpResponse<String> plan = expect(api.manage("POST", "/refs/" + branch + "/merge?dry-run=true", null), 200);
+        int cut = JsonPath.read(plan.body(), "$.tables[0].cut-version");
+        int mainNow = JsonPath.read(plan.body(), "$.tables[0].main-version");
+        int onBranch = JsonPath.read(plan.body(), "$.tables[0].branch-version");
+        int mainAfter = JsonPath.read(plan.body(), "$.tables[0].version");
+        browser.open("/ui/#c=trading&k=ref&n=" + branch + "&tab=merge");
+        browser.awaitText(By.cssSelector(".merge-verdict[data-verdict='ready']"),
+                "Ready: 1 table would move to main in one transaction");
+        WebElement moves = browser.await(By.cssSelector(".mm-row.moves[data-path='" + ns + ".orders']"));
+        assertThat(moves.findElements(By.cssSelector("dl.mm-v dd"))).extracting(ConsoleBrowser::textContent)
+                .containsExactly(String.valueOf(cut), String.valueOf(mainNow), String.valueOf(onBranch));
+
+        browser.await(By.cssSelector("button[data-act='ref-merge']")).click();
+        WebElement confirm = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(textContent(confirm.findElement(By.id("dlg-h")))).isEqualTo("Merge @" + branch + " into main");
+        assertThat(rows(confirm)).containsExactly(
+                List.of(ns + ".orders", String.valueOf(mainNow), String.valueOf(mainAfter)));
+        confirm.findElement(By.cssSelector("button[type='submit']")).click();
+        browser.awaitText(By.cssSelector("[data-merged='" + branch + "'] .granted"), "Merged @" + branch + " into main");
+
+        assertThat(properties(ns)).containsEntry("k", "on-branch");
+        expect(api.manage("GET", "/refs/" + branch, null), 404);
+    }
+
+    /**
+     * A table read as of a tag (D33, backlog 109): the page loads through trading@<tag> and shows what the tag keeps,
+     * not what main committed since; the band, the top chip and the first crumb name the tag; the read-only note
+     * quotes what the catalog answers a commit through it; and "Read main instead" goes back to main.
+     */
+    @Test
+    void aTableIsReadAsOfATag() {
+        String ns = "tagged_" + Api.suffix();
+        String tag = "eod_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables/orders", Api.SET_PROPERTY.formatted("before")), 200);
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables/orders", Api.SET_PROPERTY.formatted("after")), 200);
+            HttpResponse<String> refused = api.send("POST", "/v1/" + Api.CATALOG + "@" + tag + "/namespaces/" + ns
+                    + "/tables/orders", Api.SET_PROPERTY.formatted("through-the-tag"));
+            assertThat(refused.statusCode()).as(refused.body()).isEqualTo(400);
+
+            signIn(tester());
+            browser.open("/ui/#" + at("table", List.of(ns), "orders", "properties") + "&r=" + tag);
+            browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
+            assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading@" + tag);
+            assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
+                    .isEqualTo("trading@" + tag);
+            browser.await(By.cssSelector("[data-ref-note='props']"));
+            assertThat(fact("k")).isEqualTo("before");
+            WebElement note = browser.await(By.cssSelector(".ro-note"));
+            assertThat(textContent(note.findElement(By.cssSelector(".refusal-code"))))
+                    .isEqualTo("400 " + JsonPath.read(refused.body(), "$.error.type"));
+            assertThat(textContent(note.findElement(By.cssSelector(".refusal-msg"))))
+                    .isEqualTo(JsonPath.<String>read(refused.body(), "$.error.message"));
+            assertThat(properties(ns)).containsEntry("k", "after");
+
+            driver.findElement(By.xpath("//div[@data-ref-band='" + tag + "']//a[normalize-space()='Read main instead']"))
+                    .click();
+            browser.await("the page still reads the tag", d -> !d.getCurrentUrl().contains("r=" + tag)
+                    && d.findElements(By.cssSelector("[data-ref-band]")).isEmpty());
+            browser.awaitText(By.cssSelector("#catalog-pick [data-cat]"), "trading");
+            assertThat(textContent(driver.findElement(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+    }
+
     // ---- fixtures ----
 
     /** The v2 table: three schemas, a second partition spec and sort order, three snapshots, a tag and a branch. */
@@ -724,6 +840,12 @@ class ConsoleBrowserTest {
                 "{\"name\":\"" + name + "\",\"schema\":" + schema(0, false, false)
                         + ",\"properties\":{\"format-version\":\"" + formatVersion + "\"}}"), 200);
         return JsonPath.read(created.body(), "$.metadata-location");
+    }
+
+    /** The properties of table {@code orders} in namespace {@code ns}, as main has them. */
+    private Map<String, String> properties(String ns) {
+        return JsonPath.read(expect(api.rest("GET", "/namespaces/" + ns + "/tables/orders", null), 200).body(),
+                "$.metadata.properties");
     }
 
     private void commit(String updates) {

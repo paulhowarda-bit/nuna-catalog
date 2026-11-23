@@ -214,6 +214,62 @@ final class OracleRefs {
     }
 
     /**
+     * Takes an object out of refs (backlog 156). Locks the catalog's record for update, as a create does, so no ref is
+     * made meanwhile; then each ref for update, in id order, as a deletion locks it, so a commit on the branch in flight
+     * lands first and a later one finds the object outside the cut; then the object for update, as a purge claim locks
+     * it, before its holds and freezes are read. Then deletes each branch's own pointer for the object with its pieces,
+     * and the object's entry in each ref's cut.
+     */
+    WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
+        return transactions.change(change, "ref removal", connection -> {
+            Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?"
+                    + " AND state <> 'PURGED'", row -> Jdbc.uuid(row, "catalog_id"), objectId);
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            // The lock on the catalog's refs: the catalog exists while an object of it does.
+            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR UPDATE", catalog.get());
+            List<UUID> ids = refIds.stream().sorted().toList();
+            int locked = 0;
+            for (UUID refId : ids) {
+                if (exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE", refId,
+                        catalog.get())) {
+                    locked++;
+                }
+            }
+            if (!exists(connection, "SELECT 1 FROM catalog_object WHERE id = ? AND state <> 'PURGED' FOR UPDATE",
+                    objectId)) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            List<UUID> path = query(connection, "SELECT namespace_id FROM object_path WHERE object_id = ?",
+                    row -> Jdbc.uuid(row, "namespace_id"), objectId);
+            if (Guards.held(connection, objectId, catalog.get(), path)) {
+                return new WriteResult.Refused(WriteResult.Reason.HELD);
+            }
+            if (Guards.frozen(connection, objectId, catalog.get(), path)) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            List<Object> named = new ArrayList<>(List.of(objectId));
+            String refIn = Jdbc.in("ref_id", ids, named);
+            long count = first(connection, "SELECT COUNT(*) FROM ref_entry WHERE object_id = ? AND kind <> 'NAMESPACE'"
+                    + " AND " + refIn, row -> row.getLong(1), named.toArray()).orElseThrow();
+            if (locked != ids.size() || count != ids.size()) {
+                return MISSING;
+            }
+            if (every && exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ? AND NOT (" + refIn + ")",
+                    named.toArray())) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+            }
+            List<Object> own = new ArrayList<>(List.of(objectId));
+            String branchIn = Jdbc.in("branch", ids.stream().map(UUID::toString).toList(), own);
+            update(connection, "DELETE FROM pointer WHERE object_id = ? AND " + branchIn, own.toArray());
+            update(connection, "DELETE FROM projection_piece WHERE object_id = ? AND " + branchIn, own.toArray());
+            update(connection, "DELETE FROM ref_entry WHERE object_id = ? AND " + refIn, named.toArray());
+            return WriteResult.APPLIED;
+        });
+    }
+
+    /**
      * Locks the ref a commit lands on or ends, before any pointer (D33, backlog 103), for update: Oracle has no shared
      * row lock, so commits on one branch take turns, as commits of one object take turns on its row. A merge or a
      * deletion waits for them. Then checks it, as the lock returns it: a branch not past its expiry at the batch's

@@ -2,6 +2,11 @@
 # with the credentials the catalog vends. Only demo.sh applies this; CloudBeaver (cloudbeaver.yaml) is its UI,
 # and nothing publishes Trino itself.
 #
+# lakehouse_dev is the same catalog through its branch dev (D33): nuna takes the warehouse lakehouse@dev as the
+# branch, so reads see the branch and commits land on it, never on main. demo.sh up makes dev (refs). Trino asks
+# nuna for a catalog's config only at its first query, so it starts whether or not dev exists; while it does not
+# (merged or deleted), every query there fails with nuna's 404, and a new branch named dev is read again at once.
+#
 # Each query reaches nuna as whoever runs it: the client sends its own catalog token as Trino's extra credential
 # "token" (session USER), and Trino hands it to nuna, which checks it as it checks any engine's. CloudBeaver's
 # connections send the signed-in person's. A query without one fails: Trino then asks nuna to exchange a token,
@@ -34,6 +39,21 @@ data:
     iceberg.catalog.type=rest
     iceberg.rest-catalog.uri=http://nuna-catalog:8181
     iceberg.rest-catalog.warehouse=lakehouse
+    iceberg.rest-catalog.security=OAUTH2
+    iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
+    iceberg.rest-catalog.session=USER
+    iceberg.rest-catalog.vended-credentials-enabled=true
+    iceberg.rest-catalog.nested-namespace-enabled=true
+    iceberg.rest-catalog.server-assigned-table-location-enabled=true
+    fs.native-s3.enabled=true
+    s3.endpoint=${S3_ENDPOINT}
+    s3.region=us-east-1
+    s3.path-style-access=true
+  lakehouse_dev.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri=http://nuna-catalog:8181
+    iceberg.rest-catalog.warehouse=lakehouse@dev
     iceberg.rest-catalog.security=OAUTH2
     iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.session=USER
@@ -109,6 +129,7 @@ spec:
             name: trino-config
             items:
               - {key: lakehouse.properties, path: lakehouse.properties}
+              - {key: lakehouse_dev.properties, path: lakehouse_dev.properties}
               - {key: engines.properties, path: engines.properties}
 ---
 apiVersion: v1

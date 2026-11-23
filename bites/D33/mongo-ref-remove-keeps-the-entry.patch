@@ -1,0 +1,17 @@
+Breaks: taking a table out of refs on MongoDB deletes the branch's own pointer but not the ref's entry, so the tag still names the table and its purge stays refused (backlog 156).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Refs#takingATableOutOfRefs
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+index 84d301eb..594d57ae 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java
+@@ -505,8 +505,6 @@ final class MongoRefs {
+                     new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));
+             tx.collection(POINTER).deleteMany(tx.session, own);
+             tx.collection(PROJECTION_PIECE).deleteMany(tx.session, own);
+-            tx.collection(REF_ENTRY).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId))
+-                    .append("refId", Docs.in(ids)));
+             return WriteResult.APPLIED;
+         });
+     }

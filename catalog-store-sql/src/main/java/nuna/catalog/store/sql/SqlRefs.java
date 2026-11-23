@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * A catalog's branches and tags (D33): the ref record and its cut, {@code ref_entry}. A create locks the catalog's
@@ -201,6 +202,60 @@ final class SqlRefs {
     }
 
     /**
+     * Takes an object out of refs (backlog 156). Locks the catalog's record for share, which a create locks for
+     * update, so no ref is made meanwhile; then each ref for update, in id order, as a deletion locks it, so a commit on
+     * the branch in flight lands first and a later one finds the object outside the cut; then the object for update,
+     * as a purge claim locks it, before its holds and freezes are read. Then deletes each branch's own pointer for the
+     * object with its pieces, and the object's entry in each ref's cut.
+     */
+    WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
+        return transactions.change(change, "ref removal", connection -> {
+            Optional<UUID> catalog = first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?"
+                    + " AND state <> 'PURGED'", row -> Jdbc.uuid(row, "catalog_id"), objectId);
+            if (catalog.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            // The lock on the catalog's refs: the catalog exists while an object of it does.
+            exists(connection, "SELECT 1 FROM catalog WHERE id = ? FOR SHARE", catalog.get());
+            UUID[] ids = refIds.stream().sorted().toArray(UUID[]::new);
+            int locked = 0;
+            for (UUID refId : ids) {
+                if (exists(connection, "SELECT 1 FROM ref WHERE id = ? AND catalog_id = ? FOR UPDATE", refId,
+                        catalog.get())) {
+                    locked++;
+                }
+            }
+            Optional<List<UUID>> path = first(connection, "SELECT namespace_path FROM catalog_object WHERE id = ?"
+                    + " AND state <> 'PURGED' FOR UPDATE", row -> Jdbc.uuids(row, "namespace_path"), objectId);
+            if (path.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            if (Guards.held(connection, objectId, catalog.get(), path.get())) {
+                return new WriteResult.Refused(WriteResult.Reason.HELD);
+            }
+            if (Guards.frozen(connection, objectId, catalog.get(), path.get())) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            long named = first(connection, "SELECT count(*) AS named FROM ref_entry WHERE object_id = ?"
+                    + " AND ref_id = ANY(?) AND kind <> 'NAMESPACE'", row -> row.getLong("named"), objectId, ids)
+                    .orElseThrow();
+            if (locked != ids.length || named != ids.length) {
+                return MISSING;
+            }
+            if (every && exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ? AND NOT (ref_id = ANY(?))",
+                    objectId, ids)) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+            }
+            String[] branches = Stream.of(ids).map(UUID::toString).toArray(String[]::new);
+            update(connection, "DELETE FROM pointer WHERE object_id = ? AND branch = ANY(?)", objectId, branches);
+            update(connection, "DELETE FROM projection_piece WHERE object_id = ? AND branch = ANY(?)", objectId,
+                    branches);
+            update(connection, "DELETE FROM ref_entry WHERE object_id = ? AND ref_id = ANY(?)", objectId, ids);
+            return WriteResult.APPLIED;
+        });
+    }
+
+    /**
      * Locks the ref a commit lands on or ends, before any pointer (D33, backlog 103): for share for a commit on the
      * branch, so commits on one branch do not wait for each other while a merge or a deletion, which lock it for
      * update, waits for them; for update for a merge. Then checks it, as the lock returns it: a branch not past its
@@ -331,10 +386,14 @@ final class SqlRefs {
                 row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")));
     }
 
-    private static RefPointers pointers(ResultSet row) throws SQLException {
+    /**
+     * One row of {@link #listPointers}. {@code wasNull} answers for the last column read, so the head's version is
+     * judged before the ref's columns are read: read after them, it would judge the ref's expiry instead, and a branch
+     * with no pointer of its own would be read as having one.
+     */
+    static RefPointers pointers(ResultSet row) throws SQLException {
         RefEntry.At cut = new RefEntry.At(row.getLong("version"), row.getString("metadata_location"),
                 row.getString("sha256"));
-        // wasNull answers for the column read last, so it is asked before ref(row) reads the ref's columns.
         long version = row.getLong("head_version");
         Optional<RefEntry.At> head = row.wasNull() ? Optional.empty()
                 : Optional.of(new RefEntry.At(version, row.getString("head_location"), row.getString("head_sha256")));

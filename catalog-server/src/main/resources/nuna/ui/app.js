@@ -100,10 +100,11 @@ function closeMenus() {
   if (consoleEl.classList.contains('menu-open')) menu(false);
 }
 
-function setChrome(navKey, rail) {
+function setChrome(navKey, rail, ref) {
   consoleEl.classList.toggle('rail', railPick ?? !!rail);
   syncMenuButton();
-  for (const b of $$('[data-cat]')) b.textContent = cat || '–';
+  // The top chip names the ref a browse page reads (item 109): lakehouse @dev.
+  for (const b of $$('[data-cat]')) fill(b, cat || '–', ref ? h('span', {class: 'pick-ref'}, '@' + ref) : null);
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
   const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat}), maintenance: pageHref('maintenance', cat),
     governance: pageHref('governance', cat), audit: pageHref('audit', cat), health: pageHref('health')};
@@ -377,7 +378,7 @@ gotoDlg.addEventListener('click', e => { if (e.target === gotoDlg) gotoDlg.close
 
 // ---- the router ----
 
-const same = (a, b) => a && b && a.page === b.page && a.c === b.c && a.k === b.k && a.ns.join(SEP) === b.ns.join(SEP) && a.n === b.n;
+const same = (a, b) => a && b && a.page === b.page && a.c === b.c && a.k === b.k && a.ns.join(SEP) === b.ns.join(SEP) && a.n === b.n && a.r === b.r;
 
 function noCatalog() {
   return h('div', {class: 'nc-main'}, h('div', {class: 'ph'}, h('h1', {tabindex: '-1'}, 'No catalog to show')),
@@ -445,15 +446,16 @@ function render() {
     navKey = 'catalog';
     rail = true;
     content = browse(slot, r);
-    title = r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
+    title = r.k === 'ref' && r.n ? '@' + r.n : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
   } else {
     navKey = null;
     title = 'Not found';
     content = notFound();
   }
-  setChrome(navKey, rail);
+  const reading = !r.page && r.k !== 'ref' ? r.r : null;
+  setChrome(navKey, rail, reading);
   if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
-  document.title = `${title} · ${r.page === 'health' ? 'all catalogs' : cat} · nuna`;
+  document.title = `${title} · ${r.page === 'health' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;
   if (tabOnly && prev.tab !== r.tab) {
     const t = $('.nc-main .tabs a[aria-current="page"]', slot);
     if (t) t.focus({preventScroll: true});

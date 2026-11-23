@@ -10,8 +10,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,11 +49,13 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
+import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.KeyState;
+import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.OutboxEvent;
@@ -62,6 +67,7 @@ import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import org.junit.jupiter.api.Test;
@@ -95,6 +101,10 @@ class RefRoutesTest {
     private static final Caller VIC = person("vic", "viewers");
     /** Nothing in the catalog. */
     private static final Caller NED = person("ned", "newcomers");
+    /** Manage-tags on the catalog: the tag steward (backlog 156). */
+    private static final Caller SUE = person("sue", "stewards");
+    /** Manage-tags on the namespace hr only. */
+    private static final Caller HUGH = person("hugh", "hr-stewards");
     private static final Caller WORKER = new Caller(new Principal("nuna-maintenance", Set.of()), "worker", false,
             Optional.empty());
     private static final Caller WORKER_FOR_BEA = new Caller(new Principal("nuna-maintenance", Set.of()), "worker",
@@ -118,6 +128,13 @@ class RefRoutesTest {
     private final List<CatalogEvent> audit = new ArrayList<>();
     private final List<CatalogEvent> notices = new ArrayList<>();
     private RuntimeException noticesFail;
+    private final List<LegalHold> holds = new ArrayList<>();
+    private final List<GovernanceAttribute> attributes = new ArrayList<>();
+    /**
+     * What the store answers the next removals with instead of applying them: a ref deleted or made, or a hold placed
+     * or a freeze set, between the route's reads and its transaction.
+     */
+    private final Deque<WriteResult> removals = new ArrayDeque<>();
 
     private final MutableClock clock = new MutableClock(NOW);
     private final RefRoutes routes;
@@ -130,6 +147,8 @@ class RefRoutesTest {
         grant(new Securable(Securable.Kind.CATALOG, catalog.id()), "builders", Privilege.CREATE);
         grant(new Securable(Securable.Kind.NAMESPACE, hr.id()), "hr-readers", Privilege.DESCRIBE);
         grant(new Securable(Securable.Kind.CATALOG, catalog.id()), "viewers", Privilege.DESCRIBE);
+        grant(new Securable(Securable.Kind.CATALOG, catalog.id()), "stewards", Privilege.MANAGE_TAGS);
+        grant(new Securable(Securable.Kind.NAMESPACE, hr.id()), "hr-stewards", Privilege.MANAGE_TAGS);
         CatalogStore store = store();
         RestSettings rest = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, null);
@@ -198,10 +217,10 @@ class RefRoutesTest {
         create("dev", "branch", null, null);
         caller = HAL;
 
-        assertThat(json(routes.list("gate", null, null, http)).get("refs")).hasSize(1);
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs")).hasSize(1);
         assertThat(json(routes.read("gate", "dev", http)).get("name").asString()).isEqualTo("dev");
         caller = NED;
-        assertThat(answer(() -> routes.list("gate", null, null, http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.list("gate", null, null, false, http)).status()).isEqualTo(404);
         assertThat(answer(() -> routes.read("gate", "dev", http)).status()).isEqualTo(404);
 
         assertThat(denials()).extracting(Denial::operation).containsExactly("listRefs", "loadRef");
@@ -212,12 +231,12 @@ class RefRoutesTest {
         create("dev", "branch", null, null);
         create("v1", "tag", null, null);
 
-        assertThat(json(routes.list("gate", null, null, http)).get("refs").valueStream()
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
                 .map(ref -> ref.get("created-by").asString()).toList()).containsExactly("bea", "bea");
         assertThat(json(routes.read("gate", "dev", http)).get("created-by").asString()).isEqualTo("bea");
         for (Caller other : List.of(HAL, VIC)) {
             caller = other;
-            JsonNode listed = json(routes.list("gate", null, null, http)).get("refs");
+            JsonNode listed = json(routes.list("gate", null, null, false, http)).get("refs");
             assertThat(listed).as("listed to %s", other).hasSize(2);
             assertThat(listed.valueStream().filter(ref -> ref.has("created-by")).toList()).as("listed to %s", other)
                     .isEmpty();
@@ -373,7 +392,7 @@ class RefRoutesTest {
 
         clock.advance(DAY.multipliedBy(30));
 
-        assertThat(json(routes.list("gate", null, null, http)).get("refs").valueStream()
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
                 .map(ref -> ref.get("name").asString()).toList()).containsExactly("v1");
         assertThat(answer(() -> routes.read("gate", "dev", http)).status()).isEqualTo(404);
         assertThat(answer(() -> routes.renew("gate", "dev", null, http)).status()).isEqualTo(404);
@@ -442,6 +461,266 @@ class RefRoutesTest {
                 .containsExactly("Staff");
         assertThat(json(routes.read("gate", "v1", http)).has("changed")).isFalse();
         assertThat(denials()).as("a table left out is not a refusal").isEmpty();
+    }
+
+    // ---- what the console needs before the click (backlog 109) ----
+
+    @Test
+    void theListCarriesTheLimitsWhatTheCallerMayDoAndEachBranchsChangedCount() {
+        UUID dev = id(create("dev", "branch", null, null));
+        pointers.put(new PointerKey(staff.id(), dev.toString()), pointer(staff, 2));
+        pointers.put(new PointerKey(orders.id(), dev.toString()), pointer(orders, 4));
+        create("qa", "branch", null, null);
+        create("v1", "tag", null, null);
+
+        JsonNode list = json(routes.list("gate", null, null, false, http));
+
+        JsonNode limits = list.get("limits");
+        assertThat(limits.get("max-branches").asInt()).isEqualTo(2);
+        assertThat(limits.get("max-tags").asInt()).isEqualTo(3);
+        assertThat(limits.get("max-merge-tables").asInt()).isEqualTo(100);
+        assertThat(limits.get("branch-idle-expiry").asString()).isEqualTo(Duration.ofDays(30).toString());
+        assertThat(limits.get("branch-max-life").asString()).isEqualTo(Duration.ofDays(180).toString());
+        assertThat(limits.get("expiry-warning").asString()).isEqualTo(Duration.ofDays(7).toString());
+        assertThat(list.get("may").get("create").asBoolean()).isTrue();
+        assertThat(json(routes.read("gate", "dev", http)).get("may").get("create").asBoolean()).isTrue();
+        Map<String, JsonNode> byName = new HashMap<>();
+        list.get("refs").valueStream().forEach(ref -> byName.put(ref.get("name").asString(), ref));
+        assertThat(byName.get("dev").get("changed-count").asLong()).isEqualTo(2);
+        assertThat(byName.get("qa").get("changed-count").asLong()).isZero();
+        assertThat(byName.get("v1").has("changed-count")).as("a tag changes nothing").isFalse();
+
+        caller = HAL;
+        JsonNode halList = json(routes.list("gate", null, null, false, http));
+        assertThat(halList.get("may").get("create").asBoolean()).isFalse();
+        assertThat(json(routes.read("gate", "dev", http)).get("may").get("create").asBoolean()).isFalse();
+        assertThat(halList.get("refs").valueStream().filter(ref -> ref.get("name").asString().equals("dev"))
+                .findFirst().orElseThrow().get("changed-count").asLong())
+                .as("counted as the dry run counts them, names left out").isEqualTo(2);
+        assertThat(denials()).as("asking is no refusal").isEmpty();
+    }
+
+    @Test
+    void aBranchPastItsExpiryIsListedOnlyWhenAskedForAndSaysSo() {
+        create("dev", "branch", null, null);
+        create("v1", "tag", null, null);
+        clock.advance(DAY.multipliedBy(30));
+
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
+                .map(ref -> ref.get("name").asString()).toList()).containsExactly("v1");
+        JsonNode all = json(routes.list("gate", null, null, true, http)).get("refs");
+        assertThat(all.valueStream().map(ref -> ref.get("name").asString()).toList()).containsExactly("dev", "v1");
+        assertThat(all.valueStream().filter(ref -> ref.has("expired")).map(ref -> ref.get("name").asString())
+                .toList()).containsExactly("dev");
+    }
+
+    // ---- taking a table or view out of refs (backlog 156) ----
+
+    @Test
+    void takingATableOutOfRefsNeedsManageTagsOnIt() {
+        UUID dev = id(create("dev", "branch", null, null));
+        for (Caller other : List.of(BEA, VIC, HAL)) {
+            caller = other;
+            assertThat(answer(() -> remove(staff, refsBody("dev"), null)).status()).as("by %s", other)
+                    .isEqualTo(403);
+        }
+        caller = HAL;
+        assertThat(answer(() -> remove(orders, refsBody("dev"), null))).as("hal holds nothing on sales")
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view " + orders.id() + " in gate"));
+        caller = NED;
+        assertThat(answer(() -> remove(staff, refsBody("dev"), null)).type()).isEqualTo("NoSuchWarehouseException");
+        caller = HUGH;
+        assertThat(answer(() -> remove(orders, refsBody("dev"), null)).status()).as("hugh tends hr only")
+                .isEqualTo(404);
+
+        assertThat(denials()).hasSize(6).extracting(Denial::operation).containsOnly("removeFromRefs");
+        assertThat(denials().getFirst().privilege()).isEqualTo("manage-tags");
+        assertThat(denials().getFirst().securable().id()).isEqualTo(staff.id());
+        assertThat(denials().getFirst().securable().path()).containsExactly("hr", "Staff");
+        assertThat(cuts.get(dev)).anyMatch(entry -> entry.id().equals(staff.id()));
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).isEmpty();
+
+        assertThat(remove(staff, refsBody("dev"), null).getStatusCode().value())
+                .as("manage-tags on hr reaches its tables").isEqualTo(200);
+        assertThat(cuts.get(dev)).noneMatch(entry -> entry.id().equals(staff.id()));
+    }
+
+    @Test
+    void aRemovalTakesTheTableOutOfTheNamedRefsAndRecordsItOnEach() {
+        UUID dev = id(create("dev", "branch", null, null));
+        UUID qa = id(create("qa", "branch", null, null));
+        UUID v1 = id(create("v1", "tag", null, null));
+        pointers.put(new PointerKey(staff.id(), dev.toString()), pointer(staff, 2));
+        pointers.put(new PointerKey(orders.id(), dev.toString()), pointer(orders, 3));
+        caller = SUE;
+
+        JsonNode removed = json(remove(staff, refsBody("dev", "V1", "dev"), null));
+
+        JsonNode object = removed.get("object");
+        assertThat(object.get("id").asString()).isEqualTo(staff.id().toString());
+        assertThat(object.get("namespace").valueStream().map(JsonNode::asString).toList()).containsExactly("hr");
+        assertThat(object.get("name").asString()).isEqualTo("Staff");
+        assertThat(object.get("kind").asString()).isEqualTo("table");
+        assertThat(object.get("state").asString()).isEqualTo("active");
+        assertThat(removed.get("refs").valueStream().map(ref -> ref.get("name").asString()).toList())
+                .containsExactly("dev", "v1");
+        assertThat(removed.get("refs").valueStream().filter(ref -> ref.has("created-by")).toList())
+                .as("a steward need not hold create").isEmpty();
+        assertThat(cuts.get(dev)).noneMatch(entry -> entry.id().equals(staff.id()))
+                .anyMatch(entry -> entry.id().equals(salaries.id()));
+        assertThat(cuts.get(v1)).noneMatch(entry -> entry.id().equals(staff.id()));
+        assertThat(cuts.get(qa)).as("a ref not named keeps it").anyMatch(entry -> entry.id().equals(staff.id()));
+        assertThat(pointers).as("the branch's own pointer for it goes with it")
+                .doesNotContainKey(new PointerKey(staff.id(), dev.toString()))
+                .containsKey(new PointerKey(orders.id(), dev.toString()));
+
+        List<RefChange> events = events(RefChange.Action.OBJECT_REMOVED);
+        assertThat(events).extracting(RefChange::ref).containsExactly(dev, v1);
+        assertThat(events).extracting(RefChange::name).containsExactly("dev", "v1");
+        assertThat(events).extracting(RefChange::kind).containsExactly(RefChange.Kind.BRANCH, RefChange.Kind.TAG);
+        assertThat(events.getFirst().expiresAt()).isEqualTo(NOW.plus(DAY.multipliedBy(30)));
+        assertThat(events.get(1).expiresAt()).isNull();
+        for (RefChange event : events) {
+            assertThat(event.catalog().id()).isEqualTo(catalog.id());
+            assertThat(event.actor().principal()).isEqualTo("sue");
+            assertThat(event.tables()).singleElement().satisfies(table -> {
+                assertThat(table.id()).isEqualTo(staff.id());
+                assertThat(table.kind()).isEqualTo(nuna.catalog.audit.Securable.Kind.TABLE);
+                assertThat(table.catalog()).isEqualTo("gate");
+                assertThat(table.path()).containsExactly("hr", "Staff");
+            });
+        }
+
+        assertThat(answer(() -> remove(staff, refsBody("dev"), null))).as("through dev it is gone")
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view " + staff.id()
+                        + " on ref dev of gate"));
+        assertThat(answer(() -> remove(staff, refsBody("nope"), null)))
+                .isEqualTo(new Answer(404, "NoSuchRefException", "Ref does not exist: nope"));
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).hasSize(2);
+    }
+
+    @Test
+    void everyRefTakesADroppedTableOutOfEachRefThatNamesItAnExpiredBranchIncluded() {
+        UUID dev = id(create("dev", "branch", null, null));
+        UUID v1 = id(create("v1", "tag", null, null));
+        CatalogObject dropped = state(staff, CatalogObject.State.DROPPED);
+        clock.advance(DAY.multipliedBy(31));
+        caller = SUE;
+
+        assertThat(answer(() -> remove(dropped, refsBody("dev"), null)).type())
+                .as("a branch past its expiry is gone by name").isEqualTo("NoSuchRefException");
+        JsonNode removed = json(remove(dropped, ALL_REFS, null));
+
+        assertThat(removed.get("object").get("state").asString()).isEqualTo("dropped");
+        assertThat(removed.get("refs").valueStream().map(ref -> ref.get("name").asString()).toList())
+                .containsExactly("dev", "v1");
+        assertThat(cuts.get(dev)).noneMatch(entry -> entry.id().equals(staff.id()));
+        assertThat(cuts.get(v1)).noneMatch(entry -> entry.id().equals(staff.id()));
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).extracting(RefChange::ref).containsExactly(dev, v1);
+
+        assertThat(json(remove(dropped, ALL_REFS, null)).get("refs")).as("no ref names it now").isEmpty();
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).as("and nothing is written").hasSize(2);
+    }
+
+    @Test
+    void aRemovalReachesATableByIdUntilItIsPurged() {
+        UUID dev = id(create("dev", "branch", null, null));
+        CatalogObject purged = state(orders, CatalogObject.State.PURGED);
+        CatalogObject unregistered = state(salaries, CatalogObject.State.UNREGISTERED);
+        caller = SUE;
+
+        assertThat(answer(() -> remove(purged, ALL_REFS, null)))
+                .isEqualTo(new Answer(404, "NoSuchObjectException", "No table or view " + orders.id() + " in gate"));
+        assertThat(answer(() -> routes.remove("gate", UUID.randomUUID().toString(), null, ALL_REFS, http)).status())
+                .isEqualTo(404);
+        assertThat(answer(() -> routes.remove("gate", "Staff", null, ALL_REFS, http)).status()).isEqualTo(400);
+        removals.add(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertThat(answer(() -> remove(staff, ALL_REFS, null)).type()).as("purged under the route")
+                .isEqualTo("NoSuchObjectException");
+
+        assertThat(json(remove(unregistered, ALL_REFS, null)).get("refs")).hasSize(1);
+        assertThat(cuts.get(dev)).noneMatch(entry -> entry.id().equals(salaries.id()));
+    }
+
+    @Test
+    void aRemovalIsRefusedUnderALegalHoldOrADrFreezeAndAuditedSo() {
+        UUID dev = id(create("dev", "branch", null, null));
+        caller = SUE;
+        holds.add(new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.NAMESPACE, hr.id()), "case 7", "lee",
+                NOW));
+
+        Answer held = answer(() -> remove(staff, refsBody("dev"), null));
+        holds.clear();
+        attributes.add(new GovernanceAttribute(new Securable(Securable.Kind.CATALOG, catalog.id()),
+                GovernanceAttribute.Kind.DR_FREEZE, "reconcile 3", "operator", "ops", NOW));
+        Answer frozen = answer(() -> remove(staff, ALL_REFS, null));
+        attributes.clear();
+        // A hold placed, or a freeze set, after the route looked: the store refuses it in its transaction.
+        removals.add(new WriteResult.Refused(WriteResult.Reason.HELD));
+        removals.add(new WriteResult.Refused(WriteResult.Reason.FROZEN));
+        Answer heldLate = answer(() -> remove(staff, refsBody("dev"), null));
+        Answer frozenLate = answer(() -> remove(staff, refsBody("dev"), null));
+
+        assertThat(List.of(held, frozen, heldLate, frozenLate)).extracting(Answer::status).containsOnly(403);
+        assertThat(held.message()).contains("legal hold");
+        assertThat(frozen.message()).contains("frozen for DR reconcile: reconcile 3");
+        assertThat(denials()).extracting(denial -> denial.reason().substring(0, denial.reason().indexOf(':')))
+                .containsExactly("legal_hold", "dr_freeze", "legal_hold", "dr_freeze");
+        assertThat(denials()).extracting(Denial::operation).containsOnly("removeFromRefs");
+        assertThat(denials()).extracting(denial -> denial.securable().id()).containsOnly(staff.id());
+        assertThat(cuts.get(dev)).anyMatch(entry -> entry.id().equals(staff.id()));
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).isEmpty();
+    }
+
+    @Test
+    void aRemovalReadsTheRefsAgainWhenTheyChangeUnderIt() {
+        UUID dev = id(create("dev", "branch", null, null));
+        caller = SUE;
+        removals.add(new WriteResult.Missing(WriteResult.Subject.REF));
+        removals.add(new WriteResult.Refused(WriteResult.Reason.REFERENCED));
+
+        assertThat(json(remove(staff, ALL_REFS, null)).get("refs")).hasSize(1);
+        assertThat(removals).isEmpty();
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).hasSize(1);
+
+        for (int i = 0; i < 3; i++) {
+            removals.add(new WriteResult.Missing(WriteResult.Subject.REF));
+        }
+        Answer changing = answer(() -> remove(salaries, ALL_REFS, null));
+        assertThat(changing.status()).isEqualTo(409);
+        assertThat(changing.type()).isEqualTo("RefsChangedException");
+        assertThat(cuts.get(dev)).anyMatch(entry -> entry.id().equals(salaries.id()));
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).hasSize(1);
+    }
+
+    @Test
+    void aRemovalNamesItsRefsOrAsksForEveryOne() {
+        create("dev", "branch", null, null);
+        caller = SUE;
+
+        for (String body : Arrays.asList(null, "{}", "{\"refs\":[\"dev\"],\"all-refs\":true}", "{\"refs\":[]}",
+                "{\"refs\":\"dev\"}", "{\"refs\":[\"\"]}", "{\"refs\":[7]}", "{\"all-refs\":false}",
+                "{\"all-refs\":\"yes\"}", "[]")) {
+            assertThat(answer(() -> remove(staff, body, null)).status()).as("%s", body).isEqualTo(400);
+        }
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).isEmpty();
+        assertThat(denials()).isEmpty();
+    }
+
+    @Test
+    void aKeyReplaysARemoval() {
+        create("dev", "branch", null, null);
+        caller = SUE;
+
+        ResponseEntity<String> first = remove(staff, refsBody("dev"), "key-1");
+        ResponseEntity<String> again = remove(staff, refsBody("dev"), "key-1");
+
+        assertThat(first.getStatusCode().value()).isEqualTo(200);
+        assertThat(again.getStatusCode().value()).isEqualTo(200);
+        assertThat(again.getBody()).isEqualTo(first.getBody());
+        assertThat(events(RefChange.Action.OBJECT_REMOVED)).hasSize(1);
+        assertThat(answer(() -> remove(salaries, refsBody("dev"), "key-1")).status()).as("the key on another object")
+                .isEqualTo(400);
     }
 
     // ---- the maintenance worker ----
@@ -701,6 +980,46 @@ class RefRoutesTest {
                 .filter(entry -> entry.parentId().equals(parentId) && entry.kind() == kind).toList(), Optional.empty());
     }
 
+    private List<RefPointers> listRefPointers(UUID objectId) {
+        return refs.values().stream().sorted(Comparator.comparing(ref -> ref.name().normalized()))
+                .flatMap(ref -> cuts.getOrDefault(ref.id(), List.of()).stream()
+                        .filter(entry -> entry.id().equals(objectId) && entry.kind() != RefEntry.Kind.NAMESPACE)
+                        .map(entry -> new RefPointers(ref, entry.pointer().orElseThrow(), Optional.ofNullable(
+                                pointers.get(ref.key(objectId))).map(own -> new RefEntry.At(own.version(),
+                                own.metadataLocation(), own.sha256())))))
+                .toList();
+    }
+
+    /**
+     * As RefSuite has the stores take a table or view out of refs, but for holds and freezes, which the route checks
+     * first and each store again in its transaction (RefSuite); {@link #removals} stands in for the store's refusals.
+     */
+    private WriteResult removeFromRefs(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
+        if (!removals.isEmpty()) {
+            return removals.pop();
+        }
+        CatalogObject object = objects.get(objectId);
+        if (object == null || object.state() == CatalogObject.State.PURGED) {
+            return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+        }
+        for (UUID refId : refIds) {
+            Ref ref = refs.get(refId);
+            if (ref == null || !ref.catalogId().equals(object.catalogId())
+                    || cuts.get(refId).stream().noneMatch(entry -> entry.id().equals(objectId))) {
+                return new WriteResult.Missing(WriteResult.Subject.REF);
+            }
+        }
+        if (every && listRefPointers(objectId).stream().anyMatch(held -> !refIds.contains(held.ref().id()))) {
+            return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+        }
+        for (UUID refId : refIds) {
+            cuts.put(refId, cuts.get(refId).stream().filter(entry -> !entry.id().equals(objectId)).toList());
+            pointers.remove(refs.get(refId).key(objectId));
+        }
+        write(change);
+        return WriteResult.APPLIED;
+    }
+
     private KeyState claimKey(IdempotencyClaim claim) {
         Key key = keys.get(claim.key());
         if (key != null && key.expiresAt().isAfter(claim.now())) {
@@ -759,7 +1078,10 @@ class RefRoutesTest {
                             .filter(g -> ((Set<Securable>) args[0]).contains(g.grant().securable())
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
                             .toList();
-                    case "attributesOf", "holdsOn" -> List.of();
+                    case "attributesOf" -> attributes.stream()
+                            .filter(a -> ((Set<Securable>) args[0]).contains(a.target())).toList();
+                    case "holdsOn" -> holds.stream().filter(h -> ((Set<Securable>) args[0]).contains(h.target()))
+                            .toList();
                     case "listGrantsOfGroups" -> new Page<>(grants.stream()
                             .filter(g -> g.grant().catalogId().equals(args[0])
                                     && ((Set<String>) args[1]).contains(g.grant().group()))
@@ -775,6 +1097,11 @@ class RefRoutesTest {
                     case "listRefObjects" -> entries((UUID) args[0], (UUID) args[1],
                             RefEntry.of((CatalogObject.Kind) args[2]));
                     case "readPointer" -> Optional.ofNullable(pointers.get((PointerKey) args[0]));
+                    case "countOwnPointers" -> pointers.keySet().stream()
+                            .filter(key -> key.branch().equals(args[0].toString())).count();
+                    case "listRefPointers" -> listRefPointers((UUID) args[0]);
+                    case "removeFromRefs" -> removeFromRefs((UUID) args[0], (Set<UUID>) args[1], (Boolean) args[2],
+                            (Change) args[3]);
                     case "claimKey" -> claimKey((IdempotencyClaim) args[0]);
                     case "readKey" -> readKey((String) args[0], (Instant) args[1]);
                     case "awaitKey" -> readKey((String) args[0], clock.instant());
@@ -791,6 +1118,26 @@ class RefRoutesTest {
         ResponseEntity<String> response = routes.create("gate", key, body(name, kind, from), http);
         assertThat(response.getStatusCode().value()).as("%s: %s", name, response.getBody()).isEqualTo(201);
         return Management.JSON.readTree(response.getBody());
+    }
+
+    private static final String ALL_REFS = "{\"all-refs\":true}";
+
+    private ResponseEntity<String> remove(CatalogObject object, String body, String key) {
+        return routes.remove("gate", object.id().toString(), key, body, http);
+    }
+
+    private static String refsBody(String... names) {
+        return "{\"refs\":[" + String.join(",", Arrays.stream(names).map(name -> "\"" + name + "\"").toList())
+                + "]}";
+    }
+
+    /** The object, dropped, unregistered or purged, as its drop, unregister or purge would leave it. */
+    private CatalogObject state(CatalogObject object, CatalogObject.State state) {
+        CatalogObject changed = new CatalogObject(object.catalogId(), object.id(), object.namespaceId(), object.name(),
+                object.kind(), state, Optional.of(NOW), state == CatalogObject.State.UNREGISTERED ? Optional.empty()
+                : Optional.of(NOW.plus(DAY.multipliedBy(7))), object.locationRoot(), Optional.empty());
+        objects.put(object.id(), changed);
+        return changed;
     }
 
     private static String body(String name, String kind, String from) {

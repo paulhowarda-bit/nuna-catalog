@@ -27,6 +27,9 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
@@ -38,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -337,11 +341,18 @@ class LifecycleRoutes {
      * token names the version it stopped before, so commits made meanwhile never shift the pages after the first; a
      * page holds fewer entries only where versions are missing, and the log goes on while {@code next-page-token} is
      * present.
+     *
+     * <p>With {@code ref}, the log as the catalog's branch or tag of that name reads the object (D33, backlog 109): the
+     * versions a branch committed of its own, from its own journal, above the cut's version; below and at it, the log
+     * of what the ref was made from ({@link #stretches}); {@code pointer} is the one the ref reads, and {@code ref}
+     * names it with the cut's version, and with {@code log-stops-at-cut} when the versions below came from a ref that
+     * has ended. 404 when no live ref has the name, or the ref's cut does not hold the object.
      */
     @GetMapping(path = METADATA_LOG, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> metadataLog(@PathVariable("catalog") String prefix, @PathVariable String id,
                                        @RequestParam(required = false) String pageToken,
-                                       @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+                                       @RequestParam(required = false) Integer pageSize,
+                                       @RequestParam(required = false) String ref, HttpServletRequest http) {
         Request request = management.request(http);
         CatalogRecord catalog = management.catalog(prefix, request, "readMetadataLog", Privilege.SELECT);
         CatalogObject object = existing(catalog, id);
@@ -351,6 +362,36 @@ class LifecycleRoutes {
         int size = pageSize == null ? LOG_PAGE : Math.clamp(pageSize, 1, LOG_PAGE_MAX);
         Optional<Long> before = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()).map(LifecycleRoutes::before);
         ObjectNode body = Management.JSON.createObjectNode();
+        Function<PageRequest, Page<JournalRecord>> mains = next -> store.readJournal(object.mainKey(),
+                JournalStore.EARLIEST, JournalStore.LATEST, next);
+        if (ref != null && !ref.isEmpty()) {
+            Instant now = clock.instant();
+            Ref on = store.findRef(catalog.id(), Names.normalize(ref)).filter(r -> !r.expiredAt(now))
+                    .orElseThrow(() -> CatalogError.of(404, "NoSuchRefException", "Ref does not exist: " + ref));
+            List<RefPointers> holding = store.listRefPointers(object.id());
+            RefPointers held = holding.stream()
+                    .filter(pointers -> pointers.ref().id().equals(on.id())).findFirst()
+                    .orElseThrow(() -> CatalogError.of(404, "NoSuchObjectException", "No table or view " + id
+                            + " on ref " + on.name().display() + " of " + catalog.name()));
+            RefEntry.At reads = held.head().orElse(held.cut());
+            ObjectNode node = body.putObject("pointer");
+            node.put("metadata-location", reads.metadataLocation());
+            node.put("version", reads.version());
+            node.put("sha256", reads.sha256());
+            ObjectNode named = body.putObject("ref");
+            named.put("name", on.name().display());
+            named.put("kind", on.kind().name().toLowerCase(Locale.ROOT));
+            named.put("cut-version", held.cut().version());
+            List<Stretch> stretches = stretches(held, holding, now, object.id(), mains);
+            if (stretches.getLast().floor() > 0) {
+                named.put("log-stops-at-cut", true);
+            }
+            ArrayNode journal = body.putArray("journal");
+            LogPage page = refLogPage(before.orElse(reads.version() + 1), size, stretches);
+            page.entries().forEach(entry -> journal.add(journal(entry)));
+            page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
+            return GovernanceRoutes.json(200, body);
+        }
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         pointer.ifPresent(p -> {
             ObjectNode node = body.putObject("pointer");
@@ -361,12 +402,76 @@ class LifecycleRoutes {
         ArrayNode journal = body.putArray("journal");
         Optional<Long> top = before.or(() -> pointer.map(p -> p.version() + 1));
         if (top.isPresent()) {
-            LogPage page = logPage(top.get(), size, next -> store.readJournal(object.mainKey(), JournalStore.EARLIEST,
-                    JournalStore.LATEST, next));
+            LogPage page = logPage(top.get(), size, mains);
             page.entries().forEach(entry -> journal.add(journal(entry)));
             page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
         }
         return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * The journals a ref's log reads, newest first (backlog 109). The ref's own, above its cut. Then, while the ref it
+     * was made from is live, that ref's own versions down to its cut, which a ref made from a branch took from the
+     * branch's journal; and so on back. Then main's, at and below the last cut, when main's entry at that version
+     * wrote the cut's file: always so for a cut taken from main. Otherwise the log stops at that cut, whose versions
+     * came from a ref that has ended.
+     */
+    private List<Stretch> stretches(RefPointers held, List<RefPointers> holding, Instant now, UUID objectId,
+                                    Function<PageRequest, Page<JournalRecord>> mains) {
+        List<Stretch> stretches = new ArrayList<>();
+        stretches.add(new Stretch(held.cut().version(), journalOf(held.ref().key(objectId))));
+        RefPointers at = held;
+        while (at.ref().fromRef().isPresent()) {
+            UUID from = at.ref().fromRef().get();
+            Optional<RefPointers> source = holding.stream()
+                    .filter(pointers -> pointers.ref().id().equals(from) && !pointers.ref().expiredAt(now)).findFirst();
+            if (source.isEmpty()) {
+                break;
+            }
+            if (at.cut().version() > source.get().cut().version()) {
+                stretches.add(new Stretch(source.get().cut().version(), journalOf(source.get().ref().key(objectId))));
+            }
+            at = source.get();
+        }
+        RefEntry.At cut = at.cut();
+        boolean mainWroteIt = mains.apply(JournalStore.afterVersion(cut.version() - 1, 1)).items().stream()
+                .anyMatch(entry -> entry.newVersion() == cut.version() && entry.newLocation().equals(cut.metadataLocation()));
+        if (mainWroteIt) {
+            stretches.add(new Stretch(0, mains));
+        }
+        return stretches;
+    }
+
+    private Function<PageRequest, Page<JournalRecord>> journalOf(PointerKey key) {
+        return next -> store.readJournal(key, JournalStore.EARLIEST, JournalStore.LATEST, next);
+    }
+
+    /** One journal's part of a ref's log: its versions above {@code floor}, up to the floor of the part above it. */
+    record Stretch(long floor, Function<PageRequest, Page<JournalRecord>> read) {
+    }
+
+    /**
+     * A page of the log as a ref reads it, newest first, from {@code stretches} ({@link #stretches}), each paged as
+     * {@link #logPage} pages one journal. Each journal's versions go on from the floor below them, one a commit, so two
+     * never share a version; the log ends above the last floor.
+     */
+    static LogPage refLogPage(long before, int size, List<Stretch> stretches) {
+        List<JournalRecord> entries = new ArrayList<>();
+        long top = before;
+        int left = size;
+        for (Stretch stretch : stretches) {
+            if (left == 0) {
+                break;
+            }
+            if (top <= stretch.floor() + 1) {
+                continue;
+            }
+            int take = (int) Math.min(left, top - stretch.floor() - 1);
+            entries.addAll(logPage(top, take, stretch.read()).entries());
+            top -= take;
+            left -= take;
+        }
+        return new LogPage(entries, top > stretches.getLast().floor() + 1 ? Optional.of(top) : Optional.empty());
     }
 
     /** A page of the metadata log, newest first, and the version the page after it stops before, if there is one. */

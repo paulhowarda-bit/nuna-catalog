@@ -148,8 +148,10 @@ class IcebergClientConfigTest {
 
     /**
      * D33 (items 104 to 106): on {@code catalog@tag} the stock client reads a table as the tag took it, made through
-     * item 106's route, and may not commit; on {@code catalog@branch} it commits two tables in one transaction and
-     * appends a data file, then reads the branch's files and rows back, while main does not move.
+     * item 106's route, and may not commit: the tag's {@code /v1/config} lists no write, so the client refuses the
+     * commit at its endpoint check before sending it (the server's own 400 is {@code RefReadsTest#writesOnATagAre400});
+     * on {@code catalog@branch} it commits two tables in one transaction and appends a data file, then reads the
+     * branch's files and rows back, while main does not move.
      */
     @Test
     void stockClientReadsATagAndCommitsOnABranch() throws Exception {
@@ -173,7 +175,8 @@ class IcebergClientConfigTest {
                 assertThat(tagged.properties()).containsEntry("stage", "cut");
                 assertThatThrownBy(() -> tagged.updateProperties().set("batch", "0").commit())
                         .isInstanceOf(UnsupportedOperationException.class)
-                        .hasMessageContaining("Server does not support endpoint: POST /v1/{prefix}/namespaces/{namespace}/tables/{table}");
+                        .hasMessageContaining("Server does not support endpoint: POST /v1/{prefix}/namespaces/{namespace}"
+                                + "/tables/{table}");
             }
             String appended;
             try (RESTCatalog onBranch = client(ConformanceServer.WAREHOUSE + "@" + branch)) {

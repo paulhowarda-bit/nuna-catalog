@@ -1,0 +1,17 @@
+Breaks: a tag vends credentials that write to a caller who may write the table, so they PutObject on the real store, though a tag is read-only (D33, item 26 choice 5; backlog 112).
+Module: catalog-server
+Test: VendingRouteTest#aTagsCredentialsRefusePutObject
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index c090b7e4..5f051248 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -144,7 +144,7 @@ class Lookup {
+      * (D33); never through a tag, which is read-only (item 26's choice 5).
+      */
+     static boolean writable(OnRef on, CatalogObject object) {
+-        return !on.tag() && object.state() == CatalogObject.State.ACTIVE;
++        return object.state() == CatalogObject.State.ACTIVE;
+     }
+ 
+     /**

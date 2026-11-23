@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**35 open:** 4 S, 11 M, 15 L, 5 XL.
+**45 open:** 11 S, 15 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -30,14 +30,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [107](backlog/107.md) | L | Merge a branch into main, per table, in one bounded transaction (item 26) | the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106 | 2026-11-20 |
 | [108](backlog/108.md) | L | Cleanup protects every ref, and the worker warns of and ends expired branches (item 26) | the orphan scan and expiry across several metadata files per table, the recheck of files recorded before a ref was made, and the expiry section, with heavy tests on Silo; waits on items 105 and 106 | 2026-11-20 |
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
-| [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109 | 2026-11-20 |
+| [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new step, one more Trino catalog and the README's walk, checked by hand in the running demo; built, the check waits on Paul letting Docker be used for it | 2026-11-20 |
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
-| [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
 | [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
 | [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
@@ -47,6 +46,17 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [156](backlog/156.md) | M | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files | 2026-11-22 |
 | [157](backlog/157.md) | S | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | one read in each store's namespace drop, one route answer, a suite case, a fast route test and four bites; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [158](backlog/158.md) | M | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build | 2026-11-23 |
+| [160](backlog/160.md) | S | Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests | two test files: one route's two audit cases and one expected key; the run's containers make checking it take the most time | 2026-11-23 |
+| [161](backlog/161.md) | S | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | one function in the console's table page and its browser test; the heavy browser test is what takes the time | 2026-11-23 |
+| [162](backlog/162.md) | S | ConsoleHealthTest reads the estate legend's count and words on two lines | one assertion in one browser test | 2026-11-23 |
+| [163](backlog/163.md) | S | ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table | one browser test's expected values (or, if Paul wants the console to call it a default, one display rule) | 2026-11-23 |
+| [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
+| [168](backlog/168.md) | M | Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9) | a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns | 2026-11-23 |
+| [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
+| [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
+| [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
+| [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
+| [173](backlog/173.md) | S | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | the tree's listings and links take the route's ref, its cache keyed by ref as well as catalog, and a browser case; the REST listings through a ref exist (item 104) | 2026-11-23 |
 
 ## Open items in full
 
@@ -755,6 +765,12 @@ passed in the second (257 s). In the first, its body passed and its cleanup fail
 --wait=true` lost the API server (`http2: client connection lost`) while Windows was paging the Docker VM out (item
 135). The bite has still not run; the item still closes when an overnight run's bites show it biting.
 
+Overnight run of 2026-11-23 (testing 02b22ad): the nightly passed, `catalog-maintenance` 3 tests, 0 failures:
+its three overnight tests, `PrivateCaCompactionTest` among them (inferred from the count; the run keeps no nightly
+results that night); the bites again did not run, the heavy build having failed (nine tests, traced
+in `status/2026-11-23-agent-a9284fd56a1d18c39.md`). The item still closes when an overnight run's bites show
+`bites/M6/job-storage-ca-left-out` biting.
+
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
 - Decided: 2026-11-20, D26
@@ -1086,6 +1102,28 @@ Left:
   version, and `PointerHold` cannot say "no pointer here", so a first commit to that table on the branch landing
   meanwhile goes unseen. Holding an absent pointer needs the four stores.
 - Finding 11: credentials scoped to a branch (item 113), and the M6 adversarial case (item 112).
+
+## 2026-11-23: the overnight heavy build's two failures of this item, fixed
+
+Branch `worktree-agent-a9284fd56a1d18c39`. The overnight run of 2026-11-23 tested main at 02b22ad.
+
+- `PostgresStoreSuiteTest$Refs` and `CockroachStoreSuiteTest$Refs`, "every ref whose cut names a table lists the
+  pointer its cut took, and a branch its own": `NullPointerException: metadataLocation`. Cause: b0b459b,
+  `SqlRefs.pointers` called `row.wasNull()` after `ref(row)` had read the ref's columns, so it answered for
+  `expires_at`, not `head_version`. A branch expires, so one with no pointer of its own was read as having one, and
+  `RefEntry.At` refused its null location. A tag (no expiry) came out right by chance. Oracle and MongoDB read the
+  heads apart and passed. Fixed: the head is judged before the ref is read. `SqlRefsRowsTest` (fast) checks the row
+  on a stub `ResultSet` that answers `wasNull` as JDBC does; bite `D33/sql-ref-pointers-head-read-late` (BITES, 1 of
+  3).
+- `IcebergClientConfigTest#stockClientReadsATagAndCommitsOnABranch` expected `BadRequestException` ("a tag is
+  read-only") and got `UnsupportedOperationException`. Cause: a3876b9's test, line 176. A tag's `/v1/config` lists
+  only reads (`AdvertisedEndpoints.READ`, item 104), so iceberg-core refuses the commit at its endpoint check before
+  sending it, as designed. Fixed in the test, which now expects that; the server's own 400 stays covered by
+  `RefReadsTest#writesOnATagAre400`.
+
+Left: both run in the heavy build only; the next overnight run confirms them.
+
+Seen again in the overnight run of 2026-11-23: `PostgresStoreSuiteTest$Refs` and `CockroachStoreSuiteTest$Refs` ("every ref whose cut names a table lists the pointer its cut took, and a branch its own", `NullPointerException: metadataLocation`) and `IcebergClientConfigTest#stockClientReadsATagAndCommitsOnABranch`; that run tested 02b22ad, before the fixes above (e0512ca), which the next overnight heavy build confirms.
 
 ### 106. Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26)
 
@@ -1419,6 +1457,16 @@ Left:
   show the dry run but cannot merge it.
 - The console's screens (item 109).
 
+## 2026-11-23: the merge route's cases in the audit gate
+
+Branch `worktree-agent-a9284fd56a1d18c39`. This item's landing (7990cf7) added `POST
+/management/v1/catalogs/{catalog}/refs/{ref}/merge` without cases in `MutatingRoutesAuditTest`, so both of its tests
+would have listed it as a route without a case at the next heavy build. Added: a branch that changed nothing merges by
+ending, with its `ref` record; the steward, who holds manage-tags but not create, is refused and audited as a denial.
+
+Left: those two tests still fail until item 114's `POST .../tables/{table}/maintenance/requests` gets its cases too
+(the overnight run of 2026-11-23 found that gap; it is not this item's). The heavy build runs them.
+
 ### 108. Cleanup protects every ref, and the worker warns of and ends expired branches (item 26)
 
 - Added: 2026-11-20 by agent on item 26
@@ -1573,11 +1621,163 @@ over the cap, a hold or freeze), make, renew and delete with every refusal `RefR
 10. Audit records filterable by their `branch` field.
 11. The journal entry for a merged version (item 107).
 
+## Built, 2026-11-23 (branch `worktree-agent-a1b1c1fe3dc725e19`)
+
+The console, in the order the UI expert asked for (labels and the refs tab, then reading through a ref, then the
+merge). New module `ui/refs.js`; `ui/route.js` carries the ref as `r=` on the catalog, namespace, table and view
+pages, and their links keep it.
+
+- **6.1, the two labels.** A catalog ref is the rounded `@name` chip (`cref`, the prototype's `--cref-*` and
+  `--ctag-*` colours, ported into `style.css`); a table's own refs are "Iceberg refs": the tab "Snapshots", the
+  panels "Iceberg refs in this table" and "History and Iceberg refs", the column "Iceberg refs".
+- **6.2, the Branches and tags tab** on the catalog page, with its count: the four figures with the limits, the
+  limit notice, the ref line, the list with its filter chips and actions, the empty state, the no-create line, Ended
+  lately, and the three explanations.
+- **6.3, which ref a page reads.** The top chip `trading@dev`, the first crumb `trading@dev`, the "Reading main ▾"
+  selector with its menu (arrow keys, Escape), the band (branch, expiring, tag), the document title
+  `{page} · {catalog}@{ref} · nuna`, and on a table: the notes on Snapshots, Properties, Health, Governance, Grants
+  and Audit, "as @x has them" on the Snapshots figure, the overview's Health panel marked main's, no Compact now, the
+  metadata log through the ref, Properties through a branch committing on it and through a tag read-only with the
+  server's 400 text.
+- **6.4, namespaces and tables through a ref.** Contents lists through `catalog@ref` with "Last commit here" and the
+  "On @ref" column (changed here with the branch's version, as at the point, a namespace's count); namespace
+  Properties with the note and the server's 400 text; a link naming a ref that is not live shows the catalog's 404
+  for the warehouse and why (held after expiry, or ended, from the audit).
+- **6.5, a ref's own page**: crumbs, title, sub-line, actions, the four figures, Changes (with each table's commits
+  linked to its metadata log through the ref, and main since), What it keeps, Record, and the 404 of an unknown,
+  ended or held ref.
+- **6.6, the merge**: the dry run's verdict (ready, conflict, over the cap, refused by main's rules), table by table
+  with each row's picture of point, branch and main, "Show the catalog's answer", In one transaction, the rules line,
+  the button (hidden without create, disabled on a conflict or without `may-merge`), the missing-write line, What you
+  can do; the confirmation (Main now, Main after); the result (Main was, Main is, its file) on the ended branch's page;
+  a 409 race shown as the catalog answered, in the dialog, which stays open with its button gone; closing it reads
+  the preview again.
+- **6.7, make, renew and delete** with every refusal `RefRoutes` sends shown as the catalog answers it, and the
+  design's added words for the limit, a name taken and a name held by an expired branch.
+- **6.8, audit lines**: a `nuna.catalog.ref` record in the design's words (each action), commits "on @dev" and reads
+  "of @dev" when the record's branch is a ref, and `ref` among the feed's Changes kinds.
+- **6.9, 390 px**: the prototype's phone rules for the band, the selector's menu, the merge rows and the refs list are
+  ported. Not looked at in a browser (below).
+
+The server reads, for the gaps (fast tests in `RefRoutesTest` and `MetadataLogRefTest`):
+- Gap 1: `GET …/refs` carries `limits` (`max-branches`, `max-tags`, `max-merge-tables`, and `branch-idle-expiry`,
+  `branch-max-life` and `expiry-warning` as ISO durations).
+- Gap 2: each branch in the list carries `changed-count`.
+- Gap 3: the list and the read carry `may: {create}`. For a merge, the dry run's `may-merge` and each table's `right`
+  (item 107) are used.
+- Gap 6: `GET …/objects/{id}/metadata-log?ref=` reads the log as the ref has it: the branch's own journal above the
+  cut, main's at and below it; through a tag, main's below the cut. Through a ref made from a branch, the versions
+  between the two cuts are that branch's own while it is live, and main's below its cut. When the ref it was made from
+  has ended, main's journal is read below the cut only if main's entry at the cut's version is the cut's file;
+  otherwise the log stops at the cut and says so (`ref.log-stops-at-cut`), and the console words it. 404 for a ref
+  that is not live or does not hold the object. The Changes tab links each table's commits to it.
+- Gap 7: `GET …/refs?expired=true` also lists branches past their expiry, with `expired: true`; the console asks for
+  them and shows the held name. Ended lately also reads `nuna.catalog.ref` records from the audit feed, for audit
+  readers (D23).
+- Gaps 4, 5 and 11 are item 107's, used here as built.
+
+Tests: `ConsoleRulesTest` (new, fast) holds the console's file rules, moved from the heavy `ConsoleTest`, which now
+serves the same list: no inline script, style or handler in the page, no module writing markup or styles, `refs.js`
+among them, and a check that every module in the folder is in the list. `ConsoleBrowserTest` (heavy, written, not
+run): `aBranchIsMadeCommittedOnPreviewedAndMerged` (the make dialog, a commit through `trading@<branch>` as an engine
+sends it, the band, chip, crumb and selector through the branch, the merge tab against the dry run, the confirmation
+and the result, main's property after) and `aTableIsReadAsOfATag` (the tag's properties, not main's later ones, the
+band, chip and crumb, the read-only note equal to the catalog's own 400 for a commit through the tag, and "Read main
+instead").
+
+Bites in `bites/D33/`, each BITES and restored with `bites/run.sh`: `ref-list-limits`, `ref-list-may-create`,
+`ref-list-changed-count`, `ref-list-expired-unasked`, `metadata-log-ref-own-journal`, `metadata-log-ref-cut`,
+`metadata-log-ref-from-branch`, `metadata-log-ref-from-ended`, `console-refs-writes-markup` (new), and
+`ref-route-list-for-outsiders` (recorded again against the new list).
+
+### Choices made (Paul may overrule)
+
+1. `changed-count` counts every table the branch changed, not only those the caller may describe; the design (6.10)
+   proposed counting only the describable ones. The dry run already tells the same callers how many tables they cannot
+   describe (`hidden`), so the total is not new to them, and counting by right would mean a check per table per branch
+   on every list. So the list's "none you may describe" never shows; the ref's Changes tab counts the total and lists
+   the tables the caller may describe, then "And {n} more you may not describe".
+2. An expired branch that still holds its name comes from the list (`?expired=true`), not from the audit: the held
+   state is the store's, and an audit read needs an audit reader.
+3. The metadata log through a ref joins the branch's journal and main's at the cut, rather than a new commits route:
+   it is the history of the file the ref reads, and it answers gap 6 with an existing route.
+4. Contents through a ref leaves format, snapshots and last commit blank, with a line saying why, rather than
+   loading each table through the ref (one load per row). Item 168 asks the server for them.
+5. The file rules moved to a fast class of their own, `ConsoleRulesTest`: `ConsoleTest` starts Spring and PostgreSQL
+   (heavy), and the item asks for the rules in the fast build.
+6. Ended lately also lists merged branches (their `MERGED` record), since a merge also takes a branch off the list.
+7. A dialog hides its button once its change is made: `dialogForm` enables it again after every answer, so a second
+   click would have sent the same make, renew or delete again.
+
+### Where this differs from the design
+
+1. **The server's words win.** The design's 400 text names `commitTable` and `updateNamespaceProperties`; the server
+   names the operations `updateTable` (`Guard.WRITE_DATA`) and `updateProperties` (`Guard.UPDATE_PROPERTIES`), so the
+   console quotes those.
+2. A rebased table (main moved by maintenance alone; Paul, 2026-11-22) gets its own row words, "Moves, over main's
+   maintenance", and the rules line leaves out "A compaction or a snapshot expiry on main is a commit on main too",
+   which the server no longer does.
+3. No purpose line: the server keeps no description (gap 8, item 167).
+4. The tree's links read main; the tree does not carry the ref (item 173).
+5. The ref line has no dots for each commit: the list gives no commit times.
+6. Changes, "Its commits": a count, linked to the table's metadata log through the ref, where each commit is listed,
+   not each commit's time, operation and rows in the row.
+7. Contents through a ref: format, snapshots and last commit blank, and "as at the point" without the cut's version
+   (gap 9, item 168). The column the design calls Health keeps today's name, "Tonight's queue".
+8. The band's and the ref page's point is worked out in the console from `from` back to main (`cutOf`); for a ref
+   made from a deleted ref it says "the point @x was made from" (gap 9, item 168).
+9. Record: no "Every record through @name in the last day" button, and no `@name` search in the feed (gap 10, item
+   169); the tab scans at most four pages of `nuna.catalog.ref` records for the ref's id.
+10. Ended lately and the held-name words give no time for the worker's next run: no route gives it.
+11. A tag made from a branch shows "as @x had them" in the Changed cell, without a count; What it keeps has no
+    counts of tables, changed or dropped since (the design marks both a gap).
+12. A dropped table in the merge says when it was dropped, not by whom: the dry run gives `dropped-at` only.
+13. The 6.4 edge states (dropped on main, made after the point) show the catalog's 404 as it answers, without the
+    design's words after it (item 170).
+14. Refusals other than 403 (the 409 race, a limit, a name taken) use the console's shared box, headed "The catalog
+    answered with an error"; the design heads them "Refused by the catalog".
+15. A read through a ref reads "loaded version {n} of @dev", the built console's words with the ref (design 6.8's
+    "Built console today" row), not "Loaded the table through @dev".
+16. Through a ref, the table page offers no "Export metadata": the export is main's metadata and journal (item 172).
+17. A rebased table on the Changes tab shows a plain "Main maintained {n} times", not the warning "Main moved", since it
+    still moves.
+
+### The review, 2026-11-23
+
+The coordinator's review of the UI and the metadata log, fixed on this branch:
+- The metadata log through a ref made from a branch read main's journal below the ref's own cut; it now reads the
+  source branch's (above). New cases in `MetadataLogRefTest`, and bites `metadata-log-ref-from-branch` and
+  `metadata-log-ref-from-ended`; `metadata-log-ref-own-journal` and `metadata-log-ref-cut` recorded again.
+- Health's Requests: no request buttons through a ref (requests are main's).
+- The 409 race: `render()` closed the dialog, so the refusal was never seen. The dialog stays open with the refusal;
+  closing it reads the preview again.
+- The merge and delete dialogs open on Cancel; after a merge or a delete the result box takes the focus.
+- A link naming a ref that is not live: the selector reads "Reading" with the name struck through, no item checked,
+  and says so to a screen reader. The selector is a disclosure of links (`aria-current`), not a menu.
+- A table read through a ref that is not live showed the 404 twice, and main's Health, Governance, Grants and Audit
+  under the notes; the band alone shows it now, and those tabs show nothing.
+- "Export metadata" is hidden through a ref (item 172 asks for an export through one).
+- The ref line scrolls to now once it has a width (a `ResizeObserver`), and is 1,100 px wide on a phone.
+- Smaller fixes: `cutOf` stops at a ref made after the one it walks from (a name used again); the make dialog's Kind
+  is a labelled group; the `@` of a ref chip is easier to read; a merge row's icon follows the caller's right as well
+  as main's rules, without a stray comma; Record says when the ref's records are older than the four pages it reads;
+  the Snapshots note names a tag as a tag; a branch's settings say the change commits on it; a `nuna.catalog.ref`
+  record in the audit feed links to its ref while that ref (by id) is live; Ended lately says "The name is taken
+  again" when a live ref has it.
+- `RefRefusalWordsTest` (fast) pins the console's 400 text for a change through a ref to `OnRef`'s.
+
+### Left
+
+- The two `ConsoleBrowserTest` cases have not run; the overnight heavy build runs them. No screen was looked at in a
+  browser, at any width.
+- Gaps 8, 9 and 10: items 167, 168 and 169. The 6.4 edge states: item 170. Export through a ref: item 172. The
+  tree through a ref: item 173.
+
 ### 110. Demo: a catalog tag, a branch with Trino on it, and a merge (item 26)
 
 - Added: 2026-11-20 by agent on item 26
 - Touches: demo/
-- Effort: M, the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109
+- Effort: M, the lake writer's new step, one more Trino catalog and the README's walk, checked by hand in the running demo; built, the check waits on Paul letting Docker be used for it
 
 Part of item 26 (D33); its design section says why (choice 16).
 
@@ -1591,6 +1791,89 @@ when main moved too.
 
 Done when `up` (run only when Paul lets Docker be used for it) leaves the tag and the branch, Trino reads both, and
 the README's walk works as written; checked by hand and recorded in `status/`. Waits on items 107 and 109.
+
+## Built (2026-11-23, branch `worktree-agent-a118675ab9a511b1a`): not yet checked in the running demo
+
+Items 107 and 109, which this one waited on, landed the same day (7990cf7, 7d7609b7).
+
+- `demo/demo.sh up`, new step `refs`, once per lake, after the seed and before the brokerage world's bootstrap:
+  1. Through the management API as `ana`, whose `demo-analysts` hold `create` on `lakehouse`, the right refs need:
+     branch `dev`, made from main (`POST /management/v1/catalogs/lakehouse/refs`), unless it exists.
+  2. While `dev` has no changes of its own (its read lists `"changed":[]`), the lake writer's Job,
+     `LakeWriter dev`, as user `lake`, commits the next day, 2026-11-11, through the warehouse `lakehouse@dev`:
+     trades 9 and 10 in `markets.equities.eu.xetra.trades` and EURUSD and GBPUSD in `markets.fx.rates`, one commit
+     each. Main has neither.
+  3. Tag `sample`, made from main as `ana`: the sample data. Made last, it marks the step done; `up` does nothing
+     more while it stands, so a `dev` that was merged or deleted is not made again.
+  - Skipped while the CDC leg runs: the lake writer's Job does not fit beside it, as the world's bootstrap does not.
+  - A failure never stops `up` (the coordinator, 2026-11-23: the overnight run ends with `up`, the demo is shared,
+    and a failing step before the bootstrap would leave it without Trino and the brokerage world, as the grants
+    failure did the night before). `refs` returns at its first failure, so the tag that marks it done is never made
+    after one, and `up` says the refs were not made and goes on; the next `up` tries again.
+  - `print_access` names the refs and Trino's catalog.
+- Trino: catalog `lakehouse_dev` (`demo/k8s/trino.yaml`), `lakehouse.properties` with
+  `iceberg.rest-catalog.warehouse=lakehouse@dev`, in the same Trino. Trino asks for a catalog's config only at its
+  first query (`TrinoIcebergRestCatalogFactory.create`, read in Trino 484's source), so it starts whether or not `dev`
+  exists, and the prefix is the branch's name, so a new branch named `dev` is read again without a restart.
+- `demo/README.md`, new section "Branches and tags of the catalog": what `up` makes and as whom, how catalog refs
+  differ from the tables' own Iceberg tags, and the walk of D33's uses, linked to `docs/refs.md` (item 112):
+  1. read as of the tag: the console's **Read** on `@sample`, and `curl …/v1/lakehouse@sample/namespaces`;
+  2. change two tables on `dev`: Trino queries on `lakehouse` and `lakehouse_dev` side by side, and two INSERTs on
+     `lakehouse_dev`;
+  3. preview and merge in the console (**Merge…**, **Merge @dev into main**, **Merge into main**), `stella`'s view
+     without the button, the same through the API, and the tag read again after the merge;
+  4. the conflict: `dev` made again in the console, both tables changed on it and the rates on main, the 409 naming
+     `markets.fx.rates`, and the delete.
+  - `ana`'s row in the people table, "What is loaded", the Trino section and the opening paragraph name the refs.
+
+Checked without Docker:
+- `bash -n demo/demo.sh`.
+- `demo/LakeWriter.java` compiled with JDK 25 against the libraries `up` gives it (`unzip -j` of the change-feed
+  connector jar's `lib/`, as `build` does).
+- A copy of it on Iceberg's `InMemoryCatalog` (no branch there) ran `seed` then `dev` and read the rows back: trades
+  1, 2, 4 to 10 in 7 snapshots, the rates of 2026-11-09 to 2026-11-11 in 4. So the walk's "trades 1 to 8 (3 was
+  deleted)" and "three snapshots" on the tag hold for the sample data.
+- `trino.yaml`'s new catalog file is `lakehouse.properties` with the one line changed; nothing parses it here.
+
+### Choices made (Paul may overrule)
+
+1. **The tag has no Trino catalog.** The design (choice 16) gives Trino one more catalog, on `lakehouse@dev`; an
+   engine's catalog configuration names one ref (`docs/refs.md`), so reading `@sample` in Trino would need a third,
+   `lakehouse_sample`. The walk reads the tag in the console and through the REST API instead. So in "Done when",
+   "Trino reads both" holds for main and the branch. A third catalog is a copy of `lakehouse_dev.properties` with
+   `lakehouse@sample` and one more line in the volume's items.
+2. **The tag is named `sample`, not `eod-…`**, so it is not taken for the Iceberg tags `eod-<day>` inside tables
+   (the brokerage world's, and the trades table's `eod-2026-11-09`).
+3. **The branch's change is the next day's data in two tables, trades (v2) and rates (v3)**: a release of two tables
+   at once, D33's first use. Not the brokerage world's tables: main commits to them every 15 seconds and tags them
+   at each day's end, both changes on main, so a branch that changed one would always conflict. Not
+   `reference.countries`: its DR freeze refuses the merge (D33 as amended). The trades table's legal hold refuses
+   only removing snapshots, so appends on the branch and the merge pass it.
+4. **Refs are made as `ana`, commits on `dev` as `lake`.** `ana` is the person the walk signs in as and holds
+   `create`; the lake writer stands in for another engine, as it does for the seed. The console shows "by ana".
+5. **Once per lake, marked by the tag.** A step that stopped part way is finished by the next `up`: `dev` is made if
+   missing, and its changes committed while it has none. `up` never makes `dev` again while `@sample` stands, so a
+   merge in the walk is not undone and its rows never land twice.
+6. **Before the brokerage world's bootstrap**, so a new lake's tag holds the sample data alone and reading through it
+   shows names as at its point: no `brokerage`.
+7. **The conflict is made with a Trino INSERT on main**, not `demo/demo.sh rate`, which stops Kafka Connect and the
+   generator for its Job. The README notes that `rate` makes the same conflict.
+8. **The brokerage world's tags stay Iceberg's own, per table.** They are not catalog refs: `IcebergLake.endOfDay`
+   tags each table that changed with `manageSnapshots().createTag("eod-<day>")`. The README says how they differ from
+   `@sample` and links `docs/refs.md`'s section on the two. No catalog tag per business day: a day is 10 minutes, so
+   144 a day would reach `nuna.refs.max-tags` (1000) within a week, and `demo-datagen/` is outside this item.
+
+### Left
+
+- **The check by hand in the running demo**, when Paul lets Docker be used for it (`up` was not run, by
+  instruction: another team works against the stack). Then record it in `status/`. What only it shows:
+  - `up` makes `dev` and `sample` as `ana`, and the lake writer commits through `lakehouse@dev` with vended
+    credentials;
+  - Trino's `lakehouse_dev` reads the branch, and its INSERTs land on the branch only. Trino's writes to the v3
+    rates table rest on `build-plan.md`'s F9 ("Trino 484 … read and write v3"), never tried in this demo;
+  - the walk's console words, the 409 naming `markets.fx.rates`, Trino's failures on `lakehouse_dev` after the merge
+    (the catalog's 404) and after a create (400), and that `lakehouse_dev` reads a new `dev` without a restart;
+  - the namespaces listed through `@sample` on a new lake (`markets` and `reference`).
 
 ### 111. After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3)
 
@@ -1716,6 +1999,114 @@ Build:
 
 Done, and item 26 with it, the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh` (the engine
 matrix included) and bites are all green with items 102 to 111 landed. Waits on items 102 to 111.
+
+## Built, 2026-11-23 (branch `worktree-agent-a5e5f6e6ecd0db4ce`)
+
+Main merged in at 7d7609b7 (items 109 and 156 landed).
+
+- **The engine matrix** (`catalog-tests-engines`, overnight, written and compiled, not run): `EngineMatrixTest#refs`,
+  `@Order(6)`, between the audit table case and SingleStore (now 7). Two scripts:
+  `images/python/refs_matrix.py` (setup, branch, merge, cleanup) and `images/spark/refs_matrix.py` (branch, main),
+  baked into their images. Six Jobs:
+  1. PyIceberg makes `m8.refs.a` (three rows) and `m8.refs.b` (one row) on main, tag `m8-tag`, a fourth row in `a`,
+     then branch `m8-dev`, through the management API (`201 201`).
+  2. Spark, on catalogs `tag` and `dev` (fid's settings, warehouse `engines@m8-tag` and `engines@m8-dev`):
+     - reads the tag as cut (`3 6 1 1`: rows and id sums of a and b);
+     - is refused an INSERT on the tag by the store (`refused store`);
+     - is refused `ALTER TABLE … SET TBLPROPERTIES` there by Iceberg's REST client (`refused endpoint`);
+     - inserts a row into both tables on the branch (`5 20 2 11`);
+     - reads main, untouched (`4 10 1 1`).
+  3. PyIceberg does the same: `append` refused by the store, a property change refused by the client, a row appended
+     to each table on the branch (`6 40 3 31`), and main untouched.
+  4. The merge through `POST …/refs/m8-dev/merge`:
+     - the dry run moves a and b, and the caller may merge (`200 200 2 true a,b`);
+     - the merge moves both (`200 a,b`);
+     - the branch reads 404 after it;
+     - PyIceberg reads both engines' rows on main (`6 40 3 31`).
+  5. Spark reads the same on main, and the tag unchanged (`3 6 1 1`).
+  6. The cleanup deletes the tag (204; the branch is already gone, 404), purges both tables and drops the namespace.
+- **The M6 adversarial set** (`catalog-server`, heavy, written and compiled, not run):
+  `VendingRouteTest#aTagsCredentialsRefusePutObject`, beside `selectOnlyCallersGetReadOnlyCredentials`, with real STS
+  credentials on the run's S3 store. A caller holding create and modify makes a tag. Through `trading@<tag>` both the
+  load and the credentials route vend read-only credentials (only READ sets audited): they read the table's file, and
+  the store refuses PutObject of a data file and of a metadata file, CreateMultipartUpload and DeleteObject (403). The
+  same caller's credentials on main write. The tag is deleted at the end (204). Bite
+  `bites/D33/rest-tag-vends-write-on-a-real-store.patch`: `Lookup.writable` ignores the tag, so the tag's credentials
+  write; checked with `git apply --check` (a heavy test), and applies again after the merge of main.
+- **`docs/refs.md`**, written from the code. Its sections:
+  - Naming a ref;
+  - What a tag and a branch allow;
+  - Making, reading and deleting refs, with the console's Branches and tags tab as it now is;
+  - Merging a branch: maintenance not counting, conflicts, rules and rights, limits, what main gets, the dry run;
+  - Limits and expiry (P11);
+  - Files, purges and namespaces;
+  - Taking a table out of refs;
+  - After a regional failover;
+  - Catalog refs and Iceberg's refs inside a table.
+
+  There is no docs index (no README at the root or in `docs/`), so `deploy/README.md`'s "Branches and tags" bullet
+  links it.
+- **`build-plan.md`**: the v1.x line for branches, tags and merge says what is built, item by item, and that it closes on
+  the first green overnight run with items 102 to 111 landed. Not marked done.
+
+Checked: `./gradlew build` (fast) green after merging main: "All 571 bites apply.", "BUILD SUCCESSFUL". It compiles
+both new tests; neither runs in it.
+
+### Choices made (Paul may overrule)
+
+1. **The adversarial case sits in `VendingRouteTest`, not `catalog-objectstore`'s `VendingTest`.** Whether a tag
+   vends write is the server's decision (`Lookup.writable`); the vendor below it knows nothing of refs. The case also
+   checks the same caller's credentials on main write, so it is the tag that refuses, not the caller's rights.
+2. **The matrix asserts who refuses a write on a tag, not only that it fails.** Data writes are refused by the store,
+   because both engines write data files before any commit, with the tag's read-only credentials. Metadata-only
+   commits are refused by the client, because a tag's `/v1/config` leaves out the commit endpoints and both clients
+   check them. Neither engine reaches the catalog's own 400, which the fast route tests cover. A change in either
+   layer fails the case, rather than passing it through the other.
+3. **Setup, the merge and the cleanup are PyIceberg Jobs calling the management API with `requests`** (PyIceberg's own
+   dependency), not calls from the harness. The other cases reach the catalog only from inside the cluster, as Service
+   `nuna-catalog`, and this keeps every step and every answer (CALL lines) in the Jobs' logs.
+4. **Order 6, after the audit table case.** It stays out of that case's reads of the audit topic, and its Spark Jobs
+   run before SingleStore takes its memory. It also runs against a stack already up (`-Pengines.stack`): it needs only
+   the engine group's `create` on catalog `engines`. Its setup first removes what an interrupted run left.
+5. **Main moves past the tag but not past the branch's cut.** The fourth row lands after the tag and before the
+   branch. So the merge has nothing to conflict with, and the tag's reads differ from main's, which shows the merge
+   left the tag alone.
+
+### Where the code differs from this item's plan
+
+1. **`build-plan.md`.** The plan says to mark the milestone done, naming the run that closed it. No such run has
+   happened, so the line says what is built and what closes it.
+2. **"Refused a write on a tag."** With stock engines the catalog never sees the write: the store refuses the data and
+   the client refuses the commit. Iceberg Java 1.12 throws `UnsupportedOperationException` and PyIceberg 0.12
+   `NotImplementedError`, both "Server does not support endpoint: POST
+   /v1/{prefix}/namespaces/{namespace}/tables/{table}". The catalog's 400 ("updateTable is refused on tag eod of
+   catalog trading: a tag is read-only") is what a client that does not check gets. The page says all three.
+3. **Merge conflicts.** D33 says changed on both sides is a conflict. The code, after Paul's amendment of 2026-11-22,
+   rebases over main's maintenance (compaction, manifest rewrites, snapshot expiry). Main's other changes conflict:
+   data, the definition, and an Iceberg ref made or moved. So do a view main replaced, a table main dropped,
+   unregistered or purged, and a regulated table whose file fails its hash. A held table compacted on main since the
+   cut cannot merge while the hold stands.
+4. **Topics the plan does not list.** The plan's list of topics leaves out the dry run, taking a table out of refs, the
+   DR ref report, the purge and namespace rules, and the console. They were built or decided after the plan (items 107,
+   111, 156, 157 and 109), and the page covers them.
+5. **Naming a ref.** The plan says `warehouse=<catalog>@<ref>`. The code also takes the prefix in the path, treats
+   `catalog@main` as main and matches names without regard to case. For a missing ref or an expired branch it answers
+   404 `NoSuchWarehouseException` on `/v1/config` and every other route.
+6. **P11 as `build-plan.md` words it.** It says "a branch expires 30 days after its last commit". In the code a commit
+   moves the expiry only once the move gains an hour (`Engines.RENEWAL_STEP`). A branch past its expiry keeps its name
+   until the worker ends it. The merge cap, `nuna.refs.max-merge-tables` (100), also bounds a branch's commits. The
+   page follows the code; P11's row is left as Paul set it.
+
+### Left
+
+- Not yet run: the refs engine case (the overnight run's `./nightly.sh` runs the engine matrix) and
+  `aTagsCredentialsRefusePutObject` (its heavy build). The new bite was checked with `git apply --check` only.
+- The first run will test what could not be checked here:
+  - the error text each engine gives for the store's refusal: Spark's failed task carrying the S3 403, and pyarrow's
+    "access denied" or 403;
+  - that both clients send `engines@<ref>` in the path as the catalog answers it.
+- This item, and item 26 with it, closes the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh`
+  and bites are all green with items 102 to 111 landed. Item 110 (the demo) is still being built.
 
 ### 113. Grants that name a branch (later, D33)
 
@@ -1884,49 +2275,6 @@ counts it as CPU. This hits the heavy build as it hit the nightly, so a heavy bu
 read beside Windows' numbers, not only the VM's. Item 135 is the host's memory (Paul decides the remedy); item 136
 keeps other sessions' builds off a run by hand.
 
-### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
-
-- Added: 2026-11-22 by item 128
-- Touches: catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java, catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-- Effort: L, a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests
-
-What is missing: `GET /management/v1/catalogs/{catalog}/governance/holds` (item 128) lists the holds released and
-DR freezes lifted from the audit topic, because the store deletes a hold's row when it is released
-(`GovernanceStore.releaseHold`) and a freeze's attribute when it is lifted (`removeAttribute`). The read is bounded as
-`GET .../audit` is: the last 20,000 offsets of each partition. Every load and denial is audited to the same topic,
-so in a busy deployment those offsets cover minutes, not the 30 days the console's prototype shows ("Lifted in the
-last 30 days"). The route says how far back it read (`history.since`), so it never claims more than it holds, but the
-console's list of lifted holds will usually stop short at work.
-
-Item 128 took the audit topic because keeping the history in the store is a schema step on all four stores, and
-item 126 held those modules when 128 was built; the queryable audit tables (D23) are read by one named group and
-need item 125's reader.
-
-What done looks like: a hold's release and a freeze's lift recorded in the store with who and when (a released and
-lifted record, or the row kept with `released_at` and `released_by`), on all four stores with a suite in the shared
-test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
-its tests. The audit topic read goes.
-
-**Progress, 2026-11-22 (worktree-agent-a776179e2fcd3c868): built; open until the heavy build passes `GovernanceSuite`
-on all four stores.**
-- The record: `GovernanceLift` (kind `HOLD` or `DR_FREEZE`, the hold's id, the target, reason, placed by and at,
-  lifted by and at). `releaseHold` and `removeAttribute` take who lifts; a release, and a DR freeze's removal, write
-  one in the change's own transaction, with the catalog the level was in, so it outlives the level.
-  `liftedIn(catalog, since)` lists a catalog's lifts at or after `since`, the most recent first.
-- Schema steps, additions only: PostgreSQL `V14__governance_lifts.sql`, CockroachDB `V13__governance_lifts.sql`,
-  Oracle `V15__governance_lifts.sql`, MongoDB step 13 ("governance lifts"): a `governance_lift` table or collection
-  indexed by catalog and lift time. A separate table, not the hold row kept with `released_at`: a server of the
-  previous release would still read a kept row as a standing hold. Its releases during a rolling upgrade are kept
-  only in the audit record of the change.
-- Shared suite: `GovernanceSuite#releasesAndLiftsAreKept` (who and when, repeats `Missing`, the window, one catalog
-  only, the change rows) and `#releasesAndLiftsOutliveTheirLevel` (a dropped namespace, a purged table).
-- The route: `HoldHistory` reads the store for the last 30 days; the audit-topic read is gone. `history` is
-  `{days, since}`; a lift on a level dropped since has a null `path`, and the console names it by kind and id.
-- Not covered: dropping a namespace removes its attributes, a DR freeze among them, without keeping a lift (a frozen
-  namespace's drop is not refused today).
-
-Left: the overnight heavy build's run of the store suites on the four stores.
-
 ### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22
@@ -1979,6 +2327,14 @@ Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-1
 The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
+
+**Seen in the overnight run of 2026-11-23 (sampled by hand every 10 s, 20:10 on 2026-11-22 to 07:00): not met.**
+The nightly passed (91 min), but Windows was below 1.5 GB available in 449 of the nightly's 490 samples (00:44 to
+02:17), at 200 MB at its lowest (02:00:31), and paging in over 1,000 pages a second in 350 of them; the VM's working
+set swung between 1.3 and 5.5 GB, so it was being paged out. The heavy build and Ceph leg before it (00:00 to 00:44)
+were worse: below 1.5 GB in 228 of 232 samples, 47 MB at the lowest. The host stayed short after the run too (21 MB
+at 02:41, 1.15 GB at 07:00), so something besides the run held Windows' memory overnight. The remedies of D46 are in
+place; they are not enough. The log is the session's scratch file, not kept in the repo.
 
 ### 151. Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB
 
@@ -2111,7 +2467,7 @@ fast build with every self-check passing, and the generator produces those event
 
 - Decided: 2026-11-22, D33 (amended)
 - Added: 2026-11-22 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
-- Touches: catalog-store-api/src/main/java/nuna/catalog/store/RefStore.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java bites/D33/
+- Touches: catalog-store-api/src/main/java/nuna/catalog/store/RefStore.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java catalog-store-api/src/test/java/nuna/catalog/store/suite/MutationSuite.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlCatalogStore.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleCatalogStore.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java catalog-audit/src/main/java/nuna/catalog/audit/RefChange.java catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java catalog-server/src/test/java/nuna/catalog/server/governance/MutatingRoutesAuditTest.java bites/D33/ref-remove-route-rights-unchecked.patch bites/D33/ref-remove-route-hold-unchecked.patch bites/D33/ref-remove-route-freeze-unchecked.patch bites/D33/sql-ref-remove-hold-unchecked.patch bites/D33/sql-ref-remove-keeps-the-entry.patch bites/D33/oracle-ref-remove-keeps-the-entry.patch bites/D33/mongo-ref-remove-keeps-the-entry.patch status/2026-11-23-agent-a7f30215399c9d241.md
 - Effort: M, one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files
 
 ## What is wrong
@@ -2148,6 +2504,77 @@ that dropping does not remove data: "Yes, add the route" (D33, amended).
 - Tests: `RefSuite` on all four stores (heavy); `RefRoutesTest` (fast) for the right, the hold and freeze refusals, the
   audit event and the 404 afterwards. Bites in `bites/D33/`: the right check removed; the hold check removed; the
   `ref_entry` delete skipped.
+
+**Progress, 2026-11-23 (worktree-agent-a7f30215399c9d241): built; open until the heavy build passes the suite cases
+on all four stores and the store bites are run.**
+- Route: `POST /management/v1/catalogs/{catalog}/objects/{id}/refs/remove` (`RefRoutes.remove`), with an
+  Idempotency-Key as every management write. The body is `{"refs": [name, ...]}` (1 to 1,000 names) or
+  `{"all-refs": true}`, exactly one of them, else 400. It finds the catalog as Holdings does, then the object by id in
+  that catalog in any state but purged (400 for an id that is no UUID, 404 `NoSuchObjectException` for one the catalog
+  does not hold), and needs `manage-tags` on the object through `ManagementGuard.require`: 403 with an audited denial,
+  or 404 (also audited) for a caller holding nothing on it. Then a legal hold on the object, a namespace above it or
+  the catalog refuses it (403, denial `legal_hold`), and so does a DR freeze (403, denial `dr_freeze`), before any ref
+  is read. A named ref that is gone, or a branch past its expiry, answers 404 `NoSuchRefException`; a ref whose cut
+  does not name the object answers 404 `NoSuchObjectException` "No table or view <id> on ref <name> of <catalog>",
+  which is also what a second removal through the same ref gets. It answers 200 with the object (id, namespace, name,
+  kind, state) and the refs it left; with `all-refs` and no ref naming the object, 200 with no refs, writing nothing.
+- Audit: one `ref` event per ref left, with the new action `RefChange.Action.OBJECT_REMOVED` and the object in
+  `tables` (kind, id, catalog, path), written to the outbox in the store's transaction.
+- Store: `RefStore.removeFromRefs(objectId, refIds, every, change)` answers, in this order once its locks are held,
+  `Missing(OBJECT)` (none, or purged), `Refused(HELD)`, `Refused(FROZEN)`, `Missing(REF)` (a ref of the set is not the
+  catalog's or does not name the object) and `Refused(REFERENCED)` (`every`, and a ref outside the set names it), else
+  deletes each ref's `ref_entry` row for the object and each branch's own pointer for it with its projection pieces.
+  PostgreSQL and CockroachDB (`SqlRefs.remove`): the catalog's row for share (a create holds it for update), each ref
+  for update in id order (as a deletion and a merge do), the object for update (as a purge claim does), then
+  `Guards.held` and `Guards.frozen`. Oracle (`OracleRefs.remove`): the same, the catalog's row for update. MongoDB
+  (`MongoRefs.remove`): one transaction that reads the holds and freeze through `Guards`, counts for `every` only refs
+  whose document exists, sees then marks the object and each ref, sets the catalog's clock and a new `trimmed` stamp,
+  and deletes. `MongoRefs.create` compares the catalog's `trimmed` its snapshot read with the one in its transaction,
+  and cuts again when a removal landed between, so a ref copied from a branch never brings back what was taken out.
+- When the store answers `Missing(REF)` or `REFERENCED` (a ref deleted or made between the route's read and the
+  transaction), the route reads the refs again, three times at most, then answers 409 `RefsChangedException`.
+- Tests: `RefRoutesTest` (fast, 8 new cases, all 28 pass): the right (create, describe on the catalog and describe on
+  the namespace refused 403; nothing on the object 404; nothing in the catalog 404; `manage-tags` on the namespace
+  reaches its tables), the named refs (entry and own pointer gone, other refs and tables kept, one event per ref, the
+  404 afterwards), every ref on a dropped table with an expired branch, unregistered and purged objects, the hold and
+  freeze refusals at the route and from the store, the re-read and the 409, the body's 400s, and the key's replay.
+  `RefSuite` (heavy, 4 new cases on all four stores): `takingATableOutOfRefs`, `removalOutcomesComeInOrder`,
+  `whatNoRefNamesCanBePurged` (purge claim and namespace drop go through once no ref names the object) and
+  `aRemovalFromEveryRefHoldsAgainstRefsMadeMeanwhile` (a writer copying a branch while the removal runs).
+  `MutationSuite` gains `removeFromRefs`; `MutatingRoutesAuditTest` gains the route's `ref` record (a steward takes a
+  dropped table out of a tag) and its refused case (the tester, 403, a denial).
+- Bites in `bites/D33/`: `ref-remove-route-rights-unchecked`, `ref-remove-route-hold-unchecked` and
+  `ref-remove-route-freeze-unchecked` (fast: run, BITES); `sql-ref-remove-hold-unchecked`,
+  `sql-ref-remove-keeps-the-entry`, `oracle-ref-remove-keeps-the-entry` and `mongo-ref-remove-keeps-the-entry` (suite
+  cases: checked with `git apply --check` only).
+- Choice made (Paul may overrule): the route lives under the object's management path, by id, as undrop and the purge
+  claim do, so it reaches a dropped or unregistered object. The body names the refs or says `all-refs`, never both, so
+  an empty or mistaken body never takes the object out of every ref.
+- Choice made (Paul may overrule): `all-refs` includes a branch past its expiry, since it still names the object and
+  keeps its files until the worker ends it; a ref named by name must be live, as on every other ref route.
+- Choice made (Paul may overrule): an active table or view can be taken out too, not only a dropped one. The item says
+  "a table or view", and taking a live table out of a tag erases the same history under the same right.
+- Choice made (Paul may overrule): one event per ref, so each ref's events keep their order on its subject; its audit
+  row names the catalog, as every `ref` record's does (`AuditRows` is unchanged), and the object is in the payload.
+- Choice made (Paul may overrule): the hold and freeze are read twice, by the route before any work (a denial, as for
+  the right) and by the store under the object's lock, as a purge claim reads them, so a hold placed in between still
+  refuses it, with the same denial.
+- Choice made (Paul may overrule): a branch's journal rows for the object stay, as a ref deletion leaves them: they
+  hold the metadata locations committed, not data, and the audit trail records the same.
+- Choice made (Paul may overrule): no new store answers. `Missing(REF)` and `REFERENCED` both mean the refs changed
+  since the route read them, so the route reads again; after three tries it answers 409.
+- Choice made (Paul may overrule): the answer shows each ref without `created-by`, since a steward need not hold
+  `create` (item 106).
+- Choice made (Paul may overrule): a removal and a ref create take turns on the catalog's row (SQL) or its `trimmed`
+  stamp (MongoDB), so with `every` no ref can still name the object once the removal is done. Without it a tag copied
+  from a branch while the removal ran could keep the table, and its purge would stay refused.
+
+Left: the heavy build running the four `RefSuite` cases, the `MutationSuite` case and `MutatingRoutesAuditTest` on
+all four stores, and the four store bites run against them (the overnight run). No bite is recorded for MongoDB's
+re-cut (`MongoRefs.create`'s `trimmed` check): the only case that reaches it, the writer racing the removal, need
+not fail on every run. A hold placed on the object itself while a removal runs waits for it (SQL: the object's row)
+or conflicts with it (MongoDB: both write the object), but one placed on a namespace above it or on the catalog can
+land after the removal read the holds, on every store, as for a purge claim. The console has no control for the route yet (item 109's screens are where it would go).
 
 ### 157. A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7)
 
@@ -2257,6 +2684,249 @@ applying to reads through that ref); it grants no new access. A second way to cl
 `GovernanceChain.of` now stops when the object's namespace is gone; refusing a ref read whose object's namespace is
 missing (fail closed, audited as a denial) closes this race and any other path to the same state, without the lock
 order change on three stores or MongoDB's check. Item 157's check stays either way, so reads do not start failing.
+
+### 160. Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests
+
+- Added: 2026-11-23 by overnight run 2026-11-23
+- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/MutatingRoutesAuditTest.java catalog-server/src/test/java/nuna/catalog/server/governance/HealthRoutesTest.java
+- Effort: S, two test files: one route's two audit cases and one expected key; the run's containers make checking it take the most time
+
+Three heavy tests in catalog-server fail because item 114 (c38e941, landed 9bdb0ee) added the maintenance request
+route and a `requests` field on a table's health without updating them:
+
+- `MutatingRoutesAuditTest#everyMutatingRouteEmitsItsAuditRecord` and `#everyMutatingManagementRouteAuditsItsRefusals`:
+  "a case for every mutating route" / "a refusal case for every mutating management route" lack
+  `POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests`.
+- `HealthRoutesTest#theWorkersReportsMakeTheTablesHealth`, line 70: "[nothing reported yet]" expects only
+  `id, catalog, namespace, name`, but `HealthRoutes.table` now adds `requests`.
+
+Evidence: the overnight run of 2026-11-23 (testing 02b22ad), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
+`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
+
+An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet green", its worktree locked), already changes this test; whoever takes this item reads it first.
+
+Done looks like: a 202 request audited as `GOVERNANCE_CHANGE` (`maintenance-request`) and a refusal for a caller
+without modify in the audit gate, `requests` expected before any report, and all three tests pass in the overnight
+heavy build.
+
+### 161. Console: the Metadata log tab fails on a create's, register's or revive's journal entry
+
+- Added: 2026-11-23 by overnight run 2026-11-23
+- Touches: catalog-server/src/main/resources/nuna/ui/table.js
+- Effort: S, one function in the console's table page and its browser test; the heavy browser test is what takes the time
+
+`ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory` fails in the heavy build: "the metadata log
+is not shown"; the Metadata log tab shows "(updates || []).map is not a function". `changeWords` in `table.js`
+(4365a6e, item 124's panel for item 130) assumes a journal entry's `updates` is an array, but a create's, register's
+or revive's entry keeps the request object there (`CommitEngine` 518, 563, 631, since 2026-11-08). A real console
+bug, not only the test's: any table made by create shows the error.
+
+Evidence: the overnight run of 2026-11-23 (testing 02b22ad), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
+`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
+
+Done looks like: the Metadata log tab words a create, register and revive entry, and the test passes in the
+overnight heavy build.
+
+### 162. ConsoleHealthTest reads the estate legend's count and words on two lines
+
+- Added: 2026-11-23 by overnight run 2026-11-23
+- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleHealthTest.java
+- Effort: S, one assertion in one browser test
+
+`ConsoleHealthTest#aTableNotAssessedYetIsNeitherInShapeNorQueued`, line 296, expects "1 not assessed yet" in the
+estate legend's text, but `.ice-legend span` is `inline-flex` (7fbf01b), so WebDriver's `getText` gives
+"1
+not assessed yet". The assertion came with item 143 (6d4bdc5). Actual: "1 in shape 1 small files or deletes 1
+equality deletes, compacted first 1 not assessed yet".
+
+Evidence: the overnight run of 2026-11-23 (testing 02b22ad), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
+`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
+
+An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet green", its worktree locked), already changes this test; whoever takes this item reads it first.
+
+Done looks like: the test reads the count and words apart (or normalizes whitespace) and passes in the overnight
+heavy build.
+
+### 163. ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table
+
+- Added: 2026-11-23 by overnight run 2026-11-23
+- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleSettingsBrowserTest.java
+- Effort: S, one browser test's expected values (or, if Paul wants the console to call it a default, one display rule)
+
+`ConsoleSettingsBrowserTest#aListedSettingIsChangedAndResetThroughItsEditorAsAnAuditedCommit`, line 92, expects
+`write.parquet.compression-codec` to show `zstd · default` on a new table, but iceberg-core 1.12's
+`TableMetadata.newTableMetadata` persists `write.parquet.compression-codec=zstd` on every new table, so the console
+shows `zstd · set`. Item 141 (849fb98).
+
+Evidence: the overnight run of 2026-11-23 (testing 02b22ad), "Expected condition failed: the value of
+write.parquet.compression-codec is not zstd · default", `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
+`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
+
+An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet green", its worktree locked), already changes this test; whoever takes this item reads it first.
+
+Done looks like: the test uses a setting Iceberg does not write itself (or expects `set`), and passes in the overnight
+heavy build.
+
+### 167. Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-store-api/src/main/java/nuna/catalog/store/Ref.java catalog-store-api/src/main/java/nuna/catalog/store/RefStore.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-sql/src/main/resources/nuna/store/sql/ catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-oracle/src/main/resources/nuna/store/oracle/migration/ catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java catalog-server/src/main/resources/nuna/ui/refs.js bites/D33/
+- Effort: M, a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build
+
+Atelier's design for the console's branches and tags (`docs/design/console/wireframes.html`, chapter 6, "A purpose
+line") gives each ref a line saying why it exists: under its chip in the refs list, and as the first words of its
+page's sub-line, "{purpose}. Made from main by {created-by} on {created}." The make dialog has a field for it.
+
+`RefRoutes` stores no description: `POST …/refs` takes `name`, `kind` and `from`, and the `ref` record on the four
+stores has no column for one. Item 109 said to add it there unless it proved larger than that item could carry; a
+column on four stores with their migrations and suite cases is, so item 109 left the field out and the console shows
+no purpose line (recorded in `backlog/109.md`).
+
+Done looks like:
+- `POST …/refs` takes an optional `description` (one line of plain text, at most a length the route states, refused
+  with 400 beyond it); the list and the read answer it; renew and merge keep it; the `nuna.catalog.ref` record of a
+  create carries it.
+- The `ref` record keeps it on PostgreSQL, CockroachDB, Oracle and MongoDB, with a migration on each SQL store that
+  leaves existing refs without one, and a `RefSuite` case (heavy) that makes a ref with and without one and reads it
+  back. A `RefRoutesTest` case (fast) for the route, with a bite in `bites/D33/`.
+- The console: the make dialog's Description field, the purpose line in the refs list's Ref cell and on the ref's
+  page, as the design words them.
+
+### 168. Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/NamespaceTablesRoutesTest.java catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/refs.js bites/D33/
+- Effort: M, a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns
+
+Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.10) asks for "the cut's time for a ref made from
+a ref, and a table's cut-version for unchanged tables", shown in the band and in a namespace's Contents read through
+a ref ("Last commit here", and "as at the point" with the version).
+
+What item 109 built instead:
+- The cut's time is worked out in the console (`cutOf` in `refs.js`): a ref made from main was cut when it was made;
+  one made from a branch or tag takes that ref's cut, following `from` back to main. That is right for the tables the
+  parent had not changed, but a ref made from a branch takes the branch's own changes as they were at the making, so
+  it has no single cut time; and once the parent is deleted, the chain breaks and the band says "the point @x was
+  made from".
+- `GET …/namespaces/{ns}/tables` and `…/namespaces` read main's metadata only, so a namespace's Contents read through
+  a ref leaves format, snapshots and last commit blank, with a line saying so. The "On @ref" column comes from the
+  ref's `changed` list ("changed here" with the branch's version), and every other table says "as at the point"
+  without a version.
+
+Done looks like:
+- The ref's list and read answers carry `cut-at`, the time its cut was taken from main, and for a ref made from a
+  branch, that it also holds the branch's changes as of its making.
+- The namespace listing and its totals take `?ref=`: each table as the ref has it (its own pointer on a branch, else
+  the cut's), with its version, format, snapshots and last commit; only what the caller may describe, as today.
+  Fast route tests with bites in `bites/D33/`.
+- The console fills the Contents columns through a ref, shows "as at the point, v{n}" for an unchanged table, and
+  takes the band's and the page's point from `cut-at`.
+
+### 169. Audit: records filterable by the branch they went through (item 109's gap 10)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-audit-tables/src/main/java/nuna/audittables/EventsTable.java catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java catalog-audit-tables/src/main/java/nuna/audittables/TableWriter.java catalog-audit-tables/src/test/ catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/AuditReadRouteTest.java catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/refs.js bites/
+- Effort: M, a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build
+
+Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.8 and 6.10) has the audit feed's search take
+`@name`: every record through a catalog ref (commits and reads name it in their `branch` field) and the ref's own
+`nuna.catalog.ref` records. A ref's Record tab has "Every record through @{name} in the last day".
+
+The feed (`GET …/audit/feed`) filters by type, principal, path and time only. The audit events table
+(`EventsTable.SCHEMA`) has no `branch` column: the branch is inside each record's `data`, which the reader does not
+parse to filter. Item 109 left the `@name` search and the button out; its Record tab asks the feed for
+`nuna.catalog.ref` records and keeps those whose subject is the ref's id, scanning at most four pages.
+
+Done looks like:
+- The events table gains a nullable `branch` column, filled from each record's `branch` (null for records with none,
+  such as grants); existing tables gain the column without a rewrite, and their old rows read as null.
+- The feed takes `branch=<name>` (records through that ref) and `subject=<id>` (records about one object or ref),
+  each with tests and bites.
+- The console's feed search reads `@name` as the branch filter, and a ref's Record tab uses the subject filter and
+  links "Every record through @{name} in the last day".
+
+### 170. Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js bites/D33/
+- Effort: M, a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page
+
+Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.4) draws three edge states of a table page
+that item 109's eleven gaps do not cover, each marked "gap" in the design:
+
+- Dropped on main, read on main: the catalog's `404 NoSuchTableException`, then "{actor} dropped it on {time}. Main
+  has no such table. A ref made before then still reads it: @{ref}, …", or "No ref holds it." Needs which refs hold
+  a path, and the drop's time and actor.
+- Dropped on main, read through a ref: a "Dropped on main {d Mon}" pill and "{actor} dropped {path} on main on
+  {time}. @{ref} was made before then, so it still reads the table as it was; main answers 404 for it." Needs the
+  drop's time and actor.
+- Made after the ref's point, read through the ref: the catalog's 404, then "{path} was made on {time}, after
+  @{ref}'s point, {cut}. A ref holds only what main held then." Needs the table's making time and the cut's time
+  (item 168).
+
+Item 109 shows the catalog's 404 as it answers, verbatim, in each case, without the words after it. The merge's dry
+run already gives a dropped table's `dropped-at` (item 107), but not who dropped it.
+
+Done looks like: a route (or a field on an existing answer, the builder's choice) that names the live refs holding an
+object by id or path, and the drop's actor and time; fast tests with bites in `bites/D33/`; the three states on the
+table page with the design's words.
+
+### 171. A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlObjects.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoObjects.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-api/src/test/java/nuna/catalog/store/suite/ bites/
+- Effort: S, one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build
+
+Low, from the security review of item 156 (Nuna Security Expert session, 2026-11-23). Not a go-to-work condition.
+
+What is wrong: a purge claim and a removal from refs (item 156) read the holds and freezes on the object, its
+namespaces and the catalog inside their transaction, but lock only the object's row. A legal hold placed on a
+namespace above the object, or on the catalog, while one of them runs can commit after its read. The result is the
+same as the operation finishing first and the hold arriving a moment later (placing a hold reads nothing either
+writes, and the hold then stands, so `Rules.retentionHold` keeps main's snapshots and later purge claims are
+refused), so nothing is lost; only the audit trail can show the hold's record a little earlier than the operation's.
+
+Done when the purge claim and the removal lock the held levels (or the catalog row) before reading holds, on all four
+stores; a store suite case holds a namespace hold's write open while each runs and sees them serialized; bites
+recorded.
+
+### 172. Console: export a table's metadata and log as a catalog ref reads it (item 109's review)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/MetadataLogRefTest.java catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/table.js bites/D33/
+- Effort: S, the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name
+
+The table page's "Export metadata" (`panels.js`, `exportDialog`) calls `GET …/objects/{id}/export`, which reads main's
+pointer, main's metadata file and main's whole journal. Read through a catalog ref, the button exported main's, with no
+`@ref` in the file name, so the UI review of item 109 found it misleading; item 109 hides the button through a ref.
+
+Done looks like:
+- `GET …/objects/{id}/export?ref=<name>`: the ref's pointer (its own head on a branch, else its cut), that file checked
+  against its recorded hash, and the journal as the metadata log reads it through the ref (backlog 109: the ref's own
+  versions, then its source's, then main's at and below the cut, stopping at a cut from a ref that has ended), with
+  `ref {name, kind, cut-version}`; 404 as the log answers for a ref that is not live or does not hold the object.
+  The read is audited on the ref (`through @name`). A fast test with a bite in `bites/D33/`.
+- The console offers the button through a ref again, exporting through it, the file named `{path}@{ref}`.
+
+### 173. Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, the tree's listings and links take the route's ref, its cache keyed by ref as well as catalog, and a browser case; the REST listings through a ref exist (item 104)
+
+Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.3) has every browse page keep the ref it reads.
+Item 109 carries `r=` on the catalog, namespace, table and view pages and every link in them, but the tree beside them
+(`tree.js`) still lists main's namespaces, tables and views (`api.namespaces`, `api.tables`, `api.views` on the
+catalog) and its links drop the ref, so a click in the tree leaves the ref. Atelier accepted this as item 109's
+departure 4.
+
+The REST listings already answer through a ref, from its cut (`/v1/{catalog}@{ref}/namespaces…`, item 104,
+`RefReadsTest`), so this is the console's work only.
+
+Done looks like: reading through a ref, the tree lists each level through `catalog@ref` (a table made on main after
+the cut is not there; one dropped on main since is), marks the ref beside the catalog's node, and its links keep `r=`;
+on main it is as today. Its cache is keyed by catalog and ref. A `ConsoleBrowserTest` case (heavy) opens a table
+through a tag and follows the tree to another table without leaving the tag.
 
 ## Done and dropped
 
@@ -2369,6 +3039,7 @@ order change on three stores or MongoDB's check. Item 157's check stays either w
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [133](backlog/133.md) | Keep released holds and lifted DR freezes in the store, so their history is complete | done | 2026-11-23 |
 | [134](backlog/134.md) | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | done | 2026-11-22 |
 | [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
@@ -2386,3 +3057,7 @@ order change on three stores or MongoDB's check. Item 157's check stays either w
 | [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [159](backlog/159.md) | Demo: the seed's sample grant goes to a group the grant admin is not in | done | 2026-11-23 |
+| [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
+| [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
+| [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [175](backlog/175.md) | Brokerage world: the bootstrap fixes the world's settings on a brokerage namespace the change feed made | done | 2026-11-23 |

@@ -222,6 +222,9 @@ class MutatingRoutesAuditTest {
         // The steward holds no modify on the table, which a request for its maintenance needs.
         cases.put("POST " + M + "/namespaces/{namespace}/tables/{table}/maintenance/requests", id -> api.manage("POST",
                 target("table") + "/maintenance/requests", "{\"job\":\"compaction\"}", rid(id, api.steward())));
+        // The tester holds create and modify, not manage-tags (backlog 156).
+        cases.put("POST " + M + "/objects/{id}/refs/remove", id -> api.manage("POST", "/objects/"
+                + api.id(withTable(), "tables", "t") + "/refs/remove", "{\"all-refs\":true}", rid(id)));
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> api.manage("POST", "/maintenance/refs/"
                 + UUID.randomUUID() + "/warn", null, rid(id)));
         cases.put("POST /management/v1/maintenance/refs/{id}/end", id -> api.manage("POST", "/maintenance/refs/"
@@ -457,7 +460,7 @@ class MutatingRoutesAuditTest {
             return EventType.REF;
         });
         cases.put("POST " + M + "/refs/{ref}/merge", id -> {
-            // A branch that changed nothing merges by ending, with its ref event (merged).
+            // A branch that changed nothing merges by ending, with the merge's own record (item 107).
             String name = "m7-" + Api.suffix();
             expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
             expect(api.manage("POST", "/refs/" + name + "/merge", null, rid(id)), 200);
@@ -469,6 +472,17 @@ class MutatingRoutesAuditTest {
             expect(api.manage("PUT", table + "/maintenance-policy", "{\"compaction.enabled\":\"true\"}"), 200);
             expect(api.manage("POST", table + "/maintenance/requests", "{\"job\":\"compaction\"}", rid(id)), 202);
             return EventType.GOVERNANCE_CHANGE;
+        });
+        cases.put("POST " + M + "/objects/{id}/refs/remove", id -> {
+            // The tester makes the tag; the steward, who holds manage-tags, takes a dropped table out of it (backlog 156).
+            String name = "m7-" + Api.suffix();
+            String ns = withTable();
+            String object = api.id(ns, "tables", "t");
+            expect(api.manage("POST", "/refs", ref(name, "tag"), "X-Request-ID", "made-" + id), 201);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
+            expect(api.manage("POST", "/objects/" + object + "/refs/remove", "{\"refs\":[\"" + name + "\"]}",
+                    rid(id, api.steward())), 200);
+            return EventType.REF;
         });
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> {
             String branch = JsonPath.read(expect(api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "branch"),

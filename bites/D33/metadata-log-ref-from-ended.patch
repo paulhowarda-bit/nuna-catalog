@@ -1,0 +1,16 @@
+Breaks: a ref made from one that has ended shows main's versions at and below its cut, though main never wrote the cut's file.
+Module: catalog-server
+Test: MetadataLogRefTest#throughARefMadeFromOneThatHasEndedTheLogStopsAtTheCutUnlessMainWroteIt
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index aa9f088e..dee106fb 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -436,7 +436,7 @@ class LifecycleRoutes {
+         RefEntry.At cut = at.cut();
+         boolean mainWroteIt = mains.apply(JournalStore.afterVersion(cut.version() - 1, 1)).items().stream()
+                 .anyMatch(entry -> entry.newVersion() == cut.version() && entry.newLocation().equals(cut.metadataLocation()));
+-        if (mainWroteIt) {
++        if (mainWroteIt || cut.version() > 0) {
+             stretches.add(new Stretch(0, mains));
+         }
+         return stretches;

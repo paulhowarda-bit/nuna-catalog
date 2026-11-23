@@ -14,6 +14,7 @@ import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
@@ -22,6 +23,7 @@ import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
@@ -29,6 +31,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -47,13 +50,17 @@ import org.junit.jupiter.api.Test;
  * A catalog's branches and tags (D33, backlog 102): a ref's cut is the catalog as it was, names included, read whole;
  * a ref made from a branch takes that branch's own pointers; names compare as every name does; P11's limits hold under
  * concurrent creates; renewal; a deletion leaves no cut, no pointer of the ref and no piece; a namespace stays while a
- * ref names a table or view of it (backlog 157); paging.
+ * ref names a table or view of it (backlog 157); a table or view taken out of refs leaves them, so a dropped one can be
+ * purged (backlog 156); paging.
  */
 public abstract class RefSuite extends GroupSuite {
 
     private static final WriteResult MISSING_REF = new WriteResult.Missing(WriteResult.Subject.REF);
     private static final WriteResult LIMIT = new WriteResult.Refused(WriteResult.Reason.REF_LIMIT);
     private static final WriteResult REFERENCED = new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+    private static final WriteResult MISSING_OBJECT = new WriteResult.Missing(WriteResult.Subject.OBJECT);
+    private static final WriteResult HELD = new WriteResult.Refused(WriteResult.Reason.HELD);
+    private static final WriteResult FROZEN = new WriteResult.Refused(WriteResult.Reason.FROZEN);
 
     private final Random random = new Random(11);
 
@@ -454,6 +461,173 @@ public abstract class RefSuite extends GroupSuite {
         assertApplied(store.dropNamespace(tables.id(), change()));
         assertApplied(store.dropNamespace(views.id(), change()));
         assertThat(store.attributesOf(Set.of(regulated))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Refs: taking a table out of refs deletes the named refs' entries for it and a branch's own pointer and"
+            + " pieces for it; the branch's journal, its other tables, every other ref and main stay (backlog 156)")
+    void takingATableOutOfRefs() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        CatalogObject other = newTable(namespace, "other");
+        Pointer main = store.readPointer(table.mainKey()).orElseThrow();
+        Ref dev = created(branch(catalog, "dev", now()));
+        Ref v1 = created(tag(catalog, "v1", now()));
+        Ref qa = created(branch(catalog, "qa", now()));
+        PointerKey own = dev.key(table.id());
+        byte[] projection = new byte[3 * underTest().projectionPieceBytes()];
+        random.nextBytes(projection);
+        Pointer large = new Pointer("s3://suite-warehouse/large-on-dev.metadata.json", 1, "0".repeat(64), projection);
+        assertThat(store.commit(Commits.batch(Commits.swap(own, Optional.empty(), large))))
+                .isInstanceOf(CommitResult.Committed.class);
+        Pointer otherOnDev = commit(dev.key(other.id()), Optional.empty(), "other-on-dev");
+        assertThat(underTest().projectionPieces(own)).isEqualTo(3);
+        Change full = fullChange();
+
+        assertApplied(store.removeFromRefs(table.id(), Set.of(dev.id(), v1.id()), false, full));
+
+        assertThat(underTest().changeRows(full)).isEqualTo(WrittenRows.allOf(full));
+        for (Ref left : List.of(dev, v1)) {
+            assertThat(store.resolveOnRef(left.id(), List.of("ns"), "t")).as("on %s", left.name().display()).isEmpty();
+            assertThat(store.listRefObjects(left.id(), namespace.id(), CatalogObject.Kind.TABLE, PageRequest.first(10))
+                    .items()).extracting(RefEntry::id).containsExactly(other.id());
+            assertThat(store.findRefNamespace(left.id(), List.of("ns"))).as("its namespace stays").isPresent();
+            assertThat(store.readRef(left.id())).contains(left);
+        }
+        assertThat(store.readPointer(own)).isEmpty();
+        assertThat(underTest().projectionPieces(own)).isZero();
+        assertThat(underTest().journalVersions(own)).as("the branch's journal stays").containsExactly(1L);
+        assertThat(store.countOwnPointers(dev.id())).isEqualTo(1);
+        assertThat(store.readPointer(dev.key(other.id()))).contains(otherOnDev);
+        assertThat(store.listRefPointers(table.id())).extracting(RefPointers::ref).containsExactly(qa);
+        assertThat(store.resolveOnRef(qa.id(), List.of("ns"), "t")).as("a ref not named keeps it").isPresent();
+        assertThat(store.readPointer(table.mainKey())).contains(main);
+        CommitBatch batch = Commits.fullBatch(Commits.advance(own, Optional.empty(), "t-on-dev"));
+        CommitBatch onDev = new CommitBatch(batch.commitId(), now(), batch.swaps(), List.of(),
+                Optional.of(new RefLock.Hold(dev.id())), batch.outbox(), batch.idempotency());
+        assertThat(store.commit(onDev)).as("a commit on the branch to it").isEqualTo(new CommitResult.Inactive(own));
+        assertThat(store.removeFromRefs(table.id(), Set.of(dev.id()), false, change())).as("taken out already")
+                .isEqualTo(MISSING_REF);
+    }
+
+    @Test
+    @DisplayName("Refs: a removal's outcomes come in order, and a refused one writes nothing: no such table, a hold, a"
+            + " freeze, a ref that is not the catalog's or does not name it, and every asked with a ref left out"
+            + " (backlog 156)")
+    void removalOutcomesComeInOrder() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Ref dev = created(branch(catalog, "dev", now()));
+        Ref v1 = created(tag(catalog, "v1", now()));
+        CatalogObject later = newTable(namespace, "later");
+        UUID otherCatalog = newCatalog();
+        newTable(newNamespace(otherCatalog, "ns"), "t");
+        Ref elsewhere = created(tag(otherCatalog, "v1", now()));
+        Change refused = fullChange();
+
+        assertThat(store.removeFromRefs(UUID.randomUUID(), Set.of(dev.id()), false, refused)).isEqualTo(MISSING_OBJECT);
+        LegalHold hold = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.NAMESPACE, namespace.id()),
+                "matter", "legal", now());
+        assertApplied(store.placeHold(hold, change()));
+        assertThat(store.removeFromRefs(table.id(), Set.of(dev.id()), false, refused)).as("a hold on its namespace")
+                .isEqualTo(HELD);
+        Securable top = new Securable(Securable.Kind.CATALOG, catalog);
+        assertApplied(store.putAttribute(new GovernanceAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "drill",
+                "suite", "admin", now()), change()));
+        assertThat(store.removeFromRefs(table.id(), Set.of(UUID.randomUUID()), false, refused))
+                .as("held and frozen, and no such ref: the hold first").isEqualTo(HELD);
+        assertApplied(store.releaseHold(hold.id(), "counsel", change()));
+        assertThat(store.removeFromRefs(table.id(), Set.of(UUID.randomUUID()), false, refused))
+                .as("a freeze on its catalog").isEqualTo(FROZEN);
+        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "steward", change()));
+        assertThat(store.removeFromRefs(table.id(), Set.of(dev.id(), elsewhere.id()), false, refused))
+                .as("another catalog's ref").isEqualTo(MISSING_REF);
+        assertThat(store.removeFromRefs(table.id(), Set.of(dev.id(), UUID.randomUUID()), false, refused))
+                .as("no such ref").isEqualTo(MISSING_REF);
+        assertThat(store.removeFromRefs(later.id(), Set.of(dev.id()), false, refused))
+                .as("a ref whose cut does not name it").isEqualTo(MISSING_REF);
+        assertThat(store.removeFromRefs(table.id(), Set.of(namespace.id()), false, refused))
+                .as("a namespace's id").isEqualTo(MISSING_REF);
+        assertThat(store.removeFromRefs(table.id(), Set.of(dev.id()), true, refused)).as("every, and v1 names it too")
+                .isEqualTo(REFERENCED);
+        assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.listRefPointers(table.id())).extracting(RefPointers::ref).containsExactly(dev, v1);
+
+        assertApplied(store.removeFromRefs(table.id(), Set.of(dev.id(), v1.id()), true, change()));
+        assertThat(store.listRefPointers(table.id())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Refs: once no ref names a dropped table or view, its purge claim goes through and its namespace can"
+            + " be dropped; an expired branch is taken out as any ref, and a ref made from a branch after a removal"
+            + " does not name what it took out (backlog 156)")
+    void whatNoRefNamesCanBePurged() {
+        UUID catalog = newCatalog();
+        NamespaceRecord tables = newNamespace(catalog, "tables");
+        NamespaceRecord views = newNamespace(catalog, "views");
+        CatalogObject table = newTable(tables, "t");
+        CatalogObject view = newObject(views, "v", CatalogObject.Kind.VIEW);
+        Ref v1 = created(tag(catalog, "v1", now()));
+        Ref dev = created(branch(catalog, "dev", now()));
+        Ref fix = created(Refs.from(dev, "fix", Ref.Kind.TAG, now()));
+        for (CatalogObject object : List.of(table, view)) {
+            assertApplied(store.dropObject(object.id(), now(), change()));
+        }
+
+        assertThat(store.claimPurge(table.id(), "worker", change())).isEqualTo(REFERENCED);
+        assertApplied(store.removeFromRefs(table.id(), Set.of(v1.id(), fix.id()), false, change()));
+        assertThat(store.claimPurge(table.id(), "worker", change())).as("dev names it still").isEqualTo(REFERENCED);
+        assertApplied(store.removeFromRefs(table.id(), Set.of(dev.id()), true,
+                changeAt(dev.expiresAt().orElseThrow())));
+        Ref copy = created(Refs.from(dev, "copy", Ref.Kind.TAG, now()));
+        assertThat(store.resolveOnRef(copy.id(), List.of("tables"), "t")).as("made from dev after").isEmpty();
+        assertThat(store.listRefPointers(table.id())).isEmpty();
+        assertApplied(store.claimPurge(table.id(), "worker", change()));
+
+        assertThat(store.dropNamespace(views.id(), change())).isEqualTo(REFERENCED);
+        assertApplied(store.removeFromRefs(view.id(), Set.of(v1.id(), dev.id(), fix.id(), copy.id()), true, change()));
+        assertApplied(store.dropNamespace(views.id(), change()));
+    }
+
+    @Test
+    @DisplayName("Refs: a ref made from a branch while a table is taken out of every ref is in the removal or does not"
+            + " name the table: once the removal is done no ref names it (backlog 156)")
+    void aRemovalFromEveryRefHoldsAgainstRefsMadeMeanwhile() throws Exception {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        newTable(namespace, "other");
+        Ref dev = created(branch(catalog, "dev", now()));
+        AtomicBoolean stop = new AtomicBoolean();
+        CountDownLatch copying = new CountDownLatch(3);
+        Future<?> writer = background.submit(() -> {
+            for (int i = 0; i < 200 && !stop.get(); i++) {
+                assertApplied(store.createRef(Refs.from(dev, "copy-" + i, Ref.Kind.TAG, now()), RefLimits.P11,
+                        change()));
+                copying.countDown();
+            }
+            return null;
+        });
+        WriteResult removed = MISSING_REF;
+        try {
+            assertThat(copying.await(1, TimeUnit.MINUTES)).as("the writer copies dev").isTrue();
+            for (int attempt = 0; attempt < 500 && !removed.equals(WriteResult.APPLIED); attempt++) {
+                Set<UUID> naming = new HashSet<>();
+                store.listRefPointers(table.id()).forEach(held -> naming.add(held.ref().id()));
+                removed = store.removeFromRefs(table.id(), naming, true, change());
+                assertThat(removed).isIn(WriteResult.APPLIED, MISSING_REF, REFERENCED);
+            }
+        } finally {
+            stop.set(true);
+        }
+        writer.get(1, TimeUnit.MINUTES);
+
+        assertThat(removed).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.listRefPointers(table.id())).as("no ref names it once the removal is done").isEmpty();
+        assertThat(allPages(100, page -> store.listRefs(catalog, page))).as("the writer made refs meanwhile")
+                .hasSizeGreaterThan(3);
     }
 
     @Test

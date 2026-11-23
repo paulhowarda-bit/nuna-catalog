@@ -1,0 +1,16 @@
+Breaks: the merge tab writes its button's words as markup, which the console's policy and rules forbid.
+Module: catalog-server
+Test: ConsoleRulesTest#theFilesHoldNoInlineCodeAndNeverWriteMarkup
+diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
+index 684174fd..dc791ec0 100644
+--- a/catalog-server/src/main/resources/nuna/ui/refs.js
++++ b/catalog-server/src/main/resources/nuna/ui/refs.js
+@@ -703,7 +703,7 @@ async function mergeTab(c, r, list) {
+   const rawB = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false', onclick: () => {
+     raw.hidden = !raw.hidden;
+     rawB.setAttribute('aria-expanded', String(!raw.hidden));
+-    rawB.textContent = raw.hidden ? 'Show the catalog\'s answer' : 'Hide the catalog\'s answer';
++    rawB.innerHTML = raw.hidden ? 'Show the catalog\'s answer' : 'Hide the catalog\'s answer';
+   }}, 'Show the catalog\'s answer');
+   const tagsFrom = live(list).filter(t => t.kind === 'tag' && t.from === r.name);
+   const steps = blocked && conflicts.length ? h('p', {class: 'fine'}, h('b', null, `Nothing moves while ${plural(conflicts.length, 'table')} ${conflicts.length === 1 ? 'conflicts' : 'conflict'}.`),

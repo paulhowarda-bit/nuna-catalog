@@ -3,7 +3,7 @@
 # (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
 #
 #   demo/demo.sh up       build the jars and images, start the stack and the brokerage world, load sample data
-#                         once, print tokens
+#                         once, with the catalog's branch dev and tag sample, print tokens
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops, lake and brokerage)
@@ -416,7 +416,7 @@ finish_job() {
   fi
 }
 
-# One run of the lake writer (seed or rate) as a Job.
+# One run of the lake writer (seed, rate or dev) as a Job.
 lake() {
   local mode=$1 job
   job="lake-$mode-$(date +%s)"
@@ -531,6 +531,28 @@ SQL
   k create configmap demo-seeded >/dev/null
 }
 
+# The catalog's own branch and tag (D33, backlog 110), made through the management API as ana, whose
+# demo-analysts hold create on lakehouse, the right refs need. Branch dev is made from main, and the lake writer
+# commits the next day's trades and rates on it as user lake, through the warehouse lakehouse@dev (LakeWriter dev);
+# Trino's catalog lakehouse_dev (trino.yaml) reads and writes it. Then tag sample keeps main as it is: the sample
+# data, and on a new lake nothing of the brokerage world, whose bootstrap comes after. Once per lake: the tag, made
+# last, says it is done, and goes with the catalog's PostgreSQL. A dev left without changes by an up that stopped
+# part way gets them now; one a person made or merged is left as it is. It returns at its first failure, so the
+# tag is never made after a step that failed, and up goes on without the refs (the next up tries again).
+refs() {
+  local m=/management/v1/catalogs/$CATALOG dev
+  api ana GET "$m/refs/sample" '' 200 2>/dev/null && return 0
+  say "the catalog's branch dev, with the next day's trades and rates committed on it, and its tag sample (as ana)"
+  api ana GET "$m/refs/dev" '' 200 2>/dev/null \
+    || api ana POST "$m/refs" '{"name": "dev", "kind": "branch", "from": "main"}' 201 || return 1
+  # The branch's own read lists the tables it changed.
+  dev=$(tls_curl -fs -H "Authorization: Bearer $(token_of ana)" "$URL$m/refs/dev") || return 1
+  if [[ "$dev" == *'"changed":[]'* ]]; then
+    lake dev || return 1
+  fi
+  api ana POST "$m/refs" '{"name": "sample", "kind": "tag", "from": "main"}' 201 || return 1
+}
+
 # The brokerage world's bootstrap (brokerage-bootstrap.yaml): its catalog namespaces, tables and views, as user
 # brokerage, and its Kafka topics. On every up, before its governance, sink and generator.
 brokerage_bootstrap() {
@@ -641,6 +663,8 @@ read the catalog's (nuna.*), the Connect worker's, the brokerage world's and tho
 kafbat's audit log.
 Brokerage:    the brokerage world writes lakehouse.brokerage live, through Kafka and SingleStore;
               demo/demo.sh brokerage logs follows its generator
+Refs:         lakehouse has branch dev (the next day's trades and rates) and tag sample (the sample data);
+              the console's Branches and tags tab merges dev, and Trino's catalog lakehouse_dev reads and writes it
 Kafka:        kafbat on $web:8182; Kafka Connect's REST API on $CONNECT_URL
 SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
               Studio takes no passwords, so not root)
@@ -992,6 +1016,10 @@ up() {
     start_connect
     cdc_apply
   else
+    # Before the brokerage world's bootstrap, so a new lake's tag holds the sample data alone; and, as its lake
+    # writer's Job needs, while Kafka Connect and the generator are stopped. A failure in it never stops up: the
+    # world and Trino still start.
+    refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
     brokerage_bootstrap
     brokerage_governance
     say "starting Trino ($TRINO_IMAGE)"
