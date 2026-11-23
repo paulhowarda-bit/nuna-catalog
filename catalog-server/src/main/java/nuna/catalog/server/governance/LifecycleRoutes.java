@@ -27,6 +27,9 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
@@ -38,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -337,11 +341,17 @@ class LifecycleRoutes {
      * token names the version it stopped before, so commits made meanwhile never shift the pages after the first; a
      * page holds fewer entries only where versions are missing, and the log goes on while {@code next-page-token} is
      * present.
+     *
+     * <p>With {@code ref}, the log as the catalog's branch or tag of that name reads the object (D33, backlog 109): the
+     * versions a branch committed of its own, from its own journal, above the cut's version, and main's below and at
+     * it; {@code pointer} is the one the ref reads, and {@code ref} names it with the cut's version. 404 when no live
+     * ref has the name, or the ref's cut does not hold the object.
      */
     @GetMapping(path = METADATA_LOG, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> metadataLog(@PathVariable("catalog") String prefix, @PathVariable String id,
                                        @RequestParam(required = false) String pageToken,
-                                       @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+                                       @RequestParam(required = false) Integer pageSize,
+                                       @RequestParam(required = false) String ref, HttpServletRequest http) {
         Request request = management.request(http);
         CatalogRecord catalog = management.catalog(prefix, request, "readMetadataLog", Privilege.SELECT);
         CatalogObject object = existing(catalog, id);
@@ -351,6 +361,33 @@ class LifecycleRoutes {
         int size = pageSize == null ? LOG_PAGE : Math.clamp(pageSize, 1, LOG_PAGE_MAX);
         Optional<Long> before = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()).map(LifecycleRoutes::before);
         ObjectNode body = Management.JSON.createObjectNode();
+        Function<PageRequest, Page<JournalRecord>> mains = next -> store.readJournal(object.mainKey(),
+                JournalStore.EARLIEST, JournalStore.LATEST, next);
+        if (ref != null && !ref.isEmpty()) {
+            Instant now = clock.instant();
+            Ref on = store.findRef(catalog.id(), Names.normalize(ref)).filter(r -> !r.expiredAt(now))
+                    .orElseThrow(() -> CatalogError.of(404, "NoSuchRefException", "Ref does not exist: " + ref));
+            RefPointers held = store.listRefPointers(object.id()).stream()
+                    .filter(pointers -> pointers.ref().id().equals(on.id())).findFirst()
+                    .orElseThrow(() -> CatalogError.of(404, "NoSuchObjectException", "No table or view " + id
+                            + " on ref " + on.name().display() + " of " + catalog.name()));
+            RefEntry.At reads = held.head().orElse(held.cut());
+            ObjectNode node = body.putObject("pointer");
+            node.put("metadata-location", reads.metadataLocation());
+            node.put("version", reads.version());
+            node.put("sha256", reads.sha256());
+            ObjectNode named = body.putObject("ref");
+            named.put("name", on.name().display());
+            named.put("kind", on.kind().name().toLowerCase(Locale.ROOT));
+            named.put("cut-version", held.cut().version());
+            ArrayNode journal = body.putArray("journal");
+            LogPage page = refLogPage(before.orElse(reads.version() + 1), size, held.cut().version(),
+                    next -> store.readJournal(on.key(object.id()), JournalStore.EARLIEST, JournalStore.LATEST, next),
+                    mains);
+            page.entries().forEach(entry -> journal.add(journal(entry)));
+            page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
+            return GovernanceRoutes.json(200, body);
+        }
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         pointer.ifPresent(p -> {
             ObjectNode node = body.putObject("pointer");
@@ -361,12 +398,34 @@ class LifecycleRoutes {
         ArrayNode journal = body.putArray("journal");
         Optional<Long> top = before.or(() -> pointer.map(p -> p.version() + 1));
         if (top.isPresent()) {
-            LogPage page = logPage(top.get(), size, next -> store.readJournal(object.mainKey(), JournalStore.EARLIEST,
-                    JournalStore.LATEST, next));
+            LogPage page = logPage(top.get(), size, mains);
             page.entries().forEach(entry -> journal.add(journal(entry)));
             page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
         }
         return GovernanceRoutes.json(200, body);
+    }
+
+    /**
+     * A page of the log as a ref reads it, newest first: versions above {@code cut} from the branch's own journal
+     * ({@code own}), the rest from main's ({@code main}), as {@link #logPage} pages one journal. A branch's versions
+     * go on from the cut's, one a commit, so the two never share a version.
+     */
+    static LogPage refLogPage(long before, int size, long cut, Function<PageRequest, Page<JournalRecord>> own,
+                              Function<PageRequest, Page<JournalRecord>> main) {
+        List<JournalRecord> entries = new ArrayList<>();
+        long top = before;
+        if (top > cut + 1) {
+            int mine = (int) Math.min(size, top - cut - 1);
+            entries.addAll(logPage(top, mine, own).entries());
+            top -= mine;
+        }
+        int left = size - (int) (before - top);
+        if (left > 0 && top > 1) {
+            LogPage rest = logPage(top, left, main);
+            entries.addAll(rest.entries());
+            return new LogPage(entries, rest.before());
+        }
+        return new LogPage(entries, top > 1 ? Optional.of(top) : Optional.empty());
     }
 
     /** A page of the metadata log, newest first, and the version the page after it stops before, if there is one. */
