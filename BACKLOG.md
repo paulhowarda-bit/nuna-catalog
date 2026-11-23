@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 8 S, 14 M, 14 L, 5 XL.
+**53 open:** 19 S, 15 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,6 +53,18 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [173](backlog/173.md) | S | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | the tree's listings and links take the route's ref, its cache keyed by ref as well as catalog, and a browser case; the REST listings through a ref exist (item 104) | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
+| [183](backlog/183.md) | S | Console: sign-in opens the catalog used last, or the one with the most tables the user may read; an empty catalog names the other (Atelier's review Q1) | the landing's choice (the catalog last used in this browser, else the one with the most tables the caller may read, else the first), an empty catalog's headline naming the other, and a browser case | 2026-11-23 |
+| [184](backlog/184.md) | M | Console: rail items, tabs and buttons a user's groups can never use are hidden, and each role lands where its work is (Atelier's review Q3) | the console needs what each caller may do across a catalog (audit readers, platform operators, manage-tags, manage-grants) before it draws the rail and tabs; check what the server's answers already carry (`may` fields, the token's groups) and add a small read only if none does; then the rail, the tabs, the governance and table buttons, each role's landing, and browser cases for ana, gary and oscar | 2026-11-23 |
+| [185](backlog/185.md) | S | Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4) | the box opens an exact dotted path by fetching each level on demand, as a deep link does, and its empty answer says what it searched; a browser case | 2026-11-23 |
+| [186](backlog/186.md) | S | Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5) | the console reads the actor of the commit that made the current snapshot, as the Metadata log tab does (`LifecycleRoutes` answers each entry's actor and engine), for Overview and a By column on Snapshots, and the Contents cell's wording; M if a snapshot cannot be paired with its commit from the log's answer and the server needs a field | 2026-11-23 |
+| [187](backlog/187.md) | S | Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6) | kind chips over the feed's existing type filter, the By kind rows as links, every filter in the hash, audit reads hidden by default, and the range's wording; a browser case as gary | 2026-11-23 |
+| [188](backlog/188.md) | S | Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7) | one Technical details disclosure in `dom.js`'s result and failure boxes for status, route and request ID, and plain captions in place of config keys and routes; the browser tests that read those texts change with them | 2026-11-23 |
+| [189](backlog/189.md) | S | Console: one link style, and rows that open something look it (Atelier's review Q8) | one link style in `style.css` (link colour, underline on hover and focus) and a hover background with a chevron on rows that open something | 2026-11-23 |
+| [190](backlog/190.md) | S | Console: the maintenance headline says when the catalog's policy has maintenance off (Atelier's review Q9) | the headline reads the catalog's maintenance policy, already on the Maintenance page, and says when every job type is off, with the worker's silence as a second line | 2026-11-23 |
+| [191](backlog/191.md) | S | Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10) | the panel's name and one line of explanation, the panel folded while a catalog ref is read, and one icon per kind of ref across the console | 2026-11-23 |
+| [192](backlog/192.md) | S | Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11) | two renames carried through the rail, tabs, headings, links and the browser tests that name them, and the rail's labels kept on the Catalog page | 2026-11-23 |
+| [193](backlog/193.md) | S | Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12) | timeouts on the IdP's discovery and token calls with a Start again that clears a pending sign-in, `id_token_hint` on sign-out, one date format, empty columns dropped and phone cards labelled, and the keyboard hint hidden on touch | 2026-11-23 |
+| [194](backlog/194.md) | S | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | an off-scale marker with its value for a share below the chart's scale | 2026-11-23 |
 
 ## Open items in full
 
@@ -2863,6 +2875,11 @@ the cut is not there; one dropped on main since is), marks the ref beside the ca
 on main it is as today. Its cache is keyed by catalog and ref. A `ConsoleBrowserTest` case (heavy) opens a table
 through a tag and follows the tree to another table without leaving the tag.
 
+Atelier's live review (2026-11-23, `docs/design/console/review-2026-11-23/console-review-2026-11-23.md`,
+finding F3 and quick win Q2) found the same trap: reading `rates` through `@sample`, a click on `fx` in the tree lands
+on main with no word (`13-tree-click-drops-ref.png`). The rail's Catalog link drops the ref too; carry `r=` there as
+well (`app.js`).
+
 ### 177. Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -2882,6 +2899,210 @@ file), so no commit is overwritten, but it is a file main should never hold. Doi
 Done when register and revive refuse a location `TableFiles.onBranch` marks, with 400 `BadRequestException`, on main
 and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
 checked with `git apply --check`, not run).
+
+### 183. Console: sign-in opens the catalog used last, or the one with the most tables the user may read; an empty catalog names the other (Atelier's review Q1)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, the landing's choice (the catalog last used in this browser, else the one with the most tables the caller may read, else the first), an empty catalog's headline naming the other, and a browser case
+
+Atelier's live review of the console (Paul, 2026-11-23: "I am having trouble navigating the UI", `docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F2) found
+that sign-in lands on `#p=overview&c=engines` for `ana` and `gary`: "No table in engines is yours to select", "0 of 0".
+The catalog with the data, `lakehouse`, is one picker away and nothing says so. Screenshots `01-landing-1440.png`,
+`41-gary-landing.png`. Atelier's design had `lakehouse` as the default.
+
+Done looks like: sign-in opens the catalog this browser used last (kept per viewer, as a convenience: it may come
+back empty), else the catalog with the most tables the caller may read, else the first. A catalog with nothing the
+caller may read says so in plain words and links the one that has tables ("Nothing in engines you may read. lakehouse
+has 17 tables"). A browser case signs in with no history and lands on the catalog with tables.
+
+### 184. Console: rail items, tabs and buttons a user's groups can never use are hidden, and each role lands where its work is (Atelier's review Q3)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, the console needs what each caller may do across a catalog (audit readers, platform operators, manage-tags, manage-grants) before it draws the rail and tabs; check what the server's answers already carry (`may` fields, the token's groups) and add a small read only if none does; then the rail, the tabs, the governance and table buttons, each role's landing, and browser cases for ana, gary and oscar
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F4 and F12): as `ana` the rail's Audit and Health and a table's Audit tab each
+answer a red "Refused by the catalog" box, `403 ForbiddenException`, "ana holds no privilege that gives select for
+readAuditFeed", "only platform operators may call readCatalogHealth", "audited as a denial", and `gary`'s feed then
+shows `ana`'s denials. As `ana` (no `manage-tags`) a table's Governance tab offers Change the classification, Change
+the owner, Set a retention class and Place a hold; Compact now and Export metadata sit on every table. Screenshots
+`20-audit-ana.png`, `20-health-ana.png`, `10-rates-audit.png`, `21-trades-governance.png`, `20-governance-ana.png`.
+The design limited the rail by role ("gary sees only Catalog, Governance and Audit", `docs/design/console/README.md`).
+
+Done looks like: a rail item, tab or button the caller's groups can never use is not drawn; one that depends on the
+object is drawn disabled with the reason as its title. `gary` lands on Audit and `oscar` on Health. Where a refusal
+still happens, it leads with plain words ("Audit is open to auditors. Your groups: demo-analysts.") and keeps the
+status, exception and request ID behind a disclosure (item 188). Browsing the menu writes no denials. Browser cases
+for `ana`, `gary` and `oscar` check what each sees.
+
+### 185. Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, the box opens an exact dotted path by fetching each level on demand, as a deep link does, and its empty answer says what it searched; a browser case
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F1): on `lakehouse` with the tree folded, "Go to a path" (the header box and the `/`
+key) answers `rates` and `markets.fx.rates` with "No path matches. Try fewer words. Go to a path finds the paths the
+console has listed so far", and Enter does nothing. After opening `markets` and `fx`, `rates` is found, but a brokerage
+table still is not. Screenshots `06-goto-rates.png`, `23-goto-journal.png`, `23-goto-rates-after.png`.
+
+The full fix, a server route that finds every name the caller may describe, is Atelier's structural change S1, not
+filed yet. This item is the quick part.
+
+Done looks like: typing a full dotted path (`markets.fx.rates`) and Enter opens it from any page with the tree folded,
+fetching each level as a deep link does; a path that does not exist says so. With no match, the box says "Not found
+among the N names listed so far. Open a namespace, or type the full dotted path", and never "Try fewer words" for one
+word. A browser case opens a table by its dotted path with the tree folded.
+
+### 186. Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, the console reads the actor of the commit that made the current snapshot, as the Metadata log tab does (`LifecycleRoutes` answers each entry's actor and engine), for Overview and a By column on Snapshots, and the Contents cell's wording; M if a snapshot cannot be paired with its commit from the log's answer and the server needs a field
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F6): who last changed `markets.fx.rates` is only on the tenth tab, Metadata log
+("lake via lake-writer-demo"). Overview's Current state shows the snapshot id, operation and time with no author;
+Snapshots has no By column. In Contents the word after the time changes meaning by level: "12:49 · lake" on a table
+row is the author, "12:49 · rates" on a namespace row is the table. Atelier's prototype had the author on Overview
+("svc-fx-ingest via spark", `61-proto-table.png`). Screenshots `09-table-rates.png`, `10-rates-snapshots.png`,
+`10-rates-metadata-log.png`, `08-ns-fx.png`.
+
+Done looks like: Overview's current snapshot says "by lake via lake-writer-demo"; Snapshots has a By column (blank
+where the journal no longer holds the commit); Contents reads "12:49 by lake" for a table and "12:49 in rates" for a
+namespace. A browser case checks the author on Overview.
+
+### 187. Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, kind chips over the feed's existing type filter, the By kind rows as links, every filter in the hash, audit reads hidden by default, and the range's wording; a browser case as gary
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F7), as `gary` looking for a grant's record in `lakehouse`: the chips are All,
+Changes, Reads, Credentials, Refusals; Changes holds 1,557 records, almost all CDC commits. The By kind panel lists
+`nuna.catalog.grant 2` but its rows are not links. The grants were found only by guessing the granter into Who. The
+link stayed `#p=audit&c=lakehouse` with filters applied, so Back and a shared link lose them. The range read "From 22
+Nov 16:33 to 16:33". On `engines` five of seven records were the audit's own reads. Screenshots
+`42-gary-audit-engines.png`, `44-gary-audit-changes.png`, `45-gary-audit-who-gary.png`, `46-gary-audit-record.png`.
+
+Done looks like: a Kind filter (Grants, Holds and freezes, Branches and tags, Commits, Reads, Credentials, Refusals);
+each By kind row applies it; every filter is in the hash, so Back and a link keep them; the audit's own reads are
+hidden unless "Show audit reads" is on; the range reads "22 Nov 16:33 to 23 Nov 16:33". A browser case as `gary`
+reaches a grant record in three steps.
+
+### 188. Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/style.css
+- Effort: S, one Technical details disclosure in `dom.js`'s result and failure boxes for status, route and request ID, and plain captions in place of config keys and routes; the browser tests that read those texts change with them
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F10): screens carry the plumbing. Examples: "of lakehouse, as GET …/refs lists
+them"; "2 tables with pointers of its own; GET …/refs/dev"; "200 OK · POST …/refs/dev/merge, dry run X-Request-ID …
+nothing moved, nothing audited"; `nuna.refs.max-branches` as a stat caption; "403 ForbiddenException"; a footnote
+paragraph under almost every table. Screenshots `14-branches-tags.png`, `15-ref-dev.png`, `16-ref-dev-merge.png`,
+`20-audit-ana.png`.
+
+Done looks like: each answer box leads with what happened in plain words, with the status, route and request ID
+behind one "Technical details" disclosure; stat captions read in words ("1 of 50 branches allowed"), the setting's key
+in its title; footnotes are cut to one sentence or moved behind "About this page". Monospace stays for names, paths
+and numbers. The whole copy pass is Atelier's structural change S5, not filed yet.
+
+### 189. Console: one link style, and rows that open something look it (Atelier's review Q8)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/refs.js
+- Effort: S, one link style in `style.css` (link colour, underline on hover and focus) and a hover background with a chevron on rows that open something
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F11): in Contents tables (`markets`, `fx`, `rates`), the Governance page's object
+names and the merge preview's table names, the name is a link styled as plain monospace text, with no colour or
+underline until hover, while "1 commit" and "markets" elsewhere are underlined. Screenshots `04-catalog-lakehouse.png`,
+`07-ns-markets.png`, `20-governance-ana.png`.
+
+Done looks like: every link has one look (link colour, underline on hover and focus), and a row that opens something
+shows a hover background and a chevron. The console's dark theme keeps the contrast.
+
+### 190. Console: the maintenance headline says when the catalog's policy has maintenance off (Atelier's review Q9)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/queue.js catalog-server/src/main/resources/nuna/ui/table.js
+- Effort: S, the headline reads the catalog's maintenance policy, already on the Maintenance page, and says when every job type is off, with the worker's silence as a second line
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F9): in the demo, Overview and Maintenance lead with "17 tables not assessed yet:
+the maintenance worker has not reported", and a table's Health tab with "Not assessed yet". The policy table on the
+same Maintenance page shows `snapshot-expiry.enabled`, `orphan-removal.enabled`, `compaction.enabled` and
+`manifest-rewrite.enabled` all false, which is the real reason, and nothing says so. Screenshots
+`20-overview-ana.png`, `20-maintenance-ana.png`, `52-oscar-health.png`. Whether the demo should run the maintenance
+worker is a question about the demo, for Paul.
+
+Done looks like: when every job type is off in a catalog's policy, the headline says "Maintenance is off in
+lakehouse's policy: nothing will be compacted or expired" with a link to the policy, and "no worker has reported" is
+the second line; a table's tab says the same for its catalog. With any job on, the pages are as today.
+
+### 191. Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/index.html
+- Effort: S, the panel's name and one line of explanation, the panel folded while a catalog ref is read, and one icon per kind of ref across the console
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F8): reading `rates` through `@sample`, the header says "Reading @sample", while
+the right column's "Iceberg refs in this table" shows `main · current snapshot` with another icon, and the ref menu's
+`main` a third. A reader sees "main" while told they are not on main. Screenshots `12-rates-at-sample.png`,
+`11-ref-selector.png`.
+
+Done looks like: the panel reads "Engine-level refs in this table's metadata", with one line saying these are
+Iceberg's own branches and tags, set by engines, not the catalog's; it is folded while a catalog ref is read; each
+kind of ref (catalog branch, catalog tag, a table's Iceberg ref) has one icon everywhere.
+
+### 192. Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, two renames carried through the rail, tabs, headings, links and the browser tests that name them, and the rail's labels kept on the Catalog page
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F5): the rail's Health is server latency, Kafka and DR for operators, while a
+table's Health tab is its compaction need; the rail folds to six bare icons on the Catalog page (in the prototype too),
+the page people browse most. Screenshots `02-catalog-engines.png`, `04-catalog-lakehouse.png`, `09-table-rates.png`.
+Cutting a table's ten tabs to six is Atelier's structural change S2, not filed yet.
+
+Done looks like: the rail's Health is named Service, and a table's Health tab Maintenance; old links (`p=health`,
+`tab=health`) still open the right page; the rail shows its labels on every page at desktop widths.
+
+### 193. Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/auth.js catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/ConsoleTest.java
+- Effort: S, timeouts on the IdP's discovery and token calls with a Start again that clears a pending sign-in, `id_token_hint` on sign-out, one date format, empty columns dropped and phone cards labelled, and the keyboard hint hidden on touch
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F13, F14 and F16):
+- Sign-in and sign-out with a slow Keycloak: sign-out stops at Keycloak's "Do you want to log out?" page; when that
+  failed, Sign in brought the previous user back without a password; sign-in sat on "Loading…" for over a minute, and
+  once the tab held a half-finished sign-in (`nuna.oidc.pending`) every reload stuck until its storage was cleared.
+  `auth.js`'s discovery and token fetches have no timeout. `40-signout-confirm.png`, `50-oscar-health.png`,
+  `53-signin-stuck-loading.png`.
+- On first load the console once said "could not read its settings, /ui/config.json · Failed to fetch" with no retry.
+- The menu gives the session's end as "until 11/23/2026, 5:24:52 PM" where every other date reads "23 Nov"; on a phone
+  it says "Press / to go to a path, ? for keys". `32-phone-menu.png`.
+- A namespace header repeats its name ("markets markets"); Contents shows Format and Tonight's queue as "–" on every
+  namespace row, and through `@dev` Snapshots and Last commit too; phone cards drop the headers ("– – 16:31").
+  `07-ns-markets.png`, `17-reading-dev-catalog.png`, `33-phone-catalog.png`.
+
+Done looks like: the IdP calls time out (15 s) with "localhost:8180 is not answering" and Start again, which clears a
+pending sign-in; the settings fetch offers Try again; sign-out passes `id_token_hint` so the IdP asks nothing (keeping
+the ID token for it); dates read one way; the keyboard hint is not shown on touch; a dotted path shows only where it
+differs from the name; a column empty on every row is dropped; phone cards label each value.
+
+### 194. Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13)
+
+- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/style.css
+- Effort: S, an off-scale marker with its value for a share below the chart's scale
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F15, her own design): as `oscar`, all three latency rows on Health sit far below
+their objectives (78.00%, 1.44%, 88.91% within), but the dots are drawn on a 97–100% scale, so all three are pinned to
+the left edge and look alike. `52-oscar-health.png`.
+
+Done looks like: a share below the scale is drawn as an off-scale marker at its left edge with the value beside it
+("◀ 78%"); shares on the scale are as today.
 
 ## Done and dropped
 
