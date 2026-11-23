@@ -1,0 +1,16 @@
+Breaks: the route that takes a table or view out of refs reads no DR freeze first, so a frozen table leaves a tag during a reconcile whenever the store does not refuse it (D37; backlog 156).
+Module: catalog-server
+Test: RefRoutesTest#aRemovalIsRefusedUnderALegalHoldOrADrFreezeAndAuditedSo
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index f294f674..71b60167 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -855,7 +855,6 @@ class RefRoutes {
+         if (target.chain().held()) {
+             throw guard.held(request, target.audit(), REMOVE_OP, what + " is under a legal hold, so its refs keep it");
+         }
+-        guard.requireUnfrozen(request, target.chain(), target.audit(), REMOVE_OP, what);
+         for (int attempt = 1; ; attempt++) {
+             Instant now = now();
+             List<Ref> refs = leaving(target.catalog(), object, named, now);

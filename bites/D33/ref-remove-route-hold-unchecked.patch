@@ -1,0 +1,18 @@
+Breaks: the route that takes a table or view out of refs reads no legal hold first, so a table under a hold leaves a tag whenever the store does not refuse it (D24; backlog 156).
+Module: catalog-server
+Test: RefRoutesTest#aRemovalIsRefusedUnderALegalHoldOrADrFreezeAndAuditedSo
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index f294f674..1a97dc99 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -852,9 +852,6 @@ class RefRoutes {
+         Optional<List<String>> named = refNames(Management.body(body));
+         CatalogObject object = target.object().orElseThrow();
+         String what = String.join(".", target.audit().path());
+-        if (target.chain().held()) {
+-            throw guard.held(request, target.audit(), REMOVE_OP, what + " is under a legal hold, so its refs keep it");
+-        }
+         guard.requireUnfrozen(request, target.chain(), target.audit(), REMOVE_OP, what);
+         for (int attempt = 1; ; attempt++) {
+             Instant now = now();
