@@ -14,7 +14,9 @@ server, is in health-page.md (backlog 48). The Grafana dashboards and Prometheus
 in `deploy/grafana/`, and the series names they assume, are in dashboards-and-alerts.md (backlog 44). The DR
 replication watermark, its verifier in the worker, its routes and its lag, is in dr-watermark.md (item 28). Each
 night's maintenance, every job the worker ran with its slot, its counts and how it ended, kept a month for the
-console's overview and maintenance pages, is in maintenance-nights.md (backlog 126).
+console's overview and maintenance pages, is in maintenance-nights.md (backlog 126). The read that gives a
+namespace's tables with each one's format, snapshot count and last commit, from the pointer and the commit journal,
+for the console's Contents, is in namespace-tables.md (backlog 137).
 
 ## What is exported
 

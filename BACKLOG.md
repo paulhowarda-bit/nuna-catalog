@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**35 open:** 7 S, 13 M, 10 L, 5 XL.
+**34 open:** 7 S, 12 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -46,7 +46,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
 | [136](backlog/136.md) | S | A nightly or heavy run by hand does not hold other sessions' builds | two scripts take and drop one lock file, and one CLAUDE.md line | 2026-11-22 |
-| [137](backlog/137.md) | M | Console: each table's snapshots and last commit in a namespace's Contents | one listing route over what the catalog keeps of each table's current metadata, filtered as Contents is, then two columns in the console, with tests | 2026-11-22 |
 
 ## Open items in full
 
@@ -1626,37 +1625,6 @@ theirs, and leave a run that already holds it alone; `overnight.sh` keeps workin
 dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too. Checked by running `./nightly.sh
 --test-dry-run` and seeing the file appear and go.
 
-### 137. Console: each table's snapshots and last commit in a namespace's Contents
-
-- Added: 2026-11-22 by agent on item 124
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/resources/nuna/ui/browse.js, catalog-server/src/test/java/nuna/catalog/server/governance/, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/observability/
-- Effort: M, one listing route over what the catalog keeps of each table's current metadata, filtered as Contents is, then two columns in the console, with tests
-
-The redesign's namespace **Contents** (D45; `docs/design/console/prototype.html`, the namespace page;
-`docs/design/console/wireframes.html`, browse note 5) gives each table row its format, its snapshot count and its last
-commit. The console's Contents (`catalog-server/src/main/resources/nuna/ui/browse.js`, `contentsTable`) has Name,
-Kind, Tonight's queue and Governance, and no snapshot or commit column: item 124 left it out, since no route gives
-them for a listing (`browse.js`, header comment).
-
-Evidence:
-- The wireframe's note says the columns come from each table's metadata through the Iceberg REST load, with
-  `X-Iceberg-Access-Delegation: none`. That is one `loadTable` per row, and every load is audited
-  (`table.js`, "every load is audited"): a namespace of 300 tables would write 300 audit records each time someone
-  opens it, and read 300 metadata files from the object store.
-- The routes Contents uses (`GET /v1/{prefix}/namespaces/{ns}/tables`, the governance marks, the queue) give names and
-  marks only. `GET /management/v1/maintenance/estate` (item 127) gives each table's assessment, data files among
-  them, but not its snapshots or last commit.
-
-What done looks like:
-- A read that lists, for the tables of one namespace the caller may describe, each table's format version, its
-  snapshot count and the time and committer of its last commit, from what the catalog keeps (its pointer and commit
-  journal), paged, with no object-store read and no per-table audit record. Tables the caller may not describe are
-  left out, as Contents leaves them out today.
-- Contents shows Format, Snapshots and Last commit for each table row, as the prototype draws them.
-- A fast route test (store double) for what is listed and what is left out; a browser test (`heavy`) for the columns;
-  bites for a table listed to a caller who may not describe it and for a page without a bound.
-- docs/observability/ (or the route's own doc) describes the read.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1763,3 +1731,4 @@ What done looks like:
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
