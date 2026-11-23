@@ -1,0 +1,17 @@
+Breaks: a purge claim the store finds under a legal hold is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: FrozenLifecycleRefusalTest#aPurgeClaimTheStoreFindsHeldIsAuditedAsADenial
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
+index cca1974..0deeace 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java
+@@ -92,7 +92,7 @@ class ManagementGuard {
+ 
+     /** A refusal under a legal hold, audited as a denial with reason {@code legal_hold} (D18, D24). */
+     AccessDenied held(Request request, nuna.catalog.audit.Securable target, String operation, String message) {
+-        return denials.refuse(request.actor(), operation, target, null, "legal_hold", message);
++        return new AccessDenied(message);
+     }
+ 
+     /**

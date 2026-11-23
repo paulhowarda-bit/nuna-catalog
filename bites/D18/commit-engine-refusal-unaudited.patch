@@ -1,0 +1,18 @@
+Breaks: the routes answer the commit engine's legal-hold and DR-freeze refusals 403 but audit none of them, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GovernanceRefusalTest#aCommitUnderAFreezeIsAuditedAsADenial+aSnapshotRemovalFromAHeldTableIsAuditedAsADenial+aTransactionUnderAFreezeIsAuditedNamingTheTableRefused+aCreateInAFrozenNamespaceIsAuditedNamingTheTableItWouldHaveMade+anUnregisterTheStoreFindsFrozenIsAuditedAsADenial+anUnregisterTheStoreFindsHeldIsAuditedAsADenial
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+index 294faef..8fe4fb4 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+@@ -264,9 +264,6 @@ class Guard {
+     void refused(RequestContext request, CatalogRecord catalog, Operation operation,
+                  Function<CatalogObject, List<String>> path, CommitReply reply) {
+         if (reply instanceof CommitReply.Failure failure && failure.refusal().isPresent()) {
+-            CommitReply.Refusal refusal = failure.refusal().get();
+-            refuse(request, catalog, refusal.object(), path.apply(refusal.object()), operation, refusal.reason(),
+-                    failure.message());
+         }
+     }
+ 
