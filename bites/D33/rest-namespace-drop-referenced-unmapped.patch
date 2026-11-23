@@ -1,0 +1,18 @@
+Breaks: the REST namespace drop has no answer for a store that refuses it because a ref names a table or view in it, so the caller gets a 500 instead of 409 NamespaceNotEmptyException.
+Module: catalog-server
+Test: GovernanceRefusalTest#aNamespaceDropARefStillNeedsIsNotEmpty
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java
+index 249ac1b..4a72895 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java
+@@ -196,9 +196,6 @@ class NamespaceRoutes {
+                         case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_EMPTY ->
+                                 Reply.error(409, "NamespaceNotEmptyException",
+                                         "Namespace " + Http.dotted(levels) + " is not empty");
+-                        case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.REFERENCED ->
+-                                Reply.error(409, "NamespaceNotEmptyException", "Namespace " + Http.dotted(levels)
+-                                        + " is not empty: a branch or tag names a table or view in it");
+                         case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
+                                 throw guard.refuse(request, catalog, record, levels, Guard.DROP_NAMESPACE, "legal_hold",
+                                         "Namespace " + Http.dotted(levels)
