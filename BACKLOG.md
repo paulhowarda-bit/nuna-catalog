@@ -30,7 +30,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [107](backlog/107.md) | L | Merge a branch into main, per table, in one bounded transaction (item 26) | the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106 | 2026-11-20 |
 | [108](backlog/108.md) | L | Cleanup protects every ref, and the worker warns of and ends expired branches (item 26) | the orphan scan and expiry across several metadata files per table, the recheck of files recorded before a ref was made, and the expiry section, with heavy tests on Silo; waits on items 105 and 106 | 2026-11-20 |
 | [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
-| [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109 | 2026-11-20 |
+| [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new step, one more Trino catalog and the README's walk, checked by hand in the running demo; built, the check waits on Paul letting Docker be used for it | 2026-11-20 |
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
@@ -1777,7 +1777,7 @@ The coordinator's review of the UI and the metadata log, fixed on this branch:
 
 - Added: 2026-11-20 by agent on item 26
 - Touches: demo/
-- Effort: M, the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109
+- Effort: M, the lake writer's new step, one more Trino catalog and the README's walk, checked by hand in the running demo; built, the check waits on Paul letting Docker be used for it
 
 Part of item 26 (D33); its design section says why (choice 16).
 
@@ -1791,6 +1791,89 @@ when main moved too.
 
 Done when `up` (run only when Paul lets Docker be used for it) leaves the tag and the branch, Trino reads both, and
 the README's walk works as written; checked by hand and recorded in `status/`. Waits on items 107 and 109.
+
+## Built (2026-11-23, branch `worktree-agent-a118675ab9a511b1a`): not yet checked in the running demo
+
+Items 107 and 109, which this one waited on, landed the same day (7990cf7, 7d7609b7).
+
+- `demo/demo.sh up`, new step `refs`, once per lake, after the seed and before the brokerage world's bootstrap:
+  1. Through the management API as `ana`, whose `demo-analysts` hold `create` on `lakehouse`, the right refs need:
+     branch `dev`, made from main (`POST /management/v1/catalogs/lakehouse/refs`), unless it exists.
+  2. While `dev` has no changes of its own (its read lists `"changed":[]`), the lake writer's Job,
+     `LakeWriter dev`, as user `lake`, commits the next day, 2026-11-11, through the warehouse `lakehouse@dev`:
+     trades 9 and 10 in `markets.equities.eu.xetra.trades` and EURUSD and GBPUSD in `markets.fx.rates`, one commit
+     each. Main has neither.
+  3. Tag `sample`, made from main as `ana`: the sample data. Made last, it marks the step done; `up` does nothing
+     more while it stands, so a `dev` that was merged or deleted is not made again.
+  - Skipped while the CDC leg runs: the lake writer's Job does not fit beside it, as the world's bootstrap does not.
+  - A failure never stops `up` (the coordinator, 2026-11-23: the overnight run ends with `up`, the demo is shared,
+    and a failing step before the bootstrap would leave it without Trino and the brokerage world, as the grants
+    failure did the night before). `refs` returns at its first failure, so the tag that marks it done is never made
+    after one, and `up` says the refs were not made and goes on; the next `up` tries again.
+  - `print_access` names the refs and Trino's catalog.
+- Trino: catalog `lakehouse_dev` (`demo/k8s/trino.yaml`), `lakehouse.properties` with
+  `iceberg.rest-catalog.warehouse=lakehouse@dev`, in the same Trino. Trino asks for a catalog's config only at its
+  first query (`TrinoIcebergRestCatalogFactory.create`, read in Trino 484's source), so it starts whether or not `dev`
+  exists, and the prefix is the branch's name, so a new branch named `dev` is read again without a restart.
+- `demo/README.md`, new section "Branches and tags of the catalog": what `up` makes and as whom, how catalog refs
+  differ from the tables' own Iceberg tags, and the walk of D33's uses, linked to `docs/refs.md` (item 112):
+  1. read as of the tag: the console's **Read** on `@sample`, and `curl …/v1/lakehouse@sample/namespaces`;
+  2. change two tables on `dev`: Trino queries on `lakehouse` and `lakehouse_dev` side by side, and two INSERTs on
+     `lakehouse_dev`;
+  3. preview and merge in the console (**Merge…**, **Merge @dev into main**, **Merge into main**), `stella`'s view
+     without the button, the same through the API, and the tag read again after the merge;
+  4. the conflict: `dev` made again in the console, both tables changed on it and the rates on main, the 409 naming
+     `markets.fx.rates`, and the delete.
+  - `ana`'s row in the people table, "What is loaded", the Trino section and the opening paragraph name the refs.
+
+Checked without Docker:
+- `bash -n demo/demo.sh`.
+- `demo/LakeWriter.java` compiled with JDK 25 against the libraries `up` gives it (`unzip -j` of the change-feed
+  connector jar's `lib/`, as `build` does).
+- A copy of it on Iceberg's `InMemoryCatalog` (no branch there) ran `seed` then `dev` and read the rows back: trades
+  1, 2, 4 to 10 in 7 snapshots, the rates of 2026-11-09 to 2026-11-11 in 4. So the walk's "trades 1 to 8 (3 was
+  deleted)" and "three snapshots" on the tag hold for the sample data.
+- `trino.yaml`'s new catalog file is `lakehouse.properties` with the one line changed; nothing parses it here.
+
+### Choices made (Paul may overrule)
+
+1. **The tag has no Trino catalog.** The design (choice 16) gives Trino one more catalog, on `lakehouse@dev`; an
+   engine's catalog configuration names one ref (`docs/refs.md`), so reading `@sample` in Trino would need a third,
+   `lakehouse_sample`. The walk reads the tag in the console and through the REST API instead. So in "Done when",
+   "Trino reads both" holds for main and the branch. A third catalog is a copy of `lakehouse_dev.properties` with
+   `lakehouse@sample` and one more line in the volume's items.
+2. **The tag is named `sample`, not `eod-…`**, so it is not taken for the Iceberg tags `eod-<day>` inside tables
+   (the brokerage world's, and the trades table's `eod-2026-11-09`).
+3. **The branch's change is the next day's data in two tables, trades (v2) and rates (v3)**: a release of two tables
+   at once, D33's first use. Not the brokerage world's tables: main commits to them every 15 seconds and tags them
+   at each day's end, both changes on main, so a branch that changed one would always conflict. Not
+   `reference.countries`: its DR freeze refuses the merge (D33 as amended). The trades table's legal hold refuses
+   only removing snapshots, so appends on the branch and the merge pass it.
+4. **Refs are made as `ana`, commits on `dev` as `lake`.** `ana` is the person the walk signs in as and holds
+   `create`; the lake writer stands in for another engine, as it does for the seed. The console shows "by ana".
+5. **Once per lake, marked by the tag.** A step that stopped part way is finished by the next `up`: `dev` is made if
+   missing, and its changes committed while it has none. `up` never makes `dev` again while `@sample` stands, so a
+   merge in the walk is not undone and its rows never land twice.
+6. **Before the brokerage world's bootstrap**, so a new lake's tag holds the sample data alone and reading through it
+   shows names as at its point: no `brokerage`.
+7. **The conflict is made with a Trino INSERT on main**, not `demo/demo.sh rate`, which stops Kafka Connect and the
+   generator for its Job. The README notes that `rate` makes the same conflict.
+8. **The brokerage world's tags stay Iceberg's own, per table.** They are not catalog refs: `IcebergLake.endOfDay`
+   tags each table that changed with `manageSnapshots().createTag("eod-<day>")`. The README says how they differ from
+   `@sample` and links `docs/refs.md`'s section on the two. No catalog tag per business day: a day is 10 minutes, so
+   144 a day would reach `nuna.refs.max-tags` (1000) within a week, and `demo-datagen/` is outside this item.
+
+### Left
+
+- **The check by hand in the running demo**, when Paul lets Docker be used for it (`up` was not run, by
+  instruction: another team works against the stack). Then record it in `status/`. What only it shows:
+  - `up` makes `dev` and `sample` as `ana`, and the lake writer commits through `lakehouse@dev` with vended
+    credentials;
+  - Trino's `lakehouse_dev` reads the branch, and its INSERTs land on the branch only. Trino's writes to the v3
+    rates table rest on `build-plan.md`'s F9 ("Trino 484 … read and write v3"), never tried in this demo;
+  - the walk's console words, the 409 naming `markets.fx.rates`, Trino's failures on `lakehouse_dev` after the merge
+    (the catalog's 404) and after a create (400), and that `lakehouse_dev` reads a new `dev` without a restart;
+  - the namespaces listed through `@sample` on a new lake (`markets` and `reference`).
 
 ### 111. After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3)
 
