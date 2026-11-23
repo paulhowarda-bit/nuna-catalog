@@ -1,8 +1,8 @@
 // The tabs every catalog object shares, each one its own render function on its own route: governance (with
 // holds, a classification and a DR freeze), grants (every grant that reaches the object, made and revoked here,
 // and who may use it), the audit trail, and the dialogs those open; and the catalog's holds, freezes and regulated
-// areas as marks on the tree and in Contents (item 128). Waiting on another item, and left out until it lands: the
-// catalog-wide audit feed with its hash chain (125).
+// areas as marks on the tree and in Contents (item 128). The catalog-wide audit feed with its hash chain is the Audit
+// page (audit.js, item 125).
 
 import * as api from './api.js';
 import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,

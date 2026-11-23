@@ -20,9 +20,10 @@ import org.junit.jupiter.api.Test;
 /**
  * A rolling upgrade across schema changes (M8). Two servers of the previous release, whose PostgreSQL schema
  * stops at V8 (the worker's reports of table health and scans are kept), take traffic; servers of this release
- * replace them one at a time, the first of them migrating to V12 (V9: each table's DR watermark is kept; V10: a
- * storage profile records its KMS key; V11: refs and their cuts; V12: the maintenance nights' jobs) while previous-release servers still commit. Each server leaves only after the balancer has drained it. No request fails and no commit
- * is lost or doubled.
+ * replace them one at a time, the first of them migrating to V13 (V9: each table's DR watermark is kept; V10: a
+ * storage profile records its KMS key; V11: refs and their cuts; V12: the maintenance nights' jobs; V13: maintenance
+ * on request) while previous-release servers still commit. Each server leaves only after the balancer has drained it.
+ * No request fails and no commit is lost or doubled.
  */
 @Tag("overnight")
 class RollingUpgradeTest {
@@ -48,7 +49,7 @@ class RollingUpgradeTest {
     }
 
     @Test
-    void upgradingOneServerAtATimeAcrossV9ToV12LosesNothing() throws Exception {
+    void upgradingOneServerAtATimeAcrossV9ToV13LosesNothing() throws Exception {
         String url = stack.postgres.serverUrl();
         ServerProcess old1 = stack.server("upgrade-old-1", previous, url);
         stack.grantWriters();
@@ -87,7 +88,7 @@ class RollingUpgradeTest {
                 beforeUpgrade = ledger.acknowledged.size();
 
                 new1 = stack.server("upgrade-new-1");
-                assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("12");
+                assertThat(schemaVersion()).as("the schema once a server of this release started").isEqualTo("13");
                 catalog.add(new1.uri());
                 ServerProcess.pause(Duration.ofSeconds(5));
                 catalog.drain(old1.uri());
