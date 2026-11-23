@@ -209,6 +209,13 @@ function overviewTab(target, t) {
   load(gov, async () => h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'governance')}, 'Governance')),
     await governanceSummary(target)));
   const refs = Object.entries(m.refs || {});
+  const by = h('span', {class: 'fine', id: 'current-by'});
+  if (sn) {
+    snapshotCommits(target, [sn['snapshot-id']]).then(found => {
+      const e = found.get(String(sn['snapshot-id']));
+      if (e) fill(by, h('br'), 'by ', byWords(e));
+    }, () => {});
+  }
   return h('div', {class: 'grid-21', id: 'overview-tab'},
     h('div', {class: 'stack'},
       h('div', {class: 'kpis'},
@@ -221,7 +228,7 @@ function overviewTab(target, t) {
           schemas.length > 1 ? plural(schemas.length - 1, 'change') : 'as created')),
       h('div', {class: 'panel'}, h('h2', null, 'Current state'), facts([
         ['Current snapshot', sn ? [code(String(sn['snapshot-id'])), ` · ${sum.operation || '–'} · ${when(sn['timestamp-ms'])}`,
-          sum['engine-name'] ? [h('br'), h('span', {class: 'fine'}, `${sum['engine-name']} ${sum['engine-version'] || ''}`.trim())] : null]
+          sum['engine-name'] ? [h('br'), h('span', {class: 'fine'}, `${sum['engine-name']} ${sum['engine-version'] || ''}`.trim())] : null, by]
           : muted('none: the table has no data yet')],
         ['Table UUID', code(m['table-uuid'] || '')],
         ['Location', code(m.location || '')],
@@ -467,6 +474,7 @@ function snapshotsTab(target, t) {
     return h('div', {class: 'empty'}, h('h3', null, 'No snapshot yet'), h('p', null, 'The table was created and has had no commit.'));
   }
   const refs = refsBySnapshot(m);
+  let commits = new Map();
   let shown = Math.min(10, list.length);
   let current = currentOf(m) || list[0];
   let whole = false;
@@ -517,6 +525,7 @@ function snapshotsTab(target, t) {
       h('td', {class: 'num'}, signed(sum['added-records'], sum['deleted-records'])),
       h('td', {class: 'num'}, opOf(sn) === 'replace' ? `${fmt(Number(sum['deleted-data-files']) || 0)} → ${fmt(Number(sum['added-data-files']) || 0)}`
         : Number(sum['added-delete-files']) ? `+${fmt(Number(sum['added-delete-files']))} delete` : signed(sum['added-data-files'], sum['deleted-data-files'])),
+      h('td', {class: 'by'}, commits.has(String(id)) ? byWords(commits.get(String(id))) : null),
       h('td', null, (refs.get(id) || []).flatMap(([name, type], i) => [i ? ' ' : '', refBadge(name, type)])));
     tr.addEventListener('click', () => select(sn));
     return tr;
@@ -545,13 +554,20 @@ function snapshotsTab(target, t) {
       h('p', {class: 'fine'}, 'A tagged snapshot stays as long as its tag keeps it.'));
   });
   fillRows();
+  snapshotCommits(target, list.map(sn => sn['snapshot-id'])).then(found => {
+    commits = found;
+    for (const tr of $$('tr', tbody)) {
+      const e = commits.get(tr.dataset.id);
+      if (e) fill($('td.by', tr), byWords(e));
+    }
+  }, () => {});
   const first = list[list.length - 1]['timestamp-ms'];
   const last = list[0]['timestamp-ms'];
   const box = h('div', {class: 'stack'},
     panel('History and Iceberg refs', `${plural(list.length, 'snapshot')} · ${dayOf(first) === dayOf(last) ? dayOf(last) : `${dayOf(first)} to ${dayOf(last)}`}`,
       lanes(target, list, m, select), h('p', {class: 'fine only-sm'}, 'Opens at the newest snapshot; older ones are to the left.')),
     h('div', {class: 'grid-21'},
-      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'Iceberg refs'], tbody), more),
+      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'By', 'Iceberg refs'], tbody), more),
       h('div', {class: 'stack'}, h('div', {class: 'panel', id: 'selected-snapshot'}, h('h2', null, 'Selected snapshot ', meta), raw,
         h('div', {class: 'refusal-acts'}, sql, wholeB)), expiry)));
   select(current);
@@ -616,6 +632,30 @@ function changeWords(updates, version) {
 }
 
 /** Who made a commit: the principal, the person an engine acted for, and the engine. */
+/**
+ * The journal's commit that added each snapshot asked for (backlog 186), by snapshot id: the metadata log is read a page
+ * at a time, newest first, until every one is found or 200 commits are read. A snapshot whose commit the journal no longer
+ * holds, or lies further back, is left out, and its By is blank.
+ */
+async function snapshotCommits(target, ids) {
+  const want = new Set(ids.map(String));
+  const found = new Map();
+  const id = (await api.governance(target)).target.id;
+  let token = null;
+  for (let read = 0; read < 8 && want.size; read++) {
+    const answer = await api.metadataLog(target.catalog, id, token, target.ref);
+    for (const e of answer.journal || []) {
+      for (const u of Array.isArray(e.updates) ? e.updates : []) {
+        const added = u.action === 'add-snapshot' && u.snapshot ? String(u.snapshot['snapshot-id']) : null;
+        if (added && want.delete(added)) found.set(added, e);
+      }
+    }
+    token = answer['next-page-token'];
+    if (!token) break;
+  }
+  return found;
+}
+
 function byWords(e) {
   return [h('b', null, e.principal || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
     e.engine ? [' ', muted('via ' + e.engine)] : null];

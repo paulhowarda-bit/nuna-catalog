@@ -285,8 +285,9 @@ class ConsoleBrowserTest {
 
     /**
      * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
-     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log. Each child
-     * namespace gets its totals over the tables beneath it (backlog 147).
+     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log, "12:49 by lake".
+     * Each child namespace gets its totals over the tables beneath it (backlog 147), its newest commit "12:49 in
+     * rates" (backlog 186).
      */
     @Test
     void contentsShowEachTablesFormatSnapshotsAndLastCommit() {
@@ -308,7 +309,7 @@ class ConsoleBrowserTest {
         assertThat(contentsCell(trades, 3)).isEqualTo("v2");
         assertThat(contentsCell(trades, 6)).isEqualTo("3");
         assertThat(textContent(trades.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
-        assertThat(textContent(trades.findElement(By.cssSelector("td.last")))).endsWith("· " + committer);
+        assertThat(textContent(trades.findElement(By.cssSelector("td.last")))).endsWith(" by " + committer);
         WebElement positions = contentsRow("positions");
         assertThat(contentsCell(positions, 3)).isEqualTo("v3");
         assertThat(contentsCell(positions, 6)).as("created, never appended to").isEqualTo("0");
@@ -331,7 +332,7 @@ class ConsoleBrowserTest {
         assertThat(contentsCell(euRow, 3)).isEqualTo("–");
         assertThat(contentsCell(euRow, 6)).isEqualTo("3");
         assertThat(textContent(euRow.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
-        assertThat(textContent(euRow.findElement(By.cssSelector("td.last")))).endsWith("· " + newest.getFirst());
+        assertThat(textContent(euRow.findElement(By.cssSelector("td.last")))).endsWith(" in " + newest.getFirst());
         WebElement daily = contentsRow("daily");
         assertThat(List.of(contentsCell(daily, 3), contentsCell(daily, 6), contentsCell(daily, 7))).containsOnly("–");
 
@@ -341,7 +342,19 @@ class ConsoleBrowserTest {
         WebElement topRow = contentsRow(top);
         assertThat(contentsCell(topRow, 1)).isEqualTo(top + " · 3 tables");
         assertThat(textContent(topRow.findElement(By.cssSelector("td.last"))))
-                .matches(".+ · (equities\\.eu\\.trades|equities\\.eu\\.positions|ledger\\.accounts)");
+                .matches(".+ in (equities\\.eu\\.trades|equities\\.eu\\.positions|ledger\\.accounts)");
+
+        // Who made the current snapshot is on the table's Overview, and each snapshot's author on Snapshots, paired
+        // with its commit in the metadata log (Atelier's review, F6; backlog 186).
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        assertThat(textContent(browser.await(By.cssSelector("#overview-tab #current-by b")))).isEqualTo(committer);
+        assertThat(textContent(driver.findElement(By.id("current-by")))).startsWith("by " + committer);
+        browser.open("/ui/#" + at("table", eu, "trades", "snapshots"));
+        browser.await(By.cssSelector("table.snaps td.by b"));
+        assertThat(driver.findElements(By.cssSelector("table.snaps thead th"))).extracting(ConsoleBrowser::textContent)
+                .contains("By");
+        assertThat(driver.findElements(By.cssSelector("table.snaps tbody td.by b"))).hasSize(3)
+                .extracting(ConsoleBrowser::textContent).containsOnly(committer);
     }
 
     @Test
@@ -393,9 +406,9 @@ class ConsoleBrowserTest {
                 .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
         assertThat(snapshots.get(0).getDomAttribute("class")).contains("is-cur");
         assertThat(cell(snapshots.get(0), 3)).startsWith("append");
-        assertThat(cell(snapshots.get(0), 6)).isEqualTo("main");
-        assertThat(cell(snapshots.get(1), 6)).isEqualTo("review");
-        assertThat(cell(snapshots.get(2), 6)).isEqualTo("close-day-1");
+        assertThat(cell(snapshots.get(0), 7)).isEqualTo("main");
+        assertThat(cell(snapshots.get(1), 7)).isEqualTo("review");
+        assertThat(cell(snapshots.get(2), 7)).isEqualTo("close-day-1");
         assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]"))).hasSize(3);
         snapshots.get(2).findElement(By.cssSelector("button.row-pick")).click();
         browser.await("the oldest snapshot is not selected", d -> d.findElement(

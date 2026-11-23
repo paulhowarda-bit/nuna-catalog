@@ -128,18 +128,18 @@ function onRefCell(x, path, isNamespace) {
     : h('span', {class: 'on-ref muted'}, 'as at the point');
 }
 
-/** A table's last commit: when, then who; an engine acting for someone names them both. */
+/** A table's last commit: when, then by whom; an engine acting for someone names them both (12:49 by lake). */
 function lastCommit(c) {
   if (!c) return muted('–');
   const who = c['end-user'] ? `${c['end-user']} via ${c.principal}` : c.principal;
-  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ', muted('· ' + who)];
+  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ', muted('by ' + who)];
 }
 
-/** A namespace's newest commit beneath it: when, then the table, by its path below the namespace. */
+/** A namespace's newest commit beneath it: when, then in which table, by its path below the namespace (12:49 in rates). */
 function newestCommit(c) {
   if (!c) return muted('–');
   return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ',
-    muted('· ' + c.table.join('.'))];
+    muted('in ' + c.table.join('.'))];
 }
 
 /** A namespace's totals, its cells: a count after its name, its snapshots, its newest commit. A cut-short walk adds +. */
