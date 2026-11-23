@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The overnight run: the heavy build, the Ceph leg, the nightly, then as many bites as fit before the deadline, on
-# main's tip, in a clone of its own. Windows Task Scheduler starts it at midnight (overnight-task.ps1 registers
+# main's tip, in a worktree of its own. Windows Task Scheduler starts it at midnight (overnight-task.ps1 registers
 # the task); a Claude task reads runs/<date>/summary.md at 7:00, records the run in status/ and
 # adds a backlog item for each failure (Paul, 2026-11-14).
 #
@@ -10,7 +10,7 @@
 #                            runs, and nothing is recorded as tested
 #
 # Everything lives in $NUNA_OVERNIGHT_HOME (default: .overnight in the main checkout, which .gitignore covers):
-#   clone/           a clone of this repo, reset to main's tip at each run; the bites patch its files
+#   worktree/        a worktree of this repo, detached at main's tip each run and locked; the bites patch its files
 #   runs/<date>/     summary.md, one log per leg, the logs of bites that did not bite, and for each leg that did
 #                    not pass, <leg>-results/: its test result files and what docker info said just after
 #   last-tested      the commit the last run tested (a dry run records nothing)
@@ -28,6 +28,15 @@
 #      check failed): every bite would be SETUP.
 # With -Pheavy, -Pnightly and -Pbites each test task has a timeout (build.gradle.kts), so a hung test fails its
 # module and the leg, or the bite, goes on.
+#   5. the agents land (backlog 165). After each leg, every module with a failing or hung test that has no agent yet
+#      gets one: a headless Claude session (`claude -p`, named overnight-fix-<date>-<module>) in its own worktree and
+#      branch from main, which claims or adds the backlog item, finds the cause and commits a fix while the run goes
+#      on, running no build. Once the run has ended and let go of its lock, each agent's session is resumed in turn
+#      to merge main, run the fast build and land. At most $NUNA_OVERNIGHT_AGENTS agents a night (default 3), up to
+#      $NUNA_OVERNIGHT_AGENT_BUDGET dollars a session (default 10); the run waits for them until
+#      $NUNA_OVERNIGHT_AGENTS_UNTIL (default 07:45, inside the task's 8 hours) and leaves any still going. What each did
+#      is in runs/<date>/agents.md. No agent starts when the claude CLI is not signed in (claude auth login). The
+#      next run removes an agent's worktree and branch once its work is on main.
 # NUNA_OVERNIGHT_LEGS picks legs by name (default "heavy ceph nightly bites"); with heavy left out, the bites run.
 # Nothing starts after $NUNA_OVERNIGHT_DEADLINE (default 06:30), and a leg still running then is stopped, so
 # the day starts with Docker free. Each leg, and the bites, start once the containers of the leg before are gone,
@@ -50,6 +59,10 @@ main() {
     demo_ns=${NUNA_DEMO_NAMESPACE:-nuna-demo}
     legs=${NUNA_OVERNIGHT_LEGS:-heavy ceph nightly bites}
     demo_sh=${NUNA_DEMO_SCRIPT:-$main_checkout/demo/demo.sh}
+    agents_max=${NUNA_OVERNIGHT_AGENTS:-3}
+    agent_budget=${NUNA_OVERNIGHT_AGENT_BUDGET:-10}
+    agents_until_at=${NUNA_OVERNIGHT_AGENTS_UNTIL:-07:45}
+    claude_cli=${NUNA_OVERNIGHT_CLAUDE:-claude}
     # How long a test JVM's Testcontainers keeps asking Docker before it gives up, for good: every later test in
     # that JVM fails at once. Its default, 10 s, ran out in the Ceph leg of 2026-11-15 (backlog 32).
     export TESTCONTAINERS_CLIENT_PING_TIMEOUT=${TESTCONTAINERS_CLIENT_PING_TIMEOUT:-60}
@@ -65,7 +78,7 @@ main() {
     done
 
     mkdir -p "$home/runs"
-    clone=$home/clone
+    tree=$home/worktree
     day=$(date +%F)
     runs=$home/runs/$day
     $dry && runs=$runs-dry
@@ -75,6 +88,8 @@ main() {
     started=$(date +%s)
     deadline=$(date -d "$deadline_at" +%s)
     [ "$deadline" -gt "$started" ] || deadline=$(date -d "tomorrow $deadline_at" +%s)
+    agents_until=$(date -d "$agents_until_at" +%s)
+    [ "$agents_until" -gt "$started" ] || agents_until=$(date -d "tomorrow $agents_until_at" +%s)
 
     say() { echo "$(date +%T) $*" | tee -a "$runs/overnight.log"; }
     clock() { date -d "@$1" +%H:%M; }
@@ -130,22 +145,46 @@ main() {
         fi
     fi
 
-    # --- Docker, and the clone at main's tip --------------------------------------------------------------------
+    # --- Docker, and the worktree at main's tip -----------------------------------------------------------------
     for try in $(seq 1 20); do
         docker info >/dev/null 2>&1 && kubectl --context "$context" get nodes >/dev/null 2>&1 && break
         [ "$try" -eq 20 ] && { say "Docker or its Kubernetes is not running"; echo "# Overnight run $day: FAILED, Docker or its Kubernetes is not running" >"$summary"; exit 1; }
         sleep 30
     done
 
-    if [ ! -d "$clone/.git" ]; then
-        git clone --quiet "$repo" "$clone" || { say "could not clone $repo"; exit 1; }
+    # Test reports nest deep enough to pass Windows' 260-character limit; without long paths git clean cannot remove
+    # them. Set for every git command of the run, the bites' included, not in the config every worktree shares.
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.longpaths GIT_CONFIG_VALUE_0=true
+    # A worktree like every session's (Paul, 2026-11-23, backlog 166), but detached, so it holds no branch, and locked,
+    # so git worktree prune or remove leave it alone. Forced twice: a locked worktree whose folder is gone stays
+    # registered, and a plain add refuses its path.
+    if [ ! -e "$tree/.git" ]; then
+        git -C "$repo" worktree add --quiet --force --force --detach "$tree" "$target" >>"$runs/overnight.log" 2>&1 ||
+            { say "could not make the worktree $tree"; exit 1; }
     fi
-    # Test reports nest deep enough to pass Windows' 260-character limit; without this git clean cannot remove them.
-    git -C "$clone" config core.longpaths true
-    git -C "$clone" fetch --quiet "$repo" main && target=$(git -C "$clone" rev-parse FETCH_HEAD) &&
-        git -C "$clone" checkout --quiet --force --detach "$target" && git -C "$clone" clean -q -fdx ||
-        { say "could not reset $clone to main"; exit 1; }
-    say "testing $(git -C "$clone" log -1 --format='%h %s' "$target")"
+    git -C "$repo" worktree lock --reason "the overnight run's (overnight.sh)" "$tree" 2>/dev/null
+    git -C "$tree" checkout --quiet --force --detach "$target" && git -C "$tree" clean -q -fdx ||
+        { say "could not reset $tree to main"; exit 1; }
+    say "testing $(git -C "$tree" log -1 --format='%h %s' "$target")"
+
+    # --- the worktrees of earlier nights' agents whose work is on main ------------------------------------------
+    # Nothing else removes them: the run that started an agent has ended before the agent's landing could be judged.
+    pruned=""
+    kept=""
+    if ! $dry; then
+        for wt in "$main_checkout"/.claude/worktrees/overnight-fix-*; do
+            [ -d "$wt" ] || continue
+            name=$(basename "$wt")
+            if [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] &&
+                ! git -C "$main_checkout" cherry main "worktree-$name" 2>/dev/null | grep -q '^+' &&
+                git -C "$main_checkout" worktree remove "$wt" 2>/dev/null; then
+                git -C "$main_checkout" branch -q -D "worktree-$name" 2>/dev/null
+                pruned+=" $name"
+            else
+                kept+=" $name"
+            fi
+        done
+    fi
 
     # --- the demo out of the way --------------------------------------------------------------------------------
     # Down now, rebuilt at the end.
@@ -170,9 +209,10 @@ main() {
     failed_classes=$runs/.failed-classes
     rm -f "$failed_classes"
 
-    # The failing tests in the result files written since marker $1: "Class#method: message".
+    # The failing tests in the result files written since marker $1, under folder $2 (default: the whole worktree):
+    # "Class#method: message".
     failures_since() {
-        find "$clone" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
+        find "${2:-$tree}" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
             xargs -0 -r awk '
                 /<testcase / { match($0, /name="[^"]*"/); name = substr($0, RSTART + 6, RLENGTH - 7)
                                match($0, /classname="[^"]*"/); cls = substr($0, RSTART + 11, RLENGTH - 12) }
@@ -185,10 +225,10 @@ main() {
     # The test classes with a failing test in the result files written since marker $1: "module class", the class
     # fully qualified (a nested one as Outer$Inner).
     failed_classes_since() {
-        find "$clone" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
-            xargs -0 -r awk -v clone="$clone/" '
+        find "$tree" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
+            xargs -0 -r awk -v tree="$tree/" '
                 /<testsuite / && (/ failures="[1-9]/ || / errors="[1-9]/) {
-                    module = substr(FILENAME, length(clone) + 1); sub(/\/.*/, "", module)
+                    module = substr(FILENAME, length(tree) + 1); sub(/\/.*/, "", module)
                     match($0, /name="[^"]*"/); print module " " substr($0, RSTART + 6, RLENGTH - 7) }'
     }
 
@@ -201,12 +241,12 @@ main() {
             END { exit !found }' "$failed_classes"
     }
 
-    # Keeps the result files written since marker $1 in folder $2, at their paths in the clone, with docker info.
-    # The bites run the same tests later and overwrite them in the clone, and each holds its test's output: the
+    # Keeps the result files written since marker $1 in folder $2, at their paths in the worktree, with docker info.
+    # The bites run the same tests later and overwrite them in the worktree, and each holds its test's output: the
     # Ceph leg of 2026-11-15 found no Docker, and the files that said why were gone by morning (backlog 32).
     keep_results() {
         mkdir -p "$2"
-        (cd "$clone" && find . -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 |
+        (cd "$tree" && find . -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 |
             xargs -0 -r cp --parents -t "$2")
         timeout 60 docker info >"$2/docker-info.txt" 2>&1
     }
@@ -229,7 +269,161 @@ main() {
 
     wanted() { [[ " $legs " == *" $1 "* ]]; }
 
-    # leg <key> <title> <log> <command...>: runs the command in the clone until the deadline and records a row.
+    # --- the agents (backlog 165) -------------------------------------------------------------------------------
+    agents_dir=$runs/agents
+    agent_mods=()   # the modules given an agent tonight, in the order they were
+    capped=""       # the modules left without one by the cap
+    agents_note=""  # why no agent could start, when none could
+    agents_ok=""    # whether agents can start: found out when the first is wanted
+
+    # Field $2 of the JSON that `claude -p --output-format json` wrote to file $1, or nothing.
+    json_field() {
+        node -e 'try { const v = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))[process.argv[2]];
+                       if (v !== undefined) console.log(String(v)) } catch (e) {}' "$1" "$2" 2>/dev/null
+    }
+
+    # The brief of the agent for module $1, whose tests failed or hung in leg $2 (key), $3 (title), log $4, marker $5.
+    brief() {
+        local name=overnight-fix-$day-$1 fails
+        fails=$(failures_since "$5" "$tree/$1" | sed 's/^/- /')
+        grep -q "Requesting stop of task ':$1:test'" "$runs/$4" 2>/dev/null &&
+            fails+=$'\n'"- :$1:test was stopped at its timeout: a test hung, and the test that hung left no result file"
+        cat <<EOF
+The overnight run of $day is testing main at $(git -C "$tree" log -1 --format='%h %s' "$target"), and tests in module $1 failed in its leg "$3". Paul, 2026-11-23: "when a test fails, an agent needs to be spawned to fix it without stopping the rest of the testing." You are that agent. The run goes on while you work.
+
+What failed in $1:
+$(printf '%s\n' "$fails" | sed '/^$/d')
+
+The leg's log is $runs/$4. The test result files, each with its test's output, are kept in $runs/$2-results/$1/. Read them there and change nothing under $home.
+
+You work in your own worktree, $main_checkout/.claude/worktrees/$name, on branch worktree-$name, cut from main. Follow its CLAUDE.md. For now:
+
+1. Run ./backlog.sh list. If an open item already covers these failures, take it: if another agent holds it, or holds an item whose area overlaps, stop there and say so. Otherwise claim it. If none covers them, add one (./backlog.sh add "<title>" "overnight run $day"), written as backlog/README.md asks, and claim it.
+2. Find the cause from the result files, the log and the code, and fix it here. Commit on your branch. If you cannot find it, write what you found in the item and commit that.
+3. Until you are told that the run has ended, run no Gradle command and no test, start no container and do not use Docker: the run holds Docker and the machine's memory, and a build beside it makes its tests fail. Do not land yet.
+
+End with what you found and what you changed. Once the run has ended you will be resumed in this session, to run the fast build and land.
+EOF
+    }
+
+    land_prompt() {
+        cat <<EOF
+The overnight run has ended, so you may build now. If you stopped because another agent holds the item, or you changed nothing, say so and stop. Otherwise merge main into your branch and run the fast build, ./gradlew build. When it passes (or the branch changes only Markdown), land as CLAUDE.md says: ./backlog.sh done <n> with what was done if the fix is in, a status entry, ./land.sh, then ./backlog.sh release <n>. If you found no fix, land the item still open with what you found written in it, and release it. If the build fails and you cannot fix it, leave the branch unlanded and release the item. Do not run the tests that failed: they need containers, which wait for the overnight run, and the next one checks your fix. Leave your worktree and branch where they are: the next overnight run removes them once their work is on main. End with one line: landed or not, the item, and what the next run should show.
+EOF
+    }
+
+    # Starts an agent for module $1 (arguments as brief's), unless it has one or the cap is reached.
+    start_agent() {
+        local mod=$1 name wt
+        case " ${agent_mods[*]} " in *" $mod "*) return 0 ;; esac
+        if [ -z "$agents_ok" ]; then
+            agents_ok=false
+            if $dry; then
+                agents_note="dry run: no agent starts"
+            elif [ "$agents_max" -le 0 ]; then
+                agents_note="none: NUNA_OVERNIGHT_AGENTS is $agents_max"
+            elif ! "$claude_cli" auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
+                agents_note="none started: the claude CLI is not signed in (Paul runs \`claude auth login\` once)"
+            else
+                agents_ok=true
+                mkdir -p "$agents_dir"
+            fi
+            [ -n "$agents_note" ] && say "agents: $agents_note"
+        fi
+        $agents_ok || return 0
+        if [ "${#agent_mods[@]}" -ge "$agents_max" ]; then
+            case " $capped " in *" $mod "*) ;; *) capped+=" $mod" ;; esac
+            return 0
+        fi
+        agent_mods+=("$mod")
+        name=overnight-fix-$day-$mod
+        wt=$main_checkout/.claude/worktrees/$name
+        if ! git -C "$main_checkout" worktree add -q -b "worktree-$name" "$wt" main >"$agents_dir/$mod.err" 2>&1; then
+            echo "its worktree could not be made: $(tail -1 "$agents_dir/$mod.err")" >"$agents_dir/$mod.failed"
+            say "agent for $mod: $(cat "$agents_dir/$mod.failed")"
+            return 0
+        fi
+        shift
+        brief "$mod" "$@" >"$agents_dir/$mod.brief.md"
+        (cd "$wt" && "$claude_cli" -p --permission-mode auto --max-budget-usd "$agent_budget" -n "$name" \
+            --output-format json <"$agents_dir/$mod.brief.md" >"$agents_dir/$mod.json" 2>>"$agents_dir/$mod.err") &
+        echo $! >"$agents_dir/$mod.pid"
+        say "agent $name started"
+        write_agents_md
+    }
+
+    # Writes runs/<date>/agents.md: what each agent has done so far.
+    write_agents_md() {
+        local mod name cost phase f
+        {
+            echo "# Agents of the overnight run $day"
+            echo
+            echo "One for each module with a failing or hung test (backlog 165), at most $agents_max, up to \$$agent_budget a session; written $(date +%H:%M)."
+            [ -n "$capped" ] && echo "No agent, the cap being reached:$capped."
+            for mod in "${agent_mods[@]}"; do
+                name=overnight-fix-$day-$mod
+                echo
+                echo "## $mod"
+                echo
+                echo "- Session $name, in .claude/worktrees/$name on branch worktree-$name; its brief is agents/$mod.brief.md"
+                if [ -f "$agents_dir/$mod.failed" ]; then
+                    echo "- Not started: $(cat "$agents_dir/$mod.failed")"
+                    continue
+                fi
+                for phase in fix land; do
+                    f=$agents_dir/$mod.json
+                    [ "$phase" = land ] && f=$agents_dir/$mod.land.json
+                    [ -e "$f" ] || continue
+                    if [ ! -s "$f" ]; then
+                        echo "- ${phase^}: still going"
+                        continue
+                    fi
+                    cost=$(json_field "$f" total_cost_usd)
+                    case $(json_field "$f" is_error) in
+                        false) echo "- ${phase^}: ended (\$$cost)" ;;
+                        true) echo "- ${phase^}: ENDED WITH AN ERROR, $(json_field "$f" subtype) (\$$cost; agents/$mod.err)" ;;
+                        *) echo "- ${phase^}: ENDED WITHOUT A RESULT (agents/$mod.err, agents/$(basename "$f"))" ;;
+                    esac
+                    echo
+                    json_field "$f" result | sed 's/^/    > /'
+                    echo
+                done
+            done
+        } >"$runs/agents.md"
+    }
+
+    # Once the run has let go of its lock: waits for each agent's fix, then resumes its session to land, one at a
+    # time, until $agents_until.
+    land_agents() {
+        local mod pid sid name
+        [ "${#agent_mods[@]}" -gt 0 ] || return 0
+        for mod in "${agent_mods[@]}"; do
+            [ -f "$agents_dir/$mod.pid" ] || continue
+            pid=$(cat "$agents_dir/$mod.pid")
+            while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$agents_until" ]; do sleep 15; done
+            kill -0 "$pid" 2>/dev/null && { say "agent for $mod: still fixing at $agents_until_at; left going"; break; }
+            sid=$(json_field "$agents_dir/$mod.json" session_id)
+            if [ -z "$sid" ] || [ "$(json_field "$agents_dir/$mod.json" is_error)" != false ]; then
+                say "agent for $mod: its fix ended with an error; not resumed"
+                write_agents_md
+                continue
+            fi
+            name=overnight-fix-$day-$mod
+            say "agent for $mod: landing"
+            land_prompt | (cd "$main_checkout/.claude/worktrees/$name" && "$claude_cli" -p --resume "$sid" \
+                --permission-mode auto --max-budget-usd "$agent_budget" --output-format json \
+                >"$agents_dir/$mod.land.json" 2>>"$agents_dir/$mod.err") &
+            pid=$!
+            write_agents_md
+            while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$agents_until" ]; do sleep 15; done
+            kill -0 "$pid" 2>/dev/null && { say "agent for $mod: still landing at $agents_until_at; left going"; break; }
+            say "agent for $mod: $(json_field "$agents_dir/$mod.land.json" result | tail -1)"
+            write_agents_md
+        done
+        write_agents_md
+    }
+
+    # leg <key> <title> <log> <command...>: runs the command in the worktree until the deadline and records a row.
     # Returns 0 if it passed, 1 if it failed or did not run, 2 if NUNA_OVERNIGHT_LEGS left it out.
     leg() {
         local key=$1 title=$2 log=$3 marker status result t0
@@ -247,7 +441,7 @@ main() {
         touch "$marker"
         t0=$(date +%s)
         say "$title: $*"
-        (cd "$clone" && timeout --kill-after=120 "$(left)" "$@") >"$runs/$log" 2>&1
+        (cd "$tree" && timeout --kill-after=120 "$(left)" "$@") >"$runs/$log" 2>&1
         status=$?
         case $status in
             0) result=passed ;;
@@ -267,11 +461,16 @@ main() {
         hung=$(grep -o "Requesting stop of task '[^']*'" "$runs/$log" 2>/dev/null | sed "s/.*task '\(.*\)'/\1: stopped at its timeout, a test hung (no result file names it)/" | sort -u)
         if [ -n "$fails$hung" ]; then
             failed_tests+=$'\n'"### $title"$'\n\n'"$(printf '%s\n' "$fails" "$hung" | sed '/^$/d' | sort -u | sed 's/^/- /')"$'\n'
-            failed_classes_since "$marker" >>"$failed_classes"
+            local found mod
             # A module whose test task hung counts as failing in every class: which test hung is not known, and its
             # bites would hang too.
-            grep -o "Requesting stop of task ':[^']*:test'" "$runs/$log" 2>/dev/null |
-                sed "s/.*task ':\(.*\):test'/\1 */" >>"$failed_classes"
+            found=$(failed_classes_since "$marker"
+                grep -o "Requesting stop of task ':[^']*:test'" "$runs/$log" 2>/dev/null |
+                    sed "s/.*task ':\(.*\):test'/\1 */")
+            printf '%s\n' "$found" | sed '/^$/d' >>"$failed_classes"
+            for mod in $(printf '%s\n' "$found" | cut -d' ' -f1 | sort -u); do
+                start_agent "$mod" "$key" "$title" "$log" "$marker"
+            done
         fi
         [ "$status" -eq 0 ]
     }
@@ -293,7 +492,7 @@ main() {
     leg nightly "Nightly" nightly.log ./nightly.sh "${nightly_dry[@]}"
 
     # --- the bites, rotating ------------------------------------------------------------------------------------
-    mapfile -t all < <(cd "$clone" && ls bites/*/*.patch | sort)
+    mapfile -t all < <(cd "$tree" && ls bites/*/*.patch | sort)
     next=$(cat "$home/bites-next" 2>/dev/null)
     start=0
     for i in "${!all[@]}"; do
@@ -317,15 +516,15 @@ main() {
             patch=${all[$(( (start + k) % ${#all[@]} ))]}
             [ "$(left)" -le 300 ] && break
             id=$(basename "$patch" .patch)
-            module=$(sed -n '/^diff --git/q; s/^Module: *//p' "$clone/$patch" | head -1 | tr -d '\r ')
-            class=$(sed -n '/^diff --git/q; s/^Test: *//p' "$clone/$patch" | head -1 | tr -d '\r ' | sed 's/#.*//')
+            module=$(sed -n '/^diff --git/q; s/^Module: *//p' "$tree/$patch" | head -1 | tr -d '\r ')
+            class=$(sed -n '/^diff --git/q; s/^Test: *//p' "$tree/$patch" | head -1 | tr -d '\r ' | sed 's/#.*//')
             if failed_tonight "$module" "$class"; then
                 unjudged=$((unjudged + 1))
                 unjudged_rows+="- $patch: $module $class"$'\n'
                 echo "${all[$(( (start + k + 1) % ${#all[@]} ))]}" >"$home/bites-next"
                 continue
             fi
-            out=$(cd "$clone" && timeout --kill-after=120 "$(left)" bites/run.sh "$patch" 2>&1)
+            out=$(cd "$tree" && timeout --kill-after=120 "$(left)" bites/run.sh "$patch" 2>&1)
             echo "$out" >>"$runs/bites.log"
             row=$(printf '%s\n' "$out" | grep -m1 "^$id ")
             ran=$((ran + 1))
@@ -334,11 +533,11 @@ main() {
             else
                 not_bit=$((not_bit + 1))
                 bite_rows+="- $patch: $(printf '%s' "${row:-no verdict (stopped?)}" | sed "s/^$id *//; s/  */ /g")"$'\n'
-                cp "$clone/build/bites/$id.log" "$runs/bites/" 2>/dev/null
+                cp "$tree/build/bites/$id.log" "$runs/bites/" 2>/dev/null
             fi
             echo "${all[$(( (start + k + 1) % ${#all[@]} ))]}" >"$home/bites-next"
             if [[ $row == *"HASH MISMATCH"* ]] || [ -z "$row" ]; then
-                git -C "$clone" checkout --quiet --force "$target" && git -C "$clone" clean -q -fdx -e build/bites
+                git -C "$tree" checkout --quiet --force "$target" && git -C "$tree" clean -q -fdx -e build/bites
             fi
         done
         result="$ran of ${#all[@]} ran: $bit bite"
@@ -356,7 +555,7 @@ main() {
     {
         echo "# Overnight run $day$($dry && echo ' (dry run: nothing was tested)')"
         echo
-        echo "- Commit: $(git -C "$clone" log -1 --format='%h %s' "$target")"
+        echo "- Commit: $(git -C "$tree" log -1 --format='%h %s' "$target")"
         [ -n "$last" ] && echo "- Last run tested: $(git -C "$repo" log -1 --format='%h' "$last" 2>/dev/null || echo "$last")"
         echo "- From $(clock "$started") to $(clock "$ended"), $(minutes $(( ended - started ))); deadline $deadline_at"
         echo "- nuna-demo: $demo_note"
@@ -382,17 +581,32 @@ main() {
             echo
             printf '%s' "$unjudged_rows"
         fi
-        if [ -f "$clone/build/nightly-summary.txt" ] && [ "$clone/build/nightly-summary.txt" -nt "$runs/.nightly.log.started" ]; then
+        if [ "${#agent_mods[@]}" -gt 0 ] || [ -n "$agents_note$pruned$kept" ]; then
+            echo
+            echo "## Agents"
+            echo
+            [ "${#agent_mods[@]}" -gt 0 ] &&
+                echo "- Started for ${agent_mods[*]}; they land after the run, and agents.md says what each did"
+            [ -n "$capped" ] && echo "- None for$capped: the cap, $agents_max, was reached"
+            [ -n "$agents_note" ] && echo "- $agents_note"
+            [ -n "$pruned" ] && echo "- Earlier nights' agents whose work is on main, worktree and branch removed:$pruned"
+            [ -n "$kept" ] && echo "- Earlier nights' agents with work not on main, left in .claude/worktrees:$kept"
+        fi
+        if [ -f "$tree/build/nightly-summary.txt" ] && [ "$tree/build/nightly-summary.txt" -nt "$runs/.nightly.log.started" ]; then
             echo
             echo "## Nightly counts"
             echo
             echo '```'
-            sed '/^$/d' "$clone/build/nightly-summary.txt"
+            sed '/^$/d' "$tree/build/nightly-summary.txt"
             echo '```'
         fi
     } >"$summary"
     say "summary in $summary"
     $dry || echo "$target" >"$home/last-tested"
+
+    # Docker and the machine are free: the agents may build and land.
+    rm -f "$lock"
+    land_agents
     exit 0
 }
 

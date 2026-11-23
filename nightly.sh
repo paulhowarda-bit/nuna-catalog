@@ -24,10 +24,10 @@ cd "$(dirname "$0")" || exit 2
 # The build lock (CLAUDE.md, Builds): while .overnight/running exists in the main checkout, Docker belongs to the run
 # that wrote it and other sessions start no build. Like overnight.sh, this writes its pid there when no live run
 # holds it, and removes it at the end if it is still its own. A live run's lock it leaves alone: overnight.sh runs
-# nightly.sh in its clone, <home>/clone, beside its lock, <home>/running.
+# nightly.sh in its worktree, <home>/worktree, beside its lock, <home>/running; there, as in any worktree,
+# --git-common-dir names the main checkout.
 main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
 home=${NUNA_OVERNIGHT_HOME:-$main_checkout/.overnight}
-[ "${main_checkout##*/}" = clone ] && [ -d "$main_checkout/../runs" ] && home=${main_checkout%/*}
 lock=$home/running
 holder=$(sed -n 's/^pid: //p' "$lock" 2>/dev/null)
 if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then

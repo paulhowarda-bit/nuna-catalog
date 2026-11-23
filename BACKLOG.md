@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**40 open:** 9 S, 12 M, 14 L, 5 XL.
+**38 open:** 8 S, 11 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -50,8 +50,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [161](backlog/161.md) | S | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | one function in the console's table page and its browser test; the heavy browser test is what takes the time | 2026-11-23 |
 | [162](backlog/162.md) | S | ConsoleHealthTest reads the estate legend's count and words on two lines | one assertion in one browser test | 2026-11-23 |
 | [163](backlog/163.md) | S | ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table | one browser test's expected values (or, if Paul wants the console to call it a default, one display rule) | 2026-11-23 |
-| [165](backlog/165.md) | M | An agent for each module whose tests fail in the overnight run, while the run goes on | an agent start after each leg and a landing turn after the run in overnight.sh, a stub `claude` to test it against, and the morning report's prompt; most of a day with the checks | 2026-11-23 |
-| [166](backlog/166.md) | S | The overnight run tests in a worktree, not a clone | one script's setup step and the lock lookup in two others; waits on item 164, which changes overnight.sh | 2026-11-23 |
 
 ## Open items in full
 
@@ -2348,58 +2346,6 @@ An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet
 Done looks like: the test uses a setting Iceberg does not write itself (or expects `set`), and passes in the overnight
 heavy build.
 
-### 165. An agent for each module whose tests fail in the overnight run, while the run goes on
-
-- Added: 2026-11-23 by Paul, 2026-11-23
-- Touches: overnight.sh
-- Effort: M, an agent start after each leg and a landing turn after the run in overnight.sh, a stub `claude` to test it against, and the morning report's prompt; most of a day with the checks
-
-Paul, 2026-11-23: "also when a test fails, an agent needs to be spawned to fix it without stopping the rest of the
-testing."
-
-Today a failing test is only written down: the 07:00 report task files a backlog item for it, and nothing works on it
-until a session picks the item up. The run of 2026-11-23 failed nine heavy tests; six of them (items 160 to 163) were
-still open that evening.
-
-The agent cannot do everything at once. While the run holds `.overnight/running`, Docker and the machine's memory are
-the run's (CLAUDE.md, Builds), and a build beside it makes its tests fail (Windows paged the Docker VM out on
-2026-11-21 and 11-23, item 135). The tests that fail are container tests, which wait for the overnight run in any
-case, so the next night checks a fix.
-
-Done looks like:
-
-- After each leg, `overnight.sh` starts one Claude agent for each module with a failing or hung test that has no agent
-  yet that night, up to a cap (`NUNA_OVERNIGHT_AGENTS`, default 3), in its own worktree and branch from `main`,
-  headless (`claude -p`, named, with a spending cap), and goes on with the next leg at once.
-- The agent's brief gives the failing tests with their messages, the leg's log and the result files. It claims the
-  open item that covers them, or adds one, finds the cause and commits a fix, running no build and no test while the
-  run goes on.
-- When the run has ended and released its lock, `overnight.sh` resumes each agent's session in turn, to merge `main`,
-  run the fast build and land; it waits for them up to a time (`NUNA_OVERNIGHT_AGENTS_UNTIL`, default 07:45, inside
-  the task's 8-hour limit).
-- `runs/<date>/agents.md` says what each agent did, and the morning report does not file again what an agent holds.
-- The next run removes each agent's worktree and branch once its work is on `main`.
-- When the `claude` CLI is not signed in, no agent starts and the summary says so (on 2026-11-23 `claude auth status`
-  said `"loggedIn": false`: Paul runs `claude auth login` once).
-- Checked against a stub repo with a stub `claude`.
-
-### 166. The overnight run tests in a worktree, not a clone
-
-- Added: 2026-11-23 by local_6bfbb32c-ac81-4e4a-b672-f31d74f1b73d
-- Touches: overnight.sh, nightly.sh, heavy.sh, CLAUDE.md
-- Effort: S, one script's setup step and the lock lookup in two others; waits on item 164, which changes overnight.sh
-
-`overnight.sh` tests main's tip in `.overnight/clone`, a `git clone` of the main checkout with its own copy of the
-history (line 136), while every session and agent works in a worktree. Paul asked why there are two kinds of copy and,
-told a worktree would also do, answered "ok do it" (2026-11-23). The clone also makes `nightly.sh` and `heavy.sh`
-special-case it: there `--git-common-dir` names the clone, not the main checkout, so each looks for a folder named
-`clone` beside `runs/` to find the run's lock (backlog 136).
-
-Done looks like: `overnight.sh` makes `.overnight/worktree` with `git worktree add --detach`, locks it so `git worktree
-prune` and `remove` leave it alone, and resets it to main's tip each night; `nightly.sh` and `heavy.sh` find the lock
-through `--git-common-dir` alone; CLAUDE.md names the worktree; `./overnight.sh --dry` in a scratch home runs every
-leg's plumbing in the new worktree; the old `.overnight/clone` is deleted.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -2530,3 +2476,5 @@ leg's plumbing in the new worktree; the old `.overnight/clone` is deleted.
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [159](backlog/159.md) | Demo: the seed's sample grant goes to a group the grant admin is not in | done | 2026-11-23 |
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
+| [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
+| [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
