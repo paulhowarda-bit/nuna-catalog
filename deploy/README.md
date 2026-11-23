@@ -219,7 +219,9 @@ telemetry:
   first, for the Jobs alone: never the catalog's nor the worker's, since a pod there may run as any service
   account and mount any Secret of it. The chart puts its Role, RoleBinding and the Jobs' service account
   there, and refuses to render without the namespace or with the release's own.
-- **Branches and tags [D33, P11].** A catalog's refs are made, listed, read, renewed and deleted under
+- **Branches and tags [D33, P11].** `docs/refs.md` is the page for engine users and operators: how an engine
+  names a ref, what a branch and a tag allow, the merge, and taking a table out of refs. A catalog's refs are made,
+  listed, read, renewed and deleted under
   `/management/v1/catalogs/{catalog}/refs` (making, renewing and deleting need `create` on the catalog; listing
   and reading, any holding in it). P11's limits and expiry are settings: `nuna.refs.max-branches` (default 50
   open branches a catalog), `nuna.refs.max-tags` (1000), `nuna.refs.branch-idle-expiry` (30 days: a branch's
