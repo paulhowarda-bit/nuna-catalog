@@ -107,6 +107,28 @@ The **Health** tab of a table's page shows whether it needs compaction and why (
 assessment's counts, and the last compaction's outcome, start and end; or that the worker has not assessed it yet, or
 that no compaction has run for it.
 
+## Maintenance on request, and every table in one line
+
+Backlog 114 and 124. A viewer whose groups hold `modify` on a table sees **Compact now** and **Scan for orphans now**
+on its **Health** tab, and **Compact now** beside its name at the top of the table's page. Each opens a dialog that
+says what the worker will do and asks the catalog (`POST .../maintenance/requests`, table-health.md, "Maintenance on
+request"); its answer is shown as it came, a refusal with its request id: a DR freeze, a legal hold for an orphan scan,
+or a policy that turns the job off. The console judges `modify` from the viewer's own groups' grants on the table, a
+namespace above it or the catalog, asked once a minute at most; the catalog decides. A viewer without it sees neither
+button.
+
+Each request shows on the Health tab, with who asked it and when, waiting or started, and while it waits as a mark
+beside the table's name; its button is turned off until the worker has started it. On **Maintenance**, a viewer who
+holds `modify` anywhere in the catalog sees **Compact a table now**, which offers tonight's queue first and takes any
+table path in the catalog.
+
+The overview's ice line shows every table the viewer may `select`, from `/maintenance/estate` read a page at a time
+while there is a token (table-health.md, "Every table"): above the line each table in shape, as tall
+as its data files, a table not yet assessed as a stub; below it each table queued for tonight, as deep as its score,
+linking to its Health tab; held and frozen tables in their own colours, and a dashed outline where a table compacted
+last night was. Its legend and the overview's title count the tables in shape (assessed and needing no compaction),
+queued, with equality deletes, not yet assessed, held and frozen; the **In shape** figure gives the tables in shape out of all, with those queued and those not yet assessed.
+
 ## Tests and bites
 
 | Test | Shows |
@@ -114,7 +136,8 @@ that no compaction has run for it.
 | `HealthWindowTest` | The registry keeps every histogram bucket where `SimpleMeterRegistry` lets them go; the audit publish timer has the exported timer's buckets there, without Boot, where a plain registry gives it none; the last day is now's reading less the newest a day old, or since the start; the figures judged against the SLOs; vends by outcome and failures by type. |
 | `PeersTest` | Every address is asked with the caller's token; a peer that cannot be reached, does not resolve, refuses, or answers something else gives no figures and says why. |
 | `ConsoleHealthTest` (Selenium, P8) | In Chrome, against a server with another server standing in beside it and a third that does not answer: an operator sees each figure as the two servers' sum, the silent server named, and the worker's scans; a reader sees no catalog health and only the tables they may read, neediest first, each linking to its health (assessment, reasons, last compaction), and a table they may not read refused; someone with no grant sees neither, and their token never reaches another server. |
-| `ConsoleTest` | `health.js` is served under the console's Content-Security-Policy and writes no markup. |
+| `ConsoleTest` | `health.js` and `requests.js` are served under the console's Content-Security-Policy and write no markup. |
+| `ConsoleHealthTest#anOwnerAsksForACompactionNowAndARefusalShowsTheCatalogsAnswer` (Selenium) | A table's owner asks for a compaction now: the catalog answers 202 with a request id, and the request shows waiting, with who asked, its button turned off; an orphan scan the policy turns off is refused with the catalog's code, words and request id. The reader test checks that a reader sees no buttons. |
 
 The bites are in `bites/D38/`: `catalog-health-for-anyone`, `server-health-for-anyone`, `one-server-only`,
 `window-never-moves`, `histograms-roll-over` and `table-health-for-anyone`; and in `bites/OBS-71/`,

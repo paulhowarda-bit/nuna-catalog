@@ -1,11 +1,13 @@
 // Health (D38): catalog health for the whole deployment, for platform operators, with the maintenance worker's
 // scans (also on Maintenance: operators hold no grant, so may have no catalog to open it in), and one table's health
-// on its own tab. The server decides who sees what: a refusal is shown as it answered, never guessed at here.
-// Waiting on routes no item gives yet, and left out: the DR replication and store panels.
+// on its own tab, with its maintenance on request (item 114). The server decides who sees what: a refusal is shown as
+// it answered, never guessed at here. Waiting on routes no item gives yet, and left out: the DR replication and store
+// panels.
 
 import * as api from './api.js';
 import {facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, tbl, took, when} from './dom.js';
 import {REASONS, compactionWords, iceQueue, keyOfRow, queue, queueOf, reasonPill} from './queue.js';
+import {mayModify, requestButtons, requestsBox} from './requests.js';
 
 const ALERTS = [
   ['metadata-integrity', 'Metadata integrity', 'A metadata file no longer hashes to what its pointer recorded. Pages.'],
@@ -205,8 +207,8 @@ export async function workerPanel() {
 
 // ---- one table's health, on its tab ----
 
-export async function tableHealthTab(target) {
-  const [health, rows] = await Promise.all([api.tableHealth(target), queue().catch(() => [])]);
+export async function tableHealthTab(target, reload) {
+  const [health, rows, may] = await Promise.all([api.tableHealth(target), queue().catch(() => []), mayModify(target)]);
   const a = health.assessment;
   const c = health['last-compaction'];
   const mine = [target.catalog, ...target.namespace, target.name].join('.');
@@ -233,6 +235,10 @@ export async function tableHealthTab(target) {
     ]))
     : h('div', {class: 'panel'}, h('h2', null, 'Assessment'),
       h('p', {class: 'muted', id: 'table-health-unassessed'}, 'The maintenance worker has not assessed this table yet.'));
+  if (may) {
+    assessment.append(h('div', {class: 'refusal-acts', id: 'table-health-acts'}, requestButtons(target, health.requests, reload),
+      h('span', {class: 'fine'}, 'Now, inside the cleanup window or outside it.')));
+  }
   const last = h('div', {class: 'panel', id: 'table-health-compaction'}, h('h2', null, 'Last compaction'), c ? facts([
     ['Outcome', compactionWords(c)[0]],
     ['Started', when(c['started-at'])],
@@ -240,7 +246,7 @@ export async function tableHealthTab(target) {
   ]) : h('p', {class: 'muted'}, 'No compaction has run for this table.'));
   const policyPanel = h('div');
   load(policyPanel, () => policyFacts(target));
-  return h('div', {class: 'grid-2'}, assessment, h('div', {class: 'stack'}, last, policyPanel));
+  return [requestsBox(health.requests), h('div', {class: 'grid-2'}, assessment, h('div', {class: 'stack'}, last, policyPanel))];
 }
 
 /** The policy in force on a table: each key with where it was set. */

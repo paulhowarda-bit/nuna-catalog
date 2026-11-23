@@ -53,6 +53,9 @@ import org.springframework.test.context.DynamicPropertySource;
  *       compaction. A table they may not read is refused there as the catalog answers.</li>
  *   <li>Someone with no grant sees no catalog health and no catalog, and their token never reaches another
  *       server.</li>
+ *   <li>An owner, whose group holds {@code modify}, asks for a table's compaction now from its Health tab and sees
+ *       the request waiting (backlog 114); a request the catalog refuses shows its answer as it came. A reader sees no
+ *       such button.</li>
  * </ul>
  *
  * <p>The other servers are stand-ins on this host: one answers {@code GET /management/v1/health/server} as a server
@@ -93,6 +96,7 @@ class ConsoleHealthTest {
     private String readable;
     private String hidden;
     private String readers;
+    private String owners;
     private Instant lastSuccess;
 
     @BeforeAll
@@ -133,6 +137,12 @@ class ConsoleHealthTest {
         readers = "health-readers-" + Api.suffix();
         expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + readable
                 + "\"]},\"group\":\"" + readers + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
+        owners = "health-owners-" + Api.suffix();
+        expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + readable
+                + "\"]},\"group\":\"" + owners + "\",\"privilege\":\"modify\"}", AUTH, api.grantAdmin()), 204);
+        // Compaction runs on orders; nothing turns on fine's orphan scan, so a request for it is refused.
+        expect(api.manage("PUT", "/namespaces/" + readable + "/tables/orders/maintenance-policy",
+                "{\"compaction.enabled\":\"true\"}"), 200);
 
         // Loads and a commit of this server's own, for the SLO rows.
         for (int i = 0; i < 3; i++) {
@@ -240,6 +250,10 @@ class ConsoleHealthTest {
         assertThat(fact("Equality-delete files")).isEqualTo("0");
         WebElement compaction = browser.await(By.id("table-health-compaction"));
         assertThat(compaction.getText()).contains("succeeded");
+        browser.await("the policy has not loaded", d -> d.findElements(By.cssSelector("#table-page [data-loading]"))
+                .isEmpty());
+        assertThat(driver.findElements(By.id("table-health-acts"))).as("a reader may not ask for maintenance").isEmpty();
+        assertThat(driver.findElements(By.cssSelector("#table-page [data-act='compact']"))).isEmpty();
 
         browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=fine&tab=health");
         assertThat(browser.awaitText(By.id("table-health-verdict"), "No compaction needed")).isNotNull();
@@ -273,6 +287,35 @@ class ConsoleHealthTest {
         expectError(api.send("GET", "/management/v1/health/catalog", null, AUTH, outsider), 403, "ForbiddenException");
         expectError(api.send("GET", "/management/v1/health/server", null, AUTH, outsider), 403, "ForbiddenException");
         assertThat(PEER.tokens).doesNotContain(outsider);
+    }
+
+    @Test
+    void anOwnerAsksForACompactionNowAndARefusalShowsTheCatalogsAnswer() {
+        browser.signIn(token("olive", owners));
+        browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=health");
+        browser.await(By.cssSelector("#table-health-acts [data-act='request-compaction']")).click();
+        WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(dialog.findElement(By.tagName("h2")).getText()).isEqualTo("Compact orders now");
+        dialog.findElement(By.cssSelector("button[type='submit']")).click();
+        WebElement asked = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Compaction of orders requested");
+        assertThat(asked.getText()).contains("202", "asked by olive");
+        assertThat(asked.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
+        dialog.findElement(By.cssSelector("button.dlg-x")).click();
+
+        WebElement waiting = browser.await(By.cssSelector("#table-health-requests [data-job='compaction']"));
+        assertThat(waiting.getDomAttribute("data-state")).isEqualTo("waiting");
+        assertThat(waiting.getText()).contains("Compaction requested at", "by olive", "waiting");
+        assertThat(browser.await(By.cssSelector("#table-health-acts [data-act='request-compaction']")).isEnabled())
+                .as("one waits already").isFalse();
+
+        browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=fine&tab=health");
+        browser.await(By.cssSelector("#table-health-acts [data-act='request-orphan-scan']")).click();
+        browser.await(By.cssSelector("dialog.dlg button[type='submit']")).click();
+        WebElement refused = browser.await(By.cssSelector("dialog.dlg .refusal"));
+        assertThat(ConsoleBrowser.textContent(refused.findElement(By.cssSelector(".refusal-code"))))
+                .isEqualTo("409 MaintenanceNotAllowedException");
+        assertThat(refused.getText()).contains("does not run orphan-scan");
+        assertThat(refused.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
     }
 
     // ---- helpers ----

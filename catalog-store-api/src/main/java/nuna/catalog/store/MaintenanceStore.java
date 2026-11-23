@@ -108,4 +108,35 @@ public interface MaintenanceStore {
 
     /** The night's jobs of these kinds, by start, then id. */
     List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds);
+
+    // ---- maintenance on request (D30, amended 2026-11-20; backlog 114) ----
+
+    /**
+     * Keeps a request to run a job of an active table now, writing the change's records with it. One per table and
+     * job: while one waits, asking again changes nothing; one the worker has started is replaced. The table is
+     * share-locked, so a drop at the same moment waits; a purge's completion deletes the table's requests.
+     *
+     * @return {@code Applied}; {@code Unchanged}, writing nothing, when a request for the job waits already; or
+     *         {@code Missing(OBJECT)} when no active table has that id
+     */
+    WriteResult requestMaintenance(MaintenanceRequest request, Change change);
+
+    /** The table's requests, waiting or started, one per job at most, by job; none for an unknown id. */
+    List<MaintenanceRequest> listMaintenanceRequests(UUID objectId);
+
+    /**
+     * The waiting requests of active tables, in every catalog, by the time asked, then table, then job: the work
+     * list's requested section.
+     */
+    Page<MaintenanceRequest> listWaitingRequests(PageRequest page);
+
+    /**
+     * Marks the table's waiting request for {@code job}, made at {@code requestedAt}, started at {@code startedAt}, as
+     * the worker reports it. Like the worker's other reports it carries no change id and writes no audit record, and
+     * it is safe to repeat.
+     *
+     * @return {@code Applied}; or {@code Unchanged} when no request of that time waits for the job
+     */
+    WriteResult startMaintenanceRequest(UUID objectId, MaintenanceRequest.Job job, Instant requestedAt,
+                                        Instant startedAt);
 }

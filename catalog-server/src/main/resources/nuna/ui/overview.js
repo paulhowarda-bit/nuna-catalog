@@ -1,43 +1,51 @@
-// The overview: one catalog at a glance. Tonight's queue (drawn below the ice line); last night's maintenance with
-// its jobs on their slots (item 126); for platform operators, the latency objectives; for audit readers, the last
-// day's audit counts (item 125); and the governance figures for those who may describe the catalog (item 128).
-// Waiting on another item, and left out until it lands: the tables in shape above the line (127).
+// The overview: one catalog at a glance. Every table the caller may select on the ice line, in shape above it and
+// queued below it, with the counts (item 127); tonight's queue; last night's maintenance with its jobs on their slots
+// (item 126); for platform operators, the latency objectives; for audit readers, the last day's audit counts (item
+// 125); and the governance figures for those who may describe the catalog (item 128).
 
 import * as api from './api.js';
 import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {pageHref} from './route.js';
-import {iceLegend, iceQueue, lastAssessed, queue, queueOf, queueTable} from './queue.js';
+import {estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable} from './queue.js';
 import {sloFigures} from './health.js';
 import {governanceFigures} from './governance.js';
 
 export function overviewPage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'overview'});
   load(main, async () => {
-    const rows = queueOf(await queue(true), catalog);
+    const [rows, tables] = await Promise.all([queue(true).then(all => queueOf(all, catalog)),
+      estate(true).then(all => all.filter(t => t.catalog === catalog))]);
     const assessed = lastAssessed(rows);
+    const c = estateCounts(tables);
     const now = new Date();
     const out = [pageHead({
       hero: true,
       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
-      title: rows.length ? h('span', {class: 'q'}, `${plural(rows.length, 'table')} queued for tonight.`)
-        : `Nothing in ${catalog} is queued for tonight.`,
+      title: !c.total ? `No table in ${catalog} is yours to select.`
+        : [`${fmt(c.inShape)} of ${plural(c.total, 'table')} in shape. `, c.queued
+          ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
       sub: 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s health is on its own page.',
       side: assessed ? pill('ok', icon('check'), 'Last assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
     })];
-    if (rows.length) {
-      const ice = h('div', {class: 'iceline wide', 'data-iceline': 'queue'});
-      sized(ice, (host, w) => iceQueue(host, w, rows));
-      out.push(panel('Tonight\'s queue, below the line', 'depth is score · neediest first', ice, iceLegend(rows)));
+    if (c.total) {
+      const ice = h('div', {class: 'iceline wide', 'data-iceline': 'estate'});
+      sized(ice, (host, w) => iceEstate(host, w, tables));
+      out.push(panel('Every table, one mark', 'above: in shape, height is data files, log scale · below: queued, depth is score',
+        ice, estateLegend(tables)));
     }
     const kpis = h('div', {class: 'kpis', id: 'overview-kpis'});
+    kpis.append(h('div', {class: 'kpi', 'data-kpi': 'shape'},
+      h('p', {class: 'kpi-l'}, icon('check'), 'In shape'),
+      h('p', {class: 'kpi-v'}, `${fmt(c.inShape)} of ${fmt(c.total)}`),
+      h('p', {class: 'kpi-d'}, c.queued ? `${fmt(c.queued)} queued for tonight` : 'none queued for tonight',
+        c.unassessed ? `, ${fmt(c.unassessed)} not yet assessed` : '')));
     out.push(kpis);
     const nights = thirtyNights();
     Promise.all([nights.then(list => lastNightKpi(catalog, list), error => h('div', {class: 'kpi'}, failure(error, {compact: true}))),
       latencyKpi(), auditKpi(catalog), governanceKpi(catalog)]).then(list => {
       kpis.append(...list.flat().filter(Boolean));
-      if (!kpis.children.length) kpis.remove();
     });
     const lastNight = h('div');
     load(lastNight, async () => lastNightPanel(await nights));

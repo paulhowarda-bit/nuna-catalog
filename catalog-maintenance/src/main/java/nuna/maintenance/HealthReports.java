@@ -149,8 +149,15 @@ final class HealthReports {
      */
     void job(UUID id, CleanupWindow.Night night, Job kind, UUID object, Optional<Integer> slot, Instant started,
              Optional<Instant> ended, String outcome, Counts counts, ScanReport report) {
+        job(id, night, kind, object, slot, started, ended, outcome, counts, Optional.empty(), report);
+    }
+
+    /** The same, for a job run on request (backlog 114): {@code requested} is the time it was asked. */
+    void job(UUID id, CleanupWindow.Night night, Job kind, UUID object, Optional<Integer> slot, Instant started,
+             Optional<Instant> ended, String outcome, Counts counts, Optional<Instant> requested, ScanReport report) {
         send("job", "reporting the " + kind.label + " of " + object, report, () -> {
-            boolean kept = management.reportJob(id, night, kind, object, slot, started, ended, outcome, counts);
+            boolean kept = management.reportJob(id, night, kind, object, slot, started, ended, outcome, counts,
+                    requested);
             if (!kept) {
                 LOG.info("The catalog refused the {} report of {}: no such object", kind.label, object);
             }

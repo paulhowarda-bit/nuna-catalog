@@ -34,6 +34,7 @@ import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.MaintenanceJob;
 import nuna.catalog.store.MaintenanceNight;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -110,6 +111,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String TABLE_HEALTH = "table_health";
     static final String MAINTENANCE_SCAN = "maintenance_scan";
     static final String MAINTENANCE_JOB = "maintenance_job";
+    static final String MAINTENANCE_REQUEST = "maintenance_request";
     static final String DR_WATERMARK = "dr_watermark";
     static final String REF = "ref";
     static final String REF_ENTRY = "ref_entry";
@@ -140,6 +142,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoDeletions deletions;
     private final MongoHealth health;
     private final MongoNights nights;
+    private final MongoRequests requests;
     private final MongoDr dr;
     private final MongoRefs refs;
 
@@ -173,6 +176,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.deletions = new MongoDeletions(transactions);
         this.health = new MongoHealth(transactions);
         this.nights = new MongoNights(transactions);
+        this.requests = new MongoRequests(transactions);
         this.dr = new MongoDr(transactions);
         this.refs = new MongoRefs(transactions);
     }
@@ -525,6 +529,29 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds) {
         return nights.jobs(night, kinds);
+    }
+
+    // ---- maintenance on request (D30, amended 2026-11-20; backlog 114) ----
+
+    @Override
+    public WriteResult requestMaintenance(MaintenanceRequest request, Change change) {
+        return requests.request(request, change);
+    }
+
+    @Override
+    public List<MaintenanceRequest> listMaintenanceRequests(UUID objectId) {
+        return requests.list(objectId);
+    }
+
+    @Override
+    public Page<MaintenanceRequest> listWaitingRequests(PageRequest page) {
+        return requests.listWaiting(page);
+    }
+
+    @Override
+    public WriteResult startMaintenanceRequest(UUID objectId, MaintenanceRequest.Job job, Instant requestedAt,
+                                               Instant startedAt) {
+        return requests.start(objectId, job, requestedAt, startedAt);
     }
 
     // ---- the DR watermark (D37) ----

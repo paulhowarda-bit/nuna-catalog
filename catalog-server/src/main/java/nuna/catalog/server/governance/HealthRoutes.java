@@ -217,7 +217,10 @@ class HealthRoutes {
         return GovernanceRoutes.json(200, body);
     }
 
-    /** One table's health, with {@code select} on it: its latest assessment and last compaction, when there are. */
+    /**
+     * One table's health, with {@code select} on it: its latest assessment and last compaction, when there are, and
+     * its requested jobs (backlog 114), each waiting or started, with who asked and when.
+     */
     @GetMapping(path = HEALTH, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> table(@PathVariable("catalog") String prefix, @PathVariable String namespace,
                                  @PathVariable String table, HttpServletRequest http) {
@@ -228,7 +231,9 @@ class HealthRoutes {
         TableHealth health = store.readTableHealth(object.id())
                 .orElse(new TableHealth(object, Optional.empty(), Optional.empty()));
         List<String> levels = management.levels(object.catalogId(), object.namespaceId()).orElse(List.of());
-        return GovernanceRoutes.json(200, health(target.catalog().name(), levels, health));
+        ObjectNode body = health(target.catalog().name(), levels, health);
+        body.set("requests", MaintenanceRequests.nodes(store.listMaintenanceRequests(object.id())));
+        return GovernanceRoutes.json(200, body);
     }
 
     /** The worker's last scans, the last started first, and the last that succeeded; for platform operators. */

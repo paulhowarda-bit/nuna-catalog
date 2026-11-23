@@ -7,13 +7,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * A compactor that runs nothing: it records each Job the worker starts, once per table a night as Kubernetes would,
+ * A compactor that runs nothing: it records each Job the worker starts, once per table a run as Kubernetes would,
  * and answers each Job's state as the test sets it ({@link #finish}), {@link #state} until then.
  */
 final class StubCompactor implements Compactor {
 
     /** A Job the worker started. */
-    record Launched(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night) {
+    record Launched(Management.TableWork table, CompactionNeed need, Run run) {
     }
 
     final List<Launched> launched = new CopyOnWriteArrayList<>();
@@ -31,16 +31,17 @@ final class StubCompactor implements Compactor {
     }
 
     @Override
-    public Launch launch(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night) {
-        if (launched.stream().anyMatch(job -> job.table().id().equals(table.id()) && job.night().equals(night))) {
+    public Launch launch(Management.TableWork table, CompactionNeed need, Run run) {
+        if (launched.stream().anyMatch(job -> job.table().id().equals(table.id())
+                && job.run().key().equals(run.key()))) {
             return Launch.EXISTS;
         }
-        launched.add(new Launched(table, need, night));
+        launched.add(new Launched(table, need, run));
         return Launch.STARTED;
     }
 
     @Override
-    public State state(Management.TableWork table, CleanupWindow.Night night) {
+    public State state(Management.TableWork table, Run run) {
         return states.getOrDefault(table.id(), state);
     }
 

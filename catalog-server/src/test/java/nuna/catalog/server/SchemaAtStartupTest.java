@@ -26,7 +26,7 @@ class SchemaAtStartupTest {
     @Test
     void theJournalIsPartitionedWithMonthsAhead() {
         assertThat(jdbc.queryForObject("SELECT max(version::int) FROM flyway_schema_history WHERE success",
-                Integer.class)).isEqualTo(12);
+                Integer.class)).isEqualTo(13);
         assertThat(jdbc.queryForObject("SELECT relkind::text FROM pg_class WHERE relname = 'journal'", String.class))
                 .isEqualTo("p");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM pg_inherits i JOIN pg_class c ON c.oid = i.inhparent"

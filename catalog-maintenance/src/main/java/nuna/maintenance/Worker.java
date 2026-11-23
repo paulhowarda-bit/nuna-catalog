@@ -41,6 +41,9 @@ import org.slf4j.LoggerFactory;
  *       database's PITR window (D30 (5), (8)).</li>
  *   <li><b>Compaction</b>: Jobs for the tables that need one, neediest first, as many at once as the settings allow,
  *       each to stop at the window's end ({@link NightlyCompaction}).</li>
+ *   <li><b>Requests</b> (backlog 114): the jobs callers asked for, inside the window or outside it. Each requested
+ *       compaction starts its Job before the night's queue gets a slot, each requested orphan scan runs before the
+ *       night's, each to stop at the request's deadline ({@link RequestedWork}).</li>
  *   <li><b>Orphan scans</b> due tonight, one after another while the window is open. One the window's end cuts short
  *       is not recorded, and its table is scanned again the next night.</li>
  *   <li><b>Purges</b>: each dropped object past its window is claimed, everything under its location deleted, and
@@ -49,8 +52,8 @@ import org.slf4j.LoggerFactory;
  *       done.</li>
  * </ol>
  *
- * <p>Outside the window nothing heavy starts, after a restart too: expiry, manifest rewrite, purges and deletions
- * run round the clock. The first scan after the window closes ends the night: it counts the Jobs the window's end
+ * <p>Outside the window nothing heavy starts but what was requested, after a restart too: expiry, manifest rewrite,
+ * purges and deletions run round the clock. The first scan after the window closes ends the night: it counts the Jobs the window's end
  * cut off and the needy tables left over.
  *
  * <p>Every job is idempotent: a scan that runs again after a crash, or sees the effect of its own last commit,
@@ -74,7 +77,8 @@ final class Worker implements AutoCloseable {
     private final Clock clock;
     private final CleanupWindow window;
     private final Duration orphanInterval;
-    private final int compactionJobs;
+    /** The compaction slots, shared by the night's Jobs and the requested ones. */
+    private final Slots slots;
     /** The night of each table's last orphan scan not cut short, by table id; empty after a restart. */
     private final Map<UUID, LocalDate> orphanScans = new ConcurrentHashMap<>();
     /** The window's opening now under way, or the last one until a scan has closed it; none before the first. */
@@ -84,16 +88,18 @@ final class Worker implements AutoCloseable {
     private final WorkerMetrics metrics;
     private final ScanSpans spans;
     private final HealthReports health;
+    private final RequestedWork requested;
 
     /**
      * @param window         the nightly cleanup window: compaction and orphan scans start only inside it
      * @param orphanInterval the least time between two orphan scans of one table, rounded up to whole nights
-     * @param compactionJobs how many compaction Jobs run at once
+     * @param requestDeadline how long a job run on request may run (backlog 114)
+     * @param compactionJobs how many compaction Jobs run at once, the night's and the requested
      * @param observations   where the scans and their parts are observed: spans and timers
      */
     Worker(Management management, Catalogs catalogs, Storage storage, Compactor compactor, Clock clock,
-           CleanupWindow window, Duration orphanInterval, int compactionJobs, MeterRegistry meters,
-           ObservationRegistry observations) {
+           CleanupWindow window, Duration orphanInterval, Duration requestDeadline, int compactionJobs,
+           MeterRegistry meters, ObservationRegistry observations) {
         this.management = management;
         this.catalogs = catalogs;
         this.storage = storage;
@@ -101,10 +107,12 @@ final class Worker implements AutoCloseable {
         this.clock = clock;
         this.window = window;
         this.orphanInterval = orphanInterval;
-        this.compactionJobs = compactionJobs;
+        this.slots = new Slots(compactionJobs);
         this.metrics = new WorkerMetrics(meters, clock);
         this.spans = new ScanSpans(observations);
         this.health = new HealthReports(management, spans, window);
+        this.requested = new RequestedWork(compactor, slots, requestDeadline, storage, window, health, spans, clock,
+                this::load, this::record);
     }
 
     /**
@@ -123,11 +131,12 @@ final class Worker implements AutoCloseable {
         Storage storage = Storage.of(settings.storage());
         return new Worker(management, new Catalogs(settings.catalogUri(), tokens, storage.clientProperties(), trace),
                 storage, compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
-                settings.compaction().maxJobs(), meters, observations);
+                settings.requestDeadline(), settings.compaction().maxJobs(), meters, observations);
     }
 
     /**
-     * One scan: the tables, the night's compaction Jobs and orphan scans, then the purges, then the due deletions;
+     * One scan: the tables, the requested jobs, the night's compaction Jobs and orphan scans, then the purges, then
+     * the due deletions;
      * recorded as meters ({@link WorkerMetrics}) and spans ({@link ScanSpans}), and reported to the catalog as it
      * starts and ends (D38).
      */
@@ -149,13 +158,17 @@ final class Worker implements AutoCloseable {
                 tonight = null;
             }
             if (night.isPresent() && tonight == null) {
-                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics, spans, health,
+                tonight = new NightlyCompaction(night.get(), compactor, slots, metrics, spans, health,
                         clock, this::load);
             }
             orphansDue.clear();
             pages(Management.Section.TABLES, management::tables,
                     tables -> tables.forEach(t -> maintain(t, now, report)), report);
+            List<Management.RequestWork> requests = new ArrayList<>();
+            pages(Management.Section.REQUESTS, management::requests, requests::addAll, report);
+            requested.compact(requests, report);
             compact(report);
+            requested.scanOrphans(requests, () -> compact(report), report);
             scanOrphans(now, report);
             pages(Management.Section.PURGES, management::purges, purges -> purges.forEach(p -> purge(p, report)),
                     report);

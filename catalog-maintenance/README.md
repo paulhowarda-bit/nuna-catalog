@@ -9,9 +9,10 @@ path. Its decisions are in the ledger's D30 and its amendments.
 ## What a scan does
 
 Every `scan-interval` (10 minutes by default) the worker reads the catalog's work list,
-`GET /management/v1/maintenance/work`, page by page, and works through its three sections. Snapshot expiry,
+`GET /management/v1/maintenance/work`, page by page, and works through its four sections. Snapshot expiry,
 manifest rewrite, purges and due deletions run at every scan, round the clock. Compaction and orphan scans, the
-heavy jobs, start only inside the nightly cleanup window (below).
+heavy jobs, start only inside the nightly cleanup window (below), unless someone asked for them ("Maintenance on
+request").
 
 - **Tables** whose resolved policy runs a job, with that policy. For each one:
   - **Snapshot expiry** (`snapshot-expiry.enabled`, `max-snapshot-age`, `min-snapshots-to-keep`): Iceberg's
@@ -39,6 +40,8 @@ heavy jobs, start only inside the nightly cleanup window (below).
   principal, not the process.
 - **Deletions**: pending deletions that are due, past the PITR window (7 days by default), of objects that no
   hold or freeze covers. The worker deletes them with its own storage identity and reports them done.
+- **Requests**: a table's compaction or orphan scan someone asked for now ("Maintenance on request", below). The
+  requested compactions start before the night's queue; the requested orphan scans run before the night's.
 
 Before any job on a table the worker loads it and checks that its id is still the one the work list named. A
 table dropped, renamed or unregistered since, whose name another table now has, is left alone and reported; the
@@ -87,7 +90,8 @@ deployment as `cleanup-window.start`, `end` and `zone`. It has no default: only 
   skip. On the night they go back it is longer; a time the clocks repeat is taken the first time round, so the
   window never opens or closes twice in one night.
 - Outside the window nothing heavy starts, after a restart too: a worker started in the day starts no compaction
-  and no orphan scan until the window opens.
+  and no orphan scan until the window opens. A job someone asked for is the one exception ("Maintenance on
+  request").
 - At the window's end nothing new starts. Each compaction Job's Kubernetes deadline (`activeDeadlineSeconds`) is
   the window's end, and it runs `rewrite_data_files` with partial progress, so the file groups it finished stay
   committed when Kubernetes stops it. An orphan scan still running stops and is not recorded. The first scan after
@@ -149,6 +153,30 @@ left over, and give each needy table a series of its own (`docs/observability/wo
 each table's latest assessment and how its last Job stands or ended, as the worker reports them, and lists the
 neediest tables in the worker's order (`docs/observability/table-health.md`).
 
+## Maintenance on request
+
+A caller with `modify` on a table can ask for its compaction or its orphan scan to run now, from the console's
+Health tab or `POST .../tables/{table}/maintenance/requests` (D30, amended 2026-11-20; backlog 114;
+`docs/observability/table-health.md`, "Maintenance on request"). The catalog checks the asker and its guards; the
+worker takes the request at its next scan, from the work list's `requests` section, inside the window or outside it:
+
+- **A requested compaction.** The table is assessed and the assessment reported, then a Job is started whatever the
+  assessment says: someone asked. The Job is the night's Job in all but two things: its name ends with the time
+  asked (`nuna-compact-<table uuid>-r<epoch milliseconds in base 36>`), so a table gets one per request, and its
+  Kubernetes deadline is `request-deadline` (two hours by default) after it starts, not the window's end. It takes one
+  of the `compaction.max-jobs` slots the night's Jobs use, before the night's queue does; while every slot is taken,
+  or a Job of the table holds one, the request waits for a later scan. Without a compaction image it waits.
+- **A requested orphan scan** runs in the scan, as the night's do, until it is done or `request-deadline` has passed;
+  one cut short records nothing, and the request is not asked again.
+- Each is reported as a job of the night the window last opened, with the time asked, which marks the request
+  started: the next scan's work list no longer carries it. A request whose job the table's policy does not run, or
+  that a hold or freeze stops, stays waiting and off the work list until that changes.
+- As for the night's Jobs, a worker restarted while a requested Job runs does not report how that Job ended; the
+  request stays started.
+
+Upgrade the catalog before the worker: a catalog that has no `requests` section answers the worker's read of it with
+400, and the scan fails.
+
 ## The DR verifier
 
 The worker also keeps each table's and view's DR watermark (D37, amended 2026-11-20): the newest version whose every
@@ -208,7 +236,8 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `compaction.service-account` | `/var/run/secrets/kubernetes.io/serviceaccount` | The folder holding the service account's token, CA and namespace. |
 | `compaction.catalog-uri` | `catalog-uri` | The catalog as the Job's pods reach it. |
 | `compaction.memory`, `driver-memory` | `2Gi`, `1g` | The Job container's memory limit, and Spark's driver memory within it. |
-| `compaction.max-jobs` | `2` | How many Jobs run at once; the neediest tables go first. Each runs to the window's end at the latest. |
+| `compaction.max-jobs` | `2` | How many Jobs run at once, the night's and the requested ones together; the requested go first, then the neediest tables. Each night's Job runs to the window's end at the latest. |
+| `request-deadline` | `PT2H` | How long a job asked for on request may run ("Maintenance on request"): a requested compaction Job's Kubernetes deadline, and when a requested orphan scan stops. |
 | `compaction.run-as-user` | `185` | The Spark image's user id. |
 | `compaction.spark-conf` | none | More Spark settings for every Job. |
 | `dr.verify-interval` | `PT1M` | How often the DR verifier reads the DR work list. |
@@ -324,6 +353,7 @@ day (`TestCatalog.allDay`).
 | `GuardrailsTest` | | Held, frozen and unregistered tables are untouched until the hold and freeze go; a table no longer the one the work list named is neither assessed nor compacted. |
 | `PurgeTest` | | A purge removes the prefix after its claim; another worker's claim is left alone; a claimed purge resumes. |
 | `PendingDeletionTest` | | Pending deletions wait for their time, then are deleted and reported done. |
+| `RequestedWorkTest` | | Maintenance on request, against a stand-in catalog on the JDK's HTTP server, on an in-memory Iceberg catalog with a stand-in compactor, no Docker: a requested compaction starts in the day, whatever its assessment, its Job named after the time asked and stopping at the request's deadline; requested Jobs share the night's slots, one Job per table at once; with compaction off a request waits; a requested orphan scan runs in the day and stops at its deadline, recording nothing. Each report names the request. |
 | `FailedOrphanScanTest` | | An orphan scan that fails is tried again at the next scan, the same night, and once it has run, not again that night; against a stand-in catalog on the JDK's HTTP server, no Docker. |
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock, in a window of four hours a day: compaction and orphan scans once a night in the window and never outside it, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**36 open:** 7 S, 12 M, 11 L, 6 XL.
+**35 open:** 7 S, 13 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,15 +39,14 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
-| [114](backlog/114.md) | L | Run a table's maintenance now, from the console, outside the cleanup window too | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites | 2026-11-20 |
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
-| [124](backlog/124.md) | XL | Console: rebuild every page to the redesign prototype (D45) | every page of the console rebuilt, a typeface pair served by the console, a policy change for fonts, and the console's browser tests; panels whose route is in items 114 and 125 to 131 appear as those land | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
 | [136](backlog/136.md) | S | A nightly or heavy run by hand does not hold other sessions' builds | two scripts take and drop one lock file, and one CLAUDE.md line | 2026-11-22 |
+| [137](backlog/137.md) | M | Console: each table's snapshots and last commit in a namespace's Contents | one listing route over what the catalog keeps of each table's current metadata, filtered as Contents is, then two columns in the console, with tests | 2026-11-22 |
 
 ## Open items in full
 
@@ -1357,64 +1356,6 @@ when Paul asks.
 Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
 every ref, the governance routes and the console show the branch, and a test on each store shows it.
 
-### 114. Run a table's maintenance now, from the console, outside the cleanup window too
-
-- Decided: 2026-11-20, D30
-- Added: 2026-11-20 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/, catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-maintenance/, docs/observability/table-health.md, docs/observability/health-page.md, decision-ledger.md
-- Effort: L, a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites
-
-Paul asked (2026-11-20) whether there is a UI to see health data and to start maintenance tasks. The console shows
-health (the **Health** page and each table's **Health** tab, docs/observability/health-page.md), but nothing can
-start maintenance, in the console or through the API:
-
-- The console's only writes are grants (`catalog-server/src/main/resources/nuna/ui/api.js`, the two `POST`s at lines
-  154 and 159).
-- The maintenance routes are the worker's (`GET /management/v1/maintenance/work`, the deletions and the health
-  reports, `MaintenanceRoutes` and `HealthRoutes`) and the reads behind the health page. None asks for work.
-- The worker decides when work runs. It reads the work list every `scan-interval` (10 minutes); expiry, manifest
-  rewrite, purges and due deletions run at every scan, and compaction and orphan scans start only inside the nightly
-  cleanup window (D30, amended 2026-11-15; catalog-maintenance/README.md, "The cleanup window"). A table that needs
-  compaction at 09:00 waits for the night, and one that does not need it by the worker's thresholds never gets a Job.
-- An operator's only levers are the table's maintenance policy (`PUT .../maintenance-policy`, `modify` on the table)
-  and the deployment's window, neither of which says "now".
-
-Expiry and manifest rewrite already run within 10 minutes whenever the policy makes them due, so the request is for
-the two heavy jobs: a compaction of one table, and an orphan scan of one table.
-
-**Decided (Paul, 2026-11-20, D30 amended):** a requested compaction or orphan scan may start outside the cleanup
-window, with a deadline ("Yes, with a deadline", over queuing it for tonight's window). It still counts against
-`compaction.max-jobs`. A requested compaction Job's deadline is a new setting, 2 hours by default, in place of the
-window's end; a requested orphan scan stops at the same deadline and records nothing, as at the window's end. The
-nightly work keeps the window.
-
-Settled on the recommendation, unless Paul says otherwise:
-- **Who may ask:** `modify` on the table, as for its maintenance policy. Every request and refusal is audited.
-- **The guards stay the catalog's.** A request is refused when the table's resolved policy disables that job, and
-  when a hold or freeze would keep it off the work list. A requested compaction runs whether or not the assessment
-  says the table needs one: that is the point of asking.
-- **The worker still polls.** The catalog keeps the request; the work list carries requested tables in a section of
-  their own; the worker takes them at its next scan, so a request starts within one `scan-interval`. No push from the
-  catalog to the worker, as D30 (2) decided. One pending request per table and job; asking again changes nothing.
-  The request is cleared when the worker reports the job started, through the reports it already makes.
-
-What done looks like:
-- `POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests` with
-  `{"job": "compaction" | "orphan-scan"}`, answering 202, and the request shown in the table's health
-  (`GET .../tables/{table}/health`: who asked, when, waiting or started).
-- The request kept by an add-only schema step on PostgreSQL, CockroachDB, Oracle and MongoDB, so the rolling upgrade
-  stays safe; a store suite shows it kept, deduplicated, cleared on start and gone with a purged table.
-- The worker runs requested jobs at its next scan, inside or outside the window, and reports them as it reports
-  nightly ones; a test like `NightlyCleanupTest` shows a request made in the day run, its Job given the request
-  deadline and an orphan scan stopped at it.
-- On a table's **Health** tab, **Compact now** and **Scan for orphans now** for a viewer with `modify`, and the
-  pending request while it waits; `ConsoleHealthTest` shows a reader sees no buttons and a refused request shows the
-  catalog's answer.
-- Route tests for who may ask and every refusal; bites for a request taken without `modify`, a request taken under a
-  hold, a requested Job given the window's end as its deadline, and a requested job held back until the window.
-- docs/observability/table-health.md, health-page.md and catalog-maintenance/README.md describe it, including the
-  deadline setting (D30, amended 2026-11-20).
-
 ### 115. Row filters and column masks stored in the catalog, served to Trino (D20)
 
 - Decided: 2026-11-20, D20
@@ -1559,53 +1500,6 @@ counts it as CPU. This hits the heavy build as it hit the nightly, so a heavy bu
 read beside Windows' numbers, not only the VM's. Item 135 is the host's memory (Paul decides the remedy); item 136
 keeps other sessions' builds off a run by hand.
 
-### 124. Console: rebuild every page to the redesign prototype (D45)
-
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/ui/, catalog-server/src/main/java/nuna/catalog/server/ui/, docs/design/console/, .gitattributes, build-plan.md, catalog-server/src/test/java/nuna/catalog/server/ConsoleTest.java
-- Effort: XL, every page of the console rebuilt, a typeface pair served by the console, a policy change for fonts, and the console's browser tests; panels whose route is in items 114 and 125 to 131 appear as those land
-
-The console (`catalog-server/src/main/resources/nuna/ui/`) is the UI v1 console. Paul decided on 2026-11-22 to
-rebuild it to Atelier's redesign (D45). `docs/design/console/prototype.html` is what it should look like and do.
-`docs/design/console/wireframes.html` gives each panel's data and route.
-
-What done looks like:
-- Every page and tab of the prototype, built the way the console is built today:
-  - plain HTML, CSS and ES modules, with no third-party code;
-  - pages built from text nodes;
-  - the strict Content-Security-Policy.
-
-  The pages are:
-  - sign-in;
-  - the overview, with the ice line;
-  - catalog browse;
-  - table detail, with these tabs: overview, schema, snapshots, partitioning, health, governance, grants, audit and
-    metadata log;
-  - maintenance;
-  - governance, with summary, grants, and holds and freezes;
-  - audit;
-  - health;
-  - the refusal and empty states.
-
-  Light, dark and auto themes, and phone width, work throughout.
-- Instrument Sans and Geist Mono (SIL Open Font License) served from the console with their licences, and
-  `font-src 'self'` added to the policy.
-- Every refusal shown as the server sends it, with its request id.
-- A panel whose route has not landed yet is left out, not faked. It appears when its item lands.
-- The console's browser tests (`heavy`) cover each page, the theme switch, phone width and a refused grant.
-
-Progress, 2026-11-22 (branch `worktree-agent-a6b987ce265ae87ed`, `status/2026-11-22-console-redesign-pages.md`):
-every page and tab above is built from the routes `main` had when the branch started, with the themes, phone width,
-refusals with their request ids, and the browser tests (theme, phone width and a refused grant among them). Left:
-- The fonts: vendored with their licences and `font-src 'self'`, on this branch (1224021).
-- Done later on 2026-11-22, after merging `main` at 2e7e640: the panels of items 128 to 131 (the governance summary,
-  every hold and freeze, the tree's and Contents' marks and the overview's figure; grants from above and "Who may";
-  who made each metadata change; catalog properties), with their browser tests.
-- Done after merging `main` at fc4d7aa: the panels of items 125 (the audit feed, record detail with its chain, the
-  archive check, counts by kind, the busiest objects, the overview's audit figure) and 126 (last night's figures with
-  30-night sparklines, the slot chart, the overview's "Maintenance, last night"), with their browser tests.
-- The panels still waiting on items 114 and 127.
-
 ### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
 
 - Added: 2026-11-22 by item 128
@@ -1731,6 +1625,37 @@ theirs, and leave a run that already holds it alone; `overnight.sh` keeps workin
 dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too. Checked by running `./nightly.sh
 --test-dry-run` and seeing the file appear and go.
 
+### 137. Console: each table's snapshots and last commit in a namespace's Contents
+
+- Added: 2026-11-22 by agent on item 124
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-store-api/, catalog-store-sql/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/resources/nuna/ui/browse.js, catalog-server/src/test/java/nuna/catalog/server/governance/, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/observability/
+- Effort: M, one listing route over what the catalog keeps of each table's current metadata, filtered as Contents is, then two columns in the console, with tests
+
+The redesign's namespace **Contents** (D45; `docs/design/console/prototype.html`, the namespace page;
+`docs/design/console/wireframes.html`, browse note 5) gives each table row its format, its snapshot count and its last
+commit. The console's Contents (`catalog-server/src/main/resources/nuna/ui/browse.js`, `contentsTable`) has Name,
+Kind, Tonight's queue and Governance, and no snapshot or commit column: item 124 left it out, since no route gives
+them for a listing (`browse.js`, header comment).
+
+Evidence:
+- The wireframe's note says the columns come from each table's metadata through the Iceberg REST load, with
+  `X-Iceberg-Access-Delegation: none`. That is one `loadTable` per row, and every load is audited
+  (`table.js`, "every load is audited"): a namespace of 300 tables would write 300 audit records each time someone
+  opens it, and read 300 metadata files from the object store.
+- The routes Contents uses (`GET /v1/{prefix}/namespaces/{ns}/tables`, the governance marks, the queue) give names and
+  marks only. `GET /management/v1/maintenance/estate` (item 127) gives each table's assessment, data files among
+  them, but not its snapshots or last commit.
+
+What done looks like:
+- A read that lists, for the tables of one namespace the caller may describe, each table's format version, its
+  snapshot count and the time and committer of its last commit, from what the catalog keeps (its pointer and commit
+  journal), paged, with no object-store read and no per-table audit record. Tables the caller may not describe are
+  left out, as Contents leaves them out today.
+- Contents shows Format, Snapshots and Last commit for each table row, as the prototype draws them.
+- A fast route test (store double) for what is listed and what is left out; a browser test (`heavy`) for the columns;
+  bites for a table listed to a caller who may not describe it and for a page without a bound.
+- docs/observability/ (or the route's own doc) describes the read.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1821,12 +1746,14 @@ dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too.
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |
 | [102](backlog/102.md) | Refs in the store: the ref record and its cut on four stores (item 26) | done | 2026-11-22 |
 | [103](backlog/103.md) | Branch commits and the merge transaction in the store (item 26) | done | 2026-11-22 |
+| [114](backlog/114.md) | Run a table's maintenance now, from the console, outside the cleanup window too | done | 2026-11-22 |
 | [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
 | [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
 | [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
 | [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
 | [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
 | [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [124](backlog/124.md) | Console: rebuild every page to the redesign prototype (D45) | done | 2026-11-22 |
 | [125](backlog/125.md) | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | done | 2026-11-22 |
 | [126](backlog/126.md) | Maintenance: each night's summary and each job's run on its worker slot (D45) | done | 2026-11-22 |
 | [127](backlog/127.md) | Maintenance: one row per table for the overview's ice line (D45) | done | 2026-11-22 |

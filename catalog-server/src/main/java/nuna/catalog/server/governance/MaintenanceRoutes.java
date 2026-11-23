@@ -10,6 +10,8 @@ import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.MaintenanceJob;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
@@ -70,7 +72,7 @@ class MaintenanceRoutes {
             MaintenancePolicy.COMPACTION_ENABLED, MaintenancePolicy.REWRITE_ENABLED);
 
     /** The work list's sections, in the order its pages walk them. */
-    private enum Section { TABLES, PURGES, DELETIONS }
+    private enum Section { TABLES, PURGES, DELETIONS, REQUESTS }
 
     private final CatalogStore store;
     private final Management management;
@@ -97,9 +99,11 @@ class MaintenanceRoutes {
      * What the maintenance worker has to do, page by page: first every active table whose resolved maintenance
      * policy (D30) runs a job, with the policy in force, which leaves out what a hold or a DR freeze stops; then
      * the purge queue (dropped objects past their window that no hold or freeze covers, and every claimed one);
-     * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers. Each
-     * page holds items of one section; the token walks on to the next section, unless {@code section}
-     * ({@code tables}, {@code purges} or {@code deletions}) asks for that section alone.
+     * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers; then the
+     * requested jobs waiting (backlog 114), by the time asked, each with its table as the tables section shows it,
+     * of tables whose resolved policy runs the job still. Each page holds items of one section; the token walks on to
+     * the next section, unless {@code section} ({@code tables}, {@code purges}, {@code deletions} or
+     * {@code requests}) asks for that section alone.
      */
     @GetMapping(path = WORK, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> work(@RequestParam(required = false) String section,
@@ -110,7 +114,8 @@ class MaintenanceRoutes {
         try {
             only = Optional.ofNullable(section).map(name -> Section.valueOf(name.toUpperCase(Locale.ROOT)));
         } catch (IllegalArgumentException e) {
-            throw CatalogError.badRequest("No work list section " + section + "; there are tables, purges and deletions");
+            throw CatalogError.badRequest("No work list section " + section
+                    + "; there are tables, purges, deletions and requests");
         }
         Section current = only.orElse(Section.TABLES);
         Optional<String> inner = Optional.empty();
@@ -132,6 +137,7 @@ class MaintenanceRoutes {
         ArrayNode tables = body.putArray("tables");
         ArrayNode purges = body.putArray("purges");
         ArrayNode deletions = body.putArray("deletions");
+        ArrayNode requests = body.putArray("requests");
         Optional<String> next;
         try {
             next = switch (current) {
@@ -150,13 +156,18 @@ class MaintenanceRoutes {
                     listed.items().forEach(deletion -> deletions.add(deletion(deletion)));
                     yield listed.nextToken();
                 }
+                case REQUESTS -> {
+                    Page<MaintenanceRequest> listed = store.listWaitingRequests(page);
+                    listed.items().forEach(waiting -> requested(waiting).ifPresent(requests::add));
+                    yield listed.nextToken();
+                }
             };
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("Invalid page token: " + e.getMessage());
         }
         Section listed = current;
         Optional<String> token = next.map(t -> PageToken.encode(listed.name(), t)).or(() ->
-                only.isPresent() || listed == Section.DELETIONS ? Optional.empty()
+                only.isPresent() || listed == Section.REQUESTS ? Optional.empty()
                         : Optional.of(PageToken.encode(Section.values()[listed.ordinal() + 1].name(), "")));
         token.ifPresent(t -> body.put("next-page-token", t));
         return GovernanceRoutes.json(200, body);
@@ -252,8 +263,41 @@ class MaintenanceRoutes {
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("Not a job id: " + id);
         }
-        nights.record(MaintenanceNights.job(jobId, request.caller().principal().id(), Management.body(body)));
+        JsonNode json = Management.body(body);
+        MaintenanceJob job = MaintenanceNights.job(jobId, request.caller().principal().id(), json);
+        Optional<Instant> asked = requestedAt(json);
+        nights.record(job);
+        asked.ifPresent(at -> started(job, at));
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Clears the request a job was started for (backlog 114): the report's {@code requested-at} names it, with the
+     * job's kind and object. A request no longer waiting, or made at another time, is left as it is.
+     */
+    private void started(MaintenanceJob job, Instant requestedAt) {
+        MaintenanceRequest.Job asked = switch (job.kind()) {
+            case COMPACTION -> MaintenanceRequest.Job.COMPACTION;
+            case ORPHAN_SCAN -> MaintenanceRequest.Job.ORPHAN_SCAN;
+            default -> null;
+        };
+        if (asked != null) {
+            store.startMaintenanceRequest(job.objectId(), asked, requestedAt, job.startedAt());
+        }
+    }
+
+    /** The request a job report names, by the time it was asked; none in a report of the night's own work. */
+    private static Optional<Instant> requestedAt(JsonNode json) {
+        JsonNode value = json.get("requested-at");
+        if (value == null || value.isNull()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Instant.parse(value.asString()).truncatedTo(ChronoUnit.MILLIS));
+        } catch (RuntimeException e) {
+            throw CatalogError.badRequest("Not a maintenance job report: requested-at is not an ISO-8601 instant: "
+                    + value);
+        }
     }
 
     /**
@@ -300,6 +344,36 @@ class MaintenanceRoutes {
         if (JOBS.stream().noneMatch(job -> "true".equals(resolved.get(job).value()))) {
             return Optional.empty();
         }
+        return work(table, resolved);
+    }
+
+    /**
+     * A waiting request as the work list shows it: its table as the tables section shows it, with {@code job},
+     * {@code requested-at} and {@code requested-by}. None when the table is gone, or when its resolved policy no
+     * longer runs the job, a hold or freeze placed since included: the request waits until it does.
+     */
+    private Optional<ObjectNode> requested(MaintenanceRequest request) {
+        Optional<CatalogObject> table = store.readObject(request.objectId())
+                .filter(object -> object.kind() == CatalogObject.Kind.TABLE
+                        && object.state() == CatalogObject.State.ACTIVE);
+        if (table.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<String, MaintenancePolicy.Setting> resolved = GovernanceRoutes.resolvePolicy(settings,
+                GovernanceChain.of(store, table.get()));
+        if (!"true".equals(resolved.get(MaintenanceRequests.key(request.job())).value())) {
+            return Optional.empty();
+        }
+        return work(table.get(), resolved).map(node -> {
+            node.put("job", MaintenanceRequests.label(request.job()));
+            node.put("requested-at", request.requestedAt().toString());
+            node.put("requested-by", request.requestedBy());
+            return node;
+        });
+    }
+
+    /** The table and its resolved policy as the work list shows them; none when its namespace is gone. */
+    private Optional<ObjectNode> work(CatalogObject table, Map<String, MaintenancePolicy.Setting> resolved) {
         Optional<List<String>> levels = management.levels(table.catalogId(), table.namespaceId());
         if (levels.isEmpty()) {
             return Optional.empty();

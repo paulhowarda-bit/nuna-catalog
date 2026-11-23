@@ -1,7 +1,7 @@
 // Maintenance: last night's figures with their 30-night sparklines and its jobs on their slots (item 126), tonight's
 // queue in one catalog, the catalog's maintenance policy (read, and set by those who may modify the catalog), and
-// the worker's scans for platform operators. Waiting on another item, and left out until it lands: "Compact a table
-// now" (114).
+// the worker's scans for platform operators. "Compact a table now", for a caller whose groups hold modify in the
+// catalog (item 114).
 
 import * as api from './api.js';
 import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
@@ -9,6 +9,7 @@ import {dialogForm, failure, field, fill, granted, h, icon, load, openDialog, pa
   from './dom.js';
 import {emptyQueue, lastAssessed, queue, queueChips, queueOf, queueTable} from './queue.js';
 import {sourceWords, workerPanel} from './health.js';
+import {mayModifyAny, pickDialog} from './requests.js';
 
 /** The policy keys, in the order the prototype lists them; a key under an .enabled key is indented. */
 const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'snapshot-expiry.min-snapshots-to-keep',
@@ -18,7 +19,7 @@ const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'sn
 export function maintenancePage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'maintenance'});
   load(main, async () => {
-    const rows = queueOf(await queue(true), catalog);
+    const [rows, may] = await Promise.all([queue(true).then(all => queueOf(all, catalog)), mayModifyAny(catalog)]);
     const assessed = lastAssessed(rows);
     const policy = h('div');
     const worker = h('div');
@@ -42,7 +43,9 @@ export function maintenancePage(catalog) {
         title: rows.length ? `${plural(rows.length, 'table')} queued for tonight.` : `Every table you may read in ${catalog} is in shape.`,
         sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
           + 'each one\'s assessment is on its Health tab.',
-        side: assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
+        side: [assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
+          may ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact-pick', onclick: () => pickDialog(catalog, rows)},
+            icon('play'), 'Compact a table now') : null],
       }),
       figures,
       queuePanel,

@@ -23,7 +23,6 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -129,12 +128,21 @@ final class KubernetesJobs implements Compactor {
 
     /** The Job that compacts this table on this night: {@code nuna-compact-<table id>-<the night's date>}. */
     static String jobName(Management.TableWork table, CleanupWindow.Night night) {
-        return "nuna-compact-" + table.id() + "-" + night.date().format(DateTimeFormatter.BASIC_ISO_DATE);
+        return jobName(table, Run.of(night));
+    }
+
+    /**
+     * The Job of this run: {@code nuna-compact-<table id>-<its key>}, the night's date or a request's {@code r} and
+     * time (backlog 114), 59 characters at most: within the 63 a Job's name may have, since its pods carry it as a
+     * label.
+     */
+    static String jobName(Management.TableWork table, Run run) {
+        return "nuna-compact-" + table.id() + "-" + run.key();
     }
 
     @Override
-    public Launch launch(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night) {
-        String name = jobName(table, night);
+    public Launch launch(Management.TableWork table, CompactionNeed need, Run run) {
+        String name = jobName(table, run);
         HttpResponse<String> existing = send("GET", "/apis/batch/v1/namespaces/" + namespace + "/jobs/" + name, null);
         if (existing.statusCode() == 200) {
             return Launch.EXISTS;
@@ -144,7 +152,7 @@ final class KubernetesJobs implements Compactor {
         // for it to appear.
         String secretName = name + "-" + UUID.randomUUID().toString().substring(0, 8);
         HttpResponse<String> created = send("POST", "/apis/batch/v1/namespaces/" + namespace + "/jobs",
-                job(table, need, night, secretName));
+                job(table, need, run, secretName));
         if (created.statusCode() == 409) {
             return Launch.EXISTS;
         }
@@ -160,8 +168,8 @@ final class KubernetesJobs implements Compactor {
     }
 
     @Override
-    public State state(Management.TableWork table, CleanupWindow.Night night) {
-        String name = jobName(table, night);
+    public State state(Management.TableWork table, Run run) {
+        String name = jobName(table, run);
         HttpResponse<String> job = send("GET", "/apis/batch/v1/namespaces/" + namespace + "/jobs/" + name, null);
         if (job.statusCode() == 404) {
             return State.SUCCEEDED;
@@ -186,9 +194,8 @@ final class KubernetesJobs implements Compactor {
         return State.RUNNING;
     }
 
-    private ObjectNode job(Management.TableWork table, CompactionNeed need, CleanupWindow.Night night,
-                           String secretName) {
-        String name = jobName(table, night);
+    private ObjectNode job(Management.TableWork table, CompactionNeed need, Run run, String secretName) {
+        String name = jobName(table, run);
         ObjectNode job = JSON.createObjectNode().put("apiVersion", "batch/v1").put("kind", "Job");
         ObjectNode metadata = job.putObject("metadata").put("name", name);
         labels(metadata, table);
@@ -196,7 +203,7 @@ final class KubernetesJobs implements Compactor {
                 table.catalog() + ":" + String.join(".", table.namespace()) + "." + table.name());
         ObjectNode spec = job.putObject("spec").put("backoffLimit", 0)
                 .put("ttlSecondsAfterFinished", KEPT.toSeconds())
-                .put("activeDeadlineSeconds", deadline(night));
+                .put("activeDeadlineSeconds", deadline(run));
         ObjectNode template = spec.putObject("template");
         labels(template.putObject("metadata"), table);
         ObjectNode pod = template.putObject("spec").put("restartPolicy", "Never").put("enableServiceLinks", false)
@@ -280,9 +287,9 @@ final class KubernetesJobs implements Compactor {
         }
     }
 
-    /** Seconds from now to the window's end, rounded up: at least one, which Kubernetes requires. */
-    private long deadline(CleanupWindow.Night night) {
-        return Math.max(1, (Duration.between(clock.instant(), night.closes()).toMillis() + 999) / 1000);
+    /** Seconds from now to the run's deadline, rounded up: at least one, which Kubernetes requires. */
+    private long deadline(Run run) {
+        return Math.max(1, (Duration.between(clock.instant(), run.deadline()).toMillis() + 999) / 1000);
     }
 
     private ObjectNode sparkConf(Management.TableWork table) {

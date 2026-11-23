@@ -278,6 +278,7 @@ final class OracleObjects {
             update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
             update(connection, "DELETE FROM pending_deletion WHERE object_id = ?", objectId);
             update(connection, "DELETE FROM table_health WHERE object_id = ?", objectId);
+            update(connection, "DELETE FROM maintenance_request WHERE object_id = ?", objectId);
             update(connection, "DELETE FROM dr_watermark WHERE object_id = ?", objectId);
             return WriteResult.APPLIED;
         });
