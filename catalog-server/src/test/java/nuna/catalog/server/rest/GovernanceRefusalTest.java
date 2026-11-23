@@ -34,6 +34,7 @@ import nuna.catalog.objectstore.StoreKind;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.governance.RefSettings;
 import nuna.catalog.server.ErrorResponsesForTests;
 import nuna.catalog.server.metrics.CatalogMetrics;
 import nuna.catalog.server.security.Denials;
@@ -140,7 +141,8 @@ class GovernanceRefusalTest {
         rules.registerSingleton("snapshotMinimumAge",
                 Rules.snapshotMinimumAge(MINIMUM_SNAPSHOT_AGE, retentionClass -> Optional.empty()));
         Engines engines = new Engines(store, storage, cache, alerts, events, clock,
-                rules.getBeanProvider(CommitRule.class));
+                rules.getBeanProvider(CommitRule.class), new RefSettings(50, 1000, Duration.ofDays(30),
+                Duration.ofDays(180), Duration.ofDays(7)));
         ObjectRoutes objects = new ObjectRoutes(store, lookup, new Idempotency(store, clock), events, settings, guard,
                 clock);
         NamespaceRoutes namespaces = new NamespaceRoutes(store, lookup, new Idempotency(store, clock), events, callers,

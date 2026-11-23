@@ -145,7 +145,7 @@ class MaintenanceEstateTest {
                 return id.equals(catalogId) ? "gate" : null;
             }
         };
-        routes = new MaintenanceRoutes(store, management, null, null, catalogs, clock, authorizer);
+        routes = new MaintenanceRoutes(store, management, null, null, catalogs, null, null, clock, authorizer);
     }
 
     @Test

@@ -20,6 +20,7 @@ import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.RefLock;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -117,6 +118,23 @@ final class SqlRefs {
         return transactions.autocommit("ref lookup", connection -> first(connection,
                 "SELECT " + COLUMNS + " FROM ref WHERE catalog_id = ? AND name_norm = ?", SqlRefs::ref, catalogId,
                 normalizedName));
+    }
+
+    long countOwn(UUID refId) {
+        return transactions.autocommit("ref own pointer count", connection -> first(connection,
+                "SELECT count(*) AS own FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+                row -> row.getLong("own"), refId.toString(), refId).orElseThrow());
+    }
+
+    List<RefPointers> listPointers(UUID objectId) {
+        return transactions.autocommit("ref pointers of an object", connection -> query(connection,
+                "SELECT r.id, r.catalog_id, r.name_norm, r.name, r.kind, r.created_at, r.created_by, r.from_ref,"
+                        + " r.from_name, r.expires_at, e.version, e.metadata_location, e.sha256,"
+                        + " p.version AS head_version, p.metadata_location AS head_location, p.sha256 AS head_sha256"
+                        + " FROM ref_entry e JOIN ref r ON r.id = e.ref_id"
+                        + " LEFT JOIN pointer p ON p.object_id = e.object_id AND p.branch = CAST(e.ref_id AS TEXT)"
+                        + " WHERE e.object_id = ? ORDER BY r.name_norm",
+                SqlRefs::pointers, objectId));
     }
 
     Page<Ref> list(UUID catalogId, PageRequest page) {
@@ -311,6 +329,14 @@ final class SqlRefs {
                 new Name(row.getString("name_norm"), row.getString("name")), Ref.Kind.valueOf(row.getString("kind")),
                 instant(row, "created_at"), row.getString("created_by"), Optional.ofNullable(Jdbc.uuid(row, "from_ref")),
                 row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")));
+    }
+
+    private static RefPointers pointers(ResultSet row) throws SQLException {
+        RefEntry.At cut = new RefEntry.At(row.getLong("version"), row.getString("metadata_location"),
+                row.getString("sha256"));
+        long head = row.getLong("head_version");
+        return new RefPointers(ref(row), cut, row.wasNull() ? Optional.empty()
+                : Optional.of(new RefEntry.At(head, row.getString("head_location"), row.getString("head_sha256"))));
     }
 
     private static RefEntry entry(ResultSet row) throws SQLException {

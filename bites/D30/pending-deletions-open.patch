@@ -2,14 +2,14 @@ Breaks: anyone signed in records another table's files for deletion, which the w
 Module: catalog-server
 Test: MutatingRoutesAuditTest#everyMutatingManagementRouteAuditsItsRefusals
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
-index 9b65acd..7fcf2ac 100644
+index 5135330..a8daf76 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
-@@ -159,7 +159,6 @@ class MaintenanceRoutes {
+@@ -218,7 +218,6 @@ class MaintenanceRoutes {
          CatalogRecord catalog = management.catalog(prefix, request, "recordPendingDeletions", null);
          CatalogObject object = existing(catalog, id);
          nuna.catalog.audit.Securable audit = audit(catalog, object);
 -        guard.requireMaintenance(request, audit, "recordPendingDeletions");
          String root = object.locationRoot().endsWith("/") ? object.locationRoot() : object.locationRoot() + "/";
+         JsonNode json = Management.body(body);
          Set<String> locations = new LinkedHashSet<>();
-         for (JsonNode location : list(Management.body(body), "locations")) {

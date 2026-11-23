@@ -10,17 +10,20 @@ import java.util.Set;
 
 /**
  * Where the outbox goes (D23): every change to the audit feed, which the SIEM and the archive read,
- * and changes to catalog objects also to the CloudEvents change stream, the interim stand-in for
+ * and changes to catalog objects and refs also to the CloudEvents change stream, the interim stand-in for
  * the REST spec's events endpoint. Label changes go to both (D27, amended 2026-11-12), so engines can
  * refresh the labels they were sent; the governance records behind them, with their provenance, and
  * hold, grant and break-glass records stay on the audit feed.
  */
 public final class ChangeStream {
 
-    /** The event types the change stream carries: what happened to namespaces, tables and views, and their labels. */
+    /**
+     * The event types the change stream carries: what happened to namespaces, tables and views, their labels, and the
+     * catalog's branches and tags (D33, choice 11: a branch about to expire is announced here).
+     */
     public static final Set<EventType> TYPES = EnumSet.of(EventType.COMMIT, EventType.DROP, EventType.UNDROP,
             EventType.PURGE, EventType.RENAME, EventType.NAMESPACE_CHANGE, EventType.UNREGISTER,
-            EventType.LABEL_CHANGE);
+            EventType.LABEL_CHANGE, EventType.REF);
 
     private ChangeStream() {
     }

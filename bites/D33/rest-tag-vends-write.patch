@@ -2,25 +2,16 @@ Breaks: a tag vends credentials that write to a caller who may write the table, 
 Module: catalog-server
 Test: RefReadsTest#aTagVendsReadOnlyCredentials
 
-diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index bbbf891..741d6fa 100644
---- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-+++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -148,7 +148,7 @@ class TableRoutes {
-         CatalogObject object = seen.object();
-         // A tag is read-only to every engine, so its credentials only read (item 26's choice 5).
-         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
--                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && !on.tag();
-+                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table)));
-         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
-                 object.id(), object.locationRoot(), write);
-         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
-@@ -342,7 +342,7 @@ class TableRoutes {
-         List<String> levels = Lookup.levels(namespace);
-         CatalogObject object = objects.seen(on, levels, table, Kind.TABLE).object();
-         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
--                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table))) && !on.tag();
-+                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table)));
-         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
-                 object.id(), object.locationRoot(), write);
-         return Http.json(200, RestResponse.credentials(vended.credentials()));
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index c090b7e..5f05124 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -144,7 +144,7 @@ class Lookup {
+      * (D33); never through a tag, which is read-only (item 26's choice 5).
+      */
+     static boolean writable(OnRef on, CatalogObject object) {
+-        return !on.tag() && object.state() == CatalogObject.State.ACTIVE;
++        return object.state() == CatalogObject.State.ACTIVE;
+     }
+ 
+     /**

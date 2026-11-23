@@ -20,6 +20,7 @@ import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.RefLock;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -28,6 +29,7 @@ import java.sql.SQLIntegrityConstraintViolationException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -124,6 +126,31 @@ final class OracleRefs {
         return transactions.autocommit("ref lookup", connection -> first(connection,
                 "SELECT " + COLUMNS + " FROM ref WHERE catalog_id = ? AND name_norm = ?", OracleRefs::ref, catalogId,
                 normalizedName));
+    }
+
+    long countOwn(UUID refId) {
+        return transactions.autocommit("ref own pointer count", connection -> first(connection,
+                "SELECT count(*) AS own FROM pointer WHERE branch = ? AND object_id IN (" + CUT_OBJECTS + ")",
+                row -> row.getLong("own"), refId.toString(), refId).orElseThrow());
+    }
+
+    /** The refs' entries for the object, then its pointers on branches, matched by the branch's id. */
+    List<RefPointers> listPointers(UUID objectId) {
+        return transactions.snapshot("ref pointers of an object", connection -> {
+            List<RefPointers> cuts = query(connection, "SELECT r.id, r.catalog_id, r.name_norm, r.name, r.kind,"
+                    + " r.created_at, r.created_by, r.from_ref, r.from_name, r.expires_at, e.version,"
+                    + " e.metadata_location, e.sha256 FROM ref_entry e JOIN ref r ON r.id = e.ref_id"
+                    + " WHERE e.object_id = ? ORDER BY r.name_norm", row -> new RefPointers(ref(row),
+                    new RefEntry.At(row.getLong("version"), Jdbc.text(row, "metadata_location"),
+                            Jdbc.text(row, "sha256")), Optional.empty()), objectId);
+            Map<String, RefEntry.At> heads = query(connection, "SELECT branch, version, metadata_location, sha256"
+                    + " FROM pointer WHERE object_id = ? AND branch <> ?", row -> Map.entry(Jdbc.text(row, "branch"),
+                    new RefEntry.At(row.getLong("version"), Jdbc.text(row, "metadata_location"),
+                            Jdbc.text(row, "sha256"))), objectId, PointerKey.MAIN).stream()
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+            return cuts.stream().map(cut -> new RefPointers(cut.ref(), cut.cut(),
+                    Optional.ofNullable(heads.get(cut.ref().id().toString())))).toList();
+        });
     }
 
     Page<Ref> list(UUID catalogId, PageRequest page) {

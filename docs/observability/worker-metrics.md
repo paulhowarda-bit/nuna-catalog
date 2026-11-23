@@ -21,9 +21,9 @@ through its tables, purges and due deletions (`catalog-maintenance/README.md`, "
 
 ## Meters
 
-Labels hold only bounded values: a failure's `kind`, a scan's `outcome` and a compaction `reason`, and on the three
-timers the spans make (backlog 49), a `part`, an `exception`'s simple name, a call's `method`, route and `status`.
-Never a table, namespace, file or person, with one exception, `nuna.maintenance.table.compaction.need` ("The needy
+Labels hold only bounded values: a failure's `kind`, a scan's `outcome`, a compaction `reason` and a catalog ref's
+kind (`ref.kind`, D33), and on the three timers the spans make (backlog 49), a `part`, an `exception`'s simple name,
+a call's `method`, route and `status`. Never a table, namespace, file, ref's name or person, with one exception, `nuna.maintenance.table.compaction.need` ("The needy
 tables" below).
 
 | Meter | Type | Labels | What it records | Supports |
@@ -47,6 +47,9 @@ tables" below).
 | `nuna.maintenance.purges.completed` | counter | none | Dropped objects purged. | Purges failing |
 | `nuna.maintenance.purges.skipped` | counter | none | Purges another worker holds, or the catalog refused or rate-limited. | Panel |
 | `nuna.maintenance.files.deleted` | counter | none | Files deleted: due pending deletions and purged objects' files. | Deletions failing |
+| `nuna.maintenance.files.kept` | counter | `ref.kind`: `branch`, `tag` | Files left alone because a catalog ref reaches them (D33, item 108): a file a job left unreferenced on main that a branch or tag still reaches, not recorded; a due file that a ref made since it was recorded reaches, reported done without being deleted. A file both kinds reach counts for the branch. | Panel: what refs cost in storage |
+| `nuna.maintenance.refs.warned` | counter | none | Branches whose expiry warning the worker sent (D33, choice 11). | Panel |
+| `nuna.maintenance.refs.ended` | counter | none | Branches past their expiry the worker ended. | Panel |
 | `nuna.maintenance.scan.run` | timer | `outcome`, `exception`, `error` | Each scan, as its span's observation (worker-spans.md): the same durations as `nuna.maintenance.scan`, which alerts use. Registered at the first scan. | None of its own |
 | `nuna.maintenance.part` | timer | `part`, `outcome`, `exception`, `error` | Each part of a scan, as its span's observation: a work list page, a table's load, each job, a purge, a deletion, a report. Registered at first use. | Panel: where a scan's time goes |
 | `http.client.requests` | timer | `method`, `uri` (a route), `status`, `outcome`, `error` | Each call to the catalog and to the identity provider, Micrometer's (`micrometer-java11`). Registered at first use. | Panel: the catalog's answers to the worker |
@@ -75,7 +78,8 @@ The kinds of `nuna.maintenance.failures`:
 | `orphan-scan` | Scanning a table's location for orphans, or recording them. |
 | `compaction` | Assessing a table's need (reading its manifests), or launching its compaction Job. |
 | `purge` | Claiming, deleting or completing one dropped object's purge. |
-| `deletion` | Deleting one object's due files, or reporting them done. |
+| `deletion` | Deleting one object's due files, checking them against the refs made since they were recorded, or reporting them done. |
+| `refs` | Warning of or ending one branch the work list's refs section named. A branch renewed, ended or warned of since the list was read is not a failure. |
 | `report` | Reporting a scan, an assessment or a compaction Job to the catalog, which keeps them for the console (table-health.md). The work goes on. A report the catalog refuses because the table is gone or now another is not a failure. |
 
 Each failure is also a WARN log line naming the table or object, which the meters never do.
@@ -252,7 +256,7 @@ worker-spans.md) built on these.
 
 | Test | Shows |
 |---|---|
-| `WorkerMetricsTest` | Every meter reads zero before the first scan; a scan adds each count, each need by reason and each failure by kind; only a scan that read the whole work list moves the last success, and one that throws is still counted; labels hold only a kind, an outcome or a reason, save the needy tables' gauge, which a needy table gets, keeps under its current name and loses once it needs none or is not assessed; this page lists every meter. |
+| `WorkerMetricsTest` | Every meter reads zero before the first scan; a scan adds each count, each need by reason, the files kept by ref kind and each failure by kind; only a scan that read the whole work list moves the last success, and one that throws is still counted; labels hold only a kind, an outcome, a reason or a ref's kind, save the needy tables' gauge, which a needy table gets, keeps under its current name and loses once it needs none or is not assessed; this page lists every meter. |
 | `ScanMetricsTest` | Real scans of a catalog: one that expires, rewrites, finds an orphan, finds a table needing compaction for its small files and starts its Job, purges and skips a purge is counted as its report says and dated by the worker's clock, and the needy table has its gauge; one whose token source fails is a failure of kind `work-list`, cannot report itself to the catalog either (`report`), and leaves the last success where it was; the next moves it; one whose store fails counts its orphan scan, purge and deletion failures by kind and still succeeds. |
 | `NightlyCleanupTest` | Scans across a cleanup window: tables assessed once a night, needs by reason, one Job at a time, the neediest first, the Job cut off and the table left over at the window's end, the needy tables' gauges; the catalog keeps each assessment, Job and scan the worker reports. |
 | `TelemetryTest` | The worker's meters, from Boot's registry, arrive over OTLP: the failed first scan's `work-list` failures, its timer in milliseconds, the last success at `0`. |

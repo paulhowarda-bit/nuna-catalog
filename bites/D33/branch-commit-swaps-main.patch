@@ -1,0 +1,17 @@
+Breaks: a commit on a branch reads and swaps main's pointer, not the branch's own (D33, item 26's choice 3).
+Module: catalog-core
+Test: BranchCommitTest#firstAndSecondCommit
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..a0a203a 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1203,7 +1203,7 @@ public final class CommitEngine {
+ 
+     /** The object's key: on main its main key, on a branch the branch's own (item 26's choice 3). */
+     private PointerKey key(CatalogObject object) {
+-        return branch.map(on -> on.ref().key(object.id())).orElseGet(object::mainKey);
++        return object.mainKey();
+     }
+ 
+     private Base base(CatalogObject object) {

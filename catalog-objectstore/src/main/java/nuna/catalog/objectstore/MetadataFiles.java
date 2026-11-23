@@ -2,13 +2,13 @@ package nuna.catalog.objectstore;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
+import nuna.catalog.core.commit.TableFiles;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -50,16 +50,25 @@ public final class MetadataFiles implements AutoCloseable {
         this.s3 = builder.build();
     }
 
+    /** {@link #write(String, long, String, Optional)} for a commit on main. */
+    public StoredMetadata write(String tableLocation, long version, String json) {
+        return write(tableLocation, version, json, Optional.empty());
+    }
+
     /**
      * Writes a new metadata file under {@code tableLocation} at a location the catalog assigns,
-     * {@code <table>/metadata/<version>-<uuid>.metadata.json}, so no two writes share a file. The
-     * table location must be the one the catalog assigned and recorded, never one taken from the
-     * metadata or its properties. The store checks the bytes it receives against their SHA-256.
+     * {@code <table>/metadata/<version>-<uuid>.metadata.json}, or on a branch
+     * {@code <version>-<uuid>.branch-<branch id>.metadata.json} ({@link TableFiles#fileName}), so no two writes
+     * share a file and storage alone tells a branch's from main's. The table location must be the one the catalog
+     * assigned and recorded, never one taken from the metadata or its properties. The store checks the bytes it
+     * receives against their SHA-256.
      *
      * @param version the pointer version this file will become
+     * @param branch  the id of the branch the commit is on; empty on main
      */
-    public StoredMetadata write(String tableLocation, long version, String json) {
-        ObjectLocation file = profile.approve(tableLocation).child("metadata").child(fileName(version));
+    public StoredMetadata write(String tableLocation, long version, String json, Optional<UUID> branch) {
+        ObjectLocation file = profile.approve(tableLocation).child("metadata")
+                .child(TableFiles.fileName(version, branch));
         byte[] bytes = json.getBytes(UTF_8);
         byte[] sha256 = sha256(bytes);
         put(file, bytes, sha256);
@@ -188,11 +197,6 @@ public final class MetadataFiles implements AutoCloseable {
         } catch (SdkException e) {
             throw new ObjectStoreException("writing " + file + " failed", e);
         }
-    }
-
-    /** Iceberg's file naming, so engines and tools recognise the file: {@code 00042-<uuid>.metadata.json}. */
-    static String fileName(long version) {
-        return String.format(Locale.ROOT, "%05d-%s.metadata.json", version, UUID.randomUUID());
     }
 
     static byte[] sha256(byte[] bytes) {

@@ -9,12 +9,17 @@ path. Its decisions are in the ledger's D30 and its amendments.
 ## What a scan does
 
 Every `scan-interval` (10 minutes by default) the worker reads the catalog's work list,
-`GET /management/v1/maintenance/work`, page by page, and works through its four sections. Snapshot expiry,
+`GET /management/v1/maintenance/work`, page by page, and works through its five sections. Snapshot expiry,
 manifest rewrite, purges and due deletions run at every scan, round the clock. Compaction and orphan scans, the
 heavy jobs, start only inside the nightly cleanup window (below), unless someone asked for them ("Maintenance on
 request").
 
-- **Tables** whose resolved policy runs a job, with that policy. For each one:
+- **Refs** (D33, choice 11), first: each catalog branch within `nuna.refs.expiry-warning` of its expiry is warned
+  of, once for each expiry (`POST /management/v1/maintenance/refs/{id}/warn`), and each past it is ended
+  (`.../end`), so an ended branch's files are no longer kept at this scan's jobs. A branch renewed, ended or warned
+  of since the list was read is left alone.
+- **Tables** whose resolved policy runs a job, with that policy and the catalog refs whose cut names the table.
+  For each one:
   - **Snapshot expiry** (`snapshot-expiry.enabled`, `max-snapshot-age`, `min-snapshots-to-keep`): Iceberg's
     ExpireSnapshots, committed through the catalog. Branches and tags keep their snapshots, as Iceberg decides.
     Every file it leaves unreferenced goes to the catalog's pending-deletion list; the worker never deletes it
@@ -34,12 +39,25 @@ request").
     requires that age to be longer than its PITR window. The scans run one table after another once the night's
     Jobs have started; each stops where it is if the window closes, records nothing, and its table is scanned
     again the next night.
+  - **Catalog refs** (D33, P11, item 108): a branch or tag keeps every file its metadata reaches for the table, a
+    tag's cut, a branch's cut and its own head. Before expiry, a manifest rewrite or an orphan scan records the files
+    it left unreferenced on main, the worker reads each ref's metadata as the orphan scan reads main's, skipping the
+    snapshots main still has, and records only the files no ref reaches; the others are counted as kept
+    (`nuna.maintenance.files.kept`). The record names the refs it read. When a ref naming the table was made since
+    the work list was read, the catalog refuses the record (409) and hands back the table's refs now; the worker
+    checks the files against those, up to three times, then leaves the table to the next scan. Maintenance stays on
+    main: branches are never expired, rewritten or compacted. Once a ref is gone, the next orphan scan queues the
+    files only it kept.
 - **Purges**: dropped objects past the drop window. The worker claims each one (`PURGING`), deletes everything
   beneath its location in batches of 1,000, and reports it `PURGED`. An object another worker has claimed is
   skipped. A worker that dies part-way resumes from its own claim at the next scan: the claim belongs to the
   principal, not the process.
 - **Deletions**: pending deletions that are due, past the PITR window (7 days by default), of objects that no
-  hold or freeze covers. The worker deletes them with its own storage identity and reports them done.
+  hold or freeze covers. Each names the refs made since it was recorded, less an hour, which covers a ref whose
+  create was under way while the catalog checked the record. The worker checks such a file against those refs with
+  the table's own access, and reports one a ref reaches done without deleting it. While the table cannot be loaded,
+  dropped or failing, those files wait: a ref also stops a dropped table's purge, which deletes them with the rest.
+  The worker deletes the others with its own storage identity and reports them done.
 - **Requests**: a table's compaction or orphan scan someone asked for now ("Maintenance on request", below). The
   requested compactions start before the night's queue; the requested orphan scans run before the night's.
 
@@ -359,6 +377,9 @@ day (`TestCatalog.allDay`).
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
 | `WorkerMetricsTest`, `ScanMetricsTest` | | The worker's meters: each count, need and failure kind, the scan's time by outcome, the last success moved only by a scan that read the whole work list, bounded labels but for the needy tables' gauge; real scans counted as their reports say, and kept by the catalog as the worker reports them. |
 | `DrVerifyTest`, `DrVerifierTest`, `DrPassesTest` | | The DR check on two in-memory stores: the watermark stops before the first version missing any file, a version that adds nothing passes on its metadata file, a table with no watermark is checked whole and gets the newest version whole in one listing, never its empty creation version below its pointer; a pass reports only above the kept watermark, keeps going past a failed check, sets its meters and logs its tally at INFO (`docs/observability/dr-watermark.md`). |
+| `RefReachTest` | | What the catalog's refs reach, on an in-memory catalog: a tag keeps what its cut reaches and nothing else, a branch what its own head reaches, a file both reach counts for the branch, main's own snapshots are not read again, and with no refs or no files nothing is read. |
+| `WorkerRefsTest` | | The worker's side of refs, against a stand-in catalog on the JDK's HTTP server, on an in-memory Iceberg catalog, no Docker: branches warned of and ended before the tables are read, a branch ended or warned of since skipped, a failure counted as `refs`; a record the catalog refuses checked again against the refs it hands back, and given up after three reads; due files checked against the refs made since they were recorded, the one a ref reaches completed and not deleted, a dropped table's left waiting. |
+| `RefCleanupTest` | `heavy` | Cleanup under refs on a real catalog: a branch's own files survive expiry and the orphan scan until it is deleted, then are queued, its head untouched; a tag's files survive expiry on main; a tag made after the work list was read keeps its files (the 409); a deletion recorded before a tag is checked against it; a merged branch's files are main's; a branch is warned of once and then ended; deleting a tag of a held or frozen table deletes nothing until the hold and freeze go. Commits on a branch and the merge go through the server's store until items 105 and 107 give them routes. |
 | `OrphanRaceTest` | `heavy` | A writer committing during orphan scans loses nothing. |
 | `KafkaDownTest` | `heavy` | With Kafka down the scan changes nothing; the next one catches up. |
 | `KillMidPurgeTest` | `heavy` | A worker killed mid-purge is resumed by the next one. |
@@ -390,6 +411,9 @@ day (`TestCatalog.allDay`).
   that long to assess; manifest rewrite keeps their number down.
 - The orphan scan holds every file a table reaches in memory. Size the worker for the largest table;
   `LargeOrphanScanTest` prints the cost per file and how many files a 2 GiB worker can scan.
+- Each catalog ref naming a table costs a read of its metadata and of the manifests main no longer has, each time
+  expiry, a manifest rewrite or an orphan scan of the table leaves files to record, and each scan that finds due
+  files of the table recorded before a ref was made.
 - A worker that crashes after an expiry commit and before recording its files leaves them unrecorded. The
   orphan scan finds them once they are older than `older-than`.
 - A file outside its table's location (for instance under a `write.data.path` elsewhere), or with an empty,

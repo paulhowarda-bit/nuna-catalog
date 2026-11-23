@@ -1,0 +1,16 @@
+Breaks: making a ref needs only describe on the catalog.
+Module: catalog-server
+Test: RefRoutesTest#makingRenewingAndDeletingNeedCreateOnTheCatalog
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index ff2347e..309e3ff 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -170,7 +170,7 @@ class RefRoutes {
+                                   @RequestBody(required = false) String body, HttpServletRequest http) {
+         Request request = management.request(http);
+         Target target = management.target(request, "createRef", Privilege.CREATE, prefix, null, null, null);
+-        guard.require(request, target, "createRef", Privilege.CREATE);
++        guard.require(request, target, "createRef", Privilege.DESCRIBE);
+         return idempotency.run(Optional.ofNullable(key), request.caller(), "CREATE_REF",
+                 target.catalog().id().toString(), body, ticket -> create(target, request, body, ticket));
+     }

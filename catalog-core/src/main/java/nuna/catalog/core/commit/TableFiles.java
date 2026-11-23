@@ -1,6 +1,8 @@
 package nuna.catalog.core.commit;
 
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -9,15 +11,44 @@ import java.util.UUID;
  */
 public interface TableFiles {
 
+    /**
+     * What the name of a metadata file a commit on a branch writes carries, then the branch's id (D33): see
+     * {@link #fileName}. Storage alone tells such a file from main's, as a DR reconcile reads storage after a
+     * failover, when the store may not know a branch's latest commits: main's chain takes one only where main's
+     * pointer, or a commit on main the archive proves (a merge), names it.
+     */
+    String BRANCH_MARK = ".branch-";
+
     /** Where a new table or view lives: a short path the catalog assigns, never derived from the namespace (D28). */
     String newLocation(UUID objectId);
 
+    /** {@link #write(String, long, String, Optional)} for a commit on main. */
+    default Written write(String locationRoot, long version, String json) {
+        return write(locationRoot, version, json, Optional.empty());
+    }
+
     /**
-     * Writes a new metadata file under {@code locationRoot} at a name no other write uses, for pointer
-     * version {@code version}, and returns where it went and the SHA-256 of its bytes. The root must be
+     * Writes a new metadata file under {@code locationRoot} at a name no other write uses ({@link #fileName}), for
+     * pointer version {@code version}, and returns where it went and the SHA-256 of its bytes. The root must be
      * the one the catalog recorded for the object, never one read from the metadata.
+     *
+     * @param branch the id of the branch the commit is on; empty on main
      */
-    Written write(String locationRoot, long version, String json);
+    Written write(String locationRoot, long version, String json, Optional<UUID> branch);
+
+    /**
+     * Iceberg's file naming, so engines and tools recognise the file: {@code 00042-<uuid>.metadata.json} on main,
+     * and on a branch {@code 00042-<uuid>.branch-<branch id>.metadata.json} ({@link #BRANCH_MARK}).
+     */
+    static String fileName(long version, Optional<UUID> branch) {
+        return String.format(Locale.ROOT, "%05d-%s%s.metadata.json", version, UUID.randomUUID(),
+                branch.map(id -> BRANCH_MARK + id).orElse(""));
+    }
+
+    /** Whether the metadata file at {@code location} was written by a commit on a branch, by its name alone. */
+    static boolean onBranch(String location) {
+        return location.substring(location.lastIndexOf('/') + 1).contains(BRANCH_MARK);
+    }
 
     /** Reads a metadata file and hashes the bytes read; {@code intact} says whether they match {@code expectedSha256}. */
     Read read(String location, String expectedSha256);

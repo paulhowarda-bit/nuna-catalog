@@ -21,6 +21,7 @@ import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitLookup;
 import nuna.catalog.store.CommitOutcomeUnknownException;
 import nuna.catalog.store.CommitResult;
+import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.IdempotencyClaim;
 import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.JournalEntry;
@@ -31,6 +32,9 @@ import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerHold;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.PointerSwap;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.StoreException;
 import nuna.catalog.store.StoreUnavailableException;
 import nuna.catalog.store.WriteResult;
@@ -44,6 +48,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,6 +63,13 @@ import java.util.function.Supplier;
  * nothing writes nothing, a requirement that fails against current metadata is a 409, and a
  * swap lost to a concurrent commit is retried against the new metadata. A multi-table transaction runs
  * the same loop over every table it names and swaps all their pointers in one store transaction (D15).
+ *
+ * <p>An engine {@linkplain #on on a branch} (D33) commits to tables and views, and runs transactions, the same way on
+ * the branch's own pointers (keyed by the ref's id), holding the ref so a merge or a deletion cannot pass the commit
+ * (backlog 103). A table the branch has not committed to yet is read as its cut took it, and its first commit creates
+ * the branch's own pointer. Main's rules, holds and governance judge it as on main, except a DR freeze, which binds
+ * only the merge (Paul, 2026-11-22). Creates, registrations and unregisters happen on main only; the REST layer refuses them on
+ * a branch.
  *
  * <p>The REST layer resolves the catalog and namespace, authorizes the caller and maps the reply to
  * a response; this class never throws for an outcome it can answer.
@@ -93,9 +105,17 @@ public final class CommitEngine {
     private final CommitSettings settings;
     private final Clock clock;
     private final Sleeper sleeper;
+    /** The branch this engine commits on; empty for main. */
+    private final Optional<Branch> branch;
 
     public CommitEngine(CatalogStore store, TableFiles files, MetadataCache cache, List<CommitRule> rules,
                         CommitEvents events, Alerts alerts, CommitSettings settings, Clock clock, Sleeper sleeper) {
+        this(store, files, cache, rules, events, alerts, settings, clock, sleeper, Optional.empty());
+    }
+
+    private CommitEngine(CatalogStore store, TableFiles files, MetadataCache cache, List<CommitRule> rules,
+                         CommitEvents events, Alerts alerts, CommitSettings settings, Clock clock, Sleeper sleeper,
+                         Optional<Branch> branch) {
         this.store = Objects.requireNonNull(store, "store");
         this.files = Objects.requireNonNull(files, "files");
         this.cache = Objects.requireNonNull(cache, "cache");
@@ -105,6 +125,31 @@ public final class CommitEngine {
         this.settings = Objects.requireNonNull(settings, "settings");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
+        this.branch = branch;
+    }
+
+    /**
+     * A branch commits land on (D33): the ref; the most tables and views it may change, so that it can always merge in
+     * one transaction ({@code nuna.refs.max-merge-tables}, item 26's choice 9); and each table or view the request
+     * names, as the branch's cut holds it, by the name the request gives. The REST layer finds each through the cut
+     * and authorizes the caller on main's record of it (choice 12); the engine commits to that object whatever main
+     * has named it since, and only while main still has it active.
+     */
+    public record Branch(Ref ref, int maxTables, Map<ObjectName, RefEntry> objects) {
+
+        public Branch {
+            Objects.requireNonNull(ref, "ref");
+            objects = Map.copyOf(objects);
+        }
+    }
+
+    /**
+     * This engine on {@code branch}: {@link #commitTable}, {@link #commitView} and {@link #commitTransaction} commit on
+     * the branch's own pointers, for the objects {@code branch} names.
+     */
+    public CommitEngine on(Branch branch) {
+        return new CommitEngine(store, files, cache, rules, events, alerts, settings, clock, sleeper,
+                Optional.of(branch));
     }
 
     /** {@code POST .../tables} without stage-create. */
@@ -291,7 +336,7 @@ public final class CommitEngine {
         if (key.isEmpty()) {
             return work(new Request(operation, targets, json, caller, commitId, Optional.empty(), undrop, authorized));
         }
-        Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, targets, json, caller),
+        Key fixed = new Key(key.get(), caller.principal().id(), requestHash(operation, targets, json, caller, branch),
                 clock.instant().plus(settings.keyLifetime()));
         Request request = new Request(operation, targets, json, caller, commitId, Optional.of(fixed), undrop,
                 authorized);
@@ -415,13 +460,16 @@ public final class CommitEngine {
 
     /**
      * Binds a key to one request: what it does, to which object, for whom, with which body. A transaction
-     * names its tables in its body, so it is bound to its catalog and the body.
+     * names its tables in its body, so it is bound to its catalog and the body. On a branch it is bound to the
+     * branch too, so a key sent to main and to a branch never replays the other's answer (D33).
      */
-    private static String requestHash(Operation operation, List<TableChange> targets, String json, Caller caller) {
+    private static String requestHash(Operation operation, List<TableChange> targets, String json, Caller caller,
+                                      Optional<Branch> branch) {
         ObjectName name = targets.getFirst().name();
-        List<String> scope = operation == Operation.COMMIT_TRANSACTION
+        List<String> scope = new ArrayList<>(operation == Operation.COMMIT_TRANSACTION
                 ? List.of(name.catalogId().toString())
-                : List.of(name.catalogId().toString(), name.namespaceId().toString(), name.name().normalized());
+                : List.of(name.catalogId().toString(), name.namespaceId().toString(), name.name().normalized()));
+        branch.ifPresent(on -> scope.add(on.ref().id().toString()));
         String canonical = String.join("\n", operation.name(), String.join("\n", scope),
                 caller.endUser().map(Principal::id).orElse(""), json);
         try {
@@ -702,6 +750,10 @@ public final class CommitEngine {
     }
 
     private CommitReply commit(Request request) {
+        if (branch.isPresent()) {
+            return activeOnMain(request.name()).map(object -> update(request, object))
+                    .orElseGet(() -> goneFromMain(request.name(), request.operation().kind));
+        }
         Optional<CatalogObject> found = store.findObject(request.name().namespaceId(),
                 request.name().name().normalized());
         if (found.isPresent() && found.get().kind() == request.operation().kind) {
@@ -787,27 +839,29 @@ public final class CommitEngine {
         }
     }
 
-    /** Applies the request to the current metadata and swaps the pointer, retrying a lost swap. */
+    /**
+     * Applies the request to the current metadata and swaps the pointer, retrying a lost swap. On a branch the
+     * pointer is the branch's own, or the cut's until its first commit creates the branch's own.
+     */
     private CommitReply update(Request request, CatalogObject object) {
         GovernanceChain governance = GovernanceChain.of(store, object);
         Instant started = clock.instant();
         for (int attempt = 1; ; attempt++) {
-            Pointer base = store.readPointer(object.mainKey())
-                    .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
-            Optional<String> current = load(object, base, governance);
+            Base base = base(object);
+            Optional<String> current = load(object, base.read(), governance);
             if (current.isEmpty()) {
-                return new ServerError(SERVICE_FAILURE, "Metadata file " + base.metadataLocation()
+                return new ServerError(SERVICE_FAILURE, "Metadata file " + base.read().metadataLocation()
                         + " does not match the hash its pointer recorded");
             }
             Outcome outcome = request.operation() == Operation.COMMIT_TABLE
-                    ? Metadata.commitTable(request.json(), current.get(), base.metadataLocation())
+                    ? Metadata.commitTable(request.json(), current.get(), base.read().metadataLocation())
                     : Metadata.commitView(request.json(), current.get());
             Outcome.NewMetadata changed;
             switch (outcome) {
                 case Outcome.NewMetadata newMetadata -> changed = newMetadata;
                 case Outcome.NoChange noChange -> {
-                    return new Success(object.id(), base.metadataLocation(), base.sha256(), current.get(),
-                            How.UNCHANGED);
+                    return new Success(object.id(), base.read().metadataLocation(), base.read().sha256(),
+                            current.get(), How.UNCHANGED);
                 }
                 case Outcome.RequirementFailed failed -> {
                     return new Failure(409, COMMIT_FAILED, failed.message(), failed.requirement());
@@ -817,15 +871,16 @@ public final class CommitEngine {
                 }
                 case Outcome.NotFound notFound -> throw new IllegalStateException("current metadata was given");
             }
-            Optional<Failure> refused = judge(object, changed.before(), changed.after(), governance);
+            Optional<Failure> refused = judge(object, changed.before(), changed.after(), governance)
+                    .or(() -> overCap(base.expected().isEmpty() ? 1 : 0));
             if (refused.isPresent()) {
                 return refused.get();
             }
-            long version = base.version() + 1;
-            TableFiles.Written written = files.write(object.locationRoot(), version, changed.json());
+            long version = base.nextVersion();
+            TableFiles.Written written = files.write(object.locationRoot(), version, changed.json(), branchId());
             Pointer next = new Pointer(written.location(), version, written.sha256(), Projection.of(changed.after()));
             boolean regulatedChange = schemaOrSpecChanged(changed.before(), changed.after()) && governance.regulated();
-            CommitBatch batch = batch(request, object, Optional.of(base), next,
+            CommitBatch batch = batch(request, object, base.key(), base.expected(), Optional.of(base.read()), next,
                     Metadata.journal(request.json()), regulatedChange, CommitEvents.Kind.COMMIT);
             try {
                 CommitResult result = store.commit(batch);
@@ -840,11 +895,11 @@ public final class CommitEngine {
                         }
                     }
                     case CommitResult.Inactive inactive -> {
-                        return noSuch(request);
+                        return inactive(inactive, request.name(), request.operation().kind);
                     }
                 }
             } catch (CommitOutcomeUnknownException e) {
-                Optional<CommitReply> settled = settle(request, object.mainKey(),
+                Optional<CommitReply> settled = settle(request, base.key(),
                         () -> committed(object, next, changed.json(), regulatedChange, request.commitId()),
                         attempt, started);
                 if (settled.isPresent()) {
@@ -855,7 +910,7 @@ public final class CommitEngine {
     }
 
     /** One table of a transaction attempt that changes: what it read, and the metadata its change makes. */
-    private record Planned(CatalogObject object, Pointer base, Outcome.NewMetadata changed, String requestJson,
+    private record Planned(CatalogObject object, Base base, Outcome.NewMetadata changed, String requestJson,
                            boolean regulatedChange) {
     }
 
@@ -867,18 +922,22 @@ public final class CommitEngine {
      * Applies every change of a transaction to its table's current metadata and swaps the changed tables'
      * pointers in one batch, holding the unchanged tables' pointers as read, and retries a lost swap or hold
      * as {@link #update} retries a lost swap (D15). Each table is resolved by name once, before the first
-     * attempt, as {@link #update} resolves its one table.
+     * attempt, as {@link #update} resolves its one table. On a branch a table it has no own pointer for yet is read
+     * as its cut took it, and cannot be held: only its own pointers can.
      */
     private CommitReply transaction(Request request) {
         List<CatalogObject> objects = new ArrayList<>();
         for (TableChange change : request.targets()) {
-            Optional<CatalogObject> found = store.findObject(change.name().namespaceId(),
-                    change.name().name().normalized());
-            if (found.isEmpty() || found.get().kind() != CatalogObject.Kind.TABLE) {
-                return new Failure(404, "NoSuchTableException", "Table does not exist: " + change.name().qualified());
+            Optional<CatalogObject> found = branch.isPresent() ? activeOnMain(change.name())
+                    : store.findObject(change.name().namespaceId(), change.name().name().normalized())
+                            .filter(object -> object.kind() == CatalogObject.Kind.TABLE);
+            if (found.isEmpty()) {
+                return branch.isPresent() ? goneFromMain(change.name(), CatalogObject.Kind.TABLE)
+                        : noSuch(change.name(), CatalogObject.Kind.TABLE);
             }
             objects.add(found.get());
         }
+        List<PointerKey> keys = objects.stream().map(this::key).toList();
         List<GovernanceChain> governance = objects.stream().map(o -> GovernanceChain.of(store, o)).toList();
         Instant started = clock.instant();
         for (int attempt = 1; ; attempt++) {
@@ -888,14 +947,13 @@ public final class CommitEngine {
                 CatalogObject object = objects.get(i);
                 String table = request.targets().get(i).name().qualified();
                 String json = request.targets().get(i).json();
-                Pointer base = store.readPointer(object.mainKey())
-                        .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
-                Optional<String> current = load(object, base, governance.get(i));
+                Base base = base(object);
+                Optional<String> current = load(object, base.read(), governance.get(i));
                 if (current.isEmpty()) {
-                    return new ServerError(SERVICE_FAILURE, "Metadata file " + base.metadataLocation()
+                    return new ServerError(SERVICE_FAILURE, "Metadata file " + base.read().metadataLocation()
                             + " of " + table + " does not match the hash its pointer recorded");
                 }
-                switch (Metadata.commitTable(json, current.get(), base.metadataLocation())) {
+                switch (Metadata.commitTable(json, current.get(), base.read().metadataLocation())) {
                     case Outcome.NewMetadata changed -> {
                         Optional<Failure> refused = judge(object, changed.before(), changed.after(), governance.get(i));
                         if (refused.isPresent()) {
@@ -907,7 +965,8 @@ public final class CommitEngine {
                                 && governance.get(i).regulated();
                         planned.add(new Planned(object, base, changed, json, regulated));
                     }
-                    case Outcome.NoChange noChange -> held.add(new PointerHold(object.mainKey(), base));
+                    case Outcome.NoChange noChange ->
+                            base.expected().ifPresent(read -> held.add(new PointerHold(base.key(), read)));
                     case Outcome.RequirementFailed failed -> {
                         return new Failure(409, COMMIT_FAILED, table + ": " + failed.message(),
                                 failed.requirement());
@@ -921,10 +980,16 @@ public final class CommitEngine {
             if (planned.isEmpty()) {
                 return new Applied(How.UNCHANGED);
             }
+            Optional<Failure> capped = overCap((int) planned.stream().filter(p -> p.base().expected().isEmpty())
+                    .count());
+            if (capped.isPresent()) {
+                return capped.get();
+            }
             // Files are written only once every table has passed, so a refused transaction leaves none behind.
             List<Staged> written = planned.stream().map(p -> {
-                long version = p.base().version() + 1;
-                TableFiles.Written file = files.write(p.object().locationRoot(), version, p.changed().json());
+                long version = p.base().nextVersion();
+                TableFiles.Written file = files.write(p.object().locationRoot(), version, p.changed().json(),
+                        branchId());
                 return new Staged(p, new Pointer(file.location(), version, file.sha256(),
                         Projection.of(p.changed().after())));
             }).toList();
@@ -940,13 +1005,12 @@ public final class CommitEngine {
                         }
                     }
                     case CommitResult.Inactive inactive -> {
-                        int gone = objects.stream().map(CatalogObject::mainKey).toList().indexOf(inactive.key());
-                        return new Failure(404, "NoSuchTableException", "Table does not exist: "
-                                + request.targets().get(gone).name().qualified());
+                        return inactive(inactive, request.targets().get(keys.indexOf(inactive.key())).name(),
+                                CatalogObject.Kind.TABLE);
                     }
                 }
             } catch (CommitOutcomeUnknownException e) {
-                Optional<CommitReply> settled = settle(request, written.getFirst().plan().object().mainKey(),
+                Optional<CommitReply> settled = settle(request, written.getFirst().plan().base().key(),
                         () -> applied(written, request.commitId()), attempt, started);
                 if (settled.isPresent()) {
                     return settled.get();
@@ -970,16 +1034,16 @@ public final class CommitEngine {
         for (Staged s : written) {
             Planned p = s.plan();
             Metadata.Journal journal = Metadata.journal(p.requestJson());
-            swaps.add(new PointerSwap(p.object().mainKey(), Optional.of(p.base()), s.next(),
+            swaps.add(new PointerSwap(p.base().key(), p.base().expected(), s.next(),
                     new JournalEntry(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                             caller.engine(), journal.requirementsJson(), journal.updatesJson())));
             outbox.addAll(events.of(new CommitEvents.Commit(request.commitId(), at, caller, p.object(),
-                    Optional.of(p.base()), s.next(), journal.requirementsJson(), journal.updatesJson(),
-                    p.regulatedChange())));
+                    Optional.of(p.base().read()), s.next(), journal.requirementsJson(), journal.updatesJson(),
+                    p.regulatedChange(), CommitEvents.Kind.COMMIT, branchName())));
         }
         Optional<IdempotencyResult> result = request.key().map(key -> new IdempotencyResult(key.key(),
                 key.principal(), key.requestHash(), Replies.APPLIED, "", key.expiresAt()));
-        return new CommitBatch(request.commitId(), at, swaps, held, outbox, result);
+        return new CommitBatch(request.commitId(), at, swaps, held, refLock(), outbox, result);
     }
 
     /**
@@ -1065,7 +1129,8 @@ public final class CommitEngine {
     }
 
     private Optional<Failure> judge(CatalogObject object, Facts before, Facts after, CommitRule.Governance governance) {
-        CommitRule.Change change = new CommitRule.Change(object, before, after, clock.instant(), governance);
+        CommitRule.Change change = new CommitRule.Change(object, before, after, clock.instant(),
+                branch.isPresent() ? unfrozen(governance) : governance);
         for (CommitRule rule : rules) {
             Optional<Rejection> rejection = rule.judge(change);
             if (rejection.isPresent()) {
@@ -1095,19 +1160,153 @@ public final class CommitEngine {
         return governance.regulated() ? Optional.empty() : Optional.of(read.json());
     }
 
+    /** A batch that swaps the object's main pointer from {@code before}. */
     private CommitBatch batch(Request request, CatalogObject object, Optional<Pointer> before, Pointer next,
                               Metadata.Journal journal, boolean regulatedChange, CommitEvents.Kind kind) {
+        return batch(request, object, object.mainKey(), before, before, next, journal, regulatedChange, kind);
+    }
+
+    /**
+     * A batch that swaps {@code key} from {@code expected}, holding the branch the engine commits on, if any;
+     * {@code before} is what the commit event reports it replaced: on a branch's first commit, the cut's pointer.
+     */
+    private CommitBatch batch(Request request, CatalogObject object, PointerKey key, Optional<Pointer> expected,
+                              Optional<Pointer> before, Pointer next, Metadata.Journal journal,
+                              boolean regulatedChange, CommitEvents.Kind kind) {
         Instant at = clock.instant();
         Caller caller = request.caller();
         JournalEntry entry = new JournalEntry(caller.principal().id(), caller.endUser().map(Principal::id).orElse(null),
                 caller.engine(), journal.requirementsJson(), journal.updatesJson());
         List<OutboxEvent> outbox = events.of(new CommitEvents.Commit(request.commitId(), at, caller, object, before,
-                next, journal.requirementsJson(), journal.updatesJson(), regulatedChange, kind));
-        Optional<IdempotencyResult> result = request.key().map(key -> new IdempotencyResult(key.key(),
-                key.principal(), key.requestHash(), 200,
-                Replies.success(object.id(), next.metadataLocation(), next.sha256()), key.expiresAt()));
-        return new CommitBatch(request.commitId(), at, List.of(new PointerSwap(object.mainKey(), before, next, entry)),
-                outbox, result);
+                next, journal.requirementsJson(), journal.updatesJson(), regulatedChange, kind, branchName()));
+        Optional<IdempotencyResult> result = request.key().map(k -> new IdempotencyResult(k.key(), k.principal(),
+                k.requestHash(), 200, Replies.success(object.id(), next.metadataLocation(), next.sha256()),
+                k.expiresAt()));
+        return new CommitBatch(request.commitId(), at, List.of(new PointerSwap(key, expected, next, entry)), List.of(),
+                refLock(), outbox, result);
+    }
+
+    // ---- on a branch (D33) ----
+
+    /**
+     * Where a commit reads and swaps an object: {@code key}, the pointer it read ({@code read}), and what the swap
+     * expects there. On main, and on a branch that has its own pointer, that is the pointer read; on a branch that has
+     * none yet it is nothing, {@code read} is the one its cut took, and the commit creates the branch's own at
+     * version 1.
+     */
+    private record Base(PointerKey key, Pointer read, Optional<Pointer> expected) {
+
+        long nextVersion() {
+            return expected.map(pointer -> pointer.version() + 1).orElse(1L);
+        }
+    }
+
+    /** The object's key: on main its main key, on a branch the branch's own (item 26's choice 3). */
+    private PointerKey key(CatalogObject object) {
+        return branch.map(on -> on.ref().key(object.id())).orElseGet(object::mainKey);
+    }
+
+    private Base base(CatalogObject object) {
+        PointerKey key = key(object);
+        Optional<Pointer> stored = store.readPointer(key);
+        if (branch.isEmpty()) {
+            return new Base(key, stored.orElseThrow(
+                    () -> new IllegalStateException("active object " + object.id() + " has no pointer")), stored);
+        }
+        return new Base(key, stored.orElseGet(() -> cut(object)), stored);
+    }
+
+    /** The pointer the branch's cut took for the object; a cut's carries no projection. */
+    private Pointer cut(CatalogObject object) {
+        RefEntry.At at = branch.orElseThrow().objects().values().stream()
+                .filter(entry -> entry.id().equals(object.id())).findFirst().flatMap(RefEntry::pointer)
+                .orElseThrow(() -> new IllegalStateException("object " + object.id() + " is not in the branch's cut"));
+        return new Pointer(at.metadataLocation(), at.version(), at.sha256(), new byte[0]);
+    }
+
+    /**
+     * Main's record of the table or view the branch's cut names by {@code name}, while main still has it active: a
+     * branch commits only to what main has (D33), and is authorized on main's record of it (choice 12).
+     */
+    private Optional<CatalogObject> activeOnMain(ObjectName name) {
+        RefEntry entry = branch.orElseThrow().objects().get(name);
+        return store.readObject(entry.id()).filter(object -> object.state() == CatalogObject.State.ACTIVE);
+    }
+
+    /**
+     * A refusal when committing to {@code creates} tables or views the branch has not changed yet would take it past
+     * the most a merge moves (item 26's choice 9); none on main. Counted before the swap, so first commits to
+     * different tables racing at the cap can each pass it.
+     */
+    private Optional<Failure> overCap(int creates) {
+        if (branch.isEmpty() || creates == 0) {
+            return Optional.empty();
+        }
+        Branch on = branch.get();
+        long own = store.countOwnPointers(on.ref().id());
+        if (own + creates <= on.maxTables()) {
+            return Optional.empty();
+        }
+        return Optional.of(new Failure(400, "BadRequestException", "Branch " + on.ref().name().display()
+                + " changes " + own + " tables and views already and may change at most " + on.maxTables()
+                + " (nuna.refs.max-merge-tables), so that it can merge in one transaction; this commit would change "
+                + creates + " more. Merge the branch first, or commit them on another branch"));
+    }
+
+    /** 404 for a table or view the branch's cut names that main has dropped, unregistered or purged since. */
+    private Failure goneFromMain(ObjectName name, CatalogObject.Kind kind) {
+        Failure missing = noSuch(name, kind);
+        return new Failure(missing.status(), missing.type(), missing.message() + " (main has dropped or unregistered"
+                + " it since branch " + branchName() + " was made)");
+    }
+
+    /**
+     * What a commit answers when the store found something it swaps on gone: on a branch, the branch itself, or the
+     * object on main; on main, the object.
+     */
+    private Failure inactive(CommitResult.Inactive inactive, ObjectName name, CatalogObject.Kind kind) {
+        if (inactive.subject() == CommitResult.Subject.REF) {
+            return new Failure(404, "NoSuchWarehouseException", "Branch " + branchName()
+                    + " is gone: merged, deleted or past its expiry");
+        }
+        return branch.isPresent() ? goneFromMain(name, kind) : noSuch(name, kind);
+    }
+
+    /**
+     * Main's governance as a commit on a branch is judged by: every hold, flag and retention class as on main, but no
+     * DR freeze, which binds a change only when it would reach main, at the merge (D33 and D37; Paul, 2026-11-22).
+     */
+    private static CommitRule.Governance unfrozen(CommitRule.Governance governance) {
+        return new CommitRule.Governance() {
+            @Override
+            public boolean held() {
+                return governance.held();
+            }
+
+            @Override
+            public boolean regulated() {
+                return governance.regulated();
+            }
+
+            @Override
+            public Optional<GovernanceAttribute> nearest(GovernanceAttribute.Kind kind) {
+                return kind == GovernanceAttribute.Kind.DR_FREEZE ? Optional.empty() : governance.nearest(kind);
+            }
+        };
+    }
+
+    /** The branch a metadata file is written for, which its name carries ({@link TableFiles#BRANCH_MARK}). */
+    private Optional<UUID> branchId() {
+        return branch.map(on -> on.ref().id());
+    }
+
+    private Optional<RefLock> refLock() {
+        return branch.map(on -> new RefLock.Hold(on.ref().id()));
+    }
+
+    /** What commit events name as the branch (choice 13): main, or the branch's name. */
+    private String branchName() {
+        return branch.map(on -> on.ref().name().display()).orElse(PointerKey.MAIN);
     }
 
     /** D11a: a table's current schema or default partition spec moved. */
@@ -1126,9 +1325,13 @@ public final class CommitEngine {
     }
 
     private static Failure noSuch(Request request) {
-        return request.operation().kind == CatalogObject.Kind.TABLE
-                ? new Failure(404, "NoSuchTableException", "Table does not exist: " + display(request))
-                : new Failure(404, "NoSuchViewException", "View does not exist: " + display(request));
+        return noSuch(request.name(), request.operation().kind);
+    }
+
+    private static Failure noSuch(ObjectName name, CatalogObject.Kind kind) {
+        return kind == CatalogObject.Kind.TABLE
+                ? new Failure(404, "NoSuchTableException", "Table does not exist: " + name.qualified())
+                : new Failure(404, "NoSuchViewException", "View does not exist: " + name.qualified());
     }
 
     private static String display(Request request) {

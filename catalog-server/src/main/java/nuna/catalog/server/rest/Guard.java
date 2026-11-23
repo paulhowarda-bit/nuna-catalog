@@ -116,12 +116,13 @@ class Guard {
 
     /**
      * A table commit needs {@code write} when every update only adds or removes snapshots, refs or statistics,
-     * or, for a maintenance principal acting as itself, removes unused schemas and partition specs as snapshot
-     * expiry does (D30); and {@code modify} otherwise. A body that cannot be read is judged as the stricter; the
-     * commit refuses it anyway.
+     * or, for a maintenance principal acting as itself on main, removes unused schemas and partition specs as snapshot
+     * expiry does (D30); and {@code modify} otherwise. Maintenance runs on main only (item 26's choice 14), so on a
+     * branch that allowance is no one's. A body that cannot be read is judged as the stricter; the commit refuses it
+     * anyway.
      */
-    Operation commit(RequestContext request, String body) {
-        boolean maintenance = authorizer.maintenance(request.caller());
+    Operation commit(RequestContext request, String body, OnRef on) {
+        boolean maintenance = on.onMain() && authorizer.maintenance(request.caller());
         Privilege needed = WRITE;
         try {
             JsonNode updates = JSON.readTree(body == null ? "" : body).path("updates");
@@ -227,6 +228,26 @@ class Guard {
         Target target = new Target.TableOrView(object);
         return allows(request, target, AuditEvents.securable(object, catalog.name(), path), operation,
                 () -> holdings.onOrAbove(request.caller(), target));
+    }
+
+    /**
+     * {@link #onObject} for a commit, a view's replace or a table of a transaction through {@code on}. On a branch the
+     * maintenance exemption (D20, D30) gives nothing: maintenance runs on main only (item 26's choice 14), so a table
+     * with a row/column policy refuses the maintenance principal there as any engine that is not trusted.
+     */
+    void onCommit(RequestContext request, OnRef on, CatalogObject object, List<String> path, Operation operation,
+                  CatalogError missing) {
+        Target target = new Target.TableOrView(object);
+        Decision decision = authorizer.decide(request.caller(), target, operation);
+        if (!on.onMain() && decision instanceof Decision.Exempted) {
+            decision = new Decision.Denied(Authorizer.Reason.FLAGGED_TABLE, null, "table "
+                    + object.name().display() + " has a row/column policy; the maintenance exemption holds on main"
+                    + " only, so on branch " + on.branch() + " only a trusted engine that enforces it may commit");
+        }
+        if (!decided(request, AuditEvents.securable(object, on.catalog().name(), path), operation, decision,
+                () -> holdings.onOrAbove(request.caller(), target))) {
+            throw missing;
+        }
     }
 
     /**

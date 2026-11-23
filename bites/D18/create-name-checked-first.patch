@@ -3,10 +3,10 @@ Module: catalog-server
 Test: HiddenNamesTest#aBadTableNameIsCheckedOnlyOnceTheCallerMaySeeTheNamespace
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index 77a5cbe..575cbcd 100644
+index 0117b1a..451d6d7 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -116,9 +116,9 @@ class TableRoutes {
+@@ -120,9 +120,9 @@ class TableRoutes {
          String json = body == null ? "" : body;
          RestRequest.NewTable table = RestRequest.createTable(json);
          NamespaceRecord record = lookup.existingNamespace(catalog, levels);
@@ -14,6 +14,6 @@ index 77a5cbe..575cbcd 100644
          guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchNamespace(levels));
          // The name is checked only now, so a bad one tells a caller that may not see the namespace nothing.
 -        ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
-         Target target = new Target(catalog, prefix, namespace, table.name(), request, Optional.ofNullable(delegation));
+         Target target = new Target(OnRef.main(catalog), prefix, namespace, table.name(), request,
+                 Optional.ofNullable(delegation));
          if (table.stageCreate()) {
-             return staged(target, record, name, json);

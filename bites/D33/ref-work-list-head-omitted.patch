@@ -1,0 +1,15 @@
+Breaks: the work list names only a branch's cut, never its own head, so cleanup queues the files the branch's own commits wrote.
+Module: catalog-server
+Test: MaintenanceRefsTest#aTableNamesWhatEachRefOfItReaches
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+index 5135330..e7d93dd 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+@@ -502,7 +502,6 @@ class MaintenanceRoutes {
+             item.put("kind", ref.ref().kind().name().toLowerCase(Locale.ROOT));
+             ArrayNode locations = item.putArray("metadata-locations");
+             locations.add(ref.cut().metadataLocation());
+-            ref.head().ifPresent(head -> locations.add(head.metadataLocation()));
+         }
+     }
+ 

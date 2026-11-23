@@ -1,0 +1,17 @@
+Breaks: a commit that lands on a branch does not move its expiry (item 26's choice 11).
+Module: catalog-server
+Test: RefReadsTest#aCommitRenewsTheBranch
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Engines.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Engines.java
+index dffc2fa..1f1cb28 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Engines.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Engines.java
+@@ -114,7 +114,7 @@ class Engines {
+     void committed(OnRef on, CommitReply reply, RequestContext request) {
+         boolean landed = reply instanceof CommitReply.Success success && success.how() == CommitReply.How.COMMITTED
+                 || reply instanceof CommitReply.Applied applied && applied.how() == CommitReply.How.COMMITTED;
+-        if (on.ref().isEmpty() || !landed) {
++        if (on.ref().isPresent() || !landed) {
+             return;
+         }
+         Ref ref = on.ref().get();

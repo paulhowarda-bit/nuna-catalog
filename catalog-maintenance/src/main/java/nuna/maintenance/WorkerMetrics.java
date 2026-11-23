@@ -22,9 +22,10 @@ import java.util.function.ToIntFunction;
  * still succeeds, as the worker did scan.
  *
  * <p>Every meter is registered when the worker starts, so a dashboard or an alert sees zeros before the first scan,
- * not nothing. A label holds only a bounded value, a failure's kind, a scan's outcome or a reason for compaction:
- * never a table, namespace or file, which would make a series per table and may be sensitive. The one exception,
- * which Paul accepted (D30, amended 2026-11-15), is {@value #TABLE_NEED}: a series for every table that needs
+ * not nothing. A label holds only a bounded value, a failure's kind, a scan's outcome, a reason for compaction or a
+ * ref's kind: never a table, namespace, file or ref's name, which would make a series per table and may be sensitive.
+ * The one exception, which Paul accepted (D30, amended 2026-11-15), is {@value #TABLE_NEED}: a series for every table
+ * that needs
  * compaction, labelled with its catalog, namespace and name, registered when its assessment finds it needy. A name
  * keeps one set of label keys.
  */
@@ -44,6 +45,10 @@ final class WorkerMetrics {
      * how far past its thresholds it was. The one meter labelled by table, uncapped (D30, amended 2026-11-15).
      */
     static final String TABLE_NEED = PREFIX + "table.compaction.need";
+    /** A counter: files left alone because a catalog ref reaches them, by the ref's kind (D33). */
+    static final String KEPT = PREFIX + "files.kept";
+    /** A ref's kind, never its name (D33, item 26's choice 13), as the catalog's own meters label it. */
+    static final String REF_KIND = "ref.kind";
     static final String OUTCOME = "outcome";
     static final String SUCCESS = "success";
     static final String FAILURE = "failure";
@@ -80,13 +85,18 @@ final class WorkerMetrics {
             new Count(PREFIX + "purges.skipped", "Purges another worker holds, or the catalog refused or rate-limited",
                     report -> report.purgesSkipped),
             new Count(PREFIX + "files.deleted", "Files deleted: due pending deletions and purged objects' files",
-                    report -> report.filesDeleted));
+                    report -> report.filesDeleted),
+            new Count(PREFIX + "refs.warned", "Branches whose expiry warning the worker sent",
+                    report -> report.refsWarned),
+            new Count(PREFIX + "refs.ended", "Branches past their expiry the worker ended",
+                    report -> report.refsEnded));
 
     private final MeterRegistry registry;
     private final Clock clock;
     private final Map<Count, Counter> counts = new LinkedHashMap<>();
     private final Map<ScanReport.Failure, Counter> failures = new EnumMap<>(ScanReport.Failure.class);
     private final Map<CompactionNeed.Reason, Counter> needing = new EnumMap<>(CompactionNeed.Reason.class);
+    private final Map<Management.RefKind, Counter> kept = new EnumMap<>(Management.RefKind.class);
     /** Each needy table's gauge, by table id. */
     private final Map<UUID, TableNeed> tableNeeds = new ConcurrentHashMap<>();
     private final Timer succeeded;
@@ -110,6 +120,11 @@ final class WorkerMetrics {
         for (CompactionNeed.Reason reason : CompactionNeed.Reason.values()) {
             needing.put(reason, Counter.builder(NEEDING).description("Tables found needing compaction, by reason")
                     .tag(REASON, reason.label).register(registry));
+        }
+        for (Management.RefKind kind : Management.RefKind.values()) {
+            kept.put(kind, Counter.builder(KEPT).description("Files left alone because a catalog ref reaches them:"
+                    + " unreferenced on main and not recorded, or due and not deleted").tag(REF_KIND, kind.label)
+                    .register(registry));
         }
         succeeded = scanTimer(SUCCESS);
         failed = scanTimer(FAILURE);
@@ -138,6 +153,7 @@ final class WorkerMetrics {
             counts.forEach((count, counter) -> counter.increment(count.of().applyAsInt(report)));
             report.failuresByKind.forEach((kind, times) -> failures.get(kind).increment(times));
             report.needs.forEach((reason, tables) -> needing.get(reason).increment(tables));
+            report.kept.forEach((kind, files) -> kept.get(kind).increment(files));
             (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
                     TimeUnit.NANOSECONDS);
             if (success) {
