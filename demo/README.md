@@ -2,8 +2,8 @@
 
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
-Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
-and Iceberg in both directions, starts the brokerage world, a live generator whose data reaches Iceberg through
+Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, makes a branch and a tag of the catalog,
+syncs SingleStore and Iceberg in both directions, starts the brokerage world, a live generator whose data reaches Iceberg through
 Kafka and SingleStore, and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
 CockroachDB into Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
 ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
@@ -133,7 +133,7 @@ The console offers two ways in:
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
-| `ana` | `ana-demo` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them |
+| `ana` | `ana-demo` | `demo-analysts` | create and modify on both catalogs: create namespaces, tables and views, read and write data, change, rename and drop them; make, merge and delete branches and tags, as `up` does as her (Branches and tags of the catalog, below) |
 | `gary` | `gary-demo` | `demo-grant-admins`, `demo-auditors` | grant admin: list, grant and revoke, and read the audit trail; no data access, so loading a table is refused. As an auditor, the console's Audit page, and the audit table itself (below) |
 | `stella` | `stella-demo` | `demo-stewards` | manage-tags on `lakehouse`: classifications, owners, legal holds; select on both catalogs |
 | `oscar` | `oscar-demo` | `demo-operators` | platform operator: DR freeze |
@@ -259,8 +259,8 @@ Catalog `lakehouse`, written by `demo/LakeWriter.java` (the Iceberg Java library
 vended credentials, as any engine would):
 
 - `markets.equities.eu.xetra.trades`: v2, partitioned by day, sorted by symbol; five appends, a row-level
-  delete, two added columns (one a nested struct), a second partition spec, a tag `eod-2026-11-09` and a
-  branch `surveillance-review`; classified `internal` and under a legal hold.
+  delete, two added columns (one a nested struct), a second partition spec, and Iceberg's own tag
+  `eod-2026-11-09` and branch `surveillance-review` in the table; classified `internal` and under a legal hold.
 - `markets.fx.rates` (v3, evolved), `markets.equities.us.quotes` (v3) and `reference.countries` (v2, under a
   DR freeze).
 - No table is closed until classified (D27) for now: the toy `finance.ledger` tables that showed it are gone,
@@ -268,6 +268,8 @@ vended credentials, as any engine would):
 - View `markets.equities.eu.xetra_daily`, with two versions, in SingleStore's dialect.
 - Grants by SQL for the groups, plus two made through the API by `gary`.
 - Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`.
+- The catalog's branch `dev`, with the next day's trades and rates committed on it, and its tag `sample`, made by
+  `ana` through the API (Branches and tags of the catalog, below).
 
 Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the copy of `ops.orders`.
 
@@ -401,7 +403,8 @@ all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
 CloudBeaver is on <https://localhost:8185>: a database navigator and SQL editor in the browser, where the
 people above sign in through Keycloak. Each person has four connections of their own, which sign in as them, and sees only
 those: "nuna (Trino, as ana)" for `ana`, and the three CDC sources below. The Trino connection reaches a Trino
-whose catalogs `lakehouse` and `engines` are nuna's. It sends Trino the person's own token as the extra
+whose catalogs `lakehouse`, `lakehouse_dev` (`lakehouse`'s branch `dev`, below) and `engines` are nuna's. It sends
+Trino the person's own token as the extra
 credential `token`, and Trino hands it to the catalog with each request (`iceberg.rest-catalog.session=USER`).
 So the catalog sees the person, and each one reads and changes what they may in the console, with the
 storage credentials the catalog vends them:
@@ -449,6 +452,128 @@ storage credentials the catalog vends them:
   checking. Two features would still reach outside, and the demo uses neither: the map view of a geometry
   value fetches tiles from openstreetmap.org, and the AI assistant calls whichever AI service an
   administrator configures; none is.
+
+## Branches and tags of the catalog
+
+Catalog `lakehouse` has refs of its own (D33). A tag keeps every table as it was at one moment, read-only. A
+branch starts as the whole catalog at one moment and takes commits of its own, copying no file, until a merge
+moves what it changed onto main, every table in one transaction. An engine reaches a ref as a warehouse of its own,
+`lakehouse@<ref>`, so any Iceberg client can read it, and write to a branch. The console shows them on the
+catalog's tab **Branches and tags**.
+
+`up` makes two, through the management API as `ana`, whose group `demo-analysts` holds `create` on `lakehouse`, the
+right that making, merging and deleting a ref needs:
+
+- Branch `dev`, made from main. The lake writer (`demo/LakeWriter.java`, as user `lake`) commits the next day,
+  2026-11-11, on it, through the warehouse `lakehouse@dev`: trades 9 and 10 in `markets.equities.eu.xetra.trades`,
+  and EURUSD and GBPUSD in `markets.fx.rates`. Main has neither.
+- Tag `sample`, made from main after that: the sample data as `up` loaded it. On a new lake it comes before the
+  brokerage world's bootstrap, so it holds nothing of `brokerage`.
+
+It makes them once per lake: the tag, made last, says they are made. Like everything else they go with the
+catalog's PostgreSQL, so after `demo/demo.sh down`, or a Docker Desktop restart, the next `up` makes them again.
+
+Trino has a catalog for the branch, `lakehouse_dev` (`iceberg.rest-catalog.warehouse=lakehouse@dev`, in
+`k8s/trino.yaml`), beside `lakehouse`, which reads and writes main. The tag has none: read it in the console or
+through the REST API (step 1).
+
+These are not the tables' own tags. The lake writer's tag `eod-2026-11-09` and branch `surveillance-review` in the
+trades table, and the brokerage world's tag `eod-<day>` on each table that changed that day, are Iceberg's refs
+inside one table: the console lists them on the table's Snapshots tab, under "Iceberg refs in this table". A
+catalog ref such as `@sample` cuts every table at once, and the console shows it as a rounded `@` chip.
+
+### Try it
+
+Sign in to the console, <https://localhost:8181/ui/>, as `ana`, and to CloudBeaver, <https://localhost:8185>, where
+her connection "nuna (Trino, as ana)" runs the SQL below.
+
+1. **Read as of the tag.** In the console, open catalog `lakehouse`, tab **Branches and tags**
+   (<https://localhost:8181/ui/#c=lakehouse&tab=refs>). It lists `@dev`, a branch with 2 changed tables, and
+   `@sample`, a tag, both made by `ana`. On `@sample`'s line, choose **Read**. The band under the title says
+   "Reading the tag @sample", and the catalog lists what the tag holds: on a new lake, `markets` and `reference`,
+   and no `brokerage`. Open `markets`, `fx`, `rates`: its **Snapshots** tab lists the three the sample data made.
+   **Read main instead** goes back to main. An engine reads the tag as the warehouse `lakehouse@sample`, as this
+   call to the REST API does:
+
+   ```bash
+   curl --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort \
+     -H "Authorization: Bearer $(cat ~/.nuna-demo/tokens/ana.jwt)" "https://localhost:8181/v1/lakehouse@sample/namespaces"
+   ```
+
+   On a new lake it lists `markets` and `reference`. The same call to `/v1/lakehouse/namespaces`, main, lists
+   `brokerage` too. Nothing commits through a tag: the catalog answers 400.
+
+2. **Change two tables on dev.** In CloudBeaver, compare main and the branch. Main has trades 1 to 8 (3 was
+   deleted) and the rates of 2026-11-09 and 2026-11-10; `dev` also has 2026-11-11 in both tables:
+
+   ```sql
+   SELECT trade_id, symbol, price, qty, trade_ts FROM lakehouse."markets.equities.eu.xetra".trades ORDER BY trade_id;
+   SELECT trade_id, symbol, price, qty, trade_ts FROM lakehouse_dev."markets.equities.eu.xetra".trades ORDER BY trade_id;
+   SELECT pair, rate, as_of FROM lakehouse."markets.fx".rates ORDER BY as_of, pair;
+   SELECT pair, rate, as_of FROM lakehouse_dev."markets.fx".rates ORDER BY as_of, pair;
+   ```
+
+   Then add to the day on `dev`:
+
+   ```sql
+   INSERT INTO lakehouse_dev."markets.equities.eu.xetra".trades (trade_id, symbol, price, qty, trade_ts, venue)
+   VALUES (11, 'DTE', 23.240000, 1500, TIMESTAMP '2026-11-11 09:02:10 UTC', 'XETR');
+   INSERT INTO lakehouse_dev."markets.fx".rates VALUES ('USDJPY', 152.07, TIMESTAMP '2026-11-11 16:00:00 UTC', 'ECB');
+   ```
+
+   Run the four queries again: `dev` has the new rows, and main still has none of 2026-11-11. In the console,
+   `@dev`'s page (its name on the Branches and tags tab) lists the two tables under **Changes**. A branch takes
+   commits to the tables it has; creating, dropping or renaming a table or namespace happens on main only, and
+   `lakehouse_dev` answers such a statement with the catalog's 400.
+
+3. **Preview and merge in the console.** On the Branches and tags tab, choose **Merge…** on `@dev`'s line. The
+   preview is the catalog's dry run, which moves nothing: "Ready: 2 tables would move to main in one transaction",
+   and for each table "Judged as a commit on main: your groups hold write, main's commit rules pass". The trades
+   table's legal hold allows it, as the merge only adds snapshots. Signed in as `stella` instead, there is no
+   **Merge…** on the line, but `@dev`'s page has the same preview on its **Merge** tab, and says merging needs
+   create on `lakehouse`, which she does not hold.
+
+   Choose **Merge @dev into main**. The dialog shows each table's version on main now and after; choose **Merge
+   into main**. The result, "Merged @dev into main", lists main's new version of each table. Main now has the day:
+   the first and third queries of step 2 show trades 9 to 11 and the three rates of 2026-11-11. The branch has
+   ended, so its name is free, and every query on `lakehouse_dev` fails with the catalog's 404 until a branch named
+   `dev` exists again. Read `@sample` again as in step 1: the tag still has none of 2026-11-11.
+
+   A script can do the same through the API, the preview first:
+
+   ```bash
+   curl --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort -X POST \
+     -H "Authorization: Bearer $(cat ~/.nuna-demo/tokens/ana.jwt)" \
+     "https://localhost:8181/management/v1/catalogs/lakehouse/refs/dev/merge?dry-run=true"
+   ```
+
+   and then the merge, the same call without `?dry-run=true`. It answers 200 with main's new versions, or 409 with
+   every conflict.
+
+4. **The conflict when main moved too.** Make `dev` again: on the Branches and tags tab, **Make a branch or tag**,
+   Kind **Branch**, Name `dev`, From "main, as it is now", then **Make it**. `lakehouse_dev` reads it at once. In
+   CloudBeaver, commit to both tables on `dev`, then to one of them on main:
+
+   ```sql
+   INSERT INTO lakehouse_dev."markets.equities.eu.xetra".trades (trade_id, symbol, price, qty, trade_ts, venue)
+   VALUES (12, 'SAP', 183.400000, 200, TIMESTAMP '2026-11-12 09:00:05 UTC', 'XETR');
+   INSERT INTO lakehouse_dev."markets.fx".rates VALUES ('EURUSD', 1.0871, TIMESTAMP '2026-11-12 16:00:00 UTC', 'ECB');
+   INSERT INTO lakehouse."markets.fx".rates VALUES ('EURUSD', 1.0868, TIMESTAMP '2026-11-12 16:00:00 UTC', 'desk');
+   ```
+
+   Back in the console, choose **Merge…** on `@dev`'s line. It says "@dev cannot merge: 1 table changed on main
+   too", with the catalog's 409 `RefMergeConflictException`, which names `markets.fx.rates`: main is at a later
+   version than the branch's point. The trades could move, but every table moves or none does, so the catalog
+   refuses the merge whole and **Merge @dev into main** is off. **What you can do** offers a new branch made from
+   main, to redo the change on, or keeping `dev` until it expires.
+
+   Only a commit on main to a table the branch also changed makes a conflict. The brokerage world commits to main
+   all day without stopping `dev` from merging, and main's own maintenance (compaction, snapshot expiry) does not
+   count either. `demo/demo.sh rate` appends to main's rates, so after it a `dev` that changed the rates conflicts
+   the same way.
+
+   To finish, open `@dev`'s page, choose **Delete**, then **Delete @dev**. `up` makes no new `dev` while `@sample`
+   is there.
 
 ## CDC: PostgreSQL, Oracle and CockroachDB into Iceberg history tables
 

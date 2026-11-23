@@ -1,5 +1,5 @@
 # One run of the lake writer (demo/LakeWriter.java, image lake.Dockerfile): another engine writing Iceberg
-# through the catalog. demo.sh fills in the name and the command (seed or rate), waits for it and deletes it.
+# through the catalog. demo.sh fills in the name and the command (seed, rate or dev), waits for it and deletes it.
 apiVersion: batch/v1
 kind: Job
 metadata:
