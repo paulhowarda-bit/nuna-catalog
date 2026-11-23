@@ -1,0 +1,20 @@
+Breaks: the SQL stores read a ref's columns between the head's version and wasNull(), so a branch with no pointer of its own is listed with one, and the listing throws (D33, the overnight run of 2026-11-23).
+Module: catalog-store-sql
+Test: SqlRefsRowsTest
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index a751125..6312a02 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -340,9 +340,10 @@ final class SqlRefs {
+         RefEntry.At cut = new RefEntry.At(row.getLong("version"), row.getString("metadata_location"),
+                 row.getString("sha256"));
+         long version = row.getLong("head_version");
++        Ref ref = ref(row);
+         Optional<RefEntry.At> head = row.wasNull() ? Optional.empty()
+                 : Optional.of(new RefEntry.At(version, row.getString("head_location"), row.getString("head_sha256")));
+-        return new RefPointers(ref(row), cut, head);
++        return new RefPointers(ref, cut, head);
+     }
+ 
+     private static RefEntry entry(ResultSet row) throws SQLException {
