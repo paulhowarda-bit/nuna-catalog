@@ -255,11 +255,19 @@ class Guard {
                 operation.privilege().wireName(), reason, message);
     }
 
+    /** {@link #refuse} on a namespace, such as dropping one under a legal hold (D18). */
+    RuntimeException refuse(RequestContext request, CatalogRecord catalog, NamespaceRecord namespace,
+                            List<String> levels, Operation operation, String reason, String message) {
+        return denials.refuse(request.actor(), operation.name(),
+                AuditEvents.namespace(namespace.id(), catalog.name(), levels), operation.privilege().wireName(),
+                reason, message);
+    }
+
     /**
-     * Audits a refusal the commit engine answered for a legal hold or DR freeze (D18): a denial of {@code operation}
-     * on the table or view it refused, which {@code path} names, with its reason and the message the caller gets. The
-     * answer stays the engine's 403. Any other reply is no refusal of that kind, and a replayed one was audited when
-     * it was first answered.
+     * Audits a refusal the commit engine answered for governance, a legal hold, a DR freeze, the minimum snapshot age
+     * or a flag (D18): a denial of {@code operation} on the table or view it refused, which {@code path} names, with
+     * its reason and the message the caller gets. The answer stays the engine's 403. Any other reply is no refusal of
+     * that kind, and a replayed one was audited when it was first answered.
      */
     void refused(RequestContext request, CatalogRecord catalog, Operation operation,
                  Function<CatalogObject, List<String>> path, CommitReply reply) {

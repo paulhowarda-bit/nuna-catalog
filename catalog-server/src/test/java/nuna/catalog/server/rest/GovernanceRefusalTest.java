@@ -25,6 +25,7 @@ import nuna.catalog.audit.Denial;
 import nuna.catalog.core.Names;
 import nuna.catalog.core.commit.CommitRule;
 import nuna.catalog.core.commit.MetadataCache;
+import nuna.catalog.core.commit.Rules;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.iceberg.Metadata;
@@ -67,17 +68,21 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 /**
  * A commit, transaction, create, unregister or drop that a legal hold or DR freeze refuses is audited as a denial, as
- * every refusal is (D18; backlog 134): the Denial names the operation and the table, its reason is
- * {@code legal_hold} or {@code dr_freeze} followed by the message the caller gets, and the answer is the 403
- * ForbiddenException it always was. The commit engine answers its refusals as a reply, not a throw, so the routes
- * learn which 403s are these from the reply. The table and transaction routes, guard, authorizer, commit engine and
- * its rules are the real ones, served by Spring MVC, over a store double that refuses an unregister or drop as a
- * store would and fails any other write, so this needs only Java.
+ * every refusal is (D18; backlog 134), and so are a snapshot removal the minimum snapshot age refuses, an unregister
+ * the store refuses as flagged and a namespace drop it refuses as held (backlog 142): the Denial names the operation
+ * and the table or namespace, its reason is {@code legal_hold}, {@code dr_freeze}, {@code snapshot_min_age} or
+ * {@code flagged} followed by the message the caller gets, and the answer is the 403 ForbiddenException it always
+ * was. The commit engine answers its refusals as a reply, not a throw, so the routes learn which 403s are these from
+ * the reply. The table, namespace and transaction routes, guard, authorizer, commit engine and its rules (with a
+ * deployment minimum snapshot age of two days) are the real ones, served by Spring MVC, over a store double that
+ * refuses an unregister or drop as a store would and fails any other write, so this needs only Java.
  */
 class GovernanceRefusalTest {
 
     private static final String TABLE = "/v1/desks/namespaces/sales/tables/orders";
     private static final Instant NOW = Instant.parse("2026-11-22T12:00:00Z");
+    /** The deployment's minimum snapshot age: orders' snapshots, a day old, are younger. */
+    private static final Duration MINIMUM_SNAPSHOT_AGE = Duration.ofDays(2);
     /** Modify and create on sales: every refusal here is a hold's or a freeze's. */
     private static final Caller MO = new Caller(new Principal("mo", Set.of("owners")), "spark", false,
             Optional.empty());
@@ -98,7 +103,7 @@ class GovernanceRefusalTest {
     private boolean frozen;
     /** A legal hold on orders. */
     private boolean held;
-    /** What the store answers an unregister or a drop: a hold or a freeze it found itself. */
+    /** What the store answers an unregister or a drop: a hold, a freeze or a flag it found itself. */
     private WriteResult.Reason storeRefuses;
 
     /** orders at its third version: snapshots 1 and 2, main at 2, both a day old. */
@@ -131,16 +136,21 @@ class GovernanceRefusalTest {
         cache.put(pointer.metadataLocation(), ordersMetadata());
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ServerAlerts alerts = new ServerAlerts(1_000_000, 100, registry);
+        DefaultListableBeanFactory rules = new DefaultListableBeanFactory();
+        rules.registerSingleton("snapshotMinimumAge",
+                Rules.snapshotMinimumAge(MINIMUM_SNAPSHOT_AGE, retentionClass -> Optional.empty()));
         Engines engines = new Engines(store, storage, cache, alerts, events, clock,
-                new DefaultListableBeanFactory().getBeanProvider(CommitRule.class));
+                rules.getBeanProvider(CommitRule.class));
         ObjectRoutes objects = new ObjectRoutes(store, lookup, new Idempotency(store, clock), events, settings, guard,
                 clock);
+        NamespaceRoutes namespaces = new NamespaceRoutes(store, lookup, new Idempotency(store, clock), events, callers,
+                guard, clock);
         CatalogMetrics meters = new CatalogMetrics(registry);
         // No metadata views, metrics sink or read audit: every case here is refused before any of them is reached.
         TableRoutes tables = new TableRoutes(store, lookup, objects, engines, null, CredentialVending.NONE, null,
                 alerts, settings, callers, guard, clock, null, meters);
         TransactionRoutes transactions = new TransactionRoutes(lookup, engines, settings, callers, guard, meters);
-        mvc = MockMvcBuilders.standaloneSetup(tables, transactions)
+        mvc = MockMvcBuilders.standaloneSetup(tables, namespaces, transactions)
                 .setControllerAdvice(ErrorResponsesForTests.advice()).build();
     }
 
@@ -261,6 +271,55 @@ class GovernanceRefusalTest {
         });
     }
 
+    @Test
+    void aSnapshotRemovalYoungerThanTheMinimumAgeIsAuditedAsADenial() throws Exception {
+        String message = forbidden(perform(post(TABLE).contentType("application/json").content("""
+                {"requirements":[],"updates":[{"action":"remove-snapshots","snapshot-ids":[1]}]}""")));
+
+        assertThat(message).isEqualTo("Snapshot 1 of " + orders.id() + " is younger than PT48H, the deployment's"
+                + " minimum snapshot age: it cannot be removed yet");
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("updateTable");
+            assertThat(denial.securable().id()).isEqualTo(orders.id());
+            assertThat(denial.securable().path()).containsExactly("sales", "orders");
+            assertThat(denial.reason()).isEqualTo("snapshot_min_age: " + message);
+            assertThat(denial.actor().principal()).isEqualTo("mo");
+        });
+    }
+
+    @Test
+    void anUnregisterTheStoreFindsFlaggedIsAuditedAsADenial() throws Exception {
+        storeRefuses = WriteResult.Reason.FLAGGED;
+
+        String message = forbidden(perform(post(TABLE + "/unregister")));
+
+        assertThat(message).isEqualTo("Table sales.orders is regulated or has a row/column policy and cannot be"
+                + " unregistered; a steward removes the flag first");
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("unregisterTable");
+            assertThat(denial.securable().id()).isEqualTo(orders.id());
+            assertThat(denial.securable().path()).containsExactly("sales", "orders");
+            assertThat(denial.reason()).isEqualTo("flagged: " + message);
+        });
+    }
+
+    @Test
+    void aNamespaceDropUnderALegalHoldIsAuditedAsADenial() throws Exception {
+        storeRefuses = WriteResult.Reason.HELD;
+
+        String message = forbidden(perform(delete("/v1/desks/namespaces/sales")));
+
+        assertThat(message).isEqualTo("Namespace sales is under a legal hold and cannot be dropped");
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("dropNamespace");
+            assertThat(denial.securable().kind()).isEqualTo(nuna.catalog.audit.Securable.Kind.NAMESPACE);
+            assertThat(denial.securable().id()).isEqualTo(sales.id());
+            assertThat(denial.securable().path()).containsExactly("sales");
+            assertThat(denial.reason()).isEqualTo("legal_hold: " + message);
+            assertThat(denial.actor().principal()).isEqualTo("mo");
+        });
+    }
+
     // ---- helpers ----
 
     private MockHttpServletResponse perform(MockHttpServletRequestBuilder request) throws Exception {
@@ -310,8 +369,9 @@ class GovernanceRefusalTest {
 
     /**
      * The catalog desks, its namespace sales and table orders with its pointer, the grants on sales, the freeze and
-     * hold a test places, and the storage profile; an unregister or drop is refused for {@link #storeRefuses}. Any
-     * call not answered here fails the request with 500, so nothing else was asked of the store, writes included.
+     * hold a test places, and the storage profile; an unregister or a drop of orders or sales is refused for
+     * {@link #storeRefuses}. Any call not answered here fails the request with 500, so nothing else was asked of the
+     * store, writes included.
      */
     @SuppressWarnings("unchecked")
     private CatalogStore store() {
@@ -347,7 +407,7 @@ class GovernanceRefusalTest {
                     case "holdsOn" -> held && ((Set<Securable>) args[0]).contains(orders.securable())
                             ? List.of(new LegalHold(UUID.randomUUID(), orders.securable(), "litigation", "lee", NOW))
                             : List.of();
-                    case "unregisterObject", "dropObject" -> new WriteResult.Refused(storeRefuses);
+                    case "unregisterObject", "dropObject", "dropNamespace" -> new WriteResult.Refused(storeRefuses);
                     case "toString" -> "the test's store";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });

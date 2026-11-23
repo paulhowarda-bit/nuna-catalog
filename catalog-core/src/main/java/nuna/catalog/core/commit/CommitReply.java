@@ -33,9 +33,9 @@ public sealed interface CommitReply {
      *
      * @param requirement for a 409 a requirement refused, its type as the spec names it ({@code assert-ref-snapshot-id}
      *                    and so on); empty for any other failure, and for a failure replayed by its idempotency key
-     * @param refusal     for a 403 a legal hold or DR freeze made, what it refused and why, which the REST layer audits
-     *                    as a denial (D18); empty for any other failure, and for a failure replayed by its idempotency
-     *                    key, whose first answer was audited
+     * @param refusal     for a 403 governance made (a legal hold, a DR freeze, the minimum snapshot age, a flag), what
+     *                    it refused and why, which the REST layer audits as a denial (D18); empty for any other
+     *                    failure, and for a failure replayed by its idempotency key, whose first answer was audited
      */
     record Failure(int status, String type, String message, Optional<String> requirement, Optional<Refusal> refusal)
             implements CommitReply {
@@ -48,7 +48,7 @@ public sealed interface CommitReply {
             this(status, type, message, Optional.empty());
         }
 
-        /** A 403 a legal hold or DR freeze made on {@code object}, audited as a denial with {@code reason} (D18). */
+        /** A 403 governance made on {@code object}, audited as a denial with {@code reason} (D18). */
         public static Failure refused(CatalogObject object, String reason, String message) {
             return new Failure(403, "ForbiddenException", message, Optional.empty(),
                     Optional.of(new Refusal(object, reason)));
@@ -56,8 +56,9 @@ public sealed interface CommitReply {
     }
 
     /**
-     * What a legal hold or DR freeze refused: the table or view as the engine found it, or as a create or register
-     * would have made it, and the reason its denial names ({@code legal_hold} or {@code dr_freeze}).
+     * What governance refused: the table or view as the engine found it, or as a create or register would have made
+     * it, and the reason its denial names ({@code legal_hold}, {@code dr_freeze}, {@code snapshot_min_age} or
+     * {@code flagged}).
      */
     record Refusal(CatalogObject object, String reason) {
     }

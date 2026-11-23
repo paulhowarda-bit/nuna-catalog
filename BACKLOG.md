@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**29 open:** 5 S, 9 M, 10 L, 5 XL.
+**28 open:** 4 S, 9 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,7 +39,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
-| [142](backlog/142.md) | S | Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged | three refusal sites that item 134's pieces already cover (`Rejection.refused`, `Failure.refused`, `Guard.refuse`), each with a fast test and a bite | 2026-11-22 |
 | [149](backlog/149.md) | S | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | a close for the reader that leaves the server's shared S3 client open, and a test | 2026-11-22 |
 
 ## Open items in full
@@ -1335,31 +1334,6 @@ The decision is D46 in `decision-ledger.md`. The item stays open until an overni
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
 
-### 142. Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged
-
-- Added: 2026-11-22 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
-- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-server/src/test/java/nuna/catalog/server/rest/ bites/D18/
-- Effort: S, three refusal sites that item 134's pieces already cover (`Rejection.refused`, `Failure.refused`, `Guard.refuse`), each with a fast test and a bite
-
-Every refusal must publish a `nuna.catalog.denial` record (D18). Item 134 made four more do so. Working on it, its
-agent found three that still answer 403 and publish nothing:
-
-- A namespace drop refused by a legal hold: `NamespaceRoutes.java`, line 201, `Http.forbidden(... "is under a legal
-  hold and cannot be dropped")`.
-- A snapshot removal refused by the minimum snapshot age: `Rules.snapshotMinimumAge` (`Rules.java`, line 104) returns
-  a plain rejection, which reaches the client as a `CommitReply.Failure` with no refusal.
-- An unregister the store refuses as flagged: `CommitEngine.java`, line 695, `WriteResult.Reason.FLAGGED`.
-
-Evidence: read from the code on 2026-11-22 (item 134's branch, worktree-agent-a9ea90116af38b255). No test checks for a
-denial on any of them. Item 134's report also notes that the view routes and the table register route call
-`Guard.refused` but have no test of their own.
-
-What done looks like:
-- Each refusal above publishes a denial through `Denials`, naming the operation and the object, with a reason
-  (`legal_hold`, `snapshot_min_age` or `flagged`) and the message the caller gets. The answer stays the same 403.
-- A fast test per refusal, in the form of `GovernanceRefusalTest` (item 134).
-- A bite per publish site in `bites/D18/` that drops the publish and fails its test.
-
 ### 149. The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected
 
 - Added: 2026-11-22 by the agent on item 148
@@ -1506,6 +1480,7 @@ reads.
 | [139](backlog/139.md) | Console Health: the Store panel, the catalog database's backend, version and self-check | done | 2026-11-22 |
 | [140](backlog/140.md) | Console: set owner, retention class and regulated, as it sets classification | done | 2026-11-22 |
 | [141](backlog/141.md) | Console: a settings editor with only the keys that do something; every property shown read-only | done | 2026-11-22 |
+| [142](backlog/142.md) | Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged | done | 2026-11-22 |
 | [143](backlog/143.md) | Console: Overview and Maintenance call unassessed tables in shape; Governance says labels come from a data catalogue | done | 2026-11-22 |
 | [144](backlog/144.md) | The demo configures no audit tables, so the console's Audit page answers 503 | done | 2026-11-22 |
 | [145](backlog/145.md) | Console Health: the Store panel shows the point-in-time recovery window the deployment declares | done | 2026-11-22 |
