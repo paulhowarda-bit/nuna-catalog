@@ -240,7 +240,7 @@ class MergeTest {
 
         Outcome outcome = merge(dev);
 
-        Merge.Plan plan = ((Outcome.Refused) outcome).plan();
+        Merge.Plan plan = refused(outcome);
         assertThat(plan.conflicts()).hasSize(2);
         assertThat(plan.conflicts().getFirst()).satisfies(table -> {
             assertThat(table.entry().name().display()).isEqualTo("orders");
@@ -313,7 +313,7 @@ class MergeTest {
         beforeNextCommit.set(() -> success(engine().commitTable(name(returns), append(4, 2L, 3, 20), ALICE,
                 Optional.empty())));
         Outcome lost = merge(qa);
-        assertThat(((Outcome.Refused) lost).plan().conflicts()).singleElement()
+        assertThat(refused(lost).conflicts()).singleElement()
                 .satisfies(table -> assertThat(table.conflict()).contains("main committed snapshot 4 (append)"));
         assertThat(refs).containsKey(qa.id());
 
@@ -354,9 +354,9 @@ class MergeTest {
         }
         int reads = files.reads.get();
 
-        Merge.Plan plan = ((Outcome.Refused) engine().merging().merge(dev, 2, ALICE, refused -> {
+        Merge.Plan plan = refused(engine().merging().merge(dev, 2, ALICE, over -> {
             throw new AssertionError("no rights are asked of a branch over the cap");
-        }, this::change)).plan();
+        }, this::change));
 
         assertThat(plan.overCap()).isTrue();
         assertThat(plan.changed()).isEqualTo(3);
@@ -410,7 +410,7 @@ class MergeTest {
         holds.add(new LegalHold(UUID.randomUUID(), orders.securable(), "litigation", "legal", START));
         holds.add(new LegalHold(UUID.randomUUID(), returns.securable(), "litigation", "legal", START));
 
-        Merge.Plan plan = ((Outcome.Refused) merge(dev)).plan();
+        Merge.Plan plan = refused(merge(dev));
 
         assertThat(plan.refused()).hasValueSatisfying(table -> assertThat(table.verdict()).hasValueSatisfying(f -> {
             assertThat(f.status()).isEqualTo(403);
@@ -434,7 +434,7 @@ class MergeTest {
                 ALICE, Optional.empty()));
         holds.add(new LegalHold(UUID.randomUUID(), orders.securable(), "litigation", "legal", START));
 
-        Merge.Plan plan = ((Outcome.Refused) merge(dev)).plan();
+        Merge.Plan plan = refused(merge(dev));
 
         assertThat(plan.refused()).flatMap(Merge.Table::verdict).flatMap(Failure::refusal)
                 .map(CommitReply.Refusal::reason).contains("legal_hold");
@@ -448,7 +448,7 @@ class MergeTest {
         attributes.add(attribute(GovernanceAttribute.Kind.DR_FREEZE, "failover drill"));
         success(on(dev, orders, properties("a", "1")));
 
-        Merge.Plan plan = ((Outcome.Refused) merge(dev)).plan();
+        Merge.Plan plan = refused(merge(dev));
 
         Failure refused = plan.refused().flatMap(Merge.Table::verdict).orElseThrow();
         assertThat(refused.refusal()).map(CommitReply.Refusal::reason).contains("dr_freeze");
@@ -468,7 +468,7 @@ class MergeTest {
         rules.add(change -> Optional.ofNullable(change.after().properties().get("forbidden"))
                 .map(value -> CommitRule.Rejection.badRequest("forbidden is " + value)));
 
-        Failure refused = ((Outcome.Refused) merge(dev)).plan().refused().flatMap(Merge.Table::verdict).orElseThrow();
+        Failure refused = refused(merge(dev)).refused().flatMap(Merge.Table::verdict).orElseThrow();
         assertThat(refused).isEqualTo(new Failure(400, "BadRequestException", "forbidden is yes"));
     }
 
@@ -542,6 +542,11 @@ class MergeTest {
     /** The merges' batches that landed. */
     private List<CommitBatch> merges() {
         return landed.stream().filter(batch -> batch.ref().orElse(null) instanceof RefLock.End).toList();
+    }
+
+    private static Merge.Plan refused(Outcome outcome) {
+        assertThat(outcome).isInstanceOf(Outcome.Refused.class);
+        return ((Outcome.Refused) outcome).plan();
     }
 
     private static Outcome.Merged merged(Outcome outcome) {
