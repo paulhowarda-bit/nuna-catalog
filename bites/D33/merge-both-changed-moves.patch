@@ -3,15 +3,15 @@ Module: catalog-core
 Test: MergeTest#conflictsMoveNothing
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
-index be01593..5777f91 100644
+index 7475f0bb..796f51fa 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
-@@ -310,7 +310,7 @@ public final class Merge {
-         Pointer onMain = main.orElseThrow(() -> new IllegalStateException("active object " + o.id()
-                 + " has no pointer"));
+@@ -325,7 +325,7 @@ public final class Merge {
          GovernanceChain governance = GovernanceChain.of(store, o);
--        boolean moved = onMain.version() != cut.version();
+         // Main moved when its pointer is not the one it had at the cut: by file, never by a version number alone,
+         // since a cut taken from a branch's own pointer is numbered on that branch's line (item 105).
+-        boolean moved = !onMain.metadataLocation().equals(was.metadataLocation()) || onMain.version() != was.version();
 +        boolean moved = false;
          Optional<String> branchJson = engine.load(o, branch, governance);
          Optional<String> mainJson = engine.load(o, onMain, governance);
-         Optional<String> cutJson = moved && o.kind() == CatalogObject.Kind.TABLE ? engine.load(o, cut, governance)
+         Optional<String> baseJson = moved && o.kind() == CatalogObject.Kind.TABLE ? engine.load(o, was, governance)

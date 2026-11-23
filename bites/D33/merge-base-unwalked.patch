@@ -1,0 +1,17 @@
+Breaks: a merge takes a branch's cut as main's pointer at the cut without walking down the refs it was made from, so a branch made from a branch whose cut is the source's own file is judged against the source's metadata and refused though main has not moved (backlog 107, 2026-11-23).
+Module: catalog-core
+Test: MergeTest#aBranchOfABranchMergesWhenMainIsUnmoved
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+index 7475f0bb..dbeff5d4 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+@@ -380,7 +380,7 @@ public final class Merge {
+         Ref at = ref;
+         RefEntry.At reached = cut;
+         List<RefPointers> holding = List.of();
+-        while (at.fromRef().isPresent()) {
++        while (false && at.fromRef().isPresent()) {
+             if (holding.isEmpty()) {
+                 holding = store.listRefPointers(id);
+             }

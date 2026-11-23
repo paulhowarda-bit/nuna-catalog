@@ -1,0 +1,17 @@
+Breaks: a merge judges whether main moved by comparing main's version with the cut's, so for a branch made from a branch, whose cut is numbered on the source's own line (item 105), main's commit since the cut goes unseen when the numbers coincide and the branch's version overwrites it (backlog 107, 2026-11-23).
+Module: catalog-core
+Test: MergeTest#aBranchOfABranchSeesMainMovedWhenTheNumbersCoincide
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+index 7475f0bb..a3934d4b 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+@@ -325,7 +325,7 @@ public final class Merge {
+         GovernanceChain governance = GovernanceChain.of(store, o);
+         // Main moved when its pointer is not the one it had at the cut: by file, never by a version number alone,
+         // since a cut taken from a branch's own pointer is numbered on that branch's line (item 105).
+-        boolean moved = !onMain.metadataLocation().equals(was.metadataLocation()) || onMain.version() != was.version();
++        boolean moved = onMain.version() != cut.version();
+         Optional<String> branchJson = engine.load(o, branch, governance);
+         Optional<String> mainJson = engine.load(o, onMain, governance);
+         Optional<String> baseJson = moved && o.kind() == CatalogObject.Kind.TABLE ? engine.load(o, was, governance)

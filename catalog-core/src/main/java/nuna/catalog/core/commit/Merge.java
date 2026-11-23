@@ -29,6 +29,7 @@ import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLock;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.StoreException;
 import nuna.catalog.store.WriteResult;
 import java.time.Clock;
@@ -96,7 +97,10 @@ public final class Merge {
      * @param entry                 the cut's record of it: its id, kind and name as the branch knows it
      * @param namespace             its namespace's levels as the cut names them
      * @param object                main's record of it; empty once purged
-     * @param cut                   the pointer the cut took
+     * @param cut                   the pointer the cut took: main's, or for a ref made from a branch that had its own,
+     *                              that branch's, numbered on that branch's own line (item 105)
+     * @param base                  main's pointer when the cut was taken, in main's numbering ({@link #base}); what the
+     *                              merge judges main's changes against. Empty when it cannot be known, a conflict
      * @param branch                the branch's own pointer
      * @param main                  main's pointer; empty when main has none
      * @param since                 main's commits since the cut
@@ -109,7 +113,7 @@ public final class Merge {
      * @param json                  the metadata main takes, its own copy of the branch's; empty for a conflict
      */
     public record Table(RefEntry entry, List<String> namespace, Optional<CatalogObject> object, Pointer cut,
-                        Pointer branch, Optional<Pointer> main, Since since, Optional<String> conflict,
+                        Optional<Pointer> base, Pointer branch, Optional<Pointer> main, Since since, Optional<String> conflict,
                         boolean rebased, Optional<String> definition, Optional<Failure> verdict,
                         boolean regulatedSchemaChange, Optional<String> json) {
 
@@ -224,7 +228,7 @@ public final class Merge {
                 for (CatalogObject.Kind kind : CatalogObject.Kind.values()) {
                     for (RefEntry entry : walk(page -> store.listRefObjects(ref.id(), namespace.id(), kind, page))) {
                         Optional<Pointer> own = store.readPointer(ref.key(entry.id()));
-                        own.ifPresent(pointer -> tables.add(table(entry, path, pointer)));
+                        own.ifPresent(pointer -> tables.add(table(ref, entry, path, pointer)));
                     }
                 }
             }
@@ -296,60 +300,112 @@ public final class Merge {
 
     // ---- planning ----
 
-    private Table table(RefEntry entry, List<String> namespace, Pointer branch) {
+    private Table table(Ref ref, RefEntry entry, List<String> namespace, Pointer branch) {
         RefEntry.At at = entry.pointer().orElseThrow();
-        Pointer cut = new Pointer(at.metadataLocation(), at.version(), at.sha256(), new byte[0]);
+        Pointer cut = pointer(at);
+        Optional<Pointer> base = base(ref, entry.id(), at).map(Merge::pointer);
         Optional<CatalogObject> object = store.readObject(entry.id());
         Optional<Pointer> main = object.flatMap(o -> store.readPointer(o.mainKey()));
-        Since since = since(entry.id(), cut, main);
+        Since since = base.map(b -> since(entry.id(), b, main)).orElse(new Since(0, List.of()));
         if (object.isEmpty() || object.get().state() != CatalogObject.State.ACTIVE) {
             String gone = object.map(o -> o.state().name().toLowerCase(Locale.ROOT)
                     + o.droppedAt().map(when -> " at " + when).orElse("")).orElse("purged");
-            return conflict(entry, namespace, object, cut, branch, main, since, "main has " + gone + " it");
+            return conflict(entry, namespace, object, cut, base, branch, main, since, "main has " + gone + " it");
+        }
+        if (base.isEmpty()) {
+            return conflict(entry, namespace, object, cut, base, branch, main, since, "where main was when the cut"
+                    + " was taken cannot be known: the cut took version " + cut.version() + " of " + ref.fromName()
+                    + "'s own line, and a ref it came from has ended, so main's commits since cannot be told apart;"
+                    + " make a branch from main and commit the change there");
         }
         CatalogObject o = object.get();
         Pointer onMain = main.orElseThrow(() -> new IllegalStateException("active object " + o.id()
                 + " has no pointer"));
+        Pointer was = base.get();
         GovernanceChain governance = GovernanceChain.of(store, o);
-        boolean moved = onMain.version() != cut.version();
+        // Main moved when its pointer is not the one it had at the cut: by file, never by a version number alone,
+        // since a cut taken from a branch's own pointer is numbered on that branch's line (item 105).
+        boolean moved = !onMain.metadataLocation().equals(was.metadataLocation()) || onMain.version() != was.version();
         Optional<String> branchJson = engine.load(o, branch, governance);
         Optional<String> mainJson = engine.load(o, onMain, governance);
-        Optional<String> cutJson = moved && o.kind() == CatalogObject.Kind.TABLE ? engine.load(o, cut, governance)
+        Optional<String> baseJson = moved && o.kind() == CatalogObject.Kind.TABLE ? engine.load(o, was, governance)
                 : mainJson;
         Optional<Pointer> unread = branchJson.isEmpty() ? Optional.of(branch) : mainJson.isEmpty() ? Optional.of(onMain)
-                : cutJson.isEmpty() ? Optional.of(cut) : Optional.empty();
+                : baseJson.isEmpty() ? Optional.of(was) : Optional.empty();
         if (unread.isPresent()) {
             // A regulated table's file that no longer matches its hash fails closed, as a commit's does (D26).
-            return conflict(entry, namespace, object, cut, branch, main, since, "its metadata file "
+            return conflict(entry, namespace, object, cut, base, branch, main, since, "its metadata file "
                     + unread.get().metadataLocation() + " does not match the hash its pointer recorded");
         }
         if (o.kind() == CatalogObject.Kind.VIEW) {
             if (moved) {
-                return conflict(entry, namespace, object, cut, branch, main, since, "main replaced the view since the"
-                        + " cut");
+                return conflict(entry, namespace, object, cut, base, branch, main, since, "main replaced the view"
+                        + " since the cut");
             }
             Facts.ViewFacts before = Metadata.viewFacts(mainJson.get(), onMain.metadataLocation());
             Facts.ViewFacts after = Metadata.viewFacts(branchJson.get(), branch.metadataLocation());
-            return new Table(entry, namespace, object, cut, branch, main, since, Optional.empty(), false,
+            return new Table(entry, namespace, object, cut, base, branch, main, since, Optional.empty(), false,
                     Optional.of("view version " + before.currentVersionId() + " became " + after.currentVersionId()),
                     engine.judge(o, before, after, governance), false, branchJson);
         }
-        Optional<String> beyond = moved ? MergeMetadata.beyondMaintenance(cutJson.get(), mainJson.get())
+        Optional<String> beyond = moved ? MergeMetadata.beyondMaintenance(baseJson.get(), mainJson.get())
                 : Optional.empty();
         if (beyond.isPresent()) {
-            return conflict(entry, namespace, object, cut, branch, main, since, beyond.get());
+            return conflict(entry, namespace, object, cut, base, branch, main, since, beyond.get());
         }
         TableFacts onMainFacts = Metadata.tableLink(mainJson.get(), onMain.metadataLocation()).facts();
         TableFacts after = Metadata.tableLink(branchJson.get(), branch.metadataLocation()).facts();
         TableFacts before = moved && !governance.held()
-                ? rebased(onMainFacts, Metadata.tableLink(cutJson.get(), cut.metadataLocation()).facts())
+                ? rebased(onMainFacts, Metadata.tableLink(baseJson.get(), was.metadataLocation()).facts())
                 : onMainFacts;
-        return new Table(entry, namespace, object, cut, branch, main, since, Optional.empty(), moved,
-                MergeMetadata.definitionChange(cutJson.get(), branchJson.get()),
+        return new Table(entry, namespace, object, cut, base, branch, main, since, Optional.empty(), moved,
+                MergeMetadata.definitionChange(baseJson.get(), branchJson.get()),
                 engine.judge(o, before, after, governance),
                 CommitEngine.schemaOrSpecChanged(before, after) && governance.regulated(),
-                Optional.of(MergeMetadata.merged(cutJson.get(), branchJson.get(), mainJson.get(),
+                Optional.of(MergeMetadata.merged(baseJson.get(), branchJson.get(), mainJson.get(),
                         onMain.metadataLocation(), clock.millis())));
+    }
+
+    /**
+     * Main's pointer for object {@code id} when {@code ref}'s cut was taken: what the merge judges main's changes
+     * against. For a ref made from main, its cut. For one made from another ref, the cut took that ref's cut, or that
+     * branch's own pointer, which numbers from 1 on the branch's own line (item 105); either way main was where it
+     * was at that ref's cut, so the walk goes on down the refs each was made from, while each is there and proves
+     * the step: its cut is the one above, or its own journal's entry at that version wrote the one above's file. Where
+     * a step cannot be proved (a ref it came from has been deleted or merged, or no longer names the object), the
+     * pointer reached so far is main's only if main's own journal's entry at its version wrote its file. Otherwise
+     * empty: main's position is not known, and the merge refuses rather than guess.
+     */
+    private Optional<RefEntry.At> base(Ref ref, UUID id, RefEntry.At cut) {
+        Ref at = ref;
+        RefEntry.At reached = cut;
+        List<RefPointers> holding = List.of();
+        while (at.fromRef().isPresent()) {
+            if (holding.isEmpty()) {
+                holding = store.listRefPointers(id);
+            }
+            UUID from = at.fromRef().get();
+            RefEntry.At above = reached;
+            Optional<RefPointers> source = holding.stream().filter(held -> held.ref().id().equals(from)).findFirst();
+            if (source.isEmpty() || !(source.get().cut().equals(above) || wrote(source.get().ref().key(id), above))) {
+                return wrote(new PointerKey(id, PointerKey.MAIN), above) ? Optional.of(above) : Optional.empty();
+            }
+            reached = source.get().cut();
+            at = source.get().ref();
+        }
+        return Optional.of(reached);
+    }
+
+    /** Whether the journal of {@code key}'s entry at {@code at}'s version wrote {@code at}'s file. */
+    private boolean wrote(PointerKey key, RefEntry.At at) {
+        return store.readJournal(key, JournalStore.EARLIEST, JournalStore.LATEST,
+                        JournalStore.afterVersion(at.version() - 1, 1)).items().stream()
+                .anyMatch(entry -> entry.newVersion() == at.version()
+                        && entry.newLocation().equals(at.metadataLocation()));
+    }
+
+    private static Pointer pointer(RefEntry.At at) {
+        return new Pointer(at.metadataLocation(), at.version(), at.sha256(), new byte[0]);
     }
 
     /**
@@ -364,19 +420,23 @@ public final class Merge {
     }
 
     private static Table conflict(RefEntry entry, List<String> namespace, Optional<CatalogObject> object, Pointer cut,
-                                  Pointer branch, Optional<Pointer> main, Since since, String why) {
-        return new Table(entry, namespace, object, cut, branch, main, since, Optional.of(why), false, Optional.empty(),
-                Optional.empty(), false, Optional.empty());
+                                  Optional<Pointer> base, Pointer branch, Optional<Pointer> main, Since since,
+                                  String why) {
+        return new Table(entry, namespace, object, cut, base, branch, main, since, Optional.of(why), false,
+                Optional.empty(), Optional.empty(), false, Optional.empty());
     }
 
-    /** Main's commits since the cut, by the versions its pointer moved, and who made the first of them. */
-    private Since since(UUID id, Pointer cut, Optional<Pointer> main) {
-        if (main.isEmpty() || main.get().version() <= cut.version()) {
+    /**
+     * Main's commits since the cut, by the versions its pointer moved from {@code base}, main's pointer at the cut, and
+     * who made the first of them.
+     */
+    private Since since(UUID id, Pointer base, Optional<Pointer> main) {
+        if (main.isEmpty() || main.get().version() <= base.version()) {
             return new Since(0, List.of());
         }
         Page<JournalRecord> page = store.readJournal(new PointerKey(id, PointerKey.MAIN),
-                JournalStore.EARLIEST, JournalStore.LATEST, JournalStore.afterVersion(cut.version(), SINCE_READ));
-        return new Since(main.get().version() - cut.version(),
+                JournalStore.EARLIEST, JournalStore.LATEST, JournalStore.afterVersion(base.version(), SINCE_READ));
+        return new Since(main.get().version() - base.version(),
                 page.items().stream().map(record -> record.entry().principal()).distinct().toList());
     }
 
@@ -417,7 +477,7 @@ public final class Merge {
         for (Moved moved : merged.moved()) {
             Table table = moved.table();
             String updates = MergeMetadata.journal(ref.name().display(), ref.id().toString(), table.branch().version(),
-                    table.branch().metadataLocation(), table.cut().version(), table.since().commits(),
+                    table.branch().metadataLocation(), table.base().orElseThrow().version(), table.since().commits(),
                     table.definition());
             JournalEntry entry = new JournalEntry(caller.principal().id(),
                     caller.endUser().map(Principal::id).orElse(null), caller.engine(), "[]", updates);
