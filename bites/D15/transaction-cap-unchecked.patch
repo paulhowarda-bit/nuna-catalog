@@ -3,17 +3,17 @@ Module: catalog-server
 Test: RestRoutesTest#transactionsCommitEveryTableOrNone
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-index a735162..b8dee07 100644
+index 3a0c36d..eb04fed 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-@@ -60,10 +60,6 @@ class TransactionRoutes {
-         CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.COMMIT_TRANSACTION);
+@@ -65,10 +65,6 @@ class TransactionRoutes {
+         CatalogRecord catalog = on.catalog();
          String json = body == null ? "" : body;
          List<RestRequest.TableCommit> commits = RestRequest.commitTransaction(json);
 -        if (commits.size() > settings.maxTransactionTables()) {
 -            throw CatalogError.badRequest("A transaction may change at most " + settings.maxTransactionTables()
 -                    + " tables; this one names " + commits.size());
 -        }
-         // Keyed by the name the engine finds each table under again, so every event finds its path.
-         Map<Named, List<String>> paths = new HashMap<>();
-         List<CommitEngine.TableChange> changes = new ArrayList<>();
+         // Keyed by the name the engine finds each table under again on main, and by id on a branch, whose engine finds
+         // each by its cut entry whatever main has named it since: so every event finds its path.
+         Map<Named, List<String>> byName = new HashMap<>();

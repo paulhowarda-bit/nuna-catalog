@@ -1,0 +1,17 @@
+Breaks: the audit record of a commit on a branch names main, so a DR reconcile could take a branch's commit as proof of main's (choice 13, security finding 12).
+Module: catalog-server
+Test: RefReadsTest#aCommitOnABranchSwapsItsOwnPointer
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java b/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java
+index c449f8e..98b2630 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java
+@@ -51,7 +51,7 @@ public class AuditEvents {
+     CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
+         return commit -> {
+             Securable object = securable(commit.object(), catalog, path.apply(commit.object()));
+-            OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, commit.branch(),
++            OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, nuna.catalog.store.PointerKey.MAIN,
+                     commit.before().map(AuditEvents::state).orElse(null), state(commit.after()),
+                     commit.updatesJson(), actor));
+             return switch (commit.kind()) {

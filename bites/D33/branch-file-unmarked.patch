@@ -1,0 +1,17 @@
+Breaks: a metadata file a branch writes carries no mark of the branch, so storage alone cannot tell it from main's (security finding 12).
+Module: catalog-objectstore
+Test: MetadataFileNameTest#aBranchsFilesAreMarked
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java b/catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java
+index 21301fd..15b604c 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java
+@@ -42,7 +42,7 @@ public interface TableFiles {
+      */
+     static String fileName(long version, Optional<UUID> branch) {
+         return String.format(Locale.ROOT, "%05d-%s%s.metadata.json", version, UUID.randomUUID(),
+-                branch.map(id -> BRANCH_MARK + id).orElse(""));
++                "");
+     }
+ 
+     /** Whether the metadata file at {@code location} was written by a commit on a branch, by its name alone. */

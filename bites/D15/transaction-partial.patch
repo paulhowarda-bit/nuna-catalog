@@ -2,12 +2,12 @@ Breaks: A table whose requirement fails is left out, and the rest of the transac
 Module: catalog-core
 Test: TransactionTest$Applying#requirementFailed
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-index 8bc44f8..33c1803 100644
+index b202be9..beb71ca 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-@@ -899,8 +899,6 @@ public final class CommitEngine {
-                     }
-                     case Outcome.NoChange noChange -> held.add(new PointerHold(object.mainKey(), base));
+@@ -968,8 +968,6 @@ public final class CommitEngine {
+                     case Outcome.NoChange noChange ->
+                             base.expected().ifPresent(read -> held.add(new PointerHold(base.key(), read)));
                      case Outcome.RequirementFailed failed -> {
 -                        return new Failure(409, COMMIT_FAILED, table + ": " + failed.message(),
 -                                failed.requirement());
