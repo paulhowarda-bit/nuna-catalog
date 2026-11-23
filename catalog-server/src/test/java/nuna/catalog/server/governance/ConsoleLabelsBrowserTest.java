@@ -32,7 +32,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * classification, each recorded with provenance {@code console} under the steward's name; the regulated mark closing
  * an unclassified table and its classification opening it; the mark cleared; a table offering no regulated mark and the
  * catalog all four; an empty owner never sent; and a caller without {@code manage-tags} shown the catalog's refusal.
- * (A view has no Governance tab in the console, so its labels are set through the API only.)
+ * A view's Governance tab is {@link ConsoleViewGovernanceBrowserTest}'s (item 146).
  */
 @Tag("heavy")
 @GovernanceServer

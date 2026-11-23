@@ -119,6 +119,7 @@ export async function governanceTab(target, reload) {
   const freeze = effective['dr-freeze'];
   const holds = g.holds || [];
   const attrs = g.attributes || [];
+  const view = target.kind === 'view';
   const nearest = name => attrs.find(a => a.attribute === name);
   const ownRegulated = attrs.some(a => a.attribute === 'regulated' && String(a.level).endsWith(':' + here) && a.value === 'true');
   const valueWithSource = name => {
@@ -131,7 +132,7 @@ export async function governanceTab(target, reload) {
     freeze ? h('p', {class: 'status-frozen'}, frozenPill('DR freeze in force'), ' ', h('span', {class: 'fine'}, String(freeze)))
       : h('p', {class: 'status-free'}, pill('ok', 'No DR freeze'), ' ', muted('Commits are allowed.')),
     holds.length ? h('p', {class: 'status-held'}, heldPill(plural(holds.length, 'legal hold')), ' ',
-      h('span', {class: 'fine'}, 'Snapshots cannot be removed; it cannot be dropped or purged.'))
+      h('span', {class: 'fine'}, view ? 'It cannot be dropped or purged.' : 'Snapshots cannot be removed; it cannot be dropped or purged.'))
       : h('p', null, pill('', 'No legal hold')));
   const left = h('div', {class: 'panel', id: 'governance'}, h('h2', null, 'Governance ', h('span', {class: 'meta'}, 'each value with where it was set')),
     status,
@@ -141,7 +142,8 @@ export async function governanceTab(target, reload) {
         effective.classification ? 'Change the classification' : 'Set a classification'),
       h('button', {class: 'btn sm', type: 'button', 'data-label': 'owner', onclick: () => setOwner(target, effective.owner, reload)},
         effective.owner ? 'Change the owner' : 'Set the owner'),
-      target.kind !== 'view' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'retention-class',
+      // A retention class keeps snapshots, which a view has none of; a regulated mark closes tables only (item 146).
+      !view ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'retention-class',
         onclick: () => setRetentionClass(target, effective['retention-class'], reload)},
       effective['retention-class'] ? 'Change the retention class' : 'Set a retention class') : null,
       target.kind === 'catalog' || target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
@@ -167,8 +169,11 @@ export async function governanceTab(target, reload) {
     : h('p', {class: 'muted'}, 'No attribute set here or above.'));
   const enforced = panel('What the catalog enforces', target.kind === 'namespace' || target.kind === 'catalog' ? 'beneath it' : 'on every call',
     facts([
-      ['Commits', freeze ? [h('b', null, 'Refused'), ' · frozen until the DR freeze is lifted'] : [h('b', null, 'Allowed'), ' · to groups holding write']],
-      ['Snapshot expiry', holds.length ? [h('b', null, 'Off'), ' · under legal hold'] : freeze ? [h('b', null, 'Off'), ' · frozen for DR']
+      // A view has no snapshots or data files: what it enforces is on replacing its definition, and on its drop.
+      view ? ['Replacing the definition', freeze ? [h('b', null, 'Refused'), ' · frozen until the DR freeze is lifted']
+        : [h('b', null, 'Allowed'), ' · to groups holding modify']]
+        : ['Commits', freeze ? [h('b', null, 'Refused'), ' · frozen until the DR freeze is lifted'] : [h('b', null, 'Allowed'), ' · to groups holding write']],
+      view ? null : ['Snapshot expiry', holds.length ? [h('b', null, 'Off'), ' · under legal hold'] : freeze ? [h('b', null, 'Off'), ' · frozen for DR']
         : [h('b', null, 'On'), ' · as its maintenance policy sets']],
       ['Drop and purge', holds.length ? [h('b', null, 'Refused'), ' · under legal hold'] : [h('b', null, 'Allowed'), ' · to groups holding modify']],
     ]));
@@ -187,7 +192,7 @@ const reachWords = target => target.kind === 'catalog' || target.kind === 'names
 function classify(target, current, reload) {
   openDialog(`Classify ${lastWord(target)} (${target.kind})`, h('div', null,
     h('p', null, 'The classification says how sensitive the data is. Engines receive it with every load. ' + reachWords(target)
-      + 'A table in a regulated area stays closed until it has a classification of its own.'),
+      + (target.kind === 'view' ? '' : 'A table in a regulated area stays closed until it has a classification of its own.')),
     h('p', {class: 'fine'}, RECORDED),
     dialogForm([field('Classification', select('cls', CLASSES, current || 'confidential'))], 'Set the classification', async (form, out) => {
       const value = form.elements.cls.value;
@@ -273,8 +278,10 @@ function setRegulated(target, marked, inherited, reload) {
 
 export function placeHold(target, reload) {
   openDialog(`Place a hold on ${lastWord(target)}`, h('div', null,
-    h('p', null, 'A legal hold stops snapshot expiry, orphan removal, drops and purges on what it covers. Compaction still '
-      + 'runs. Only a steward can release it.'),
+    h('p', null, target.kind === 'view'
+      ? 'A legal hold stops this view being dropped or purged. Its definition can still be replaced. Only a steward can release it.'
+      : 'A legal hold stops snapshot expiry, orphan removal, drops and purges on what it covers. Compaction still '
+        + 'runs. Only a steward can release it.'),
     dialogForm([field('Reason, as it will be recorded', text('reason', 'Matter 2026-1xx: what the hold is for'))], 'Place the hold',
       async (form, out) => {
         const reason = form.elements.reason.value.trim();
@@ -292,8 +299,9 @@ export function placeHold(target, reload) {
 /** Releases a hold, after a word in a dialog, on the level it was placed on. */
 export function releaseHold(level, hold, reload) {
   openDialog('Release a hold', h('div', null,
-    h('p', null, 'Releasing ', h('b', null, hold.reason), ' on ', code(what(level)), ' lets the worker expire snapshots and '
-      + 'remove files there again. The hold and its release stay in the audit trail.'),
+    h('p', null, 'Releasing ', h('b', null, hold.reason), ' on ', code(what(level)), level.kind === 'view'
+      ? ' lets the view be dropped and purged again. The hold and its release stay in the audit trail.'
+      : ' lets the worker expire snapshots and remove files there again. The hold and its release stay in the audit trail.'),
     dialogForm(null, 'Release the hold', async (form, out) => {
       const answer = await api.releaseHold(level, hold.id);
       forgetMarks(level.catalog);
