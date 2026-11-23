@@ -58,8 +58,8 @@ import java.util.stream.LongStream;
  * <p>A commit on a branch writes its file in the same folder, built on the file it read, and its first builds on
  * main's file at the branch's cut (D33). Such a file is marked in its name ({@link TableFiles#onBranch}), and the
  * walk never takes one as a file that follows main's: neither as a step nor as a file that proves another (security
- * finding 12; item 111). The pointer the walk starts from may name one, as a merge or a register can leave it, and
- * its files that follow are walked as any pointer's are.
+ * finding 12; item 111). A merge writes main's own unmarked copy (item 107), but a register can start the pointer on
+ * a marked file; the pointer is never judged so, and its files that follow are walked as any pointer's are.
  *
  * <p>Storage replicates to DR asynchronously and not in write order, so a proven file's manifests and data may not
  * have arrived. The walk takes a step only when storage holds every file it adds to the version before it, data

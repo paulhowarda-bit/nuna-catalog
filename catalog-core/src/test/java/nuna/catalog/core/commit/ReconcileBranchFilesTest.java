@@ -27,11 +27,11 @@ import org.junit.jupiter.api.Test;
  * The DR reconcile's walk never takes a branch's file as main's (security finding 12; item 111). A commit on a branch
  * writes its file beside main's, built on the file it read, and its first builds on main's file at the branch's cut
  * (D33, item 105), so without its mark a branch's chain would pass for main's. The walk judges each file that follows
- * by its name ({@link TableFiles#onBranch}), and never the pointer it starts from, which a merge or a register may
- * leave on a branch's file.
+ * by its name ({@link TableFiles#onBranch}), and never the pointer it starts from, which a register may start on a
+ * branch's file (a merge never does: it writes main's own unmarked copy at main's next version, item 107).
  *
  * <p>A branch numbers its own pointer from 1, so today its first file lies below main's pointer and its later ones
- * build on its own; the walk meets a branch's files only after main's pointer names one. The first two tests name a
+ * build on its own; the walk meets a branch's files only after a register names one. The first two tests name a
  * branch's files at main's next versions all the same: the mark, not the numbering, keeps them out of main's chain.
  * Against a store double holding one table's main pointer, so it needs no database.
  */
@@ -110,16 +110,16 @@ class ReconcileBranchFilesTest {
     }
 
     @Test
-    @DisplayName("a pointer that names a branch's file, as a merge leaves it, still walks main's files that follow it")
+    @DisplayName("a pointer that names a branch's file, as a register can start it, still walks main's files after it")
     void aPointerOnABranchsFileWalksMainsFilesAfterIt() {
-        TableFiles.Written merged = after(v1, dev);
-        pointer = new Pointer(merged.location(), 2, merged.sha256(), new byte[0]);
-        TableFiles.Written main3 = after(merged, MAIN);
+        TableFiles.Written registered = after(v1, dev);
+        pointer = new Pointer(registered.location(), 2, registered.sha256(), new byte[0]);
+        TableFiles.Written main3 = after(registered, MAIN);
         TableFiles.Written main4 = after(main3, MAIN);
 
         Reconcile.Plan plan = reconcile.plan(table, Set.of());
 
-        assertThat(plan.from().metadataLocation()).isEqualTo(merged.location());
+        assertThat(plan.from().metadataLocation()).isEqualTo(registered.location());
         assertThat(plan.problem()).isEmpty();
         assertThat(plan.steps()).extracting(Reconcile.Step::location).containsExactly(main3.location());
         assertThat(plan.steps()).extracting(Reconcile.Step::proof).containsExactly(Reconcile.Proof.SUCCESSOR);

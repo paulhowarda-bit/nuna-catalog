@@ -1,4 +1,4 @@
-Breaks: the DR reconcile's walk judges main's own pointer by the branch mark too, so a table whose pointer a merge or a register left on a branch's file is never walked (item 111).
+Breaks: the DR reconcile's walk judges main's own pointer by the branch mark too, so a table whose pointer a register started on a branch's file is never walked (item 111).
 Module: catalog-core
 Test: ReconcileBranchFilesTest#aPointerOnABranchsFileWalksMainsFilesAfterIt
 
