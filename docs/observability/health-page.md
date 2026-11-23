@@ -13,6 +13,7 @@ history. The page answers "how does the catalog stand today" without them, from 
 | Part | Shown to | Read from |
 |---|---|---|
 | Catalog health | Platform operators (`nuna.security.platform-operator-groups`, SEC-1) | `GET /management/v1/health/catalog` and `GET /management/v1/maintenance/scans` |
+| DR replication and the store | Platform operators | `GET /management/v1/dr/watermarks` and `GET /management/v1/health/server?store=true` |
 | Tables that need compaction | Anyone; each table only to a caller with `select` on it | `GET /management/v1/maintenance/tables` (table-health.md) |
 | A table's health, its **Health** tab | Anyone with `select` on the table | `GET .../tables/{table}/health` (table-health.md) |
 
@@ -96,6 +97,50 @@ GET /management/v1/health/catalog
  "servers": [{"id": "…", "name": "…", "answered": true, "this-server": true, "started-at": "…", "from": "…"}, …]}
 ```
 
+## DR replication and the store
+
+Backlog 138 and 139, beneath the servers and the worker, for platform operators. A refusal of either route leaves
+its panel out; anyone who is not an operator is refused the whole of catalog health before either is asked.
+
+**DR replication** reads the DR readout, `GET /management/v1/dr/watermarks` (dr-watermark.md), 200 a page and at
+most 5 pages: the readout reads one journal record a row, so each visit reads at most 1,000 tables and views, by id.
+Past that the counts say "at least 1,000", and the most and the longest are of the first 1,000.
+
+- A table or view with a watermark is counted as **behind** it; the **most versions behind** (linking to its page) and
+  the **longest lag**, the time since its oldest unverified commit, are of these.
+- One with none is counted apart, as **never verified**: without a watermark the readout counts every version it has,
+  and its lag runs from its first commit, which says nothing of DR.
+- When no table listed has a watermark, as in a deployment with no DR store (the demo) or before the verifier's first
+  pass, the panel says no DR verifier has reported on them and counts none as behind. The readout cannot tell that
+  from tables the verifier has not reached yet: a table at its watermark is not listed.
+- When none is listed, no table or view is behind its watermark: each is whole in the DR store at its current
+  version.
+
+**Store** reads `GET /management/v1/health/server?store=true`, the server the browser reaches:
+
+- **Backend**: the database as this server finds it on its own connection, each visit: `SELECT version()` on
+  PostgreSQL's wire, which tells PostgreSQL ("17.2") from CockroachDB ("v24.3.1"); the JDBC driver's product version
+  on Oracle; `buildInfo` on MongoDB. It is the one read outside the catalog store (`StoreWiring`), and it reads
+  nothing of the catalog. A database that does not answer is shown as not reached, with its error.
+- **Self-check at start**: when this server ran the store's self-check (D8.2), and whether it passed or started
+  despite findings `nuna.database.allow-unsafe` names, each with its code and detail. A server refuses to start on any
+  other finding.
+- Point-in-time recovery is not shown, and the panel says so: it is the database's own backup setting, which the
+  catalog's role cannot read on most backends and nothing in the server records.
+
+`store=true` is asked for: the servers gathering each other's figures leave it off, so they never wait on a database
+that does not answer.
+
+```json
+GET /management/v1/health/server?store=true
+{"server": {…}, "from": "…", "to": "…", "figures": {…},
+ "store": {"configured": "postgresql", "backend": "PostgreSQL", "version": "17.2",
+           "self-check": {"at": "…", "allowed": [{"code": "pg.no-sync-standby", "detail": "…"}]}}}
+```
+
+`configured` is `nuna.database.backend`; when the database cannot be asked, `unreadable` holds why in place of
+`backend` and `version`.
+
 ## Tables that need compaction, and a table's health
 
 Beneath catalog health, the neediest tables as the worker last assessed them (item 47's read route), neediest first,
@@ -139,6 +184,12 @@ queued, with equality deletes, not yet assessed, held and frozen; the **In shape
 | `ConsoleTest` | `health.js` and `requests.js` are served under the console's Content-Security-Policy and write no markup. |
 | `ConsoleHealthTest#anOwnerAsksForACompactionNowAndARefusalShowsTheCatalogsAnswer` (Selenium) | A table's owner asks for a compaction now: the catalog answers 202 with a request id, and the request shows waiting, with who asked, its button turned off; an orphan scan the policy turns off is refused with the catalog's code, words and request id. The reader test checks that a reader sees no buttons. |
 
+| `StoreFactsRouteTest` | `/health/server?store=true` names PostgreSQL, CockroachDB, Oracle and MongoDB with their versions from what each answers; a database that does not answer is said so, with the self-check still shown; the self-check's time and each finding allowed; without `store=true` the database is not asked; a non-operator is refused, audited, before it is. |
+| `StoreWiringTest` | The self-check's findings allowed at start are what the Store panel is given. |
+| `ConsoleHealthBrowserTest` (Selenium) | DR replication with every table at its watermark (none behind), with one table never verified (no verifier has reported, no count), then two behind and one never verified, the most behind linking to its table, and the lag; the Store panel's backend and version as the database answers, and its self-check as the route answers; a non-operator sees neither panel and both routes refuse them. |
+
 The bites are in `bites/D38/`: `catalog-health-for-anyone`, `server-health-for-anyone`, `one-server-only`,
-`window-never-moves`, `histograms-roll-over` and `table-health-for-anyone`; and in `bites/OBS-71/`,
-`health-page-buckets-of-its-own` (item 74).
+`window-never-moves`, `histograms-roll-over` and `table-health-for-anyone`; in `bites/OBS-71/`,
+`health-page-buckets-of-its-own` (item 74); and in `bites/D45/`, `health-dr-unverified-counted-as-behind`,
+`store-read-before-operator-check`, `store-cockroach-named-postgresql` and `store-self-check-findings-dropped`
+(items 138 and 139).

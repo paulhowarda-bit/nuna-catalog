@@ -1,11 +1,12 @@
 // Health (D38): catalog health for the whole deployment, for platform operators, with the maintenance worker's
 // scans (also on Maintenance: operators hold no grant, so may have no catalog to open it in), and one table's health
 // on its own tab, with its maintenance on request (item 114). The server decides who sees what: a refusal is shown as
-// it answered, never guessed at here. Waiting on routes no item gives yet, and left out: the DR replication and store
-// panels.
+// it answered, never guessed at here. DR replication (item 138) and the store (item 139) are for platform operators
+// too; their panels are left out for anyone the catalog refuses them to.
 
 import * as api from './api.js';
-import {facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, tbl, took, when} from './dom.js';
+import {at, code, facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, tbl, took, when} from './dom.js';
+import {objectHref} from './route.js';
 import {REASONS, compactionWords, iceQueue, keyOfRow, queue, queueOf, reasonPill} from './queue.js';
 import {mayModify, requestButtons, requestsBox} from './requests.js';
 
@@ -80,6 +81,10 @@ async function catalogHealth() {
   const total = servers.length || health.answered + (health.silent || 0);
   const worker = h('div');
   load(worker, workerPanel);
+  const dr = h('div');
+  load(dr, drPanel);
+  const store = h('div');
+  load(store, storePanel);
   return [
     pageHead({
       eyebrow: 'deployment · the last day, to now',
@@ -106,7 +111,8 @@ async function catalogHealth() {
         panel('Credential vending', null, vends(health['credential-vends'] || {})),
         panel('Alerts fired', null, alerts(health.alerts || {}),
           h('p', {class: 'fine'}, 'Paging stays in your alerting; these are the last day\'s counts.'))),
-      h('div', {class: 'grid-2'}, serversPanel(health, servers), worker)),
+      h('div', {class: 'grid-2'}, serversPanel(health, servers), worker),
+      h('div', {class: 'grid-2'}, dr, store)),
   ];
 }
 
@@ -152,6 +158,103 @@ function vends(v) {
 
 function plural(n, word = 'server') {
   return `${fmt(n)} ${n === 1 ? word : word + 's'}`;
+}
+
+// ---- DR replication (D37, item 138): platform operators only ----
+
+// The readout reads one journal record a row, so Health reads at most 1,000 tables and views, by id.
+const DR_PAGE = 200;
+const DR_PAGES = 5;
+
+/**
+ * The readout's rows, split: those behind a watermark the verifier recorded, and those with none, which the readout
+ * counts as behind by every version they have; the most versions behind and the longest lag are of the first.
+ */
+export function drFigures(tables) {
+  const behind = tables.filter(t => t['watermark-version'] !== null && t['watermark-version'] !== undefined);
+  const never = tables.filter(t => !behind.includes(t));
+  const most = behind.reduce((a, t) => !a || t['versions-behind'] > a['versions-behind'] ? t : a, null);
+  const longest = behind.filter(t => t['lag-seconds'] !== undefined)
+    .reduce((a, t) => !a || t['lag-seconds'] > a['lag-seconds'] ? t : a, null);
+  return {behind, never, most, longest};
+}
+
+async function drPanel() {
+  let read;
+  try {
+    read = await api.drBehind(DR_PAGE, DR_PAGES);
+  } catch (error) {
+    if (error.status === 403) return null;
+    throw error;
+  }
+  const {tables, more} = read;
+  const {behind, never, most, longest} = drFigures(tables);
+  const count = n => (more ? 'at least ' : '') + fmt(n);
+  const head = h('h2', null, 'DR replication ', h('span', {class: 'meta'}, 'the DR store against each watermark'));
+  if (!tables.length) {
+    return h('div', {class: 'panel hide-sm', id: 'health-dr'}, head, kpis([
+      ['behind', 'Tables behind their watermark', '0'],
+    ]), h('p', {class: 'fine', id: 'health-dr-none'}, 'No table or view is behind its DR watermark: the verifier found '
+      + 'each whole in the DR store at its current version.'));
+  }
+  if (!behind.length) {
+    return h('div', {class: 'panel hide-sm', id: 'health-dr'}, head,
+      h('p', {class: 'notice', id: 'health-dr-no-verifier'}, icon('info'), h('span', null,
+        h('b', null, 'No DR verifier has reported on them.'),
+        ` ${count(never.length)} ${never.length === 1 && !more ? 'table or view has' : 'tables and views have'} no DR `
+        + 'watermark, so none is counted as behind one. The maintenance worker\'s verifier records one when it '
+        + 'checks a DR store.')));
+  }
+  const target = t => ({catalog: t.catalog, kind: t.kind, namespace: t.namespace || [], name: t.name});
+  return h('div', {class: 'panel hide-sm', id: 'health-dr'}, head, kpis([
+    ['behind', 'Tables behind their watermark', count(behind.length)],
+    never.length ? ['never', 'Never verified', count(never.length)] : null,
+    ['most', 'Most versions behind', [fmt(most['versions-behind']), ' · ', most.catalog
+      ? h('a', {href: objectHref(target(most)), title: [most.catalog, ...(most.namespace || []), most.name].join('.')}, most.name)
+      : most.name]],
+    ['lag', 'Longest lag', longest ? took(1000 * longest['lag-seconds']) : null],
+  ]),
+  never.length ? h('p', {class: 'fine'}, 'Never verified: no watermark yet, so the readout counts every version they '
+    + 'have. They are left out of the most and the longest.') : null,
+  more ? h('p', {class: 'fine', id: 'health-dr-more'}, `Read the first ${fmt(DR_PAGE * DR_PAGES)} by id; the most `
+    + 'and the longest are among them.') : null);
+}
+
+/** A list of figures, each [key, label, value]; a value that is null shows as a dash. */
+function kpis(rows) {
+  return h('div', {class: 'kpi-list'}, rows.filter(Boolean).map(([key, label, value]) =>
+    h('div', {'data-fact': key}, h('span', null, label), h('b', null, value === null || value === undefined ? '–' : value))));
+}
+
+// ---- the catalog's database, as this server finds it (item 139): platform operators only ----
+
+const BACKENDS = {postgresql: 'PostgreSQL or CockroachDB', oracle: 'Oracle', mongodb: 'MongoDB'};
+
+async function storePanel() {
+  let body;
+  try {
+    body = await api.serverHealth();
+  } catch (error) {
+    if (error.status === 403) return null;
+    throw error;
+  }
+  const store = body.store || {};
+  const check = store['self-check'] || {};
+  const allowed = check.allowed || [];
+  return h('div', {class: 'panel hide-sm', id: 'health-store'},
+    h('h2', null, 'Store ', h('span', {class: 'meta'}, 'as ' + (body.server && body.server.name || 'this server') + ' finds it')),
+    kpis([
+      ['backend', 'Backend', store.backend ? store.backend + ' ' + store.version
+        : h('span', {class: 'warn-n'}, (BACKENDS[store.configured] || store.configured) + ' · not reached')],
+      ['self-check', 'Self-check at start', h('span', {class: allowed.length ? 'warn-n' : null}, at(check.at) + ' · '
+        + (allowed.length ? `started despite ${plural(allowed.length, 'finding')}` : 'passed'))],
+    ]),
+    store.unreadable ? h('p', {class: 'fine', id: 'health-store-unreadable'}, 'The database did not answer: ', store.unreadable) : null,
+    allowed.length ? h('ul', {class: 'stack', id: 'health-store-findings'}, allowed.map(f =>
+      h('li', {'data-code': f.code}, code(f.code), ' ', h('span', {class: 'fine'}, f.detail)))) : null,
+    h('p', {class: 'fine'}, 'Each server checks its database\'s durability when it starts, and starts despite a finding '
+      + 'only when ', code('nuna.database.allow-unsafe'), ' names it. Point-in-time recovery is not shown: it is the '
+      + 'database\'s own backup setting, which the catalog cannot read.'));
 }
 
 // ---- the maintenance worker's scans, on Maintenance: platform operators only ----
