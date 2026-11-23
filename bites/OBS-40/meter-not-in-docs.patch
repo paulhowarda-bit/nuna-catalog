@@ -2,14 +2,14 @@ Breaks: a new meter is added without a line in docs/observability/worker-metrics
 Module: catalog-maintenance
 Test: WorkerMetricsTest#theDocsListEveryMeter
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-index 8d8605b..cdbf375 100644
+index 60c2991..712ff62 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-@@ -55,6 +55,7 @@ final class WorkerMetrics {
+@@ -84,6 +84,7 @@ final class WorkerMetrics {
              new Count(PREFIX + "purges.completed", "Dropped objects purged", report -> report.purged),
              new Count(PREFIX + "purges.skipped", "Purges another worker holds, or the catalog refused or rate-limited",
                      report -> report.purgesSkipped),
 +            new Count(PREFIX + "files.listed", "Files an orphan scan listed", report -> 0),
              new Count(PREFIX + "files.deleted", "Files deleted: due pending deletions and purged objects' files",
-                     report -> report.filesDeleted));
- 
+                     report -> report.filesDeleted),
+             new Count(PREFIX + "refs.warned", "Branches whose expiry warning the worker sent",

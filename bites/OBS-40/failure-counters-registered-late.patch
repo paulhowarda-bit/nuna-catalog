@@ -2,10 +2,10 @@ Breaks: a failure counter appears only at its kind's first failure, so before it
 Module: catalog-maintenance
 Test: WorkerMetricsTest#everyMeterReadsZeroBeforeTheFirstScan
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-index 816a4c1..704e7d9 100644
+index 60c2991..10a1e52 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-@@ -103,10 +103,6 @@ final class WorkerMetrics {
+@@ -113,10 +113,6 @@ final class WorkerMetrics {
          for (Count count : COUNTS) {
              counts.put(count, Counter.builder(count.name()).description(count.description()).register(registry));
          }
@@ -16,7 +16,7 @@ index 816a4c1..704e7d9 100644
          for (CompactionNeed.Reason reason : CompactionNeed.Reason.values()) {
              needing.put(reason, Counter.builder(NEEDING).description("Tables found needing compaction, by reason")
                      .tag(REASON, reason.label).register(registry));
-@@ -136,7 +132,8 @@ final class WorkerMetrics {
+@@ -151,7 +147,8 @@ final class WorkerMetrics {
          } finally {
              boolean success = ended && !report.failuresByKind.containsKey(ScanReport.Failure.WORK_LIST);
              counts.forEach((count, counter) -> counter.increment(count.of().applyAsInt(report)));
@@ -24,5 +24,5 @@ index 816a4c1..704e7d9 100644
 +            report.failuresByKind.forEach((kind, times) -> failures.computeIfAbsent(kind, k -> Counter.builder(FAILURES)
 +                    .tag(KIND, k.label).register(registry)).increment(times));
              report.needs.forEach((reason, tables) -> needing.get(reason).increment(tables));
+             report.kept.forEach((kind, files) -> kept.get(kind).increment(files));
              (success ? succeeded : failed).record(registry.config().clock().monotonicTime() - start,
-                     TimeUnit.NANOSECONDS);

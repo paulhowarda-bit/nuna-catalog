@@ -2,15 +2,15 @@ Breaks: nuna.maintenance.files.deleted counts the files recorded for deletion in
 Module: catalog-maintenance
 Test: WorkerMetricsTest#aScanAddsEachCountAndEachFailureByItsKind
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-index 8d8605b..36d11ba 100644
+index 60c2991..4bc2b2a 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerMetrics.java
-@@ -56,7 +56,7 @@ final class WorkerMetrics {
+@@ -85,7 +85,7 @@ final class WorkerMetrics {
              new Count(PREFIX + "purges.skipped", "Purges another worker holds, or the catalog refused or rate-limited",
                      report -> report.purgesSkipped),
              new Count(PREFIX + "files.deleted", "Files deleted: due pending deletions and purged objects' files",
--                    report -> report.filesDeleted));
-+                    report -> report.filesRecorded));
- 
-     private final MeterRegistry registry;
-     private final Clock clock;
+-                    report -> report.filesDeleted),
++                    report -> report.filesRecorded),
+             new Count(PREFIX + "refs.warned", "Branches whose expiry warning the worker sent",
+                     report -> report.refsWarned),
+             new Count(PREFIX + "refs.ended", "Branches past their expiry the worker ended",
