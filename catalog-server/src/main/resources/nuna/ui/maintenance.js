@@ -5,9 +5,9 @@
 
 import * as api from './api.js';
 import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
-import {dialogForm, failure, field, fill, granted, h, icon, load, openDialog, pageHead, panel, pill, plural, tbl, text}
+import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialog, pageHead, panel, pill, plural, tbl, text}
   from './dom.js';
-import {emptyQueue, lastAssessed, queue, queueChips, queueOf, queueTable} from './queue.js';
+import {emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
 import {sourceWords, workerPanel} from './health.js';
 import {mayModifyAny, pickDialog} from './requests.js';
 
@@ -19,8 +19,11 @@ const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'sn
 export function maintenancePage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'maintenance'});
   load(main, async () => {
-    const [rows, may] = await Promise.all([queue(true).then(all => queueOf(all, catalog)), mayModifyAny(catalog)]);
+    const [rows, tables, may] = await Promise.all([queue(true).then(all => queueOf(all, catalog)),
+      estate(true).then(all => all.filter(t => t.catalog === catalog)), mayModifyAny(catalog)]);
     const assessed = lastAssessed(rows);
+    // The queue lists only assessed tables that need compaction; the estate says which tables are not assessed yet.
+    const c = estateCounts(tables);
     const policy = h('div');
     const worker = h('div');
     const figures = h('div');
@@ -35,12 +38,15 @@ export function maintenancePage(catalog) {
       const table = queueTable(rows, {id: 'neediest'});
       queuePanel = panel('Tonight\'s queue', 'equality deletes first, then the highest score', queueChips(rows, table), table);
     } else {
-      queuePanel = emptyQueue(catalog);
+      queuePanel = emptyQueue(catalog, c);
     }
     return [
       pageHead({
         eyebrow: `${catalog} · maintenance`,
-        title: rows.length ? `${plural(rows.length, 'table')} queued for tonight.` : `Every table you may read in ${catalog} is in shape.`,
+        title: rows.length
+          ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
+          : !c.total ? `No table in ${catalog} is yours to select.`
+            : c.unassessed ? shapeWords(c) : `Every table you may read in ${catalog} is in shape.`,
         sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
           + 'each one\'s assessment is on its Health tab.',
         side: [assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,

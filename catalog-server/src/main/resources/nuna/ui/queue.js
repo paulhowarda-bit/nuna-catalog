@@ -3,7 +3,7 @@
 // select, one row each (GET /management/v1/maintenance/estate, item 127): each table in shape a mark standing above
 // the water, as tall as its data files on a log scale, and each queued one hanging below it, as deep as its score.
 
-import {$$, bar, h, ordinal, pill, plural, s} from './dom.js';
+import {$$, bar, fmt, h, ordinal, pill, plural, s} from './dom.js';
 import {objectHref} from './route.js';
 import * as api from './api.js';
 
@@ -70,6 +70,16 @@ export function estateCounts(rows) {
     held: rows.filter(r => r.held).length,
     frozen: rows.filter(r => r.frozen).length,
   };
+}
+
+/**
+ * The estate's shape in one sentence, from its counts (`estateCounts`), for at least one table: a table the worker
+ * has not assessed yet is counted apart, never as in shape or out of it.
+ */
+export function shapeWords(c) {
+  if (c.unassessed === c.total) return `${plural(c.total, 'table')} not assessed yet: the maintenance worker has not reported.`;
+  if (!c.unassessed) return `${fmt(c.inShape)} of ${plural(c.total, 'table')} in shape.`;
+  return `${fmt(c.inShape)} of ${plural(c.total - c.unassessed, 'assessed table')} in shape; ${fmt(c.unassessed)} not assessed yet.`;
 }
 
 /**
@@ -160,7 +170,7 @@ export function estateLegend(rows) {
     c.fixed ? item('sw-ghost', c.fixed, 'fixed last night') : null,
     c.held ? item('sw-held', c.held, 'held') : null,
     c.frozen ? item('sw-frozen', c.frozen, 'frozen') : null,
-    c.unassessed ? h('span', null, h('b', null, c.unassessed.toLocaleString('en-GB')), ' not yet assessed') : null);
+    c.unassessed ? h('span', null, h('b', null, c.unassessed.toLocaleString('en-GB')), ' not assessed yet') : null);
 }
 
 /** The score bar's scale: the neediest table's score, at least 10. */
@@ -278,10 +288,18 @@ export function queueChips(rows, table) {
   return box;
 }
 
-/** The empty queue: nothing for the worker to do tonight, among the tables the caller may read. */
-export function emptyQueue(catalog) {
+/**
+ * The empty queue: nothing for the worker to do tonight, among the tables the caller may read. `c` is the catalog's
+ * estate counts (`estateCounts`): a table not assessed yet is named as such, not counted as needing nothing.
+ */
+export function emptyQueue(catalog, c) {
+  const why = c.total && c.unassessed === c.total
+    ? ['The maintenance worker has not assessed any table you may read in ', h('code', null, catalog), ' yet, so it has '
+      + 'queued none. ']
+    : ['No table you may read in ', h('code', null, catalog), ' has small files, deletes past its policy\'s share of its '
+      + 'data files, or equality deletes, as the worker last assessed them. ',
+    c.unassessed ? `${plural(c.unassessed, 'table')} ${c.unassessed === 1 ? 'is' : 'are'} not assessed yet. ` : ''];
   return h('div', {class: 'empty', id: 'neediest-none'},
     h('h3', null, 'Nothing queued for tonight'),
-    h('p', null, 'No table you may read in ', h('code', null, catalog), ' has small files, deletes past its policy\'s '
-      + 'share of its data files, or equality deletes, as the worker last assessed them. Tables you may not read are not counted here.'));
+    h('p', null, ...why, 'Tables you may not read are not counted here.'));
 }
