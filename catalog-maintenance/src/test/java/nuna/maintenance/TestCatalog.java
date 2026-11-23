@@ -448,7 +448,7 @@ final class TestCatalog {
                   CleanupWindow window, Duration orphanInterval, int maxJobs) {
         return new Worker(new Management(uri, tokens, http, 100), new Catalogs(uri, tokens,
                 storage.clientProperties(), TraceHeaders.NONE), storage, compactor, clock, window, orphanInterval,
-                maxJobs, meters, ObservationRegistry.NOOP);
+                Duration.ofHours(2), maxJobs, meters, ObservationRegistry.NOOP);
     }
 
     /**
@@ -682,6 +682,17 @@ final class TestCatalog {
     }
 
     // ---- what the catalog and the store hold ----
+
+    /**
+     * The object's jobs of the night as the catalog's database holds them (backlog 126), by start: each as its kind,
+     * slot and outcome, e.g. {@code COMPACTION 1 CUT_OFF}, a job with no slot showing none.
+     */
+    List<String> jobs(java.time.LocalDate night, UUID object) {
+        return jdbc.query("SELECT kind, slot, outcome FROM maintenance_job WHERE night = ? AND object_id = ?"
+                + " ORDER BY started_at, id", (row, n) -> row.getString("kind") + " "
+                + (row.getObject("slot") == null ? "none" : row.getInt("slot")) + " " + row.getString("outcome"),
+                night, object);
+    }
 
     /** Every file pending deletion for the object, due or not, as the catalog's database holds them. */
     List<String> pending(String objectId) {

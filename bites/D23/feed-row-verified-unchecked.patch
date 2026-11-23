@@ -1,0 +1,16 @@
+Breaks: a feed row says its chain is verified once any of its partition is, even a record the archive check has not reached.
+Module: catalog-server
+Test: AuditFeedRoutesTest#aRowIsVerifiedWhenTheCheckHasVerifiedItsChainPastIt
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+index f181d13..22342b6 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditReadRoutes.java
+@@ -404,7 +404,7 @@ class AuditReadRoutes {
+             chain.put("status", "no-archive");
+         } else {
+             ArchiveCheck.Checked checked = verified.get(row.topicPartition());
+-            chain.put("status", checked != null && row.topicOffset() < checked.nextOffset() ? "verified" : "unverified");
++            chain.put("status", checked != null ? "verified" : "unverified");
+             chain.put("checked-at", checked == null ? null : checked.at().toString());
+         }
+         try {

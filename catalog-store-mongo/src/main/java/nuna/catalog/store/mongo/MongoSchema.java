@@ -8,7 +8,10 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
+import static nuna.catalog.store.mongo.MongoCatalogStore.LIFT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
+import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_JOB;
+import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_REQUEST;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_SCAN;
 import static nuna.catalog.store.mongo.MongoCatalogStore.NAMESPACE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
@@ -173,6 +176,48 @@ final class MongoSchema {
                 index(database, REF_ENTRY, "ref_entry_listing", false, null, "refId", "parentId", "kind", "nameNorm",
                         "objectId");
                 index(database, REF_ENTRY, "ref_entry_object", false, null, "objectId");
+            }),
+            // v1.x (D45, backlog 126): each job of the maintenance worker's nights, by the job's id, for the console's
+            // overview and maintenance pages: a night's totals and its jobs of a kind, by start, and the deletion of
+            // nights more than 31 days old, all by night first. The collection is new, made here outside any
+            // transaction, and no server of the previous release touches it, so building its index locks nothing it
+            // uses.
+            new Step(11, "maintenance nights", database -> {
+                index(database, MAINTENANCE_JOB, "maintenance_job_night", false, null, "night", "kind", "startedAt",
+                        "_id");
+            }),
+            // v1.x (D30, amended 2026-11-20; backlog 114): a request to run one of a table's heavy maintenance jobs now,
+            // one per table and job, waiting (startedAt null) until the worker reports the job started; and the work
+            // list's waiting requests, by the time asked. The collection is new, made here outside any transaction, since
+            // a purge deletes from it inside one, and no server of the previous release touches it, so building its
+            // indexes locks nothing it uses.
+            new Step(12, "maintenance requests", database -> {
+                try {
+                    database.createCollection(MAINTENANCE_REQUEST);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
+                index(database, MAINTENANCE_REQUEST, "maintenance_request_key", true, null, "objectId", "job");
+                index(database, MAINTENANCE_REQUEST, "maintenance_request_waiting", false, null, "requestedAt",
+                        "objectId", "job");
+            }),
+            // D24, D37, D45 (backlog 133): a hold released and a DR freeze lifted are kept, one document per change,
+            // named by its change id and never changed, with the catalog its level lies in, so a catalog's history of
+            // them is complete and outlives a level dropped since; and a catalog's lifts over a window, the most recent
+            // first. The collection is new, made here outside any transaction, since a release inserts into it inside
+            // one; no server of the previous release touches it, so building its index locks nothing it uses. A
+            // release or lift such a server makes during a rolling upgrade is not kept (its audit record is).
+            new Step(13, "governance lifts", database -> {
+                try {
+                    database.createCollection(LIFT);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
+                index(database, LIFT, "governance_lift_by_catalog", false, null, "catalogId", "liftedAt");
             }));
 
     private MongoSchema() {

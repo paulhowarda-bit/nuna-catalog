@@ -1,0 +1,16 @@
+Breaks: a branch past its expiry is still read, though it is gone from its expiry on (P11; the store keeps it until it is deleted).
+Module: catalog-server
+Test: RefReadsTest#aMissingOrExpiredRefIsGone
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java
+index 7e66c67..c0e6249 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java
+@@ -45,7 +45,6 @@ public class Prefixes {
+             return OnRef.main(catalog);
+         }
+         Ref ref = store.findRef(catalog.id(), Names.normalize(name.get()))
+-                .filter(found -> !found.expiredAt(clock.instant()))
+                 .orElseThrow(() -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + prefix
+                         + " (catalog " + catalog.name() + " has no branch or tag " + name.get() + ")"));
+         return new OnRef(catalog, Optional.of(ref));

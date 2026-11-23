@@ -33,7 +33,10 @@ public abstract class DrSuite extends GroupSuite {
     private static final WriteResult BEHIND = new WriteResult.Refused(WriteResult.Reason.WATERMARK_BEHIND);
     private static final WriteResult AHEAD = new WriteResult.Refused(WriteResult.Reason.WATERMARK_AHEAD);
 
-    /** Commits {@code versions} versions of the object's main pointer; returns the last. */
+    /**
+     * Commits {@code versions} versions of the object's main pointer; returns the last. Creating an object commits
+     * its version 1 ({@link Changes#creation}), so the first of these is version 2.
+     */
     private Pointer commit(CatalogObject object, int versions) {
         PointerKey key = new PointerKey(object.id(), PointerKey.MAIN);
         Optional<Pointer> current = store.readPointer(key);
@@ -62,7 +65,7 @@ public abstract class DrSuite extends GroupSuite {
     void aWatermarkOnlyRises() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         CatalogObject table = newTable(namespace, "t");
-        Pointer v2 = commit(table, 2);
+        Pointer v2 = commit(table, 1);
         Pointer v3 = commit(table, 1);
         DrWatermark low = at(v2);
         DrWatermark high = at(v3);
@@ -88,7 +91,7 @@ public abstract class DrSuite extends GroupSuite {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         CatalogObject table = newTable(namespace, "t");
         PointerKey key = new PointerKey(table.id(), PointerKey.MAIN);
-        Pointer v1 = commit(table, 1);
+        Pointer v1 = store.readPointer(key).orElseThrow();
         Pointer v102 = commit(table, 101);
         assertApplied(store.recordDrWatermark(table.id(), at(v1)));
         PointerSwap stale = recording(Commits.advance(key, Optional.of(v1), table.id() + "-stale"));
@@ -116,12 +119,11 @@ public abstract class DrSuite extends GroupSuite {
     }
 
     @Test
-    @DisplayName("DR: a view keeps a watermark; a dropped table, an object with no pointer or an unknown id is Missing")
+    @DisplayName("DR: a view keeps a watermark; a dropped table or an unknown id is Missing")
     void onlyActiveTablesAndViewsKeepOne() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         CatalogObject view = newObject(namespace, "v", CatalogObject.Kind.VIEW);
         CatalogObject dropped = newTable(namespace, "dropped");
-        CatalogObject unpointed = newTable(namespace, "unpointed");
         Pointer viewAt = commit(view, 1);
         Pointer droppedAt = commit(dropped, 1);
         assertApplied(store.dropObject(dropped.id(), now().plusSeconds(3600), change()));
@@ -129,7 +131,7 @@ public abstract class DrSuite extends GroupSuite {
         assertApplied(store.recordDrWatermark(view.id(), at(viewAt)));
 
         assertThat(store.readDrWatermark(view.id())).contains(at(viewAt));
-        for (UUID id : List.of(dropped.id(), unpointed.id(), UUID.randomUUID())) {
+        for (UUID id : List.of(dropped.id(), UUID.randomUUID())) {
             assertThat(store.recordDrWatermark(id, at(droppedAt))).as("watermark of %s", id).isEqualTo(MISSING);
             assertThat(store.readDrWatermark(id)).as("watermark of %s", id).isEmpty();
         }
@@ -137,7 +139,7 @@ public abstract class DrSuite extends GroupSuite {
 
     @Test
     @DisplayName("DR: the tables and views behind are listed by id, with pointer and watermark; those at their"
-            + " watermark, dropped or without a pointer are left out, and pages resume after the last")
+            + " watermark or dropped are left out, and pages resume after the last")
     void theObjectsBehindAreListed() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         CatalogObject never = newTable(namespace, "never");
@@ -145,18 +147,17 @@ public abstract class DrSuite extends GroupSuite {
         CatalogObject level = newTable(namespace, "level");
         CatalogObject view = newObject(namespace, "view", CatalogObject.Kind.VIEW);
         CatalogObject dropped = newTable(namespace, "dropped");
-        CatalogObject unpointed = newTable(namespace, "unpointed");
-        Pointer neverAt = commit(never, 2);
-        Pointer laggingLow = commit(lagging, 1);
+        Pointer neverAt = commit(never, 1);
+        Pointer laggingLow = store.readPointer(lagging.mainKey()).orElseThrow();
         Pointer laggingAt = commit(lagging, 2);
         Pointer levelAt = commit(level, 3);
-        Pointer viewAt = commit(view, 1);
+        Pointer viewAt = store.readPointer(view.mainKey()).orElseThrow();
         commit(dropped, 1);
         assertApplied(store.recordDrWatermark(lagging.id(), at(laggingLow)));
         assertApplied(store.recordDrWatermark(level.id(), at(levelAt)));
         assertApplied(store.dropObject(dropped.id(), now().plusSeconds(3600), change()));
 
-        List<DrState> listed = behind(never, lagging, level, view, dropped, unpointed);
+        List<DrState> listed = behind(never, lagging, level, view, dropped);
 
         assertThat(listed).extracting(state -> state.object().id()).containsExactlyElementsOf(
                 java.util.stream.Stream.of(never, lagging, view).map(CatalogObject::id)
@@ -187,7 +188,7 @@ public abstract class DrSuite extends GroupSuite {
     void theJournalReadsAfterAVersion() {
         NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
         CatalogObject table = newTable(namespace, "t");
-        commit(table, 5);
+        commit(table, 4);
         PointerKey key = new PointerKey(table.id(), PointerKey.MAIN);
 
         List<JournalRecord> after2 = store.readJournal(key, JournalStore.EARLIEST, JournalStore.LATEST,

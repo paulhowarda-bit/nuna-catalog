@@ -13,7 +13,9 @@ import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogSettings;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
+import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitOutcomeUnknownException;
+import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.LegalHold;
@@ -21,8 +23,11 @@ import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Pointer;
+import nuna.catalog.store.PointerHold;
+import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.TrustedEngine;
@@ -45,7 +50,8 @@ import org.junit.jupiter.api.TestFactory;
  * Suite tests 2 and 3 for every non-commit mutation: it writes exactly its change records, or
  * nothing; a lost answer is unknown and carries the change id; a link cut just before COMMIT is
  * unknown and leaves nothing. A mutation that skips the commit hook, the checked COMMIT or a
- * change record fails here.
+ * change record fails here. The two commits that lock a ref, a commit on a branch and a merge
+ * (backlog 103), run here too, as batches with the change's id, time and records.
  */
 public abstract class MutationSuite extends GroupSuite {
 
@@ -128,7 +134,7 @@ public abstract class MutationSuite extends GroupSuite {
                 onTable("removeAttribute", table -> {
                     assertApplied(store.putAttribute(new GovernanceAttribute(table.securable(),
                             GovernanceAttribute.Kind.OWNER, "team", "catalog-api", "admin", now()), change()));
-                    return (target, change) -> target.removeAttribute(table.securable(), GovernanceAttribute.Kind.OWNER, change);
+                    return (target, change) -> target.removeAttribute(table.securable(), GovernanceAttribute.Kind.OWNER, "steward", change);
                 }),
                 new Mutation("placeHold", () -> {
                     NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
@@ -140,7 +146,7 @@ public abstract class MutationSuite extends GroupSuite {
                     LegalHold hold = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.CATALOG, catalog),
                             "matter", "counsel", now());
                     assertApplied(store.placeHold(hold, change()));
-                    return (target, change) -> target.releaseHold(hold.id(), change);
+                    return (target, change) -> target.releaseHold(hold.id(), "counsel", change);
                 }),
                 new Mutation("putTrustedEngine", () -> (target, change) -> target.putTrustedEngine(
                         new TrustedEngine("https://idp.suite/" + UUID.randomUUID(), "trino", "sub", Set.of("shared")), change)),
@@ -166,7 +172,36 @@ public abstract class MutationSuite extends GroupSuite {
                     Ref branch = Refs.branch(catalog, "b", now());
                     assertApplied(store.createRef(branch, RefLimits.P11, change()));
                     return (target, change) -> target.deleteRef(branch.id(), change);
+                }),
+                new Mutation("commit on a branch", () -> {
+                    UUID catalog = newCatalog();
+                    CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+                    Ref branch = Refs.branch(catalog, "b", now());
+                    assertApplied(store.createRef(branch, RefLimits.P11, change()));
+                    PointerSwap own = Commits.advance(branch.key(table.id()), Optional.empty(), "on-b");
+                    return (target, change) -> applied(target.commit(new CommitBatch(change.id(), change.at(),
+                            List.of(own), List.of(), Optional.of(new RefLock.Hold(branch.id())), change.outbox(),
+                            change.idempotency())));
+                }),
+                new Mutation("merge", () -> {
+                    UUID catalog = newCatalog();
+                    CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+                    Ref branch = Refs.branch(catalog, "b", now());
+                    assertApplied(store.createRef(branch, RefLimits.P11, change()));
+                    PointerSwap own = Commits.advance(branch.key(table.id()), Optional.empty(), "on-b");
+                    applied(store.commit(new CommitBatch(UUID.randomUUID(), now(), List.of(own), List.of(),
+                            Optional.of(new RefLock.Hold(branch.id())), List.of(), Optional.empty())));
+                    PointerSwap toMain = Commits.advance(table.mainKey(), store.readPointer(table.mainKey()), "merged");
+                    return (target, change) -> applied(target.commit(new CommitBatch(change.id(), change.at(),
+                            List.of(toMain), List.of(new PointerHold(own.key(), own.next())),
+                            Optional.of(new RefLock.End(branch.id())), change.outbox(), change.idempotency())));
                 }));
+    }
+
+    /** A commit's answer as a change's: it must have committed. */
+    private static WriteResult applied(CommitResult result) {
+        assertThat(result).isInstanceOf(CommitResult.Committed.class);
+        return WriteResult.APPLIED;
     }
 
     private Mutation onTable(String name, Function<CatalogObject, Ready> ready) {

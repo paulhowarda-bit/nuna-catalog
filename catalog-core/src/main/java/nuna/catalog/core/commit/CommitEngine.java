@@ -210,8 +210,16 @@ public final class CommitEngine {
      * matches its hash is alerted; for a regulated object the read fails closed (D5, D26).
      */
     public Current readCurrent(CatalogObject object) {
-        Pointer pointer = store.readPointer(object.mainKey())
-                .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer"));
+        return readAt(object, store.readPointer(object.mainKey())
+                .orElseThrow(() -> new IllegalStateException("active object " + object.id() + " has no pointer")));
+    }
+
+    /**
+     * The metadata {@code pointer} names for a table or view, as {@link #readCurrent} reads main's: a branch's own
+     * pointer, or the one a ref's cut took (D33). The file is checked against the pointer's hash, alerted and, for a
+     * regulated object, refused as on main.
+     */
+    public Current readAt(CatalogObject object, Pointer pointer) {
         Optional<String> json = load(object, pointer, GovernanceChain.of(store, object));
         return json.<Current>map(j -> new Current.Loaded(pointer, j))
                 .orElseGet(() -> new Current.Refused(new ServerError(SERVICE_FAILURE, "Metadata file "
@@ -677,15 +685,15 @@ public final class CommitEngine {
                     return noSuch(request);
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD -> {
-                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                    return Failure.refused(object, "legal_hold", "Table " + display(request)
                             + " is under a legal hold and cannot be unregistered");
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN -> {
-                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                    return Failure.refused(object, "dr_freeze", "Table " + display(request)
                             + " is frozen for DR reconcile and cannot be unregistered");
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {
-                    return new Failure(403, "ForbiddenException", "Table " + display(request) + " is regulated or"
+                    return Failure.refused(object, "flagged", "Table " + display(request) + " is regulated or"
                             + " has a row/column policy and cannot be unregistered; a steward removes the flag first");
                 }
                 default -> throw new IllegalStateException("unregisterObject answered " + result);
@@ -892,7 +900,8 @@ public final class CommitEngine {
                         Optional<Failure> refused = judge(object, changed.before(), changed.after(), governance.get(i));
                         if (refused.isPresent()) {
                             Failure f = refused.get();
-                            return new Failure(f.status(), f.type(), table + ": " + f.message());
+                            return new Failure(f.status(), f.type(), table + ": " + f.message(), Optional.empty(),
+                                    f.refusal());
                         }
                         boolean regulated = schemaOrSpecChanged(changed.before(), changed.after())
                                 && governance.get(i).regulated();
@@ -1061,7 +1070,8 @@ public final class CommitEngine {
             Optional<Rejection> rejection = rule.judge(change);
             if (rejection.isPresent()) {
                 Rejection r = rejection.get();
-                return Optional.of(new Failure(r.status(), r.type(), r.message()));
+                return Optional.of(new Failure(r.status(), r.type(), r.message(), Optional.empty(),
+                        r.denial().map(reason -> new CommitReply.Refusal(object, reason))));
             }
         }
         return Optional.empty();

@@ -9,9 +9,10 @@ path. Its decisions are in the ledger's D30 and its amendments.
 ## What a scan does
 
 Every `scan-interval` (10 minutes by default) the worker reads the catalog's work list,
-`GET /management/v1/maintenance/work`, page by page, and works through its three sections. Snapshot expiry,
+`GET /management/v1/maintenance/work`, page by page, and works through its four sections. Snapshot expiry,
 manifest rewrite, purges and due deletions run at every scan, round the clock. Compaction and orphan scans, the
-heavy jobs, start only inside the nightly cleanup window (below).
+heavy jobs, start only inside the nightly cleanup window (below), unless someone asked for them ("Maintenance on
+request").
 
 - **Tables** whose resolved policy runs a job, with that policy. For each one:
   - **Snapshot expiry** (`snapshot-expiry.enabled`, `max-snapshot-age`, `min-snapshots-to-keep`): Iceberg's
@@ -39,6 +40,8 @@ heavy jobs, start only inside the nightly cleanup window (below).
   principal, not the process.
 - **Deletions**: pending deletions that are due, past the PITR window (7 days by default), of objects that no
   hold or freeze covers. The worker deletes them with its own storage identity and reports them done.
+- **Requests**: a table's compaction or orphan scan someone asked for now ("Maintenance on request", below). The
+  requested compactions start before the night's queue; the requested orphan scans run before the night's.
 
 Before any job on a table the worker loads it and checks that its id is still the one the work list named. A
 table dropped, renamed or unregistered since, whose name another table now has, is left alone and reported; the
@@ -54,6 +57,21 @@ and each table's assessment and compaction Job as it makes or starts and ends th
 (`PUT /management/v1/maintenance/tables/{id}/assessment`, `.../compaction`). A report the catalog does not take is
 logged and counted as a `report` failure, and the work goes on; one for a table dropped or replaced since the work list
 was read is refused, and left at that.
+
+It also reports each job of the night, which the catalog keeps for a month for the console's overview and maintenance
+pages (D45, backlog 126, `docs/observability/maintenance-nights.md`; `PUT /management/v1/maintenance/jobs/{id}`).
+A night is one opening of the cleanup window and the day that follows it. Each report gives the job's start, end,
+outcome and counts:
+
+- **Compaction Jobs.** Each Job is reported as it starts, on its slot, and again as it ends. The slot is the lowest
+  of 1 to `compaction.max-jobs` that no other running Job holds. The Job's id is made from its name, so a worker
+  restarted reports it under the same id. Once a Job has ended, the worker loads its table and counts the data files
+  that its `replace` commits on main took out and wrote, back to the snapshot the table had when it was assessed.
+- **Orphan scans and purges.** Each is reported once it has ended. A purge reports the files and bytes it deleted,
+  with sizes from the listing it already makes.
+- **Round-the-clock work.** Expiry, manifest rewrite and deletions are added up for each table, kind and night,
+  failures apart, and each sum is reported under one id as it grows. Deletions report their bytes. The worker's
+  identity cannot read an object, so it sizes each file by listing it under its own key before deleting it.
 
 The worker relies on the catalog's guards rather than repeating them. The work list leaves out held tables'
 expiry and orphan scans, frozen namespaces, unregistered tables and everything that is not active. The
@@ -72,7 +90,8 @@ deployment as `cleanup-window.start`, `end` and `zone`. It has no default: only 
   skip. On the night they go back it is longer; a time the clocks repeat is taken the first time round, so the
   window never opens or closes twice in one night.
 - Outside the window nothing heavy starts, after a restart too: a worker started in the day starts no compaction
-  and no orphan scan until the window opens.
+  and no orphan scan until the window opens. A job someone asked for is the one exception ("Maintenance on
+  request").
 - At the window's end nothing new starts. Each compaction Job's Kubernetes deadline (`activeDeadlineSeconds`) is
   the window's end, and it runs `rewrite_data_files` with partial progress, so the file groups it finished stay
   committed when Kubernetes stops it. An orphan scan still running stops and is not recorded. The first scan after
@@ -123,12 +142,40 @@ own, one certificate per key, named like the Job's Secret, owned by the Job and 
 (`$JAVA_HOME/lib/security/cacerts`, password `changeit`) and the bundle's with the JDK's `keytool`, and Spark's
 driver trusts that store (`-Djavax.net.ssl.trustStore` in `spark.driver.extraJavaOptions`, on spark-submit's command
 line). So the image needs `JAVA_HOME` and `keytool`, as the apache/spark images have; a `keytool` failure stops the
-Job with keytool's output. A table on a profile without a bundle gets the Job as before.
+Job with keytool's output. A table on a profile without a bundle gets the Job as before. A Job that does not trust
+the store's certificate logs `PKIX path building failed` only when the store's name has one address: the S3
+client's HttpClient handshakes TLS inside its loop over a name's addresses and reports the last address's error, so
+where the name also has an IPv6 address the pod cannot route (Docker Desktop's `host.docker.internal`), a missing or
+wrong bundle shows as `Unable to execute HTTP request: Network is unreachable` (backlog 89).
 
 The worker's meters count the tables assessed, the needs by reason, the Jobs started and cut off and the tables
 left over, and give each needy table a series of its own (`docs/observability/worker-metrics.md`). The catalog keeps
 each table's latest assessment and how its last Job stands or ended, as the worker reports them, and lists the
 neediest tables in the worker's order (`docs/observability/table-health.md`).
+
+## Maintenance on request
+
+A caller with `modify` on a table can ask for its compaction or its orphan scan to run now, from the console's
+Health tab or `POST .../tables/{table}/maintenance/requests` (D30, amended 2026-11-20; backlog 114;
+`docs/observability/table-health.md`, "Maintenance on request"). The catalog checks the asker and its guards; the
+worker takes the request at its next scan, from the work list's `requests` section, inside the window or outside it:
+
+- **A requested compaction.** The table is assessed and the assessment reported, then a Job is started whatever the
+  assessment says: someone asked. The Job is the night's Job in all but two things: its name ends with the time
+  asked (`nuna-compact-<table uuid>-r<epoch milliseconds in base 36>`), so a table gets one per request, and its
+  Kubernetes deadline is `request-deadline` (two hours by default) after it starts, not the window's end. It takes one
+  of the `compaction.max-jobs` slots the night's Jobs use, before the night's queue does; while every slot is taken,
+  or a Job of the table holds one, the request waits for a later scan. Without a compaction image it waits.
+- **A requested orphan scan** runs in the scan, as the night's do, until it is done or `request-deadline` has passed;
+  one cut short records nothing, and the request is not asked again.
+- Each is reported as a job of the night the window last opened, with the time asked, which marks the request
+  started: the next scan's work list no longer carries it. A request whose job the table's policy does not run, or
+  that a hold or freeze stops, stays waiting and off the work list until that changes.
+- As for the night's Jobs, a worker restarted while a requested Job runs does not report how that Job ended; the
+  request stays started.
+
+Upgrade the catalog before the worker: a catalog that has no `requests` section answers the worker's read of it with
+400, and the scan fails.
 
 ## The DR verifier
 
@@ -189,7 +236,8 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `compaction.service-account` | `/var/run/secrets/kubernetes.io/serviceaccount` | The folder holding the service account's token, CA and namespace. |
 | `compaction.catalog-uri` | `catalog-uri` | The catalog as the Job's pods reach it. |
 | `compaction.memory`, `driver-memory` | `2Gi`, `1g` | The Job container's memory limit, and Spark's driver memory within it. |
-| `compaction.max-jobs` | `2` | How many Jobs run at once; the neediest tables go first. Each runs to the window's end at the latest. |
+| `compaction.max-jobs` | `2` | How many Jobs run at once, the night's and the requested ones together; the requested go first, then the neediest tables. Each night's Job runs to the window's end at the latest. |
+| `request-deadline` | `PT2H` | How long a job asked for on request may run ("Maintenance on request"): a requested compaction Job's Kubernetes deadline, and when a requested orphan scan stops. |
 | `compaction.run-as-user` | `185` | The Spark image's user id. |
 | `compaction.spark-conf` | none | More Spark settings for every Job. |
 | `dr.verify-interval` | `PT1M` | How often the DR verifier reads the DR work list. |
@@ -298,12 +346,14 @@ day (`TestCatalog.allDay`).
 |---|---|---|
 | `CleanupWindowTest` | | The window without a catalog: its edges, across midnight, the nights the clocks go forward and back, all day. |
 | `CompactionNeedTest` | | The need from a table's manifests, on an in-memory catalog: small files per partition, delete files past their share (position deletes and deletion vectors), any equality delete, the policy's thresholds; the order; the Job's options. |
-| `NightlyCleanupTest` | | The worker across a window that closes early as the clocks go forward: nothing heavy outside it or after a restart in the day; one Job a table a night; equality deletes first, then the neediest; each Job's deadline at the window's end; the Job cut off and the table left over; an orphan scan cut short scanned again the next night; the catalog keeps each assessment, Job and scan as the worker reports them. |
+| `NightlyCleanupTest` | | The worker across a window that closes early as the clocks go forward: nothing heavy outside it or after a restart in the day; one Job a table a night; equality deletes first, then the neediest; each Job's deadline at the window's end; the Job cut off and the table left over; an orphan scan cut short scanned again the next night; the catalog keeps each assessment, Job and scan as the worker reports them, and each Job on its slot and each orphan scan as a job of its night. |
+| `NightJobsTest` | | The jobs of the night as the worker reports them, to a stand-in catalog on the JDK's HTTP server, on an in-memory Iceberg catalog, no Docker: each compaction Job on the lowest free slot, counting only its own `replace` commits since its table's assessment; round-the-clock work added up over the night, failures apart, the next night's under a new id. |
 | `SnapshotExpiryTest` | | Expiry queues only unreachable files; branch and tag files survive expiry and the orphan scan. |
 | `OrphanScanTest` | | Young orphans are kept; old ones are queued; a sibling location (`t` and `t-twin`) is never touched. |
 | `GuardrailsTest` | | Held, frozen and unregistered tables are untouched until the hold and freeze go; a table no longer the one the work list named is neither assessed nor compacted. |
 | `PurgeTest` | | A purge removes the prefix after its claim; another worker's claim is left alone; a claimed purge resumes. |
 | `PendingDeletionTest` | | Pending deletions wait for their time, then are deleted and reported done. |
+| `RequestedWorkTest` | | Maintenance on request, against a stand-in catalog on the JDK's HTTP server, on an in-memory Iceberg catalog with a stand-in compactor, no Docker: a requested compaction starts in the day, whatever its assessment, its Job named after the time asked and stopping at the request's deadline; requested Jobs share the night's slots, one Job per table at once; with compaction off a request waits; a requested orphan scan runs in the day and stops at its deadline, recording nothing. Each report names the request. |
 | `FailedOrphanScanTest` | | An orphan scan that fails is tried again at the next scan, the same night, and once it has run, not again that night; against a stand-in catalog on the JDK's HTTP server, no Docker. |
 | `WorkerRunTest` | | One table's whole maintenance over 16 days of the worker's clock, in a window of four hours a day: compaction and orphan scans once a night in the window and never outside it, deletions 7 days after they were recorded. |
 | `KubernetesJobsTest`, `TokenSourceTest` | | The Job manifest: one a table a night, its deadline the window's end, partial progress, the Job before its Secret, the Jobs' own namespace; a Job's state from its conditions; the token sources, and the settings compaction refuses. |
@@ -315,7 +365,7 @@ day (`TestCatalog.allDay`).
 | `KubernetesCompactionTest` | `heavy` | Compaction as a Job in Docker Desktop's cluster, the worker and its Jobs each in a namespace of their own that it deletes; the Job's deadline no later than the window's end; the next night the compacted table needs none; a Job naming the table by an id it no longer has stops without compacting; a Job whose window closes at once is stopped by Kubernetes and read as cut off. Needs `kubectl`, `helm` and the `docker-desktop` context. |
 | `LargeExpiryTest` | `overnight` | One scan expires 9,999 of 10,000 snapshots. |
 | `LargeOrphanScanTest` | `overnight` | The orphan scan's heap per reachable file, at 250,000 to 1,000,000 files. |
-| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails on the store's certificate and leaves the table alone; the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
+| `PrivateCaCompactionTest` | `overnight` | A compaction Job against Silo serving TLS from a private CA (backlog 89), in Docker Desktop's cluster as `KubernetesCompactionTest` sets it up, with the chart's Role for a profile with a `ca-bundle`: a Job without the bundle fails its S3 request and leaves the table alone (its log shows the unroutable IPv6 address's error, not the PKIX one); the worker's Job, with the bundle's ConfigMap, compacts six files into one in a `replace` snapshot. Its pods reach the store as `host.docker.internal`, a name its certificate holds. Needs what `KubernetesCompactionTest` needs. |
 | `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (in `catalog-tests-load`) | `overnight` | The worker's runnable jar as the DR verifier, on two Silo stores, the DR one fed by a replicator the test pauses: in the primary region the watermarks stop at the DR store's edge; in DR, a pass under the freeze leaves them there, and the rewind records each rewound table's watermark in its own commit, so the walk right after it checks the table at once, with no second verifier pass (backlog 92, 100). |
 | `EngineMatrixTest#compaction` (in `catalog-tests-engines`) | `overnight` | The worker's own Job in the engine matrix's cluster: 32 small files compacted into 4, the same rows, the replaced files left in place, no pending deletion. |
 
@@ -327,6 +377,15 @@ day (`TestCatalog.allDay`).
   window closed, before a scan ended the night, does not count that night's cut-off Jobs and left-over tables,
   and the catalog shows those Jobs running until the table's next Job. The catalog keeps each assessment and Job the worker reports (item 47, D38), but only for the console: the worker
   does not read them back.
+- The night's sums of round-the-clock work are kept in memory too: a worker restarted reports what it does from then
+  on under new ids, so the night shows two jobs for a table and kind where it would have shown one. The totals are
+  the same.
+- A compaction Job's files in and out are read from the table's snapshots once the worker sees the Job end. Another
+  writer's own `replace` commit on the table in that time counts as the Job's. A Job found already running after a
+  restart is counted from the table's snapshot at the restart's assessment, so its commits before the restart are
+  missed. The counts stop at snapshots more than an hour older than the Job's start, and at an ancestor that expiry
+  has removed.
+- Sizing a deletion's files costs one LIST request a file, beside the one DELETE request for each 1,000 files.
 - Assessing a table reads its current manifests, every one, once a night. A table of very many manifests takes
   that long to assess; manifest rewrite keeps their number down.
 - The orphan scan holds every file a table reaches in memory. Size the worker for the largest table;

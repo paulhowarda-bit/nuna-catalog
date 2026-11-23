@@ -1,0 +1,18 @@
+Breaks: Every property, one an engine or tool set included, is offered for removal again, as the old free-form namespace tab offered it.
+Module: catalog-server
+Test: ConsoleSettingsBrowserTest#aPropertySetByAToolIsShownReadOnlyWithWhereItCameFrom
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/settings.js b/catalog-server/src/main/resources/nuna/ui/settings.js
+index 494c1d3..88b6194 100644
+--- a/catalog-server/src/main/resources/nuna/ui/settings.js
++++ b/catalog-server/src/main/resources/nuna/ui/settings.js
+@@ -173,7 +173,8 @@ export function settingsTab({target, settings, props, ctx, write, reload, needs}
+   const all = keys.map(k => h('tr', {'data-key': k},
+     h('td', {class: 'name'}, k), h('td', {class: 'name wrap'}, props[k]),
+     h('td', {class: 'prop-note fine'}, listed.has(k) ? ['A setting: ', h('b', null, listed.get(k).label), ', above.']
+-      : noteFor(k, target) || 'Set outside the console, by an engine or tool. Read-only here.')));
++      : noteFor(k, target) || 'Set outside the console, by an engine or tool. Read-only here.'),
++    h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => write({}, [k]).then(reload)}, 'Remove'))));
+   const where = target.kind === 'table' ? 'the table' : 'the namespace';
+   return [
+     h('div', {class: 'panel', id: 'settings'}, h('h2', null, 'Settings ', h('span', {class: 'meta'}, `what the console may change on ${where}`)),

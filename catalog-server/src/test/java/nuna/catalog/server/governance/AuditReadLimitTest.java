@@ -103,7 +103,8 @@ class AuditReadLimitTest {
                 Duration.ofHours(1), Map.of());
         AuditTrail auditTrail = new AuditTrail(Optional.<EventPublisher>of(audit::add), URI.create("urn:nuna:test"),
                 clock, Duration.ofSeconds(1));
-        trail = new AuditReadRoutes(management, guard, new Topic(), auditTrail, settings, clock);
+        // The topic's trail needs neither the audit table nor the archive (AuditFeedRoutesTest).
+        trail = new AuditReadRoutes(management, guard, new Topic(), auditTrail, settings, null, null, clock);
     }
 
     @Test

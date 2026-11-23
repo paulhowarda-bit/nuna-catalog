@@ -44,12 +44,14 @@ import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.suite.CatalogObjectSuite;
+import nuna.catalog.store.suite.BranchCommitSuite;
 import nuna.catalog.store.suite.CatalogStoreUnderTest;
 import nuna.catalog.store.suite.Changes;
 import nuna.catalog.store.suite.CommitSuite;
 import nuna.catalog.store.suite.GovernanceSuite;
 import nuna.catalog.store.suite.DrSuite;
 import nuna.catalog.store.suite.HealthSuite;
+import nuna.catalog.store.suite.NightSuite;
 import nuna.catalog.store.suite.GrantSuite;
 import nuna.catalog.store.suite.GroupSuite;
 import nuna.catalog.store.suite.IdempotencySuite;
@@ -156,6 +158,14 @@ class OracleStoreSuiteTest extends CommitSuite {
     }
 
     @Nested
+    class Nights extends NightSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return oracle;
+        }
+    }
+
+    @Nested
     class Dr extends DrSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
@@ -165,6 +175,14 @@ class OracleStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Refs extends RefSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return oracle;
+        }
+    }
+
+    @Nested
+    class BranchCommits extends BranchCommitSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return oracle;

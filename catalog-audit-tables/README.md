@@ -104,6 +104,88 @@ It has no HTTP port. It logs a line per commit, as JSON on stdout.
    property name such as `nuna.audit-tables.token.client-secret`. The chart refuses to render without `catalog-uri`,
    `principal`, `token.endpoint`, `token.client-id` and `kafka.bootstrap-servers`.
 
+## The console's audit feed (D45, item 125)
+
+The catalog server reads the table back for the console's Audit page, through this module's own reader,
+`EventsReader` (D23, amended 2026-11-22: Paul, "Yes, link them"; no server code imports Iceberg). It finds the table
+as `<nuna.audit.tables.catalog>.<nuna.audit.tables.namespace>.events` (the namespace defaults to `audit` and must match
+the writer's `namespace`), through its own pointer to the table's metadata, and reads the files with the audit
+catalog's storage profile. A file named outside the table's location is refused. The feed holds what the writer has
+committed, so it is about a minute behind. Each response's `table.committed-at` says how far it reaches.
+
+Every route needs `select` on the audit catalog, as the tables themselves do (Paul, 2026-11-22: "Audit readers
+only"). That rules out grant admins, platform operators and holders of `select` on the catalog the feed is about.
+- A refusal is a 403, audited as a `Denial` on the audit catalog.
+- Where `nuna.audit.tables.catalog` is unset, every route answers 503.
+- A feed page, a chain lookup and a day's counts not kept from the last minute each take one of the caller's
+  `nuna.governance.audit-reads-per-minute`, shared with `GET .../audit`; beyond that the answer is 429 with
+  `Retry-After`.
+- The feed and the counts are audited as an `AuditRead` of the catalog, and a chain lookup as one of the audit
+  catalog.
+
+`GET /management/v1/catalogs/{catalog}/audit/feed`
+
+- Parameters, all optional:
+  - `type`: record types separated by commas, such as `nuna.catalog.read,nuna.catalog.denial`;
+  - `principal`;
+  - `path`: namespace levels, and a table or view name, joined by 0x1F; it matches the object and everything in a
+    namespace, compared as the catalog compares names;
+  - `from` (inclusive) and `to` (exclusive), as instants;
+  - `limit`: 1 to 200, 50 by default;
+  - `pageToken`.
+- Answer: `{"catalog", "records": [...], "next-page-token"?, "searched-to"?, "table": {"name", "snapshot-id",
+  "committed-at"}}`.
+- Each record: `{"event-id", "time", "type", "principal", "end-user", "engine", "request-id", "object": {"kind",
+  "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "chain": {"status",
+  "checked-at"}, "event"}`.
+  - `event` is the record as the topic carries it.
+  - `chain.status` is `verified` when the archive check has verified the record's chain past its offset,
+    `unverified` when it has not (yet, or the chain is broken there: see the archive status), and `no-archive` where
+    no archive is configured.
+- Records come newest first by time, then partition, then offset. A page token resumes after the page's last record,
+  so a growing table neither repeats nor skips one.
+- A page reads about 500,000 rows at most. When a narrow filter finds fewer than `limit` in that, the page comes back
+  short with `searched-to`: every record newer than that time was searched. Its `next-page-token` searches further
+  back. Without a `next-page-token` there is nothing older.
+- 404 for an unknown catalog, 400 for a bad parameter, 503 while the table does not exist or cannot be read.
+
+`GET /management/v1/catalogs/{catalog}/audit/summary`
+
+- The last day's counts: `{"catalog", "from", "to", "by-type": {type: n}, "busiest": [{"kind", "id", "path",
+  "records", "reads", "writer"}], "deployment-by-type": {type: n}, "table"}`.
+  - `busiest` lists the ten objects with the most records. `writer` is the principal with the most commits to the
+    object.
+  - `deployment-by-type` counts every catalog's records and those about none.
+- The counts are read once a minute at most and shared by every caller.
+- They count the records in the table. These differ from the server's own counters in two ways. The writer leaves
+  its own records out. A record that went to the fallback log while Kafka was down reaches neither the topic nor the
+  table.
+
+`GET /management/v1/audit/archive`
+
+- The archive check's status: `{"configured", "bucket", "prefix", "retention", "verified": [{"chain", "partition",
+  "sequence", "hash", "next-offset", "segment", "at"}], "check": {"started-at", "ended-at", "intact", "chains":
+  [{"chain", "partition", "records-verified", "verified", "broken", "failed"}]} | null}`.
+- `verified` says how far each chain is verified, shared by every server. `check` is this server's last run, and is
+  null before its first.
+- Every server checks each chain a minute after it starts and hourly after that. A run reads only the segments
+  written since the last head verified, and reads them up to the archive consumer's anchor. It keeps what it verified
+  as the committed offsets of the consumer group `<nuna.audit.archive.consumer-group>-check`.
+- A broken chain keeps its last verified head, so the break is found again on every run, and is logged as an error.
+
+`GET /management/v1/audit/chains/{partition}/records/{offset}?event-id=`
+
+- A feed record's place in its hash chain, from the archive: `{"chain", "partition", "offset", "event-id",
+  "archived", "sequence", "hash", "previous-hash", "next-hash", "link-holds", "verified", "checked-at", "segment":
+  {"key", "first-sequence", "last-sequence"}}`.
+- `link-holds` says whether the stored hash is the hash of the previous one and the record. `verified` says whether
+  the archive check has verified the chain past it.
+- It reads the one segment that holds the record, plus the next segment's first hash when the record is its segment's
+  last.
+- `archived` is false until the archive consumer has written the record's segment, and for records older than the
+  archive.
+- 503 where no archive is configured.
+
 ## Tests
 
 - `AuditRowsTest` (`catalog-audit`) maps every line of the golden `events-v1.jsonl` and fails for an event type with
@@ -122,4 +204,13 @@ It has no HTTP port. It logs a line per commit, as JSON on stdout.
 - The engine matrix (`EngineMatrixTest#auditTables`, overnight, `catalog-tests-engines`) runs the writer from its
   image and chart beside the matrix's catalog and reads `nuna_audit.audit.events` from Spark and PyIceberg as the
   readers' group.
+- The feed:
+  - `EventsReaderTest` pages a real table on local files: newest first, every row once whatever the page size, a
+    short page with `searched-to` when the budget runs out, the filters, the counts and no file read outside the
+    table's location.
+  - `ArchiveCheckTest` (`catalog-audit`) checks chains on an in-memory bucket: each verified to its anchor and no
+    further, a later run reading only the new segment, a changed record or a lost tail found, and a record placed
+    with its neighbours.
+  - `AuditFeedRoutesTest` (`catalog-server`) runs the routes with the real guard over a store double: a test for
+    each refusal, the answers, the 400s and 503s, and the shared read limit.
 - Bites: `bites/D23/`.

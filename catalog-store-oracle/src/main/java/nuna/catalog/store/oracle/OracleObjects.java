@@ -1,5 +1,6 @@
 package nuna.catalog.store.oracle;
 
+import static nuna.catalog.store.oracle.Jdbc.exists;
 import static nuna.catalog.store.oracle.Jdbc.first;
 import static nuna.catalog.store.oracle.Jdbc.instant;
 import static nuna.catalog.store.oracle.Jdbc.query;
@@ -52,6 +53,8 @@ final class OracleObjects {
     /** The active-name lookup, written with the unique index's own expressions so it can use the index. */
     private static final String ACTIVE_NAME = "CASE WHEN state = 'ACTIVE' THEN namespace_id END = ?"
             + " AND CASE WHEN state = 'ACTIVE' THEN name_norm END = ?";
+    /** No ref's cut names the object (D33): a ref keeps a dropped table's files (P11). */
+    static final String UNREFERENCED = "NOT EXISTS (SELECT 1 FROM ref_entry e WHERE e.object_id = o.id)";
 
     private final Transactions transactions;
 
@@ -218,7 +221,7 @@ final class OracleObjects {
             parameters.add(page.size() + 1);
             List<CatalogObject> objects = query(connection, "SELECT " + COLUMNS + " FROM catalog_object o"
                     + " WHERE o.state IN ('DROPPED', 'PURGING') AND o.purge_after <= ?" + keyset
-                    + " AND (o.state = 'PURGING' OR (" + UNCOVERED + "))"
+                    + " AND (o.state = 'PURGING' OR (" + UNCOVERED + " AND " + UNREFERENCED + "))"
                     + " ORDER BY o.purge_after, o.id FETCH FIRST ? ROWS ONLY",
                     OracleObjects::object, parameters.toArray());
             return Jdbc.page(objects, page,
@@ -228,7 +231,9 @@ final class OracleObjects {
 
     /**
      * Locks the dropped or claimed object, then judges the claim under the lock: the holds and DR freezes
-     * are read as a drop reads holds, so one placed before the claim refuses it.
+     * are read as a drop reads holds, so one placed before the claim refuses it. So are the refs whose cut
+     * names it: a ref made from another copies its source's cut under a lock on the source, so a ref that
+     * comes to name the object committed before its source's deletion, and this read sees it.
      */
     WriteResult claimPurge(UUID objectId, String claimant, Change change) {
         return transactions.change(change, "purge claim", connection -> {
@@ -251,6 +256,9 @@ final class OracleObjects {
             if (Guards.frozen(connection, objectId, claim.catalogId(), path)) {
                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
             }
+            if (exists(connection, "SELECT 1 FROM ref_entry WHERE object_id = ?", objectId)) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+            }
             update(connection, "UPDATE catalog_object SET state = 'PURGING', purge_claimant = ? WHERE id = ?",
                     claimant, objectId);
             return WriteResult.APPLIED;
@@ -270,6 +278,7 @@ final class OracleObjects {
             update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
             update(connection, "DELETE FROM pending_deletion WHERE object_id = ?", objectId);
             update(connection, "DELETE FROM table_health WHERE object_id = ?", objectId);
+            update(connection, "DELETE FROM maintenance_request WHERE object_id = ?", objectId);
             update(connection, "DELETE FROM dr_watermark WHERE object_id = ?", objectId);
             return WriteResult.APPLIED;
         });

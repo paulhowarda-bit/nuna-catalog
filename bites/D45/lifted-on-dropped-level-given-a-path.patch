@@ -1,0 +1,17 @@
+Breaks: A lift on a level dropped since is named with an empty path, as if it were still there to link to, not a null one.
+Module: catalog-server
+Test: GovernanceSummaryTest#theHoldsAndFreezesStandingAreListedNewestFirstAndTheLiftedOnesFromTheStore
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
+index d3fd0a1..e119331 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
+@@ -229,7 +229,7 @@ final class GovernanceSummary {
+             return on(level);
+         }
+         ObjectNode node = GovernanceRoutes.securable(securable);
+-        node.putNull("path");
++        node.putArray("path");
+         return node;
+     }
+ 

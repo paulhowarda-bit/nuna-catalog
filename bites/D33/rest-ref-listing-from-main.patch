@@ -1,0 +1,26 @@
+Breaks: a ref's namespace, table and view listings come from main, so a tag lists names it does not hold and misses those it does (D33, as amended 2026-11-20).
+Module: catalog-server
+Test: RefReadsTest#listingsComeFromTheCut
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index b75ebcf..42bee8d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -150,7 +150,7 @@ class Lookup {
+         if (on.ref().isEmpty()) {
+             return names(store.listNamespaces(parentId, request), ns -> ns.name().display());
+         }
+-        return names(store.listRefNamespaces(on.ref().get().id(), parentId, request), e -> e.name().display());
++        return names(store.listNamespaces(parentId, request), ns -> ns.name().display());
+     }
+ 
+     /** The display names of the active tables or views of {@code kind} in a namespace, on main or in the ref's cut. */
+@@ -159,7 +159,7 @@ class Lookup {
+             return names(store.listObjects(namespaceId, kind, CatalogObject.State.ACTIVE, request),
+                     o -> o.name().display());
+         }
+-        return names(store.listRefObjects(on.ref().get().id(), namespaceId, kind, request), e -> e.name().display());
++        return names(store.listObjects(namespaceId, kind, CatalogObject.State.ACTIVE, request), o -> o.name().display());
+     }
+ 
+     private static <T> Page<String> names(Page<T> page, Function<T, String> name) {

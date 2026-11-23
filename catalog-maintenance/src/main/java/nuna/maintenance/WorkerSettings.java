@@ -25,6 +25,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param storage        its own storage identity, per store: every table location the catalog lists must lie under one
  *                       profile's prefixes
  * @param compaction     compaction as Kubernetes Jobs; off unless an image is named
+ * @param requestDeadline how long a job run on request (backlog 114) may run: a requested compaction Job's deadline,
+ *                        and how long a requested orphan scan lists before it stops, recording nothing
  */
 @ConfigurationProperties("nuna.maintenance")
 public record WorkerSettings(
@@ -35,7 +37,8 @@ public record WorkerSettings(
         @DefaultValue("100") int pageSize,
         Token token,
         @DefaultValue Map<String, StorageProfile> storage,
-        @DefaultValue Compaction compaction) {
+        @DefaultValue Compaction compaction,
+        @DefaultValue("PT2H") Duration requestDeadline) {
 
     public WorkerSettings {
         Objects.requireNonNull(catalogUri, "nuna.maintenance.catalog-uri names no catalog");
@@ -48,6 +51,9 @@ public record WorkerSettings(
         }
         if (scanInterval.isNegative() || scanInterval.isZero()) {
             throw new IllegalArgumentException("nuna.maintenance.scan-interval must be positive");
+        }
+        if (requestDeadline.isNegative() || requestDeadline.isZero()) {
+            throw new IllegalArgumentException("nuna.maintenance.request-deadline must be positive");
         }
         if (compaction.enabled()) {
             if (token.file() != null) {

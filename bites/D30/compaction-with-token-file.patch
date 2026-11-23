@@ -2,11 +2,11 @@ Breaks: compaction runs with a token file, whose token a Job could outlive.
 Module: catalog-maintenance
 Test: TokenSourceTest#compactionNeedsTheGrantWithAScopeAndANamespaceOfItsOwn
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
-index e36506b..46174c2 100644
+index ec5df90..111d725 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/WorkerSettings.java
-@@ -46,7 +46,7 @@ public record WorkerSettings(
-             throw new IllegalArgumentException("nuna.maintenance.scan-interval must be positive");
+@@ -56,7 +56,7 @@ public record WorkerSettings(
+             throw new IllegalArgumentException("nuna.maintenance.request-deadline must be positive");
          }
          if (compaction.enabled()) {
 -            if (token.file() != null) {

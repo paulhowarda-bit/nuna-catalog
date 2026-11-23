@@ -1,0 +1,16 @@
+Breaks: the feed reads any file the audit table's manifests name, so its writer could make the catalog read another table's files.
+Module: catalog-audit-tables
+Test: EventsReaderTest#readsNoFileOutsideTheTablesLocation
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+index 4c287a0..bc7a43a 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+@@ -579,7 +579,7 @@ public final class EventsReader {
+         }
+ 
+         private String approve(String path) {
+-            if (!path.startsWith(under) || path.contains("/../")) {
++            if (path.contains("/../")) {
+                 throw new IllegalStateException("the audit table names " + path + ", which is not under its location "
+                         + under + "; the feed reads nothing else");
+             }

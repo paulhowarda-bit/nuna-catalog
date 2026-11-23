@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**32 open:** 6 S, 11 M, 11 L, 4 XL.
+**33 open:** 3 S, 10 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -22,17 +22,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [29](backlog/29.md) | XL | M9: carry nuna to work (at work) | the whole install checklist, at work | 2026-11-14 |
 | [43](backlog/43.md) | L | Hook nuna into work's OpenTelemetry collector and Prometheus (at work) | findings at work, Helm values, perhaps a Prometheus endpoint, artifact approval | 2026-11-15 |
 | [44](backlog/44.md) | M | Grafana dashboards and Prometheus alert rules for nuna (at work) | at work: rename to item 43's series names where they differ, import, fire each of the 17 alerts once in a test; waits on item 43 | 2026-11-15 |
-| [55](backlog/55.md) | S | The nightly lost two tests to one 15 s stall reaching Docker's containers | waits on an overnight run in which both tests pass | 2026-11-16 |
-| [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
-| [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
-| [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
-| [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
-| [98](backlog/98.md) | S | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails | 2026-11-20 |
-| [100](backlog/100.md) | M | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first | 2026-11-20 |
-| [102](backlog/102.md) | L | Refs in the store: the ref record and its cut on four stores (item 26) | a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them | 2026-11-20 |
-| [103](backlog/103.md) | L | Branch commits and the merge transaction in the store (item 26) | a change to the commit core on four stores (a ref held by every branch commit, a batch that ends a ref) and the purge claim's ref check, each with suite cases and bites; waits on item 102 | 2026-11-20 |
 | [104](backlog/104.md) | L | Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26) | every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102 | 2026-11-20 |
 | [105](backlog/105.md) | L | Commits on a branch write its own pointer (item 26) | the engine's twelve reads and swaps of main's key become the ref's, for tables, views and transactions, with the merge cap and the unknown-outcome path on a branch; most tests need only Java; waits on items 103 and 104 | 2026-11-20 |
 | [106](backlog/106.md) | L | Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26) | five routes with their rights, idempotency, limits, audit and meters, and the work list's expiry section, with route tests; waits on item 102 | 2026-11-20 |
@@ -43,7 +34,17 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
-| [114](backlog/114.md) | L | Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window) | a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window | 2026-11-20 |
+| [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
+| [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
+| [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
+| [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
+| [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
+| [150](backlog/150.md) | L | Brokerage world 1: the ledger world in Iceberg, booked by the kit's posting engine ported to Java | a new Gradle module (the engine port and its golden, the world's calendar, securities, prices, accounts and personas, the Java writer) and its place in `demo.sh up`; waits on nothing | 2026-11-22 |
+| [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
+| [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
+| [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
+| [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
+| [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 
 ## Open items in full
 
@@ -564,6 +565,25 @@ Left: the heavy tests named above and the overnight `DrDrillTest` have not run. 
 
 **Decided 2026-11-20 (D37, amended):** both DR alerts stay severity `page`. Paul: "Both page".
 
+Seen in the overnight run of 2026-11-22 (testing b1f073d), the first heavy build to reach `DrSuite`: on MongoDB, five
+of its cases failed (`MongoStoreSuiteTest$Dr`):
+
+- "a watermark is kept, rises, never moves back, and never passes the pointer" (`DrSuite.java:79`): [one above the
+  pointer] expected `Refused[WATERMARK_AHEAD]` but was `Unchanged[]`.
+- "a view keeps a watermark; a dropped table, an object with no pointer or an unknown id is Missing"
+  (`DrSuite.java:133`): expected `Missing[OBJECT]` but was `Refused[WATERMARK_AHEAD]`.
+- "the tables and views behind are listed by id ..." (`DrSuite.java:161`): one id more than expected in the list.
+- "a journal page can start after any version ..." (`DrSuite.java:200`): expected empty but held a main journal record.
+- the rewind swap's watermark (`DrSuite.java:104`): expected 103 but was 104 (item 100's case).
+
+PostgreSQL, Oracle and CockroachDB did not run: the heavy build stopped after this module (item 122).
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\heavy.log`, `heavy-results\catalog-store-mongo\`.
+
+2026-11-22: `DrSuite` was fixed on `worktree-heavy-fixes` (its versions now count the one creating an object commits;
+item 100 says how) and passed on all four stores in two full heavy builds. The third, clean in every module, also passed
+`DrRewindRouteTest`, `MetadataFilesTest`, `ManagementAuthorizationTest`, `MutatingRoutesAuditTest` and
+`DrReconcileRouteTest`. Left: item 92 and the overnight `DrDrillTest`.
+
 ### 29. M9: carry nuna to work (at work)
 
 - Decided: 2026-11-20, D8
@@ -650,182 +670,6 @@ each alert fired once in a test. The item stays open for those, which are its do
 
 **Paul's answer, 2026-11-20 (D43, amended):** the 500 commits a second target stays a panel with no alert ("Panel only").
 
-### 55. The nightly lost two tests to one 15 s stall reaching Docker's containers
-
-- Decided: 2026-11-19, D31
-- Added: 2026-11-16 by overnight run 2026-11-16
-- Touches: catalog-store-api/src/test/java/nuna/catalog/store/suite/CommitSuite.java, catalog-tests-load/src/test/java/nuna/catalog/load/ConcurrentWritersTest.java
-- Effort: S, waits on an overnight run in which both tests pass
-
-The Nightly leg of the overnight run of 2026-11-16 (testing 30bab53) failed two tests, each on one request that went
-unanswered between about 05:45:57 and 05:46:13 UTC, while `catalog-tests-load` started `ConcurrentWritersTest`'s stack
-(two PostgreSQL, Kafka, the S3 store, two server JVMs) beside `catalog-store-sql-raft`'s CockroachDB cluster:
-
-- `CockroachStoreSuiteTest` "1 CAS" (1,000 rounds, 339 s in): `StoreUnavailableException: commit … could not connect`,
-  caused by `PSQLException: The connection attempt failed` and `SocketTimeoutException: Read timed out`: one
-  connection through the link waited out its 15 s socket timeout, ending about 05:46:12.
-- `ConcurrentWritersTest` "8 writers, format v2": `[5xx answers]` held two `503 GET …/tables/hot` "Storage
-  credentials cannot be issued now". The server started last, `writers-b`, logged "Bootstrap broker localhost:…
-  disconnected" at 05:45:59, then failed two vends at 05:46:08 and 05:46:13: "the credential issue could not be
-  audited", caused by "Topic nuna.catalog.audit not present in metadata after 5000 ms". The other server's producer
-  had the topic's metadata; 16 and 32 writers, and format v3, passed.
-
-Docker Desktop's VM logs (`dockerd.log`, `containerd.log`, `init.log.0`) and Windows' System and Application logs
-show nothing between 05:45:30 and 05:46:30 to explain the stall. Logs:
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-16\nightly.log`, `nightly-results/`, and the server logs in
-`C:\Users\paulh\code\nuna-catalog\.overnight\clone\catalog-tests-load\build\m8\logs\writers-*.log` (until the next run).
-
-Neither failure is in the code under test: the store's answer is its contract (`StoreUnavailableException`: nothing
-applied, the caller repeats), and a vend that cannot be audited fails closed (D23). Each test failed because it had
-no room for one transient.
-
-Done looks like: both tests pass in an overnight run.
-
-Fixed on 2026-11-16, not yet run; open until both pass in an overnight run:
-
-- `CommitSuite#exactlyOneWriterWinsEachRound` commits a writer's batch again, after 1 s, when the store answers
-  `StoreUnavailableException` (nothing applied: the contract says the caller repeats), up to three tries; a third such
-  answer still fails the round. It prints how many commits it repeated, so the overnight log shows any.
-- `ConcurrentWritersTest` warms each server up before the first case: it creates `load.warm-up.t` and loads it through
-  each server until one load returns 200 (two minutes at most), printing how long each took. The measured cases still
-  allow no 5xx.
-
-Neither was run here: both are `-Pnightly` tests (`cas`, `overnight`), which run only in the overnight run unless Paul
-asks. The fast build compiled both.
-
-Run by hand on 2026-11-16 at Paul's word, on adad94c, Docker otherwise idle: `ConcurrentWritersTest` passed, 5 of 5
-(the warm-up took 0.1 s on `writers-a` and 0.9 s on `writers-b`, one 200 each; no 5xx in any case), and
-`CockroachStoreSuiteTest#exactlyOneWriterWinsEachRound` passed, 1,000 rounds in 342 s, repeating no commit. Neither run
-met a stall, so neither shows the new handling working; the item stays open for the overnight run.
-
-Seen again in the overnight run of 2026-11-18 (testing 2dee958, the first with both fixes): the CAS test passed on
-all four backends, and `ConcurrentWritersTest` failed one case of five, "32 writers, format v2" (301 s), in a new
-place. After the case's writers ran, its `SELECT deadlocks FROM pg_stat_database WHERE datname = 'catalog'`
-(`ConcurrentWritersTest.java:115`) failed: `PSQLException: The connection attempt failed`, caused by
-`SocketTimeoutException: Read timed out`: a read reaching a container timed out, as in the stall above, met
-this time by the test's own check rather than by a writer. 8 and 16 writers at v2, and 8 and 32 at v3, passed. Logs:
-`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\nightly.log` and `nightly-results/` (run before the rename to nuna).
-
-Fixed on 2026-11-19 (Paul, 2026-11-19: "Fix the check"), not yet run; open until both tests pass in an overnight run:
-
-- `ConcurrentWritersTest` reads the deadlock count again after 1 s when the read fails, three tries at most, both
-  before the writers start and after they finish; a third failure in a row still fails the case, and what it asserts
-  is unchanged (the count after equals the count before). Each repeat prints a line (`[m8] deadlock count not read,
-  repeating in 1 s: …` and `[m8] deadlock count read after n repeat(s)`), so the overnight log shows any. The read is
-  the test's own instrument, and no writer runs while it reads, so it repeats on any failure.
-- The same exposure in the CAS test (`CommitSuite#exactlyOneWriterWinsEachRound`): after each round it reads the
-  pointer and the winner's outcome through the store (`readPointer`, `findCommit`: 2,000 reads in 1,000 rounds), and
-  at the end the journal directly (`journalVersions`). The store's two reads are now asked again on
-  `StoreUnavailableException` alone, as the commits are (one helper, `repeating`, serves all three: three tries, 1 s
-  apart); the journal read, the suite's own instrument over four drivers that fail in their own types, on any
-  failure. It prints how many reads it repeated beside how many commits.
-- Left as they were: `ConcurrentWritersTest`'s other requests go to the catalog servers, whose answers the case
-  holds to no 5xx (the item's rule), and `Stack.grantWriters` is a write in the stack's setup, not a check.
-
-Not run: both are `-Pnightly` tests (`overnight`, `cas`), and the heavy and nightly builds were off on 2026-11-19. The
-fast build compiled both.
-
-### 60. CredentialExpiryTest's first request answered 401
-
-- Added: 2026-11-18 by overnight run 2026-11-18
-- Touches: catalog-security/, catalog-server/src/test/java/nuna/catalog/server/CredentialExpiryTest.java, bites/D16/
-- Effort: S, the reason was in the test's output; one timeout and a Java-only test
-
-The heavy build of the overnight run of 2026-11-18 (testing 2dee958, the demo taken down for the run) failed
-`nuna.catalog.server.CredentialExpiryTest#noNotModifiedNearExpiryAndANewEpochIsANewETag` at 05:11:22 UTC:
-`AssertionFailedError: expected: 200 but was: 401` at `CredentialExpiryTest.java:66`, the test's first request
-(`POST /namespaces`, right after `IssuerForTests.grant`). So the catalog refused the test issuer's token before
-anything about expiry or ETags was checked. The token was not stale: `IssuerForTests` mints each one with an hour to
-live. The test's output holds no line saying why; its only warnings are the audit fallback's (no Kafka in this
-test). The test is not tagged heavy, so every fast build runs it, and every landing's fast build has passed it; it
-also passed in the overnight run of 2026-11-16.
-
-Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-18\heavy.log`, and
-`heavy-results\catalog-server\build\test-results\test\TEST-keel.catalog.server.CredentialExpiryTest.xml` there (run
-before the rename to nuna).
-
-Done when the cause of the 401 is found and fixed, or shown to be the environment with the evidence, and the test
-passes in the overnight run.
-
-Fixed 2026-11-20 on worktree-agent-a919c80972fe867d3: the cause was a JWKS fetch that Nimbus gave up on after its default 500 ms read timeout, in a test JVM slowed
-by the build beside it. The test's output did say why: its one `audit.fallback` line is the auth-failure event, whose
-reason is "token from https://idp.test/keel rejected: An error occurred while attempting to decode the Jwt: Couldn't
-retrieve JWK set from URL: Read timed out".
-- The first request of a fresh Spring context fetches the test issuer's keys from `TestIdp`, a JDK `HttpServer` in
-  the same JVM (`IssuerForTests`). `TokenAuthenticator` built its JWKS source with `JWKSourceBuilder.create(url)`,
-  whose retriever waits 500 ms to connect and 500 ms to read, with no retry. A fetch that times out refuses the token
-  as invalid: 401, `Bearer error="invalid_token"`.
-- The JVM was slow: that night `CredentialExpiryTest`'s context took 30.8 s to start (12.7 s for the web context),
-  against 5.3 s (1.1 s) on 2026-11-16, and the request reached Tomcat 3.3 s after the context started. Beside it,
-  `catalog-maintenance`'s `KubernetesCompactionTest` ran Spark Jobs in Docker Desktop's Kubernetes from 05:09:19 to
-  05:15:09 UTC (350 s, failed), and `TelemetryTest` there missed a 20 s wait. On 2026-11-19 the two overlapped again:
-  the test's context took 25.3 s and it passed. The same refusal, "Couldn't retrieve JWK set from URL: Read timed
-  out", is in the nightly `LargeExpiryTest` of 2026-11-19 (catalog-maintenance's `TestCatalog`, also a `TestIdp`),
-  which passed regardless.
-- Fixed in `TokenAuthenticator`: a JWKS fetch waits up to 5 s for the IdP's answer (`JWKS_READ_TIMEOUT`); connecting
-  keeps Nimbus's 500 ms, and the cache, refresh-ahead and rate limit are unchanged. A slow IdP at work would have had
-  the same effect on the first request to each node, and on each key rotation.
-- `JwksRefreshTest#aSlowJwksIsWaitedForNotTakenForAnInvalidToken` (Java only): `TestIdp.slowFetches` answers after
-  1 s; the token is accepted after one fetch. Without the fix it failed with the overnight's message (fast build of
-  2026-11-20, 47 tests in catalog-security, 1 failed). Bite: `bites/D16/jwks-read-timeout-500ms.patch`.
-- `CredentialExpiryTest`'s status assertions now carry the response: status, `WWW-Authenticate` and body, and on a
-  401 a pointer to the `nuna.audit.fallback` line, since the body never names the reason by design.
-  `IssuerForTests` sends no requests, so it has nothing to report.
-- Since item 90 (2026-11-20), a JWKS fetch that fails or times out answers 503 with `Retry-After`, not 401
-  `invalid_token`: the 401 above is what such a fetch gave before. A 503's body says the issuer's keys could not be
-  fetched.
-
-Left: `CredentialExpiryTest` is tagged heavy since D44, so it did not run here; the overnight run's heavy build
-shows whether it passes.
-
-The item stays open until an overnight run's heavy build passes `CredentialExpiryTest`, as its done-when asks (the test is heavy since D44 and did not run on 2026-11-20).
-
-### 70. A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After
-
-- Added: 2026-11-19 by agent-abefa39293b4b238c, from item 7
-- Touches: catalog-server/src/test/, catalog-server/build.gradle.kts, bites/M8/
-- Effort: M, two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass
-
-Item 7 made the Oracle and MongoDB stores raise `StoreUnavailableException` for a database that cannot be reached,
-is failing over or is out of connections. Its checks stop at the store: the Java-only `UnavailableFailuresTest` in
-`catalog-store-oracle` and `catalog-store-mongo`, the shared suite's `CommitSuite#linkDownBeforeCommitIsACleanFailure`
-(heavy, every backend) and `MongoStoreSuiteTest#commitWhileFailingOverIsUnavailable` (heavy). The routes' answer to
-that exception, 503 with Retry-After, is store-independent (`catalog-server`'s error mapping, `catalog-core`'s
-`CommitEngine`), but nothing runs the server against Oracle or MongoDB with the database away. The only test that
-watches the routes through an outage is `catalog-tests-load`'s `KillPrimaryTest` (overnight), on PostgreSQL only.
-`catalog-server` was held by other agents while item 7 was worked, so the route-level check could not go there.
-
-Done when `catalog-server`'s `OracleBackendTest` and `MongodbBackendTest` (both `@Tag("heavy")`) each cut the link to
-their database (the store tests' `OracleFree` and `MongoReplicaSet` do it with a proxy) and show a load-table and a
-commit answering 503 with a Retry-After header in the Iceberg error shape, then the same requests succeeding once the
-link is back.
-
-Written on 2026-11-20 (worktree-agent-af0dfeed53e61ec78), not yet run; open until both pass in an overnight run:
-
-- `OracleBackendTest` and `MongodbBackendTest` put their database behind Toxiproxy on a Docker network, as `OracleFree`
-  and `MongoReplicaSet` do, and the server connects through it; setup goes to the database directly.
-  `LinkForTests` is that proxy for the server's tests. The store fixtures themselves could not be shared: they are
-  package-private in their modules' tests, which no other module depends on (only `catalog-store-api`'s suite is a
-  test jar), and those modules are item 28's. What the build does share is reused: the
-  `testcontainers-toxiproxy` dependency and the pinned `toxiproxy.image`, now in `catalog-server/build.gradle.kts`.
-- Each class's new test `anOutageAnswers503WithRetryAfterUntilTheLinkIsBack` runs `BackendFlow.outage`: a new table,
-  then with the link cut a load and a commit (set-properties) each answer 503 `ServiceUnavailableException`,
-  `Retry-After: 2`, `application/json`, `$.error.code` 503. Then, the link back, the load (repeated on Retry-After,
-  two minutes at most, as a client would while the pool or driver reconnects) answers 200 without the property, so
-  the 503 commit applied nothing; the commit answers 200 with it, and a reload shows it. The server's pool and driver
-  keep their defaults, so each 503 can take their 30 s wait (HikariCP's connection timeout, MongoDB's server
-  selection).
-- `StoreOutageRoutesTest` (Java only, `catalog-server` had none): the real table routes, commit engine and
-  `ErrorResponses`, served through MockMvc, over a store double that raises `StoreUnavailableException`. With the
-  database away, a load and a commit answer 503 with Retry-After in the Iceberg shape at their first read; lost
-  mid-request, a load meets it at its pointer read (`ErrorResponses`) and a commit inside the engine
-  (`CommitReply.Unavailable`, `ObjectRoutes.reply`). Bites: `bites/M8/store-outage-escapes-routes.patch` (the
-  handler gone: 500) and `bites/M8/commit-unavailable-answers-500.patch`. With both breaks applied, the fast build
-  failed exactly those three tests, each with "expected: 503 but was: 500" (143 tests in `catalog-server`, 3 failed).
-
-Left: the two heavy tests did not run (no heavy build on 2026-11-20); the overnight run's heavy build shows whether
-they pass. The item stays open until it does.
-
 ### 89. A compaction Job against a store behind a private CA, end to end
 
 - Decided: 2026-11-20, D21
@@ -880,114 +724,34 @@ beside the nuna-demo stack, and no container was started. The fast build compile
   source, `cmd/common-main.go`, not run); that the Spark image's `$JAVA_HOME/bin/keytool` and its cacerts work as item
   88's command expects; the wording of the TLS error in the Spark log.
 
-### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
+Seen again in the overnight run of 2026-11-21: its first run failed. `PrivateCaCompactionTest#aJobTrustsItsStoresPrivateCaAndCompacts`,
+`AssertionError: [refused by the store's certificate]`: the control Job's Spark log holds no PKIX error but
+`SdkClientException: Unable to execute HTTP request: Network is unreachable` (6 attempts) and
+`CATALOG_NOT_FOUND`, so the pod did not reach the store at `host.docker.internal` at all. Log:
+`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-21\nightly-results\catalog-maintenance\`.
 
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: deploy/helm/nuna-maintenance/, catalog-maintenance/README.md, docs/install-at-work.md, catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java, deploy/README.md, docs/observability/dr-watermark.md
-- Effort: M, the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight.
+Fixed on `worktree-item-89` (2026-11-21), not yet shown by running. The control Job did what it should; its log
+could not say so. Docker Desktop gives pods two addresses for `host.docker.internal`, `192.168.65.254` and
+`fdc4:f303:9324::254`, and pods route no IPv6 (`nslookup` and `ip -6 route` in a busybox pod, 2026-11-21). The S3
+client's HttpClient, 5.6.4 shaded in `iceberg-aws-bundle-1.12.0.jar` in the Spark image, handshakes TLS inside its
+loop over a name's addresses (`DefaultHttpClientConnectionOperator.connect`: `upgradeToTls` lies in the try whose
+`IOException` handler moves to the next address, read with `javap`), so the PKIX refusal on the IPv4 address sent it
+on to the IPv6 one and it reported only `Network is unreachable`. The catalog, over HTTP, was reached on IPv4 at once.
+The control now asserts that the S3 request failed on every attempt (`Unable to execute HTTP request`) and compacted
+nothing; the worker's Job, the same but for the bundle, must then succeed against the same address. The README says
+how a missing bundle shows on such a network. The test could not run here: the cluster has 6 GiB of 7.5 GiB
+requested with the nuna-demo stack up, and the Job asks for 2 GiB. Close this item when the overnight run of
+2026-11-22 passes the test and its bite bites.
 
-Item 28 built the DR replication watermark (D37, amended 2026-11-20): the watermark on all four stores, the
-verifier in the maintenance worker, its routes, readout, meters and alerts, the rewind, and the reconcile stopping at
-the watermark. Three parts were left:
+Seen in the overnight run of 2026-11-22 (testing b1f073d, which holds the fix): `PrivateCaCompactionTest` passed, 1
+test, 0 failures, 122 s (`C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-22\nightly-results\catalog-maintenance\`).
+Its bite, `bites/M6/job-storage-ca-left-out`, did not run: the bites run only after a passing heavy build, and that
+build failed (items 28, 100, 102, 103, 121). Close this item when an overnight run's bites show the bite bites.
 
-- **The worker chart's values** (`deploy/helm/nuna-maintenance/values.yaml`) do not describe
-  `nuna.maintenance.dr.replicas.<profile>` (endpoint, region, path-style access, keys, CA bundle) or
-  `nuna.maintenance.dr.verify-interval`. The chart already renders them, as any setting under `config`, with the
-  secret key in `secrets.values` and a CA bundle in `storageCaConfigMap`, as `deploy/README.md`'s runbook says; items
-  87 and 88 held the chart while item 28 ran. Done when the values file comments them as it does `storage`.
-- **The worker's settings in `catalog-maintenance/README.md` and `docs/install-at-work.md`** (held by item 88 then):
-  the DR replicas and the verify interval, the DR store's read-only keys, and that the verifier is off without a
-  replica. Done when both list them.
-- **The overnight drill's leg with the DR store behind** (item 28's gate): `DrDrillTest` gains a leg on two Silo
-  stores and a replicator the test pauses: region lost, DR promoted, a verifier pass in DR, freeze, rewind, thaw;
-  every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived. Done when the
-  leg is in and an overnight run has passed it.
-
-## Progress, 2026-11-20 (worktree-agent-abb88ef3bcbfecca6), still open
-
-- **The chart's values.** `deploy/helm/nuna-maintenance/values.yaml` comments `config.nuna.maintenance.dr` as it
-  does `storage`: `verify-interval` (PT1M), and a commented `replicas.<profile>` example (endpoint, region,
-  path-style-access, the read-only `access-key-id`, `ca-bundle`), the verifier off without a replica, the secret key
-  in `secrets.values` as `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a DR store's CA in
-  `storageCaConfigMap`. `replicas` stays commented rather than `{}`, so a release with no replica renders no empty
-  map. `helm template` (helm 3 from winget) rendered the chart with and without a replica, exit 0 both; with one, the
-  ConfigMap holds `dr.replicas.ceph.*` and the Secret the replica's key; `helm lint` passed.
-- **The worker README.** `catalog-maintenance/README.md` has a section "The DR verifier", the `dr.*` settings in its
-  table, the DR store's read-only keys under "The identity it needs" (`s3:ListBucket` on each replicated bucket,
-  `s3:GetObject` beneath the prefixes), the chart's DR values and secret key, and the DR tests.
-- **install-at-work.** Not changed: `docs/install-at-work.md` is held by item 23. The bullet for its section 6, for
-  the session that lands this to add:
-
-  > - The DR verifier (D37, amended 2026-11-20) is off until `dr.replicas.<profile>` names, for a storage profile,
-  >   its DR store: the same buckets and paths on the DR region's endpoint (`endpoint`, `region`,
-  >   `path-style-access`, `access-key-id`, `ca-bundle`; the secret key in `secrets.values` as
-  >   `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a private CA's bundle in `storageCaConfigMap`). Give
-  >   it keys of its own that may only read the DR store: `s3:ListBucket` on each replicated bucket and
-  >   `s3:GetObject` beneath the profile's prefixes. `dr.verify-interval` sets how often it passes (1 minute by
-  >   default). An AWS DR bucket under another name waits on PLT-4. `deploy/README.md` ("Recovering in the DR
-  >   region") says when to run it in each region.
-
-- **The drill's leg.** `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (overnight,
-  Silo only): a stack with a second Silo of its own as the DR store (`Stack.withDrStore`, `TestS3.siloOfItsOwn`),
-  the primary bucket copied there by `Replicator`, a thread the test pauses, and a DR user that may only read. The
-  maintenance worker runs from its runnable jar (`catalog-maintenance`'s new `execJar` configuration). Tables a, b,
-  c (c format 3) and a quiet one; one paced writer each, appending through `Appender` with the store client, so each
-  snapshot's manifest list exists (item 93). The verifier runs in the primary region; the test waits for each
-  table's first watermark before the writers start (item 99), pauses the replicator, lets the writers run on, and
-  computes from what was copied which commits reached the DR store whole. It then waits until the primary's
-  watermarks stop exactly at the last whole version (failing at once on one above it), loses the region, promotes
-  DR, and in DR: servers on the DR store, freeze, the worker on the DR store (two passes, none failed, watermarks
-  unchanged), the rewind's plan (exactly a, b, c; each `lost` tail exactly the commits whose files never arrived, in
-  order, by `m8-writer`), the rewind (each table at the version after its pointer, main at the last kept commit),
-  the verifier passing the rewound versions, the walk (`{"apply":false}` and `{"apply":true}`: nothing listed,
-  nothing unknown, no pointer moved), thaw. Then every table reads whole from the DR store as an engine reads it
-  (metadata, every manifest list, manifest, data and delete file), its history is exactly the kept commits, and a
-  commit to each succeeds. Its lost tails stay under the work list's 100 versions (item 100). The expectations
-  follow D37 "Check from the watermark" as landed by item 28 (5df8b5d): the walk runs after the verifier's pass
-  over the rewound versions, as the runbook's step 5 says.
-- **Not run.** The leg is tagged `overnight` and has not run anywhere: it compiles in the fast build, which starts
-  no container. The first leg changed only to give its appenders the store client and its stack per test.
-
-Left: an overnight run passing both legs of `DrDrillTest`, and the install-at-work bullet above. For
-`deploy/README.md` (not this branch's), once this lands: "the chart's values do not describe them yet (item 92)"
-becomes "`values.yaml` comments them", and the drill sentence at the runbook's end can say the leg with the DR
-store behind runs the verifier in both regions, the rewind and the walk.
-
-### 93. The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit
-
-- Added: 2026-11-20 by agent on item 28
-- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/Appender.java catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java
-- Effort: S, the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest
-
-Item 28 (D37, amended 2026-11-20: "Walk with a file check") made the DR reconcile's walk take a step only when
-storage holds every file it adds: for each snapshot, its manifest list, the manifests and data files it adds. The
-overnight DR drill (`DrDrillTest`, catalog-tests-load) writes its tables through `Appender`, whose commits add
-snapshots naming `<table>/metadata/snap-<id>.avro` as their manifest list (`Appender.body`, the `add-snapshot`
-update) without ever writing that file. So the walk now stops before the first appended version, with
-"storage does not hold .../snap-<id>.avro, which version n adds", and the drill's dry run fails its
-`assertThat(plan.has("problem")).isFalse()`, as do the steps it expects after.
-
-Found while building item 28 on 2026-11-20 (worktree-agent-a34b673c32ed6d84d); not run, since the drill is an
-`overnight` test, so this is read from the code, not from a failure. `Appender` is also used by the other load tests
-(`ConcurrentWritersTest`, `KillPrimaryTest`, `SloTest`, `RollingUpgradeTest`, `TenThousandSnapshotsTest`), which never
-call the reconcile, so they are unaffected either way.
-
-Done when the drill's appended snapshots name manifest lists that exist and parse (an empty manifest list is enough:
-it adds no manifest and no data file), and `DrDrillTest` passes in the overnight run with the item 28 walk.
-
-## Progress, 2026-11-20 (worktree-agent-abb88ef3bcbfecca6), still open
-
-- `Appender` takes the table's store client (a fifth constructor argument). Given one, before a commit's first
-  attempt it writes each snapshot's manifest list, an empty Avro manifest list (`ManifestFile.schema()`, named
-  `manifest_file`, with the `snapshot-id` and `format-version` metadata Iceberg writes), at the location the
-  snapshot names, `<table>/metadata/snap-<id>.avro` (`Appender.manifestList`). The snapshots add no manifest and no
-  data file, so nothing else is named. Its ledger also records the metadata file each acknowledged commit made
-  (`Ledger.locations`), which item 92's leg uses.
-- Only `DrDrillTest` passes the client. The other users (`ConcurrentWritersTest`, `KillPrimaryTest`, `SloTest`,
-  `RollingUpgradeTest`, `TenThousandSnapshotsTest`) construct it as before and write no file, so what they time and
-  how fast they commit is unchanged; their only change is a map insert per acknowledged commit.
-- Not run: the drill is `overnight`. Left: an overnight run in which `DrDrillTest`'s dry run walks, with the
-  item 28 walk.
+Run in two nightlies by hand on 2026-11-22 (`status/2026-11-22-nightly-2026-11-22.md`): `PrivateCaCompactionTest`
+passed in the second (257 s). In the first, its body passed and its cleanup failed: `kubectl delete namespace ...
+--wait=true` lost the API server (`http2: client connection lost`) while Windows was paging the Docker VM out (item
+135). The bite has still not run; the item still closes when an overnight run's bites show it biting.
 
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
@@ -1009,244 +773,6 @@ are refused a write with no key or another key on each store (a heavy test per s
 and the server's metadata files are written with it; or Paul decides on-prem profiles name no key for now.
 
 **Decided 2026-11-20 (D26, amended):** at work, once its on-prem store is known (PLT-3): "98 now, 97 at work".
-
-### 98. A storage profile's KMS key is not recorded with the profile, so a change of key is not audited
-
-- Decided: 2026-11-20, D26
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: catalog-server/src/main/java/nuna/catalog/server/storage/CatalogStorage.java catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-audit/src/main/java/nuna/catalog/audit/StorageSetup.java catalog-server/src/test/java/nuna/catalog/server/storage/KmsKeyProfileTest.java catalog-server/src/test/java/nuna/catalog/server/SchemaAtStartupTest.java catalog-security/src/test/java/nuna/catalog/security/Estate.java catalog-core/src/test/java/nuna/catalog/core/commit/Harness.java catalog-tests-load/src/test/java/nuna/catalog/load/RollingUpgradeTest.java bites/M6/profile-kms-key-unrecorded.patch
-- Effort: S, built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails
-
-At startup `CatalogStorage.record` writes each configured profile to the store and audits a `storage-setup`
-PROFILE_SET event when the stored profile differs: kind, endpoint, STS role and allowed prefixes. Item 23 added a
-profile's `kms-key` (D26), which decides the key every write to the profile's tables uses, but the stored profile
-(`nuna.catalog.store.StorageProfile`) has no field for it. So a server started with a new key, or none, records and
-audits nothing, and the store cannot say which key a profile used when.
-
-Done when the stored profile carries the key, a change of key alone is written and audited as PROFILE_SET (with the
-key in the event's settings), and a test on each store shows it.
-
-**Decided 2026-11-20 (D26, amended):** done now: "98 now, 97 at work".
-
-**Progress, 2026-11-20 (worktree-agent-a5f236698c7f0b3fc): built; open until the heavy build passes the store test
-on all four stores, as items 28 and 100 are.**
-- `nuna.catalog.store.StorageProfile` gains `kmsKey`, empty when the profile names no key. `CatalogStorage.record`
-  takes it from the configured profile, so a change of key alone (none to a key, one key to another, a key to none)
-  differs from what the store holds and is written with a `storage-setup` PROFILE_SET event whose settings carry
-  `kms-key`: the key ARN, or empty for none, as `sts-role` is. A start with the key the store holds writes and audits
-  nothing, as before.
-- Schema steps add the key: PostgreSQL `V10__storage_profile_kms_key.sql`, CockroachDB `V9__…` (its own folder in
-  `catalog-store-sql`), Oracle `V11__…` (a nullable `kms_key` column on `storage_profile`), MongoDB step 9 (a `kmsKey`
-  field, no index, recorded as step 4 was). A profile stored before the step reads as naming no key until a server
-  of this release records it; servers of the previous release do not name the column and leave a recorded key as
-  it is.
-- Tests: `GovernanceSuite#storageProfileKeepsItsKmsKey` (heavy, in the suite that `PostgresStoreSuiteTest`,
-  `CockroachStoreSuiteTest`, `OracleStoreSuiteTest` and `MongoStoreSuiteTest` all run): a profile with no key reads
-  back with none; puts that change only the key, to a key, to another and back to none, each read back exactly,
-  with their change records. Oracle's empty-string test stores an empty key. Java-only, run:
-  `KmsKeyProfileTest#keyChangeIsRecordedAndAudited` and `#unchangedKeyAuditsNothing` (the server started again and
-  again on one store double that holds what is written). `SchemaAtStartupTest` (heavy) and `RollingUpgradeTest`
-  (overnight) expect PostgreSQL V10.
-- Bite `bites/M6/profile-kms-key-unrecorded` (the profile recorded without its key), seen to bite both
-  `KmsKeyProfileTest` tests on assertions.
-- No other reader shows the stored profile: the console, the management routes (delete policies read the
-  configured profile, not the stored one) and `docs/` say nothing of its fields, so none was changed.
-
-Left: the heavy and overnight tests above have not run; agents ran no container tests on 2026-11-20. The overnight
-run's heavy build runs them.
-
-### 100. A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good
-
-- Decided: 2026-11-20, D37
-- Added: 2026-11-20 by agent on item 92
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/DrRoutes.java catalog-maintenance/src/main/java/nuna/maintenance/DrVerify.java docs/observability/dr-watermark.md deploy/README.md
-- Effort: M, one of the fixes below with its tests on the four stores' route suites; which one is D37's, so Paul decides first
-
-The DR rewind (D37, amended 2026-11-20; `Reconcile.rewind`) moves a table back to its watermark in one commit: the
-next version, `pointer + 1`, holding the watermark's metadata again. The commits it gives up stay in the journal. The
-verifier's work list (`GET /management/v1/maintenance/dr-work`, `DrRoutes`) names at most 100 journaled versions
-above the watermark, oldest first (`DrRoutes.MAX_VERSIONS`). So when a rewind gives up 100 versions or more, every
-version the work list names is a lost one, none of them whole in the DR store, and the rewound version is never
-named. The table is not checked whole either, since its versions follow the watermark one by one (`DrVerify.Item.whole`).
-Each pass checks the same lost versions, and the table stays behind its watermark for good:
-
-- the readout lists it and `NunaDrLagging` pages for it from 15 minutes after its oldest lost commit, which is
-  already older than that;
-- the walk (D37 "Check from the watermark", item 28) finds the lost versions between its watermark and its pointer
-  not whole and takes nothing for it, saying to rewind it;
-- the rewind refuses: "the pointer ... already holds the DR watermark's metadata ...; there is nothing to rewind until
-  the verifier passes it" (`Reconcile.planRewind`).
-
-A table that lost fewer than 100 versions is fine: the verifier's next pass reaches the rewound version, which adds
-nothing beyond the watermark and passes on its metadata file. Item 92's drill leg keeps its lost tails under 100 for
-this reason.
-
-Read from the code on 2026-11-20 while writing item 92's drill leg; not seen in a run. A region lost behind a
-store that is minutes behind a busy table loses more than 100 commits easily.
-
-Ways out, each Paul's to choose since each touches D37: the rewind records the watermark at the version it writes,
-in the same transaction (the version is the watermark's metadata, whole by construction); or the work list names
-the versions after the last rewind only, or always the pointer's too; or the verifier checks a version with no
-journaled commit of its own after a rewind against the watermark directly. Done when a table that gave up more than
-100 versions is at its watermark after the rewind and the next pass, in a route test on each store, and the runbook
-in `deploy/README.md` says nothing about a limit.
-
-**Decided 2026-11-20 (D37, amended again):** "Rewind sets watermark": the rewind records the watermark at the
-version it writes, in the same transaction.
-
-**Built, 2026-11-20 (worktree-agent-a5f1bf763c08126f3): "Rewind sets watermark"; open until its heavy tests run.**
-- `PointerSwap` gains `drWatermark`: a swap that sets it records its next pointer as the object's DR watermark in the
-  commit's transaction, by `recordDrWatermark`'s rule (it only rises). `Reconcile.rewind`'s swap sets it, for tables
-  and views; every other commit leaves it unset. The stores raise the watermark after writing the journal:
-  PostgreSQL and CockroachDB (`SqlDr.raise`, the upsert `recordDrWatermark` runs), Oracle (`OracleDr.raise`, its
-  MERGE), MongoDB (`MongoDr.raise`). No schema step.
-- Tests: `ReconcileWatermarkTest` (Java only; its store double records the watermark as the stores do): the rewind's
-  swap records it at the version it writes, after which the plan has nothing to rewind and the walk nothing to report;
-  a rewind giving up 150 versions ends at its watermark; the view's rewind records it too. Heavy, compiled, not run:
-  `DrSuite#aRewindsCommitRecordsTheWatermark` on all four stores (a rewind past 101 versions records it and the object
-  is not behind; a conflicting swap records nothing; a later commit leaves it) and `DrRewindRouteTest` (after the
-  rewind the table is out of the work list and its watermark refuses a lower report; a rewind giving up 101 versions).
-- Bite `bites/D37/rewind-leaves-the-watermark`. `lower-watermark-accepted` and the M8
-  `reconcile-apply-ignores-moved-pointer` recorded again at their moved lines, same breaks.
-- The runbook and `docs/observability/dr-watermark.md` say the rewind records the watermark; neither mentions a
-  limit. `dr-watermark.md`'s "(at most 100 a pass)" describes the verifier's work-list page and stays.
-
-Left: the heavy tests have not run. `DrRewindRouteTest` runs on PostgreSQL only (the governance server's harness), so
-"a route test on each store" is `DrSuite`'s store-level test on all four plus the route test on PostgreSQL.
-
-**Decided 2026-11-20 (D37, amended):** "a route test on each store" is met by `DrSuite` on all four stores plus `DrRewindRouteTest` on PostgreSQL; the item closes when the heavy build passes them. Paul: "Yes, that's enough".
-
-### 102. Refs in the store: the ref record and its cut on four stores (item 26)
-
-- Decided: 2026-11-20, D33
-- Added: 2026-11-20 by agent on item 26
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/ docs/storage-design.md build-plan.md
-- Effort: L, a schema step and a new store group on four stores, with a shared suite and bites; waits on no item: item 98's schema steps landed on 2026-11-20 (its item stays open for the heavy run), and this item's come after them
-
-Part of item 26 (D33). Its design section says why, in choices 1 to 4 and question 1; this item is written for
-question 1's recommended answer (a ref keeps names too). Answer (a) leaves the names out of the cut; (c) needs more.
-
-What is missing: PostgreSQL, CockroachDB and Oracle have had a `ref` table since V3 (`V3__whole_contract.sql` in each:
-catalog id, name, kind, `base_position` as text, expires-at), with no Java type and no operation; MongoDB has no
-collection for it (`docs/storage-design.md` 9 (f) 5). `base_position` waited for a tag protocol that was never fixed
-(storage-design 8): the journal's `seq` is drawn at insert, so it is not in commit order, and MongoDB's journal has
-none.
-
-Build:
-- A schema step on each store, after item 98's (PostgreSQL V10, CockroachDB V9, Oracle V11 and MongoDB's newest
-  step): the ref gains an id (UUID), created-at, created-by and what it was made from; `base_position` stays unused. A new record, the ref's cut (`ref_entry`): ref id, object id, kind,
-  namespace path and name (normalized and display), and the object's main pointer as of the ref's point (version,
-  metadata location, SHA-256). MongoDB gets both as collections with the same unique keys. Additions only
-  (storage-design 9 (f) 6).
-- `RefStore` in `catalog-store-api`, joined to `CatalogStore`: `createRef` (from main, or from another ref's current
-  head: that ref's own pointer for a table where it has one, else its cut), `readRef`, `listRefs` (paged),
-  `renewRef`, `deleteRef` (its cut and every pointer keyed by its id go in the same transaction), `resolveOnRef` (an
-  object by namespace path and name, through the cut), and paged listings of a ref's namespaces, tables and views.
-  Each write takes a `Change` (outbox, idempotency), as every mutation does (storage-design 9).
-- The cut is read in one consistent read. On the SQL stores one `INSERT … SELECT`, whose statement snapshot holds
-  every multi-table transaction whole. On MongoDB a snapshot read at one cluster time, written in batches; the ref is
-  visible only once its whole cut is written. P11's counts (open branches, tags) are checked in the create's
-  transaction under a lock on the catalog's refs, so two creates cannot pass a limit together.
-- A shared `RefSuite`, tagged `heavy`, run inside each store's suite as the other groups are: a cut never holds half
-  of a multi-table transaction committed while it is read; names compare as every name does (D8.6); the limits hold
-  under concurrent creates; a deletion leaves no cut row and no pointer of the ref; paging. `MutationSuite` drives the
-  new mutations (overnight).
-- `docs/storage-design.md` section 8 rewritten as built, and `build-plan.md`'s ref row (2.4) with it.
-
-Done when `RefSuite` passes on all four stores in the heavy build, the fast build is green, and the guards' bites are
-recorded in `bites/D33/`. Items 103, 104, 106 and 111 wait on this one.
-
-**Decided 2026-11-20 (D33, amended):** a ref's cut keeps each table's and view's name as well as its pointer (question 1 (b), "Names too").
-
-**Progress, 2026-11-20 (worktree-agent-a59232ac18259ccb8): built; open until the heavy build passes `RefSuite` on
-all four stores, as items 98 and 100 are.**
-- Schema steps, additions only: PostgreSQL `V11__refs.sql`, CockroachDB `V10__refs.sql` (its own folder in
-  `catalog-store-sql`), Oracle `V12__refs.sql`, MongoDB step 10 ("refs and their cuts"). `ref` gains `id` (unique
-  index `ref_id`), `created_at`, `created_by`, `from_ref` (the source ref's id, NULL for main) and `from_name` (its
-  name then, `main` for main); no release before writes `ref`, so the columns are NOT NULL where they must be. New
-  `ref_entry`, the cut: `ref_id`, `object_id`, `kind` (NAMESPACE, TABLE, VIEW), `parent_id`, `name_norm`, `name`,
-  `version`, `metadata_location`, `sha256` (all three NULL for a namespace), keyed (ref_id, object_id), with
-  `ref_entry_listing` (ref_id, parent_id, kind, name_norm, object_id) and `ref_entry_object` (object_id). MongoDB:
-  collections `ref` (unique `ref_name` on catalogId, nameNorm) and `ref_entry` with the same three indexes.
-- API (`catalog-store-api`): `Ref` (its name rules: no `@`, no `/`, not `main`; a branch expires, a tag never;
-  `key(objectId)` is (object, ref id); `expiredAt`), `RefEntry`, `RefLimits` (`P11` = 50 branches, 1,000 tags) and
-  `RefStore`, which `CatalogStore` now extends: `createRef`, `readRef`, `findRef`, `listRefs`, `renewRef`,
-  `deleteRef`, `findRefNamespace`, `resolveOnRef`, `listRefNamespaces`, `listRefObjects`. `WriteResult` gains
-  `Subject.REF` and the reasons `REF_LIMIT` and `NOT_A_BRANCH`. The javadoc gives each method's outcomes.
-- Stores: `SqlRefs` (PostgreSQL and CockroachDB), `OracleRefs`, `MongoRefs`. The SQL cut is one `INSERT … SELECT`;
-  MongoDB's is read in a snapshot session, written in batches of 1,000, and its ref inserted last in one transaction
-  (`docs/storage-design.md` section 8, rewritten as built, with 9 (c), (d), (f) 5 and (g); `build-plan.md` 2.3 and
-  2.4).
-- Tests: `RefSuite` (11 tests, heavy), run as `@Nested class Refs` in `PostgresStoreSuiteTest`,
-  `CockroachStoreSuiteTest`, `OracleStoreSuiteTest` and `MongoStoreSuiteTest`: the cut of main with names kept after a
-  rename and a drop on main; a ref from a branch takes its own pointers; names (case, per catalog, order); the order
-  of a create's outcomes; P11 under 12 concurrent creates; an expired branch frees its place, not its name; renewal;
-  a deletion leaves no cut, pointer or piece and frees the name; two races (a multi-table commit appears whole in
-  every cut; every table in a cut has its namespace); paging. `MutationSuite` drives `createRef`, `renewRef` and
-  `deleteRef`. Java-only and run: `RefTypesTest` (8 tests). `SchemaAtStartupTest` (heavy) and `RollingUpgradeTest`
-  (overnight) expect PostgreSQL V11.
-- Bites in `bites/D33/`: four Java-only, seen to bite `RefTypesTest` on assertions (`ref-name-at-sign-accepted`,
-  `ref-name-main-accepted`, `ref-branch-alive-at-its-expiry`, `ref-limit-one-over`); seven on the heavy `RefSuite`,
-  checked with `git apply --check` only (`sql-cut-in-separate-reads`, `sql-ref-limit-unlocked`,
-  `sql-ref-delete-keeps-pointers`, `sql-ref-from-branch-takes-its-cut`, `oracle-ref-delete-keeps-pieces`,
-  `mongo-ref-limit-unmarked`, `mongo-cut-read-outside-the-snapshot`).
-
-Choices made (Paul may overrule):
-- The cut keeps namespaces as entries too (kind NAMESPACE, parent and name, no pointer), so the "namespace path" is
-  the chain of parents through the cut, as `namespace.parent_id` is on main. Why: a ref then lists and resolves
-  namespaces as main does, empty ones included.
-- The lock on the catalog's refs is the catalog's own record: `FOR UPDATE` on the SQL stores (as a grant on the
-  catalog takes it), a mark on MongoDB. Why: no new lock record. Cost: on the SQL stores a top-level namespace create
-  in that catalog waits for a ref create's cut statement.
-- A branch past its expiry keeps its name until it is deleted (`NameTaken`), is not counted against P11, and cannot
-  be renewed or made from (`Missing(REF)`); read, find and list still return it, and callers check
-  `Ref.expiredAt`. Why: the store keeps a record until a write removes it, as it keeps dropped objects; ending
-  expired branches is item 108's.
-- A ref keeps its source both by id (`from_ref`) and by name then (`from_name`). Why: the id survives the name's
-  reuse; the name still reads after the source is deleted.
-- A tag's renewal answers `Refused(NOT_A_BRANCH)`, a new reason. Why: other writes refuse with a reason too.
-- `findRef(catalog, normalized name)` beside `readRef(id)`. Why: item 104 resolves `catalog@ref` by name.
-- A create answers in a fixed order: `Missing(CATALOG)`, `NameTaken`, `Missing(REF)`, `Refused(REF_LIMIT)`. Why: a
-  retried create then always names its own id (storage-design 9), even after its source is gone.
-- No index by catalog on `namespace` or `catalog_object`: the cut reads the catalog's rows by scan. Why: refs are
-  made rarely, and an index on those tables would cost every write.
-- A deletion finds the ref's own pointers and pieces through its cut (`branch = ref id AND object_id IN` the cut),
-  by their primary keys, since nothing indexes `branch`. Why: no new index on the commit path's tables. It holds
-  because creates, drops and renames are refused on a branch (question 1 (b)), so a branch's own pointers are of
-  objects in its cut.
-- `ref_entry_object` (by object) is built now for items 103 and 108. Why: one schema step instead of two.
-- On MongoDB a deletion is one transaction over the whole cut, as the item asks; a very large cut makes a large
-  transaction there, which the heavy suite's sizes do not test.
-
-### 103. Branch commits and the merge transaction in the store (item 26)
-
-- Added: 2026-11-20 by agent on item 26
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-sql-raft/ catalog-store-oracle/ catalog-store-mongo/
-- Effort: L, a change to the commit core on four stores (a ref held by every branch commit, a batch that ends a ref) and the purge claim's ref check, each with suite cases and bites; waits on item 102
-
-Part of item 26 (D33); its design section says why (choices 3, 9, 10 and 14).
-
-What is missing: `CommitBatch` swaps and holds pointers in one transaction (D15) but knows no ref. A commit on a
-branch must not land once the branch is merged, deleted or expired, and a merge must move main's pointers and end
-the branch in one transaction (D33). A purge claim checks holds and freezes (`claimPurge`, storage-design 9 (f) 3),
-not refs, so a dropped table that a tag still names would lose its files (P11).
-
-Build:
-- `CommitBatch` gains an optional ref hold: the branch must exist, be a branch and not be past its expiry. The store
-  locks the ref record for share where it can (PostgreSQL and CockroachDB `FOR SHARE`; Oracle and MongoDB as their
-  object checks do, storage-design 9 (f) 8), so a merge or a deletion waits for a branch commit or refuses it. A
-  branch's pointer for a table is created by the first swap of its key (expected empty).
-- A ref end, for the merge: one transaction locks the ref record for update, then swaps main's pointers, holds the
-  branch's own pointers as the merge read them, and deletes the branch, its cut and its pointers. The ref is locked
-  before any pointer, in a fixed order, so a merge and a branch commit cannot deadlock.
-- `claimPurge` answers `Refused(REFERENCED)` while a ref's cut names the object, read under the object's lock, and
-  the purge queue leaves such objects out.
-- Suite cases on all four stores (heavy): a branch commit racing a merge or a deletion lands before it or is refused,
-  never after it; a merge whose expected main pointer moved writes nothing; a ref end and its swaps are one
-  transaction (the cut repeated in `MutationSuite`, overnight); a purge claim is refused under a ref.
-
-Done when those cases pass on all four stores in the heavy build, the fast build is green and the bites are recorded
-in `bites/D33/`. Waits on item 102. Items 105 and 107 wait on this one.
 
 ### 104. Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26)
 
@@ -1283,6 +809,71 @@ write on a tag (400), and a catalog name holding `@` (refused at startup); and a
 build green; bites recorded in `bites/D33/`. Waits on item 102. Items 105 and 109 wait on this one.
 
 **Decided 2026-11-20 (D33, amended):** reads on a ref resolve names as of its cut; creates, drops, renames and namespace changes on a branch are refused; namespace properties are live (question 1 (b), "Names too").
+
+**Progress, 2026-11-20 (worktree-agent-aa14fd77cb3da956c): built and tested in Java; open until the stock-client
+test is written and the heavy build passes it.** That test needs a tag, and nothing can make one yet but the store:
+`createRef` takes a `Change` whose outbox holds a catalog event, and no event type records a ref change until item 106
+adds `ref` (a made-up event would stop the outbox relay). So it is written once item 106's ref routes land, making the
+tag as a client would.
+- The prefix: `OnRef` (the catalog and the ref a prefix names) and `Prefixes` (a component beside `Holdings`) split
+  `catalog@ref` once, at the first `@`; `catalog` and `catalog@main` are main. The catalog is found as before
+  (`Holdings.catalog`, D18 as amended), then the ref with `findRef`. A ref the catalog does not have, or a branch past
+  its expiry, answers 404 `NoSuchWarehouseException` naming the prefix, on every route and `/v1/config`. Spring decodes
+  `%40` in the path, so both forms reach the route. `CatalogStorage` refuses a configured catalog name holding `@` at
+  startup, before it writes anything.
+- `/v1/config?warehouse=catalog@ref` answers the prefix `catalog@ref` (the ref's normalized name) and, from
+  `AdvertisedEndpoints.of`, a tag's 11 read endpoints, a branch's reads and its three commit endpoints, or main's 26.
+- Reads: `Lookup` finds namespaces (`findRefNamespace`), tables and views (`resolveOnRef`) and lists them
+  (`listRefNamespaces`, `listRefObjects`) through the cut. A namespace through a ref has the cut's id, parent and name,
+  and main's live properties, or none once main dropped it. `Lookup.pointer` serves a branch's own pointer
+  (`ref.key(id)`) where it has one, else the cut's; `CommitEngine.readAt` reads that file by location and checks its
+  SHA-256 as on main (an alert, and a refusal for a regulated object). Table load, HEAD, metrics and credentials, view
+  load and HEAD, and the three listings all read this way.
+- The ETag takes the ref's id; main's ETags are byte for byte as before. `ObjectRead.branch` names the ref, or `main`.
+  A tag vends read-only credentials, on a load and on the credentials route.
+- Writes: `Lookup.catalog` (every create, drop, rename, register, unregister and namespace change, properties
+  included) answers 400 on any ref; `Lookup.forCommit` (a table commit, a view replace, a multi-table commit) answers
+  400 on a tag, and on a branch "commits on a branch are not served yet" until item 105. Each message names the
+  operation, the tag or branch and the catalog; nothing past the ref is read.
+- Tests, Java only, run in the fast build: `RefReadsTest` (14: the real routes, guard, commit engine and error mapping
+  over a store double holding main, a tag's cut and three branches, and an HTTP server in the JVM serving the metadata
+  files) and `CatalogNameTest` (2). `HiddenNamesTest` and `StoreOutageRoutesTest` build the routes with `Prefixes`.
+- Bites in `bites/D33/`, all Java only, each seen to bite on an assertion (applied, the fast build run with its test
+  class selected, reverted): `rest-prefix-ref-ignored`, `rest-ref-listing-from-main`,
+  `rest-branch-own-pointer-ignored`, `rest-expired-branch-read`, `rest-ref-etag-as-main`, `rest-tag-vends-write`,
+  `rest-tag-write-accepted`, `rest-branch-create-accepted`, `rest-tag-config-lists-writes` and
+  `rest-ref-read-audited-as-main` on `RefReadsTest`; `catalog-name-at-sign-accepted` on `CatalogNameTest`. The hash
+  check through a ref has no bite of its own: it is main's check in `CommitEngine`, and `aCutsFileIsHashChecked`
+  covers it through a ref. Ten older bites this change moved are recorded again with the same breaks: the three in
+  `bites/D18/` were seen to bite `HiddenNamesTest`; `M4/etag-ignores-location`, `M6/real-near-expiry-304`,
+  `OBS-39/requests-raw-prefix-label`, `D13/labels-not-in-etag`, `D13/metrics-for-a-missing-table`,
+  `D13/metrics-unguarded` and `D15/transaction-cap-unchecked` name heavy tests and were checked with `git apply
+  --check` only.
+- Left: the stock `RESTCatalog` test in `IcebergClientConfigTest` (heavy), once item 106 lands, and the heavy build
+  passing it. `ConformanceServer` needs no change for it if the tag is made through item 106's route.
+
+Choices made (Paul may overrule):
+- Through a ref, rights and governance (holds, regulated, freezes) are checked against main's record of the namespace,
+  table or view, by its id. Why: rights on a ref are those on main (choice 12), and a cut keeps no grants.
+- A ref the catalog does not have, and a branch past its expiry, answer 404 `NoSuchWarehouseException`, as a catalog
+  that does not exist does. Why: the prefix is the client's warehouse; one answer for every missing one.
+- `catalog@main` is main, and the prefix `/v1/config` answers for it is `catalog`. Why: `main` is reserved and always
+  there (choice 4); one prefix per line keeps one ETag and cache key for main.
+- A branch's `/v1/config` lists its three commit endpoints already, though they answer 400 until item 105. Why: it is
+  choice 5's list for a branch, so item 105 changes no config; a stock engine's commit on a branch fails with 400
+  naming the branch until then.
+- A namespace's properties cannot be changed through a ref: that is a namespace change, refused on a branch (question
+  1 (b)). Reads through a ref show main's live properties, and none for a namespace main has dropped since the cut.
+  Why: "namespace properties are live" (D33, amended 2026-11-20); the dropped namespace has no live properties.
+- A write refused on a ref is a 400 `BadRequestException` and is not audited as a denial. Why: it is not a refusal of
+  rights; other 400s are not audited either.
+- The ETag carries the ref's id only through a ref. Why: main's tags stay as they were, so no client loses its 304 when
+  this lands.
+- A tag takes a scan's metrics report (204). Why: it only reads, and choice 5 lists it with the reads.
+- The prefix is resolved in a new component, `Prefixes`, not in `Holdings`. Why: `Holdings`' constructor is built in
+  the governance tests item 106 holds; the catalog lookup itself is unchanged.
+- `CommitEngine.readAt(object, pointer)` reads any pointer's file; `readCurrent` calls it with main's. Why: one read and
+  hash check for main and refs; item 105 builds on it.
 
 ### 105. Commits on a branch write its own pointer (item 26)
 
@@ -1508,63 +1099,408 @@ when Paul asks.
 Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
 every ref, the governance routes and the console show the branch, and a test on each store shows it.
 
-### 114. Run a table's maintenance now, from the console (Paul decides whether it may start outside the cleanup window)
+### 115. Row filters and column masks stored in the catalog, served to Trino (D20)
 
+- Decided: 2026-11-20, D20
 - Added: 2026-11-20 by Paul
-- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/resources/nuna/ui/, catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-maintenance/, docs/observability/table-health.md, docs/observability/health-page.md, decision-ledger.md
-- Effort: L, a route, a request kept on all four stores, the worker taking requests from its work list, a console button, with tests and bites; waits on Paul for the cleanup window
+- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-security/ catalog-server/ demo/
+- Effort: L, a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites
 
-Paul asked (2026-11-20) whether there is a UI to see health data and to start maintenance tasks. The console shows
-health (the **Health** page and each table's **Health** tab, docs/observability/health-page.md), but nothing can
-start maintenance, in the console or through the API:
+Paul chose row-level security through trusted engines on 2026-11-20 (D20, amended): nuna holds the row filters and
+column masks, and Trino applies them. Today nuna has only half of it. A table flagged with a row/column policy gives
+storage access only to registered trusted engines (`Authorizer`, rule D20, in `catalog-security`), but the rules
+themselves are nowhere in nuna, and the demo's Trino sets none (`demo/k8s/trino.yaml` configures no access control).
 
-- The console's only writes are grants (`catalog-server/src/main/resources/nuna/ui/api.js`, the two `POST`s at lines
-  154 and 159).
-- The maintenance routes are the worker's (`GET /management/v1/maintenance/work`, the deletions and the health
-  reports, `MaintenanceRoutes` and `HealthRoutes`) and the reads behind the health page. None asks for work.
-- The worker decides when work runs. It reads the work list every `scan-interval` (10 minutes); expiry, manifest
-  rewrite, purges and due deletions run at every scan, and compaction and orphan scans start only inside the nightly
-  cleanup window (D30, amended 2026-11-15; catalog-maintenance/README.md, "The cleanup window"). A table that needs
-  compaction at 09:00 waits for the night, and one that does not need it by the worker's thresholds never gets a Job.
-- An operator's only levers are the table's maintenance policy (`PUT .../maintenance-policy`, `modify` on the table)
-  and the deployment's window, neither of which says "now".
+What is missing:
 
-Expiry and manifest rewrite already run within 10 minutes whenever the policy makes them due, so the request is for
-the two heavy jobs: a compaction of one table, and an orphan scan of one table.
+1. **The rules, in nuna.** A row filter (an SQL predicate) and column masks (an SQL expression per column) on a table,
+   for a group, stored on all four stores beside the grants, set, listed and removed through the management API, and
+   audited as grants are (D23). Who may set them under D18's separation of duties (the grant admin, the tag steward,
+   or a duty of its own) is Paul's to decide; ask before building the routes.
+2. **A route Trino asks.** Trino's OPA access control asks an outside service for each table's row filters and column
+   masks (`opa.policy.row-filters-uri`, `opa.policy.column-masking-uri`; check both against the demo's Trino version).
+   nuna answers that request itself, or feeds an OPA server that does; the work picks one and says why.
+3. **Trino reaching nuna as a trusted engine.** The demo's Trino sends each user's own token
+   (`iceberg.rest-catalog.session=USER`, `demo/k8s/trino.yaml`), so nuna sees the user, not the engine, and a flagged
+   table refuses storage access through Trino. Trino must come as itself and name the end user (`X-Nuna-End-User`,
+   `catalog-server/.../security/Authentication.java`), or nuna must accept another form Trino can send, such as a
+   token exchange with Trino as the actor. Not checked by running.
 
-**The question for Paul:** may a requested compaction or orphan scan start outside the cleanup window?
-- *Recommended: yes.* The window keeps the routine heavy load off the day; a request is someone's deliberate choice
-  for one table. It still counts against `compaction.max-jobs`, and its Job gets a deadline of its own (a new
-  setting, 2 hours by default) in place of the window's end.
-- *Or: no.* The request queues the table for tonight's window, ahead of the needy tables. D30 stays as it is, but
-  nothing runs "now".
+Out of scope: SingleStore. Its pipelines read as their own principal (`demo/singlestore/load.sql`), copy whole tables
+into SingleStore, and have no hook to fetch rules from nuna, so registering it as a trusted engine would hand every
+row of a flagged table to SingleStore's own access control.
 
-Settled on the recommendation, unless Paul says otherwise:
-- **Who may ask:** `modify` on the table, as for its maintenance policy. Every request and refusal is audited.
-- **The guards stay the catalog's.** A request is refused when the table's resolved policy disables that job, and
-  when a hold or freeze would keep it off the work list. A requested compaction runs whether or not the assessment
-  says the table needs one: that is the point of asking.
-- **The worker still polls.** The catalog keeps the request; the work list carries requested tables in a section of
-  their own; the worker takes them at its next scan, so a request starts within one `scan-interval`. No push from the
-  catalog to the worker, as D30 (2) decided. One pending request per table and job; asking again changes nothing.
-  The request is cleared when the worker reports the job started, through the reports it already makes.
+Done when a group's row filter and column masks on a table are stored on all four stores and managed and audited
+through the management API; in the demo, two users in different groups run the same Trino query on a flagged table
+and get different rows and masked columns; a client that is no trusted engine still gets 403 on that table's storage
+access; and a bite that drops the filter from nuna's answer to Trino makes a test fail.
+
+### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
+
+- Decided: 2026-11-21, D20
+- Added: 2026-11-21 by Paul
+- Touches: catalog-server/ catalog-security/ catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-objectstore/ catalog-maintenance/ deploy/helm/ demo/
+- Effort: XL, the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115
+
+Paul decided on 2026-11-21 (D20, amended) that clients which are no trusted engine will read tables flagged with a
+row/column policy the way Databricks Unity Catalog serves them: the engine never gets the table's files. A fleet nuna
+controls reads them, keeps only the rows and columns the caller may see, and writes filtered temporary files, and
+the engine gets credentials for those alone. It is a separate item from 115 because Paul may build 115 first.
+Today such a client gets 403 on a flagged table's storage access (`Authorizer`, rule D20).
+
+The delivery is the spec's server-side scan planning (`spec/rest-catalog-open-api.yaml`: `planTableScan`,
+`fetchPlanningResult`, `cancelPlanning`):
+
+1. A flagged table's config tells a client that is no trusted engine to plan on the server
+   (`scan-planning-mode=server`), and nuna advertises the plan routes.
+2. The plan request carries the query's `filter` and `select`, so the fleet copies only what the query needs.
+3. nuna answers `submitted` with a plan id and starts a job. The job reads the real files, applies the caller's row
+   filter and column masks (item 115's rules, so this item waits on it), and writes Parquet files with the table's
+   field ids to a temporary prefix.
+4. When the client polls, the answer lists only the temporary files, with a credential scoped to that prefix.
+
+What the work settles:
+
+- **The fleet.** Its own identity, which alone reads flagged tables for this purpose and is audited each time (as the
+  maintenance exemption is, D20/D30). The maintenance worker already launches Spark as Kubernetes Jobs
+  (`catalog-maintenance/.../KubernetesJobs.java`); at work that presumes Kubernetes compute for Spark (PLT-7, open).
+- **The copies.** Written with the table's storage profile KMS key (D26), deleted once their credentials expire,
+  audited (D23), read-only: an untrusted engine still gets 403 on a write to a flagged table.
+- **Latency.** A cold copy takes seconds to minutes. Cache copies by snapshot and by the caller's set of rules, so
+  callers in the same groups share one.
+- **Clients.** Per `research_notes/Enterprise Iceberg REST catalog plan/rest_catalog_spec.md` (client matrix): Java
+  1.12 and Spark, PyIceberg, DuckDB and iceberg-go plan on the server; Trino 484 and Snowflake do not; SingleStore
+  depends on the Iceberg Java version it carries. A client that cannot plan on the server still gets 403, unless Paul
+  asks for a fallback (`loadTable` answering with a filtered copy of the whole table).
+
+Done when, in the demo, a client that is no trusted engine (PyIceberg or Spark with a user's own token) reads a
+flagged table and gets only the rows and unmasked columns that user's groups allow, never a credential for the
+table's own files; two users in different groups get different results; the copies are gone after their credentials
+expire; each copy is audited; and bites show a test fails when the filter is skipped or the credential covers the
+table's own prefix.
+
+### 123. Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker
+
+- Added: 2026-11-22 by heavy runs 2026-11-22
+- Touches: catalog-server/src/test/java/nuna/catalog/server/ catalog-server/src/test/resources/spring.properties CLAUDE.md
+- Effort: M, finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs
+
+Of three full heavy builds run on 2026-11-22 with the nuna-demo stack down (`./gradlew --continue build -Pheavy`, two
+modules under test at a time by `org.gradle.workers.max=2`), the second lost five tests to waits that ran out, and
+the first and third lost none of them. Each failed beside another Docker-heavy module and passed when its classes
+were run alone straight after (`AuditReadRouteTest` 6/6, `ManagementAuthorizationTest` 23/23, `WorkerTraceTest` 1/1).
+
+- `AuditReadRouteTest` (three cases, 16:00 to 16:02 UTC, beside `catalog-store-mongo`) and
+  `ManagementAuthorizationTest#aRefusalIsAuditedAsADenialOfTheRoute` (16:06, beside `catalog-store-oracle`): the test
+  JVM's Kafka clients sent requests to the shared broker that went unanswered for the whole 30 s request timeout ("due
+  to node -1 being disconnected (elapsed time since send: 30017ms ... request timeout: 30000ms)", and the same for the
+  group coordinator). The audit route answered 503 "The audit topic cannot be read now" (`RecentAudit`'s 10 s
+  metadata wait: "Timeout expired while fetching topic metadata"), and the test's own consumer read no record in its
+  30 s (`Api.awaitRecord`: "no matching audit record among 0 read").
+- `WorkerTraceTest#aScanAndTheCatalogsSpansForItsCallsAreOneTrace` (15:53, beside `catalog-server`): the worker's scan
+  loaded the test's empty table at 15:53:37 and logged nothing more until the test gave up at 15:54:07, 30 s
+  (`ARRIVAL`) later; its expiry of a table with no snapshots should have taken milliseconds.
+
+Item 55 is the same kind in the nightly (one 15 s stall reaching Docker's containers, beside the CockroachDB cluster),
+and the overnight run of 2026-11-19 lost `TelemetryTest#theStandardVariablesAloneTurnExportOn` to a 20 s metric wait.
+The logs were in the session's scratch folder and the worktree's build folders, which are gone; the quotes above are
+from them.
+
+Done looks like: what stalls is known, and either the heavy build keeps such modules apart or the waits that meet it
+outlast it; ten overnight heavy builds in a row lose no test to a wait running out.
+
+**2026-11-22, what stalls: Docker's memory.** The same four test tasks as the second run (`:catalog-server:test`,
+`:catalog-maintenance:test`, `:catalog-store-mongo:test`, `:catalog-store-oracle:test` with `-Pheavy --continue`, two at
+a time, the demo down) ran twice with a sampler logging, each second, the Docker VM's pressure-stall counters
+(`/proc/pressure`), free memory and swap, and the time of a fresh request to a container through a mapped port.
+
+- Before the fix (30m41s): two tests failed, `TwoIssuersTest#aTokenForAnotherAudienceIsRefused` (Keycloak sent no
+  bytes for 30 s) and `DrRewindRouteTest#aFrozenTableAboveItsWatermarkIsRewoundToIt` ("no matching audit record among 0
+  read", the second run's failure). Both fell in minutes when the VM's 2 GB of swap was filling, from 0.4 GB to 2.0 GB,
+  and every task in it stalled on memory for 10 to 50% of each second (312 s at 10% or more). The mapped-port probe
+  answered within about 1 s throughout: the port forwarding did not stall; the processes behind it did. The memory
+  was catalog-server's test JVM's: it held every container it had started until it exited, an Oracle (2.5 GB limit),
+  a MongoDB, two Keycloaks (one with 471 MB swapped out), a Kafka for each governance context and a PostgreSQL for
+  each of its contexts (twelve by mid-run), about 4 GB idle beside the Mongo and Oracle suites. Once that JVM exited,
+  swap fell to 0.4 GB and 4.5 GB was free with the Oracle suite still running.
+- The fix: catalog-server's tests keep one Spring context at a time (`spring.properties`, `maxSize=1`), so Spring
+  closes the last context, and its PostgreSQL and Kafka, when a class needs another; and the four initializers that
+  start containers for one class (`OracleBackendTest`, `MongodbBackendTest`, `TwoIssuersTest`, `ConsoleSignInTest`)
+  register their stop with that context (`StopWithContext`), after its beans. Neither keeps modules apart nor
+  lengthens a wait: it removes the overcommit. CLAUDE.md (Builds) gives the rule for new tests.
+- After the fix (20m50s): every test passed (catalog-server 343, maintenance 89, Mongo 223, Oracle 247 with 3
+  skipped as always). Swap stayed at 0.4 GB, at least 2.7 GB was free, memory stalls fell from 77 s to 20 s, and
+  catalog-server held at most two PostgreSQLs, one Keycloak and one Kafka at a time; its tests took 14.8 min instead of
+  23.6. The short stalls left came with Oracle starting.
+
+The item stays open for its last test: ten overnight heavy builds in a row that lose no test to a wait running out.
+
+A second cause, found on 2026-11-22 by two nightlies run by hand (`status/2026-11-22-nightly-2026-11-22.md`): Windows
+out of RAM. With other sessions' fast builds running, Windows had 241 to 760 MB available and paged in a median 22,700
+pages a second, and the Docker VM was resident at as little as 991 MB of its 8 GB; containers took 44 to 95 s to
+start, a Kafka never did, and the VM's own pressure stalls stayed near 0, since a guest stalled on a host page fault
+counts it as CPU. This hits the heavy build as it hit the nightly, so a heavy build that loses a wait should be
+read beside Windows' numbers, not only the VM's. Item 135 is the host's memory (Paul decides the remedy); item 136
+keeps other sessions' builds off a run by hand.
+
+### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
+
+- Added: 2026-11-22 by item 128
+- Touches: catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java, catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+- Effort: L, a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests
+
+What is missing: `GET /management/v1/catalogs/{catalog}/governance/holds` (item 128) lists the holds released and
+DR freezes lifted from the audit topic, because the store deletes a hold's row when it is released
+(`GovernanceStore.releaseHold`) and a freeze's attribute when it is lifted (`removeAttribute`). The read is bounded as
+`GET .../audit` is: the last 20,000 offsets of each partition. Every load and denial is audited to the same topic,
+so in a busy deployment those offsets cover minutes, not the 30 days the console's prototype shows ("Lifted in the
+last 30 days"). The route says how far back it read (`history.since`), so it never claims more than it holds, but the
+console's list of lifted holds will usually stop short at work.
+
+Item 128 took the audit topic because keeping the history in the store is a schema step on all four stores, and
+item 126 held those modules when 128 was built; the queryable audit tables (D23) are read by one named group and
+need item 125's reader.
+
+What done looks like: a hold's release and a freeze's lift recorded in the store with who and when (a released and
+lifted record, or the row kept with `released_at` and `released_by`), on all four stores with a suite in the shared
+test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
+its tests. The audit topic read goes.
+
+**Progress, 2026-11-22 (worktree-agent-a776179e2fcd3c868): built; open until the heavy build passes `GovernanceSuite`
+on all four stores.**
+- The record: `GovernanceLift` (kind `HOLD` or `DR_FREEZE`, the hold's id, the target, reason, placed by and at,
+  lifted by and at). `releaseHold` and `removeAttribute` take who lifts; a release, and a DR freeze's removal, write
+  one in the change's own transaction, with the catalog the level was in, so it outlives the level.
+  `liftedIn(catalog, since)` lists a catalog's lifts at or after `since`, the most recent first.
+- Schema steps, additions only: PostgreSQL `V14__governance_lifts.sql`, CockroachDB `V13__governance_lifts.sql`,
+  Oracle `V15__governance_lifts.sql`, MongoDB step 13 ("governance lifts"): a `governance_lift` table or collection
+  indexed by catalog and lift time. A separate table, not the hold row kept with `released_at`: a server of the
+  previous release would still read a kept row as a standing hold. Its releases during a rolling upgrade are kept
+  only in the audit record of the change.
+- Shared suite: `GovernanceSuite#releasesAndLiftsAreKept` (who and when, repeats `Missing`, the window, one catalog
+  only, the change rows) and `#releasesAndLiftsOutliveTheirLevel` (a dropped namespace, a purged table).
+- The route: `HoldHistory` reads the store for the last 30 days; the audit-topic read is gone. `history` is
+  `{days, since}`; a lift on a level dropped since has a null `path`, and the console names it by kind and id.
+- Not covered: dropping a namespace removes its attributes, a DR freeze among them, without keeping a lift (a frozen
+  namespace's drop is not refused today).
+
+Left: the overnight heavy build's run of the store suites on the four stores.
+
+### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
+
+- Added: 2026-11-22 by nightly by hand 2026-11-22
+- Decided: 2026-11-22, D46
+- Touches: none
+- Effort: S, once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul
+
+The machine has 15.7 GB, and during both nightlies of 2026-11-22 Windows was paging the Docker VM's memory out
+(`status/2026-11-22-nightly-2026-11-22.md`). A container whose memory is in Windows' page file stalls on every touch
+of it, and inside the VM that shows as CPU, never as memory pressure, so the VM's own numbers look healthy.
+
+Evidence, from `Get-Counter` and `Get-Process` every 10 s:
+
+- With other sessions' fast builds running (nightly 1, 16:10 to 16:30): 241 to 760 MB available, a median 22,700
+  page-ins a second, peak 160,000; the VM resident at 991 MB of 8 GB at worst. Thirteen tests lost a wait: PostgreSQL
+  and Kafka not started in 60 to 90 s, CockroachDB statements past their 15 s, the CAS on PostgreSQL and CockroachDB.
+- With no other build (nightly 2, 16:30 to 17:58): 65 to 1,700 MB available (median 655), a median 16,800 page-ins a
+  second, peak 136,000; the VM resident at a median 2.9 GB. Every test passed, but the CockroachDB CAS took 1,277 s
+  for 1,000 rounds, against 342 s on an idle host on 2026-11-16.
+- Who holds the memory: the Docker VM commits 8 GB, 27 Claude processes 5.8 GB, Edge WebView and ChatGPT 2 GB
+  each, VS Code 1.1 GB, Chrome 0.8 GB. Windows' non-paged pool was 1.76 GB (a few hundred MB is usual) and WUDFHost,
+  a host for user-mode drivers, had 3.2 GB committed: both look like a driver leaking, which a restart clears.
+
+The remedies are changes to Paul's machine, so Paul picks:
+
+1. Before midnight, close what the run does not need (ChatGPT, Chrome, VS Code, idle Claude sessions), and restart
+   Windows now and then to clear the non-paged pool and WUDFHost.
+2. Let WSL give the VM's idle memory back to Windows: WSL's `autoMemoryReclaim` setting in
+   `%UserProfile%\.wslconfig` (none exists now; check the installed WSL version's documentation for its section),
+   which needs `wsl --shutdown` once, so Docker Desktop restarts.
+3. Fewer containers at once in the nightly's step 1 (`--max-workers=1`): a smaller peak for the VM, and a longer run.
+
+Done looks like: the remedy Paul picks is in place, and an overnight run's nightly passes with Windows above 1.5 GB
+available and the VM resident at its working size throughout (sampled as `status/2026-11-22-nightly-2026-11-22.md`
+says).
+
+Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-135):
+
+1. Closing ChatGPT, Chrome, VS Code and idle Claude sessions before midnight, and restarting Windows now and then,
+   are Paul's to do: nothing in the repo does them.
+2. `%UserProfile%\.wslconfig` now sets `autoMemoryReclaim=dropCache` under `[experimental]`. WSL 3.0.5 is installed,
+   and Microsoft's page on `.wslconfig` (dated 2026-10-16) gives `dropCache` as the default already: the VM's cached
+   memory goes back to Windows as soon as the VM is idle. So the file pins the behaviour rather than changing it, and
+   WSL was not restarted for it. It returns nothing while the VM is busy, which is the whole of a nightly.
+3. `nightly.sh` runs its first step with `--max-workers=1`: one module's containers and one test JVM at a time. From
+   the second nightly's module times, step 1 takes about 2 h 15 min instead of 1 h 15 min, which still leaves the
+   overnight run hours for its bites before 06:30. `./nightly.sh --test-dry-run` passes. CLAUDE.md (Builds) says so,
+   and says to check Windows' memory when a container-backed test loses a wait.
+
+The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
+Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
+be taken by hand.
+
+### 150. Brokerage world 1: the ledger world in Iceberg, booked by the kit's posting engine ported to Java
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ settings.gradle.kts demo/demo.sh demo/LakeWriter.java demo/k8s/ demo/README.md
+- Effort: L, a new Gradle module (the engine port and its golden, the world's calendar, securities, prices, accounts and personas, the Java writer) and its place in `demo.sh up`; waits on nothing
+
+The demo's data is a handful of sample tables (`demo/LakeWriter.java`): Xetra trades, FX rates, US quotes, and a toy
+`finance.ledger` with a `journal` and an `accounts` table. Nothing joins, nothing ties out, and none of it is a
+brokerage. D48 and `docs/design/brokerage-world.md` set out the generator; this is its first phase.
+
+What to build:
+- `demo-datagen`, a Gradle module: the demo kit, forked once from Paul's ledger kit v14 (D48 as amended: the ledger
+  kit serves the sequencer, this one only fills Iceberg), with its posting engine ported to Java, reading the 22 booking
+  schemes and the chart of accounts as data exported from the kit (`defs.py`, `schemes_v20.py`, checked against the
+  estate guard's whole deny list first; nothing else from the kit enters the repo).
+- The world at its simplest: the NYSE calendar with T+1, about 300 synthetic securities with identifiers that cannot be
+  real (the design's list), closing prices, parties and accounts, and personas that produce only the transactions the
+  kit has templates for (30 to 35, 40 to 47, 51 and 52, 60 to 65). Seed, anchor date and scale give the same bytes.
+- The Java writer (a Job, like the lake writer) for `brokerage.reference`, `brokerage.markets.prices_eod`,
+  `brokerage.party.accounts` and every `brokerage.ledger` table and view: one commit per business day, a tag
+  `eod-YYYY-MM-DD` on the ledger's balances, `financial_transactions` starting on the v13 shape and gaining
+  `locate_id` when short selling starts, and the views `buying_power` and `running_collected_balance` (R17: derived,
+  never posted). Classifications and the regulated mark as the design's namespace table gives them.
+- `demo.sh up` runs it; the toy `finance.ledger` tables go (the D27 refusal they show moves to
+  `party.beneficial_owners` in item 152; until then the console shows none).
 
 What done looks like:
-- `POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests` with
-  `{"job": "compaction" | "orphan-scan"}`, answering 202, and the request shown in the table's health
-  (`GET .../tables/{table}/health`: who asked, when, waiting or started).
-- The request kept by an add-only schema step on PostgreSQL, CockroachDB, Oracle and MongoDB, so the rolling upgrade
-  stays safe; a store suite shows it kept, deduplicated, cleared on start and gone with a purged table.
-- The worker runs requested jobs at its next scan, inside or outside the window as Paul decides, and reports them
-  as it reports nightly ones; a test like `NightlyCleanupTest` shows a request made in the day run (or wait for the
-  night).
-- On a table's **Health** tab, **Compact now** and **Scan for orphans now** for a viewer with `modify`, and the
-  pending request while it waits; `ConsoleHealthTest` shows a reader sees no buttons and a refused request shows the
-  catalog's answer.
-- Route tests for who may ask and every refusal; bites for a request taken without `modify`, a request taken under a
-  hold, and (if Paul says yes) a requested Job given the window's end as its deadline.
-- docs/observability/table-health.md, health-page.md and catalog-maintenance/README.md describe it; D30 amended with
-  Paul's answer, quoted.
+- In the fast build: the port reproduces `events_v8.json` (44 financial transactions, 289 journal lines, every one
+  matching) and the kit's own checks (`kit_checks()` in `schemes_v20.py`: LotNotHeld, BalanceBelowZero, the mirror
+  proof, the rounding cases); the same seed gives the same output twice; a 1,000-account month posts with no halt.
+- On the demo: the console shows `brokerage.ledger` with one snapshot and one tag per business day, and the views
+  answer in Trino as `ana`.
+
+Choices made (Paul may overrule): Java rather than Python; the root namespace `brokerage`; 1,000 accounts over a month.
+
+### 151. Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/singlestore/ demo/cdc/cockroach.sql demo/cdc/connectors/ demo/demo.sh demo/README.md
+- Effort: L, the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150
+
+Second phase of D48 (`docs/design/brokerage-world.md`). The ledger's fills come from somewhere: an order management
+system and a clearing house.
+
+What to build:
+- In SingleStore `ops`, replacing the toy `ops.orders`: orders, order events, routes and executions, consistent with
+  the ledger's fills (same fill ids, prices, quantities), copied to `brokerage.trading` by the change feed; securities
+  and closing prices loaded back from Iceberg by Iceberg pipelines.
+- `brokerage.clearing`: CNS obligations per security and settlement date, settlements, fails, the stock record by
+  location, locates (the kit's `locateId` joins them to short sales). Backfilled to Iceberg, and loaded into
+  CockroachDB `custody` for the CDC leg in place of the toy `positions.holdings`.
+- `brokerage.recon` views for ties 1, 3 and 4 of the design.
+- Seeded break: one fail to deliver aged into a Reg SHO 204 close-out.
+
+What done looks like: on a clean world the three views return no rows, and with the seeded break exactly the seeded
+rows, read in Trino as `ana`; an `UPDATE` to an order in SingleStore reaches `brokerage.trading.orders` as before.
+
+### 152. Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/cdc/ demo/k8s/cdc.yaml demo/k8s/keycloak-realm.json demo/k8s/demo-values.yaml demo/CloudBeaverUsers.java demo/demo.sh demo/README.md
+- Effort: L, the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS
+
+Third phase of D48 (`docs/design/brokerage-world.md`).
+
+What to build:
+- PostgreSQL `backoffice`, replacing the toy `settlement.instructions`: parties, accounts, roles, CIP checks,
+  suitability profiles, beneficial owners, trusted contacts, payments, ACH returns, ACATS transfers, complaints, AML
+  alerts and cases. Oracle `treasury`: bank payments, replacing the toy `PAYMENTS`. Their histories land in
+  `brokerage.party`, `brokerage.money_movement` and `brokerage.compliance` through Debezium and the Iceberg sink, with
+  current-state views; the backfill writes the same histories in the sink's shape.
+- Sanctions screening against a synthetic list in OFAC's SDN layout; surveillance alerts; seeded structuring deposits
+  and one sanctions match.
+- Governance: the classifications and regulated namespaces of the design's table; tax ids, birth dates, addresses and
+  bank account numbers flagged (D20); a legal hold on `compliance.aml_cases`; `party.beneficial_owners` landing
+  unclassified, so the catalog refuses it (D27) until a steward classifies it; a new person `cora` (password
+  `cora-demo`) in a new group `demo-compliance`, the only group that reads `compliance`, in Keycloak, CloudBeaver and
+  the catalog's grants.
+- `demo.sh live`: with the CDC leg up, the sources loaded with the month's end state, Debezium started without
+  snapshotting those rows, the next business day played at a compressed clock; the ledger's transactions and postings
+  on Kafka topics the Iceberg sink writes to `brokerage.ledger`, visible in kafbat.
+- The events the demo kit adds (item 155), as its templates land.
+
+What done looks like: a live day reaches every history table with no gap and no duplicate against the backfill (a
+count per table and key); `ana` is refused `compliance` and `cora` reads it; a snapshot expiry on `aml_cases` is
+refused while the hold stands; `stella` classifying `beneficial_owners` ends its refusal.
+
+Choice made (Paul may overrule): one new person, `cora`, for compliance.
+
+### 153. Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/cdc/oracle.sql demo/demo.sh demo/README.md
+- Effort: L, the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits
+
+Fourth phase of D48 (`docs/design/brokerage-world.md`).
+
+What to build:
+- The General Ledger in Oracle (`brokerage.finance`) and its tie to the sub-ledgers (ControlOfTotal); margin
+  (`brokerage.margin`: house requirements, account snapshots with the intraday margin level of FINRA 4210 as amended
+  from 2026-06-04, calls); the 15c3-3 reserve computation and net capital (`brokerage.regulatory`).
+- Tax lots and realizations with wash sales, 1099-B lines (`brokerage.tax`); confirms and month-end statements
+  (`brokerage.client_reporting`); best-execution reviews; CAT order events and a Rule 606 report.
+- Asset servicing (`brokerage.reference.corporate_actions`, `brokerage.asset_servicing`) once the demo kit books it (item 155).
+- The month-end close as one multi-table commit (`/transactions/commit`) with a tag `month-end-YYYY-MM`; a trade bust
+  after the close corrected on a branch and merged, while the tag keeps what the statements said.
+- Spark as the month-end batch where the demo's memory allows (it needs Trino stopped); the Java writer otherwise.
+- The remaining ties of the design (2 and 5 to 9) as `brokerage.recon` views.
+
+What done looks like: every tie holds on a clean world and returns exactly the seeded rows otherwise; reading the
+statements at the month-end tag after the bust's correction gives what they said before it.
+
+### 154. Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/demo.sh demo/README.md demo/k8s/ docs/install-at-work.md
+- Effort: M, two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153
+
+Fifth phase of D48 (`docs/design/brokerage-world.md`).
+
+What to build: five-minute bars and live quotes (`brokerage.markets`) and sessions and click events
+(`brokerage.digital`) on Kafka through the Iceberg sink in live mode; maintenance policies per namespace (short
+snapshot retention and frequent compaction on the streaming tables, D30); the scale setting (accounts, days), with a
+note in `docs/install-at-work.md` on sizing it there.
+
+What done looks like: after a live day the health dashboard (D38) ranks the streaming tables among the neediest, and a
+maintenance run fixes them without touching the held `compliance.aml_cases`.
+
+### 155. The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48)
+
+- Decided: 2026-11-22, D48 (amended)
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/
+- Effort: L, about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port)
+
+Rescoped by Paul, 2026-11-22 (D48 as amended): "the kit chat is for building the sequencer. This kit is just for
+filling iceberg with data. So they are 2 separate kits." This item first read as kit v15 and v16 of the sequencer's
+ledger kit. It is the demo's own kit instead: item 150 forks ledger kit v14 into `demo-datagen`, and this item extends
+that fork. It never follows the ledger kit's later versions, and needs none of its workbook or reviews.
+
+A month at a brokerage has events v14 cannot book, and the generator produces none until the demo kit can:
+
+- Money and fees (for item 152): wire deposit received; wire withdrawal initiated, settled and cancelled; an ACH
+  deposit returned before and after settlement, with its Nacha return code; a cash journal between two brokerage
+  accounts; an account fee charged and reversed (wire, ACATS-out, hard-to-borrow on shorts); short sell and buy to
+  cover cancelled.
+- Transfers and asset servicing (for items 152 and 153): ACATS received (cash, and positions whose lots carry the
+  delivering firm's cost and acquisition date) and delivered (lots out at remaining cost, no gain); a cash dividend on
+  a long position; a payment in lieu charged to a short position; forward and reverse splits (lots rescaled, cost
+  unchanged, cash in lieu of fractions).
+
+The bar: every template books on all four sub-ledgers with the engine's self-checks holding after every Posting
+(each journal entry balanced in its unit, lots tied to their controls, mirrors, J16 floors), and reads as believable to
+a brokerage person.
+
+What done looks like: for each template, a lifecycle on a cash and a margin account runs through the engine in the
+fast build with every self-check passing, and the generator produces those events.
 
 ## Done and dropped
 
@@ -1614,10 +1550,12 @@ What done looks like:
 | [52](backlog/52.md) | backlog.sh done fails on a branch name with a slash | dropped | 2026-11-15 |
 | [53](backlog/53.md) | Count credential vends served from the cache apart from new issues (after 41) | done | 2026-11-15 |
 | [54](backlog/54.md) | KubernetesCompactionTest: kubectl's jsonpath filter loses its quotes on Windows | done | 2026-11-16 |
+| [55](backlog/55.md) | The nightly lost two tests to one 15 s stall reaching Docker's containers | done | 2026-11-22 |
 | [56](backlog/56.md) | WorkerTraceTest takes the expiry's table load for the scan's | done | 2026-11-16 |
 | [57](backlog/57.md) | Publish Silo's console on localhost:8184 | done | 2026-11-16 |
 | [58](backlog/58.md) | Demo: TLS at one front door, with a certificate that work's can replace | done | 2026-11-17 |
 | [59](backlog/59.md) | Rename keel to nuna, short for nunatak, everywhere | done | 2026-11-18 |
+| [60](backlog/60.md) | CredentialExpiryTest's first request answered 401 | done | 2026-11-22 |
 | [61](backlog/61.md) | KubernetesCompactionTest: kubectl get job ran past its minute, after item 54's fix | done | 2026-11-19 |
 | [62](backlog/62.md) | The worker's TelemetryTest: no metric arrived within 20 s from the standard variables alone | done | 2026-11-19 |
 | [63](backlog/63.md) | The overnight folder moves inside the repo, gitignored | done | 2026-11-18 |
@@ -1627,6 +1565,7 @@ What done looks like:
 | [67](backlog/67.md) | An unregister whose outcome is unknown waits within the retry budget when the store is down | done | 2026-11-19 |
 | [68](backlog/68.md) | Catalog names still leak through /v1/config and the unknown-prefix 404 (Paul decides, D18) | done | 2026-11-20 |
 | [69](backlog/69.md) | The DR reconcile's apply waits within the retry budget when the store is down, as the commit engine does | done | 2026-11-20 |
+| [70](backlog/70.md) | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | done | 2026-11-22 |
 | [71](backlog/71.md) | Export the audit publish timer's histogram, so Grafana can show the Kafka acknowledgement p99 | done | 2026-11-20 |
 | [72](backlog/72.md) | Oracle's self-check does not notice a journal-partition job that cannot run | done | 2026-11-20 |
 | [73](backlog/73.md) | Namespace, table and view names still leak through the management API | done | 2026-11-20 |
@@ -1647,8 +1586,45 @@ What done looks like:
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
 | [90](backlog/90.md) | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | done | 2026-11-20 |
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
+| [92](backlog/92.md) | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | done | 2026-11-22 |
+| [93](backlog/93.md) | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | done | 2026-11-22 |
 | [94](backlog/94.md) | The demo's object store on its own port, 8187, for engines on other machines | done | 2026-11-20 |
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
 | [96](backlog/96.md) | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | dropped | 2026-11-20 |
+| [98](backlog/98.md) | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | done | 2026-11-22 |
 | [99](backlog/99.md) | A table that commits faster than the DR store replicates never gets a first DR watermark | done | 2026-11-20 |
+| [100](backlog/100.md) | A rewind that gives up more than 100 versions leaves the table behind its DR watermark for good | done | 2026-11-22 |
 | [101](backlog/101.md) | The DR runbook waits on the worker's log, which records a DR pass only at DEBUG | done | 2026-11-20 |
+| [102](backlog/102.md) | Refs in the store: the ref record and its cut on four stores (item 26) | done | 2026-11-22 |
+| [103](backlog/103.md) | Branch commits and the merge transaction in the store (item 26) | done | 2026-11-22 |
+| [114](backlog/114.md) | Run a table's maintenance now, from the console, outside the cleanup window too | done | 2026-11-22 |
+| [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
+| [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
+| [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
+| [120](backlog/120.md) | Atelier moves to user scope | done | 2026-11-21 |
+| [121](backlog/121.md) | ConsoleBrowserTest could not start its browser session | done | 2026-11-22 |
+| [122](backlog/122.md) | The overnight heavy build stops at its first failing module | done | 2026-11-22 |
+| [124](backlog/124.md) | Console: rebuild every page to the redesign prototype (D45) | done | 2026-11-22 |
+| [125](backlog/125.md) | Audit: a catalog-wide feed with filters, each record's place in the hash chain, and the last day's counts (D45) | done | 2026-11-22 |
+| [126](backlog/126.md) | Maintenance: each night's summary and each job's run on its worker slot (D45) | done | 2026-11-22 |
+| [127](backlog/127.md) | Maintenance: one row per table for the overview's ice line (D45) | done | 2026-11-22 |
+| [128](backlog/128.md) | Governance: a summary per catalog, and every hold and freeze with its history (D45) | done | 2026-11-22 |
+| [129](backlog/129.md) | Grants: the effective grants on an object, inherited ones included (D45) | done | 2026-11-22 |
+| [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
+| [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
+| [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [134](backlog/134.md) | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | done | 2026-11-22 |
+| [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
+| [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
+| [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
+| [139](backlog/139.md) | Console Health: the Store panel, the catalog database's backend, version and self-check | done | 2026-11-22 |
+| [140](backlog/140.md) | Console: set owner, retention class and regulated, as it sets classification | done | 2026-11-22 |
+| [141](backlog/141.md) | Console: a settings editor with only the keys that do something; every property shown read-only | done | 2026-11-22 |
+| [142](backlog/142.md) | Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged | done | 2026-11-22 |
+| [143](backlog/143.md) | Console: Overview and Maintenance call unassessed tables in shape; Governance says labels come from a data catalogue | done | 2026-11-22 |
+| [144](backlog/144.md) | The demo configures no audit tables, so the console's Audit page answers 503 | done | 2026-11-22 |
+| [145](backlog/145.md) | Console Health: the Store panel shows the point-in-time recovery window the deployment declares | done | 2026-11-22 |
+| [146](backlog/146.md) | Console: a Governance tab on the view page, to see and set a view's labels and holds | done | 2026-11-22 |
+| [147](backlog/147.md) | Console: a child namespace's totals in Contents: its tables, their snapshots and the newest commit | done | 2026-11-22 |
+| [148](backlog/148.md) | The audit feed and summary answer 500 where audit tables are configured: the reader loads Iceberg's AWS client factory, which needs the KMS SDK the server leaves out | done | 2026-11-22 |
+| [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |

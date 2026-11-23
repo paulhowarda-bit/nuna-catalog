@@ -1,0 +1,26 @@
+Breaks: a page looks at every table until it is full, however many the caller may not select.
+Module: catalog-server
+Test: MaintenanceEstateTest#aPageLooksAtTwoThousandTablesAtMost
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java
+index da0da91..01cc891 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java
+@@ -97,7 +97,7 @@ final class MaintenanceEstate {
+         int examined = 0;
+         while (true) {
+             Page<CatalogObject> page = store.listActiveObjects(CatalogObject.Kind.TABLE,
+-                    new PageRequest(cursor, Math.min(size - rows.size(), MAX_EXAMINED - examined)));
++                    new PageRequest(cursor, size - rows.size()));
+             List<CatalogObject> tables = page.items();
+             examined += tables.size();
+             List<Decision> decisions = tables.isEmpty() ? List.of() : authorizer.decide(caller, tables.stream()
+@@ -111,7 +111,7 @@ final class MaintenanceEstate {
+                 }
+             }
+             next = page.nextToken();
+-            if (next.isEmpty() || rows.size() == size || examined >= MAX_EXAMINED) {
++            if (next.isEmpty() || rows.size() == size) {
+                 break;
+             }
+             cursor = next;

@@ -32,10 +32,12 @@ final class Transactions {
     /** The SQLState ojdbc gives every Oracle Net error (ORA-12xxx), the listener's refusals among them. */
     private static final String ORACLE_NET = "66000";
     /**
-     * ORA-03135 (connection lost contact) and ORA-16000 (the database is open read-only: a write reached a
-     * standby during failover), which ojdbc raises as plain SQLExceptions of other classes.
+     * ORA-03135 (connection lost contact), ORA-16000 (the database is open read-only: a write reached a standby
+     * during failover) and ORA-17800 (got minus one from a read call: the database or a proxy closed the connection,
+     * as it does when it drops one during logon; backlog 7), which ojdbc raises as plain SQLExceptions of other
+     * classes.
      */
-    private static final Set<Integer> UNAVAILABLE_ERRORS = Set.of(3135, 16000);
+    private static final Set<Integer> UNAVAILABLE_ERRORS = Set.of(3135, 16000, 17800);
 
     @FunctionalInterface
     interface Body<T> {

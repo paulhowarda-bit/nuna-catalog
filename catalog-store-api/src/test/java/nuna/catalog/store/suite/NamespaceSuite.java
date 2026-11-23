@@ -308,7 +308,7 @@ public abstract class NamespaceSuite extends GroupSuite {
                     .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
 
             assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
-            assertApplied(store.releaseHold(hold.id(), change()));
+            assertApplied(store.releaseHold(hold.id(), "counsel", change()));
         }
         assertApplied(store.dropNamespace(namespace.id(), change()));
     }

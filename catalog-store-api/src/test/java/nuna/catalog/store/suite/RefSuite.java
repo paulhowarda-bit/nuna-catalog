@@ -265,7 +265,7 @@ public abstract class RefSuite extends GroupSuite {
         PointerKey own = dev.key(table.id());
         byte[] projection = new byte[3 * underTest().projectionPieceBytes()];
         random.nextBytes(projection);
-        Pointer large = new Pointer("s3://suite-warehouse/large-on-dev.metadata.json", 2, "0".repeat(64), projection);
+        Pointer large = new Pointer("s3://suite-warehouse/large-on-dev.metadata.json", 1, "0".repeat(64), projection);
         CommitBatch batch = Commits.batch(Commits.swap(own, Optional.empty(), large));
         assertThat(store.commit(batch)).isInstanceOf(CommitResult.Committed.class);
         assertThat(underTest().projectionPieces(own)).isEqualTo(3);

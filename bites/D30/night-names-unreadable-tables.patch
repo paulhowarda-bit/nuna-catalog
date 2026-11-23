@@ -1,0 +1,16 @@
+Breaks: a night's jobs name every table, whether the caller may select it or not.
+Module: catalog-server
+Test: MaintenanceNightsRoutesTest#aNightAddsUpItsJobsAndNamesOnlyTheTablesTheCallerMaySelect
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceNights.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceNights.java
+index e1d87cd..eb21b4d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceNights.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceNights.java
+@@ -154,7 +154,7 @@ final class MaintenanceNights {
+             String catalog = catalogs.name(object.catalogId());
+             Optional<List<String>> namespace = levels.computeIfAbsent(object.namespaceId(),
+                     id -> management.levels(object.catalogId(), id));
+-            if (decisions.get(i).allowed() && catalog != null && namespace.isPresent()) {
++            if (catalog != null && namespace.isPresent()) {
+                 ObjectNode table = Management.JSON.createObjectNode();
+                 table.put("id", object.id().toString());
+                 table.put("catalog", catalog);

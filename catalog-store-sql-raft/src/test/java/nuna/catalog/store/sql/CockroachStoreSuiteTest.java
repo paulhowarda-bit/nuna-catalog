@@ -10,11 +10,13 @@ import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.suite.CatalogObjectSuite;
+import nuna.catalog.store.suite.BranchCommitSuite;
 import nuna.catalog.store.suite.CatalogStoreUnderTest;
 import nuna.catalog.store.suite.CommitSuite;
 import nuna.catalog.store.suite.GovernanceSuite;
 import nuna.catalog.store.suite.DrSuite;
 import nuna.catalog.store.suite.HealthSuite;
+import nuna.catalog.store.suite.NightSuite;
 import nuna.catalog.store.suite.GrantSuite;
 import nuna.catalog.store.suite.IdempotencySuite;
 import nuna.catalog.store.suite.JournalSuite;
@@ -109,6 +111,14 @@ class CockroachStoreSuiteTest extends CommitSuite {
     }
 
     @Nested
+    class Nights extends NightSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return cockroach;
+        }
+    }
+
+    @Nested
     class Dr extends DrSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
@@ -118,6 +128,14 @@ class CockroachStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Refs extends RefSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return cockroach;
+        }
+    }
+
+    @Nested
+    class BranchCommits extends BranchCommitSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return cockroach;

@@ -1,0 +1,18 @@
+Breaks: a merge on the SQL stores moves main but leaves the branch, its cut and its own pointers.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$BranchCommits#aMergeMovesMainAndEndsTheBranch
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+index 74d9df2..668dcb7 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/Pointers.java
+@@ -85,9 +85,6 @@ final class Pointers {
+             return inactive.get();
+         }
+         record(connection, batch);
+-        if (batch.ref().orElse(null) instanceof RefLock.End end) {
+-            SqlRefs.end(connection, end.refId());
+-        }
+         return new CommitResult.Committed(batch.commitId());
+     }
+ 

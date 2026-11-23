@@ -156,4 +156,13 @@ class AuditRowsTest {
         assertThat(row.data()).isEqualTo(new String(EventCodec.encode(event), UTF_8).replaceFirst(".*,\"data\":", "")
                 .replaceFirst("}$", ""));
     }
+
+    @Test
+    void everyRowGivesBackTheRecordAsTheTopicCarriesIt() throws IOException {
+        // The audit feed shows each row as its event (backlog 125): the bytes the topic and the archive hold.
+        for (Mapped m : golden()) {
+            assertThat(new String(EventCodec.encode(AuditRows.event(m.row())), UTF_8)).as(m.event().type().typeName())
+                    .isEqualTo(m.line());
+        }
+    }
 }

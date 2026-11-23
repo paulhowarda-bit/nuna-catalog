@@ -160,7 +160,7 @@ class RefRoutesTest {
         StorageSettings storage = new StorageSettings(Map.of(), Map.of("gate", new StorageSettings.Catalog(
                 "warehouse", null, null)), Duration.ofHours(1), 100, false);
         // No governance settings: only the refs section is asked for.
-        maintenance = new MaintenanceRoutes(store, management, guard, null, names, SETTINGS, storage, clock);
+        maintenance = new MaintenanceRoutes(store, management, guard, null, names, SETTINGS, storage, clock, authorizer);
     }
 
     // ---- rights ----

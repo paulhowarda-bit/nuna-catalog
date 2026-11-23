@@ -16,6 +16,7 @@ import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.governance.Management.Target;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
@@ -48,9 +49,10 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * The governance management API (D24, D27, D30, D37) on a catalog, namespace, table or view: the
- * attributes the governance tool pushes, with their provenance; legal holds; the maintenance policy;
- * and the DR freeze. Every change writes its audit record to the outbox with the change itself.
+ * The governance management API (D24, D27, D30, D37) on a catalog, namespace, table or view: the labels people
+ * set in the console or an outside tool pushes, with their provenance; legal holds; the maintenance policy;
+ * and the DR freeze; and, for the console, a catalog's summary and every hold and freeze in it (D45). Every change
+ * writes its audit record to the outbox with the change itself.
  * Each route asks {@link ManagementGuard} once its target is resolved, before reading the body.
  */
 @RestController
@@ -62,8 +64,10 @@ class GovernanceRoutes {
     private static final String HOLD = "/holds/{holdId}";
     private static final String POLICY = "/maintenance-policy";
     private static final String FREEZE = "/dr-freeze";
+    private static final String SUMMARY = "/governance/summary";
+    private static final String HOLDS_AND_FREEZES = "/governance/holds";
 
-    /** The attributes the governance tool pushes (D27), by their path name. */
+    /** The attributes set through this API, from the console or an outside tool (D27), by their path name. */
     static final Map<String, GovernanceAttribute.Kind> PUSHED = Map.of(
             "classification", GovernanceAttribute.Kind.CLASSIFICATION,
             "owner", GovernanceAttribute.Kind.OWNER,
@@ -80,15 +84,69 @@ class GovernanceRoutes {
     private final Management management;
     private final ManagementGuard guard;
     private final GovernanceSettings settings;
+    private final HoldHistory history;
     private final Clock clock;
 
     GovernanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
-                     Clock clock) {
+                     HoldHistory history, Clock clock) {
         this.store = store;
         this.management = management;
         this.guard = guard;
         this.settings = settings;
+        this.history = history;
         this.clock = clock;
+    }
+
+    /**
+     * The catalog's governance in one read (D45, item 128): its tables, how many are classified, closed until
+     * classified, held and frozen; its standing holds and freezes; its regulated areas; and its closed tables, by
+     * name. Needs describe on the catalog, which covers every name under it (D18).
+     */
+    @GetMapping(path = CATALOG + SUMMARY, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> summary(@PathVariable("catalog") String prefix, HttpServletRequest http) {
+        Request request = management.request(http);
+        Target target = management.target(request, "loadGovernanceSummary", Privilege.DESCRIBE,
+                prefix, null, null, null);
+        guard.require(request, target, "loadGovernanceSummary", Privilege.DESCRIBE);
+        return json(200, GovernanceSummary.read(store, target.catalog()).summary());
+    }
+
+    /**
+     * Every hold and DR freeze in the catalog: those standing now, the newest placed first; and every one released
+     * or lifted in the last {@value HoldHistory#DAYS} days, the most recent first, as the store keeps each release
+     * and lift ({@link HoldHistory}, item 133). Each with what it is on, the reason as recorded, who placed it and
+     * when, and for a lifted one who lifted it and when; a lift on a level dropped since names it by kind and id,
+     * with a null path. {@code history} gives the window: its days, and {@code since}, the time it starts. The
+     * standing ones are read first, so a hold released between the two reads is listed twice, never missed. Needs
+     * describe on the catalog.
+     */
+    @GetMapping(path = CATALOG + HOLDS_AND_FREEZES, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> holdsAndFreezes(@PathVariable("catalog") String prefix, HttpServletRequest http) {
+        Request request = management.request(http);
+        Target target = management.target(request, "listHoldsAndFreezes", Privilege.DESCRIBE,
+                prefix, null, null, null);
+        guard.require(request, target, "listHoldsAndFreezes", Privilege.DESCRIBE);
+        GovernanceSummary governance = GovernanceSummary.read(store, target.catalog());
+        ObjectNode body = Management.JSON.createObjectNode();
+        body.put("catalog", target.catalog().name());
+        body.set("standing", governance.standing());
+        HoldHistory.Result result = history.lifted(target.catalog());
+        ArrayNode lifted = body.putArray("lifted");
+        for (GovernanceLift each : result.lifted()) {
+            ObjectNode node = lifted.addObject();
+            node.put("kind", each.kind() == GovernanceLift.Kind.HOLD ? "hold" : "freeze");
+            each.holdId().ifPresent(id -> node.put("id", id.toString()));
+            node.set("on", governance.on(each.target()));
+            node.put("reason", each.reason());
+            node.put("placed-by", each.placedBy());
+            node.put("placed-at", each.placedAt().toString());
+            node.put("lifted-by", each.liftedBy());
+            node.put("lifted-at", each.liftedAt().toString());
+        }
+        ObjectNode window = body.putObject("history");
+        window.put("days", HoldHistory.DAYS);
+        window.put("since", result.since().toString());
+        return json(200, body);
     }
 
     @GetMapping(path = {CATALOG + GOVERNANCE, NAMESPACE + GOVERNANCE, TABLE + GOVERNANCE, VIEW + GOVERNANCE},
@@ -198,8 +256,9 @@ class GovernanceRoutes {
                 .orElseThrow(() -> CatalogError.of(404, "NoSuchHoldException",
                         "No hold " + holdId + " on this " + kind(target.securable())));
         Instant now = now();
-        WriteResult result = Management.write("Releasing a hold", () -> store.releaseHold(id, management.change(now,
-                        new HoldChange(HoldChange.Action.RELEASED, id, target.audit(), hold.reason(), request.actor()))),
+        WriteResult result = Management.write("Releasing a hold", () -> store.releaseHold(id,
+                        request.actor().principal(), management.change(now, new HoldChange(HoldChange.Action.RELEASED,
+                                id, target.audit(), hold.reason(), request.actor()))),
                 () -> store.holdsOn(java.util.Set.of(target.securable())).stream().noneMatch(h -> h.id().equals(id)));
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
@@ -211,7 +270,9 @@ class GovernanceRoutes {
 
     /**
      * The maintenance policy of the target: its own keys, and every key resolved through the levels
-     * above it, the deployment's defaults and the guardrails, each with where its value came from.
+     * above it, the deployment's defaults and the guardrails, each with where its value came from; and the
+     * retention classes configured, by name, each with its minimum snapshot age, which the console offers when a
+     * retention class is set (D27, item 140).
      */
     @GetMapping(path = {CATALOG + POLICY, NAMESPACE + POLICY, TABLE + POLICY, VIEW + POLICY},
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -244,6 +305,13 @@ class GovernanceRoutes {
             if (setting.reason() != null) {
                 node.put("reason", setting.reason());
             }
+        });
+        ArrayNode classes = body.putArray("retention-classes");
+        new TreeMap<>(settings.retentionClasses()).forEach((name, retention) -> {
+            ObjectNode node = classes.addObject();
+            node.put("name", name);
+            node.put("minimum-snapshot-age", retention.minimumSnapshotAge() == null ? null
+                    : retention.minimumSnapshotAge().toString());
         });
         return json(200, body);
     }
@@ -349,8 +417,9 @@ class GovernanceRoutes {
         }
         Instant now = now();
         WriteResult result = Management.write("Removing " + attribute, () -> store.removeAttribute(target.securable(),
-                        kind, management.change(now, events(new GovernanceChange(GovernanceChange.Action.REMOVED,
-                                target.audit(), attribute, null, null, request.actor()), kind, null))),
+                        kind, request.actor().principal(), management.change(now, events(new GovernanceChange(
+                                GovernanceChange.Action.REMOVED, target.audit(), attribute, null, null,
+                                request.actor()), kind, null))),
                 () -> own(target, kind).isEmpty());
         return switch (result) {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();

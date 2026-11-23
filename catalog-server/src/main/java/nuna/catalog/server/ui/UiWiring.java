@@ -19,7 +19,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 /**
  * The web console's static files under {@code /ui/}, served by the catalog server itself: same origin, so no
  * CORS. The files need no sign-in; every API call the console makes does. Every {@code /ui} response carries a
- * strict Content-Security-Policy: scripts and styles only from the server's own files (no inline code), and
+ * strict Content-Security-Policy: scripts, styles and fonts only from the server's own files (no inline code), and
  * connections only to the server and the configured IdP.
  */
 @Configuration(proxyBeanMethods = false)
@@ -30,7 +30,7 @@ public class UiWiring implements WebMvcConfigurer {
     static final String FILES = "classpath:/nuna/ui/";
 
     /** The console's own paths: its page and its flat set of files. Nothing else skips authentication. */
-    private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg)");
+    private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg|woff2|txt)");
 
     /** Whether {@code path} (without the context path) is one of the console's files, which need no token. */
     public static boolean isConsoleFile(String path) {
@@ -39,7 +39,7 @@ public class UiWiring implements WebMvcConfigurer {
 
     /** The console's Content-Security-Policy; {@code idpOrigin} is null when no IdP is configured. */
     static String contentSecurityPolicy(String idpOrigin) {
-        return "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        return "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; "
                 + "connect-src 'self'" + (idpOrigin == null ? "" : " " + idpOrigin) + "; "
                 + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     }

@@ -2,16 +2,15 @@ Breaks: The console's audit trail leaves out the refusals (Denial records).
 Module: catalog-server
 Test: ConsoleBrowserTest#theAuditTrailShowsCommitsReadsCredentialsAndDenials
 
-diff --git a/catalog-server/src/main/resources/nuna/ui/detail.js b/catalog-server/src/main/resources/nuna/ui/detail.js
-index fe4a6a1..a705718 100644
---- a/catalog-server/src/main/resources/nuna/ui/detail.js
-+++ b/catalog-server/src/main/resources/nuna/ui/detail.js
-@@ -554,7 +554,7 @@ async function auditPanel(target) {
-   const run = () => load(out, async () => {
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -356,7 +356,7 @@
+   };
+   const run = () => load(feed, async () => {
      const body = await api.recentAudit(target, limit.value);
-     const w = body.window;
 -    const records = body.records || [];
 +    const records = (body.records || []).filter(r => r.type !== 'nuna.catalog.denial');
-     return h('div', null,
-       records.length ? table(['Time', 'Type', 'Who', 'What', ''], records.map(r => {
-         const type = String(r.type || '').replace(/^nuna\.catalog\./, '');
+     const w = body.window || {};
+     const counts = {};
+     for (const r of records) {

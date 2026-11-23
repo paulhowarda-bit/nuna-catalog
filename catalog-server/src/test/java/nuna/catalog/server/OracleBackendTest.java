@@ -71,7 +71,7 @@ class OracleBackendTest {
      * Oracle Free with the catalog service and the catalog role's grants (OracleCatalogStore's class comment), and
      * the server's datasource on it, through {@link LinkForTests}; the setup goes to the database directly. An
      * initializer, as IssuerForTests is: the store is made while the web server starts, before property registrar
-     * beans run. One container for the JVM; Testcontainers removes it at exit.
+     * beans run. One container for the context, stopped with it ({@link StopWithContext}).
      */
     static class Oracle implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
@@ -89,6 +89,7 @@ class OracleBackendTest {
         @Override
         public void initialize(ConfigurableApplicationContext context) {
             started();
+            StopWithContext.register(context, "oracle-for-tests", Oracle::stop);
             context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("oracle-for-tests", Map.of(
                     "spring.datasource.url", url(link.host(), link.port(), SERVICE),
                     "spring.datasource.username", USER,
@@ -127,6 +128,13 @@ class OracleBackendTest {
             // Through the link, as the server will connect.
             awaitService(dataSource(url(link.host(), link.port(), SERVICE), USER, false));
             return oracle;
+        }
+
+        private static synchronized void stop() {
+            oracle.stop();
+            link.close();
+            oracle = null;
+            link = null;
         }
 
         private static String url(String host, int port, String service) {

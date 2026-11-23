@@ -3,15 +3,14 @@ Module: catalog-server
 Test: ConsoleSignInTest#signOutEndsTheIdpSessionSoTheNextSignInAsksForThePassword
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index f63ff72..c6ed20a 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -96,7 +96,7 @@ signOutButton.addEventListener('click', async () => {
-   location.hash = '';
-   signOutButton.hidden = true;
-   fill(main, h('p', {class: 'loading'}, 'Signing out…'));
+@@ -257,7 +257,7 @@
+   consoleEl.hidden = true;
+   $('#booting').hidden = false;
+   $('#booting').textContent = 'Signing out…';
 -  const message = await signOut(config.oidc);
 +  const message = await signOut(null);
-   if (message) signInScreen(message);
- });
-
+   if (message) signInPage(message);
+ }
+ 

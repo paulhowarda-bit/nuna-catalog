@@ -11,6 +11,7 @@ import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -33,12 +34,13 @@ public final class Mint {
     static final String KEY_ID = "nuna-demo-1";
     static final Duration LIFETIME = Duration.ofDays(7);
 
-    /** user -> {client id, groups}. */
+    /** user -> {client id, group, more groups}. */
     static final Map<String, String[]> USERS = new LinkedHashMap<>();
 
     static {
         USERS.put("ana", new String[] {"nuna-console", "demo-analysts"});
-        USERS.put("gary", new String[] {"nuna-console", "demo-grant-admins"});
+        // gary also reads the audit tables, and so the console's Audit page, as the readers' group (demo-values.yaml).
+        USERS.put("gary", new String[] {"nuna-console", "demo-grant-admins", "demo-auditors"});
         USERS.put("stella", new String[] {"nuna-console", "demo-stewards"});
         USERS.put("oscar", new String[] {"nuna-console", "demo-operators"});
         USERS.put("singlestore", new String[] {"singlestore-demo", "demo-loaders"});
@@ -76,9 +78,10 @@ public final class Mint {
         long iat = now.minusSeconds(60).getEpochSecond();
         long exp = now.plus(LIFETIME).getEpochSecond();
         for (Map.Entry<String, String[]> user : USERS.entrySet()) {
+            String groups = String.join("\",\"", Arrays.copyOfRange(user.getValue(), 1, user.getValue().length));
             String header = "{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"" + KEY_ID + "\"}";
             String claims = "{\"iss\":\"" + ISSUER + "\",\"aud\":\"" + AUDIENCE + "\",\"sub\":\"" + user.getKey()
-                    + "\",\"azp\":\"" + user.getValue()[0] + "\",\"groups\":[\"" + user.getValue()[1] + "\"],\"iat\":" + iat
+                    + "\",\"azp\":\"" + user.getValue()[0] + "\",\"groups\":[\"" + groups + "\"],\"iat\":" + iat
                     + ",\"nbf\":" + iat + ",\"exp\":" + exp + ",\"jti\":\"" + UUID.randomUUID() + "\"}";
             String signingInput = b64(header.getBytes(StandardCharsets.UTF_8)) + "." + b64(claims.getBytes(StandardCharsets.UTF_8));
             Signature rs256 = Signature.getInstance("SHA256withRSA");

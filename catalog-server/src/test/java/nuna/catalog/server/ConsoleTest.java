@@ -33,8 +33,9 @@ import org.springframework.test.context.ContextConfiguration;
 @Import({PostgresForTests.class, S3ForTests.class})
 class ConsoleTest {
 
-    static final List<String> FILES = List.of("index.html", "app.js", "api.js", "auth.js", "detail.js", "dom.js",
-            "health.js", "style.css", "favicon.svg");
+    static final List<String> FILES = List.of("index.html", "app.js", "api.js", "audit.js", "auth.js", "browse.js",
+            "dom.js", "governance.js", "health.js", "maintenance.js", "nights.js", "overview.js", "panels.js", "queue.js",
+            "requests.js", "route.js", "settings.js", "table.js", "tree.js", "style.css", "favicon.svg");
 
     private final HttpClient http = HttpClient.newHttpClient();
 
@@ -117,7 +118,7 @@ class ConsoleTest {
         for (String file : FILES.stream().filter(f -> f.endsWith(".js")).toList()) {
             String code = resource(file);
             assertThat(code).as(file).doesNotContain(".innerHTML =", ".outerHTML =", "insertAdjacentHTML",
-                    "document.write", "eval(", "new Function", "localStorage.setItem('nuna.token");
+                    "document.write", "eval(", "new Function", "localStorage.setItem('nuna.token", ".style.", "cssText");
         }
         assertThat(resource("auth.js")).contains("sessionStorage.setItem(TOKEN").doesNotContain("localStorage.")
                 .doesNotContain("document.cookie");
@@ -126,8 +127,8 @@ class ConsoleTest {
     private static void assertStrictPolicy(HttpResponse<String> response, String connect) {
         assertThat(response.headers().firstValue("Content-Security-Policy")).as(response.uri().toString())
                 .hasValueSatisfying(policy -> assertThat(policy)
-                        .contains("default-src 'none'", "script-src 'self';", "style-src 'self';", connect,
-                                "frame-ancestors 'none'", "base-uri 'none'")
+                        .contains("default-src 'none'", "script-src 'self';", "style-src 'self';", "font-src 'self';",
+                                connect, "frame-ancestors 'none'", "base-uri 'none'")
                         .doesNotContain("unsafe-inline", "unsafe-eval", "*"));
     }
 

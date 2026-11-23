@@ -31,12 +31,13 @@ public class ReadAudit {
     /**
      * Records that {@code object}'s metadata at {@code served} was returned, or confirmed by a 304.
      *
-     * @param path the namespace levels and name, as the request named the object
+     * @param path   the namespace levels and name, as the request named the object
+     * @param branch what the read went through: {@link PointerKey#MAIN}, or the name of a branch or tag (D33)
      */
     public void read(HttpServletRequest http, CatalogRecord catalog, List<String> path, CatalogObject object,
-                     Pointer served) {
+                     Pointer served, String branch) {
         trail.record(new ObjectRead(securable(catalog, path, object.kind() == CatalogObject.Kind.TABLE
-                ? Securable.Kind.TABLE : Securable.Kind.VIEW, object.id()), PointerKey.MAIN, state(served),
+                ? Securable.Kind.TABLE : Securable.Kind.VIEW, object.id()), branch, state(served),
                 management.request(http).actor()));
     }
 

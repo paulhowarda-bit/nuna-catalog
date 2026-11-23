@@ -59,7 +59,8 @@ class MutatingRoutesAuditTest {
             "PUT /management/v1/maintenance/scans/{id}", "a scan's start or end",
             "PUT /management/v1/maintenance/tables/{id}/assessment", "a table's assessment",
             "PUT /management/v1/maintenance/tables/{id}/compaction", "how a table's compaction stands",
-            "PUT /management/v1/maintenance/tables/{id}/dr-watermark", "how far the DR store holds a table whole (D37)");
+            "PUT /management/v1/maintenance/tables/{id}/dr-watermark", "how far the DR store holds a table whole (D37)",
+            "PUT /management/v1/maintenance/jobs/{id}", "a job of the night (backlog 126)");
 
     private static final String M = "/management/v1/catalogs/{catalog}";
     private static final Map<String, String> LEVELS = Map.of(
@@ -207,6 +208,8 @@ class MutatingRoutesAuditTest {
                 "/maintenance/tables/" + api.id(withTable(), "tables", "t") + "/compaction", "{}", rid(id)));
         cases.put("PUT /management/v1/maintenance/tables/{id}/dr-watermark", id -> api.manage("PUT",
                 "/maintenance/tables/" + api.id(withTable(), "tables", "t") + "/dr-watermark", "{}", rid(id)));
+        cases.put("PUT /management/v1/maintenance/jobs/{id}", id -> api.manage("PUT", "/maintenance/jobs/"
+                + UUID.randomUUID(), "{}", rid(id)));
         // The steward holds manage-tags on the catalog, not create (D33, choice 12).
         cases.put("POST " + M + "/refs", id -> api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "tag"),
                 rid(id, api.steward())));

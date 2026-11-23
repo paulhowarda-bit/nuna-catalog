@@ -11,6 +11,7 @@ import nuna.catalog.iceberg.MetadataViews;
 import nuna.catalog.iceberg.Outcome;
 import nuna.catalog.iceberg.RestRequest;
 import nuna.catalog.iceberg.RestResponse;
+import nuna.catalog.security.Authorizer.Operation;
 import nuna.catalog.server.governance.ReadAudit;
 import nuna.catalog.server.metrics.CatalogMetrics;
 import nuna.catalog.server.rest.CredentialVending.Vended;
@@ -47,7 +48,9 @@ import org.springframework.web.util.UriUtils;
 
 /**
  * The table routes of D13. Creates, commits and registrations go through the commit engine (M3);
- * loads answer 304 from the pointer alone when the client's ETag still holds (D14).
+ * loads answer 304 from the pointer alone when the client's ETag still holds (D14). Through a branch or tag
+ * ({@code catalog@ref}, D33), lists, loads, HEAD, metrics and credentials read as of the ref; every write there is
+ * refused ({@link OnRef}), and a tag's credentials only read.
  */
 @RestController
 class TableRoutes {
@@ -126,6 +129,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table.name()), request)
                 .createTable(name, json, request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.CREATE_TABLE, reply);
+        guard.refused(request, catalog, Guard.CREATE_TABLE, object -> AuditEvents.path(levels, table.name()), reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -138,33 +142,37 @@ class TableRoutes {
                                 @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                 HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.LOAD_TABLE);
+        OnRef on = lookup.onRef(prefix, request, Guard.LOAD_TABLE);
+        CatalogRecord catalog = on.catalog();
         boolean refsOnly = refsOnly(snapshots);
         List<String> levels = Lookup.levels(namespace);
-        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        Lookup.Seen seen = objects.seen(on, levels, table, Kind.TABLE);
+        CatalogObject object = seen.object();
+        // A tag is read-only to every engine, so its credentials only read (item 26's choice 5).
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table)));
+                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && !on.tag();
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
         Map<String, String> labels = GovernanceChain.of(store, object).labels();
-        Optional<Pointer> pointer = store.readPointer(object.mainKey());
+        Optional<Pointer> pointer = lookup.pointer(on, seen);
         if (cacheable && pointer.isPresent()) {
-            String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch(), labels);
+            String etag = ETags.of(pointer.get().metadataLocation(), refsOnly, referencedBy, vended.epoch(), labels,
+                    on.refId());
             if (ETags.matches(ifNoneMatch, etag)) {
-                reads.read(http, catalog, AuditEvents.path(levels, table), object, pointer.get());
+                reads.read(http, catalog, AuditEvents.path(levels, table), object, pointer.get(), on.branch());
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED).eTag(etag).build();
             }
         }
-        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object);
+        CommitEngine.Current.Loaded current = ObjectRoutes.current(engines.reader(catalog), object, pointer);
         String location = current.pointer().metadataLocation();
-        reads.read(http, catalog, AuditEvents.path(levels, table), object, current.pointer());
+        reads.read(http, catalog, AuditEvents.path(levels, table), object, current.pointer(), on.branch());
         alerts.loaded(object.id(), location, views.tableStats(location, current.json()));
         String response = views.loadTable(location, current.json(), refsOnly, vended.config(), vended.credentials(),
                 labels);
         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();
         if (cacheable) {
-            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels));
+            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels, on.refId()));
         }
         return builder.contentType(MediaType.APPLICATION_JSON).body(response);
     }
@@ -184,22 +192,24 @@ class TableRoutes {
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.WRITE_DATA);
+        CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.WRITE_DATA);
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, table);
         NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchTable(qualified));
         Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        List<String> path = AuditEvents.path(levels, table);
+        Operation operation = existing.isPresent() ? guard.commit(request, body) : Guard.CREATE_TABLE;
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body),
-                    Http.noSuchTable(qualified));
+            guard.onObject(request, catalog, existing.get(), path, operation, Http.noSuchTable(qualified));
         } else {
-            guard.onNewObject(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchTable(qualified));
+            guard.onNewObject(request, catalog, record, levels, operation, Http.noSuchTable(qualified));
         }
         Target target = new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation));
-        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
+        CommitReply reply = engines.forRequest(catalog, path, request)
                 .commitTable(ObjectRoutes.name(catalog, record, levels, table), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.UPDATE_TABLE, reply);
+        guard.refused(request, catalog, operation, object -> path, reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -251,6 +261,8 @@ class TableRoutes {
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
         meters.commit(catalog.name(), Operations.REGISTER_TABLE, reply);
+        guard.refused(request, catalog, Guard.REGISTER_TABLE, object -> AuditEvents.path(levels, registration.name()),
+                reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -302,6 +314,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
                 .unregisterTable(name, authorized, request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.UNREGISTER_TABLE, reply);
+        guard.refused(request, catalog, Guard.UNREGISTER_TABLE, object -> AuditEvents.path(levels, table), reply);
         return ObjectRoutes.reply(reply, done -> Http.json(200,
                 RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
     }
@@ -314,9 +327,10 @@ class TableRoutes {
     ResponseEntity<Void> metrics(@PathVariable String prefix, @PathVariable String namespace,
                                  @PathVariable String table, @RequestBody(required = false) String body,
                                  HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.REPORT_METRICS);
+        OnRef on = lookup.onRef(prefix, RequestContext.of(http, callers), Guard.REPORT_METRICS);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
-        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        CatalogObject object = objects.seen(on, levels, table, Kind.TABLE).object();
         guard.onObject(RequestContext.of(http, callers), catalog, object, AuditEvents.path(levels, table),
                 Guard.REPORT_METRICS, Http.noSuchTable(Http.qualified(levels, table)));
         RestRequest.MetricsSummary summary = RestRequest.reportMetrics(body == null ? "" : body);
@@ -330,11 +344,12 @@ class TableRoutes {
                                        @RequestHeader(name = Http.ACCESS_DELEGATION, required = false) String delegation,
                                        HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.catalog(prefix, request, Guard.LOAD_CREDENTIALS);
+        OnRef on = lookup.onRef(prefix, request, Guard.LOAD_CREDENTIALS);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
-        CatalogObject object = objects.existing(catalog, levels, table, Kind.TABLE);
+        CatalogObject object = objects.seen(on, levels, table, Kind.TABLE).object();
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table)));
+                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table))) && !on.tag();
         Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         return Http.json(200, RestResponse.credentials(vended.credentials()));

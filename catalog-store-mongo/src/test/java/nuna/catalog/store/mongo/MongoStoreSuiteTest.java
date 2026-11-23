@@ -40,12 +40,14 @@ import nuna.catalog.store.StoreUnavailableException;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import nuna.catalog.store.suite.CatalogObjectSuite;
+import nuna.catalog.store.suite.BranchCommitSuite;
 import nuna.catalog.store.suite.CatalogStoreUnderTest;
 import nuna.catalog.store.suite.Changes;
 import nuna.catalog.store.suite.CommitSuite;
 import nuna.catalog.store.suite.GovernanceSuite;
 import nuna.catalog.store.suite.DrSuite;
 import nuna.catalog.store.suite.HealthSuite;
+import nuna.catalog.store.suite.NightSuite;
 import nuna.catalog.store.suite.GrantSuite;
 import nuna.catalog.store.suite.IdempotencySuite;
 import nuna.catalog.store.suite.JournalSuite;
@@ -170,6 +172,14 @@ class MongoStoreSuiteTest extends CommitSuite {
     }
 
     @Nested
+    class Nights extends NightSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return mongo;
+        }
+    }
+
+    @Nested
     class Dr extends DrSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
@@ -179,6 +189,14 @@ class MongoStoreSuiteTest extends CommitSuite {
 
     @Nested
     class Refs extends RefSuite {
+        @Override
+        protected CatalogStoreUnderTest underTest() {
+            return mongo;
+        }
+    }
+
+    @Nested
+    class BranchCommits extends BranchCommitSuite {
         @Override
         protected CatalogStoreUnderTest underTest() {
             return mongo;
@@ -344,11 +362,11 @@ class MongoStoreSuiteTest extends CommitSuite {
         Securable target = new Securable(Securable.Kind.NAMESPACE, namespace.id());
         GovernanceAttribute owner = new GovernanceAttribute(target, GovernanceAttribute.Kind.OWNER, "team", "manual", "admin", now());
         assertApplied(ahead.putAttribute(owner, event("attribute-1")));
-        assertApplied(ahead.removeAttribute(target, GovernanceAttribute.Kind.OWNER, event("attribute-removed")));
+        assertApplied(ahead.removeAttribute(target, GovernanceAttribute.Kind.OWNER, "steward", event("attribute-removed")));
         assertApplied(behind.putAttribute(owner, event("attribute-2")));
         LegalHold hold = new LegalHold(UUID.randomUUID(), target, "case", "legal", now());
         assertApplied(ahead.placeHold(hold, event("hold-1")));
-        assertApplied(ahead.releaseHold(hold.id(), event("hold-released")));
+        assertApplied(ahead.releaseHold(hold.id(), "counsel", event("hold-released")));
         assertApplied(behind.placeHold(new LegalHold(UUID.randomUUID(), target, "case", "legal", now()), event("hold-2")));
 
         TrustedEngine engine = new TrustedEngine("https://issuer.lamport", "spark", "sub", Set.of("delegated"));
@@ -488,7 +506,7 @@ class MongoStoreSuiteTest extends CommitSuite {
                 assertApplied(store.placeHold(hold, Changes.change()));
                 assertThat(store.dropNamespace(child.id(), Changes.change())).as("hold on %s", securable)
                         .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-                assertApplied(store.releaseHold(hold.id(), Changes.change()));
+                assertApplied(store.releaseHold(hold.id(), "counsel", Changes.change()));
             }
             assertApplied(store.dropNamespace(child.id(), Changes.change()));
         }

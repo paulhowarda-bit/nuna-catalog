@@ -6,12 +6,15 @@ import static nuna.catalog.server.governance.Management.ROOT;
 import nuna.catalog.audit.FileDeletion;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.security.Authorizer;
 import nuna.catalog.server.governance.Management.Request;
 import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.KeyState;
+import nuna.catalog.store.MaintenanceJob;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
@@ -37,6 +40,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,6 +54,13 @@ import tools.jackson.databind.node.ObjectNode;
  * waits out the database's PITR window as a pending deletion first, so a database restored to any point it
  * still holds never names a deleted file. Each route asks {@link ManagementGuard} before any other work. The work
  * list also names the branches to warn of and to end (D33, choice 11), which {@link RefRoutes} does.
+ *
+ * <p>Also the worker's nights (D45, backlog 126; {@link MaintenanceNights}): the worker reports each job it runs, and
+ * anyone signed in reads each night's totals and the jobs on its slots, a job's table named only to a caller who may
+ * select it.
+ *
+ * <p>And every table, one row each, for the console's ice line (D45, backlog 127; {@link MaintenanceEstate}): anyone
+ * signed in reads the tables they may select, never counting or naming another.
  */
 @RestController
 class MaintenanceRoutes {
@@ -57,6 +68,9 @@ class MaintenanceRoutes {
     static final String WORK = ROOT + "/maintenance/work";
     static final String DELETIONS = CATALOG + "/objects/{id}/pending-deletions";
     static final String DELETIONS_DONE = DELETIONS + "/complete";
+    static final String JOB = ROOT + "/maintenance/jobs/{id}";
+    static final String NIGHTS = ROOT + "/maintenance/nights";
+    static final String ESTATE = ROOT + "/maintenance/estate";
 
     private static final int PAGE = 100;
     private static final int MAX_FILES = 1000;
@@ -64,7 +78,7 @@ class MaintenanceRoutes {
             MaintenancePolicy.COMPACTION_ENABLED, MaintenancePolicy.REWRITE_ENABLED);
 
     /** The work list's sections, in the order its pages walk them. */
-    private enum Section { TABLES, PURGES, DELETIONS, REFS }
+    private enum Section { TABLES, PURGES, DELETIONS, REQUESTS, REFS }
 
     private final CatalogStore store;
     private final Management management;
@@ -74,9 +88,12 @@ class MaintenanceRoutes {
     private final RefSettings refSettings;
     private final StorageSettings storage;
     private final Clock clock;
+    private final MaintenanceNights nights;
+    private final MaintenanceEstate estate;
 
     MaintenanceRoutes(CatalogStore store, Management management, ManagementGuard guard, GovernanceSettings settings,
-                      CatalogNames catalogs, RefSettings refSettings, StorageSettings storage, Clock clock) {
+                      CatalogNames catalogs, RefSettings refSettings, StorageSettings storage, Clock clock,
+                      Authorizer authorizer) {
         this.store = store;
         this.management = management;
         this.guard = guard;
@@ -85,6 +102,8 @@ class MaintenanceRoutes {
         this.refSettings = refSettings;
         this.storage = storage;
         this.clock = clock;
+        this.nights = new MaintenanceNights(store, management, authorizer, catalogs, clock);
+        this.estate = new MaintenanceEstate(store, authorizer, catalogs, clock);
     }
 
     /**
@@ -92,10 +111,12 @@ class MaintenanceRoutes {
      * policy (D30) runs a job, with the policy in force, which leaves out what a hold or a DR freeze stops; then
      * the purge queue (dropped objects past their window that no hold or freeze covers, and every claimed one);
      * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers; then the
-     * branches past their expiry, to end, and those within {@code nuna.refs.expiry-warning} of it that have not been
-     * warned of, to warn of ({@link #refs}). Each page holds items of one section; the token walks on to the next
-     * section, unless {@code section} ({@code tables}, {@code purges}, {@code deletions} or {@code refs}) asks for that
-     * section alone.
+     * requested jobs waiting (backlog 114), by the time asked, each with its table as the tables section shows it,
+     * of tables whose resolved policy runs the job still; then the branches past their expiry, to end, and those
+     * within {@code nuna.refs.expiry-warning} of it that have not been warned of, to warn of ({@link #refs}). Each
+     * page holds items of one section; the token walks on to the next section, unless {@code section}
+     * ({@code tables}, {@code purges}, {@code deletions}, {@code requests} or {@code refs}) asks for that section
+     * alone.
      */
     @GetMapping(path = WORK, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> work(@RequestParam(required = false) String section,
@@ -107,7 +128,7 @@ class MaintenanceRoutes {
             only = Optional.ofNullable(section).map(name -> Section.valueOf(name.toUpperCase(Locale.ROOT)));
         } catch (IllegalArgumentException e) {
             throw CatalogError.badRequest("No work list section " + section
-                    + "; there are tables, purges, deletions and refs");
+                    + "; there are tables, purges, deletions, requests and refs");
         }
         Section current = only.orElse(Section.TABLES);
         Optional<String> inner = Optional.empty();
@@ -130,6 +151,7 @@ class MaintenanceRoutes {
         ArrayNode purges = body.putArray("purges");
         ArrayNode deletions = body.putArray("deletions");
         ArrayNode refs = body.putArray("refs");
+        ArrayNode requests = body.putArray("requests");
         Optional<String> next;
         try {
             next = switch (current) {
@@ -146,6 +168,11 @@ class MaintenanceRoutes {
                 case DELETIONS -> {
                     Page<PendingDeletion> listed = store.listDueDeletions(now, page);
                     listed.items().forEach(deletion -> deletions.add(deletion(deletion)));
+                    yield listed.nextToken();
+                }
+                case REQUESTS -> {
+                    Page<MaintenanceRequest> listed = store.listWaitingRequests(page);
+                    listed.items().forEach(waiting -> requested(waiting).ifPresent(requests::add));
                     yield listed.nextToken();
                 }
                 case REFS -> refs(page, now, refs);
@@ -280,6 +307,98 @@ class MaintenanceRoutes {
                 ? Optional.of(PageToken.encode(names.get(at + 1), "")) : Optional.empty());
     }
 
+    /**
+     * A job of the worker's night, as the worker reports it (docs/observability/maintenance-nights.md): {@code {"night",
+     * "opens", "closes", "kind", "object-id", "slot", "started-at", "ended-at", "outcome", "files-in", "files-out",
+     * "snapshots-expired", "files-deleted", "bytes-deleted"}}. The worker is the caller. A report repeated late, or a
+     * running report of a job that has ended, changes nothing. Answers 204; 404 when the catalog never had the object.
+     * The report is the worker's bookkeeping and writes no audit record; a refusal is audited.
+     */
+    @PutMapping(path = JOB)
+    ResponseEntity<Void> reportJob(@PathVariable String id, @RequestBody(required = false) String body,
+                                   HttpServletRequest http) {
+        Request request = management.request(http);
+        guard.requireMaintenance(request, null, "reportMaintenanceJob");
+        UUID jobId;
+        try {
+            jobId = UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Not a job id: " + id);
+        }
+        JsonNode json = Management.body(body);
+        MaintenanceJob job = MaintenanceNights.job(jobId, request.caller().principal().id(), json);
+        Optional<Instant> asked = requestedAt(json);
+        nights.record(job);
+        asked.ifPresent(at -> started(job, at));
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Clears the request a job was started for (backlog 114): the report's {@code requested-at} names it, with the
+     * job's kind and object. A request no longer waiting, or made at another time, is left as it is.
+     */
+    private void started(MaintenanceJob job, Instant requestedAt) {
+        MaintenanceRequest.Job asked = switch (job.kind()) {
+            case COMPACTION -> MaintenanceRequest.Job.COMPACTION;
+            case ORPHAN_SCAN -> MaintenanceRequest.Job.ORPHAN_SCAN;
+            default -> null;
+        };
+        if (asked != null) {
+            store.startMaintenanceRequest(job.objectId(), asked, requestedAt, job.startedAt());
+        }
+    }
+
+    /** The request a job report names, by the time it was asked; none in a report of the night's own work. */
+    private static Optional<Instant> requestedAt(JsonNode json) {
+        JsonNode value = json.get("requested-at");
+        if (value == null || value.isNull()) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(Instant.parse(value.asString()).truncatedTo(ChronoUnit.MILLIS));
+        } catch (RuntimeException e) {
+            throw CatalogError.badRequest("Not a maintenance job report: requested-at is not an ISO-8601 instant: "
+                    + value);
+        }
+    }
+
+    /**
+     * The worker's last nights, newest first, for anyone signed in: the newest {@code days} nights that have a job (30
+     * by default, 1 to 32), each with its totals, and the first {@code jobs} of them (1 by default, 0 to {@code days})
+     * with their compaction Jobs and orphan scans, by start. A job names its table only when the caller may select it.
+     */
+    @GetMapping(path = NIGHTS, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> nights(@RequestParam(required = false) Integer days,
+                                  @RequestParam(required = false) Integer jobs, HttpServletRequest http) {
+        Request request = management.request(http);
+        int asked = days == null ? MaintenanceNights.DAYS : Math.clamp(days, 1, MaintenanceNights.KEEP_NIGHTS);
+        int withJobs = jobs == null ? 1 : Math.clamp(jobs, 0, asked);
+        return GovernanceRoutes.json(200, nights.nights(request.caller(), asked, withJobs));
+    }
+
+    /**
+     * Every active table the caller may {@code select}, in every catalog, by id (docs/observability/table-health.md,
+     * "Every table"): {@code {"night", "tables": [{"id", "catalog", "namespace", "name", "assessment": {"assessed-at",
+     * "needs-compaction", "reasons", "score", "data-files"}, "held", "frozen", "closed", "fixed-last-night"}],
+     * "next-page-token"}}. {@code night} is the newest night that has a job, the one {@code fixed-last-night} speaks
+     * of; {@code assessment} is absent until the worker has assessed the table. A table closed until classified (D27)
+     * counts for a caller whose grants give select on it, with {@code closed} true. Each page holds at most
+     * {@code pageSize} rows (200 by default, 1 to 500), and fewer when the caller may select few of the tables it
+     * looks at (2,000 at most); {@code next-page-token} is there while more may follow.
+     */
+    @GetMapping(path = ESTATE, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> estate(@RequestParam(required = false) String pageToken,
+                                  @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+        Request request = management.request(http);
+        int size = pageSize == null ? MaintenanceEstate.PAGE : Math.clamp(pageSize, 1, MaintenanceEstate.MAX_PAGE);
+        try {
+            return GovernanceRoutes.json(200, estate.tables(request.caller(),
+                    Optional.ofNullable(pageToken).filter(token -> !token.isEmpty()), size));
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Invalid page token: " + pageToken);
+        }
+    }
+
     /** The table as the work list shows it, when its resolved policy runs a job. */
     private Optional<ObjectNode> due(CatalogObject table) {
         Map<String, MaintenancePolicy.Setting> resolved = GovernanceRoutes.resolvePolicy(settings,
@@ -287,6 +406,36 @@ class MaintenanceRoutes {
         if (JOBS.stream().noneMatch(job -> "true".equals(resolved.get(job).value()))) {
             return Optional.empty();
         }
+        return work(table, resolved);
+    }
+
+    /**
+     * A waiting request as the work list shows it: its table as the tables section shows it, with {@code job},
+     * {@code requested-at} and {@code requested-by}. None when the table is gone, or when its resolved policy no
+     * longer runs the job, a hold or freeze placed since included: the request waits until it does.
+     */
+    private Optional<ObjectNode> requested(MaintenanceRequest request) {
+        Optional<CatalogObject> table = store.readObject(request.objectId())
+                .filter(object -> object.kind() == CatalogObject.Kind.TABLE
+                        && object.state() == CatalogObject.State.ACTIVE);
+        if (table.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<String, MaintenancePolicy.Setting> resolved = GovernanceRoutes.resolvePolicy(settings,
+                GovernanceChain.of(store, table.get()));
+        if (!"true".equals(resolved.get(MaintenanceRequests.key(request.job())).value())) {
+            return Optional.empty();
+        }
+        return work(table.get(), resolved).map(node -> {
+            node.put("job", MaintenanceRequests.label(request.job()));
+            node.put("requested-at", request.requestedAt().toString());
+            node.put("requested-by", request.requestedBy());
+            return node;
+        });
+    }
+
+    /** The table and its resolved policy as the work list shows them; none when its namespace is gone. */
+    private Optional<ObjectNode> work(CatalogObject table, Map<String, MaintenancePolicy.Setting> resolved) {
         Optional<List<String>> levels = management.levels(table.catalogId(), table.namespaceId());
         if (levels.isEmpty()) {
             return Optional.empty();

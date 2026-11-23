@@ -88,9 +88,9 @@ public interface CatalogObjectStore {
 
     /**
      * The maintenance worker's purge queue, by purge-after then id (D25, D30): dropped objects whose
-     * purge-after time is at or before {@code now} that no legal hold or DR freeze covers, and objects
-     * already claimed for purge, whatever covers them now, so their claimant can finish. Unregistered
-     * objects are never purged and never listed.
+     * purge-after time is at or before {@code now} that no legal hold or DR freeze covers and no ref's
+     * cut names (D33), and objects already claimed for purge, whatever covers them now, so their claimant
+     * can finish. Unregistered objects are never purged and never listed.
      */
     Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page);
 
@@ -98,13 +98,16 @@ public interface CatalogObjectStore {
      * Claims a dropped object for purge at {@code change.at()} (D25, D30): it becomes {@code PURGING},
      * held by {@code claimant}, and can no longer be undropped or revived. The worker then deletes its
      * files and completes the purge. A hold or DR freeze placed after the claim does not stop it; one
-     * placed before refuses the claim. Claiming again as the claimant that holds it writes nothing, so a
-     * worker that stopped part way resumes.
+     * placed before refuses the claim. While a ref's cut names the object, a tag or a branch past its
+     * expiry included, the claim is refused, so its files stay (D33, P11); a new ref names only active
+     * objects, or what its source ref names, so none can name the object once it is claimed. The holds,
+     * freezes and refs are read under the object's lock. Claiming again as the claimant that holds it
+     * writes nothing, so a worker that stopped part way resumes.
      *
      * @return {@code Applied}, {@code Unchanged} (the claimant already holds the claim),
      *         {@code Missing(OBJECT)} (neither dropped nor claimed), {@code Refused(NOT_DUE)},
-     *         {@code Refused(HELD)}, {@code Refused(FROZEN)}, or {@code Refused(NOT_HOLDER)} (another
-     *         claimant holds it)
+     *         {@code Refused(HELD)}, {@code Refused(FROZEN)}, {@code Refused(REFERENCED)}, or
+     *         {@code Refused(NOT_HOLDER)} (another claimant holds it)
      */
     WriteResult claimPurge(UUID objectId, String claimant, Change change);
 

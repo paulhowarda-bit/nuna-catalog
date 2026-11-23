@@ -1,0 +1,18 @@
+Breaks: a merge on MongoDB moves main but leaves the branch, its cut and its own pointers.
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$BranchCommits#aMergeMovesMainAndEndsTheBranch
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
+index 6574b35..8352f4e 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoCatalogStore.java
+@@ -229,9 +229,6 @@ public final class MongoCatalogStore implements CatalogStore {
+                 return conflict.get();
+             }
+             Pointers.records(tx, batch, transactions.entryIds());
+-            if (batch.ref().orElse(null) instanceof RefLock.End end) {
+-                MongoRefs.end(tx, end.refId(), owned.cut());
+-            }
+             return new CommitResult.Committed(batch.commitId());
+         }, result -> result instanceof CommitResult.Committed);
+     }

@@ -36,7 +36,10 @@ import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** The namespace routes of D13, nested to any depth (D28). */
+/**
+ * The namespace routes of D13, nested to any depth (D28). Through a ref they list and load its cut's namespaces with
+ * live properties; creates, drops and property changes happen on main only (D33, as amended 2026-11-20).
+ */
 @RestController
 class NamespaceRoutes {
 
@@ -72,15 +75,16 @@ class NamespaceRoutes {
                                 @RequestParam(required = false) String pageToken,
                                 @RequestParam(required = false) String pageSize,
                                 HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.LIST_NAMESPACES);
+        OnRef on = lookup.onRef(prefix, RequestContext.of(http, callers), Guard.LIST_NAMESPACES);
+        CatalogRecord catalog = on.catalog();
         List<String> parentLevels = parent == null || parent.isEmpty() ? List.of() : Lookup.levels(parent);
-        UUID parentId = parentLevels.isEmpty() ? catalog.id() : lookup.existingNamespace(catalog, parentLevels).id();
+        UUID parentId = parentLevels.isEmpty() ? catalog.id() : lookup.existingNamespace(on, parentLevels).id();
         guard.onParent(RequestContext.of(http, callers), catalog, parentId, parentLevels, Guard.LIST_NAMESPACES,
                 Http.noSuchNamespace(parentLevels));
-        Page<NamespaceRecord> page = lookup.listing(pageToken, pageSize,
-                request -> store.listNamespaces(parentId, request));
+        Page<String> page = lookup.listing(pageToken, pageSize,
+                request -> lookup.namespaceNames(on, parentId, request));
         List<List<String>> namespaces = page.items().stream()
-                .map(ns -> AuditEvents.path(parentLevels, ns.name().display()))
+                .map(name -> AuditEvents.path(parentLevels, name))
                 .toList();
         return Http.json(200, RestResponse.namespaces(namespaces, page.nextToken().orElse(null)));
     }
@@ -138,8 +142,9 @@ class NamespaceRoutes {
     ResponseEntity<String> load(@PathVariable String prefix, @PathVariable String namespace,
                                 HttpServletRequest http) {
         List<String> levels = Lookup.levels(namespace);
-        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.LOAD_NAMESPACE);
-        NamespaceRecord record = lookup.existingNamespace(catalog, levels);
+        OnRef on = lookup.onRef(prefix, RequestContext.of(http, callers), Guard.LOAD_NAMESPACE);
+        CatalogRecord catalog = on.catalog();
+        NamespaceRecord record = lookup.existingNamespace(on, levels);
         guard.onNamespace(RequestContext.of(http, callers), catalog, record, levels, Guard.LOAD_NAMESPACE,
                 Http.noSuchNamespace(levels));
         return Http.json(200, RestResponse.namespace(levels, record.properties()));
@@ -149,9 +154,10 @@ class NamespaceRoutes {
     @RequestMapping(path = NAMESPACE, method = RequestMethod.HEAD)
     ResponseEntity<Void> exists(@PathVariable String prefix, @PathVariable String namespace,
                                 HttpServletRequest http) {
-        CatalogRecord catalog = lookup.catalog(prefix, RequestContext.of(http, callers), Guard.NAMESPACE_EXISTS);
+        OnRef on = lookup.onRef(prefix, RequestContext.of(http, callers), Guard.NAMESPACE_EXISTS);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
-        Optional<NamespaceRecord> found = lookup.namespace(catalog, levels);
+        Optional<NamespaceRecord> found = lookup.namespace(on, levels);
         if (found.isEmpty() || !guard.allowsOnNamespace(RequestContext.of(http, callers), catalog, found.get(), levels,
                 Guard.NAMESPACE_EXISTS)) {
             return ResponseEntity.notFound().build();
@@ -191,8 +197,9 @@ class NamespaceRoutes {
                                 Reply.error(409, "NamespaceNotEmptyException",
                                         "Namespace " + Http.dotted(levels) + " is not empty");
                         case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
-                                throw Http.forbidden("Namespace " + Http.dotted(levels)
-                                        + " is under a legal hold and cannot be dropped");
+                                throw guard.refuse(request, catalog, record, levels, Guard.DROP_NAMESPACE, "legal_hold",
+                                        "Namespace " + Http.dotted(levels)
+                                                + " is under a legal hold and cannot be dropped");
                         default -> throw new IllegalStateException("dropNamespace answered " + result);
                     };
                 });

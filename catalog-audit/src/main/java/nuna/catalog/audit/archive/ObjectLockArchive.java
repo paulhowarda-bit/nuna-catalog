@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -163,16 +164,161 @@ public final class ObjectLockArchive {
 
     /** Every segment of the chain, first to last, including any a delete marker hides. */
     public List<Segment> segments(String chain) {
-        TreeMap<String, ObjectVersion> firstVersions = new TreeMap<>();
-        s3.listObjectVersionsPaginator(b -> b.bucket(bucket).prefix(prefix + "/" + chain + "/"))
-                .versions()
-                .forEach(v -> firstVersions.merge(v.key(), v,
-                        (a, b) -> a.lastModified().isBefore(b.lastModified()) ? a : b));
+        return segmentsAfter(chain, null);
+    }
+
+    /**
+     * The chain's segments after the one keyed {@code afterKey}, first to last, including any a delete marker hides;
+     * every segment when {@code afterKey} is null. The archive check reads only what was written since it last looked.
+     */
+    public List<Segment> segmentsAfter(String chain, String afterKey) {
         List<Segment> segments = new ArrayList<>();
-        for (ObjectVersion version : firstVersions.values()) {
+        for (ObjectVersion version : firstVersions(chain, afterKey, null).values()) {
             segments.add(segment(version.key(), version.versionId()));
         }
         return segments;
+    }
+
+    /**
+     * Checks a run of consecutive segments on its own: its records link to one another from {@code start}, the head
+     * the first segment starts from, and end at the last segment's end. After a part of the chain already checked,
+     * that is as good as checking the whole chain again, since a locked segment cannot change (D23).
+     */
+    public Verification verify(List<Segment> run, ChainHead start) {
+        try (InputStream records = new SegmentStream(run)) {
+            return ArchiveVerifier.verify(new BufferedInputStream(records, readBuffer), start,
+                    run.isEmpty() ? start : run.getLast().end(), body -> { });
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Where a record of the audit topic lies in the archive, for the audit feed (backlog 125).
+     *
+     * @param segment  the segment holding it
+     * @param sequence its sequence number in the chain
+     * @param hash     the hash it stores
+     * @param previous the hash of the record before it: the segment's start head for its first record
+     * @param next     the hash of the record after it; empty while it is the chain's last
+     * @param holds    whether its stored hash is the hash of the one before it and its content
+     */
+    public record Placement(Segment segment, long sequence, String hash, String previous, Optional<String> next,
+                           boolean holds) {
+    }
+
+    /**
+     * The place of the record at {@code offset} of the chain's partition, whose event id is {@code eventId}; empty
+     * when the archive does not hold it yet, or never will (it precedes the archive). The audit topic is written
+     * without transactions, so its offsets run without gaps and a record's sequence is its offset less the chain's
+     * first offset, plus one. The segment that sequence falls in is searched for the record by its event id.
+     *
+     * @param segmentEvents the most records a segment holds, so the listing starts at most that far back
+     */
+    public Optional<Placement> place(String chain, long offset, String eventId, int segmentEvents) {
+        Map.Entry<String, ObjectVersion> firstEntry = firstVersions(chain, null, key(chain, 1)).firstEntry();
+        if (firstEntry == null || !firstEntry.getKey().equals(key(chain, 1))) {
+            return Optional.empty();
+        }
+        Segment first = segment(firstEntry.getKey(), firstEntry.getValue().versionId());
+        long firstOffset = first.nextOffset() - (first.end().sequence() - first.start().sequence());
+        long sequence = offset - firstOffset + 1;
+        if (sequence < 1) {
+            return Optional.empty();
+        }
+        Map.Entry<String, ObjectVersion> holder = firstVersions(chain,
+                key(chain, Math.max(0, sequence - segmentEvents)), key(chain, sequence)).lastEntry();
+        if (holder == null) {
+            holder = firstVersions(chain, null, key(chain, sequence)).lastEntry();
+        }
+        Segment segment = segment(holder.getKey(), holder.getValue().versionId());
+        byte[] id = ("\"id\":\"" + eventId + "\"").getBytes(StandardCharsets.UTF_8);
+        try (InputStream in = new BufferedInputStream(fetch(segment), readBuffer)) {
+            byte[] previous = Chain.HEX.parseHex(segment.start().hash());
+            byte[] line;
+            while ((line = ArchiveVerifier.nextLine(in)) != null) {
+                if (line.length < Chain.HASH_HEX_LENGTH + 2) {
+                    return Optional.empty();
+                }
+                String stored = new String(line, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII);
+                byte[] body = Arrays.copyOfRange(line, Chain.HASH_HEX_LENGTH + 1,
+                        line.length - (line[line.length - 1] == '\n' ? 1 : 0));
+                if (contains(body, id)) {
+                    boolean holds = Chain.HEX.formatHex(Chain.link(previous, body)).equals(stored);
+                    byte[] after = ArchiveVerifier.nextLine(in);
+                    Optional<String> next = after != null && after.length >= Chain.HASH_HEX_LENGTH
+                            ? Optional.of(new String(after, 0, Chain.HASH_HEX_LENGTH, StandardCharsets.US_ASCII))
+                            : firstHashAfter(chain, segment);
+                    return Optional.of(new Placement(segment, sequence(body), stored, Chain.HEX.formatHex(previous),
+                            next, holds));
+                }
+                previous = Chain.HEX.parseHex(stored);
+            }
+            return Optional.empty();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** The hash of the first record of the segment after {@code segment}, if there is one yet. */
+    private Optional<String> firstHashAfter(String chain, Segment segment) throws IOException {
+        Map.Entry<String, ObjectVersion> next = firstVersions(chain, segment.key(), null).firstEntry();
+        if (next == null) {
+            return Optional.empty();
+        }
+        try (InputStream in = s3.getObject(r -> r.bucket(bucket).key(next.getKey())
+                .versionId(next.getValue().versionId()))) {
+            byte[] hash = in.readNBytes(Chain.HASH_HEX_LENGTH);
+            return hash.length == Chain.HASH_HEX_LENGTH
+                    ? Optional.of(new String(hash, StandardCharsets.US_ASCII)) : Optional.empty();
+        }
+    }
+
+    private InputStream fetch(Segment segment) {
+        return s3.getObject(r -> r.bucket(bucket).key(segment.key()).versionId(segment.versionId()));
+    }
+
+    private static long sequence(byte[] body) {
+        int end = 0;
+        while (body[end] != ' ') {
+            end++;
+        }
+        return Long.parseLong(new String(body, 0, end, StandardCharsets.US_ASCII));
+    }
+
+    private static boolean contains(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i + needle.length <= haystack.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * The first version of each of the chain's segment keys after {@code afterKey} (from the first when null) up to
+     * {@code upTo} inclusive (to the last when null), by key. The listing stops once past {@code upTo}.
+     */
+    private TreeMap<String, ObjectVersion> firstVersions(String chain, String afterKey, String upTo) {
+        TreeMap<String, ObjectVersion> firstVersions = new TreeMap<>();
+        for (ObjectVersion v : s3.listObjectVersionsPaginator(b -> {
+            b.bucket(bucket).prefix(prefix + "/" + chain + "/");
+            if (afterKey != null) {
+                b.keyMarker(afterKey);
+            }
+        }).versions()) {
+            if (upTo != null && v.key().compareTo(upTo) > 0) {
+                break;
+            }
+            if (afterKey == null || v.key().compareTo(afterKey) > 0) {
+                firstVersions.merge(v.key(), v, (a, b) -> a.lastModified().isBefore(b.lastModified()) ? a : b);
+            }
+        }
+        return firstVersions;
     }
 
     /** The chain's last segment, if it has any. */

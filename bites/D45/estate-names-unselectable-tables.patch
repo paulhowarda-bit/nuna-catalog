@@ -1,0 +1,17 @@
+Breaks: every table is a row, whether the caller may select it or not.
+Module: catalog-server
+Test: MaintenanceEstateTest#eachTableTheCallerMaySelectIsOneRowWithItsAssessmentHoldFreezeAndLastNight+aTableClosedUntilClassifiedCountsForItsGranteesWithClosedSet
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java
+index da0da91..a5d27db 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceEstate.java
+@@ -106,7 +106,7 @@ final class MaintenanceEstate {
+                 Decision decision = decisions.get(i);
+                 boolean closed = decision instanceof Decision.Denied denied
+                         && denied.reason() == Authorizer.Reason.UNCLASSIFIED;
+-                if (decision.allowed() || closed) {
++                if (decision != null) {
+                     row(tables.get(i), closed, namespaces).ifPresent(rows::add);
+                 }
+             }

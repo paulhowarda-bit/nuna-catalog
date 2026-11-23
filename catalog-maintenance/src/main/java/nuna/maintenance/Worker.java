@@ -19,6 +19,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.iceberg.Table;
@@ -40,6 +41,9 @@ import org.slf4j.LoggerFactory;
  *       database's PITR window (D30 (5), (8)).</li>
  *   <li><b>Compaction</b>: Jobs for the tables that need one, neediest first, as many at once as the settings allow,
  *       each to stop at the window's end ({@link NightlyCompaction}).</li>
+ *   <li><b>Requests</b> (backlog 114): the jobs callers asked for, inside the window or outside it. Each requested
+ *       compaction starts its Job before the night's queue gets a slot, each requested orphan scan runs before the
+ *       night's, each to stop at the request's deadline ({@link RequestedWork}).</li>
  *   <li><b>Orphan scans</b> due tonight, one after another while the window is open. One the window's end cuts short
  *       is not recorded, and its table is scanned again the next night.</li>
  *   <li><b>Purges</b>: each dropped object past its window is claimed, everything under its location deleted, and
@@ -48,8 +52,8 @@ import org.slf4j.LoggerFactory;
  *       done.</li>
  * </ol>
  *
- * <p>Outside the window nothing heavy starts, after a restart too: expiry, manifest rewrite, purges and deletions
- * run round the clock. The first scan after the window closes ends the night: it counts the Jobs the window's end
+ * <p>Outside the window nothing heavy starts but what was requested, after a restart too: expiry, manifest rewrite,
+ * purges and deletions run round the clock. The first scan after the window closes ends the night: it counts the Jobs the window's end
  * cut off and the needy tables left over.
  *
  * <p>Every job is idempotent: a scan that runs again after a crash, or sees the effect of its own last commit,
@@ -57,6 +61,10 @@ import org.slf4j.LoggerFactory;
  * file group failing is reported and the scan moves on.
  *
  * <p>The scan and each of its parts are spans ({@link ScanSpans}), and its calls to the catalog carry their trace.
+ *
+ * <p>Each job is reported to the catalog as a job of the night it counts to (backlog 126, {@link HealthReports}):
+ * each compaction Job, orphan scan and purge on its own, and each table's expiry, manifest rewrite and deletions added
+ * up over the night.
  */
 final class Worker implements AutoCloseable {
 
@@ -69,7 +77,8 @@ final class Worker implements AutoCloseable {
     private final Clock clock;
     private final CleanupWindow window;
     private final Duration orphanInterval;
-    private final int compactionJobs;
+    /** The compaction slots, shared by the night's Jobs and the requested ones. */
+    private final Slots slots;
     /** The night of each table's last orphan scan not cut short, by table id; empty after a restart. */
     private final Map<UUID, LocalDate> orphanScans = new ConcurrentHashMap<>();
     /** The window's opening now under way, or the last one until a scan has closed it; none before the first. */
@@ -79,16 +88,18 @@ final class Worker implements AutoCloseable {
     private final WorkerMetrics metrics;
     private final ScanSpans spans;
     private final HealthReports health;
+    private final RequestedWork requested;
 
     /**
      * @param window         the nightly cleanup window: compaction and orphan scans start only inside it
      * @param orphanInterval the least time between two orphan scans of one table, rounded up to whole nights
-     * @param compactionJobs how many compaction Jobs run at once
+     * @param requestDeadline how long a job run on request may run (backlog 114)
+     * @param compactionJobs how many compaction Jobs run at once, the night's and the requested
      * @param observations   where the scans and their parts are observed: spans and timers
      */
     Worker(Management management, Catalogs catalogs, Storage storage, Compactor compactor, Clock clock,
-           CleanupWindow window, Duration orphanInterval, int compactionJobs, MeterRegistry meters,
-           ObservationRegistry observations) {
+           CleanupWindow window, Duration orphanInterval, Duration requestDeadline, int compactionJobs,
+           MeterRegistry meters, ObservationRegistry observations) {
         this.management = management;
         this.catalogs = catalogs;
         this.storage = storage;
@@ -96,10 +107,12 @@ final class Worker implements AutoCloseable {
         this.clock = clock;
         this.window = window;
         this.orphanInterval = orphanInterval;
-        this.compactionJobs = compactionJobs;
+        this.slots = new Slots(compactionJobs);
         this.metrics = new WorkerMetrics(meters, clock);
         this.spans = new ScanSpans(observations);
-        this.health = new HealthReports(management, spans);
+        this.health = new HealthReports(management, spans, window);
+        this.requested = new RequestedWork(compactor, slots, requestDeadline, storage, window, health, spans, clock,
+                this::load, this::record);
     }
 
     /**
@@ -118,11 +131,12 @@ final class Worker implements AutoCloseable {
         Storage storage = Storage.of(settings.storage());
         return new Worker(management, new Catalogs(settings.catalogUri(), tokens, storage.clientProperties(), trace),
                 storage, compactor, clock, settings.cleanupWindow(), settings.orphanInterval(),
-                settings.compaction().maxJobs(), meters, observations);
+                settings.requestDeadline(), settings.compaction().maxJobs(), meters, observations);
     }
 
     /**
-     * One scan: the tables, the night's compaction Jobs and orphan scans, then the purges, then the due deletions;
+     * One scan: the tables, the requested jobs, the night's compaction Jobs and orphan scans, then the purges, then
+     * the due deletions;
      * recorded as meters ({@link WorkerMetrics}) and spans ({@link ScanSpans}), and reported to the catalog as it
      * starts and ends (D38).
      */
@@ -144,13 +158,17 @@ final class Worker implements AutoCloseable {
                 tonight = null;
             }
             if (night.isPresent() && tonight == null) {
-                tonight = new NightlyCompaction(night.get(), compactor, compactionJobs, metrics, spans, health,
-                        clock);
+                tonight = new NightlyCompaction(night.get(), compactor, slots, metrics, spans, health,
+                        clock, this::load);
             }
             orphansDue.clear();
             pages(Management.Section.TABLES, management::tables,
                     tables -> tables.forEach(t -> maintain(t, now, report)), report);
+            List<Management.RequestWork> requests = new ArrayList<>();
+            pages(Management.Section.REQUESTS, management::requests, requests::addAll, report);
+            requested.compact(requests, report);
             compact(report);
+            requested.scanOrphans(requests, () -> compact(report), report);
             scanOrphans(now, report);
             pages(Management.Section.PURGES, management::purges, purges -> purges.forEach(p -> purge(p, report)),
                     report);
@@ -216,23 +234,37 @@ final class Worker implements AutoCloseable {
         }
         Table table = loaded.get();
         if (expire) {
-            job(ScanReport.Failure.SNAPSHOT_EXPIRY, ScanSpans.Part.SNAPSHOT_EXPIRY, "expiring snapshots of", work,
-                    report, () -> {
+            Instant started = clock.instant();
+            AtomicLong expired = new AtomicLong();
+            boolean done = job(ScanReport.Failure.SNAPSHOT_EXPIRY, ScanSpans.Part.SNAPSHOT_EXPIRY,
+                    "expiring snapshots of", work, report, () -> {
                 Set<String> unreferenced = ConcurrentHashMap.newKeySet();
-                report.snapshotsExpired += TableJobs.expire(table, now, work.duration("snapshot-expiry"
+                expired.set(TableJobs.expire(table, now, work.duration("snapshot-expiry"
                         + ".max-snapshot-age"), (int) work.count("snapshot-expiry.min-snapshots-to-keep"),
-                        unreferenced::add);
+                        unreferenced::add));
+                report.snapshotsExpired += expired.get();
                 record(work, table, unreferenced, report);
             });
+            health.ran(HealthReports.Job.SNAPSHOT_EXPIRY, work.id(), started, clock.instant(), !done,
+                    HealthReports.Counts.expired(expired.get()), report);
         }
         if (rewrite) {
-            job(ScanReport.Failure.MANIFEST_REWRITE, ScanSpans.Part.MANIFEST_REWRITE, "rewriting manifests of", work,
-                    report, () -> {
+            Instant started = clock.instant();
+            AtomicLong in = new AtomicLong();
+            AtomicLong out = new AtomicLong();
+            boolean done = job(ScanReport.Failure.MANIFEST_REWRITE, ScanSpans.Part.MANIFEST_REWRITE,
+                    "rewriting manifests of", work, report, () -> {
                 Set<String> unreferenced = ConcurrentHashMap.newKeySet();
-                report.manifestsRewritten += TableJobs.rewriteManifests(table,
-                        work.count("manifest-rewrite.min-manifests"), unreferenced::add);
+                in.set(TableJobs.rewriteManifests(table, work.count("manifest-rewrite.min-manifests"),
+                        unreferenced::add));
+                report.manifestsRewritten += in.get();
+                if (in.get() > 0) {
+                    out.set(created(table));
+                }
                 record(work, table, unreferenced, report);
             });
+            health.ran(HealthReports.Job.MANIFEST_REWRITE, work.id(), started, clock.instant(), !done,
+                    HealthReports.Counts.files(in.get(), out.get()), report);
         }
         if (assess && open().isPresent()) {
             job(ScanReport.Failure.COMPACTION, ScanSpans.Part.COMPACTION_ASSESSMENT, "assessing compaction of", work,
@@ -241,6 +273,12 @@ final class Worker implements AutoCloseable {
         if (orphans) {
             orphansDue.add(work);
         }
+    }
+
+    /** How many manifests the table's last commit, a manifest rewrite, wrote. */
+    private static long created(Table table) {
+        String created = table.currentSnapshot().summary().get("manifests-created");
+        return created == null ? 0 : Long.parseLong(created);
     }
 
     /**
@@ -311,8 +349,10 @@ final class Worker implements AutoCloseable {
             }
             Table table = loaded.get();
             CleanupWindow.Night night = open.get();
-            job(ScanReport.Failure.ORPHAN_SCAN, ScanSpans.Part.ORPHAN_SCAN, "scanning for orphans of", work, report,
-                    () -> {
+            Instant started = clock.instant();
+            boolean[] cutShort = {false};
+            boolean done = job(ScanReport.Failure.ORPHAN_SCAN, ScanSpans.Part.ORPHAN_SCAN, "scanning for orphans of",
+                    work, report, () -> {
                 List<String> found;
                 try {
                     found = OrphanScan.find(table, storage, now.minus(work.duration("orphan-removal.older-than")),
@@ -320,6 +360,7 @@ final class Worker implements AutoCloseable {
                 } catch (OrphanScan.CutShort e) {
                     // Not recorded: the table is scanned again the next night.
                     report.orphanScansCutShort++;
+                    cutShort[0] = true;
                     LOG.info("The window's end cut short the orphan scan of table {} ({})", work.name(), work.id());
                     return;
                 }
@@ -329,17 +370,26 @@ final class Worker implements AutoCloseable {
                 // Tonight's only once it is done: a scan that failed is tried again at the next scan (backlog 5).
                 orphanScans.put(work.id(), night.date());
             });
+            health.job(UUID.randomUUID(), night, HealthReports.Job.ORPHAN_SCAN, work.id(), Optional.empty(), started,
+                    Optional.of(clock.instant()), !done ? "failed" : cutShort[0] ? "cut-off" : "succeeded",
+                    HealthReports.Counts.NONE, report);
         }
     }
 
-    /** One job on a table, as a part of the scan; a failure is reported as {@code kind}, and the scan goes on. */
-    private void job(ScanReport.Failure kind, ScanSpans.Part part, String what, Management.TableWork work,
-                     ScanReport report, Runnable job) {
+    /**
+     * One job on a table, as a part of the scan; a failure is reported as {@code kind}, and the scan goes on.
+     *
+     * @return whether it ran without failing
+     */
+    private boolean job(ScanReport.Failure kind, ScanSpans.Part part, String what, Management.TableWork work,
+                        ScanReport report, Runnable job) {
         try {
             spans.part(part, job);
+            return true;
         } catch (RuntimeException e) {
             LOG.warn("Failed {} table {} ({})", what, work.name(), work.id(), e);
             report.failed(kind, what + " " + work.id(), e);
+            return false;
         }
     }
 
@@ -380,39 +430,67 @@ final class Worker implements AutoCloseable {
 
     // ---- purges ----
 
+    /** One purge, reported as a job of the night once claimed: its files and bytes deleted, failed or not. */
     private void purge(Management.PurgeWork purge, ScanReport report) {
+        Instant started = clock.instant();
+        Purging purging = new Purging();
         try {
-            spans.part(ScanSpans.Part.PURGE, KeyValues.empty(), () -> purged(purge, report), outcome -> outcome);
+            spans.part(ScanSpans.Part.PURGE, KeyValues.empty(), () -> purged(purge, purging, report),
+                    outcome -> outcome);
         } catch (RuntimeException e) {
             LOG.warn("Failed purging {} ({})", purge.name(), purge.id(), e);
             report.failed(ScanReport.Failure.PURGE, "purging " + purge.id(), e);
+            purging.failed = true;
+        }
+        if (purging.claimed) {
+            health.job(UUID.randomUUID(), window.last(started), HealthReports.Job.PURGE, purge.id(),
+                    Optional.empty(), started, Optional.of(clock.instant()), purging.failed ? "failed" : "succeeded",
+                    HealthReports.Counts.deleted(purging.files, purging.bytes), report);
         }
     }
 
+    /** How a purge went so far. */
+    private static final class Purging {
+        boolean claimed;
+        boolean failed;
+        long files;
+        long bytes;
+    }
+
     /** Claims the object's purge, deletes its files and completes it: {@code purged}, or {@code skipped}. */
-    private String purged(Management.PurgeWork purge, ScanReport report) {
+    private String purged(Management.PurgeWork purge, Purging purging, ScanReport report) {
         Management.Claim claim = management.claimPurge(purge.catalog(), purge.id());
         if (claim != Management.Claim.CLAIMED) {
             report.purgesSkipped++;
             return "skipped";
         }
+        purging.claimed = true;
         String root = purge.location().endsWith("/") ? purge.location() : purge.location() + "/";
         List<String> batch = new ArrayList<>(Management.BATCH);
+        long bytes = 0;
         for (FileInfo file : storage.list(root)) {
             batch.add(file.location());
+            bytes += file.size();
             if (batch.size() == Management.BATCH) {
                 storage.delete(batch);
-                report.filesDeleted += batch.size();
+                deleted(batch.size(), bytes, purging, report);
                 batch.clear();
+                bytes = 0;
             }
         }
         if (!batch.isEmpty()) {
             storage.delete(batch);
-            report.filesDeleted += batch.size();
+            deleted(batch.size(), bytes, purging, report);
         }
         management.completePurge(purge.catalog(), purge.id());
         report.purged++;
         return "purged";
+    }
+
+    private static void deleted(int files, long bytes, Purging purging, ScanReport report) {
+        report.filesDeleted += files;
+        purging.files += files;
+        purging.bytes += bytes;
     }
 
     // ---- pending deletions ----
@@ -424,9 +502,14 @@ final class Worker implements AutoCloseable {
         byObject.forEach((key, deletions) -> {
             String catalog = (String) key.get(0);
             UUID object = (UUID) key.get(1);
+            Instant started = clock.instant();
+            AtomicLong bytes = new AtomicLong();
+            boolean failed = false;
             try {
                 spans.part(ScanSpans.Part.DELETION, () -> {
-                    storage.delete(deletions.stream().map(Management.DeletionWork::location).toList());
+                    List<String> locations = deletions.stream().map(Management.DeletionWork::location).toList();
+                    locations.forEach(location -> bytes.addAndGet(size(location)));
+                    storage.delete(locations);
                     management.completeDeletions(catalog, object,
                             deletions.stream().map(Management.DeletionWork::id).toList());
                     report.filesDeleted += deletions.size();
@@ -434,8 +517,30 @@ final class Worker implements AutoCloseable {
             } catch (RuntimeException e) {
                 LOG.warn("Failed deleting {} files of {}", deletions.size(), object, e);
                 report.failed(ScanReport.Failure.DELETION, "deleting files of " + object, e);
+                failed = true;
             }
+            health.ran(HealthReports.Job.DELETION, object, started, clock.instant(), failed,
+                    failed ? HealthReports.Counts.NONE : HealthReports.Counts.deleted(deletions.size(), bytes.get()),
+                    report);
         });
+    }
+
+    /**
+     * A file's size as the store lists it, by its own key: the worker's identity may list and delete, never read.
+     * Nothing when it is gone already or cannot be listed: its deletion goes on.
+     */
+    private long size(String location) {
+        String wanted = Storage.normalize(location);
+        try {
+            for (FileInfo file : storage.list(location)) {
+                if (Storage.normalize(file.location()).equals(wanted)) {
+                    return file.size();
+                }
+            }
+        } catch (RuntimeException e) {
+            LOG.debug("Cannot list {} to size it", location, e);
+        }
+        return 0;
     }
 
     @Override

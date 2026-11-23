@@ -7,8 +7,10 @@
 #   ./nightly.sh --test-dry-run               lists what would run and runs nothing
 #
 # 1. Every module but the engine matrix: the CAS test at 1,000 rounds and the per-mutation fault sweeps on all
-#    four databases, the load, resilience and SLO runs, and the maintenance worker's large runs. Two modules at
-#    a time, as in every build.
+#    four databases, the load, resilience and SLO runs, and the maintenance worker's large runs. One module at a
+#    time (--max-workers=1; every build runs two): with two, the Docker VM's peak and two test JVMs outgrew
+#    Windows' free memory and Windows paged the VM out, and waits ran out (Paul, 2026-11-22; backlog 135). It takes
+#    about 2 h 15 min instead of 1 h 15 min.
 # 2. The engine matrix on its own. Its Kubernetes stack (SingleStore alone asks for 1.5 to 3 GiB) does not fit in
 #    Docker's 8 GB beside a three-node cluster or a load stack, and in one Gradle run it could start beside one.
 # Each step runs whatever the other did, with --continue, so one failure does not hide the rest. Exits 0 only
@@ -18,12 +20,33 @@
 # run's numbers. Record each run in status/ (status/README.md).
 
 cd "$(dirname "$0")" || exit 2
+
+# The build lock (CLAUDE.md, Builds): while .overnight/running exists in the main checkout, Docker belongs to the run
+# that wrote it and other sessions start no build. Like overnight.sh, this writes its pid there when no live run
+# holds it, and removes it at the end if it is still its own. A live run's lock it leaves alone: overnight.sh runs
+# nightly.sh in its clone, <home>/clone, beside its lock, <home>/running.
+main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+home=${NUNA_OVERNIGHT_HOME:-$main_checkout/.overnight}
+[ "${main_checkout##*/}" = clone ] && [ -d "$main_checkout/../runs" ] && home=${main_checkout%/*}
+lock=$home/running
+holder=$(sed -n 's/^pid: //p' "$lock" 2>/dev/null)
+if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    echo "${0##*/}: pid $holder holds $lock; leaving it to that run"
+else
+    mkdir -p "$home"
+    printf 'pid: %s\nstarted: %s\nby: %s in %s\n' "$$" "$(date '+%F %T')" "${0##*/}" "$PWD" >"$lock"
+    echo "${0##*/}: holding $lock until it ends"
+    unlock() { [ "$(sed -n 's/^pid: //p' "$lock" 2>/dev/null)" != "$$" ] || rm -f "$lock"; }
+    trap unlock EXIT
+    trap 'exit 130' INT TERM
+fi
+
 start=$SECONDS
 mkdir -p build
 marker=build/nightly.started
 touch "$marker"
 
-./gradlew --console=plain --continue -Pnightly -x :catalog-tests-engines:test test "$@"
+./gradlew --console=plain --continue --max-workers=1 -Pnightly -x :catalog-tests-engines:test test "$@"
 step1=$?
 ./gradlew --console=plain --continue -Pnightly :catalog-tests-engines:test "$@"
 step2=$?

@@ -37,8 +37,13 @@ public final class Changes {
 
     /** A change with one outbox event and no idempotency result. */
     public static Change change() {
+        return changeAt(now());
+    }
+
+    /** {@link #change()} at {@code at}. */
+    public static Change changeAt(Instant at) {
         UUID id = UUID.randomUUID();
-        return new Change(id, now(), List.of(new OutboxEvent("suite.changed", "{\"change\":\"" + id + "\"}")),
+        return new Change(id, at, List.of(new OutboxEvent("suite.changed", "{\"change\":\"" + id + "\"}")),
                 Optional.empty());
     }
 

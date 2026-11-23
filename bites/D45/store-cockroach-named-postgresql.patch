@@ -1,0 +1,17 @@
+Breaks: Health names a CockroachDB database PostgreSQL, though it answers "CockroachDB CCL v...".
+Module: catalog-server
+Test: StoreFactsRouteTest#cockroachdbIsToldApartFromPostgresqlOnTheSameWire
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/health/StoreFacts.java b/catalog-server/src/main/java/nuna/catalog/server/health/StoreFacts.java
+index c7e0fdc..b2395e1 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/health/StoreFacts.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/health/StoreFacts.java
+@@ -95,7 +95,7 @@ final class StoreFacts {
+ 
+     /** PostgreSQL's or CockroachDB's answer to {@code SELECT version()}. */
+     static Found postgresWire(String version) {
+-        if (version.startsWith("CockroachDB")) {
++        if (version.startsWith("CockroachDB CCL v0")) {
+             Matcher number = COCKROACH_VERSION.matcher(version);
+             return new Found("CockroachDB", number.find() ? number.group() : version);
+         }

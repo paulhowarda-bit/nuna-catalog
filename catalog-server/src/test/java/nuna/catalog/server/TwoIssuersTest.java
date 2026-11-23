@@ -47,7 +47,7 @@ class TwoIssuersTest {
     /** The directory id both realms carry for the same person, in different claims. */
     private static final String DIRECTORY_ID = "d1001";
 
-    /** Starts Keycloak once, imports the realms, and trusts two of them. */
+    /** Starts Keycloak for the context, imports the realms, and trusts two of them; it stops with the context. */
     static final class Realms implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
         static final GenericContainer<?> KEYCLOAK = new GenericContainer<>(
@@ -78,6 +78,7 @@ class TwoIssuersTest {
             if (!KEYCLOAK.isRunning()) {
                 KEYCLOAK.start();
             }
+            StopWithContext.register(context, "keycloak-for-tests", KEYCLOAK::stop);
             Map<String, Object> properties = new HashMap<>();
             issuer(properties, 0, "entra", "oid", "groups", "azp");
             issuer(properties, 1, "ping", "uid", "memberOf", "client_id");

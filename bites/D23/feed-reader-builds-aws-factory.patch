@@ -1,0 +1,18 @@
+Breaks: the audit feed reader gives Iceberg's S3FileIO no asynchronous client, so Iceberg builds one from its AWS client factory, whose class needs the KMS SDK the server leaves out: every feed and summary call fails.
+Module: catalog-server
+Test: EventsReaderOnTheServerTest#opensAndPagesTheAuditTableWithoutTheKmsSdk
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+index 6355089..83f8900 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+@@ -208,9 +208,7 @@ public final class EventsReader implements AutoCloseable {
+      */
+     public static EventsReader open(String name, String metadataLocation, S3Client s3) {
+         S3Client borrowed = new Borrowed(s3);
+-        S3FileIO io = new S3FileIO(() -> borrowed, () -> {
+-            throw new UnsupportedOperationException("the audit feed reads with its synchronous S3 client only");
+-        });
++        S3FileIO io = new S3FileIO(() -> borrowed);
+         TableMetadata metadata = TableMetadataParser.read(io, metadataLocation);
+         return of(new BaseTable(new StaticTableOperations(metadata, new Confined(io, metadata.location())), name),
+                 DEFAULT_SCAN_BUDGET);

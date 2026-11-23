@@ -1,0 +1,26 @@
+Breaks: a requested job waits for the cleanup window, as the night's work does, instead of starting at the next scan (backlog 114).
+Module: catalog-maintenance
+Test: RequestedWorkTest#aRequestedCompactionStartsInTheDayAndStopsAtTheRequestsDeadline+aRequestedOrphanScanRunsInTheDayAndStopsAtTheRequestsDeadline
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java b/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java
+index eebac3e..b534749 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/RequestedWork.java
+@@ -88,7 +88,7 @@ final class RequestedWork {
+      */
+     void compact(List<Management.RequestWork> requests, ScanReport report) {
+         running.values().removeIf(job -> finished(job, report));
+-        if (compactor == Compactor.NONE) {
++        if (compactor == Compactor.NONE || window.night(clock.instant()).isEmpty()) {
+             return;
+         }
+         for (Management.RequestWork request : requests) {
+@@ -184,6 +184,9 @@ final class RequestedWork {
+      * {@code between} runs: the worker starts the night's Jobs whose slots have freed.
+      */
+     void scanOrphans(List<Management.RequestWork> requests, Runnable between, ScanReport report) {
++        if (window.night(clock.instant()).isEmpty()) {
++            return;
++        }
+         for (Management.RequestWork request : requests) {
+             if (Management.RequestWork.ORPHAN_SCAN.equals(request.job())) {
+                 between.run();

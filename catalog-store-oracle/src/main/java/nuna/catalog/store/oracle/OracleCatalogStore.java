@@ -11,6 +11,7 @@ import nuna.catalog.store.CommitLookup;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
@@ -18,6 +19,9 @@ import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
+import nuna.catalog.store.MaintenanceJob;
+import nuna.catalog.store.MaintenanceNight;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -52,6 +56,7 @@ import java.sql.Statement;
 import java.sql.Types;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -97,6 +102,8 @@ public final class OracleCatalogStore implements CatalogStore {
     private final OracleGovernance governance;
     private final OracleDeletions deletions;
     private final OracleHealth health;
+    private final OracleNights nights;
+    private final OracleRequests requests;
     private final OracleDr dr;
     private final OracleRefs refs;
 
@@ -122,6 +129,8 @@ public final class OracleCatalogStore implements CatalogStore {
         this.governance = new OracleGovernance(transactions);
         this.deletions = new OracleDeletions(transactions);
         this.health = new OracleHealth(transactions);
+        this.nights = new OracleNights(transactions);
+        this.requests = new OracleRequests(transactions);
         this.dr = new OracleDr(transactions);
         this.refs = new OracleRefs(transactions);
     }
@@ -489,6 +498,46 @@ public final class OracleCatalogStore implements CatalogStore {
         return health.listScans();
     }
 
+    // ---- the worker's nights (D45, backlog 126) ----
+
+    @Override
+    public void recordMaintenanceJob(MaintenanceJob job, LocalDate keepFrom) {
+        nights.record(job, keepFrom);
+    }
+
+    @Override
+    public List<MaintenanceNight> listMaintenanceNights(LocalDate through, int limit) {
+        return nights.nights(through, limit);
+    }
+
+    @Override
+    public List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds) {
+        return nights.jobs(night, kinds);
+    }
+
+    // ---- maintenance on request (D30, amended 2026-11-20; backlog 114) ----
+
+    @Override
+    public WriteResult requestMaintenance(MaintenanceRequest request, Change change) {
+        return requests.request(request, change);
+    }
+
+    @Override
+    public List<MaintenanceRequest> listMaintenanceRequests(UUID objectId) {
+        return requests.list(objectId);
+    }
+
+    @Override
+    public Page<MaintenanceRequest> listWaitingRequests(PageRequest page) {
+        return requests.listWaiting(page);
+    }
+
+    @Override
+    public WriteResult startMaintenanceRequest(UUID objectId, MaintenanceRequest.Job job, Instant requestedAt,
+                                               Instant startedAt) {
+        return requests.start(objectId, job, requestedAt, startedAt);
+    }
+
     // ---- the DR watermark (D37) ----
 
     @Override
@@ -615,8 +664,9 @@ public final class OracleCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, Change change) {
-        return governance.removeAttribute(target, kind, change);
+    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy,
+                                       Change change) {
+        return governance.removeAttribute(target, kind, removedBy, change);
     }
 
     @Override
@@ -630,13 +680,18 @@ public final class OracleCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult releaseHold(UUID holdId, Change change) {
-        return governance.releaseHold(holdId, change);
+    public WriteResult releaseHold(UUID holdId, String releasedBy, Change change) {
+        return governance.releaseHold(holdId, releasedBy, change);
     }
 
     @Override
     public List<LegalHold> holdsOn(Set<Securable> targets) {
         return governance.holdsOn(targets);
+    }
+
+    @Override
+    public List<GovernanceLift> liftedIn(UUID catalogId, Instant since) {
+        return governance.liftedIn(catalogId, since);
     }
 
     @Override

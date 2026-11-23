@@ -1,0 +1,19 @@
+Breaks: a commit on a branch on the SQL stores reads its ref without a share lock, so a deletion runs beside it and leaves the pointer it writes.
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$BranchCommits#aDeletionWaitsForABranchCommitInFlight
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 4fe54a3..f8e7680 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -196,8 +196,8 @@ final class SqlRefs {
+      */
+     static Optional<CommitResult> lock(Connection connection, CommitBatch batch) throws SQLException {
+         RefLock lock = batch.ref().orElseThrow();
+-        Optional<Locked> locked = first(connection, "SELECT kind, expires_at FROM ref WHERE id = ? FOR "
+-                        + (lock instanceof RefLock.Hold ? "SHARE" : "UPDATE"),
++        Optional<Locked> locked = first(connection, "SELECT kind, expires_at FROM ref WHERE id = ?"
++                        + (lock instanceof RefLock.Hold ? "" : " FOR UPDATE"),
+                 row -> new Locked(Ref.Kind.valueOf(row.getString("kind")), instant(row, "expires_at")), lock.refId());
+         if (locked.isEmpty() || locked.get().kind() != Ref.Kind.BRANCH
+                 || !locked.get().expiresAt().isAfter(batch.committedAt())) {

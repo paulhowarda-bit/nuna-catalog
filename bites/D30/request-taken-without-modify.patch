@@ -1,0 +1,16 @@
+Breaks: a request for a table's maintenance needs only select on it, not modify (backlog 114).
+Module: catalog-server
+Test: MaintenanceRequestsTest#aCallerWithSelectOnlyIsRefusedAndTheRefusalAudited
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRequests.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRequests.java
+index 405f9f6..d020b39 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRequests.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRequests.java
+@@ -78,7 +78,7 @@ class MaintenanceRequests {
+                                    HttpServletRequest http) {
+         Request request = management.request(http);
+         Target target = management.target(request, OPERATION, Privilege.MODIFY, prefix, namespace, table, null);
+-        guard.require(request, target, OPERATION, Privilege.MODIFY);
++        guard.require(request, target, OPERATION, Privilege.SELECT);
+         MaintenanceRequest.Job job = job(Management.body(body));
+         CatalogObject object = target.object().orElseThrow();
+         String qualified = String.join(".", target.audit().path());

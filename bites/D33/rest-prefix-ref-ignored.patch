@@ -1,0 +1,17 @@
+Breaks: the prefix catalog@ref reads main whatever the ref, so a read through a tag or branch serves what main holds now (D33, item 26 choice 4).
+Module: catalog-server
+Test: RefReadsTest#aTagLoadsItsCut
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java
+index 7e66c67..af55f0c 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Prefixes.java
+@@ -40,7 +40,7 @@ public class Prefixes {
+      */
+     public OnRef resolve(String prefix, Caller caller, Actor actor, String operation, Privilege privilege) {
+         CatalogRecord catalog = holdings.catalog(OnRef.catalogName(prefix), caller, actor, operation, privilege);
+-        Optional<String> name = OnRef.refName(prefix);
++        Optional<String> name = Optional.empty();
+         if (name.isEmpty()) {
+             return OnRef.main(catalog);
+         }

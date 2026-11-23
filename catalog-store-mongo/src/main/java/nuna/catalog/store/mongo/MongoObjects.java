@@ -19,6 +19,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.OBJECT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.PENDING_DELETION;
 import static nuna.catalog.store.mongo.MongoCatalogStore.POINTER;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
+import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_REQUEST;
 import static nuna.catalog.store.mongo.MongoCatalogStore.TABLE_HEALTH;
 
 import com.mongodb.client.ClientSession;
@@ -236,9 +237,9 @@ final class MongoObjects {
 
     /**
      * Objects dropped long enough ago, in purge order, without those under a legal hold or a DR
-     * freeze, and every claimed object, whatever came after its claim. The dropped and claimed
-     * objects are read in order and their holds and freezes checked a chunk at a time, all in one
-     * snapshot.
+     * freeze or named by a ref's cut, and every claimed object, whatever came after its claim. The
+     * dropped and claimed objects are read in order and their holds, freezes and refs checked a chunk
+     * at a time, all in one snapshot.
      */
     Page<CatalogObject> listPurgeEligible(Instant now, PageRequest page) {
         Optional<List<BsonValue>> after = after(page, 2,
@@ -256,9 +257,12 @@ final class MongoObjects {
                     chunk.add(dropped.next());
                     if (chunk.size() == PURGE_CHUNK || !dropped.hasNext()) {
                         Set<BsonValue> covered = covered(transactions, session, chunk);
+                        Set<BsonValue> referenced = MongoRefs.referenced(transactions.database(), session,
+                                chunk.stream().map(object -> object.get("_id")).toList());
                         for (BsonDocument object : chunk) {
                             if (object.getString("state").getValue().equals(PURGING)
-                                    || holdTargets(object).stream().noneMatch(covered::contains)) {
+                                    || (holdTargets(object).stream().noneMatch(covered::contains)
+                                    && !referenced.contains(object.get("_id")))) {
                                 eligible.add(object(object));
                             }
                         }
@@ -296,7 +300,9 @@ final class MongoObjects {
     /**
      * Claims a dropped object's purge for {@code claimant}. The claim writes the object, so a hold or DR
      * freeze placed on the object at the same moment conflicts with it; holds and freezes above the
-     * object are read in the same snapshot, as a drop reads holds.
+     * object are read in the same snapshot, as a drop reads holds, and so are the refs whose cut names it.
+     * A ref made from another marks its source as it inserts itself, so it either commits before the
+     * source's deletion, which this snapshot then shows, or conflicts with it and finds its source gone.
      */
     WriteResult claimPurge(UUID objectId, String claimant, Change change) {
         return transactions.change(change, "purge claim", tx -> {
@@ -319,6 +325,9 @@ final class MongoObjects {
             if (Guards.frozen(tx, objectId, uuid(object.get().get("catalogId")),
                     uuidList(object.get().get("namespacePath")))) {
                 return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            if (!MongoRefs.referenced(tx.database, tx.session, List.of(uuid(objectId))).isEmpty()) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
             }
             tx.see(object.get());
             tx.collection(OBJECT).updateOne(tx.session, byId(uuid(objectId)), new BsonDocument("$set",
@@ -345,6 +354,7 @@ final class MongoObjects {
             tx.collection(GRANT).deleteMany(tx.session, new BsonDocument("securableId", uuid(objectId)));
             tx.collection(PENDING_DELETION).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId)));
             tx.collection(TABLE_HEALTH).deleteOne(tx.session, byId(uuid(objectId)));
+            tx.collection(MAINTENANCE_REQUEST).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId)));
             tx.collection(DR_WATERMARK).deleteOne(tx.session, byId(uuid(objectId)));
             return WriteResult.APPLIED;
         });

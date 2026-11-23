@@ -1,0 +1,19 @@
+Breaks: a compaction Job takes the slot after the slots taken, not the lowest free one, so two Jobs share a slot once one has finished.
+Module: catalog-maintenance
+Test: NightJobsTest#eachJobTakesTheLowestFreeSlotAndCountsItsOwnReplaces
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Slots.java b/catalog-maintenance/src/main/java/nuna/maintenance/Slots.java
+index 958b1c8..447122d 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Slots.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Slots.java
+@@ -30,10 +30,7 @@ final class Slots {
+ 
+     /** Takes the lowest free slot for a Job of the table; the caller has seen one {@link #free}. */
+     int take(UUID table) {
+-        int slot = 1;
+-        while (taken.containsKey(slot)) {
+-            slot++;
+-        }
++        int slot = taken.size() + 1;
+         taken.put(slot, table);
+         return slot;
+     }

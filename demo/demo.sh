@@ -8,8 +8,9 @@
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops and lake)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL, Oracle and CockroachDB, through Debezium and Kafka
-#                         Connect, into Iceberg history tables (stops Trino while it runs)
-#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino again
+#                         Connect, into Iceberg history tables (stops Trino and the audit table writer while
+#                         it runs)
+#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino and the writer again
 #   demo/demo.sh psql [user]     a psql prompt on the CDC leg's PostgreSQL, database backoffice (default backoffice)
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
@@ -160,8 +161,8 @@ image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -
 # its Dockerfile, so a change to either replaces the pod (and up seeds the new one). The cluster never pulls: images it runs
 # come from the local Docker engine.
 build() {
-  say "building the catalog server and change-feed connector jars (no tests run)"
-  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :singlestore-change-feed:connectorJar)
+  say "building the catalog server, audit table writer and change-feed connector jars (no tests run)"
+  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :catalog-audit-tables:bootJar :singlestore-change-feed:connectorJar)
   local jar="$REPO/singlestore-change-feed/build/libs/nuna-changefeed-connector.jar"
   rm -rf "$RUN/images"
   mkdir -p "$RUN/images/singlestore" "$RUN/images/lake/lib"
@@ -169,8 +170,10 @@ build() {
   unzip -q -j "$jar" 'lib/*' -d "$RUN/images/lake/lib"
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
 
-  say "building the images: the catalog, SingleStore with the connector, the lake writer, CloudBeaver"
+  say "building the images: the catalog, the audit table writer, SingleStore with the connector, the lake writer, CloudBeaver"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
+  docker build -q -f "$REPO/deploy/image/audit-tables.Dockerfile" -t nuna-audit-tables:demo \
+    "$REPO/catalog-audit-tables/build/libs" >/dev/null
   # Studio's SAML address, in the image, names the host.
   SINGLESTORE_IMAGE="nuna-demo-singlestore:$( (cat "$jar" "$STACK/singlestore.Dockerfile"; echo "$DEMO_HOST") \
     | sha256sum | cut -c1-12)"
@@ -206,10 +209,11 @@ publish_tokens() {
   k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
-# Keycloak's realm signing key and certificate, and CloudBeaver's client and cookie secrets, made once per
-# machine in $RUN/keycloak and kept, and published as Secret keycloak-keys (keycloak.yaml, cloudbeaver.yaml,
-# singlestore.yaml). The key is fixed rather than Keycloak's own, made at each start, because SingleStore checks
-# Studio's SAML sign-ins against its certificate, which it reads only as it starts.
+# Keycloak's realm signing key and certificate, CloudBeaver's client and cookie secrets and the audit table
+# writer's client secret, made once per machine in $RUN/keycloak and kept, and published as Secret keycloak-keys
+# (keycloak.yaml, cloudbeaver.yaml, singlestore.yaml; audit_writer passes the writer its secret). The key is fixed
+# rather than Keycloak's own, made at each start, because SingleStore checks Studio's SAML sign-ins against its
+# certificate, which it reads only as it starts.
 publish_keycloak_keys() {
   local dir="$RUN/keycloak"
   if [[ ! -f "$dir/realm-certificate.pem" ]]; then
@@ -222,6 +226,8 @@ publish_keycloak_keys() {
     openssl rand -hex 16 > "$dir/cloudbeaver-cookie-secret"
     mv "$dir/realm-certificate.pem.new" "$dir/realm-certificate.pem"
   fi
+  # Made apart from the rest: the folder predates it on machines that ran the demo before.
+  [[ -f "$dir/audit-tables-client-secret" ]] || openssl rand -hex 24 > "$dir/audit-tables-client-secret"
   # The realm file takes the key and certificate without their PEM lines.
   pem_body() { sed '/^-----/d' "$1" | tr -d '\r\n'; }
   k create secret generic keycloak-keys \
@@ -230,6 +236,7 @@ publish_keycloak_keys() {
     --from-file=realm-certificate-pem="$dir/realm-certificate.pem" \
     --from-literal=cloudbeaver-client-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-client-secret")" \
     --from-literal=cloudbeaver-cookie-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-cookie-secret")" \
+    --from-literal=audit-tables-client-secret="$(tr -d '\r\n' < "$dir/audit-tables-client-secret")" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
@@ -297,9 +304,10 @@ publish_tls() {
     | k apply -f - >/dev/null
 }
 
-# Expired, about to expire, or minted before Mint.java had every user it has now.
+# Expired, about to expire, or minted before Mint.java last changed (a user or group added).
 tokens_expired() {
-  [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/trino.jwt" ]] && return 0
+  [[ ! -f "$RUN/tokens/expires.txt" || ! -f "$RUN/tokens/trino.jwt" \
+    || "$REPO/demo/Mint.java" -nt "$RUN/tokens/expires.txt" ]] && return 0
   local expires now
   expires=$(date -d "$(tr -d '\r\n' < "$RUN/tokens/expires.txt")" +%s)
   now=$(date +%s)
@@ -357,6 +365,18 @@ SQL
 trusted_engines() {
   say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
   api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
+}
+
+# The audit table writer (D23; chart deploy/helm/nuna-audit-tables, audit-tables-values.yaml), installed or brought
+# up to date: it writes the audit topic to nuna_audit.audit.events, which the console's Audit page reads. It signs
+# in to Keycloak as client nuna-audit-tables, with the secret publish_keycloak_keys made. The image's id as a pod
+# annotation, as for the catalog. One replica: an upgrade also starts it again after cdc stopped it.
+audit_writer() {
+  say "starting the audit table writer (chart deploy/helm/nuna-audit-tables), for the console's Audit page"
+  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-audit-tables "$REPO/deploy/helm/nuna-audit-tables" \
+    -f "$STACK/audit-tables-values.yaml" \
+    --set-string "secrets.values.nuna\.audit-tables\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/audit-tables-client-secret")" \
+    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
 }
 
 # One run of the lake writer (seed or rate) as a Job: prints its output, deletes it, fails if it failed.
@@ -482,7 +502,7 @@ Studio asks only the username, then "Sign in with SAML". To change user, use the
 CloudBeaver's Logout (both end Keycloak's session too), or sign out of each UI and of Keycloak
 ($web:8180/realms/nuna/protocol/openid-connect/logout, then Logout), or use a private window.
 To show everything in one sign-in, use presenter / presenter-demo in the console and kafbat: all four people's
-groups at once. CloudBeaver and Studio have no presenter.
+groups at once, the Audit page's demo-auditors among them. CloudBeaver and Studio have no presenter.
 
 The console:  $URL/ui/   (catalogs lakehouse and engines)
 Sign in, or paste one of these tokens (valid until $expires).
@@ -490,7 +510,8 @@ Sign in, or paste one of these tokens (valid until $expires).
 Data user  ana   (group demo-analysts: select on both catalogs)
 $(token_of ana)
 
-Grant admin  gary  (group demo-grant-admins: manage grants and read the audit trail; no data access)
+Grant admin  gary  (groups demo-grant-admins: manage grants and read the audit trail, no data access; and
+                    demo-auditors: the Audit page, from the audit table nuna_audit.audit.events)
 $(token_of gary)
 
 Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix, Kafka Connect
@@ -656,9 +677,14 @@ cdc_start() {
   fi
   image=$(image_of cockroachdb.image)
   docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
-  say "stopping Trino: the CDC leg needs its memory"
+  say "stopping Trino and the audit table writer: the CDC leg needs their memory"
   k scale deployment/trino --replicas=0 >/dev/null
   k wait --for=delete pod -l app=trino --timeout=2m >/dev/null
+  # Its records wait in Kafka meanwhile; cdc stop starts it again, and it writes them then.
+  if k get deployment nuna-audit-tables >/dev/null 2>&1; then
+    k scale deployment/nuna-audit-tables --replicas=0 >/dev/null
+    k wait --for=delete pod -l app.kubernetes.io/instance=nuna-audit-tables --timeout=3m >/dev/null
+  fi
   # History tables left by an earlier run recorded databases that are gone; each run starts its own.
   local entry ns table
   for entry in "${HISTORY_TABLES[@]}"; do
@@ -739,13 +765,17 @@ cdc_stop() {
       done' >/dev/null
   say "starting Trino again"
   k scale deployment/trino --replicas=1 >/dev/null
+  # It reads on from where its table's last commit ended, so the Audit page catches up on the leg's records.
+  audit_writer
 }
 
 up() {
   mkdir -p "$RUN"
   build
+  local minted=
   if tokens_expired; then
     mint
+    minted=yes
   fi
   kubectl --context "$CONTEXT" create namespace "$NS" --dry-run=client -o yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
   check_ports
@@ -785,18 +815,30 @@ up() {
   wait_for_console
   grants
   trusted_engines
+  if cdc_running; then
+    say "the CDC leg is running: the audit table writer stays stopped until demo/demo.sh cdc stop"
+  else
+    audit_writer
+  fi
 
   say "starting SingleStore ($SINGLESTORE_IMAGE)"
   apply singlestore.yaml
   k rollout status deployment/singlestore --timeout=15m >/dev/null
   s2_file users.sql >/dev/null
   seed
+  if [[ -n "$minted" ]]; then
+    # Running pipelines carry the token they were made with (feeds.sql); seed made none if SingleStore had them.
+    feeds
+  fi
 
   if cdc_running; then
     # trino.yaml asks for one replica, which would start Trino beside the leg.
     say "the CDC leg is running: Trino stays stopped; bringing the leg and CloudBeaver ($CLOUDBEAVER_IMAGE) up to date"
     build_connect
     cdc_apply
+    if [[ -n "$minted" ]]; then
+      k rollout restart deployment/connect >/dev/null
+    fi
   else
     say "starting Trino ($TRINO_IMAGE)"
     apply trino.yaml
@@ -870,7 +912,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,23p' "$0"; exit 2 ;;
+      *) sed -n '2,24p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -901,7 +943,7 @@ case "${1:-}" in
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,23p' "$0"
+    sed -n '2,24p' "$0"
     exit 2
     ;;
 esac

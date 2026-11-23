@@ -25,6 +25,7 @@ import nuna.catalog.store.CommitLookup;
 import nuna.catalog.store.CommitResult;
 import nuna.catalog.store.CompactionRun;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.IdempotencyClaim;
@@ -32,6 +33,9 @@ import nuna.catalog.store.IdempotencyResult;
 import nuna.catalog.store.JournalRecord;
 import nuna.catalog.store.KeyState;
 import nuna.catalog.store.LegalHold;
+import nuna.catalog.store.MaintenanceJob;
+import nuna.catalog.store.MaintenanceNight;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
@@ -45,6 +49,7 @@ import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
 import nuna.catalog.store.Securable;
@@ -58,6 +63,7 @@ import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -101,10 +107,13 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String STORAGE_PROFILE = "storage_profile";
     static final String ATTRIBUTE = "governance_attribute";
     static final String HOLD = "legal_hold";
+    static final String LIFT = "governance_lift";
     static final String ENGINE = "trusted_engine";
     static final String PENDING_DELETION = "pending_deletion";
     static final String TABLE_HEALTH = "table_health";
     static final String MAINTENANCE_SCAN = "maintenance_scan";
+    static final String MAINTENANCE_JOB = "maintenance_job";
+    static final String MAINTENANCE_REQUEST = "maintenance_request";
     static final String DR_WATERMARK = "dr_watermark";
     static final String REF = "ref";
     static final String REF_ENTRY = "ref_entry";
@@ -134,6 +143,8 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoGovernance governance;
     private final MongoDeletions deletions;
     private final MongoHealth health;
+    private final MongoNights nights;
+    private final MongoRequests requests;
     private final MongoDr dr;
     private final MongoRefs refs;
 
@@ -166,6 +177,8 @@ public final class MongoCatalogStore implements CatalogStore {
         this.governance = new MongoGovernance(transactions);
         this.deletions = new MongoDeletions(transactions);
         this.health = new MongoHealth(transactions);
+        this.nights = new MongoNights(transactions);
+        this.requests = new MongoRequests(transactions);
         this.dr = new MongoDr(transactions);
         this.refs = new MongoRefs(transactions);
     }
@@ -186,19 +199,51 @@ public final class MongoCatalogStore implements CatalogStore {
         return transactions.snapshot("pointer read for " + key, session -> Pointers.read(database, session, key));
     }
 
+    /**
+     * The batch's ref, if any, is read and checked first: a commit on the branch marks it once the stamp is fixed, and
+     * a merge, which must hold every own pointer of the branch, deletes it, with its cut and its own pointers, after
+     * the swaps (D33, backlog 103).
+     */
     @Override
     public CommitResult commit(CommitBatch batch) {
         return transactions.write(batch.commitId(), "commit " + batch.commitId(), tx -> {
             Pointers.see(tx, batch);
+            Optional<BsonDocument> branch = Optional.empty();
+            MongoRefs.Owned owned = new MongoRefs.Owned(List.of(), Set.of());
+            if (batch.ref().isPresent()) {
+                branch = MongoRefs.openBranch(tx, batch);
+                if (branch.isEmpty()) {
+                    return new CommitResult.Inactive(batch.refKey(), CommitResult.Subject.REF);
+                }
+                if (batch.ref().get() instanceof RefLock.Hold) {
+                    Optional<PointerKey> outside = MongoRefs.outsideCut(tx, batch);
+                    if (outside.isPresent()) {
+                        return new CommitResult.Inactive(outside.get());
+                    }
+                } else {
+                    owned = MongoRefs.seeOwnPointers(tx, batch.ref().get().refId());
+                    Optional<PointerKey> unheld = MongoRefs.unheld(batch, owned);
+                    if (unheld.isPresent()) {
+                        return new CommitResult.Conflict(unheld.get(),
+                                Pointers.read(tx.database, tx.session, unheld.get()));
+                    }
+                }
+            }
             Optional<CommitResult.Inactive> inactive = Pointers.markObjects(tx, batch);
             if (inactive.isPresent()) {
                 return inactive.get();
+            }
+            if (batch.ref().orElse(null) instanceof RefLock.Hold) {
+                tx.mark(REF, branch.orElseThrow());
             }
             Optional<CommitResult.Conflict> conflict = Pointers.swap(tx, batch, transactions.pieceBytes());
             if (conflict.isPresent()) {
                 return conflict.get();
             }
             Pointers.records(tx, batch, transactions.entryIds());
+            if (batch.ref().orElse(null) instanceof RefLock.End end) {
+                MongoRefs.end(tx, end.refId(), owned.cut());
+            }
             return new CommitResult.Committed(batch.commitId());
         }, result -> result instanceof CommitResult.Committed);
     }
@@ -471,6 +516,46 @@ public final class MongoCatalogStore implements CatalogStore {
         return health.listScans();
     }
 
+    // ---- the worker's nights (D45, backlog 126) ----
+
+    @Override
+    public void recordMaintenanceJob(MaintenanceJob job, LocalDate keepFrom) {
+        nights.record(job, keepFrom);
+    }
+
+    @Override
+    public List<MaintenanceNight> listMaintenanceNights(LocalDate through, int limit) {
+        return nights.nights(through, limit);
+    }
+
+    @Override
+    public List<MaintenanceJob> listMaintenanceJobs(LocalDate night, Set<MaintenanceJob.Kind> kinds) {
+        return nights.jobs(night, kinds);
+    }
+
+    // ---- maintenance on request (D30, amended 2026-11-20; backlog 114) ----
+
+    @Override
+    public WriteResult requestMaintenance(MaintenanceRequest request, Change change) {
+        return requests.request(request, change);
+    }
+
+    @Override
+    public List<MaintenanceRequest> listMaintenanceRequests(UUID objectId) {
+        return requests.list(objectId);
+    }
+
+    @Override
+    public Page<MaintenanceRequest> listWaitingRequests(PageRequest page) {
+        return requests.listWaiting(page);
+    }
+
+    @Override
+    public WriteResult startMaintenanceRequest(UUID objectId, MaintenanceRequest.Job job, Instant requestedAt,
+                                               Instant startedAt) {
+        return requests.start(objectId, job, requestedAt, startedAt);
+    }
+
     // ---- the DR watermark (D37) ----
 
     @Override
@@ -597,8 +682,9 @@ public final class MongoCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, Change change) {
-        return governance.removeAttribute(target, kind, change);
+    public WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy,
+                                       Change change) {
+        return governance.removeAttribute(target, kind, removedBy, change);
     }
 
     @Override
@@ -612,13 +698,18 @@ public final class MongoCatalogStore implements CatalogStore {
     }
 
     @Override
-    public WriteResult releaseHold(UUID holdId, Change change) {
-        return governance.releaseHold(holdId, change);
+    public WriteResult releaseHold(UUID holdId, String releasedBy, Change change) {
+        return governance.releaseHold(holdId, releasedBy, change);
     }
 
     @Override
     public List<LegalHold> holdsOn(Set<Securable> targets) {
         return governance.holdsOn(targets);
+    }
+
+    @Override
+    public List<GovernanceLift> liftedIn(UUID catalogId, Instant since) {
+        return governance.liftedIn(catalogId, since);
     }
 
     @Override

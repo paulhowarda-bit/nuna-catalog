@@ -58,7 +58,10 @@ class ConsoleSignInTest {
 
     private static final Network NETWORK = Network.newNetwork();
 
-    /** Starts Keycloak with the console's realm, and points the catalog and the console at it. */
+    /**
+     * Starts Keycloak with the console's realm, and points the catalog and the console at it; it stops with the
+     * context.
+     */
     static final class Idp implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
         static final GenericContainer<?> KEYCLOAK = new GenericContainer<>(
@@ -79,6 +82,7 @@ class ConsoleSignInTest {
             if (!KEYCLOAK.isRunning()) {
                 KEYCLOAK.start();
             }
+            StopWithContext.register(context, "keycloak-for-tests", KEYCLOAK::stop);
             String keys = "http://" + KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(8080)
                     + "/realms/console/protocol/openid-connect/certs";
             Map<String, Object> properties = new HashMap<>();
@@ -130,8 +134,8 @@ class ConsoleSignInTest {
         // Back in the console with a token the catalog accepts: the catalog's own answers fill the page.
         browser.awaitText(By.id("who"), "ana");
         assertThat(driver.findElement(By.id("who")).getText()).contains(GROUP);
-        browser.awaitText(By.cssSelector("section.pane"), "REST prefix");
-        browser.await(By.cssSelector("nav.tree button[aria-label='catalog trading']"));
+        browser.awaitText(By.cssSelector("#catalog-pick [data-cat]"), "trading");
+        browser.awaitText(By.cssSelector("#overview .ph .eyebrow"), "trading · ");
         assertThat(driver.getCurrentUrl()).as("the code and state leave the address bar")
                 .startsWith(browser.origin() + "/ui/").doesNotContain("code=", "state=");
 

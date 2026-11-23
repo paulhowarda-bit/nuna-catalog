@@ -10,15 +10,18 @@ import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogSettings;
 import nuna.catalog.store.Change;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
+import nuna.catalog.store.StoreException;
 import nuna.catalog.store.TrustedEngine;
 import nuna.catalog.store.WriteResult;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLIntegrityConstraintViolationException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,7 +30,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Catalogs and their boundary (D28), storage profiles (D21), attributes (D20, D24, D27), holds (D24), engines (D17). */
+/**
+ * Catalogs and their boundary (D28), storage profiles (D21), attributes (D20, D24, D27), holds (D24), the holds
+ * released and DR freezes lifted (backlog 133), engines (D17).
+ */
 final class OracleGovernance {
 
     private final Transactions transactions;
@@ -117,11 +123,24 @@ final class OracleGovernance {
         });
     }
 
-    WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, Change change) {
-        return transactions.change(change, "attribute remove", connection -> update(connection,
-                "DELETE FROM governance_attribute WHERE target_id = ? AND target_kind = ? AND kind = ?",
-                target.id(), target.kind().name(), kind.name()) == 1
-                ? WriteResult.APPLIED : new WriteResult.Missing(WriteResult.Subject.ATTRIBUTE));
+    /** A DR freeze's removal is its lift, kept with who lifted it and when (backlog 133). */
+    WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy, Change change) {
+        return transactions.change(change, "attribute remove", connection -> {
+            Optional<GovernanceAttribute> removed = first(connection, "SELECT value, provenance, set_by, set_at"
+                            + " FROM governance_attribute WHERE target_id = ? AND target_kind = ? AND kind = ? FOR UPDATE",
+                    row -> new GovernanceAttribute(target, kind, Jdbc.text(row, "value"), Jdbc.text(row, "provenance"),
+                            Jdbc.text(row, "set_by"), instant(row, "set_at")),
+                    target.id(), target.kind().name(), kind.name());
+            if (removed.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.ATTRIBUTE);
+            }
+            update(connection, "DELETE FROM governance_attribute WHERE target_id = ? AND kind = ?", target.id(),
+                    kind.name());
+            if (kind == GovernanceAttribute.Kind.DR_FREEZE) {
+                keep(connection, change.id(), GovernanceLift.lifted(removed.get(), removedBy, change.at()));
+            }
+            return WriteResult.APPLIED;
+        });
     }
 
     List<GovernanceAttribute> attributesOf(Set<Securable> targets) {
@@ -149,10 +168,18 @@ final class OracleGovernance {
         });
     }
 
-    WriteResult releaseHold(UUID holdId, Change change) {
-        return transactions.change(change, "hold release", connection -> update(connection,
-                "DELETE FROM legal_hold WHERE id = ?", holdId) == 1
-                ? WriteResult.APPLIED : new WriteResult.Missing(WriteResult.Subject.HOLD));
+    /** The release is kept with who released the hold and when (backlog 133). */
+    WriteResult releaseHold(UUID holdId, String releasedBy, Change change) {
+        return transactions.change(change, "hold release", connection -> {
+            Optional<LegalHold> released = first(connection, "SELECT id, target_kind, target_id, reason, placed_by,"
+                    + " placed_at FROM legal_hold WHERE id = ? FOR UPDATE", OracleGovernance::hold, holdId);
+            if (released.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.HOLD);
+            }
+            update(connection, "DELETE FROM legal_hold WHERE id = ?", holdId);
+            keep(connection, change.id(), GovernanceLift.released(released.get(), releasedBy, change.at()));
+            return WriteResult.APPLIED;
+        });
     }
 
     List<LegalHold> holdsOn(Set<Securable> targets) {
@@ -160,9 +187,40 @@ final class OracleGovernance {
         String in = Jdbc.in("target_id", ids(targets), parameters);
         return transactions.autocommit("hold read", connection -> query(connection,
                 "SELECT id, target_kind, target_id, reason, placed_by, placed_at FROM legal_hold WHERE " + in,
-                row -> new LegalHold(Jdbc.uuid(row, "id"), target(row), Jdbc.text(row, "reason"),
-                        Jdbc.text(row, "placed_by"), instant(row, "placed_at")), parameters.toArray()))
+                OracleGovernance::hold, parameters.toArray()))
                 .stream().filter(hold -> targets.contains(hold.target())).toList();
+    }
+
+    List<GovernanceLift> liftedIn(UUID catalogId, Instant since) {
+        return transactions.autocommit("lift read", connection -> query(connection,
+                "SELECT kind, hold_id, target_kind, target_id, reason, placed_by, placed_at, lifted_by, lifted_at"
+                        + " FROM governance_lift WHERE catalog_id = ? AND lifted_at >= ? ORDER BY lifted_at DESC, id DESC",
+                row -> new GovernanceLift(GovernanceLift.Kind.valueOf(row.getString("kind")),
+                        Optional.ofNullable(Jdbc.uuid(row, "hold_id")), target(row), Jdbc.text(row, "reason"),
+                        Jdbc.text(row, "placed_by"), instant(row, "placed_at"), Jdbc.text(row, "lifted_by"),
+                        instant(row, "lifted_at")), catalogId, since));
+    }
+
+    /**
+     * Keeps a release or lift, named by its change, with the catalog its level lies in, so the history outlives a
+     * level dropped since. A hold or freeze stands only on a level that exists: one on a namespace or table stops
+     * its drop and purge, and a purged table keeps its row.
+     */
+    private static void keep(Connection connection, UUID changeId, GovernanceLift lift) throws SQLException {
+        Securable target = lift.target();
+        Optional<UUID> catalogId = switch (target.kind()) {
+            case CATALOG -> Optional.of(target.id());
+            case NAMESPACE -> first(connection, "SELECT catalog_id FROM namespace WHERE id = ?",
+                    row -> Jdbc.uuid(row, "catalog_id"), target.id());
+            case TABLE, VIEW -> first(connection, "SELECT catalog_id FROM catalog_object WHERE id = ?",
+                    row -> Jdbc.uuid(row, "catalog_id"), target.id());
+        };
+        update(connection, "INSERT INTO governance_lift (id, catalog_id, kind, hold_id, target_kind, target_id, reason,"
+                        + " placed_by, placed_at, lifted_by, lifted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                changeId, catalogId.orElseThrow(() -> new StoreException("the " + target.kind() + " " + target.id()
+                        + " a hold or freeze was lifted from is gone", null)), lift.kind().name(),
+                lift.holdId().orElse(null), target.kind().name(), target.id(), lift.reason(), lift.placedBy(),
+                lift.placedAt(), lift.liftedBy(), lift.liftedAt());
     }
 
     WriteResult putTrustedEngine(TrustedEngine engine, Change change) {
@@ -216,6 +274,11 @@ final class OracleGovernance {
         String flags = Jdbc.text(row, "flags");
         return new TrustedEngine(Jdbc.text(row, "issuer"), Jdbc.text(row, "client_id"), Jdbc.text(row, "end_user_claim"),
                 flags.isEmpty() ? Set.of() : Set.copyOf(Arrays.asList(flags.split(" "))));
+    }
+
+    private static LegalHold hold(ResultSet row) throws SQLException {
+        return new LegalHold(Jdbc.uuid(row, "id"), target(row), Jdbc.text(row, "reason"), Jdbc.text(row, "placed_by"),
+                instant(row, "placed_at"));
     }
 
     private static Securable target(ResultSet row) throws SQLException {

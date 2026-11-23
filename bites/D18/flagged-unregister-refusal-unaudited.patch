@@ -1,0 +1,17 @@
+Breaks: an unregister the store refuses as flagged (regulated, or under a row/column policy) is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GovernanceRefusalTest#anUnregisterTheStoreFindsFlaggedIsAuditedAsADenial
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index 26aae81..198fa4b 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -693,7 +693,7 @@ public final class CommitEngine {
+                             + " is frozen for DR reconcile and cannot be unregistered");
+                 }
+                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {
+-                    return Failure.refused(object, "flagged", "Table " + display(request) + " is regulated or"
++                    return new Failure(403, "ForbiddenException", "Table " + display(request) + " is regulated or"
+                             + " has a row/column policy and cannot be unregistered; a steward removes the flag first");
+                 }
+                 default -> throw new IllegalStateException("unregisterObject answered " + result);

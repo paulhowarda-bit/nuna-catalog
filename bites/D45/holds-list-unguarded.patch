@@ -1,0 +1,16 @@
+Breaks: A catalog's holds and freezes are listed without describe on the catalog.
+Module: catalog-server
+Test: GovernanceSummaryTest#aCallerWithoutDescribeOnTheCatalogIsRefusedAndTheRefusalAudited
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+index ed27c0f..dc1390b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
+@@ -125,7 +125,6 @@ class GovernanceRoutes {
+         Request request = management.request(http);
+         Target target = management.target(request, "listHoldsAndFreezes", Privilege.DESCRIBE,
+                 prefix, null, null, null);
+-        guard.require(request, target, "listHoldsAndFreezes", Privilege.DESCRIBE);
+         GovernanceSummary governance = GovernanceSummary.read(store, target.catalog());
+         ObjectNode body = Management.JSON.createObjectNode();
+         body.put("catalog", target.catalog().name());

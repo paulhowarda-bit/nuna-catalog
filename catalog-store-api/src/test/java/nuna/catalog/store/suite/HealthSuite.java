@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CompactionRun;
+import nuna.catalog.store.MaintenanceRequest;
 import nuna.catalog.store.MaintenanceScan;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.TableAssessment;
@@ -195,6 +196,113 @@ public abstract class HealthSuite extends GroupSuite {
                 base.plusSeconds(7), MaintenanceScan.Outcome.SUCCEEDED, Map.of(), Optional.empty());
         store.recordScan(later, 3);
         assertThat(store.listScans()).containsExactly(later, running, failed4);
+    }
+
+    @Test
+    @DisplayName("Requests: a request is kept, asking again while it waits changes nothing, the worker's start report"
+            + " clears it, and a request after that replaces it; only an active table may be asked for")
+    void aRequestIsKeptDeduplicatedAndClearedOnStart() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Instant base = now();
+        MaintenanceRequest compaction = new MaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION, "ana",
+                base, Optional.empty());
+        MaintenanceRequest orphans = new MaintenanceRequest(table.id(), MaintenanceRequest.Job.ORPHAN_SCAN, "ben",
+                base.plusSeconds(1), Optional.empty());
+        assertThat(store.listMaintenanceRequests(table.id())).as("nothing asked yet").isEmpty();
+
+        assertApplied(store.requestMaintenance(compaction, change()));
+        assertApplied(store.requestMaintenance(orphans, change()));
+        assertThat(store.requestMaintenance(new MaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION,
+                "carl", base.plusSeconds(5), Optional.empty()), change())).as("one waits already")
+                .isEqualTo(WriteResult.UNCHANGED);
+
+        assertThat(store.listMaintenanceRequests(table.id())).containsExactly(compaction, orphans);
+        assertThat(waiting(namespace)).containsExactly(compaction, orphans);
+        assertThat(store.startMaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION,
+                base.minusSeconds(1), base.plusSeconds(60))).as("not the request waiting")
+                .isEqualTo(WriteResult.UNCHANGED);
+
+        assertApplied(store.startMaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION, base,
+                base.plusSeconds(60)));
+
+        MaintenanceRequest started = new MaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION, "ana", base,
+                Optional.of(base.plusSeconds(60)));
+        assertThat(store.listMaintenanceRequests(table.id())).containsExactly(started, orphans);
+        assertThat(waiting(namespace)).as("started: off the work list").containsExactly(orphans);
+        assertThat(store.startMaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION, base,
+                base.plusSeconds(90))).as("its start, reported again").isEqualTo(WriteResult.UNCHANGED);
+        MaintenanceRequest again = new MaintenanceRequest(table.id(), MaintenanceRequest.Job.COMPACTION, "dee",
+                base.plusSeconds(120), Optional.empty());
+        assertApplied(store.requestMaintenance(again, change()));
+        assertThat(store.listMaintenanceRequests(table.id())).containsExactly(again, orphans);
+
+        CatalogObject view = newObject(namespace, "v", CatalogObject.Kind.VIEW);
+        CatalogObject dropped = newTable(namespace, "dropped");
+        assertApplied(store.dropObject(dropped.id(), now().plusSeconds(3600), change()));
+        for (UUID id : List.of(view.id(), dropped.id(), UUID.randomUUID())) {
+            assertThat(store.requestMaintenance(new MaintenanceRequest(id, MaintenanceRequest.Job.COMPACTION, "ana",
+                    base, Optional.empty()), change())).as("a request for %s", id).isEqualTo(MISSING);
+            assertThat(store.listMaintenanceRequests(id)).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("Requests: the waiting are listed by the time asked, then table, then job, a page at a time; one"
+            + " started or of a dropped table is left out")
+    void theWaitingAreListedInTheOrderAsked() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject a = newTable(namespace, "a");
+        CatalogObject b = newTable(namespace, "b");
+        CatalogObject c = newTable(namespace, "c");
+        CatalogObject dropped = newTable(namespace, "dropped");
+        Instant base = now();
+        MaintenanceRequest late = request(a, MaintenanceRequest.Job.COMPACTION, base.plusSeconds(30));
+        MaintenanceRequest first = request(b, MaintenanceRequest.Job.ORPHAN_SCAN, base);
+        List<MaintenanceRequest> tied = List.of(request(a, MaintenanceRequest.Job.ORPHAN_SCAN, base.plusSeconds(10)),
+                request(c, MaintenanceRequest.Job.COMPACTION, base.plusSeconds(10)),
+                request(c, MaintenanceRequest.Job.ORPHAN_SCAN, base.plusSeconds(10)));
+        MaintenanceRequest started = request(b, MaintenanceRequest.Job.COMPACTION, base.plusSeconds(5));
+        MaintenanceRequest gone = request(dropped, MaintenanceRequest.Job.COMPACTION, base.plusSeconds(1));
+        for (MaintenanceRequest request : List.of(late, first, tied.get(2), tied.get(0), tied.get(1), started, gone)) {
+            assertApplied(store.requestMaintenance(request, change()));
+        }
+        assertApplied(store.startMaintenanceRequest(b.id(), MaintenanceRequest.Job.COMPACTION, base.plusSeconds(5),
+                base.plusSeconds(6)));
+        assertApplied(store.dropObject(dropped.id(), now().plusSeconds(3600), change()));
+        List<MaintenanceRequest> byTableThenJob = tied.stream().sorted(Comparator
+                .comparing(MaintenanceRequest::objectId, UNSIGNED).thenComparing(MaintenanceRequest::job)).toList();
+
+        List<MaintenanceRequest> listed = waiting(namespace);
+
+        assertThat(listed).containsExactly(first, byTableThenJob.get(0), byTableThenJob.get(1), byTableThenJob.get(2),
+                late);
+    }
+
+    @Test
+    @DisplayName("Requests: a purge's completion deletes the table's requests")
+    void aPurgeDeletesTheRequests() {
+        NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
+        CatalogObject table = newTable(namespace, "t");
+        assertApplied(store.requestMaintenance(request(table, MaintenanceRequest.Job.COMPACTION, now()), change()));
+        assertApplied(store.requestMaintenance(request(table, MaintenanceRequest.Job.ORPHAN_SCAN, now()), change()));
+        assertApplied(store.dropObject(table.id(), now(), change()));
+        assertApplied(store.claimPurge(table.id(), "worker", change()));
+        assertThat(store.listMaintenanceRequests(table.id())).as("kept while the table is purged").hasSize(2);
+
+        assertApplied(store.completePurge(table.id(), "worker", change()));
+
+        assertThat(store.listMaintenanceRequests(table.id())).isEmpty();
+    }
+
+    private static MaintenanceRequest request(CatalogObject table, MaintenanceRequest.Job job, Instant at) {
+        return new MaintenanceRequest(table.id(), job, "ana", at, Optional.empty());
+    }
+
+    /** The waiting requests of the tables in {@code namespace}, read in pages of 2. */
+    private List<MaintenanceRequest> waiting(NamespaceRecord namespace) {
+        return allPages(2, store::listWaitingRequests).stream().filter(request -> store.readObject(request.objectId())
+                .filter(table -> table.namespaceId().equals(namespace.id())).isPresent()).toList();
     }
 
     private CatalogObject assessed(NamespaceRecord namespace, String name, TableAssessment assessment) {

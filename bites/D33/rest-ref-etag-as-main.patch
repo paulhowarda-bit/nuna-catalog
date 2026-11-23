@@ -1,0 +1,17 @@
+Breaks: a load through a ref is tagged as main's, so a client that read a table through a tag gets 304 through a branch serving other credentials (D14, D33).
+Module: catalog-server
+Test: RefReadsTest#theETagCarriesTheRef
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
+index bbbf891..f851510 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
+@@ -170,7 +170,7 @@ class TableRoutes {
+                 labels);
+         ResponseEntity.BodyBuilder builder = ResponseEntity.ok();
+         if (cacheable) {
+-            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels, on.refId()));
++            builder.eTag(ETags.of(location, refsOnly, referencedBy, vended.epoch(), labels, Optional.empty()));
+         }
+         return builder.contentType(MediaType.APPLICATION_JSON).body(response);
+     }

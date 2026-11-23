@@ -1,0 +1,16 @@
+Breaks: a compaction's files in and out count the table's rewrites from before tonight's assessment too.
+Module: catalog-maintenance
+Test: NightJobsTest#eachJobTakesTheLowestFreeSlotAndCountsItsOwnReplaces
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java b/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
+index 1d50768..47ce93b 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/NightlyCompaction.java
+@@ -226,7 +226,7 @@ final class NightlyCompaction {
+         long out = 0;
+         long floor = started.minus(SKEW).toEpochMilli();
+         Snapshot snapshot = table.currentSnapshot();
+-        while (snapshot != null && !assessed.equals(Optional.of(snapshot.snapshotId()))
++        while (snapshot != null
+                 && snapshot.timestampMillis() >= floor) {
+             if (DataOperations.REPLACE.equals(snapshot.operation())) {
+                 in += count(snapshot, SnapshotSummary.DELETED_FILES_PROP);

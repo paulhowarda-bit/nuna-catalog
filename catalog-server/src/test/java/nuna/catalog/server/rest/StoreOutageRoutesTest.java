@@ -106,7 +106,7 @@ class StoreOutageRoutesTest {
         Denials denials = DenialsForTests.denials(publisher, settings, clock);
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
         Guard guard = new Guard(authorizer, denials, publisher, settings, clock, holdings);
-        Lookup lookup = new Lookup(store, settings, holdings);
+        Lookup lookup = new Lookup(store, settings, new Prefixes(holdings, store, clock));
         AuditEvents events = new AuditEvents(settings);
         Callers callers = request -> MO;
         // One MinIO profile whose endpoint nothing contacts: every case is answered before a metadata file is read.
