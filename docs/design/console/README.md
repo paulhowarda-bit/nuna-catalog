@@ -38,8 +38,8 @@ The prototype assumes the following server capabilities, which do not exist toda
 - A paged listing of a table's metadata log.
 - Catalog and namespace properties for the console.
 - Compaction or an orphan scan on request (item 114, built on 2026-11-22).
-- A DR freeze's refusal is not audited today (`Management.requireUnfrozen`). The prototype shows it as unaudited, to
-  match the server.
+- A DR freeze's refusal was not audited. The prototype shows it as unaudited, as the server was then. Item 132 now
+  audits it, and item 134 covers the refusals that are still unaudited.
 
 ## Building it under the console's rules
 
