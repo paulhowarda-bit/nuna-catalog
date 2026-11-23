@@ -51,6 +51,8 @@ import org.springframework.test.context.DynamicPropertySource;
  *   <li>A reader sees no catalog health and no worker scans, and in tonight's queue only the tables they may select,
  *       neediest first, each linking to its table's Health tab: the latest assessment, why it is needy and its last
  *       compaction. A table they may not read is refused there as the catalog answers.</li>
+ *   <li>A table the worker has not assessed yet is counted apart on the overview and Maintenance, never as in shape
+ *       or queued, whether some of the reader's tables are assessed or none is (backlog 143).</li>
  *   <li>Someone with no grant sees no catalog health and no catalog, and their token never reaches another
  *       server.</li>
  *   <li>An owner, whose group holds {@code modify}, asks for a table's compaction now from its Health tab and sees
@@ -97,6 +99,8 @@ class ConsoleHealthTest {
     private String hidden;
     private String readers;
     private String owners;
+    private String fresh;
+    private String newcomers;
     private Instant lastSuccess;
 
     @BeforeAll
@@ -111,6 +115,11 @@ class ConsoleHealthTest {
             api.table(readable, table);
         }
         api.table(hidden, "secret");
+        // Tables the worker has not assessed yet: one beside the assessed ones, and one alone in a namespace of its own.
+        api.table(readable, "unseen");
+        fresh = "health_f_" + Api.suffix();
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + fresh + "\"]}"), 200);
+        api.table(fresh, "first");
 
         // The worker's reports: orders has small files and was compacted; events has equality deletes, so comes
         // first; fine needs nothing; secret needs it most, but the reader may not see it.
@@ -140,6 +149,9 @@ class ConsoleHealthTest {
         owners = "health-owners-" + Api.suffix();
         expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + readable
                 + "\"]},\"group\":\"" + owners + "\",\"privilege\":\"modify\"}", AUTH, api.grantAdmin()), 204);
+        newcomers = "health-newcomers-" + Api.suffix();
+        expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + fresh
+                + "\"]},\"group\":\"" + newcomers + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
         // Compaction runs on orders; nothing turns on fine's orphan scan, so a request for it is refused.
         expect(api.manage("PUT", "/namespaces/" + readable + "/tables/orders/maintenance-policy",
                 "{\"compaction.enabled\":\"true\"}"), 200);
@@ -268,6 +280,41 @@ class ConsoleHealthTest {
         // backlog 73), and the page shows that answer as it came.
         assertThat(shown.getText()).contains("The catalog answered with an error", "404 NoSuchTableException",
                 "Table does not exist: " + hidden + ".secret");
+    }
+
+    @Test
+    void aTableNotAssessedYetIsNeitherInShapeNorQueued() {
+        // Some assessed: the reader's four tables, one of them not assessed yet (backlog 143).
+        browser.signIn(token("rita", readers));
+        browser.open("/ui/#p=overview&c=trading");
+        assertThat(browser.await(By.cssSelector("#overview .ph h1")).getText())
+                .isEqualTo("1 of 3 assessed tables in shape; 1 not assessed yet. 2 queued for tonight.");
+        WebElement shape = browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='shape']"));
+        assertThat(shape.findElement(By.cssSelector(".kpi-v")).getText()).startsWith("1 of 3");
+        assertThat(shape.findElement(By.cssSelector(".kpi-d")).getText())
+                .isEqualTo("2 queued for tonight, 1 not assessed yet");
+        assertThat(browser.await(By.id("estate-legend")).getText()).contains("1 not assessed yet");
+        browser.open("/ui/#p=maintenance&c=trading");
+        assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
+                .isEqualTo("2 tables queued for tonight. 1 not assessed yet.");
+
+        // None assessed: before the worker reports, nothing is called in shape (backlog 143).
+        driver = browser.session();
+        browser.signIn(token("nell", newcomers));
+        browser.open("/ui/#p=overview&c=trading");
+        assertThat(browser.await(By.cssSelector("#overview .ph h1")).getText())
+                .isEqualTo("1 table not assessed yet: the maintenance worker has not reported.");
+        shape = browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='shape']"));
+        assertThat(shape.findElement(By.cssSelector(".kpi-d")).getText())
+                .isEqualTo("1 not assessed yet: the maintenance worker has not reported");
+        assertThat(shape.getText()).doesNotContain(" of ");
+        assertThat(browser.awaitText(By.cssSelector("#overview .grid-21 p.muted"), "Nothing queued").getText())
+                .isEqualTo("Nothing queued: the maintenance worker has not assessed any table you may read yet.");
+        browser.open("/ui/#p=maintenance&c=trading");
+        assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
+                .isEqualTo("1 table not assessed yet: the maintenance worker has not reported.");
+        assertThat(browser.await(By.id("neediest-none")).getText()).contains("The maintenance worker has not assessed "
+                + "any table you may read in trading yet, so it has queued none.").doesNotContain("in shape");
     }
 
     @Test
