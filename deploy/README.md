@@ -294,7 +294,16 @@ lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes
    Rewind before walking, not after: the walk's check keeps a table that was not rewound from being walked from a
    version DR lacks, but until the verifier's next pass the walked versions are above the watermark, and a rewind
    would give them up. Table locations no catalog holds are listed as `unknown-locations`.
-6. **Thaw:** `DELETE /management/v1/catalogs/{catalog}/dr-freeze`. Then register the unknown locations by name, if
+6. **Check the refs.** The same answer (step 5, with or without `apply`) lists under `refs` every branch and tag
+   whose cut, or a branch's own pointer, names a metadata file the DR store lacks, each with the tables and views
+   concerned under `missing`: the object's `id`, `kind` and `path` as the ref's cut names it, `pointer` (`cut`, or
+   `head` for a branch's own) and the `version` and `metadata-location` it names. `refs-checked` counts the refs
+   checked; a branch past its expiry is gone and is left out. A ref whose file the DR store could not be asked about
+   has a `problem`, and its files after that one are not checked: run the step again. Nothing walks or rewinds a ref
+   (D33: a report only). Delete each listed ref (`DELETE /management/v1/catalogs/{catalog}/refs/{ref}`: it needs
+   `create` on the catalog, and the freeze does not refuse it), or keep it for the primary region's return, when the DR store may get its files; until
+   then a read through it that needs a listed file fails.
+7. **Thaw:** `DELETE /management/v1/catalogs/{catalog}/dr-freeze`. Then register the unknown locations by name, if
    wanted: a register is refused under a freeze.
 
 Each step is a platform operator's (D18, amended 2026-11-20); the rewind's commits reach the audit trail as the
