@@ -1,0 +1,17 @@
+Breaks: A link from before the rename, p=health, no longer opens the Service page.
+Module: catalog-server
+Test: ConsoleHealthBrowserTest#anOperatorSeesDrReplicationAndTheStore
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/route.js b/catalog-server/src/main/resources/nuna/ui/route.js
+index f176a7ae..15fed729 100644
+--- a/catalog-server/src/main/resources/nuna/ui/route.js
++++ b/catalog-server/src/main/resources/nuna/ui/route.js
+@@ -7,7 +7,7 @@ export const SEP = '\u001f';
+ 
+ // Links from before item 192 keep working: the deployment's Health page is Service now, and a table's Health tab
+ // Maintenance.
+-const OLD_PAGES = {health: 'service'};
++const OLD_PAGES = {};
+ const OLD_TABS = {health: 'maintenance'};
+ 
+ /** {page, c, k, ns: [], n, tab, g, r} from the fragment. A catalog with no page is that catalog's browse page. */

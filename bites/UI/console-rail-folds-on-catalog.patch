@@ -1,0 +1,17 @@
+Breaks: The rail folds to bare icons on every page.
+Module: catalog-server
+Test: ConsoleBrowserTest#theRailKeepsItsLabelsOnTheCatalogPage
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 144a9bda..03b45cc8 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -152,7 +152,7 @@ function closeMenus() {
+ }
+ 
+ function setChrome(navKey, ref) {
+-  consoleEl.classList.toggle('rail', !!railPick);
++  consoleEl.classList.toggle('rail', true);
+   syncMenuButton();
+   // The top chip names the ref a browse page reads (item 109): lakehouse @dev.
+   for (const b of $$('[data-cat]')) fill(b, cat || '–', ref ? h('span', {class: 'pick-ref'}, '@' + ref) : null);
