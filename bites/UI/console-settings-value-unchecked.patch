@@ -1,0 +1,24 @@
+Breaks: The settings dialog checks only that a number or a size is one, not that it lies in its range, so a value outside it is sent.
+Module: catalog-server
+Test: ConsoleSettingsBrowserTest#aValueOutsideTheAllowedOnesIsRefusedInTheDialogAndNeverSent
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/settings.js b/catalog-server/src/main/resources/nuna/ui/settings.js
+index 494c1d3..b044249 100644
+--- a/catalog-server/src/main/resources/nuna/ui/settings.js
++++ b/catalog-server/src/main/resources/nuna/ui/settings.js
+@@ -118,13 +118,13 @@ export function checkValue(s, raw, ctx) {
+     if (!s.choices.includes(typed)) return {error: `Choose one of ${s.choices.join(', ')}.`};
+   } else if (s.kind === 'int') {
+     const [min, max] = rangeOf(s, ctx);
+-    if (!/^\d+$/.test(typed) || Number(typed) < min || Number(typed) > max) {
++    if (!/^\d+$/.test(typed)) {
+       return {error: `A whole number from ${fmt(min)} to ${fmt(max)}.`};
+     }
+     value = String(Number(typed));
+   } else if (s.kind === 'size') {
+     const bytes = parseSize(typed);
+-    if (bytes === null || bytes < s.min || bytes > s.max) {
++    if (bytes === null) {
+       return {error: `A size from ${sizeWords(s.min)} to ${sizeWords(s.max)}, such as 512 MB.`};
+     }
+     value = String(bytes);
