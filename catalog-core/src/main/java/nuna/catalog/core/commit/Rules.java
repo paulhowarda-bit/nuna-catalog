@@ -79,7 +79,7 @@ public final class Rules {
         if (change.before() instanceof TableFacts before && change.after() instanceof TableFacts after
                 && !after.snapshotTimestamps().keySet().containsAll(before.snapshotTimestamps().keySet())
                 && change.governance().held()) {
-            return Optional.of(Rejection.forbidden("Table " + change.object().id()
+            return Optional.of(Rejection.refused("legal_hold", "Table " + change.object().id()
                     + " is under legal hold: its snapshots cannot be removed"));
         }
         return Optional.empty();
@@ -88,7 +88,7 @@ public final class Rules {
     /** Nothing commits to a table or view while it, a namespace above it or its catalog is frozen for a DR reconcile (D37). */
     static Optional<Rejection> drFreeze(CommitRule.Change change) {
         return change.governance().nearest(GovernanceAttribute.Kind.DR_FREEZE)
-                .map(freeze -> Rejection.forbidden("Writes to " + change.object().id()
+                .map(freeze -> Rejection.refused("dr_freeze", "Writes to " + change.object().id()
                         + " are frozen for DR reconcile: " + freeze.value()));
     }
 

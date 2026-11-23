@@ -154,7 +154,9 @@ class ObjectRoutes {
                 case WriteResult.Applied applied -> new Reply(204, "", true);
                 case WriteResult.Missing missing -> throw noSuch(kind, qualified);
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
-                        throw Http.forbidden(word(kind) + " " + qualified + " is under a legal hold and cannot be dropped");
+                        throw guard.refuse(request, catalog, object, AuditEvents.path(levels, name),
+                                kind == Kind.TABLE ? Guard.DROP_TABLE : Guard.DROP_VIEW, "legal_hold",
+                                word(kind) + " " + qualified + " is under a legal hold and cannot be dropped");
                 default -> throw new IllegalStateException("dropObject answered " + result);
             };
         });

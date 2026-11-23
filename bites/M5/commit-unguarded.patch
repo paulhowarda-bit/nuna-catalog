@@ -2,15 +2,14 @@ Breaks: A commit to an existing table is not authorized.
 Module: catalog-server
 Test: SecurityGateTest#privilegesInheritDownTheTreeAndNeverSideways
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-index 77a5cbe..b1b4619 100644
+index 819181a..62d2ad1 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TableRoutes.java
-@@ -190,8 +190,6 @@ class TableRoutes {
-         NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchTable(qualified));
-         Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+@@ -200,7 +200,6 @@ class TableRoutes {
+         List<String> path = AuditEvents.path(levels, table);
+         Operation operation = existing.isPresent() ? guard.commit(request, body) : Guard.CREATE_TABLE;
          if (existing.isPresent()) {
--            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body),
--                    Http.noSuchTable(qualified));
+-            guard.onObject(request, catalog, existing.get(), path, operation, Http.noSuchTable(qualified));
          } else {
-             guard.onNewObject(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchTable(qualified));
+             guard.onNewObject(request, catalog, record, levels, operation, Http.noSuchTable(qualified));
          }

@@ -1,0 +1,17 @@
+Breaks: a commit, transaction or create a DR freeze refuses is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GovernanceRefusalTest#aCommitUnderAFreezeIsAuditedAsADenial+aTransactionUnderAFreezeIsAuditedNamingTheTableRefused+aCreateInAFrozenNamespaceIsAuditedNamingTheTableItWouldHaveMade
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
+index f00a1f4..90432ce 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
+@@ -88,7 +88,7 @@ public final class Rules {
+     /** Nothing commits to a table or view while it, a namespace above it or its catalog is frozen for a DR reconcile (D37). */
+     static Optional<Rejection> drFreeze(CommitRule.Change change) {
+         return change.governance().nearest(GovernanceAttribute.Kind.DR_FREEZE)
+-                .map(freeze -> Rejection.refused("dr_freeze", "Writes to " + change.object().id()
++                .map(freeze -> Rejection.forbidden("Writes to " + change.object().id()
+                         + " are frozen for DR reconcile: " + freeze.value()));
+     }
+ 

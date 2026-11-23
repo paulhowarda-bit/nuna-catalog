@@ -685,11 +685,11 @@ public final class CommitEngine {
                     return noSuch(request);
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD -> {
-                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                    return Failure.refused(object, "legal_hold", "Table " + display(request)
                             + " is under a legal hold and cannot be unregistered");
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN -> {
-                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                    return Failure.refused(object, "dr_freeze", "Table " + display(request)
                             + " is frozen for DR reconcile and cannot be unregistered");
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {
@@ -900,7 +900,8 @@ public final class CommitEngine {
                         Optional<Failure> refused = judge(object, changed.before(), changed.after(), governance.get(i));
                         if (refused.isPresent()) {
                             Failure f = refused.get();
-                            return new Failure(f.status(), f.type(), table + ": " + f.message());
+                            return new Failure(f.status(), f.type(), table + ": " + f.message(), Optional.empty(),
+                                    f.refusal());
                         }
                         boolean regulated = schemaOrSpecChanged(changed.before(), changed.after())
                                 && governance.get(i).regulated();
@@ -1069,7 +1070,8 @@ public final class CommitEngine {
             Optional<Rejection> rejection = rule.judge(change);
             if (rejection.isPresent()) {
                 Rejection r = rejection.get();
-                return Optional.of(new Failure(r.status(), r.type(), r.message()));
+                return Optional.of(new Failure(r.status(), r.type(), r.message(), Optional.empty(),
+                        r.denial().map(reason -> new CommitReply.Refusal(object, reason))));
             }
         }
         return Optional.empty();

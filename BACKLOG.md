@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 3 S, 10 M, 10 L, 5 XL.
+**28 open:** 4 S, 9 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -38,8 +38,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
-| [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
+| [142](backlog/142.md) | S | Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged | three refusal sites that item 134's pieces already cover (`Rejection.refused`, `Failure.refused`, `Guard.refuse`), each with a fast test and a bite | 2026-11-22 |
 
 ## Open items in full
 
@@ -1261,34 +1261,6 @@ lifted record, or the row kept with `released_at` and `released_by`), on all fou
 test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
 its tests. The audit topic read goes.
 
-### 134. Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited
-
-- Added: 2026-11-22 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java, catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/java/nuna/catalog/server/rest/, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/D18/
-- Effort: M, four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them
-
-Item 132 made a drop, rename, undrop or purge claim refused by a DR freeze publish a `nuna.catalog.denial` record, as
-every refusal must (D18). Working on it found four more refusals that answer 403 and publish nothing:
-
-- A commit refused by a DR freeze: `Rules.java`, line 92, "Writes to ... are frozen for DR reconcile: ...". It returns
-  a `Rejection.forbidden`, which reaches the client as a `CommitReply.Failure` (`ObjectRoutes.reply`). The same rule
-  set refuses a snapshot removal under a legal hold (`Rules.java`, line 83) the same way, also unaudited.
-- An unregister refused by a DR freeze: `CommitEngine.java`, line 693, "... is frozen for DR reconcile and cannot be
-  unregistered". Its legal-hold refusal beside it (line 689) is unaudited too. `TableRoutes.unregister` audits the
-  regulated and flagged-table refusals through `Guard.refuse`, but not these.
-- A drop refused by a legal hold: `ObjectRoutes.java`, line 157, `Http.forbidden(... "is under a legal hold and cannot
-  be dropped")`, a `CatalogError` with no denial.
-- A purge claim refused by a legal hold: `LifecycleRoutes.java`, line 219, `CatalogError.of(403, ...)` with no denial.
-
-Evidence: read from the code on 2026-11-22 (branch of item 132). No test checks for a denial on any of them.
-
-What done looks like:
-- Each refusal above publishes a `nuna.catalog.denial` record through `Denials`, naming the operation and the table
-  or view, with reason `dr_freeze` or `legal_hold` and the message the caller gets. The answer stays the same 403.
-- A fast test per refusal, or per route, that checks the denial, in the form of `FrozenObjectRefusalTest` and
-  `FrozenLifecycleRefusalTest` (item 132).
-- A bite per publish site, in `bites/D18/`, that drops the publish and fails its test.
-
 ### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22
@@ -1341,6 +1313,31 @@ Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-1
 The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
+
+### 142. Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged
+
+- Added: 2026-11-22 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
+- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-server/src/test/java/nuna/catalog/server/rest/ bites/D18/
+- Effort: S, three refusal sites that item 134's pieces already cover (`Rejection.refused`, `Failure.refused`, `Guard.refuse`), each with a fast test and a bite
+
+Every refusal must publish a `nuna.catalog.denial` record (D18). Item 134 made four more do so. Working on it, its
+agent found three that still answer 403 and publish nothing:
+
+- A namespace drop refused by a legal hold: `NamespaceRoutes.java`, line 201, `Http.forbidden(... "is under a legal
+  hold and cannot be dropped")`.
+- A snapshot removal refused by the minimum snapshot age: `Rules.snapshotMinimumAge` (`Rules.java`, line 104) returns
+  a plain rejection, which reaches the client as a `CommitReply.Failure` with no refusal.
+- An unregister the store refuses as flagged: `CommitEngine.java`, line 695, `WriteResult.Reason.FLAGGED`.
+
+Evidence: read from the code on 2026-11-22 (item 134's branch, worktree-agent-a9ea90116af38b255). No test checks for a
+denial on any of them. Item 134's report also notes that the view routes and the table register route call
+`Guard.refused` but have no test of their own.
+
+What done looks like:
+- Each refusal above publishes a denial through `Denials`, naming the operation and the object, with a reason
+  (`legal_hold`, `snapshot_min_age` or `flagged`) and the message the caller gets. The answer stays the same 403.
+- A fast test per refusal, in the form of `GovernanceRefusalTest` (item 134).
+- A bite per publish site in `bites/D18/` that drops the publish and fails its test.
 
 ## Done and dropped
 
@@ -1453,6 +1450,7 @@ be taken by hand.
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [134](backlog/134.md) | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | done | 2026-11-22 |
 | [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
 | [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
