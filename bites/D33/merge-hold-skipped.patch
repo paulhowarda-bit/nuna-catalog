@@ -3,15 +3,15 @@ Module: catalog-core
 Test: MergeTest#aHoldSetAfterTheBranchCommit
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
-index be01593..e8d5b2e 100644
+index 315bedf..a6554d0 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
-@@ -345,7 +345,7 @@ public final class Merge {
+@@ -346,7 +346,7 @@ public final class Merge {
                  : onMainFacts;
          return new Table(entry, namespace, object, cut, branch, main, since, Optional.empty(), moved,
                  MergeMetadata.definitionChange(cutJson.get(), branchJson.get()),
 -                engine.judge(o, before, after, governance),
 +                engine.judge(o, after, after, governance),
                  CommitEngine.schemaOrSpecChanged(before, after) && governance.regulated(),
-                 Optional.of(MergeMetadata.merged(branchJson.get(), mainJson.get(), onMain.metadataLocation(),
-                         clock.millis())));
+                 Optional.of(MergeMetadata.merged(cutJson.get(), branchJson.get(), mainJson.get(),
+                         onMain.metadataLocation(), clock.millis())));

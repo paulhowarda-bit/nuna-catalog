@@ -1,0 +1,17 @@
+Breaks: main's copy keeps the cut's snapshots main's expiry removed since the cut, so after a merge time travel on main reaches history main had expired, rows a later delete removed among it (the security review's low note on item 107).
+Module: catalog-iceberg
+Test: MergeMetadataTest#theCopyLeavesOutWhatMainsExpiryRemoved
+
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
+index 680ab70..d6cff26 100644
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
+@@ -118,8 +118,6 @@ public final class MergeMetadata {
+                 named.add(ref.getValue().snapshotId());
+             }
+         }
+-        kept.removeSnapshots(branch.snapshots().stream().map(Snapshot::snapshotId)
+-                .filter(id -> cut.snapshot(id) != null && main.snapshot(id) == null && !named.contains(id)).toList());
+         try {
+             copy = (ObjectNode) Metadata.REQUESTS.readTree(TableMetadataParser.toJson(kept.build()));
+         } catch (JsonProcessingException e) {

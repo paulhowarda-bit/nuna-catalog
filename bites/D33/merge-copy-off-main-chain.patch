@@ -3,15 +3,15 @@ Module: catalog-iceberg
 Test: MergeMetadataTest#theCopyIsTheBranchsMetadataAfterMainsFile
 
 diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
-index 1823d81..dc95675 100644
+index 680ab70..18b0b23 100644
 --- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
 +++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
-@@ -100,7 +100,7 @@ public final class MergeMetadata {
+@@ -107,7 +107,7 @@ public final class MergeMetadata {
                  .put("metadata-file", mainLocation));
          int keep = branch.propertyAsInt(TableProperties.METADATA_PREVIOUS_VERSIONS_MAX,
                  TableProperties.METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT);
 -        ArrayNode entries = copy.putArray("metadata-log");
 +        ArrayNode entries = Metadata.REQUESTS.createArrayNode();
          log.subList(Math.max(0, log.size() - keep), log.size()).forEach(entries::add);
-         copy.put("last-updated-ms", Math.max(atMillis, Math.max(main.lastUpdatedMillis(), branch.lastUpdatedMillis())));
-         return TableMetadataParser.toJson(TableMetadataParser.fromJson(copy.toString()));
+         TableMetadata.Builder kept = TableMetadata.buildFrom(TableMetadataParser.fromJson(copy.toString()));
+         Set<Long> named = new HashSet<>();
