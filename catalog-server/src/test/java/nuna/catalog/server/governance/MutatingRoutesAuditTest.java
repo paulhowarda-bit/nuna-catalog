@@ -219,6 +219,9 @@ class MutatingRoutesAuditTest {
                 rid(id, api.steward())));
         cases.put("POST " + M + "/refs/{ref}/merge", id -> api.manage("POST", "/refs/m7-" + Api.suffix() + "/merge",
                 null, rid(id, api.steward())));
+        // The steward holds no modify on the table, which a request for its maintenance needs.
+        cases.put("POST " + M + "/namespaces/{namespace}/tables/{table}/maintenance/requests", id -> api.manage("POST",
+                target("table") + "/maintenance/requests", "{\"job\":\"compaction\"}", rid(id, api.steward())));
         // The tester holds create and modify, not manage-tags (backlog 156).
         cases.put("POST " + M + "/objects/{id}/refs/remove", id -> api.manage("POST", "/objects/"
                 + api.id(withTable(), "tables", "t") + "/refs/remove", "{\"all-refs\":true}", rid(id)));
@@ -462,6 +465,13 @@ class MutatingRoutesAuditTest {
             expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
             expect(api.manage("POST", "/refs/" + name + "/merge", null, rid(id)), 200);
             return EventType.REF;
+        });
+        cases.put("POST " + M + "/namespaces/{namespace}/tables/{table}/maintenance/requests", id -> {
+            // Compaction is off by default, and a job the policy does not run is refused (409).
+            String table = target("table");
+            expect(api.manage("PUT", table + "/maintenance-policy", "{\"compaction.enabled\":\"true\"}"), 200);
+            expect(api.manage("POST", table + "/maintenance/requests", "{\"job\":\"compaction\"}", rid(id)), 202);
+            return EventType.GOVERNANCE_CHANGE;
         });
         cases.put("POST " + M + "/objects/{id}/refs/remove", id -> {
             // The tester makes the tag; the steward, who holds manage-tags, takes a dropped table out of it (backlog 156).

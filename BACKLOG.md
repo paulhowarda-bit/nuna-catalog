@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**45 open:** 11 S, 15 M, 14 L, 5 XL.
+**41 open:** 7 S, 15 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -46,10 +46,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [156](backlog/156.md) | M | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files | 2026-11-22 |
 | [157](backlog/157.md) | S | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | one read in each store's namespace drop, one route answer, a suite case, a fast route test and four bites; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [158](backlog/158.md) | M | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build | 2026-11-23 |
-| [160](backlog/160.md) | S | Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests | two test files: one route's two audit cases and one expected key; the run's containers make checking it take the most time | 2026-11-23 |
-| [161](backlog/161.md) | S | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | one function in the console's table page and its browser test; the heavy browser test is what takes the time | 2026-11-23 |
-| [162](backlog/162.md) | S | ConsoleHealthTest reads the estate legend's count and words on two lines | one assertion in one browser test | 2026-11-23 |
-| [163](backlog/163.md) | S | ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table | one browser test's expected values (or, if Paul wants the console to call it a default, one display rule) | 2026-11-23 |
 | [167](backlog/167.md) | M | Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8) | a nullable column and its migration on PostgreSQL, CockroachDB and Oracle and a field on MongoDB's document, carried by create and every read, a `RefSuite` case on four stores, the route's field and limit, and the console's purpose line; the suite case then waits for the overnight heavy build | 2026-11-23 |
 | [168](backlog/168.md) | M | Refs: each table's version at a ref's cut, and the cut's time for a ref made from a branch, from the server (item 109's gap 9) | a `cut-at` on the ref's answer, and the namespace listing and its totals read through a ref (each table's pointer on the ref, or at the cut, for its format, snapshots and last commit), with fast route tests and bites, then the console's columns | 2026-11-23 |
 | [169](backlog/169.md) | M | Audit: records filterable by the branch they went through (item 109's gap 10) | a `branch` column (and the subject's id as a filter) on the audit events table, its schema evolved in place on existing tables, the writer filling it from each record, the feed's two filters, and the console's search; the audit table tests start containers, so they wait for the overnight heavy build | 2026-11-23 |
@@ -2685,88 +2681,6 @@ applying to reads through that ref); it grants no new access. A second way to cl
 missing (fail closed, audited as a denial) closes this race and any other path to the same state, without the lock
 order change on three stores or MongoDB's check. Item 157's check stays either way, so reads do not start failing.
 
-### 160. Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests
-
-- Added: 2026-11-23 by overnight run 2026-11-23
-- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/MutatingRoutesAuditTest.java catalog-server/src/test/java/nuna/catalog/server/governance/HealthRoutesTest.java
-- Effort: S, two test files: one route's two audit cases and one expected key; the run's containers make checking it take the most time
-
-Three heavy tests in catalog-server fail because item 114 (c38e941, landed 9bdb0ee) added the maintenance request
-route and a `requests` field on a table's health without updating them:
-
-- `MutatingRoutesAuditTest#everyMutatingRouteEmitsItsAuditRecord` and `#everyMutatingManagementRouteAuditsItsRefusals`:
-  "a case for every mutating route" / "a refusal case for every mutating management route" lack
-  `POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests`.
-- `HealthRoutesTest#theWorkersReportsMakeTheTablesHealth`, line 70: "[nothing reported yet]" expects only
-  `id, catalog, namespace, name`, but `HealthRoutes.table` now adds `requests`.
-
-Evidence: the overnight run of 2026-11-23 (testing 02b22ad), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
-`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
-
-An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet green", its worktree locked), already changes this test; whoever takes this item reads it first.
-
-Done looks like: a 202 request audited as `GOVERNANCE_CHANGE` (`maintenance-request`) and a refusal for a caller
-without modify in the audit gate, `requests` expected before any report, and all three tests pass in the overnight
-heavy build.
-
-### 161. Console: the Metadata log tab fails on a create's, register's or revive's journal entry
-
-- Added: 2026-11-23 by overnight run 2026-11-23
-- Touches: catalog-server/src/main/resources/nuna/ui/table.js
-- Effort: S, one function in the console's table page and its browser test; the heavy browser test is what takes the time
-
-`ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory` fails in the heavy build: "the metadata log
-is not shown"; the Metadata log tab shows "(updates || []).map is not a function". `changeWords` in `table.js`
-(4365a6e, item 124's panel for item 130) assumes a journal entry's `updates` is an array, but a create's, register's
-or revive's entry keeps the request object there (`CommitEngine` 518, 563, 631, since 2026-11-08). A real console
-bug, not only the test's: any table made by create shows the error.
-
-Evidence: the overnight run of 2026-11-23 (testing 02b22ad), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
-`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
-
-Done looks like: the Metadata log tab words a create, register and revive entry, and the test passes in the
-overnight heavy build.
-
-### 162. ConsoleHealthTest reads the estate legend's count and words on two lines
-
-- Added: 2026-11-23 by overnight run 2026-11-23
-- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleHealthTest.java
-- Effort: S, one assertion in one browser test
-
-`ConsoleHealthTest#aTableNotAssessedYetIsNeitherInShapeNorQueued`, line 296, expects "1 not assessed yet" in the
-estate legend's text, but `.ice-legend span` is `inline-flex` (7fbf01b), so WebDriver's `getText` gives
-"1
-not assessed yet". The assertion came with item 143 (6d4bdc5). Actual: "1 in shape 1 small files or deletes 1
-equality deletes, compacted first 1 not assessed yet".
-
-Evidence: the overnight run of 2026-11-23 (testing 02b22ad), `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
-`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
-
-An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet green", its worktree locked), already changes this test; whoever takes this item reads it first.
-
-Done looks like: the test reads the count and words apart (or normalizes whitespace) and passes in the overnight
-heavy build.
-
-### 163. ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table
-
-- Added: 2026-11-23 by overnight run 2026-11-23
-- Touches: catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleSettingsBrowserTest.java
-- Effort: S, one browser test's expected values (or, if Paul wants the console to call it a default, one display rule)
-
-`ConsoleSettingsBrowserTest#aListedSettingIsChangedAndResetThroughItsEditorAsAnAuditedCommit`, line 92, expects
-`write.parquet.compression-codec` to show `zstd · default` on a new table, but iceberg-core 1.12's
-`TableMetadata.newTableMetadata` persists `write.parquet.compression-codec=zstd` on every new table, so the console
-shows `zstd · set`. Item 141 (849fb98).
-
-Evidence: the overnight run of 2026-11-23 (testing 02b22ad), "Expected condition failed: the value of
-write.parquet.compression-codec is not zstd · default", `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-23\summary.md` and `heavy-results\`; traced in
-`status/2026-11-23-agent-a9284fd56a1d18c39.md`.
-
-An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet green", its worktree locked), already changes this test; whoever takes this item reads it first.
-
-Done looks like: the test uses a setting Iceberg does not write itself (or expects `set`), and passes in the overnight
-heavy build.
-
 ### 167. Refs: a description given when a branch or tag is made, kept on the ref and shown in the console (item 109's gap 8)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -3057,6 +2971,10 @@ through a tag and follows the tree to another table without leaving the tag.
 | [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |
 | [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |
 | [159](backlog/159.md) | Demo: the seed's sample grant goes to a group the grant admin is not in | done | 2026-11-23 |
+| [160](backlog/160.md) | Heavy build: the audit gate and HealthRoutesTest miss item 114's maintenance requests | done | 2026-11-23 |
+| [161](backlog/161.md) | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | done | 2026-11-23 |
+| [162](backlog/162.md) | ConsoleHealthTest reads the estate legend's count and words on two lines | done | 2026-11-23 |
+| [163](backlog/163.md) | ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table | done | 2026-11-23 |
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |

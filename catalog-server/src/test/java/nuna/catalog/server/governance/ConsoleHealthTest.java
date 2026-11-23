@@ -293,7 +293,9 @@ class ConsoleHealthTest {
         assertThat(shape.findElement(By.cssSelector(".kpi-v")).getText()).startsWith("1 of 3");
         assertThat(shape.findElement(By.cssSelector(".kpi-d")).getText())
                 .isEqualTo("2 queued for tonight, 1 not assessed yet");
-        assertThat(browser.await(By.id("estate-legend")).getText()).contains("1 not assessed yet");
+        // Each legend item is a flex row, so its count and words come back on lines of their own.
+        assertThat(browser.await(By.id("estate-legend")).getText().replaceAll("\\s+", " "))
+                .contains("1 not assessed yet");
         browser.open("/ui/#p=maintenance&c=trading");
         assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
                 .isEqualTo("2 tables queued for tonight. 1 not assessed yet.");
