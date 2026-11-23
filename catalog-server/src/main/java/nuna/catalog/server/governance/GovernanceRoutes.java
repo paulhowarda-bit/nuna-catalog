@@ -51,8 +51,8 @@ import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * The governance management API (D24, D27, D30, D37) on a catalog, namespace, table or view: the
- * attributes the governance tool pushes, with their provenance; legal holds; the maintenance policy;
+ * The governance management API (D24, D27, D30, D37) on a catalog, namespace, table or view: the labels people
+ * set in the console or an outside tool pushes, with their provenance; legal holds; the maintenance policy;
  * and the DR freeze; and, for the console, a catalog's summary and every hold and freeze in it (D45). Every change
  * writes its audit record to the outbox with the change itself.
  * Each route asks {@link ManagementGuard} once its target is resolved, before reading the body.
@@ -70,7 +70,7 @@ class GovernanceRoutes {
     private static final String HOLDS_AND_FREEZES = "/governance/holds";
     private static final Logger LOG = LoggerFactory.getLogger(GovernanceRoutes.class);
 
-    /** The attributes the governance tool pushes (D27), by their path name. */
+    /** The attributes set through this API, from the console or an outside tool (D27), by their path name. */
     static final Map<String, GovernanceAttribute.Kind> PUSHED = Map.of(
             "classification", GovernanceAttribute.Kind.CLASSIFICATION,
             "owner", GovernanceAttribute.Kind.OWNER,
@@ -294,7 +294,9 @@ class GovernanceRoutes {
 
     /**
      * The maintenance policy of the target: its own keys, and every key resolved through the levels
-     * above it, the deployment's defaults and the guardrails, each with where its value came from.
+     * above it, the deployment's defaults and the guardrails, each with where its value came from; and the
+     * retention classes configured, by name, each with its minimum snapshot age, which the console offers when a
+     * retention class is set (D27, item 140).
      */
     @GetMapping(path = {CATALOG + POLICY, NAMESPACE + POLICY, TABLE + POLICY, VIEW + POLICY},
             produces = MediaType.APPLICATION_JSON_VALUE)
@@ -327,6 +329,13 @@ class GovernanceRoutes {
             if (setting.reason() != null) {
                 node.put("reason", setting.reason());
             }
+        });
+        ArrayNode classes = body.putArray("retention-classes");
+        new TreeMap<>(settings.retentionClasses()).forEach((name, retention) -> {
+            ObjectNode node = classes.addObject();
+            node.put("name", name);
+            node.put("minimum-snapshot-age", retention.minimumSnapshotAge() == null ? null
+                    : retention.minimumSnapshotAge().toString());
         });
         return json(200, body);
     }

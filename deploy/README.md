@@ -274,9 +274,9 @@ lag; `NunaDrLagging` pages when a commit has not been whole in DR for 15 minutes
    wanted: a register is refused under a freeze.
 
 Each step is a platform operator's (D18, amended 2026-11-20); the rewind's commits reach the audit trail as the
-fast-forward's do. The overnight
-DR drill (`DrDrillTest`) runs the freeze, reconcile and thaw; its leg with the DR store behind (item 92) runs the
-verifier in both regions, the rewind and the walk right after it, and has not run yet.
+fast-forward's do. The overnight DR drill (`DrDrillTest`) runs the freeze, reconcile and thaw; its leg with the DR
+store behind (item 92) runs the verifier in both regions, the rewind and the walk right after it. Both passed in the
+overnight run of 2026-11-22.
 
 ## Trying it locally
 

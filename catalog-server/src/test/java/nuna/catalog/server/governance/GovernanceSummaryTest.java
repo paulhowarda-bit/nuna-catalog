@@ -55,7 +55,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import tools.jackson.databind.JsonNode;
 
 /**
- * A catalog's governance summary and its holds and freezes (D45, item 128): the counts the console's governance page
+ * A catalog's governance summary and its holds and freezes (D45, item 128), and the retention classes a maintenance
+ * policy names for the console to offer (item 140): the counts the console's governance page
  * shows, with a table closed until classified exactly when the authorizer closes it (D27); the holds and freezes
  * standing now, from the store, and those lifted, from the audit topic; and who may read them, describe on the
  * catalog, refusals audited and names hidden as on every management route (D18). The routes, guard and authorizer
@@ -282,6 +283,43 @@ class GovernanceSummaryTest {
         assertThat(body.get("history").get("reason").asString()).contains("cannot be read");
     }
 
+    // ---- the retention classes to choose from ----
+
+    /**
+     * The maintenance policy names the retention classes the console offers (D27, item 140): each configured one, by
+     * name, with its minimum snapshot age.
+     */
+    @Test
+    void theMaintenancePolicyNamesEveryConfiguredRetentionClassWithItsMinimumAge() {
+        GovernanceSettings settings = new GovernanceSettings(10, 60, Map.of(
+                "trade-records", new GovernanceSettings.RetentionClass(Duration.ofDays(30)),
+                "audit-evidence", new GovernanceSettings.RetentionClass(Duration.ofDays(400)),
+                "scratch", new GovernanceSettings.RetentionClass(null)),
+                Duration.ofDays(7), Duration.ofHours(1), Map.of());
+        GovernanceRoutes routes = new GovernanceRoutes(store, management, guard, settings, topic.history(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        for (JsonNode policy : List.of(json(routes.policy("gate", null, null, null, http)),
+                json(routes.policy("gate", "finance\u001fledger", "journal", null, http)))) {
+            JsonNode classes = policy.get("retention-classes");
+            assertThat(classes.valueStream().map(c -> c.get("name").asString()).toList())
+                    .containsExactly("audit-evidence", "scratch", "trade-records");
+            assertThat(classes.get(0).get("minimum-snapshot-age").asString()).isEqualTo("PT9600H");
+            assertThat(classes.get(1).get("minimum-snapshot-age").isNull()).as("a class with no minimum").isTrue();
+            assertThat(classes.get(2).get("minimum-snapshot-age").asString()).isEqualTo("PT720H");
+        }
+    }
+
+    @Test
+    void withNoRetentionClassConfiguredThereIsNoneToChoose() {
+        GovernanceSettings settings = new GovernanceSettings(10, 60, Map.of(), Duration.ofDays(7), Duration.ofHours(1),
+                Map.of());
+        GovernanceRoutes routes = new GovernanceRoutes(store, management, guard, settings, topic.history(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+
+        assertThat(json(routes.policy("gate", "sandbox", null, null, http)).get("retention-classes")).isEmpty();
+    }
+
     // ---- who may read them ----
 
     @Test
@@ -447,6 +485,8 @@ class GovernanceSummaryTest {
                     case "findNamespace" -> findNamespace((List<String>) args[1]);
                     case "readNamespace" -> Optional.ofNullable(namespaces.get((UUID) args[0]));
                     case "readObject" -> Optional.ofNullable(objects.get((UUID) args[0]));
+                    case "findObject" -> objects.values().stream().filter(o -> o.namespaceId().equals(args[0])
+                            && o.name().normalized().equals(args[1])).findFirst();
                     case "listNamespaces" -> page(namespaces.values().stream()
                             .filter(ns -> ns.parentId().equals(args[0]))
                             .sorted(Comparator.comparing(ns -> ns.name().normalized())).toList(), (PageRequest) args[1]);
