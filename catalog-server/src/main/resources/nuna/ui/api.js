@@ -185,7 +185,7 @@ export const catalogProperties = catalog => call(`/management/v1/catalogs/${enc(
 /** A catalog's governance in figures (item 128): tables classified, closed, held and frozen; regulated areas. */
 export const governanceSummary = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/summary`);
 
-/** Every hold and freeze in a catalog (item 128): those standing, and those lifted as far as the audit topic reaches. */
+/** Every hold and freeze in a catalog (item 128): those standing, and those the store recorded lifted in the last 30 days (item 133). */
 export const holdsAndFreezes = catalog => call(`/management/v1/catalogs/${enc(catalog)}/governance/holds`);
 
 /** An object's export: its pointer, current metadata and commit journal, by the object's id. */
