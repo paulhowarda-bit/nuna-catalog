@@ -3,16 +3,12 @@ package nuna.catalog.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
-import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,17 +21,14 @@ import org.springframework.test.context.ContextConfiguration;
 /**
  * The web console as the server hosts it under {@code /ui}, with no {@code nuna.ui.*} settings: its files
  * need no token and carry a strict Content-Security-Policy, {@code config.json} offers no token box and holds
- * nothing secret, and everything else still needs a token.
+ * nothing secret, and everything else still needs a token. {@link ConsoleRulesTest} reads the same files without a
+ * server, in the fast build.
  */
 @Tag("heavy")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class})
 class ConsoleTest {
-
-    static final List<String> FILES = List.of("index.html", "app.js", "api.js", "audit.js", "auth.js", "browse.js",
-            "dom.js", "governance.js", "health.js", "maintenance.js", "nights.js", "overview.js", "panels.js", "queue.js",
-            "requests.js", "route.js", "settings.js", "table.js", "tree.js", "style.css", "favicon.svg");
 
     private final HttpClient http = HttpClient.newHttpClient();
 
@@ -52,7 +45,7 @@ class ConsoleTest {
         assertThat(page.headers().firstValue("Content-Type")).hasValueSatisfying(v -> assertThat(v).startsWith("text/html"));
         assertThat(page.body()).contains("<script type=\"module\" src=\"app.js\">");
         assertStrictPolicy(page, "connect-src 'self';");
-        for (String file : FILES) {
+        for (String file : ConsoleRulesTest.FILES) {
             HttpResponse<String> response = get("/ui/" + file, null);
             assertThat(response.statusCode()).as(file).isEqualTo(200);
             assertStrictPolicy(response, "connect-src 'self';");
@@ -108,35 +101,12 @@ class ConsoleTest {
         assertThat(JsonPath.<List<String>>read(held.body(), "$.catalogs[*].name")).containsExactly("trading");
     }
 
-    @Test
-    void theFilesHoldNoInlineCodeAndNeverWriteMarkup() throws IOException {
-        Pattern inlineScript = Pattern.compile("<script(?![^>]*\\bsrc=)[^>]*>", Pattern.CASE_INSENSITIVE);
-        Pattern inlineStyle = Pattern.compile("<style|\\sstyle=|\\son[a-z]+=", Pattern.CASE_INSENSITIVE);
-        String page = resource("index.html");
-        assertThat(inlineScript.matcher(page).find()).as("inline <script> in index.html").isFalse();
-        assertThat(inlineStyle.matcher(page).find()).as("inline style or handler in index.html").isFalse();
-        for (String file : FILES.stream().filter(f -> f.endsWith(".js")).toList()) {
-            String code = resource(file);
-            assertThat(code).as(file).doesNotContain(".innerHTML =", ".outerHTML =", "insertAdjacentHTML",
-                    "document.write", "eval(", "new Function", "localStorage.setItem('nuna.token", ".style.", "cssText");
-        }
-        assertThat(resource("auth.js")).contains("sessionStorage.setItem(TOKEN").doesNotContain("localStorage.")
-                .doesNotContain("document.cookie");
-    }
-
     private static void assertStrictPolicy(HttpResponse<String> response, String connect) {
         assertThat(response.headers().firstValue("Content-Security-Policy")).as(response.uri().toString())
                 .hasValueSatisfying(policy -> assertThat(policy)
                         .contains("default-src 'none'", "script-src 'self';", "style-src 'self';", "font-src 'self';",
                                 connect, "frame-ancestors 'none'", "base-uri 'none'")
                         .doesNotContain("unsafe-inline", "unsafe-eval", "*"));
-    }
-
-    private static String resource(String file) throws IOException {
-        try (InputStream in = ConsoleTest.class.getResourceAsStream("/nuna/ui/" + file)) {
-            assertThat(in).as(file).isNotNull();
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 
     private HttpResponse<String> get(String path, String authorization) throws Exception {

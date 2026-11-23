@@ -173,11 +173,11 @@ export const removePolicy = target => send(managed(target) + '/maintenance-polic
 export const recentAudit = (target, limit) => call(managed(target) + '/audit?limit=' + limit);
 
 /**
- * A table's or view's metadata log, newest first, a page at a time (item 130): {pointer, journal, next-page-token},
+ * A table's or view's metadata log, newest first, through a catalog ref when `ref` names one (item 109), a page at a time (item 130): {pointer, journal, next-page-token},
  * each journal entry the commit that wrote one metadata file, with who made it. Needs select on the object.
  */
-export const metadataLog = (catalog, id, pageToken) => call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}`
-  + `/metadata-log?pageSize=25${pageToken ? '&pageToken=' + enc(pageToken) : ''}`);
+export const metadataLog = (catalog, id, pageToken, ref) => call(`/management/v1/catalogs/${enc(catalog)}/objects/${enc(id)}`
+  + `/metadata-log?pageSize=25${pageToken ? '&pageToken=' + enc(pageToken) : ''}${ref ? '&ref=' + enc(ref) : ''}`);
 
 /** A catalog's properties (item 131): its name, legal entity, whether a KMS key is set, and its storage profile. */
 export const catalogProperties = catalog => call(`/management/v1/catalogs/${enc(catalog)}/properties`);
@@ -297,3 +297,42 @@ export const auditArchive = () => call('/management/v1/audit/archive');
 /** One record's place in its hash chain, from the archive. */
 export const auditChain = (partition, offset, eventId) =>
   call(`/management/v1/audit/chains/${enc(partition)}/records/${enc(offset)}?event-id=${enc(eventId)}`);
+
+// ---- the catalog's branches and tags (item 26, D33; item 109) ----
+
+const refsPath = catalog => `/management/v1/catalogs/${enc(catalog)}/refs`;
+
+/**
+ * A catalog's refs, every page: {refs, limits, may}. Each branch has its changed-count; `limits` are nuna.refs.*; `may`
+ * says whether the caller may make, renew, delete and merge them. With `expired`, a branch past its expiry that still
+ * holds its name is listed too, marked expired.
+ */
+export async function refs(catalog, expired) {
+  const out = {refs: [], limits: {}, may: {}};
+  let pageToken = null;
+  for (let page = 0; page < 100; page++) {
+    const query = new URLSearchParams({pageSize: '100'});
+    if (expired) query.set('expired', 'true');
+    if (pageToken) query.set('pageToken', pageToken);
+    const body = await call(`${refsPath(catalog)}?${query}`);
+    out.refs.push(...(body.refs || []));
+    out.limits = body.limits || {};
+    out.may = body.may || {};
+    pageToken = body['next-page-token'];
+    if (!pageToken) break;
+  }
+  return out;
+}
+
+/** One ref; a branch's answer lists the tables and views it changed that the caller may describe. */
+export const ref = (catalog, name) => call(`${refsPath(catalog)}/${enc(name)}`);
+
+export const makeRef = (catalog, name, kind, from) => send(refsPath(catalog), {method: 'POST', body: {name, kind, from}});
+
+export const renewRef = (catalog, name) => send(`${refsPath(catalog)}/${enc(name)}/renew`, {method: 'POST'});
+
+export const deleteRef = (catalog, name) => send(`${refsPath(catalog)}/${enc(name)}`, {method: 'DELETE'});
+
+/** A branch's merge into main; with `dryRun`, what it would do now, writing nothing. */
+export const mergeRef = (catalog, name, dryRun) => send(`${refsPath(catalog)}/${enc(name)}/merge`
+  + (dryRun ? '?dry-run=true' : ''), {method: 'POST'});
