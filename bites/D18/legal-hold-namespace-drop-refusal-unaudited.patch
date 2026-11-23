@@ -3,12 +3,12 @@ Module: catalog-server
 Test: GovernanceRefusalTest#aNamespaceDropUnderALegalHoldIsAuditedAsADenial
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java
-index 4a72895..03a7968 100644
+index 249ac1b..b872d0e 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java
-@@ -197,7 +197,7 @@ class NamespaceRoutes {
-                                 Reply.error(409, "NamespaceNotEmptyException",
-                                         "Namespace " + Http.dotted(levels) + " is not empty");
+@@ -200,7 +200,7 @@ class NamespaceRoutes {
+                                 Reply.error(409, "NamespaceNotEmptyException", "Namespace " + Http.dotted(levels)
+                                         + " is not empty: a branch or tag names a table or view in it");
                          case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
 -                                throw guard.refuse(request, catalog, record, levels, Guard.DROP_NAMESPACE, "legal_hold",
 +                                throw new AccessDenied(

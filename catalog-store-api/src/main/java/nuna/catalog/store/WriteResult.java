@@ -64,7 +64,11 @@ public sealed interface WriteResult {
         REF_LIMIT,
         /** The ref is a tag, and only a branch can be renewed ({@link RefStore#renewRef}, D33). */
         NOT_A_BRANCH,
-        /** A ref's cut names the object, so its files stay ({@link CatalogObjectStore#claimPurge}, D33, P11). */
+        /**
+         * A ref's cut names the object, so its files stay ({@link CatalogObjectStore#claimPurge}, D33, P11); or names
+         * a table or view of the namespace, so the namespace and its governance stay ({@link
+         * NamespaceStore#dropNamespace}, backlog 157).
+         */
         REFERENCED
     }
 }

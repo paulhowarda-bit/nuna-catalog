@@ -39,10 +39,13 @@ public interface NamespaceStore {
 
     /**
      * Deletes an empty namespace, with its properties and the grants on it. Dropped objects do not
-     * count as content; they keep its id and are undropped into a namespace the caller names.
+     * count as content; they keep its id and are undropped into a namespace the caller names. But
+     * while a ref's cut names a table or view of the namespace, in any state, the namespace stays:
+     * a read through the ref takes that object's governance from it (D33, backlog 157).
      *
      * @return {@code Applied}, {@code Missing(NAMESPACE)}, {@code Refused(NOT_EMPTY)} (child
-     *         namespaces or active objects), or {@code Refused(HELD)}
+     *         namespaces or active objects), {@code Refused(REFERENCED)} (a ref's cut names a table
+     *         or view of the namespace), or {@code Refused(HELD)}
      */
     WriteResult dropNamespace(UUID namespaceId, Change change);
 }

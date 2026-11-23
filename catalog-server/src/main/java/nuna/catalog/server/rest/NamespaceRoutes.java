@@ -196,6 +196,9 @@ class NamespaceRoutes {
                         case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.NOT_EMPTY ->
                                 Reply.error(409, "NamespaceNotEmptyException",
                                         "Namespace " + Http.dotted(levels) + " is not empty");
+                        case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.REFERENCED ->
+                                Reply.error(409, "NamespaceNotEmptyException", "Namespace " + Http.dotted(levels)
+                                        + " is not empty: a branch or tag names a table or view in it");
                         case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
                                 throw guard.refuse(request, catalog, record, levels, Guard.DROP_NAMESPACE, "legal_hold",
                                         "Namespace " + Http.dotted(levels)

@@ -1,0 +1,19 @@
+Breaks: a namespace drop on Oracle reads no ref, so a namespace whose dropped table a tag still names is dropped with its regulated flag (security finding 7).
+Module: catalog-store-oracle
+Test: OracleStoreSuiteTest$Refs#aRefKeepsItsObjectsNamespace
+
+diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java
+index 68e2904..acf5100 100644
+--- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java
++++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java
+@@ -127,10 +127,6 @@ final class OracleNamespaces {
+                     namespaceId)) {
+                 return new WriteResult.Refused(WriteResult.Reason.NOT_EMPTY);
+             }
+-            if (exists(connection, "SELECT 1 FROM catalog_object o JOIN ref_entry e ON e.object_id = o.id"
+-                    + " WHERE o.namespace_id = ?", namespaceId)) {
+-                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+-            }
+             if (Guards.held(connection, namespaceId, catalogId.get(), Guards.pathOf(connection, namespaceId))) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }
