@@ -28,23 +28,58 @@ val bites = providers.gradleProperty("bites").isPresent
 // breaks fails here, in the branch that moved it, which records the bite again (CLAUDE.md, Bites); before, it
 // surfaced only in the next heavy pass. Each patch is checked on its own, as bites/run.sh applies it.
 // Applying is not biting: only bites/run.sh shows a bite still makes its test fail.
+// Whether a patch applies depends only on its bytes and those of the files it touches, so a bite that applied once
+// with the same patch and the same files applies again: it leaves a marker named by a hash of those bytes in the
+// Gradle user home, shared by every worktree, and is checked again only when one of them changes. Checking all 571
+// bites, one git process each, took 1 to 2 minutes of every fast build (backlog 176).
 val bitesApply = tasks.register("bitesApply") {
-    description = "Checks that every recorded bite still applies (git apply --check)."
+    description = "Checks that every recorded bite still applies (git apply --check), skipping each bite that " +
+        "applied before with the same patch and the same files."
     val root = rootDir
     val patches = fileTree("bites") { include("*/*.patch") }
+    val applied = gradle.gradleUserHomeDir.resolve("nuna/bites-applied")
     doLast {
         val all = patches.files.sorted()
+        val touches = Regex("""^diff --git a/(\S+) b/(\S+)""", RegexOption.MULTILINE)
+        fun fingerprint(patch: File): String {
+            val sha = java.security.MessageDigest.getInstance("SHA-256")
+            val bytes = patch.readBytes()
+            sha.update(bytes)
+            touches.findAll(String(bytes, Charsets.UTF_8)).flatMap { sequenceOf(it.groupValues[1], it.groupValues[2]) }
+                .distinct().sorted().forEach { path ->
+                    sha.update(0.toByte())
+                    sha.update(path.toByteArray(Charsets.UTF_8))
+                    val file = root.resolve(path)
+                    if (file.isFile) {
+                        sha.update(1.toByte())
+                        sha.update(file.readBytes())
+                    } else {
+                        sha.update(2.toByte())
+                    }
+                }
+            return sha.digest().joinToString("") { "%02x".format(it) }
+        }
+        var checked = 0
         val failed = all.mapNotNull { patch ->
+            val marker = applied.resolve(fingerprint(patch))
+            if (marker.isFile) return@mapNotNull null
+            checked++
             val git = ProcessBuilder("git", "apply", "--check", patch.path).directory(root)
                 .redirectErrorStream(true).start()
             val output = git.inputStream.bufferedReader().readText().trim()
-            if (git.waitFor() == 0) null else "${patch.relativeTo(root).invariantSeparatorsPath}: $output"
+            if (git.waitFor() == 0) {
+                marker.parentFile.mkdirs()
+                marker.createNewFile()
+                null
+            } else {
+                "${patch.relativeTo(root).invariantSeparatorsPath}: $output"
+            }
         }
         if (failed.isNotEmpty()) {
             throw GradleException("${failed.size} of ${all.size} bites no longer apply; record each again " +
                 "against today's code (CLAUDE.md, Bites):\n" + failed.joinToString("\n"))
         }
-        logger.lifecycle("All ${all.size} bites apply.")
+        logger.lifecycle("All ${all.size} bites apply ($checked checked; the others applied before as they are).")
     }
 }
 tasks.named("check") {
