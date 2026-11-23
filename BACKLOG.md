@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**34 open:** 7 S, 12 M, 10 L, 5 XL.
+**33 open:** 6 S, 12 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -26,7 +26,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
 | [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
-| [93](backlog/93.md) | S | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | S | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails | 2026-11-20 |
 | [104](backlog/104.md) | L | Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26) | every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102 | 2026-11-20 |
@@ -928,42 +927,6 @@ Left: an overnight run passing both legs of `DrDrillTest`, and the install-at-wo
 becomes "`values.yaml` comments them", and the drill sentence at the runbook's end can say the leg with the DR
 store behind runs the verifier in both regions, the rewind and the walk.
 
-### 93. The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit
-
-- Added: 2026-11-20 by agent on item 28
-- Touches: catalog-tests-load/src/test/java/nuna/catalog/load/Appender.java catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java
-- Effort: S, the appender writes a valid, empty manifest list (or a real manifest list and manifest) for each snapshot it adds before it commits, and the drill runs overnight; waits on item 92, which holds DrDrillTest
-
-Item 28 (D37, amended 2026-11-20: "Walk with a file check") made the DR reconcile's walk take a step only when
-storage holds every file it adds: for each snapshot, its manifest list, the manifests and data files it adds. The
-overnight DR drill (`DrDrillTest`, catalog-tests-load) writes its tables through `Appender`, whose commits add
-snapshots naming `<table>/metadata/snap-<id>.avro` as their manifest list (`Appender.body`, the `add-snapshot`
-update) without ever writing that file. So the walk now stops before the first appended version, with
-"storage does not hold .../snap-<id>.avro, which version n adds", and the drill's dry run fails its
-`assertThat(plan.has("problem")).isFalse()`, as do the steps it expects after.
-
-Found while building item 28 on 2026-11-20 (worktree-agent-a34b673c32ed6d84d); not run, since the drill is an
-`overnight` test, so this is read from the code, not from a failure. `Appender` is also used by the other load tests
-(`ConcurrentWritersTest`, `KillPrimaryTest`, `SloTest`, `RollingUpgradeTest`, `TenThousandSnapshotsTest`), which never
-call the reconcile, so they are unaffected either way.
-
-Done when the drill's appended snapshots name manifest lists that exist and parse (an empty manifest list is enough:
-it adds no manifest and no data file), and `DrDrillTest` passes in the overnight run with the item 28 walk.
-
-## Progress, 2026-11-20 (worktree-agent-abb88ef3bcbfecca6), still open
-
-- `Appender` takes the table's store client (a fifth constructor argument). Given one, before a commit's first
-  attempt it writes each snapshot's manifest list, an empty Avro manifest list (`ManifestFile.schema()`, named
-  `manifest_file`, with the `snapshot-id` and `format-version` metadata Iceberg writes), at the location the
-  snapshot names, `<table>/metadata/snap-<id>.avro` (`Appender.manifestList`). The snapshots add no manifest and no
-  data file, so nothing else is named. Its ledger also records the metadata file each acknowledged commit made
-  (`Ledger.locations`), which item 92's leg uses.
-- Only `DrDrillTest` passes the client. The other users (`ConcurrentWritersTest`, `KillPrimaryTest`, `SloTest`,
-  `RollingUpgradeTest`, `TenThousandSnapshotsTest`) construct it as before and write no file, so what they time and
-  how fast they commit is unchanged; their only change is a map insert per acknowledged commit.
-- Not run: the drill is `overnight`. Left: an overnight run in which `DrDrillTest`'s dry run walks, with the
-  item 28 walk.
-
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
 - Decided: 2026-11-20, D26
@@ -1707,6 +1670,7 @@ dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too.
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
 | [90](backlog/90.md) | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | done | 2026-11-20 |
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
+| [93](backlog/93.md) | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | done | 2026-11-22 |
 | [94](backlog/94.md) | The demo's object store on its own port, 8187, for engines on other machines | done | 2026-11-20 |
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
 | [96](backlog/96.md) | A per-client S3 endpoint in the storage profile, for engines outside the cluster (Paul decides) | dropped | 2026-11-20 |
