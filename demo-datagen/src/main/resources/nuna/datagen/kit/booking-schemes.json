@@ -1,0 +1,4595 @@
+{
+ "source": "ledger kit v14, schemes_v20.py (booking scheme v20, financial transaction v8); the demo kit's own copy from here on (D48)",
+ "commonFields": {
+  "1": "financialTransactionId",
+  "2": "effectiveDate",
+  "4": "originator",
+  "5": "brokerageAccount",
+  "6": "security",
+  "7": "currency",
+  "8": "quantity",
+  "9": "originatingFinancialTransactionId"
+ },
+ "templates": [
+  {
+   "id": 30,
+   "name": "CashDepositReceived",
+   "fields": {
+    "10": "amount",
+    "11": "paymentId"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 31,
+   "name": "AchDepositInitiated",
+   "fields": {
+    "10": "amount",
+    "11": "expectedSettlementDate",
+    "12": "goodFaithAmount",
+    "13": "paymentId"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 32,
+   "name": "AchDepositSettled",
+   "fields": {
+    "10": "amount",
+    "12": "goodFaithAmount"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 31
+  },
+  {
+   "id": 33,
+   "name": "AchWithdrawalInitiated",
+   "fields": {
+    "10": "amount",
+    "11": "expectedSettlementDate",
+    "12": "paymentId"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 34,
+   "name": "AchWithdrawalSettled",
+   "fields": {
+    "10": "amount"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 33
+  },
+  {
+   "id": 35,
+   "name": "AchWithdrawalCancelled",
+   "fields": {
+    "10": "amount"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 33
+  },
+  {
+   "id": 40,
+   "name": "EquityBuyAccepted",
+   "fields": {
+    "10": "orderId",
+    "11": "estimatedAmount",
+    "12": "estimatedPrice"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 41,
+   "name": "EquityBuyExecuted",
+   "fields": {
+    "11": "fillId",
+    "12": "fillPrice",
+    "13": "fillAmount",
+    "14": "estimatedAmount",
+    "15": "tradeDate",
+    "16": "venue"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 40
+  },
+  {
+   "id": 42,
+   "name": "EquityBuySettled",
+   "fields": {
+    "11": "settledAmount",
+    "12": "settlementDate"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 40
+  },
+  {
+   "id": 43,
+   "name": "EquitySellAccepted",
+   "fields": {
+    "10": "orderId"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 44,
+   "name": "EquitySellExecuted",
+   "fields": {
+    "11": "fillId",
+    "12": "fillPrice",
+    "13": "grossAmount",
+    "14": "secFee",
+    "15": "finraTaf",
+    "16": "tradeDate",
+    "17": "venue",
+    "18": "lots"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 43
+  },
+  {
+   "id": 45,
+   "name": "EquitySellSettled",
+   "fields": {
+    "11": "grossAmount",
+    "12": "totalFees",
+    "13": "settlementDate"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 43
+  },
+  {
+   "id": 46,
+   "name": "EquityBuyCancelled",
+   "fields": {
+    "11": "releasedAmount"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 40
+  },
+  {
+   "id": 47,
+   "name": "EquitySellCancelled",
+   "fields": {},
+   "startsLifecycle": false,
+   "originTemplate": 43
+  },
+  {
+   "id": 51,
+   "name": "MarginInterestAccrued",
+   "fields": {
+    "10": "amount",
+    "11": "periodStart",
+    "12": "periodEnd",
+    "13": "rate",
+    "14": "averageDebitBalance"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 52,
+   "name": "MarginInterestCapitalized",
+   "fields": {
+    "10": "amount",
+    "11": "accruedThroughDate"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 60,
+   "name": "EquityShortSellAccepted",
+   "fields": {
+    "10": "orderId",
+    "11": "estimatedAmount",
+    "12": "estimatedPrice",
+    "13": "locateId"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 61,
+   "name": "EquityShortSellExecuted",
+   "fields": {
+    "11": "fillId",
+    "12": "fillPrice",
+    "13": "grossAmount",
+    "14": "secFee",
+    "15": "finraTaf",
+    "16": "tradeDate",
+    "17": "venue",
+    "18": "estimatedAmount"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 60
+  },
+  {
+   "id": 62,
+   "name": "EquityShortSellSettled",
+   "fields": {
+    "11": "grossAmount",
+    "12": "totalFees",
+    "13": "settlementDate"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 60
+  },
+  {
+   "id": 63,
+   "name": "EquityBuyToCoverAccepted",
+   "fields": {
+    "10": "orderId",
+    "11": "estimatedAmount",
+    "12": "estimatedPrice"
+   },
+   "startsLifecycle": true,
+   "originTemplate": null
+  },
+  {
+   "id": 64,
+   "name": "EquityBuyToCoverExecuted",
+   "fields": {
+    "11": "fillId",
+    "12": "fillPrice",
+    "13": "fillAmount",
+    "14": "estimatedAmount",
+    "15": "tradeDate",
+    "16": "venue",
+    "18": "lots"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 63
+  },
+  {
+   "id": 65,
+   "name": "EquityBuyToCoverSettled",
+   "fields": {
+    "11": "settledAmount",
+    "12": "settlementDate"
+   },
+   "startsLifecycle": false,
+   "originTemplate": 63
+  }
+ ],
+ "nonNegativeFields": [
+  "amount",
+  "averageDebitBalance",
+  "estimatedAmount",
+  "estimatedPrice",
+  "fillAmount",
+  "fillPrice",
+  "finraTaf",
+  "goodFaithAmount",
+  "grossAmount",
+  "quantity",
+  "rate",
+  "releasedAmount",
+  "secFee",
+  "settledAmount",
+  "totalFees"
+ ],
+ "calculations": {
+  "2": {
+   "name": "IdentifyLotsNamed",
+   "inputs": [
+    "lots",
+    "proceeds"
+   ],
+   "outputs": [
+    "totalCost",
+    "realizedGain",
+    "lot",
+    "shares",
+    "cost"
+   ]
+  },
+  "3": {
+   "name": "SettlePending",
+   "inputs": [],
+   "outputs": [
+    "lot",
+    "shares"
+   ]
+  },
+  "5": {
+   "name": "Difference",
+   "inputs": [
+    "minuend",
+    "subtrahend"
+   ],
+   "outputs": [
+    "result"
+   ]
+  },
+  "6": {
+   "name": "Sum",
+   "inputs": [
+    "term1",
+    "term2",
+    "term3",
+    "term4"
+   ],
+   "outputs": [
+    "result"
+   ]
+  },
+  "9": {
+   "name": "IdentifyShortLotsNamed",
+   "inputs": [
+    "lots",
+    "cost"
+   ],
+   "outputs": [
+    "totalProceeds",
+    "realizedGain",
+    "lot",
+    "shares",
+    "proceeds"
+   ]
+  },
+  "10": {
+   "name": "SettleShortPending",
+   "inputs": [],
+   "outputs": [
+    "lot",
+    "shares"
+   ]
+  }
+ },
+ "bookingSchemes": [
+  {
+   "name": "CASH_DEPOSIT_RECEIVED",
+   "id": 10,
+   "template": 30,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1001,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4001,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 B0, M0, M7, M10a, M13a. Collected cash credited to the brokerage account; both clocks recognize it at once. On a margin brokerage account whose Cash is negative, the deposit reduces the margin debit by itself (M10a: −67,500 to −57,500): there is no paydown."
+  },
+  {
+   "name": "ACH_DEPOSIT_INITIATED",
+   "id": 30,
+   "template": 31,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1004,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1105,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4003,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 D1. The deposit in transit on SL-CA (one pair); the good-faith amount (the originator's, capped by its own rule) credited to buying power at initiation. The withdraw clock waits for settlement. Credit - Uncollected Deposit (4003) carries the good-faith amount, at most the deposit: it is not a mirror of 1004 (B20)."
+  },
+  {
+   "name": "ACH_DEPOSIT_SETTLED",
+   "id": 31,
+   "template": 32,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 10
+      },
+      "subtrahend": {
+       "field": 12
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1001,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1004,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1105,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4003,
+       "side": "Credit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4001,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 D2. Cash arrives; the SL-CA pair clears; the withdraw clock recognizes the deposit now (net equity up by the amount). On the trade clock the good-faith credit is replaced by cash; calculation 1, Difference(amount, goodFaithAmount), is the part the trade clock had not recognized, posted to net equity (zero in v114, where the good-faith credit was the whole deposit, so not written: J11)."
+  },
+  {
+   "name": "ACH_WITHDRAWAL_INITIATED",
+   "id": 32,
+   "template": 33,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1405,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1406,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5104,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4105,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 W1, M12a, M13b. A withdrawal, by any rail, from any brokerage account: a direct cash obligation. The hold pair in SL-CA; the withdraw clock encumbers it and the trade clock commits it at instruction, so both net equities fall now."
+  },
+  {
+   "name": "ACH_WITHDRAWAL_SETTLED",
+   "id": 33,
+   "template": 34,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1406,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1405,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1201,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1001,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5104,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4001,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4105,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 W2, M12b, M13c. Cash out for the full amount; the hold pair clears; on both clocks the cash control falls and the encumbrance or commitment clears against it. No net-equity line: both clocks recognized the withdrawal at instruction. On a margin brokerage account Cash may go below zero (M13c: −57,120 to −62,620): the margin debit grows by the withdrawal."
+  },
+  {
+   "name": "ACH_WITHDRAWAL_CANCELLED",
+   "id": 47,
+   "template": 35,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1406,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1405,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5104,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4105,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "The mirror of the initiation: the hold pair, the encumbrance and the commitment clear and both net equities are restored. No workbook block; checked by the kit's own test."
+  },
+  {
+   "name": "EQUITY_BUY_ACCEPTED",
+   "id": 11,
+   "template": 40,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1401,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1402,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4101,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 B1, C1, M1a, M4a, M8a. Hold and commitment at the estimate. The withdraw clock waits for execution. Whether the order is allowed was decided by the order management system before the transaction existed."
+  },
+  {
+   "name": "EQUITY_BUY_EXECUTED",
+   "id": 12,
+   "template": 41,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 14
+      },
+      "subtrahend": {
+       "field": 13
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1402,
+       "side": "Debit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1401,
+       "side": "Credit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1002,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1101,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5101,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4101,
+       "side": "Debit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4102,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3001,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "field": 1
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3002,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 B3, M1b, M4b, M8b, posted per fill. estimatedAmount is the filled shares at the accepted estimate; the overage returned to the trade clock's net equity is calculation 1, Difference(estimatedAmount, fillAmount), not a transaction field. When the fill costs more than the estimate (a market order in a fast market) the overage is negative and its journal line posts on the other side (J12): net equity is debited by the difference. The withdraw clock recognizes the purchase now (encumbrance and net equity by the cost). The lot journal line binds Lot to the fill's financialTransactionId (field 1), so the lookup misses and a new lot ledger account opens with the fill's shares; the engine records the fill's amount and shares as the lot's reference (schema 11 R12)."
+  },
+  {
+   "name": "EQUITY_BUY_SETTLED",
+   "id": 15,
+   "template": 42,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1101,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1001,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5101,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4001,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4102,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 B7, M1c, M4f, M8c. The purchase is paid from Cash, in full, for a cash and a margin brokerage account alike. On a margin brokerage account Cash goes below zero when the purchase is financed (M1c: 25,000 to −15,000; M8c: 22,500 to −67,500): the negative balance is the margin debit. On both clocks the cash control falls and the encumbrance or commitment clears against it: no net-equity line, because both recognized the purchase at execution. No SL-SHARE journal entry: the lots were opened at execution."
+  },
+  {
+   "name": "EQUITY_SELL_ACCEPTED",
+   "id": 19,
+   "template": 43,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3004,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3005,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 S1, C3, M4c. The sell hold, in shares: the order's quantity (field 8) is held in SL-SHARE against the security (net zero; the position control is unchanged). No effect on SL-CA or either clock. Whether the shares are free is the order management system's check: SL-SHARE 3002 less open sell holds (3004)."
+  },
+  {
+   "name": "EQUITY_SELL_EXECUTED",
+   "id": 20,
+   "template": 44,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 2,
+     "inputs": {
+      "lots": {
+       "group": 18
+      },
+      "proceeds": {
+       "field": 13
+      }
+     }
+    },
+    {
+     "id": 2,
+     "kind": 6,
+     "inputs": {
+      "term1": {
+       "field": 14
+      },
+      "term2": {
+       "field": 15
+      }
+     }
+    },
+    {
+     "id": 3,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 13
+      },
+      "subtrahend": {
+       "calculation": 2,
+       "output": "result"
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1003,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1002,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "totalCost"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1202,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "realizedGain"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1301,
+       "side": "Debit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1302,
+       "side": "Debit",
+       "amount": {
+        "field": 15
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1102,
+       "side": "Credit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5102,
+       "side": "Credit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Debit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4002,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4103,
+       "side": "Credit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 3,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3005,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3004,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3002,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3003,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "shares"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "calculation": 1,
+          "output": "lot"
+         }
+        }
+       ],
+       "repeat": 1
+      }
+     ]
+    }
+   ],
+   "note": "v114 S3, M4d, posted per fill. Calculation 1 (IdentifyLotsNamed) takes the lots the fill names (field 18, chosen by the order gateway by the customer's disposal method) and costs each at remaining cost before less remaining cost after (schema 11 R12); it yields totalCost and realizedGain = grossAmount - totalCost (a sale at a loss gives a negative realizedGain, so the journal line posts on the other side, J12: 1202 is debited by the loss). Calculation 2 is Sum(secFee, finraTaf), calculation 3 Difference(grossAmount, totalFees). Cost basis, gain, total fees and net proceeds are not transaction fields. The trade clock credits the gross proceeds now and commits the fees (net equity up by the net proceeds); the withdraw clock encumbers only the fees. In SL-SHARE the sell hold is released for the filled shares, and the shares leave the position control and sit in 3003 against each named lot (one journal line per lot) until settlement. A fee of zero (M4d) writes no fee journal lines (J11)."
+  },
+  {
+   "name": "EQUITY_SELL_SETTLED",
+   "id": 22,
+   "template": 45,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 3,
+     "inputs": {}
+    },
+    {
+     "id": 2,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 11
+      },
+      "subtrahend": {
+       "field": 12
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1001,
+       "side": "Debit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1102,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1003,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5102,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5001,
+       "side": "Debit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4002,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4103,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4001,
+       "side": "Debit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3003,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "shares"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "calculation": 1,
+          "output": "lot"
+         }
+        }
+       ],
+       "repeat": 1
+      },
+      {
+       "definition": 3001,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "shares"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "calculation": 1,
+          "output": "lot"
+         }
+        }
+       ],
+       "repeat": 1
+      }
+     ]
+    }
+   ],
+   "note": "v114 S7, M4e. Calculation 1 (SettlePending) relieves every pending share of the security from its lot: one journal line pair per lot. Calculation 2 is the net proceeds, Difference(grossAmount, totalFees). The withdraw clock recognizes the gross proceeds now (net equity up by grossAmount; the fee encumbrance clears against cash); the trade clock replaces its sale credit with cash and clears the fee commitment, with no net-equity line, because it recognized the proceeds at execution. Proceeds settle to Cash: on a margin brokerage account with a margin debit they reduce it (M4e: −15,000 to −9,875)."
+  },
+  {
+   "name": "EQUITY_BUY_CANCELLED",
+   "id": 23,
+   "template": 46,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1402,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1401,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4101,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 C2. The remaining hold and commitment released for the unfilled part of the order; releasedAmount is the originator's (the estimate of the shares still open)."
+  },
+  {
+   "name": "EQUITY_SELL_CANCELLED",
+   "id": 24,
+   "template": 47,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3005,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3004,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 C4. The sell hold released for the unfilled shares (field 8), in shares."
+  },
+  {
+   "name": "MARGIN_INTEREST_ACCRUED",
+   "id": 41,
+   "template": 51,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1303,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1103,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5103,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4104,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 M11a. The accrual is the interest gateway's, computed on the margin debit (period, rate and average debit balance travel on the transaction for the audit trail). Both clocks recognize it at accrual, as they do fees: an encumbrance and a commitment, net equity down by the amount."
+  },
+  {
+   "name": "MARGIN_INTEREST_CAPITALIZED",
+   "id": 42,
+   "template": 52,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1103,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1001,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5103,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4001,
+       "side": "Credit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4104,
+       "side": "Debit",
+       "amount": {
+        "field": 10
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 M11b. Accrued interest charged to Cash (−57,500 to −58,120: the margin debit grows by the interest). On both clocks the cash control falls and the encumbrance or commitment clears against it: no net-equity line, recognized at accrual."
+  },
+  {
+   "name": "EQUITY_SHORT_SELL_ACCEPTED",
+   "id": 50,
+   "template": 60,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4107,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 SH1a. The trade clock commits the estimate: a short consumes selling power as a buy consumes buying power. No SL-CA line (no cash is spoken for) and no SL-SHARE line (no shares are held). The locate (field 13), the $2,000 minimum and the selling power check were the order gateway's before the transaction existed."
+  },
+  {
+   "name": "EQUITY_SHORT_SELL_EXECUTED",
+   "id": 51,
+   "template": 61,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 6,
+     "inputs": {
+      "term1": {
+       "field": 14
+      },
+      "term2": {
+       "field": 15
+      }
+     }
+    },
+    {
+     "id": 2,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 18
+      },
+      "subtrahend": {
+       "calculation": 1,
+       "output": "result"
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1003,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1107,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1301,
+       "side": "Debit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1302,
+       "side": "Debit",
+       "amount": {
+        "field": 15
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1102,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5102,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4107,
+       "side": "Debit",
+       "amount": {
+        "field": 18
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4002,
+       "side": "Debit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4108,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4103,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3102,
+       "side": "Debit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 3101,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "field": 1
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 SH1b, posted per fill. The short position opens at the proceeds (1107; no gain or loss until the cover) and the proceeds are receivable until settlement; fees are expensed and accrued as on a sale. The trade clock releases the order commitment for the filled shares (estimatedAmount, field 18), credits the proceeds (4002, the mirror of 1003) and commits them (4108, the mirror of 1107): net equity up by the released commitment less the fees (calculation 2), back to SL-CA equity. The withdraw clock encumbers only the fees. In SL-SHARE the short lot opens, keyed by this fill's financialTransactionId (field 1), against the short position control; the engine records the fill's grossAmount and shares as the short lot's reference (schema 11 R12)."
+  },
+  {
+   "name": "EQUITY_SHORT_SELL_SETTLED",
+   "id": 52,
+   "template": 62,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 11
+      },
+      "subtrahend": {
+       "field": 12
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1001,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1102,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1003,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5102,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5106,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4001,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4103,
+       "side": "Debit",
+       "amount": {
+        "field": 12
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4002,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 SH1c. The net proceeds settle to Cash (calculation 1, Difference(grossAmount, totalFees)); the receivable and the accrued fees clear. The withdraw clock takes the cash in and encumbers the gross proceeds until the cover (5106), clearing the fee encumbrance: no net-equity line, so its net equity stays equal to SL-CA equity. The trade clock replaces its sale credit with cash. No SL-SHARE line: the short lot opened at execution."
+  },
+  {
+   "name": "EQUITY_BUY_TO_COVER_ACCEPTED",
+   "id": 53,
+   "template": 63,
+   "calculations": [],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1401,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1402,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4101,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 SH4a. As a buy acceptance: the cash hold and the commitment at the estimate. Whether a closing order may skip the buying power check (up to the open short quantity) is the order gateway's rule."
+  },
+  {
+   "name": "EQUITY_BUY_TO_COVER_EXECUTED",
+   "id": 54,
+   "template": 64,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 9,
+     "inputs": {
+      "lots": {
+       "group": 18
+      },
+      "cost": {
+       "field": 13
+      }
+     }
+    },
+    {
+     "id": 2,
+     "kind": 5,
+     "inputs": {
+      "minuend": {
+       "field": 14
+      },
+      "subtrahend": {
+       "field": 13
+      }
+     }
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1402,
+       "side": "Debit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1401,
+       "side": "Credit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1107,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "totalProceeds"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1202,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "realizedGain"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1101,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5106,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "totalProceeds"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5101,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "realizedGain"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4101,
+       "side": "Debit",
+       "amount": {
+        "field": 14
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4102,
+       "side": "Credit",
+       "amount": {
+        "field": 13
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 2,
+        "output": "result"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4108,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "totalProceeds"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4201,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "totalProceeds"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3103,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "shares"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "calculation": 1,
+          "output": "lot"
+         }
+        }
+       ],
+       "repeat": 1
+      },
+      {
+       "definition": 3102,
+       "side": "Credit",
+       "amount": {
+        "field": 8
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    }
+   ],
+   "note": "v114 SH4b, posted per fill. Calculation 1 (IdentifyShortLotsNamed) takes the short lots the cover fill names (field 18) and relieves each at remaining proceeds before less remaining proceeds after (schema 11 R12); it yields totalProceeds and realizedGain = totalProceeds - fillAmount (a cover above the proceeds gives a negative realizedGain, so its journal lines post on the other side, J12: 1202 and Net Equity - Withdraw Clock are debited by the loss). The hold is released and the purchase owed until settlement. The withdraw clock releases the short's proceeds encumbrance and encumbers the purchase: net equity moves by the gain or loss. The trade clock swaps the order commitment for the purchase commitment (any overage, calculation 2, returns to net equity) and releases the proceeds commitment to net equity. In SL-SHARE the short position control closes for the filled shares and the shares sit in 3103 against each named short lot until settlement."
+  },
+  {
+   "name": "EQUITY_BUY_TO_COVER_SETTLED",
+   "id": 55,
+   "template": 65,
+   "calculations": [
+    {
+     "id": 1,
+     "kind": 10,
+     "inputs": {}
+    }
+   ],
+   "entries": [
+    {
+     "subLedger": 2,
+     "lines": [
+      {
+       "definition": 1101,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 1001,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 5,
+     "lines": [
+      {
+       "definition": 5001,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 5101,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 4,
+     "lines": [
+      {
+       "definition": 4001,
+       "side": "Credit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      },
+      {
+       "definition": 4102,
+       "side": "Debit",
+       "amount": {
+        "field": 11
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 2,
+         "source": {
+          "field": 7
+         }
+        }
+       ],
+       "repeat": null
+      }
+     ]
+    },
+    {
+     "subLedger": 3,
+     "lines": [
+      {
+       "definition": 3103,
+       "side": "Credit",
+       "amount": {
+        "calculation": 1,
+        "output": "shares"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "calculation": 1,
+          "output": "lot"
+         }
+        }
+       ],
+       "repeat": 1
+      },
+      {
+       "definition": 3101,
+       "side": "Debit",
+       "amount": {
+        "calculation": 1,
+        "output": "shares"
+       },
+       "dimensions": [
+        {
+         "dimension": 1,
+         "source": {
+          "field": 5
+         }
+        },
+        {
+         "dimension": 3,
+         "source": {
+          "field": 6
+         }
+        },
+        {
+         "dimension": 4,
+         "source": {
+          "calculation": 1,
+          "output": "lot"
+         }
+        }
+       ],
+       "repeat": 1
+      }
+     ]
+    }
+   ],
+   "note": "v114 SH4c. The purchase is paid from Cash, as any buy settles; on both clocks the cash control falls and the encumbrance or commitment clears against it. Calculation 1 (SettleShortPending) relieves every pending cover share of the security from its short lot: one journal line pair per lot; a lot covered in full closes at zero."
+  }
+ ]
+}

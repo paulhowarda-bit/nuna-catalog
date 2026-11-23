@@ -2,6 +2,7 @@
 --   ops   SingleStore's own tables. The change feed copies each change to ops.orders into Iceberg
 --         (markets.equities.eu.xetra.orders) and records each commit in ops.lake_commits.
 --   lake  Tables loaded from Iceberg by Iceberg pipelines (load.sql, feeds.sql).
+-- The brokerage world's database, brokerage, is made by brokerage.sql, before feeds.sql.
 
 -- Connector pipelines are a preview feature. The change feed's extractor gets 384 MB of heap, not the
 -- default 128 MB: it holds a batch of changes and writes Parquet. SingleStore reserves each extractor's heap

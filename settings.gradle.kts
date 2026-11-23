@@ -35,4 +35,5 @@ include(
     "singlestore-change-feed",
     "catalog-maintenance",
     "catalog-audit-tables",
+    "demo-datagen",
 )

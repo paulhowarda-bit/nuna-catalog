@@ -1,7 +1,8 @@
-# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): three source databases, and Kafka
-# Connect running Debezium and the Apache Iceberg sink, which write every change into Iceberg history tables
-# through the catalog. Only demo.sh applies this. Every object carries label nuna-demo/cdc, by which
-# demo.sh cdc stop deletes them.
+# The demo's CDC leg, on demand (demo.sh cdc; demo.sh cdc stop deletes it): three source databases, whose changes
+# Debezium and the Apache Iceberg sink, in the demo's Kafka Connect (connect.yaml, in every up), write into Iceberg
+# history tables through the catalog. Only demo.sh applies this. Every object carries label nuna-demo/cdc, by which
+# demo.sh cdc stop deletes them; demo.sh adds the connectors in demo/cdc/connectors to the running worker, and cdc
+# stop deletes them, with their offsets.
 #
 #   backoffice  PostgreSQL 18 (logical WAL), database backoffice, table settlement.instructions
 #               (demo/cdc/backoffice.sql, ConfigMap backoffice-initdb)
@@ -9,15 +10,13 @@
 #               (demo/cdc/oracle.sql, ConfigMap oracle-startdb)
 #   cockroach   CockroachDB, one node, database custody, table positions.holdings, captured through a
 #               changefeed (demo/cdc/cockroach.sql, ConfigMap cockroach-initdb)
-#   connect     Kafka Connect, distributed mode, image connect.Dockerfile; demo.sh adds the connectors in
-#               demo/cdc/connectors through its REST API, which ports.yaml publishes on port 8186
 #
-# Memory: 2.25 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
-# demo.sh cdc stops Trino while the leg runs. CloudBeaver stays, to query the databases. No volumes: the
-# databases and Connect's topics last as long as the pods.
+# Memory: 1.75 GiB of requests in all, more than an 8 GB Docker Desktop has free beside the rest of the demo, so
+# demo.sh cdc stops Trino, the audit table writer and the brokerage world's generator while the leg runs.
+# CloudBeaver stays, to query the databases. No volumes: the databases last as long as the pods.
 #
 # Each Deployment stops its old pod before starting the new one (Recreate): a changed SQL file or image
-# replaces the pod, and there is no room for two Oracles or two Connect workers at once.
+# replaces the pod, and there is no room for two Oracles at once.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -193,82 +192,3 @@ spec:
   selector: {app: cockroach}
   ports:
     - port: 26257
----
-# The worker. Its own topics are cdc-connect-*; the connectors' token for the catalog (user cdc, group
-# demo-loaders) is in environment variable NUNA_TOKEN, which connector configurations name as
-# ${env:NUNA_TOKEN}. offset.flush.interval.ms is short because the Iceberg sink polls its control topic only
-# about once per offset flush when idle (catalog-tests-engines/images/kafka-connect/run.sh).
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: connect-worker
-  labels: {nuna-demo/cdc: "true"}
-data:
-  worker.properties: |
-    bootstrap.servers=kafka:9092
-    group.id=nuna-demo-cdc
-    config.storage.topic=cdc-connect-configs
-    offset.storage.topic=cdc-connect-offsets
-    status.storage.topic=cdc-connect-status
-    config.storage.replication.factor=1
-    offset.storage.replication.factor=1
-    status.storage.replication.factor=1
-    key.converter=org.apache.kafka.connect.json.JsonConverter
-    value.converter=org.apache.kafka.connect.json.JsonConverter
-    offset.flush.interval.ms=1000
-    plugin.path=/opt/connect-plugins
-    listeners=http://0.0.0.0:8083
-    rest.advertised.host.name=connect
-    config.providers=env
-    config.providers.env.class=org.apache.kafka.common.config.provider.EnvVarConfigProvider
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: connect
-  labels: {nuna-demo/cdc: "true"}
-spec:
-  strategy: {type: Recreate}
-  selector:
-    matchLabels: {app: connect}
-  template:
-    metadata:
-      labels: {app: connect}
-      # The worker reads its configuration only as it starts, so a changed file replaces the pod.
-      annotations: {nuna-demo/manifest: "${MANIFEST_HASH}"}
-    spec:
-      enableServiceLinks: false
-      containers:
-        - name: connect
-          image: ${CONNECT_IMAGE}
-          imagePullPolicy: Never
-          command: ["/opt/kafka/bin/connect-distributed.sh", "/etc/connect/worker.properties"]
-          env:
-            - {name: KAFKA_HEAP_OPTS, value: "-Xms256m -Xmx384m"}
-            - name: NUNA_TOKEN
-              valueFrom:
-                secretKeyRef: {name: demo-cdc-token, key: token}
-          ports:
-            - containerPort: 8083
-          volumeMounts:
-            - {name: worker, mountPath: /etc/connect, readOnly: true}
-          readinessProbe:
-            httpGet: {path: /connectors, port: 8083}
-            periodSeconds: 3
-            timeoutSeconds: 10
-          resources:
-            requests: {memory: 512Mi}
-            limits: {memory: 1Gi}
-      volumes:
-        - name: worker
-          configMap: {name: connect-worker}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: connect
-  labels: {nuna-demo/cdc: "true"}
-spec:
-  selector: {app: connect}
-  ports:
-    - port: 8083

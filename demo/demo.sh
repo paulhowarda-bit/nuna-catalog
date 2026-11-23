@@ -2,19 +2,22 @@
 # The local demo of nuna-catalog, on Docker Desktop's Kubernetes: the stack it shares with the engine matrix
 # (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
 #
-#   demo/demo.sh up       build the jars and images, start the stack, load sample data once, print tokens
+#   demo/demo.sh up       build the jars and images, start the stack and the brokerage world, load sample data
+#                         once, print tokens
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
-#   demo/demo.sh sql      open a SingleStore prompt (databases ops and lake)
+#   demo/demo.sh sql      open a SingleStore prompt (databases ops, lake and brokerage)
 #   demo/demo.sh rate     append an FX rate to Iceberg (markets.fx.rates); SingleStore loads it into lake.fx_rates
+#   demo/demo.sh brokerage logs  follow the brokerage world's generator
 #   demo/demo.sh cdc      start the CDC leg: PostgreSQL, Oracle and CockroachDB, through Debezium and Kafka
-#                         Connect, into Iceberg history tables (stops Trino and the audit table writer while
-#                         it runs)
-#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino and the writer again
+#                         Connect, into Iceberg history tables (stops Trino, the audit table writer and the
+#                         brokerage world while it runs)
+#   demo/demo.sh cdc stop delete the CDC leg (the history tables stay) and start Trino, the writer and the world
+#                         again
 #   demo/demo.sh psql [user]     a psql prompt on the CDC leg's PostgreSQL, database backoffice (default backoffice)
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
-#   demo/demo.sh status   show the pods and services
+#   demo/demo.sh status   show the deployments, pods and services, and Kafka Connect's connectors
 #   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key, tokens, Keycloak keys
 #                         and the certificate)
 #
@@ -54,7 +57,10 @@ TRINO_IMAGE=trinodb/trino:484
 OAUTH2_PROXY_IMAGE=quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
 CLOUDBEAVER_IMAGE=
 CONNECT_IMAGE=
-# Kafka Connect's REST API while the CDC leg runs (ports.yaml).
+# The brokerage world's generator (brokerage.Dockerfile), and its image's id.
+BROKERAGE_IMAGE=
+BROKERAGE_IMAGE_ID=
+# Kafka Connect's REST API (connect.yaml, ports.yaml).
 CONNECT_URL="https://$DEMO_HOST:8186"
 # The front door (ports.yaml): TLS on every port the demo publishes.
 NGINX_IMAGE=nginx:1.30.6-alpine
@@ -67,14 +73,16 @@ say() { printf '\n== %s\n' "$*"; }
 
 token_of() { tr -d '\r\n' < "$RUN/tokens/$1.jwt"; }
 
-# Changes whenever Mint.java mints. Trino and CloudBeaver read tokens only as they start and carry this as a pod
-# annotation (trino.yaml, cloudbeaver.yaml), so new tokens replace their pods.
+# Changes whenever Mint.java mints. Trino, CloudBeaver, Kafka Connect and the brokerage world's generator read
+# tokens only as they start and carry this as a pod annotation (trino.yaml, cloudbeaver.yaml, connect.yaml,
+# brokerage.yaml), so new tokens replace their pods.
 tokens_hash() { sha256sum "$RUN/tokens/expires.txt" | cut -c1-12; }
 
-# Sets that annotation as up would, outside up: new tokens replace both pods, and the same tokens change nothing.
+# Sets that annotation as up would, outside up: new tokens replace the pods, and the same tokens change nothing.
 annotate_tokens() {
   local deployment
-  for deployment in trino cloudbeaver; do
+  for deployment in trino cloudbeaver connect brokerage; do
+    k get deployment "$deployment" >/dev/null 2>&1 || continue
     k patch deployment "$deployment" --type merge \
       -p "{\"spec\":{\"template\":{\"metadata\":{\"annotations\":{\"nuna-demo/tokens\":\"$(tokens_hash)\"}}}}}" >/dev/null
   done
@@ -91,6 +99,8 @@ fill() {
     -e "s|\${KAFKA_UI_IMAGE}|$KAFKA_UI_IMAGE|g" -e "s|\${SINGLESTORE_IMAGE}|$SINGLESTORE_IMAGE|g" \
     -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" -e "s|\${OAUTH2_PROXY_IMAGE}|$OAUTH2_PROXY_IMAGE|g" \
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
+    -e "s|\${BROKERAGE_IMAGE}|$BROKERAGE_IMAGE|g" -e "s|\${BROKERAGE_IMAGE_ID}|$BROKERAGE_IMAGE_ID|g" \
+    -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$S2_ROOT_PASSWORD|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
     -e "s|\${ORACLE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/oracle.sql" | cut -c1-12)|g" \
@@ -158,19 +168,21 @@ image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -
 
 # Built from this checkout on every up, so the stack never runs code older than the checkout; Gradle and
 # Docker do nothing when nothing changed. SingleStore's image is tagged with the hash of the connector jar and
-# its Dockerfile, so a change to either replaces the pod (and up seeds the new one). The cluster never pulls: images it runs
-# come from the local Docker engine.
+# its Dockerfile, so a change to either replaces the pod (and up seeds the new one); the brokerage world's with the
+# hash of its classpath and its Dockerfile. The cluster never pulls: images it runs come from the local Docker engine.
 build() {
-  say "building the catalog server, audit table writer and change-feed connector jars (no tests run)"
-  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :catalog-audit-tables:bootJar :singlestore-change-feed:connectorJar)
+  say "building the catalog server, audit table writer, change-feed connector and brokerage world jars (no tests run)"
+  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :catalog-audit-tables:bootJar :singlestore-change-feed:connectorJar \
+    :demo-datagen:imageLib)
   local jar="$REPO/singlestore-change-feed/build/libs/nuna-changefeed-connector.jar"
   rm -rf "$RUN/images"
-  mkdir -p "$RUN/images/singlestore" "$RUN/images/lake/lib"
+  mkdir -p "$RUN/images/singlestore" "$RUN/images/lake/lib" "$RUN/images/brokerage"
   cp "$jar" "$RUN/images/singlestore/"
   unzip -q -j "$jar" 'lib/*' -d "$RUN/images/lake/lib"
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
+  cp -r "$REPO/demo-datagen/build/image/lib" "$RUN/images/brokerage/"
 
-  say "building the images: the catalog, the audit table writer, SingleStore with the connector, the lake writer, CloudBeaver"
+  say "building the images: the catalog, the audit table writer, SingleStore with the connector, the lake writer, CloudBeaver, the brokerage world"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
   docker build -q -f "$REPO/deploy/image/audit-tables.Dockerfile" -t nuna-audit-tables:demo \
     "$REPO/catalog-audit-tables/build/libs" >/dev/null
@@ -185,6 +197,12 @@ build() {
   CLOUDBEAVER_IMAGE="nuna-demo-cloudbeaver:$(cat "$STACK/cloudbeaver.Dockerfile" "$REPO/demo/CloudBeaverUsers.java" \
     "$STACK/cloudbeaver-signin.conf" | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/cloudbeaver.Dockerfile" -t "$CLOUDBEAVER_IMAGE" "$RUN/images/cloudbeaver" >/dev/null
+  BROKERAGE_IMAGE="nuna-demo-brokerage:$( (cat "$STACK/brokerage.Dockerfile"; cd "$RUN/images/brokerage" \
+    && find lib -type f | LC_ALL=C sort | xargs sha256sum) | sha256sum | cut -c1-12)"
+  docker build -q -f "$STACK/brokerage.Dockerfile" -t "$BROKERAGE_IMAGE" "$RUN/images/brokerage" >/dev/null
+  BROKERAGE_IMAGE_ID=$(image_id "$BROKERAGE_IMAGE")
+  say "building the Kafka Connect image (Debezium 3.7.1, the Apache Iceberg 1.12.0 sink)"
+  build_connect
 
   local image
   for image in "$(image_of postgres.image)" "$(image_of kafka.image)" "$(image_of silo.image)" busybox:1.37.0 \
@@ -197,11 +215,13 @@ mint() {
   "$JAVA" "$REPO/demo/Mint.java" "$RUN"
 }
 
-# The issuer's public keys (served by Service idp), the lake writer's token, Trino's own, the people's for
-# their CloudBeaver connections, and cdc's for Kafka Connect's Iceberg sinks.
+# The issuer's public keys (served by Service idp), the lake writer's token, the brokerage world's, Trino's own, the
+# people's for their CloudBeaver connections, and cdc's for Kafka Connect's Iceberg sinks.
 publish_tokens() {
   k create configmap idp-keys --from-file=keys.json="$RUN/idp/keys.json" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-lake-token --from-literal=token="$(token_of lake)" --dry-run=client -o yaml | k apply -f - >/dev/null
+  k create secret generic demo-brokerage-token --from-literal=token="$(token_of brokerage)" --dry-run=client -o yaml \
+    | k apply -f - >/dev/null
   k create secret generic demo-trino-token --from-literal=token="$(token_of trino)" --dry-run=client -o yaml | k apply -f - >/dev/null
   k create secret generic demo-people-tokens --from-literal=ana="$(token_of ana)" --from-literal=gary="$(token_of gary)" \
     --from-literal=stella="$(token_of stella)" --from-literal=oscar="$(token_of oscar)" --dry-run=client -o yaml \
@@ -379,11 +399,9 @@ audit_writer() {
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
 }
 
-# One run of the lake writer (seed or rate) as a Job: prints its output, deletes it, fails if it failed.
-lake() {
-  local mode=$1 job succeeded= failed=
-  job="lake-$mode-$(date +%s)"
-  sed -e "s|\${JOB}|$job|" -e "s|\${MODE}|$mode|" "$STACK/lake-job.yaml" | k apply -f - >/dev/null
+# Waits for a Job to end: prints its output, deletes it, fails if it failed.
+finish_job() {
+  local job=$1 what=$2 succeeded= failed=
   for _ in $(seq 1 300); do
     succeeded=$(k get job "$job" -o jsonpath='{.status.succeeded}')
     failed=$(k get job "$job" -o jsonpath='{.status.failed}')
@@ -393,9 +411,40 @@ lake() {
   k logs "job/$job" 2>/dev/null | grep -v '^Picked up JAVA_TOOL_OPTIONS' || true
   k delete job "$job" --wait=false >/dev/null
   if [[ "$succeeded" != 1 ]]; then
-    echo "the lake writer ($mode) did not succeed" >&2
+    echo "$what did not succeed" >&2
     return 1
   fi
+}
+
+# One run of the lake writer (seed or rate) as a Job.
+lake() {
+  local mode=$1 job
+  job="lake-$mode-$(date +%s)"
+  sed -e "s|\${JOB}|$job|" -e "s|\${MODE}|$mode|" "$STACK/lake-job.yaml" | k apply -f - >/dev/null
+  finish_job "$job" "the lake writer ($mode)"
+}
+
+# Kafka Connect and the brokerage world's generator (connect.yaml, brokerage.yaml) ask for 768 MiB between them,
+# which leaves Docker Desktop's node about 390 MiB: too little for a 768 MiB Job (the lake writer), for Spark, or
+# for a catalog server rolling to a new image, whose new pod starts before the old one stops. So up, rate and
+# engines stop both first and start them again after; up starts them last.
+pause_world() {
+  local deployment
+  for deployment in brokerage connect; do
+    if k get deployment "$deployment" >/dev/null 2>&1; then
+      k scale deployment/"$deployment" --replicas=0 >/dev/null
+    fi
+  done
+  k wait --for=delete pod -l 'app in (brokerage, connect)' --timeout=2m >/dev/null 2>&1 || true
+}
+
+resume_world() {
+  local deployment
+  for deployment in connect brokerage; do
+    if k get deployment "$deployment" >/dev/null 2>&1; then
+      k scale deployment/"$deployment" --replicas=1 >/dev/null
+    fi
+  done
 }
 
 # Starts a pipeline unless it is running already.
@@ -407,11 +456,14 @@ start_pipeline() {
   fi
 }
 
-# The two running pipelines, created or replaced with the current token, and started.
+# The three running pipelines, created or replaced with the current token, and started; first the brokerage world's
+# database, which its change feed reads (brokerage.sql, made if missing: older SingleStore pods have none).
 feeds() {
+  s2_file brokerage.sql >/dev/null
   s2_file feeds.sql >/dev/null
   start_pipeline lake fx_rates_feed
   start_pipeline ops orders_to_lake
+  start_pipeline brokerage brokerage_orders_to_lake
 }
 
 # Waits until the change feed has made a commit of one of the given kinds; fails after two minutes.
@@ -431,7 +483,8 @@ wait_for_commit() {
 # offsets in Iceberg that it cannot continue from, so its first commit is a resnapshot. PostgreSQL and Silo
 # keep their data only as long as their pods (a Docker Desktop restart empties both) but the ConfigMap
 # outlives them, so the lake counts as seeded only while the catalog can also load the trades table; a new
-# lake empties SingleStore too, since its databases are loaded from the lake.
+# lake empties SingleStore too, since its databases are loaded from the lake, and the brokerage world's orders
+# would no longer match its lake (feeds makes its database again).
 seed() {
   local seeded= ns='markets%1Fequities%1Feu%1Fxetra'
   if k get configmap demo-seeded >/dev/null 2>&1 \
@@ -440,7 +493,7 @@ seed() {
   fi
   if [[ -z "$seeded" ]]; then
     k delete configmap demo-seeded --ignore-not-found >/dev/null
-    echo "DROP DATABASE IF EXISTS ops; DROP DATABASE IF EXISTS lake;" | s2 >/dev/null
+    echo "DROP DATABASE IF EXISTS ops; DROP DATABASE IF EXISTS lake; DROP DATABASE IF EXISTS brokerage;" | s2 >/dev/null
     say "writing the sample Iceberg tables through the catalog (demo/LakeWriter.java)"
     lake seed
   fi
@@ -465,10 +518,8 @@ SQL
   fi
 
   [[ -n "$seeded" ]] && return 0
-  say "governance: classification, owner, regulated area, a legal hold, a DR freeze"
+  say "governance: classification, owner, a legal hold, a DR freeze"
   local m=/management/v1/catalogs/$CATALOG
-  api stella PUT "$m/namespaces/finance/attributes/regulated" '{"value":"true","provenance":"demo-seed: compliance register"}'
-  api stella PUT "$m/namespaces/finance%1Fledger/tables/journal/attributes/classification" '{"value":"confidential","provenance":"demo-seed: data catalogue"}'
   api stella PUT "$m/namespaces/markets/attributes/owner" '{"value":"markets-data-office","provenance":"demo-seed: HR feed"}'
   api stella PUT "$m/namespaces/$ns/tables/trades/attributes/classification" '{"value":"internal","provenance":"demo-seed: data catalogue"}'
   api stella POST "$m/namespaces/$ns/tables/trades/holds" '{"reason":"Matter 2026-114: trade surveillance review"}'
@@ -478,6 +529,75 @@ SQL
   api gary POST "$m/grants" '{"securable":{"type":"namespace","namespace":["markets"]},"group":"demo-auditors","privilege":"describe"}'
   api gary POST "$m/grants" "{\"securable\":{\"type\":\"table\",\"namespace\":[\"markets\",\"equities\",\"eu\",\"xetra\"],\"name\":\"trades\"},\"group\":\"demo-quants\",\"privilege\":\"select\"}"
   k create configmap demo-seeded >/dev/null
+}
+
+# The brokerage world's bootstrap (brokerage-bootstrap.yaml): its catalog namespaces, tables and views, as user
+# brokerage, and its Kafka topics. On every up, before its governance, sink and generator.
+brokerage_bootstrap() {
+  say "the brokerage world: its namespaces, tables, views and Kafka topics ($BROKERAGE_IMAGE, bootstrap)"
+  k delete job brokerage-bootstrap --ignore-not-found >/dev/null
+  apply brokerage-bootstrap.yaml
+  finish_job brokerage-bootstrap "the brokerage world's bootstrap"
+}
+
+# The brokerage world's governance (docs/design/brokerage-world.md, the namespace tree), set by stella after the
+# bootstrap and before anything writes: every table is classified before its namespace is marked regulated, since a
+# regulated namespace refuses writers a table without a classification of its own (D27). Once per lake:
+# brokerage.ledger's regulated mark, set last, says it is done, and goes with the catalog's PostgreSQL.
+# brokerage.trading is SingleStore's change feed's (feeds.sql), which makes it as it first starts; made here if the
+# feed has not yet.
+brokerage_governance() {
+  local m=/management/v1/catalogs/$CATALOG table
+  if curl -fs "${CURL_TLS[@]}" -H "Authorization: Bearer $(token_of stella)" \
+      "$URL$m/namespaces/brokerage%1Fledger/governance" 2>/dev/null | grep -q '"regulated"'; then
+    return 0
+  fi
+  say "governance of the brokerage world: classifications, owners, regulated areas"
+  classify() {
+    api stella PUT "$m/namespaces/$1/attributes/classification" "{\"value\":\"$2\",\"provenance\":\"demo-seed: data catalogue\"}"
+  }
+  for table in calendar securities; do classify "brokerage%1Freference/tables/$table" public; done
+  for table in bars_5m prices_eod; do classify "brokerage%1Fmarkets/tables/$table" internal; done
+  classify "brokerage%1Fparty/tables/accounts" restricted
+  for table in chart_of_accounts booking_schemes financial_transactions journal_lines posting_rejections balances_eod; do
+    classify "brokerage%1Fledger/tables/$table" confidential
+  done
+  for table in buying_power running_collected_balance; do classify "brokerage%1Fledger/views/$table" confidential; done
+  api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Ftrading" '' 200 2>/dev/null \
+    || api brokerage POST "/v1/$CATALOG/namespaces" '{"namespace": ["brokerage", "trading"]}' 200 2>/dev/null \
+    || api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Ftrading" '' 200
+  classify "brokerage%1Ftrading" internal
+  api stella PUT "$m/namespaces/brokerage/attributes/owner" '{"value":"brokerage-operations","provenance":"demo-seed: HR feed"}'
+  api stella PUT "$m/namespaces/brokerage%1Ftrading/attributes/owner" '{"value":"trading-desk","provenance":"demo-seed: HR feed"}'
+  api stella PUT "$m/namespaces/brokerage%1Fparty/attributes/regulated" '{"value":"true","provenance":"demo-seed: compliance register"}'
+  api stella PUT "$m/namespaces/brokerage%1Fledger/attributes/regulated" '{"value":"true","provenance":"demo-seed: compliance register"}'
+}
+
+# Kafka Connect (connect.yaml), applied and waited for until its REST API answers through the front door.
+start_connect() {
+  say "starting Kafka Connect ($CONNECT_IMAGE)"
+  apply connect.yaml
+  k rollout status deployment/connect --timeout=5m >/dev/null
+  wait_for_connect
+}
+
+wait_for_connect() {
+  for _ in $(seq 1 30); do
+    curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors" >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  echo "Kafka Connect did not answer on $CONNECT_URL; see: kubectl --context $CONTEXT -n $NS logs deployment/connect" >&2
+  return 1
+}
+
+# The brokerage world's sink, brokerage-lake (demo/brokerage/connector.json: the world's topics into its Iceberg
+# tables, through the catalog), put in place on the running worker (the same config twice changes nothing), then its
+# generator (brokerage.yaml), last.
+start_brokerage() {
+  say "the brokerage world: its Iceberg sink brokerage-lake, and its generator ($BROKERAGE_IMAGE)"
+  connect_api PUT /connectors/brokerage-lake/config < "$REPO/demo/brokerage/connector.json" >/dev/null
+  apply brokerage.yaml
+  k rollout status deployment/brokerage --timeout=5m >/dev/null
 }
 
 print_access() {
@@ -514,11 +634,14 @@ Grant admin  gary  (groups demo-grant-admins: manage grants and read the audit t
                     demo-auditors: the Audit page, from the audit table nuna_audit.audit.events)
 $(token_of gary)
 
-Tag steward stella, platform operator oscar, SingleStore, the lake writer, the engine matrix, Kafka Connect
-and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,engine-matrix,cdc,trino}.jwt
+Tag steward stella, platform operator oscar, SingleStore, the lake writer, the brokerage world, the engine matrix,
+Kafka Connect and Trino have tokens too: $RUN/tokens/{stella,oscar,singlestore,lake,brokerage,engine-matrix,cdc,trino}.jwt
 oscar administers kafbat, Studio and CloudBeaver; in kafbat, ana, gary and stella administer topics, but only
-read the catalog's (nuna.*), the Connect worker's and those starting with _. oscar reads kafbat's audit log.
-Kafka:        kafbat on $web:8182
+read the catalog's (nuna.*), the Connect worker's, the brokerage world's and those starting with _. oscar reads
+kafbat's audit log.
+Brokerage:    the brokerage world writes lakehouse.brokerage live, through Kafka and SingleStore;
+              demo/demo.sh brokerage logs follows its generator
+Kafka:        kafbat on $web:8182; Kafka Connect's REST API on $CONNECT_URL
 SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password $S2_ROOT_PASSWORD;
               Studio takes no passwords, so not root)
 Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to nuna through
@@ -528,19 +651,22 @@ Silo:         its console on $web:8184   (user nunatest, password nunatest-secre
               store's root, which sees every bucket)
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
-              while it runs)
+              and pauses the brokerage world while it runs)
 Kubernetes:   namespace $NS, context $CONTEXT
 EOF
 }
 
 # The CDC leg (cdc.yaml), on demand: PostgreSQL backoffice, Oracle and CockroachDB, captured by Debezium into
-# Kafka, and written by the Apache Iceberg sink into history tables, one row per change. Its pods do not fit
-# beside Trino on an 8 GB Docker Desktop, so Trino stops while it runs; CloudBeaver stays, to query the
-# databases. Kafka Connect's REST API is on $CONNECT_URL meanwhile.
-cdc_running() { k get deployment connect >/dev/null 2>&1; }
+# Kafka, and written by the Apache Iceberg sink into history tables, one row per change; both run in the demo's
+# Kafka Connect (connect.yaml). Its pods do not fit beside Trino on an 8 GB Docker Desktop, so Trino, the audit
+# table writer and the brokerage world's generator stop while it runs; CloudBeaver stays, to query the databases.
+cdc_running() { k get deployment backoffice >/dev/null 2>&1; }
 
-# Built on every cdc (and on every up while the leg runs), tagged with the hash of its Dockerfile and plugin
-# poms, so a change to either replaces the pod.
+# The leg's connectors on the worker (demo/cdc/connectors).
+CDC_CONNECTORS=(backoffice-source oracle-source cockroach-source backoffice-history oracle-history cockroach-history)
+
+# Kafka Connect's image, built on every up, tagged with the hash of its Dockerfile and plugin poms, so a change to
+# either replaces the pod.
 build_connect() {
   CONNECT_IMAGE="nuna-demo-connect:$(cat "$STACK/connect.Dockerfile" "$REPO"/demo/cdc/plugins/*/pom.xml | sha256sum | cut -c1-12)"
   docker build -q -f "$STACK/connect.Dockerfile" -t "$CONNECT_IMAGE" "$REPO/demo/cdc/plugins" >/dev/null
@@ -628,8 +754,8 @@ cockroach_history_table() {
     {"id": 8, "name": "updated_at", "required": true, "type": "timestamptz"}]}}' 200
 }
 
-# The leg's databases, worker and connectors, as cdc.yaml and demo/cdc have them; the connectors' configs are
-# put in place (the same config twice changes nothing).
+# The leg's databases and connectors, as cdc.yaml and demo/cdc have them; the connectors' configs are put in place
+# on the running worker (the same config twice changes nothing).
 cdc_apply() {
   k create configmap backoffice-initdb --from-file=backoffice.sql="$REPO/demo/cdc/backoffice.sql" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
@@ -641,17 +767,33 @@ cdc_apply() {
   apply ports.yaml
   k rollout status deployment/backoffice --timeout=3m >/dev/null
   k rollout status deployment/cockroach --timeout=3m >/dev/null
-  k rollout status deployment/connect --timeout=5m >/dev/null
   # Oracle restarts once into archive log mode (demo/cdc/oracle.sql): about two minutes.
   k rollout status deployment/oracle --timeout=10m >/dev/null
-  for _ in $(seq 1 30); do
-    curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors" >/dev/null 2>&1 && break
-    sleep 2
-  done
+  wait_for_connect
   local connector
-  for connector in backoffice-source oracle-source cockroach-source backoffice-history oracle-history \
-    cockroach-history; do
+  for connector in "${CDC_CONNECTORS[@]}"; do
     connect_api PUT "/connectors/$connector/config" < "$REPO/demo/cdc/connectors/$connector.json" >/dev/null
+  done
+}
+
+# Deletes the leg's connectors from the worker, each with its offsets, so the next cdc's Debezium snapshots its new
+# databases rather than resuming from the last run's positions: a connector's offsets outlive the connector. Kafka
+# Connect resets them only for a stopped connector (KIP-875), and stopping one takes a moment.
+cdc_connectors_delete() {
+  local connector reset
+  for connector in "${CDC_CONNECTORS[@]}"; do
+    connect_api GET "/connectors/$connector" >/dev/null 2>&1 || continue
+    connect_api PUT "/connectors/$connector/stop" </dev/null >/dev/null
+    reset=
+    for _ in $(seq 1 30); do
+      if connect_api DELETE "/connectors/$connector/offsets" >/dev/null 2>&1; then
+        reset=yes
+        break
+      fi
+      sleep 2
+    done
+    [[ -n "$reset" ]] || connect_api DELETE "/connectors/$connector/offsets" >/dev/null
+    connect_api DELETE "/connectors/$connector" >/dev/null
   done
 }
 
@@ -661,8 +803,6 @@ cdc_start() {
   fi
   publish_tokens
   annotate_tokens
-  say "building the Kafka Connect image (Debezium 3.7.1, the Apache Iceberg 1.12.0 sink)"
-  build_connect
   if cdc_running; then
     say "the CDC leg is running: bringing it up to date"
     cdc_apply
@@ -677,13 +817,18 @@ cdc_start() {
   fi
   image=$(image_of cockroachdb.image)
   docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
-  say "stopping Trino and the audit table writer: the CDC leg needs their memory"
+  say "stopping Trino, the audit table writer and the brokerage world's generator: the CDC leg needs their memory"
   k scale deployment/trino --replicas=0 >/dev/null
   k wait --for=delete pod -l app=trino --timeout=2m >/dev/null
   # Its records wait in Kafka meanwhile; cdc stop starts it again, and it writes them then.
   if k get deployment nuna-audit-tables >/dev/null 2>&1; then
     k scale deployment/nuna-audit-tables --replicas=0 >/dev/null
     k wait --for=delete pod -l app.kubernetes.io/instance=nuna-audit-tables --timeout=3m >/dev/null
+  fi
+  # The world pauses; its sink stays, on the worker the leg shares.
+  if k get deployment brokerage >/dev/null 2>&1; then
+    k scale deployment/brokerage --replicas=0 >/dev/null
+    k wait --for=delete pod -l app=brokerage --timeout=2m >/dev/null 2>&1 || true
   fi
   # History tables left by an earlier run recorded databases that are gone; each run starts its own.
   local entry ns table
@@ -695,7 +840,7 @@ cdc_start() {
   done
   cockroach_history_table
 
-  say "starting the CDC leg: PostgreSQL backoffice, Oracle Free, CockroachDB and Kafka Connect (a few minutes)"
+  say "starting the CDC leg: PostgreSQL backoffice, Oracle Free, CockroachDB and their connectors (a few minutes)"
   cdc_apply
   say "waiting for Debezium's snapshots of the three tables to reach Iceberg"
   wait_for_rows "history%1Fpostgres%1Fsettlement" instructions 4
@@ -740,31 +885,36 @@ Kafka Connect: curl -s --cacert '$TLS/ca.crt' --ssl-revoke-best-effort '$CONNECT
 kafbat (https://$DEMO_HOST:8182) shows Debezium's change events as they arrive, and the console shows each sink
 commit as a snapshot of its history table.
 Query the source databases in CloudBeaver (https://$DEMO_HOST:8185): each person's backoffice, treasury and
-custody connections sign in as them. Trino is stopped meanwhile: demo/demo.sh cdc stop deletes the leg and
-starts it again. Then read the history in CloudBeaver's Trino connection, oldest change first:
+custody connections sign in as them. Trino and the brokerage world are stopped meanwhile: demo/demo.sh cdc stop
+deletes the leg and starts them again. Then read the history in CloudBeaver's Trino connection, oldest change first:
   SELECT "_cdc".op, "_cdc".ts, instruction_id, status FROM lakehouse."history.postgres.settlement".instructions
   ORDER BY "_cdc"."offset";
 EOF
 }
 
-# Deletes the leg's pods, then its Kafka topics and consumer groups, so the next cdc starts from nothing; the
-# history tables stay, for Trino to read. The topics go after the worker, which would otherwise make its own
-# again, and from a pod of their own: a Kafka tool in the broker's pod could push it past its memory limit.
+# Deletes the leg's connectors (with their offsets) and pods, then its Kafka topics and consumer groups, so the
+# next cdc starts from nothing; Kafka Connect stays, with the brokerage world's sink, and the history tables stay,
+# for Trino to read. The topics go after the connectors, which would otherwise write them again, and from a pod
+# of their own: a Kafka tool in the broker's pod could push it past its memory limit.
 cdc_stop() {
-  say "deleting the CDC leg: its databases, Kafka Connect, and its Kafka topics (the history tables stay)"
+  say "deleting the CDC leg: its connectors, databases and Kafka topics (Kafka Connect and the history tables stay)"
+  cdc_connectors_delete
   k delete deployment,service,configmap -l nuna-demo/cdc=true --ignore-not-found >/dev/null
   k delete configmap backoffice-initdb oracle-startdb cockroach-initdb --ignore-not-found >/dev/null
-  k wait --for=delete pod -l 'app in (backoffice, oracle, cockroach, connect)' --timeout=3m >/dev/null 2>&1 || true
+  k wait --for=delete pod -l 'app in (backoffice, oracle, cockroach)' --timeout=3m >/dev/null 2>&1 || true
   k delete pod cdc-cleanup --ignore-not-found >/dev/null
   MSYS_NO_PATHCONV=1 k run cdc-cleanup -i --rm --quiet --restart=Never --image="$(image_of kafka.image)" \
     --image-pull-policy=Never --env=KAFKA_HEAP_OPTS=-Xmx128m --command -- sh -c '
       bin=/opt/kafka/bin; kafka=--bootstrap-server=kafka:9092
-      $bin/kafka-topics.sh $kafka --delete --if-exists --topic "cdc-connect-.*|backoffice.*|oracle.*|cockroach.*"
-      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|cockroach|nuna-demo-cdc"); do
+      $bin/kafka-topics.sh $kafka --delete --if-exists --topic "backoffice.*|oracle.*|cockroach.*"
+      for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|cockroach"); do
         $bin/kafka-consumer-groups.sh $kafka --delete --group "$group" >/dev/null
       done' >/dev/null
-  say "starting Trino again"
+  say "starting Trino and the brokerage world's generator again"
   k scale deployment/trino --replicas=1 >/dev/null
+  if k get deployment brokerage >/dev/null 2>&1; then
+    k scale deployment/brokerage --replicas=1 >/dev/null
+  fi
   # It reads on from where its table's last commit ended, so the Audit page catches up on the leg's records.
   audit_writer
 }
@@ -782,6 +932,9 @@ up() {
   publish_tokens
   publish_keycloak_keys
   publish_tls
+  # Kafka Connect and the generator stop for up's memory, and start again last, after the brokerage world's
+  # bootstrap and governance.
+  pause_world
 
   say "starting PostgreSQL, Kafka, kafbat, the issuer's key server, Keycloak and Silo (namespace $NS, context $CONTEXT)"
   apply stack.yaml
@@ -826,20 +979,21 @@ up() {
   k rollout status deployment/singlestore --timeout=15m >/dev/null
   s2_file users.sql >/dev/null
   seed
-  if [[ -n "$minted" ]]; then
-    # Running pipelines carry the token they were made with (feeds.sql); seed made none if SingleStore had them.
+  # Running pipelines carry the token they were made with (feeds.sql); seed made none if SingleStore had them. A
+  # SingleStore pod made before the brokerage world lacks its change feed.
+  if [[ -n "$minted" || "$(echo "SELECT COUNT(*) FROM information_schema.PIPELINES WHERE DATABASE_NAME = 'brokerage';" | s2)" == 0* ]]; then
     feeds
   fi
 
   if cdc_running; then
-    # trino.yaml asks for one replica, which would start Trino beside the leg.
-    say "the CDC leg is running: Trino stays stopped; bringing the leg and CloudBeaver ($CLOUDBEAVER_IMAGE) up to date"
-    build_connect
+    # trino.yaml and brokerage.yaml ask for one replica, which would start Trino and the generator beside the leg;
+    # the world's bootstrap Job has no room beside it either.
+    say "the CDC leg is running: Trino and the brokerage world stay stopped; bringing Kafka Connect, the leg and CloudBeaver ($CLOUDBEAVER_IMAGE) up to date"
+    start_connect
     cdc_apply
-    if [[ -n "$minted" ]]; then
-      k rollout restart deployment/connect >/dev/null
-    fi
   else
+    brokerage_bootstrap
+    brokerage_governance
     say "starting Trino ($TRINO_IMAGE)"
     apply trino.yaml
     k rollout status deployment/trino --timeout=5m >/dev/null
@@ -847,6 +1001,10 @@ up() {
   say "starting CloudBeaver ($CLOUDBEAVER_IMAGE), with each person's connections to Trino and the CDC leg's databases"
   apply cloudbeaver.yaml
   k rollout status deployment/cloudbeaver --timeout=5m >/dev/null
+  if ! cdc_running; then
+    start_connect
+    start_brokerage
+  fi
   print_access
 }
 
@@ -859,24 +1017,27 @@ refuse_while_cdc() {
 }
 
 # The engine matrix's tests against this stack: its engines run as Jobs here, into catalog engines, and the
-# stack stays as it is. Results are in catalog-tests-engines/build/engines-run. Trino and CloudBeaver stop
-# for the run: Spark's Job asks for 2 GiB, which an 8 GB Docker Desktop has only without them.
+# stack stays as it is. Results are in catalog-tests-engines/build/engines-run. Trino, CloudBeaver, Kafka Connect
+# and the brokerage world's generator stop for the run: Spark's Job asks for 2 GiB, which an 8 GB Docker Desktop
+# has only without them.
 engines() {
   if tokens_expired; then
     mint
     publish_tokens
     annotate_tokens
   fi
-  say "stopping Trino and CloudBeaver for the run"
+  say "stopping Trino, CloudBeaver, Kafka Connect and the brokerage world for the run"
   k scale deployment/trino deployment/cloudbeaver --replicas=0 >/dev/null
   k wait --for=delete pod -l 'app in (trino, cloudbeaver)' --timeout=2m >/dev/null
+  pause_world
   say "running the engine matrix against namespace $NS"
   local status=0
   (cd "$REPO" && ./gradlew :catalog-tests-engines:test --rerun -Pnightly --tests EngineMatrixTest \
     -Pengines.cluster="$CONTEXT" -Pengines.stack="$NS" -Pengines.token-file="$RUN/tokens/engine-matrix.jwt" -Ps3=silo) \
     || status=$?
-  say "starting Trino and CloudBeaver again"
+  say "starting Trino, CloudBeaver, Kafka Connect and the brokerage world again"
   k scale deployment/trino deployment/cloudbeaver --replicas=1 >/dev/null
+  resume_world
   return "$status"
 }
 
@@ -892,12 +1053,9 @@ case "${1:-}" in
     if tokens_expired; then
       mint
       publish_tokens
-      say "re-minted; replacing SingleStore's running pipelines and restarting Trino, CloudBeaver and Kafka Connect so they use the new tokens"
+      say "re-minted; replacing SingleStore's running pipelines and restarting Trino, CloudBeaver, Kafka Connect and the brokerage world's generator so they use the new tokens"
       feeds
       annotate_tokens
-      if cdc_running; then
-        k rollout restart deployment/connect >/dev/null
-      fi
     fi
     print_access
     ;;
@@ -906,13 +1064,24 @@ case "${1:-}" in
     ;;
   rate)
     refuse_while_cdc "the lake writer"
-    lake rate
+    # The lake writer's Job needs Kafka Connect's and the generator's memory meanwhile.
+    pause_world
+    status=0
+    lake rate || status=$?
+    resume_world
+    exit "$status"
+    ;;
+  brokerage)
+    case "${2:-}" in
+      logs) k logs deployment/brokerage --tail=100 -f ;;
+      *) sed -n '2,27p' "$0"; exit 2 ;;
+    esac
     ;;
   cdc)
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,24p' "$0"; exit 2 ;;
+      *) sed -n '2,27p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
@@ -936,14 +1105,25 @@ case "${1:-}" in
     fi
     ;;
   status)
-    k get pods,services
+    # The deployments too: a stopped one (the brokerage world's generator while the CDC leg runs) has no pod.
+    k get deployments,pods,services
+    echo
+    echo "Kafka Connect's connectors (the connector's state, then its tasks'):"
+    if names=$(curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors" 2>/dev/null); then
+      for name in $(grep -o '"[^"]*"' <<<"$names" | tr -d '"'); do
+        printf '  %-22s %s\n' "$name" "$(curl -fs "${CURL_TLS[@]}" "$CONNECT_URL/connectors/$name/status" \
+          | grep -o '"state":"[A-Z_]*"' | cut -d'"' -f4 | tr '\n' ' ')"
+      done
+    else
+      echo "  Kafka Connect does not answer on $CONNECT_URL"
+    fi
     ;;
   down)
     helm --kube-context "$CONTEXT" -n "$NS" uninstall "$RELEASE" --wait 2>/dev/null || true
     kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,24p' "$0"
+    sed -n '2,27p' "$0"
     exit 2
     ;;
 esac

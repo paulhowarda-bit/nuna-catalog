@@ -8,8 +8,8 @@
 # not Keycloak. kafbat builds its own sign-in address from the front door's X-Forwarded headers. Roles by
 # Keycloak group: the operators (oscar) administer Kafka in kafbat. The analysts, grant admins and stewards
 # (ana, gary, stella) administer topics: create, change settings, produce and clear messages, and delete. They
-# only read the topics the demo runs on: the catalog's nuna.*, the Connect worker's cdc-connect-*, and those
-# whose names start with "_". A person's rights on a topic are those of every pattern that matches its whole
+# only read the topics the demo runs on: the catalog's nuna.*, the Connect worker's connect-*, the brokerage
+# world's brokerage.* and its sink's brokerage-lake-control, and those whose names start with "_". A person's rights on a topic are those of every pattern that matches its whole
 # name. They read consumer groups, schemas, connectors and the cluster's settings.
 #
 # kafbat's audit log records every change made through it (topics, messages, consumer groups, connectors, ACLs),
@@ -71,8 +71,8 @@ spec:
                       ],
                       "permissions": [
                         {"resource": "clusterconfig", "actions": ["VIEW"]},
-                        {"resource": "topic", "value": "(?!nuna\\.|cdc-connect-|_).*", "actions": ["all"]},
-                        {"resource": "topic", "value": "(nuna\\.|cdc-connect-|_).*",
+                        {"resource": "topic", "value": "(?!nuna\\.|connect-|brokerage[.-]|_).*", "actions": ["all"]},
+                        {"resource": "topic", "value": "(nuna\\.|connect-|brokerage[.-]|_).*",
                          "actions": ["VIEW", "MESSAGES_READ", "ANALYSIS_VIEW"]},
                         {"resource": "consumer", "value": ".*", "actions": ["VIEW"]},
                         {"resource": "schema", "value": ".*", "actions": ["VIEW"]},

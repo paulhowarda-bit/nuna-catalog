@@ -131,7 +131,7 @@ spec:
     - port: 8080
 ---
 # kafbat UI for the stack's Kafka: topics (the Kafka Connect source topic, the sink's control topic, the
-# catalog's audit and change topics), their messages and consumer groups, and the CDC leg's Kafka Connect
+# catalog's audit and change topics), their messages and consumer groups, and the demo's Kafka Connect
 # connectors. The demo publishes it on
 # port 8182 (ports.yaml); otherwise kubectl port-forward svc/kafka-ui 8080:8080.
 apiVersion: apps/v1
@@ -153,9 +153,9 @@ spec:
           env:
             - {name: KAFKA_CLUSTERS_0_NAME, value: nuna}
             - {name: KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS, value: "kafka:9092"}
-            # The CDC leg's Kafka Connect (cdc.yaml): its connectors, their tasks and configs. Unreachable
-            # while the leg is stopped.
-            - {name: KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME, value: cdc}
+            # The demo's Kafka Connect (connect.yaml): its connectors, their tasks and configs. Unreachable when
+            # the engine matrix runs on its own.
+            - {name: KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME, value: connect}
             - {name: KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS, value: "http://connect:8083"}
             - {name: DYNAMIC_CONFIG_ENABLED, value: "false"}
             # Off: on by default, it asks api.github.com for kafbat's latest release every hour.
