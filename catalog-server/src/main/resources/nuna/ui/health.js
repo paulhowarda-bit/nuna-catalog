@@ -350,7 +350,8 @@ export async function tableHealthTab(target, reload) {
     ]))
     : h('div', {class: 'panel'}, h('h2', null, 'Assessment'),
       h('p', {class: 'muted', id: 'table-health-unassessed'}, 'The maintenance worker has not assessed this table yet.'));
-  if (may) {
+  // Requests are main's: the worker compacts and scans main only, so a page read through a ref offers none (item 109).
+  if (may && !target.ref) {
     assessment.append(h('div', {class: 'refusal-acts', id: 'table-health-acts'}, requestButtons(target, health.requests, reload),
       h('span', {class: 'fine'}, 'Now, inside the cleanup window or outside it.')));
   }

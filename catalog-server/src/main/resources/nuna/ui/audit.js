@@ -259,7 +259,7 @@ function feedRow(catalog, r) {
   h('span', {class: 'w'}, h('b', null, r.principal || '–'), r['end-user'] ? [' for ', h('b', null, r['end-user'])] : null,
     h('br'), h('span', {class: 'via'}, r.engine ? 'via ' + r.engine : '')),
   h('div', null, badge(r.type || type), ' ', chainPill(r.chain),
-    h('p', {class: 'what'}, describe(type, event.data || {}) || r.operation || '',
+    h('p', {class: 'what'}, describe(type, event.data || {}, catalog) || r.operation || '',
       o && o.path && o.path.length ? [' · ', objectLink(catalog, o.kind, o.path, null)] : null)), btn);
   let detail = null;
   btn.addEventListener('click', () => {

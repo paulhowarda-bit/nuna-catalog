@@ -43,10 +43,28 @@ const loadTable = target => loadOnce(target, () => api.table(warehouseOf(target)
 const loadView = target => loadOnce(target, () => api.view(warehouseOf(target), target.namespace, target.name));
 
 /** What a load that failed leaves: the catalog's answer, and that the other tabs are checked on their own. */
-function refusedLoad(error, others) {
+/** The catalog's answer for a ref that is not live (item 109): the band shows it, so no tab draws it again. */
+const noLiveRef = error => error.status === 404 && error.type === 'NoSuchWarehouseException';
+
+function refusedLoad(error, others, ref) {
+  if (ref && noLiveRef(error)) return null;
   return [failure(error, {big: true}), error.status === 403 ? h('div', {class: 'notice'}, icon('info'),
     h('span', null, h('b', null, `${others} are checked on their own`), '. The catalog checks each tab separately, so one refusal never closes the others.'))
     : null];
+}
+
+/**
+ * A tab of main's that a page read through a ref still shows (item 109): with the note `what` on what is main's, or
+ * nothing when the ref is not live, as `loaded` (the object's load through the ref) answers.
+ */
+async function throughRef(target, loaded, what, draw) {
+  if (!target.ref) return draw();
+  try {
+    await loaded();
+  } catch (error) {
+    if (noLiveRef(error)) return null;
+  }
+  return [what ? refNote(await readingRef(target.catalog, target.ref) || target.ref, what) : null, await draw()];
 }
 
 function tabBody(main) {
@@ -71,15 +89,13 @@ export function tablePage(target, tab, route) {
   const key = TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
   const tabs = tabsNav('Table', TABLE_TABS, key, k => objectHref(target, k || null));
-  const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(),
-    h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
+  // The export is main's metadata and journal, so a page read through a ref offers none (item 109; item 172).
+  const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(), target.ref ? null
+    : h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, acts);
   main.append(head, tabs);
   const body = tabBody(main);
   refChrome(route, acts, head);
-  // A note names the ref as the list has it, so a tag shows as a tag; a ref that is not live keeps its name.
-  const noted = async (what, content) => target.ref
-    ? [refNote(await readingRef(target.catalog, target.ref) || target.ref, what), content] : content;
   let metadata = loadTable(target);
   metadata.then(t => {
     const m = t.metadata;
@@ -104,20 +120,20 @@ export function tablePage(target, tab, route) {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
     } else if (key === 'health') {
-      load(body, async () => noted('health', await tableHealthTab(target, reload)));
+      load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
     } else if (key === 'governance') {
-      load(body, async () => noted('governance', await governanceTab(target, reload)));
+      load(body, () => throughRef(target, () => metadata, 'governance', () => governanceTab(target, reload)));
     } else if (key === 'grants') {
-      load(body, () => noted('grants', grantsTab(target)));
+      load(body, () => throughRef(target, () => metadata, 'grants', () => grantsTab(target)));
     } else if (key === 'audit') {
-      load(body, () => noted('audit', auditTab(target)));
+      load(body, () => throughRef(target, () => metadata, 'audit', () => auditTab(target)));
     } else {
       load(body, async () => {
         let t;
         try {
           t = await metadata;
         } catch (error) {
-          return refusedLoad(error, 'Health, Governance, Grants and Audit');
+          return refusedLoad(error, 'Health, Governance, Grants and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
@@ -228,7 +244,8 @@ function propertiesTab(target, t, reload, ref) {
       panel('Properties', 'in the metadata file the tag keeps', Object.keys(props).length
         ? facts(Object.entries(props).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [code(k), String(v)])) : muted('No property is set.'))];
   }
-  const tab = settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: 'a commit to the table, as an engine makes it, so every commit rule applies',
+  const on = target.ref ? ` on @${(ref && ref.name) || target.ref}` : '';
+  const tab = settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: `a commit to the table${on}, as an engine makes it, so every commit rule applies`,
     ctx: {formatVersion: m['format-version'], codec: props['write.parquet.compression-codec'] || 'zstd'},
     write: (updates, removals) => api.tableProperties(warehouseOf(target), target.namespace, target.name, m['table-uuid'],
       updates, removals)});
@@ -624,7 +641,11 @@ function metadataLogTab(target, t) {
     shown += entries.length;
     const next = answer['next-page-token'];
     meta.textContent = `${plural(shown, 'commit')} shown · newest first`;
-    more.replaceChildren(next ? `Older commits follow. ` : `Every commit the journal keeps is shown. `);
+    const stops = !next && answer.ref && answer.ref['log-stops-at-cut'];
+    more.replaceChildren(next ? `Older commits follow. ` : stops
+      ? `The versions at and below @${answer.ref.name}'s point, ${fmt(answer.ref['cut-version'])}, came from a branch or tag that has ended, `
+        + 'whose own commits the catalog no longer reads. '
+      : `Every commit the journal keeps is shown. `);
     if (next) {
       more.append(h('button', {class: 'linkish', type: 'button', onclick: e => {
         e.currentTarget.disabled = true;
@@ -677,16 +698,16 @@ export function viewPage(target, tab, route) {
   }, () => {});
   const show = () => {
     if (key === null) fill(body, h('div', {class: 'empty'}, h('h3', null, 'A view has no such tab')));
-    else if (key === 'governance') load(body, () => governanceTab(target, show));
-    else if (key === 'grants') fill(body, grantsTab(target));
-    else if (key === 'audit') fill(body, auditTab(target));
+    else if (key === 'governance') load(body, () => throughRef(target, () => loaded, null, () => governanceTab(target, show)));
+    else if (key === 'grants') load(body, () => throughRef(target, () => loaded, null, () => grantsTab(target)));
+    else if (key === 'audit') load(body, () => throughRef(target, () => loaded, null, () => auditTab(target)));
     else {
       load(body, async () => {
         let v;
         try {
           v = await loaded;
         } catch (error) {
-          return refusedLoad(error, 'Governance, Grants and Audit');
+          return refusedLoad(error, 'Governance, Grants and Audit', target.ref);
         }
         return key === 'versions' ? versionsTab(v) : viewOverview(target, v);
       });
