@@ -203,6 +203,27 @@ class RefRoutesTest {
         assertThat(denials()).extracting(Denial::operation).containsExactly("listRefs", "loadRef");
     }
 
+    @Test
+    void whoMadeARefIsShownOnlyToThoseWhoMayMakeOne() {
+        create("dev", "branch", null, null);
+        create("v1", "tag", null, null);
+
+        assertThat(json(routes.list("gate", null, null, http)).get("refs").valueStream()
+                .map(ref -> ref.get("created-by").asString()).toList()).containsExactly("bea", "bea");
+        assertThat(json(routes.read("gate", "dev", http)).get("created-by").asString()).isEqualTo("bea");
+        for (Caller other : List.of(HAL, VIC)) {
+            caller = other;
+            JsonNode listed = json(routes.list("gate", null, null, http)).get("refs");
+            assertThat(listed).as("listed to %s", other).hasSize(2);
+            assertThat(listed.valueStream().filter(ref -> ref.has("created-by")).toList()).as("listed to %s", other)
+                    .isEmpty();
+            JsonNode read = json(routes.read("gate", "v1", http));
+            assertThat(read.get("name").asString()).isEqualTo("v1");
+            assertThat(read.has("created-by")).as("read by %s", other).isFalse();
+        }
+        assertThat(denials()).as("a field left out is not a refusal").isEmpty();
+    }
+
     // ---- create ----
 
     @Test

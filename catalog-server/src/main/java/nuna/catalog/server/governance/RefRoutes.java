@@ -62,7 +62,8 @@ import tools.jackson.databind.node.ObjectNode;
  * A catalog's branches and tags (D33, item 26's choices 6, 11, 12 and 13; item 106): list, create, read, renew and
  * delete under {@code /management/v1/catalogs/{catalog}/refs}, and the maintenance worker's two routes, which warn of a
  * branch about to expire and end one past its expiry. Making, renewing and deleting a ref needs {@code create} on the
- * catalog; listing and reading need any holding in the catalog (D18 as amended). Every write takes an Idempotency-Key
+ * catalog; listing and reading need any holding in the catalog (D18 as amended), and show who made a ref only to a
+ * caller holding {@code create} there (item 106, security finding 9). Every write takes an Idempotency-Key
  * (D10) and writes its {@code ref} audit record to the outbox with the change. P11's limits and expiry are
  * {@link RefSettings}: the store refuses a create past a limit, and a renewal sets a branch's expiry
  * {@code branch-idle-expiry} ahead, never past {@code branch-max-life} from its creation. A branch past its expiry is
@@ -139,7 +140,8 @@ class RefRoutes {
         }
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode refs = body.putArray("refs");
-        page.items().stream().filter(ref -> !ref.expiredAt(now)).forEach(ref -> refs.add(ref(ref, now)));
+        boolean creators = mayCreate(request, catalog, "listRefs");
+        page.items().stream().filter(ref -> !ref.expiredAt(now)).forEach(ref -> refs.add(ref(ref, now, creators)));
         page.nextToken().ifPresent(token -> body.put("next-page-token", token));
         return GovernanceRoutes.json(200, body);
     }
@@ -152,7 +154,7 @@ class RefRoutes {
         CatalogRecord catalog = management.catalog(prefix, request, "loadRef", null);
         Instant now = now();
         Ref ref = live(catalog, name, now);
-        ObjectNode body = ref(ref, now);
+        ObjectNode body = ref(ref, now, mayCreate(request, catalog, "loadRef"));
         if (ref.kind() == Ref.Kind.BRANCH) {
             body.set("changed", changed(request, ref));
         }
@@ -493,20 +495,38 @@ class RefRoutes {
                 List.of(), request.actor());
     }
 
+    /** A ref as the create and renew routes answer it, to a caller holding create on the catalog. */
     private ObjectNode ref(Ref ref, Instant now) {
+        return ref(ref, now, true);
+    }
+
+    /**
+     * A ref as the routes show it. {@code created-by}, a principal's id, which is personal data, only when
+     * {@code withCreator}: to a caller holding create on the catalog, who may make and delete its refs.
+     */
+    private ObjectNode ref(Ref ref, Instant now, boolean withCreator) {
         ObjectNode node = Management.JSON.createObjectNode();
         node.put("id", ref.id().toString());
         node.put("name", ref.name().display());
         node.put("kind", ref.kind().name().toLowerCase(Locale.ROOT));
         node.put("from", ref.fromName());
         node.put("created-at", ref.createdAt().toString());
-        node.put("created-by", ref.createdBy());
+        if (withCreator) {
+            node.put("created-by", ref.createdBy());
+        }
         ref.expiresAt().ifPresent(expiry -> {
             node.put("expires-at", expiry.toString());
             node.put("max-expires-at", settings.lastExpiry(ref.createdAt()).toString());
             node.put("expiring", settings.expiring(ref, now));
         });
         return node;
+    }
+
+    /** Whether the caller holds create on the catalog; asked, not required, so a no is no refusal. */
+    private boolean mayCreate(Request request, CatalogRecord catalog, String operation) {
+        return authorizer.decide(request.caller(), List.of(new Authorizer.Request(
+                new Authorizer.Target.Catalog(catalog.id()), new Authorizer.Operation(operation, Privilege.CREATE,
+                        false)))).getFirst().allowed();
     }
 
     private CatalogError nameTaken(String name, UUID holder, Instant now) {
