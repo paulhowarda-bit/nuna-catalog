@@ -2,15 +2,15 @@ Breaks: a ref made from a branch shows main's versions at and below its cut, not
 Module: catalog-server
 Test: MetadataLogRefTest#throughARefMadeFromABranchTheVersionsBelowItsCutAreTheBranchsThenMains
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-index aa9f088e..754510ba 100644
+index 3039358c..b236afcf 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-@@ -429,7 +429,7 @@ class LifecycleRoutes {
-                 break;
+@@ -439,7 +439,7 @@ class LifecycleRoutes {
              }
-             if (at.cut().version() > source.get().cut().version()) {
--                stretches.add(new Stretch(source.get().cut().version(), journalOf(source.get().ref().key(objectId))));
-+                stretches.add(new Stretch(source.get().cut().version(), mains));
+             Stretch its = own(source.get().ref(), cut.version(), objectId);
+             if (wrote(its.read(), cut)) {
+-                stretches.add(its);
++                stretches.add(new Stretch(its.branch(), its.name(), its.top(), mains));
+                 cut = source.get().cut();
              }
              at = source.get();
-         }

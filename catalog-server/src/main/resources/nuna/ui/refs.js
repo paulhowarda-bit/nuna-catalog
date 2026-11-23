@@ -503,15 +503,16 @@ function refLine(c, refs, list) {
     svg.append(a);
   });
   const box = h('div', {class: 'rl-scroll'}, svg);
-  // Opens at today, once the box has a width: the tab is drawn before it is in the page.
-  const place = () => {
-    if (!box.clientWidth) return false;
+  // Opens at today whenever the box gets a width, until the reader scrolls it. Not only the first time: the tab is
+  // drawn before it is in the page, and the page is moved into place after, which puts a box's scroll back to its
+  // start; a width that changes (a phone turned, a window narrowed to a phone's) changes where today is too.
+  let moved = false;
+  for (const e of ['pointerdown', 'wheel', 'keydown', 'touchstart']) box.addEventListener(e, () => { moved = true; }, {passive: true});
+  new ResizeObserver(() => {
+    if (moved || !box.clientWidth) return;
     box.scrollLeft = Math.max(0, nx / W * box.scrollWidth - box.clientWidth * 0.55);
-    edgeCue(box);
-    return true;
-  };
-  const watch = new ResizeObserver(() => { if (place()) watch.disconnect(); });
-  watch.observe(box);
+  }).observe(box);
+  edgeCue(box);
   return box;
 }
 
@@ -541,7 +542,8 @@ export function refPage(c, name, tab) {
     const may = !!(r.may && r.may.create);
     const changed = r.changed || [];
     const total = Math.max(changed.length, (findRef(list, r.name) || {})['changed-count'] || 0);
-    const commits = changed.reduce((a, t) => a + Math.max(0, t.version - t['cut-version']), 0);
+    // A branch's own versions number from 1 (item 105), so its version is its count of commits.
+    const commits = changed.reduce((a, t) => a + (t.version || 0), 0);
     const cut = cutOf(r, list);
     const title = h('div', {class: 'title-row'}, h('h1', {tabindex: '-1', 'aria-label': `${kindWord(r)} @${r.name}`}, cref(r, {big: true})),
       badge(kindWord(r), 'strong'), expiring(r) ? pill('warn', icon('clock'), `Expires ${untilWords(r['expires-at'])}`) : null);
@@ -605,7 +607,7 @@ async function changesTab(c, r, total) {
     return h('tr', {class: p && p.moves ? null : p ? 'is-warn' : null, 'data-path': pathOfItem(t)},
       h('td', {class: 'name'}, h('a', {href: tableHref(c, t, r.name)}, pathOfItem(t))),
       h('td', {class: 'num'}, fmt(t['cut-version'])), h('td', {class: 'num'}, h('b', null, fmt(t.version))),
-      h('td', null, h('a', {href: tableHref(c, t, r.name, 'metadata-log')}, plural(Math.max(0, t.version - t['cut-version']), 'commit'))),
+      h('td', null, h('a', {href: tableHref(c, t, r.name, 'metadata-log')}, plural(t.version || 0, 'commit'))),
       h('td', null, state));
   });
   return [h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
@@ -614,7 +616,8 @@ async function changesTab(c, r, total) {
     : h('p', {class: 'muted'}, total ? 'None you may describe.' : 'None yet: the branch has not committed.'),
   rows.length && total > changed.length ? h('p', {class: 'muted', 'data-hidden-count': total - changed.length},
     `And ${fmt(total - changed.length)} more you may not describe.`) : null,
-  h('p', {class: 'fine'}, 'Versions are the catalog\'s commit journal versions of each table. Every other table reads as main had it at the point. ',
+  h('p', {class: 'fine'}, 'At the point is main\'s version of each table then; on the branch, the branch\'s own, which number from 1. '
+    + 'Every other table reads as main had it at the point. ',
     h('a', {href: refHref(c, r.name, 'merge')}, 'Preview the merge'), ' to see which tables would move.'),
   plan.error ? failure(plan.error, {compact: true}) : null)];
 }
@@ -663,8 +666,8 @@ async function recordTab(c, r) {
 
 const why = (x, r) => x.moves
   ? (x['main-version'] === x['cut-version']
-    ? [h('b', null, 'Moves. '), `Changed only on the branch: main is still at version ${fmt(x['cut-version'])}, the point's, so it takes version `
-      + `${fmt(x['branch-version'])}'s file as its version ${fmt(x.version)}.`]
+    ? [h('b', null, 'Moves. '), `Changed only on the branch: main is still at version ${fmt(x['cut-version'])}, the point's, so it takes the file of `
+      + `@${r.name}'s version ${fmt(x['branch-version'])} as its version ${fmt(x.version)}.`]
     : [h('b', null, 'Moves, over main\'s maintenance. '), `Main went from version ${fmt(x['cut-version'])} to ${fmt(x['main-version'])} since the `
       + `point by compaction or snapshot expiry alone, so it takes @${r.name}'s change over them as its version ${fmt(x.version)}.`])
   : x['dropped-at'] || x['main-version'] === undefined
@@ -673,7 +676,7 @@ const why = (x, r) => x.moves
     : [h('b', null, 'Conflict: changed on both. '), `Main went from version ${fmt(x['cut-version'])} to ${fmt(x['main-version'])} since the point, `
       + `${plural((x['main-commits'] || {}).count || x['main-version'] - x['cut-version'], 'commit')}`
       + ((x['main-commits'] || {}).by ? `; the latest by ${x['main-commits'].by.join(', ')}` : '')
-      + `. The branch's version ${fmt(x['branch-version'])} was made from ${fmt(x['cut-version'])}, so taking it would undo main's. `,
+      + `. @${r.name}'s version ${fmt(x['branch-version'])} was made from the point's version ${fmt(x['cut-version'])}, so taking it would undo main's. `,
     muted(`The catalog: ${x.conflict}.`)];
 
 function mergeMap(x, r) {
@@ -682,7 +685,7 @@ function mergeMap(x, r) {
   const y0 = 16;
   const y1 = 42;
   const dropped = !x.moves && (x['dropped-at'] || x['main-version'] === undefined);
-  const own = Math.max(0, x['branch-version'] - x['cut-version']);
+  const own = x['branch-version'] || 0;
   const since = Math.min(60, (x['main-commits'] || {}).count || Math.max(0, (x['main-version'] || x['cut-version']) - x['cut-version']));
   const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, class: 'mm', role: 'img', 'aria-label': `${pathOfItem(x)}: ${plural(own, 'commit')} on the branch; `
     + `${dropped ? 'dropped on main' : since ? plural(since, 'commit') + ' on main since the point' : 'no commit on main since the point'}`});

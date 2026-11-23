@@ -22,12 +22,20 @@ const STATUS_TEXT = {200: 'OK', 201: 'Created', 204: 'No Content'};
 export async function send(path, {method = 'GET', body, headers = {}} = {}) {
   const sent = Object.assign({Accept: 'application/json', Authorization: 'Bearer ' + token()}, headers);
   if (body !== undefined) sent['Content-Type'] = 'application/json';
-  const response = await fetch(path, {
-    method, headers: sent, body: body === undefined ? undefined : JSON.stringify(body),
-    cache: 'no-store', credentials: 'omit', redirect: 'error',
-  });
+  let response;
+  let text;
+  try {
+    response = await fetch(path, {
+      method, headers: sent, body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store', credentials: 'omit', redirect: 'error',
+    });
+    text = response.status === 204 ? '' : await response.text();
+  } catch (error) {
+    // The network failed: no answer, or not all of it, came back. Marked so the failure box says so (dom.js).
+    error.unreached = true;
+    throw error;
+  }
   const requestId = response.headers.get('X-Request-ID');
-  const text = response.status === 204 ? '' : await response.text();
   let json = null;
   try {
     json = text ? JSON.parse(text) : null;

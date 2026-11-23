@@ -83,6 +83,7 @@ import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLock;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import org.junit.jupiter.api.DisplayName;
@@ -122,6 +123,8 @@ class RefMergeRoutesTest {
     private static final Caller NED = person("ned", "newcomers");
     /** Who commits, on main and on the branches. */
     private static final Caller BOB = person("bob", "builders");
+    /** Select on the catalog: reads a table's metadata log. */
+    private static final Caller REX = person("rex", "readers");
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), "gate", "gate");
     private final Map<UUID, NamespaceRecord> namespaces = new LinkedHashMap<>();
@@ -163,6 +166,7 @@ class RefMergeRoutesTest {
         grant(onCatalog, "writers", Privilege.CREATE);
         grant(onCatalog, "writers", Privilege.WRITE);
         grant(new Securable(Securable.Kind.NAMESPACE, hr.id()), "hr-readers", Privilege.DESCRIBE);
+        grant(onCatalog, "readers", Privilege.SELECT);
     }
 
     // ---- merging ----
@@ -414,7 +418,63 @@ class RefMergeRoutesTest {
         assertThat(refs).containsKey(dev.id());
     }
 
+    // ---- a branch's own versions, as the console reads them (backlog 109) ----
+
+    @Test
+    @DisplayName("commits through the engine on a branch number its own versions from 1, whatever the cut's: the ref's"
+            + " read counts them, and the metadata log through it lists them, each an update on the branch's line,"
+            + " then main's at and below the cut, never main's since")
+    void aBranchsOwnVersionsNumberFromOne() {
+        onMain(orders, append(3, 1L, 2, 3));
+        Ref dev = branch("dev", staff, orders);
+        onMain(orders, append(4, 3L, 3, 2));
+        onBranch(dev, orders, append(5, 3L, 3, 1));
+        onBranch(dev, orders, append(6, 5L, 4, 1));
+
+        Pointer own = pointers.get(dev.key(orders.id()));
+        assertThat(own.version()).as("the engine's numbering, not a fixture's").isEqualTo(2);
+        assertThat(pointers.get(orders.mainKey()).version()).isEqualTo(4);
+        JsonNode changed = json(routes.read("gate", "dev", http)).get("changed");
+        assertThat(changed).singleElement().satisfies(table -> {
+            assertThat(table.get("cut-version").asLong()).isEqualTo(3);
+            assertThat(table.get("version").asLong()).as("two commits on the branch").isEqualTo(2);
+        });
+
+        caller = REX;
+        JsonNode log = Management.JSON.readTree(lifecycle().metadataLog("gate", orders.id().toString(), null, null,
+                "dev", http).getBody());
+        List<JsonNode> entries = log.get("journal").valueStream().toList();
+        assertThat(entries).extracting(entry -> entry.get("branch").asString() + " " + entry.get("new-version")
+                .asLong()).as("main's 4, made since the cut, is not the branch's; main's 1 was never journaled here")
+                .containsExactly("dev 2", "dev 1", "main 3", "main 2");
+        assertThat(entries.getFirst().get("new-location").asString()).isEqualTo(own.metadataLocation());
+        assertThat(entries.subList(0, 2)).allSatisfy(entry -> {
+            assertThat(entry.get("new-location").asString()).contains(TableFiles.BRANCH_MARK + dev.id());
+            assertThat(entry.get("updates").isArray()).as("a commit on the branch is an update, not a create")
+                    .isTrue();
+            assertThat(entry.get("updates").get(0).get("action").asString()).isEqualTo("add-snapshot");
+        });
+        assertThat(entries.get(1).has("old-location")).as("the branch's first commit, from the cut's file").isFalse();
+        assertThat(log.get("ref").get("cut-version").asLong()).isEqualTo(3);
+        assertThat(log.get("ref").has("log-stops-at-cut")).isFalse();
+    }
+
     // ---- the estate ----
+
+    /** The metadata log's route over the same store. */
+    private LifecycleRoutes lifecycle() {
+        Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
+        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
+        Denials denials = DenialsForTests.denials(audit::add, rest, clock);
+        Holdings holdings = new Holdings(authorizer, store, rest, separation, denials);
+        Management management = new Management(store, request -> caller, rest, holdings);
+        SecuritySettings security = new SecuritySettings(List.of(new SecuritySettings.Issuer("https://idp.test",
+                URI.create("https://idp.test/keys"), Set.of("nuna"), Set.of(), "sub", "groups", "azp")),
+                Duration.ofSeconds(60), Set.of("grant-admins"), Set.of("platform-ops"), Set.of("nuna-maintenance"),
+                false);
+        ManagementGuard guard = new ManagementGuard(authorizer, separation, security, denials, holdings);
+        return new LifecycleRoutes(store, management, guard, null, null, null, null, clock);
+    }
 
     private RefRoutes routes(RefSettings settings) {
         AuditPublisher publisher = audit::add;
@@ -742,6 +802,11 @@ class RefMergeRoutesTest {
                     case "countOwnPointers" -> pointers.keySet().stream()
                             .filter(key -> key.branch().equals(args[0].toString())).count();
                     case "listRefNamespaces" -> entries((UUID) args[0], (UUID) args[1], RefEntry.Kind.NAMESPACE);
+                    case "listRefPointers" -> refs.values().stream().flatMap(ref -> cuts.getOrDefault(ref.id(),
+                            List.of()).stream().filter(entry -> entry.id().equals(args[0])).map(entry ->
+                            new RefPointers(ref, entry.pointer().orElseThrow(), Optional.ofNullable(pointers.get(
+                                    ref.key(entry.id()))).map(own -> new RefEntry.At(own.version(),
+                                    own.metadataLocation(), own.sha256()))))).toList();
                     case "listRefObjects" -> entries((UUID) args[0], (UUID) args[1],
                             RefEntry.of((CatalogObject.Kind) args[2]));
                     case "readPointer" -> Optional.ofNullable(pointers.get((PointerKey) args[0]));
