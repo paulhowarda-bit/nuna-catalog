@@ -135,6 +135,14 @@ subprojects {
             outputs.upToDateWhen { false }
             outputs.cacheIf { false }
         }
+        if (nightly || heavy || bites) {
+            // A test task past this has hung: Gradle stops it and it fails, and with --continue (the overnight run's
+            // legs, nightly.sh) the other modules still run, where one hung test would have held its leg, or a bite
+            // the rest of the bites, until the run's deadline. The longest seen: 16 min for a heavy module
+            // (catalog-server), 66 min for a nightly one (catalog-maintenance, 2026-11-21, with Windows paging the
+            // Docker VM out); a bite runs one class of either (backlog 164).
+            timeout.set(java.time.Duration.ofMinutes(if (heavy) 60 else 120))
+        }
         // The one S3 store every test uses (catalog-tests-s3, TestS3): -Ps3=silo, ceph or aws.
         listOf("s3", "silo.image", "ceph.image").forEach { systemProperty(it, project.property(it)!!) }
         systemProperty("nuna.aws.profile", providers.gradleProperty("nuna.aws.profile").getOrElse(""))

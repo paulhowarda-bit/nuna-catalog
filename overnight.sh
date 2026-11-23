@@ -22,8 +22,12 @@
 #   1. ./gradlew build -Pheavy, with --continue, so one failing module does not hide the others (backlog 122)
 #   2. the Ceph leg: :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph, with --continue too
 #   3. ./nightly.sh: the overnight tests and the CAS test
-#   4. bites/run.sh, one bite at a time, only if leg 1 passed (a bite run against a failing build proves
-#      nothing)
+#   4. bites/run.sh, one bite at a time, whatever tests failed in the legs before (backlog 164). A bite whose own
+#      test class failed tonight, in any leg, is not run: its verdict would mean nothing; nor is one whose module's
+#      tests hung. The bites are left out only when leg 1 failed with no failing test (it did not compile, or a
+#      check failed): every bite would be SETUP.
+# With -Pheavy, -Pnightly and -Pbites each test task has a timeout (build.gradle.kts), so a hung test fails its
+# module and the leg, or the bite, goes on.
 # NUNA_OVERNIGHT_LEGS picks legs by name (default "heavy ceph nightly bites"); with heavy left out, the bites run.
 # Nothing starts after $NUNA_OVERNIGHT_DEADLINE (default 06:30), and a leg still running then is stopped, so
 # the day starts with Docker free. Each leg, and the bites, start once the containers of the leg before are gone,
@@ -163,6 +167,8 @@ main() {
     # --- the legs -----------------------------------------------------------------------------------------------
     rows=()
     failed_tests=""
+    failed_classes=$runs/.failed-classes
+    rm -f "$failed_classes"
 
     # The failing tests in the result files written since marker $1: "Class#method: message".
     failures_since() {
@@ -174,6 +180,25 @@ main() {
                                       gsub(/&lt;/, "<", msg); gsub(/&gt;/, ">", msg); gsub(/&quot;/, "\"", msg)
                                       gsub(/&#10;/, " ", msg); gsub(/&amp;/, "\\&", msg)
                                       print cls "#" name ": " substr(msg, 1, 200) }'
+    }
+
+    # The test classes with a failing test in the result files written since marker $1: "module class", the class
+    # fully qualified (a nested one as Outer$Inner).
+    failed_classes_since() {
+        find "$clone" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
+            xargs -0 -r awk -v clone="$clone/" '
+                /<testsuite / && (/ failures="[1-9]/ || / errors="[1-9]/) {
+                    module = substr(FILENAME, length(clone) + 1); sub(/\/.*/, "", module)
+                    match($0, /name="[^"]*"/); print module " " substr($0, RSTART + 6, RLENGTH - 7) }'
+    }
+
+    # Whether a test of class $2 (as a bite names it: Class or Outer$Inner) in module $1 failed tonight, in any leg.
+    # A failure in a nested class counts for its outer class, which the bite's test run includes; "module *" is a
+    # module whose test task hung.
+    failed_tonight() {
+        [ -f "$failed_classes" ] && awk -v m="$1" -v c="$2" '
+            $1 == m { n = $2; sub(/.*\./, "", n); if (n == "*" || n == c || index(n, c "$") == 1) found = 1 }
+            END { exit !found }' "$failed_classes"
     }
 
     # Keeps the result files written since marker $1 in folder $2, at their paths in the clone, with docker info.
@@ -236,19 +261,34 @@ main() {
             logs+=", $key-results/"
         fi
         rows+=("| $title | $result | $(minutes $(( $(date +%s) - t0 ))) | $logs |")
-        local fails
+        local fails hung
         fails=$(failures_since "$marker")
-        if [ -n "$fails" ]; then
-            failed_tests+=$'\n'"### $title"$'\n\n'"$(printf '%s\n' "$fails" | sort -u | sed 's/^/- /')"$'\n'
+        # A test task stopped at its timeout (build.gradle.kts) leaves no result file for the test that hung.
+        hung=$(grep -o "Requesting stop of task '[^']*'" "$runs/$log" 2>/dev/null | sed "s/.*task '\(.*\)'/\1: stopped at its timeout, a test hung (no result file names it)/" | sort -u)
+        if [ -n "$fails$hung" ]; then
+            failed_tests+=$'\n'"### $title"$'\n\n'"$(printf '%s\n' "$fails" "$hung" | sed '/^$/d' | sort -u | sed 's/^/- /')"$'\n'
+            failed_classes_since "$marker" >>"$failed_classes"
+            # A module whose test task hung counts as failing in every class: which test hung is not known, and its
+            # bites would hang too.
+            grep -o "Requesting stop of task ':[^']*:test'" "$runs/$log" 2>/dev/null |
+                sed "s/.*task ':\(.*\):test'/\1 */" >>"$failed_classes"
         fi
         [ "$status" -eq 0 ]
+    }
+
+    # Whether the leg logged in $1 failed without a failing or hung test: it did not compile, or a check failed.
+    broken() {
+        [ -f "$runs/.$1.started" ] && [ -z "$(failures_since "$runs/.$1.started")" ] &&
+            ! grep -q "Requesting stop of task" "$runs/$1"
     }
 
     dry_args=()
     nightly_dry=()
     $dry && dry_args=(-m) && nightly_dry=(--test-dry-run)
     leg heavy "Heavy build" heavy.log ./gradlew --console=plain --continue build -Pheavy "${dry_args[@]}"
-    heavy_ok=$?
+    heavy_status=$?
+    heavy_broken=false
+    [ "$heavy_status" -eq 1 ] && broken heavy.log && heavy_broken=true
     leg ceph "Ceph leg" ceph.log ./gradlew --console=plain --continue :catalog-objectstore:test :catalog-maintenance:test -Pheavy -Ps3=ceph "${dry_args[@]}"
     leg nightly "Nightly" nightly.log ./nightly.sh "${nightly_dry[@]}"
 
@@ -260,12 +300,13 @@ main() {
         [ "${all[$i]}" = "$next" ] && start=$i && break
     done
     bite_rows=""
-    ran=0; bit=0; not_bit=0
+    unjudged_rows=""
+    ran=0; bit=0; not_bit=0; unjudged=0
     t0=$(date +%s)
     if ! wanted bites; then
         rows+=("| Bites | left out (NUNA_OVERNIGHT_LEGS) | | |")
-    elif [ "$heavy_ok" -eq 1 ]; then
-        rows+=("| Bites | not run: the heavy build did not pass | | |")
+    elif $heavy_broken; then
+        rows+=("| Bites | not run: the heavy build failed with no failing test (it did not compile, or a check failed) | | |")
     elif $dry; then
         rows+=("| Bites | dry run: would start at ${all[$start]} of ${#all[@]} | | |")
     else
@@ -276,6 +317,14 @@ main() {
             patch=${all[$(( (start + k) % ${#all[@]} ))]}
             [ "$(left)" -le 300 ] && break
             id=$(basename "$patch" .patch)
+            module=$(sed -n '/^diff --git/q; s/^Module: *//p' "$clone/$patch" | head -1 | tr -d '\r ')
+            class=$(sed -n '/^diff --git/q; s/^Test: *//p' "$clone/$patch" | head -1 | tr -d '\r ' | sed 's/#.*//')
+            if failed_tonight "$module" "$class"; then
+                unjudged=$((unjudged + 1))
+                unjudged_rows+="- $patch: $module $class"$'\n'
+                echo "${all[$(( (start + k + 1) % ${#all[@]} ))]}" >"$home/bites-next"
+                continue
+            fi
             out=$(cd "$clone" && timeout --kill-after=120 "$(left)" bites/run.sh "$patch" 2>&1)
             echo "$out" >>"$runs/bites.log"
             row=$(printf '%s\n' "$out" | grep -m1 "^$id ")
@@ -294,7 +343,8 @@ main() {
         done
         result="$ran of ${#all[@]} ran: $bit bite"
         [ "$not_bit" -gt 0 ] && result+=", $not_bit did NOT"
-        [ "$ran" -lt "${#all[@]}" ] && result+="; the deadline stopped the rest, which the next run starts on"
+        [ "$unjudged" -gt 0 ] && result+="; $unjudged not run, their tests having failed or hung tonight"
+        [ $(( ran + unjudged )) -lt "${#all[@]}" ] && result+="; the deadline stopped the rest, which the next run starts on"
         rows+=("| Bites | $result | $(minutes $(( $(date +%s) - t0 ))) | bites.log |")
         say "bites: $result"
     fi
@@ -325,6 +375,12 @@ main() {
             echo "## Bites that did not bite (their logs are in bites/)"
             echo
             printf '%s' "$bite_rows"
+        fi
+        if [ -n "$unjudged_rows" ]; then
+            echo
+            echo "## Bites not run: their tests failed or hung tonight"
+            echo
+            printf '%s' "$unjudged_rows"
         fi
         if [ -f "$clone/build/nightly-summary.txt" ] && [ "$clone/build/nightly-summary.txt" -nt "$runs/.nightly.log.started" ]; then
             echo
