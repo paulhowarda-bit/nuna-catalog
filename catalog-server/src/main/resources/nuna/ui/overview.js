@@ -134,11 +134,11 @@ async function latencyKpi() {
   const met = slos.filter(x => x.met === true).length;
   const judged = slos.filter(x => x.met !== undefined).length;
   return [h('div', {class: 'kpi'},
-    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('health')}, icon('health'), 'Latency objectives, last day')),
+    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('service')}, icon('health'), 'Latency objectives, last day')),
     h('p', {class: 'kpi-v'}, judged ? `${met} of ${judged}` : '–', h('small', null, judged ? 'met' : 'none in the window')),
     h('div', {class: 'kpi-list'}, slos.map(x => h('div', null, h('span', null, x.short), h('b', null, x.share || muted('–')))))),
   h('div', {class: 'kpi'},
-    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('health')}, icon('server'), 'Servers')),
+    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('service')}, icon('server'), 'Servers')),
     h('p', {class: 'kpi-v'}, `${health.answered}`, h('small', null, 'answered')),
     h('div', {class: 'kpi-list'}, h('div', null, h('span', null, 'Did not answer'), h('b', null, String(health.silent || 0)))))];
 }

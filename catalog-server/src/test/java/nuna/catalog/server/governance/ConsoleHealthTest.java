@@ -255,7 +255,7 @@ class ConsoleHealthTest {
         orders.findElement(By.cssSelector("td.name a")).click();
         assertThat(browser.awaitText(By.id("table-health-verdict"), "Needs compaction").getText())
                 .contains("Score 3");
-        assertThat(driver.getCurrentUrl()).contains("k=table", "n=orders", "tab=health");
+        assertThat(driver.getCurrentUrl()).contains("k=table", "n=orders", "tab=maintenance");
         assertThat(driver.findElements(By.cssSelector("#table-health-reasons li"))).extracting(li -> li.getDomAttribute(
                 "data-reason")).containsExactly("small-files");
         assertThat(fact("Small files")).isEqualTo("12 (30.0% of data files)");
@@ -267,8 +267,11 @@ class ConsoleHealthTest {
         assertThat(driver.findElements(By.id("table-health-acts"))).as("a reader may not ask for maintenance").isEmpty();
         assertThat(driver.findElements(By.cssSelector("#table-page [data-act='compact']"))).isEmpty();
 
+        // A link from before the tab was named Maintenance (backlog 192) still opens it.
         browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=fine&tab=health");
         assertThat(browser.awaitText(By.id("table-health-verdict"), "No compaction needed")).isNotNull();
+        assertThat(driver.findElement(By.cssSelector("#table-page nav.tabs a[aria-current='page']")).getText())
+                .isEqualTo("Maintenance");
         assertThat(browser.await(By.id("table-health-compaction")).getText())
                 .contains("No compaction has run for this table.");
 

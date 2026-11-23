@@ -104,9 +104,12 @@ class ConsoleHealthBrowserTest {
         // Every table and view at its watermark: none is behind.
         verifyAll();
         assertThat(readout(operator)).isEmpty();
+        // A link from before the page was named Service (backlog 192) still opens it.
         browser.open("/ui/#p=health");
         assertThat(browser.await(By.id("health-dr-none")).getText()).startsWith("No table or view is behind its DR "
                 + "watermark");
+        assertThat(driver.findElement(By.cssSelector("#nav a[data-k='service']")).getDomAttribute("aria-current"))
+                .isEqualTo("page");
         assertThat(fact("health-dr", "behind")).isEqualTo("0");
 
         // One table the verifier has not reported on: listed by every version it has, so not counted as behind.
@@ -182,7 +185,7 @@ class ConsoleHealthBrowserTest {
         // The page is not offered, and a link to it says so without asking the catalog (backlog 184).
         assertThat(browser.await(By.cssSelector("#closed-page [data-closed] h3")).getText())
                 .isEqualTo("Service health is open to platform operators.");
-        assertThat(driver.findElement(By.cssSelector("#nav a[data-k='health']")).getDomAttribute("hidden")).isNotNull();
+        assertThat(driver.findElement(By.cssSelector("#nav a[data-k='service']")).getDomAttribute("hidden")).isNotNull();
         assertThat(driver.findElements(By.id("health-dr"))).isEmpty();
         assertThat(driver.findElements(By.id("health-store"))).isEmpty();
 

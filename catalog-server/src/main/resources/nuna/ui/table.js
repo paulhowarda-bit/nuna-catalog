@@ -82,7 +82,7 @@ function addCount(tabs, key, n) {
 // ---- the table page ----
 
 const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['snapshots', 'Snapshots'], ['partitioning', 'Partitioning'],
-  ['properties', 'Properties'], ['health', 'Health'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
+  ['properties', 'Properties'], ['maintenance', 'Maintenance'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
   ['metadata-log', 'Metadata log']];
 
 export function tablePage(target, tab, route) {
@@ -116,12 +116,12 @@ export function tablePage(target, tab, route) {
   // Compact now is main's: the worker compacts main only.
   if (!target.ref) mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
-      onclick: () => askDialog(target, 'compaction', key === 'health' ? reload : null)}, icon('play'), 'Compact now'));
+      onclick: () => askDialog(target, 'compaction', key === 'maintenance' ? reload : null)}, icon('play'), 'Compact now'));
   });
   const show = () => {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
-    } else if (key === 'health') {
+    } else if (key === 'maintenance') {
       load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
     } else if (key === 'governance') {
       load(body, () => throughRef(target, () => metadata, 'governance', () => governanceTab(target, reload)));
@@ -137,7 +137,7 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return refusedLoad(error, 'Health, Governance, Grants and Audit', target.ref);
+          return refusedLoad(error, 'Maintenance, Governance, Grants and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
@@ -156,7 +156,7 @@ function headMarks(target, title) {
     const row = queueOf(rows, target.catalog).find(r => keyOfRow(r) === [target.catalog, pathOf(target)].join('.'));
     if (row) {
       const eq = (row.assessment.reasons || []).includes('equality-deletes');
-      title.append(h('a', {href: objectHref(target, 'health'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
+      title.append(h('a', {href: objectHref(target, 'maintenance'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
     }
   }, () => {});
   api.tableHealth(target).then(health => title.append(...requestPills(health.requests)), () => {});
@@ -267,9 +267,9 @@ async function healthSummary(target) {
   const words = [];
   if (a && a['needs-compaction']) words.push((a.reasons || []).map(r => (REASONS[r] || [null, null, r])[2]).join(' '));
   words.push(c ? `Last compaction ${at(c['ended-at'] || c['started-at'])}, ${c.outcome}.` : 'No compaction has run for this table.');
-  return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'health')}, 'Health'), ' ',
+  return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'maintenance')}, 'Maintenance'), ' ',
     target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
-  target.ref ? h('p', {class: 'fine'}, 'Health is assessed and maintained on main only. Main\'s health of this table.') : null,
+  target.ref ? h('p', {class: 'fine'}, 'Maintenance is assessed and run on main only. Main\'s, for this table.') : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)
     : pill('ok', icon('check'), 'No compaction needed'),

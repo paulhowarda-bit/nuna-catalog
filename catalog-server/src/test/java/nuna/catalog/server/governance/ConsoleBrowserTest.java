@@ -198,7 +198,7 @@ class ConsoleBrowserTest {
 
     /**
      * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
-     * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Health; a grant admin
+     * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Service; a grant admin
      * on Audit, with no Overview or Maintenance; a platform operator on Health.
      */
     @Test
@@ -226,8 +226,21 @@ class ConsoleBrowserTest {
 
         signIn(api.operator());
         browser.open("/ui/");
-        browser.await("the operator did not land on Health", d -> d.getCurrentUrl().endsWith("#p=health"));
-        assertThat(rail()).containsExactly("catalog", "governance", "health");
+        browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
+        assertThat(rail()).containsExactly("catalog", "governance", "service");
+    }
+
+    /**
+     * The rail keeps its labels on the Catalog page, the page people browse most (Atelier's review, F5; backlog 192);
+     * only its fold button folds it to icons.
+     */
+    @Test
+    void theRailKeepsItsLabelsOnTheCatalogPage() {
+        signIn(tester());
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#nav a[data-k='catalog'][aria-current='page']"));
+        assertThat(driver.findElement(By.cssSelector("#nav a[data-k='catalog'] .nl")).isDisplayed()).isTrue();
+        assertThat(driver.findElement(By.cssSelector(".nc-app")).getDomAttribute("class")).doesNotContain("rail");
     }
 
     /** The rail's items drawn for the caller, by key. */
@@ -605,7 +618,7 @@ class ConsoleBrowserTest {
         browser.open("/ui/#p=maintenance&c=trading");
         WebElement lastNight = browser.await(By.cssSelector("#last-night[data-night='" + night + "']"));
         WebElement job = browser.await(By.cssSelector("#last-night a.gj[data-job='" + compaction + "']"));
-        assertThat(job.getDomAttribute("href")).contains("k=table", "n=trades", "tab=health");
+        assertThat(job.getDomAttribute("href")).contains("k=table", "n=trades", "tab=maintenance");
         assertThat(job.getDomAttribute("aria-label")).startsWith("Compaction of " + top + ".equities.eu.trades: ")
                 .endsWith("succeeded, 40 files into 3");
         browser.await(By.cssSelector("#last-night a.gj[data-job='" + scan + "'] rect.scan"));

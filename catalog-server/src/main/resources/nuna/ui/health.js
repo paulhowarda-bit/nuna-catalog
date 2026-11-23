@@ -1,4 +1,4 @@
-// Health (D38): catalog health for the whole deployment, for platform operators, with the maintenance worker's
+// Service (D38, named Health before item 192): catalog health for the whole deployment, for platform operators, with the maintenance worker's
 // scans (also on Maintenance: operators hold no grant, so may have no catalog to open it in), and one table's health
 // on its own tab, with its maintenance on request (item 114). The server decides who sees what: a refusal is shown as
 // it answered, never guessed at here. DR replication (item 138) and the store (item 139) are for platform operators
@@ -69,7 +69,7 @@ async function catalogHealth() {
     health = await api.catalogHealth();
   } catch (error) {
     if (error.status !== 403) throw error;
-    return [pageHead({eyebrow: 'deployment · the last day, to now', title: 'Health'}),
+    return [pageHead({eyebrow: 'deployment · the last day, to now', title: 'Service'}),
       h('div', {class: 'notice'}, icon('info'), h('span', {class: 'health-refused'},
         h('b', null, 'Catalog health is shown to platform operators only.'), ' Your groups do not include one. The catalog answered:')),
       failure(error, {big: true})];

@@ -210,7 +210,7 @@ export function refNote(r, what) {
   const chip = cref(typeof r === 'string' ? {name, kind: 'branch'} : r);
   const tag = typeof r !== 'string' && r.kind === 'tag';
   const words = {
-    health: [h('b', null, 'Health and maintenance are main\'s.'), ` The worker compacts and expires main only; a ${tag ? 'tag' : 'branch'}'s `
+    health: [h('b', null, 'Maintenance is main\'s.'), ` The worker compacts and expires main only; a ${tag ? 'tag' : 'branch'}'s `
       + `tables are never compacted or expired, and every file @${name} reaches is kept while it exists.`],
     governance: [h('b', null, 'Governance holds on every ref.'), ' Holds, freezes, classifications and the regulated area are main\'s '
       + 'record of the table, by its id: what you see here binds ', chip, ' too, and a merge is judged by it.'],

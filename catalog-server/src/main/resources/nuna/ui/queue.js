@@ -85,7 +85,7 @@ export function shapeWords(c) {
 /**
  * The ice line over the whole estate: one mark per table, grouped by top-level namespace and labelled under the
  * line. Above it, each table in shape, as tall as its data files on a log scale, with a dashed reference at 1,000
- * files; one not yet assessed is a stub. Below it, each queued table, as deep as its score, a link to its Health tab.
+ * files; one not yet assessed is a stub. Below it, each queued table, as deep as its score, a link to its Maintenance tab.
  * A table whose compaction succeeded last night has a dashed outline where it was queued. Held and frozen tables have
  * their own colours.
  */
@@ -127,7 +127,7 @@ export function iceEstate(host, W, rows) {
       if (needs(row)) {
         const depth = 6 + 46 * (Number(a.score) || 0) / deepest;
         const mx = x + step / 2 - 2;
-        const link = s('a', {href: objectHref(targetOfRow(row), 'health'), class: 'qa g' + (gi % 6),
+        const link = s('a', {href: objectHref(targetOfRow(row), 'maintenance'), class: 'qa g' + (gi % 6),
           'aria-label': `${row.namespace.join('.')}.${row.name}, score ${a.score}`});
         link.append(s('title', null, `${row.catalog}.${row.namespace.join('.')}.${row.name} · score ${a.score} · `
           + (a.reasons || []).map(r => (REASONS[r] || [null, r])[1].toLowerCase()).join(', ')));
@@ -156,7 +156,7 @@ export function iceEstate(host, W, rows) {
   svg.append(ghosts, sky, sink, s('line', {class: 'water', x1: 0, y1: Y, x2: W, y2: Y}), labels);
   host.append(svg);
   host.append(h('p', {class: 'ice-cap'}, 'Above the line: in shape, height is data files, log scale. Below: queued, '
-    + 'depth is score. Each namespace opens its page; each queued table its Health tab.'));
+    + 'depth is score. Each namespace opens its page; each queued table its Maintenance tab.'));
 }
 
 /** The legend under the estate's ice line, with each count. */
@@ -210,7 +210,7 @@ export function iceQueue(host, W, rows, {me, label} = {}) {
       const depth = 6 + 46 * (Number(a.score) || 0) / deepest;
       const mine = me && keyOfRow(row) === me;
       const mx = x + step / 2 - 2;
-      const link = s('a', {href: objectHref(targetOfRow(row), 'health'), class: 'qa g' + (gi % 6) + (mine ? ' is-me' : ''),
+      const link = s('a', {href: objectHref(targetOfRow(row), 'maintenance'), class: 'qa g' + (gi % 6) + (mine ? ' is-me' : ''),
         'aria-label': `${row.namespace.join('.')}.${row.name}, score ${a.score}`});
       link.append(s('title', null, `${row.catalog}.${row.namespace.join('.')}.${row.name} · score ${a.score} · `
         + (a.reasons || []).map(r => (REASONS[r] || [null, r])[1].toLowerCase()).join(', ')));
@@ -245,7 +245,7 @@ export function queueTable(rows, {numbered = true, cls = 'queue stack-line', id}
     const c = row['last-compaction'];
     return h('tr', {'data-table': keyOfRow(row), 'data-reasons': (a.reasons || []).join(' ')},
       numbered ? h('td', {class: 'num'}, String(i + 1)) : null,
-      h('td', {class: 'name'}, h('a', {href: objectHref(targetOfRow(row), 'health')}, pathName(row.namespace, row.name))),
+      h('td', {class: 'name'}, h('a', {href: objectHref(targetOfRow(row), 'maintenance')}, pathName(row.namespace, row.name))),
       h('td', {class: 'why'}, (a.reasons || []).flatMap((r, k) => k ? [' ', reasonPill(r)] : [reasonPill(r)])),
       h('td', {class: 'score'}, bar(a.score, scale, isEq(row)), ' ', h('span', {class: 'tnum'}, String(a.score ?? ''))),
       numbered ? h('td', {class: 'num'}, String(a['small-files'] ?? '')) : null,

@@ -90,7 +90,7 @@ function gantt(host, W, t, jobs, slots) {
       + `${j['ended-at'] ? hm(j['ended-at']) : 'now'}, ${j.outcome}${j.kind === 'compaction' && j['ended-at']
         ? `, ${fmt(n(j['files-in']))} files into ${fmt(n(j['files-out']))}` : ''}`;
     const g = table
-      ? s('a', {href: objectHref({catalog: table.catalog, kind: 'table', namespace: table.namespace || [], name: table.name}, 'health'),
+      ? s('a', {href: objectHref({catalog: table.catalog, kind: 'table', namespace: table.namespace || [], name: table.name}, 'maintenance'),
         class: 'gj', 'aria-label': words, 'data-job': j.id})
       : s('g', {class: 'gj-anon', role: 'img', 'aria-label': words, 'data-job': j.id});
     g.append(s('title', null, words), bar);

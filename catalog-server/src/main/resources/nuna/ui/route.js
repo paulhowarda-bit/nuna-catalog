@@ -5,17 +5,23 @@
 
 export const SEP = '\u001f';
 
+// Links from before item 192 keep working: the deployment's Health page is Service now, and a table's Health tab
+// Maintenance.
+const OLD_PAGES = {health: 'service'};
+const OLD_TABS = {health: 'maintenance'};
+
 /** {page, c, k, ns: [], n, tab, g, r} from the fragment. A catalog with no page is that catalog's browse page. */
 export function parse() {
   const p = new URLSearchParams(location.hash.slice(1));
   const ns = p.get('ns') ? p.get('ns').split(SEP) : [];
+  const page = OLD_PAGES[p.get('p')] || p.get('p') || null;
   return {
-    page: p.get('p') || null,
+    page,
     c: p.get('c') || null,
     k: p.get('k') || (ns.length ? 'namespace' : 'catalog'),
     ns,
     n: p.get('n') || null,
-    tab: p.get('tab') || null,
+    tab: (!page && OLD_TABS[p.get('tab')]) || p.get('tab') || null,
     g: p.get('g') || null,
     r: p.get('r') || null,
   };
@@ -38,7 +44,7 @@ export function href(o) {
 export const objectHref = (target, tab) => href({c: target.catalog, k: target.kind, ns: target.namespace, n: target.name, tab,
   r: target.ref});
 
-export const pageHref = (page, c, tab, g) => href({page, c: page === 'health' ? null : c, tab, g});
+export const pageHref = (page, c, tab, g) => href({page, c: page === 'service' ? null : c, tab, g});
 
 export const catalogHref = (c, tab, r) => href({c, tab, r});
 

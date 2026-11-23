@@ -169,7 +169,7 @@ function contentsTable(catalog, levels, x) {
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref})}, name)),
         h('td', null, badge([icon('table'), 'table'])),
         h('td', {class: 'fmt'}, kept['format-version'] ? badge('v' + kept['format-version'], 'strong') : muted('–')),
-        h('td', null, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'health')}, queuePill(mine))
+        h('td', null, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'maintenance')}, queuePill(mine))
           : muted('–')),
         h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, kept.snapshots === undefined ? muted('–') : fmt(kept.snapshots)),
@@ -188,7 +188,7 @@ function contentsTable(catalog, levels, x) {
     ['Snapshots', 'num'], x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean), rows),
     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. ', x.ref
       ? `The catalog keeps format, snapshots and last commit for main's metadata only, so through @${x.ref} they are left out: `
-        + 'open a table to read it as the ref has it. Health and governance are main\'s, and bind the ref too.'
+        + 'open a table to read it as the ref has it. Maintenance and governance are main\'s, and bind the ref too.'
       : 'Format, snapshots and last commit are what the catalog keeps of each table\'s current metadata; its health, governance '
         + 'and history are on its own page. A namespace counts the tables beneath it that you may describe.'));
 }
