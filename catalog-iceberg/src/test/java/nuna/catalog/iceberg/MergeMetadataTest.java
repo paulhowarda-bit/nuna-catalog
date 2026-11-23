@@ -137,7 +137,7 @@ class MergeMetadataTest {
     }
 
     @Test
-    void theCopyKeepsWhatMainsExpiryRemoved() {
+    void theCopyLeavesOutWhatMainsExpiryRemoved() {
         Chain tagged = cut.then(tag("q3", 1));
         Chain main = tagged.then(removeRef("q3"), removeSnapshots(1));
         Chain branch = tagged.then(append(3, 2L, 3, T0 + 2 * DAY), main(3));
