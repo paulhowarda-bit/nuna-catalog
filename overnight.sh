@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The overnight run: the heavy build, the Ceph leg, the nightly, then as many bites as fit before the deadline, on
-# main's tip, in a clone of its own. Windows Task Scheduler starts it at midnight (overnight-task.ps1 registers
+# main's tip, in a worktree of its own. Windows Task Scheduler starts it at midnight (overnight-task.ps1 registers
 # the task); a Claude task reads runs/<date>/summary.md at 7:00, records the run in status/ and
 # adds a backlog item for each failure (Paul, 2026-11-14).
 #
@@ -10,7 +10,7 @@
 #                            runs, and nothing is recorded as tested
 #
 # Everything lives in $NUNA_OVERNIGHT_HOME (default: .overnight in the main checkout, which .gitignore covers):
-#   clone/           a clone of this repo, reset to main's tip at each run; the bites patch its files
+#   worktree/        a worktree of this repo, detached at main's tip each run and locked; the bites patch its files
 #   runs/<date>/     summary.md, one log per leg, the logs of bites that did not bite, and for each leg that did
 #                    not pass, <leg>-results/: its test result files and what docker info said just after
 #   last-tested      the commit the last run tested (a dry run records nothing)
@@ -78,7 +78,7 @@ main() {
     done
 
     mkdir -p "$home/runs"
-    clone=$home/clone
+    tree=$home/worktree
     day=$(date +%F)
     runs=$home/runs/$day
     $dry && runs=$runs-dry
@@ -145,22 +145,27 @@ main() {
         fi
     fi
 
-    # --- Docker, and the clone at main's tip --------------------------------------------------------------------
+    # --- Docker, and the worktree at main's tip -----------------------------------------------------------------
     for try in $(seq 1 20); do
         docker info >/dev/null 2>&1 && kubectl --context "$context" get nodes >/dev/null 2>&1 && break
         [ "$try" -eq 20 ] && { say "Docker or its Kubernetes is not running"; echo "# Overnight run $day: FAILED, Docker or its Kubernetes is not running" >"$summary"; exit 1; }
         sleep 30
     done
 
-    if [ ! -d "$clone/.git" ]; then
-        git clone --quiet "$repo" "$clone" || { say "could not clone $repo"; exit 1; }
+    # Test reports nest deep enough to pass Windows' 260-character limit; without long paths git clean cannot remove
+    # them. Set for every git command of the run, the bites' included, not in the config every worktree shares.
+    export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.longpaths GIT_CONFIG_VALUE_0=true
+    # A worktree like every session's (Paul, 2026-11-23, backlog 166), but detached, so it holds no branch, and locked,
+    # so git worktree prune or remove leave it alone. Forced twice: a locked worktree whose folder is gone stays
+    # registered, and a plain add refuses its path.
+    if [ ! -e "$tree/.git" ]; then
+        git -C "$repo" worktree add --quiet --force --force --detach "$tree" "$target" >>"$runs/overnight.log" 2>&1 ||
+            { say "could not make the worktree $tree"; exit 1; }
     fi
-    # Test reports nest deep enough to pass Windows' 260-character limit; without this git clean cannot remove them.
-    git -C "$clone" config core.longpaths true
-    git -C "$clone" fetch --quiet "$repo" main && target=$(git -C "$clone" rev-parse FETCH_HEAD) &&
-        git -C "$clone" checkout --quiet --force --detach "$target" && git -C "$clone" clean -q -fdx ||
-        { say "could not reset $clone to main"; exit 1; }
-    say "testing $(git -C "$clone" log -1 --format='%h %s' "$target")"
+    git -C "$repo" worktree lock --reason "the overnight run's (overnight.sh)" "$tree" 2>/dev/null
+    git -C "$tree" checkout --quiet --force --detach "$target" && git -C "$tree" clean -q -fdx ||
+        { say "could not reset $tree to main"; exit 1; }
+    say "testing $(git -C "$tree" log -1 --format='%h %s' "$target")"
 
     # --- the worktrees of earlier nights' agents whose work is on main ------------------------------------------
     # Nothing else removes them: the run that started an agent has ended before the agent's landing could be judged.
@@ -204,10 +209,10 @@ main() {
     failed_classes=$runs/.failed-classes
     rm -f "$failed_classes"
 
-    # The failing tests in the result files written since marker $1, under folder $2 (default: the whole clone):
+    # The failing tests in the result files written since marker $1, under folder $2 (default: the whole worktree):
     # "Class#method: message".
     failures_since() {
-        find "${2:-$clone}" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
+        find "${2:-$tree}" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
             xargs -0 -r awk '
                 /<testcase / { match($0, /name="[^"]*"/); name = substr($0, RSTART + 6, RLENGTH - 7)
                                match($0, /classname="[^"]*"/); cls = substr($0, RSTART + 11, RLENGTH - 12) }
@@ -220,10 +225,10 @@ main() {
     # The test classes with a failing test in the result files written since marker $1: "module class", the class
     # fully qualified (a nested one as Outer$Inner).
     failed_classes_since() {
-        find "$clone" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
-            xargs -0 -r awk -v clone="$clone/" '
+        find "$tree" -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 2>/dev/null |
+            xargs -0 -r awk -v tree="$tree/" '
                 /<testsuite / && (/ failures="[1-9]/ || / errors="[1-9]/) {
-                    module = substr(FILENAME, length(clone) + 1); sub(/\/.*/, "", module)
+                    module = substr(FILENAME, length(tree) + 1); sub(/\/.*/, "", module)
                     match($0, /name="[^"]*"/); print module " " substr($0, RSTART + 6, RLENGTH - 7) }'
     }
 
@@ -236,12 +241,12 @@ main() {
             END { exit !found }' "$failed_classes"
     }
 
-    # Keeps the result files written since marker $1 in folder $2, at their paths in the clone, with docker info.
-    # The bites run the same tests later and overwrite them in the clone, and each holds its test's output: the
+    # Keeps the result files written since marker $1 in folder $2, at their paths in the worktree, with docker info.
+    # The bites run the same tests later and overwrite them in the worktree, and each holds its test's output: the
     # Ceph leg of 2026-11-15 found no Docker, and the files that said why were gone by morning (backlog 32).
     keep_results() {
         mkdir -p "$2"
-        (cd "$clone" && find . -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 |
+        (cd "$tree" && find . -path '*/build/test-results/*' -name 'TEST-*.xml' -newer "$1" -print0 |
             xargs -0 -r cp --parents -t "$2")
         timeout 60 docker info >"$2/docker-info.txt" 2>&1
     }
@@ -280,11 +285,11 @@ main() {
     # The brief of the agent for module $1, whose tests failed or hung in leg $2 (key), $3 (title), log $4, marker $5.
     brief() {
         local name=overnight-fix-$day-$1 fails
-        fails=$(failures_since "$5" "$clone/$1" | sed 's/^/- /')
+        fails=$(failures_since "$5" "$tree/$1" | sed 's/^/- /')
         grep -q "Requesting stop of task ':$1:test'" "$runs/$4" 2>/dev/null &&
             fails+=$'\n'"- :$1:test was stopped at its timeout: a test hung, and the test that hung left no result file"
         cat <<EOF
-The overnight run of $day is testing main at $(git -C "$clone" log -1 --format='%h %s' "$target"), and tests in module $1 failed in its leg "$3". Paul, 2026-11-23: "when a test fails, an agent needs to be spawned to fix it without stopping the rest of the testing." You are that agent. The run goes on while you work.
+The overnight run of $day is testing main at $(git -C "$tree" log -1 --format='%h %s' "$target"), and tests in module $1 failed in its leg "$3". Paul, 2026-11-23: "when a test fails, an agent needs to be spawned to fix it without stopping the rest of the testing." You are that agent. The run goes on while you work.
 
 What failed in $1:
 $(printf '%s\n' "$fails" | sed '/^$/d')
@@ -418,7 +423,7 @@ EOF
         write_agents_md
     }
 
-    # leg <key> <title> <log> <command...>: runs the command in the clone until the deadline and records a row.
+    # leg <key> <title> <log> <command...>: runs the command in the worktree until the deadline and records a row.
     # Returns 0 if it passed, 1 if it failed or did not run, 2 if NUNA_OVERNIGHT_LEGS left it out.
     leg() {
         local key=$1 title=$2 log=$3 marker status result t0
@@ -436,7 +441,7 @@ EOF
         touch "$marker"
         t0=$(date +%s)
         say "$title: $*"
-        (cd "$clone" && timeout --kill-after=120 "$(left)" "$@") >"$runs/$log" 2>&1
+        (cd "$tree" && timeout --kill-after=120 "$(left)" "$@") >"$runs/$log" 2>&1
         status=$?
         case $status in
             0) result=passed ;;
@@ -487,7 +492,7 @@ EOF
     leg nightly "Nightly" nightly.log ./nightly.sh "${nightly_dry[@]}"
 
     # --- the bites, rotating ------------------------------------------------------------------------------------
-    mapfile -t all < <(cd "$clone" && ls bites/*/*.patch | sort)
+    mapfile -t all < <(cd "$tree" && ls bites/*/*.patch | sort)
     next=$(cat "$home/bites-next" 2>/dev/null)
     start=0
     for i in "${!all[@]}"; do
@@ -511,15 +516,15 @@ EOF
             patch=${all[$(( (start + k) % ${#all[@]} ))]}
             [ "$(left)" -le 300 ] && break
             id=$(basename "$patch" .patch)
-            module=$(sed -n '/^diff --git/q; s/^Module: *//p' "$clone/$patch" | head -1 | tr -d '\r ')
-            class=$(sed -n '/^diff --git/q; s/^Test: *//p' "$clone/$patch" | head -1 | tr -d '\r ' | sed 's/#.*//')
+            module=$(sed -n '/^diff --git/q; s/^Module: *//p' "$tree/$patch" | head -1 | tr -d '\r ')
+            class=$(sed -n '/^diff --git/q; s/^Test: *//p' "$tree/$patch" | head -1 | tr -d '\r ' | sed 's/#.*//')
             if failed_tonight "$module" "$class"; then
                 unjudged=$((unjudged + 1))
                 unjudged_rows+="- $patch: $module $class"$'\n'
                 echo "${all[$(( (start + k + 1) % ${#all[@]} ))]}" >"$home/bites-next"
                 continue
             fi
-            out=$(cd "$clone" && timeout --kill-after=120 "$(left)" bites/run.sh "$patch" 2>&1)
+            out=$(cd "$tree" && timeout --kill-after=120 "$(left)" bites/run.sh "$patch" 2>&1)
             echo "$out" >>"$runs/bites.log"
             row=$(printf '%s\n' "$out" | grep -m1 "^$id ")
             ran=$((ran + 1))
@@ -528,11 +533,11 @@ EOF
             else
                 not_bit=$((not_bit + 1))
                 bite_rows+="- $patch: $(printf '%s' "${row:-no verdict (stopped?)}" | sed "s/^$id *//; s/  */ /g")"$'\n'
-                cp "$clone/build/bites/$id.log" "$runs/bites/" 2>/dev/null
+                cp "$tree/build/bites/$id.log" "$runs/bites/" 2>/dev/null
             fi
             echo "${all[$(( (start + k + 1) % ${#all[@]} ))]}" >"$home/bites-next"
             if [[ $row == *"HASH MISMATCH"* ]] || [ -z "$row" ]; then
-                git -C "$clone" checkout --quiet --force "$target" && git -C "$clone" clean -q -fdx -e build/bites
+                git -C "$tree" checkout --quiet --force "$target" && git -C "$tree" clean -q -fdx -e build/bites
             fi
         done
         result="$ran of ${#all[@]} ran: $bit bite"
@@ -550,7 +555,7 @@ EOF
     {
         echo "# Overnight run $day$($dry && echo ' (dry run: nothing was tested)')"
         echo
-        echo "- Commit: $(git -C "$clone" log -1 --format='%h %s' "$target")"
+        echo "- Commit: $(git -C "$tree" log -1 --format='%h %s' "$target")"
         [ -n "$last" ] && echo "- Last run tested: $(git -C "$repo" log -1 --format='%h' "$last" 2>/dev/null || echo "$last")"
         echo "- From $(clock "$started") to $(clock "$ended"), $(minutes $(( ended - started ))); deadline $deadline_at"
         echo "- nuna-demo: $demo_note"
@@ -587,12 +592,12 @@ EOF
             [ -n "$pruned" ] && echo "- Earlier nights' agents whose work is on main, worktree and branch removed:$pruned"
             [ -n "$kept" ] && echo "- Earlier nights' agents with work not on main, left in .claude/worktrees:$kept"
         fi
-        if [ -f "$clone/build/nightly-summary.txt" ] && [ "$clone/build/nightly-summary.txt" -nt "$runs/.nightly.log.started" ]; then
+        if [ -f "$tree/build/nightly-summary.txt" ] && [ "$tree/build/nightly-summary.txt" -nt "$runs/.nightly.log.started" ]; then
             echo
             echo "## Nightly counts"
             echo
             echo '```'
-            sed '/^$/d' "$clone/build/nightly-summary.txt"
+            sed '/^$/d' "$tree/build/nightly-summary.txt"
             echo '```'
         fi
     } >"$summary"
