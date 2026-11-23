@@ -3,7 +3,8 @@
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
 Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, syncs SingleStore
-and Iceberg in both directions and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
+and Iceberg in both directions, starts the brokerage world, a live generator whose data reaches Iceberg through
+Kafka and SingleStore, and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
 CockroachDB into Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
 ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
 
@@ -14,8 +15,9 @@ demo/demo.sh up
 ```
 
 - Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, `kubectl`, `helm`, `curl`, `unzip`,
-  and JDK 25 (`JAVA_HOME`, or `java` on the path). Every `up` builds the server jar and the change-feed
-  connector jar from this checkout (no tests run) and the images below, so the stack never runs code older
+  and JDK 25 (`JAVA_HOME`, or `java` on the path). Every `up` builds the server jar, the change-feed
+  connector jar and the brokerage world's classpath (`demo-datagen`) from this checkout (no tests run) and the
+  images below, so the stack never runs code older
   than the checkout; when nothing changed, Gradle and Docker do nothing. The cluster never pulls an image: it
   runs them from the local Docker engine, and `up` pulls the public ones there.
 - Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
@@ -51,11 +53,14 @@ demo/demo.sh up
   - `ports.yaml`: the front door, `nginx:1.30.6-alpine`, which serves the ports below over HTTPS (below), and
     their Services.
   - The lake writer runs as a job when needed (`lake-job.yaml`, image `nuna-demo-lake:local`).
-  - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free, CockroachDB, and
-    Kafka Connect, image `nuna-demo-connect:<hash>` (`connect.Dockerfile`).
+  - `connect.yaml`: Kafka Connect, image `nuna-demo-connect:<hash>` (`connect.Dockerfile`), with the brokerage
+    world's sink, and the CDC leg's connectors while it runs.
+  - `brokerage-bootstrap.yaml` and `brokerage.yaml`: the brokerage world's bootstrap job and its generator, image
+    `nuna-demo-brokerage:<hash>` (`brokerage.Dockerfile`; below).
+  - `cdc.yaml`, only while `demo.sh cdc` runs: a second PostgreSQL, Oracle Database Free and CockroachDB.
 - Ports on localhost, from Docker Desktop's LoadBalancer Services, all HTTPS: **8180** (Keycloak), **8181**
   (catalog and console), **8182** (kafbat), **8183** (SingleStore Studio), **8184** (Silo's console), **8185**
-  (CloudBeaver), **8186** (Kafka Connect's REST API, while the CDC leg runs) and **8187** (Silo's S3 API, for
+  (CloudBeaver), **8186** (Kafka Connect's REST API) and **8187** (Silo's S3 API, for
   engines on other machines). `up` stops if something else holds one of them, such as a `kubectl port-forward`.
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
@@ -64,11 +69,16 @@ demo/demo.sh up
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus the audit
-  table writer's 384 MB, of up to 512 MB (6.4 GB in all), plus one job at a time: the lake writer 768 MB, or an engine up to 2 GB (Spark). Docker Desktop's
-  Kubernetes has about 7.5 GB, so nothing else of that size fits beside it, and `engines` stops Trino and
-  CloudBeaver while it runs to make room for Spark (7.25 GB asked with Spark). The CDC leg asks for 2.25 GB (Oracle 1.25 GB, Kafka
-  Connect 512 MB, CockroachDB 384 MB, using about 450 MB of up to 768 MB, its PostgreSQL 128 MB), so `cdc`
-  stops Trino and the audit table writer, and `engines` and `rate` refuse to run beside it. With the leg up, the stack's requests fill
+  table writer's 384 MB, of up to 512 MB (6.4 GB in all), plus Kafka Connect's 512 MB, of up to 1 GB, and the
+  brokerage world's generator's 256 MB, of up to 384 MB (7.1 GB in all), plus one job at a time: the lake writer
+  768 MB, the brokerage world's bootstrap 384 MB, or an engine up to 2 GB (Spark). Docker Desktop's
+  Kubernetes has about 7.5 GB, which leaves about 390 MB beside Kafka Connect and the generator: too little for
+  the lake writer, Spark, or a catalog server rolling to a new image (its new pod starts before the old one
+  stops). So `up`, `rate` and `engines` stop both while they run and start them again after; `up` starts them
+  last. `engines` also stops Trino and CloudBeaver to make room for Spark (7.25 GB asked with Spark). The CDC
+  leg asks for 1.75 GB (Oracle 1.25 GB, CockroachDB 384 MB, using about 450 MB of up to 768 MB, its PostgreSQL
+  128 MB), so `cdc` stops Trino, the audit table writer and the generator, and `engines` and `rate` refuse to
+  run beside it. With the leg up, the stack's requests fill
   Kubernetes to within about 20 MB, so CloudBeaver is replaced by stopping the old pod first.
 - No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
   `up` again and it writes the sample data again (it checks the catalog, not a marker).
@@ -119,7 +129,7 @@ The console offers two ways in:
   authorization code with PKCE, `nuna.ui.oidc`), and the catalog trusts Keycloak's realm as a second issuer.
   It names a user by `preferred_username`, so `ana` from Keycloak is the same user as `ana`'s token below.
 - **The token box** (`nuna.ui.dev-token-login=true`, off by default): paste a token minted by `demo/Mint.java`.
-  Machine users (`singlestore`, `lake`, `cdc`, `engine-matrix`, `trino`) have tokens only.
+  Machine users (`singlestore`, `lake`, `brokerage`, `cdc`, `engine-matrix`, `trino`) have tokens only.
 
 | User | Password | Group | What the catalog lets them do |
 |---|---|---|---|
@@ -130,7 +140,8 @@ The console offers two ways in:
 | `presenter` | `presenter-demo` | all five groups above | everything the four people may do, in one sign-in, for showing the demo |
 | `singlestore` | token only | `demo-loaders` | create and modify; SingleStore's pipelines use it, both ways |
 | `lake` | token only | `demo-loaders` | create and modify; the lake writer, standing in for another engine |
-| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks in the CDC leg |
+| `brokerage` | token only | `demo-loaders` | create and modify; the brokerage world's generator, whose bootstrap makes its namespaces, tables and views |
+| `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 | `service-account-nuna-audit-tables` | Keycloak client `nuna-audit-tables`, client-credentials grant | `demo-audit-writers` | create and write on `nuna_audit` only: the audit table writer |
 | `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them |
@@ -162,14 +173,15 @@ Trino connection sends their own token, so the catalog lets them do there what i
 
 | UI | How they sign in | `ana`, `gary`, `stella` | `oscar` |
 |---|---|---|---|
-| kafbat, <https://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and the CDC leg's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
+| kafbat, <https://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and Kafka Connect's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <https://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
 | CloudBeaver, <https://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers Kafka, and `demo-analysts`,
 `demo-grant-admins` and `demo-stewards` administer topics, except the ones the demo runs on, which they only
-read: the catalog's audit and change topics (`nuna.*`), the Connect worker's `cdc-connect-*`, and any name
-starting with `_`. The CDC leg's change, control and schema-history topics stay theirs to administer. kafbat
+read: the catalog's audit and change topics (`nuna.*`), the Connect worker's `connect-*`, the brokerage world's
+`brokerage.*` and its sink's `brokerage-lake-control`, and any name starting with `_`. The CDC leg's change,
+control and schema-history topics stay theirs to administer. kafbat
 records every change made through it, refused ones included, with who made it, in topic `__kui-audit-log`, which
 only `demo-operators` read in kafbat, and in its log (`kubectl -n nuna-demo logs deployment/kafka-ui | grep -w
 audit`). Unlike the console's, kafbat's sign-out leaves Keycloak's session.
@@ -225,7 +237,7 @@ Accounts that run the demo rather than people in it:
 
 Tokens are valid for 7 days, and `up` mints new ones only when they are about to expire. Print them again
 (re-minted if they are about to expire; SingleStore's running pipelines are then replaced and Trino,
-CloudBeaver and the CDC leg's Kafka Connect are restarted, so they carry the new ones):
+CloudBeaver, Kafka Connect and the brokerage world's generator are restarted, so they carry the new ones):
 
 ```bash
 demo/demo.sh token
@@ -249,15 +261,50 @@ vended credentials, as any engine would):
 - `markets.equities.eu.xetra.trades`: v2, partitioned by day, sorted by symbol; five appends, a row-level
   delete, two added columns (one a nested struct), a second partition spec, a tag `eod-2026-11-09` and a
   branch `surveillance-review`; classified `internal` and under a legal hold.
-- `markets.fx.rates` (v3, evolved), `markets.equities.us.quotes` (v3), `reference.countries` (v2, under a DR
-  freeze), `finance.ledger.journal` (v3, classified `confidential`) and `finance.ledger.accounts` (v2).
-- `finance` is marked regulated, and `accounts` has no classification of its own, so the catalog refuses to
-  load it for anyone (D27): the console shows that refusal.
+- `markets.fx.rates` (v3, evolved), `markets.equities.us.quotes` (v3) and `reference.countries` (v2, under a
+  DR freeze).
+- No table is closed until classified (D27) for now: the toy `finance.ledger` tables that showed it are gone,
+  and item 152 brings it back on `brokerage.party.beneficial_owners`.
 - View `markets.equities.eu.xetra_daily`, with two versions, in SingleStore's dialect.
 - Grants by SQL for the groups, plus two made through the API by `gary`.
 - Trino's client, `trino-demo`, registered as a trusted engine through the API by `oscar`, on every `up`.
 
 Written by SingleStore's change feed: `markets.equities.eu.xetra.orders`, the copy of `ops.orders`.
+
+Written live by the brokerage world (below): everything under `brokerage`.
+
+### The brokerage world
+
+A simulated US broker-dealer (D48, `docs/design/brokerage-world.md`, module `demo-datagen`), running in every
+`up`: its generator books every financial transaction through the demo kit's posting engine and sends the world's
+events to Kafka and SingleStore, and the demo's pipelines bring them into Iceberg as they happen.
+
+- `brokerage-bootstrap`, a job that `up` runs first: it makes the world's namespaces, tables and views in
+  `lakehouse` as user `brokerage`, and its Kafka topics. Then `up` sets their governance as `stella` (below),
+  registers the sink, and starts the generator, Deployment `brokerage`, last (`demo/demo.sh brokerage logs`
+  follows it). Its settings are environment variables in `k8s/brokerage.yaml` and `k8s/brokerage-bootstrap.yaml`:
+  `BROKERAGE_ACCOUNTS=1000`, `BROKERAGE_DAY_MINUTES=10`, `BROKERAGE_CATCH_UP_DAYS=3`, `BROKERAGE_SEED=20261122`.
+- Kafka: the generator writes plain JSON to eleven topics, and Kafka Connect's Iceberg sink `brokerage-lake`
+  (`demo/brokerage/connector.json`, as user `cdc`) routes each record to the table its `lake_table` field names,
+  committing every 15 seconds. The tables must exist: the sink neither makes nor changes them.
+
+  | Kafka topic | Iceberg table in `lakehouse` |
+  |---|---|
+  | `brokerage.reference.calendar`, `.securities` | `brokerage.reference.calendar`, `.securities` |
+  | `brokerage.markets.bars-5m`, `.prices-eod` | `brokerage.markets.bars_5m`, `.prices_eod` |
+  | `brokerage.party.accounts` | `brokerage.party.accounts` |
+  | `brokerage.ledger.chart-of-accounts`, `.booking-schemes`, `.financial-transactions`, `.journal-lines`, `.posting-rejections`, `.balances-eod` | `brokerage.ledger.chart_of_accounts`, `.booking_schemes`, `.financial_transactions`, `.journal_lines`, `.posting_rejections`, `.balances_eod` |
+
+- SingleStore: the generator writes the world's orders to `brokerage.orders` (`demo/singlestore/brokerage.sql`),
+  and the change feed `brokerage.brokerage_orders_to_lake` copies each change into `brokerage.trading.orders`,
+  committing every 15 seconds, with its receipts in `brokerage.lake_commits`, as `ops.orders_to_lake` does.
+- Governance, once per lake: `brokerage.reference`'s tables are `public`, `brokerage.markets`' `internal`,
+  `brokerage.party.accounts` `restricted` and `brokerage.ledger`'s tables and views `confidential`; namespaces
+  `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
+  `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. The grants on all of
+  `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino.
+- Memory: the generator asks for 256 MB, Kafka Connect 512 MB, the bootstrap job 384 MB while it runs. `cdc`
+  pauses the generator; `up`, `rate` and `engines` stop it and Kafka Connect while they run.
 
 ### The audit tables and the Audit page
 
@@ -286,12 +333,14 @@ feed, its filters and the last day's counts, D45) reads it back and says how far
 demo/demo.sh sql
 ```
 
-Or Studio on <https://localhost:8183>, as one of the people above, through Keycloak. Two databases, and a
-third once the engines have run:
+Or Studio on <https://localhost:8183>, as one of the people above, through Keycloak. Three databases, and a
+fourth once the engines have run:
 
 - `ops`: SingleStore's own tables. `ops.orders` is copied into Iceberg as it changes.
 - `lake`: tables loaded from Iceberg: `xetra_trades` and `countries` once, `fx_rates` continuously, and a
   view `xetra_daily`.
+- `brokerage`: the brokerage world's orders, `brokerage.orders`, which its generator writes and the change feed
+  `brokerage.brokerage_orders_to_lake` copies into Iceberg (`brokerage.trading.orders`) as they change.
 - `nuna_m8`: the engine matrix's SingleStore check, Spark's shared tables loaded from catalog `engines`.
 
 ### SingleStore to Iceberg: the change feed
@@ -337,12 +386,15 @@ demo/demo.sh rate
 ```
 
 appends an EURUSD rate to `markets.fx.rates` through the catalog; the pipeline `lake.fx_rates_feed` loads it
-into `lake.fx_rates` within a few seconds.
+into `lake.fx_rates` within a few seconds. Kafka Connect and the brokerage world's generator stop while the lake
+writer's job runs, for its memory, and start again after.
 
 SingleStore reserves each pipeline extractor's Java heap from its own memory, and keeps idle extractors
 pooled. An Iceberg pipeline's data workers default to 500 MB each, so two loads and a feed are enough to stop
 all writes in the demo's 3 GB pod. `seed.sql` caps them at 128 MB
-(`pipelines_iceberg_data_workers_heap_size`).
+(`pipelines_iceberg_data_workers_heap_size`). Each change feed's extractor gets 384 MB
+(`pipelines_cdc_java_heap_size`), so the brokerage world's feed, beside `ops.orders_to_lake`, reserves another
+384 MB; how close that brings the pod to its limit has not been measured yet.
 
 ## Trino and CloudBeaver
 
@@ -368,14 +420,19 @@ storage credentials the catalog vends them:
   SELECT * FROM lakehouse."markets.equities.eu.xetra".trades;
   ```
 
-- `finance.ledger.accounts` is listed, but reading it fails with "Failed to load table 'accounts'", for
-  everyone. Trino keeps the catalog's reason (D27) in the error's cause, which `trino --debug` prints; the
-  extra credential is the token of whoever asks:
+- The brokerage world's tables fill as it runs:
+
+  ```sql
+  SELECT * FROM lakehouse."brokerage.ledger".journal_lines;
+  SELECT * FROM lakehouse."brokerage.trading".orders;      -- SingleStore's change feed
+  ```
+
+- A refusal's reason (D27, say) is in the error's cause, which `trino --debug` prints; the extra credential is
+  the token of whoever asks:
 
   ```bash
   kubectl --context docker-desktop -n nuna-demo exec deployment/trino -- trino --user ana --debug \
-    --extra-credential "token=$(cat ~/.nuna-demo/tokens/ana.jwt)" \
-    --execute 'SELECT * FROM lakehouse."finance.ledger".accounts'
+    --extra-credential "token=$(cat ~/.nuna-demo/tokens/ana.jwt)" --execute '<the query>'
   ```
 
 - A query without a token fails: Trino then asks the catalog to exchange one, and the catalog answers that
@@ -399,7 +456,8 @@ storage credentials the catalog vends them:
 demo/demo.sh cdc
 ```
 
-starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino and the audit table writer to make room for it:
+starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino, the audit table writer and the brokerage
+world's generator to make room for it:
 
 - `backoffice`: a PostgreSQL with logical WAL, table `settlement.instructions` (`demo/cdc/backoffice.sql`).
 - `oracle`: Oracle Database Free in archive log mode with supplemental logging, table `TREASURY.PAYMENTS`
@@ -408,7 +466,7 @@ starts the CDC leg (`demo/k8s/cdc.yaml`, `demo/cdc`) and stops Trino and the aud
   database `custody` (`demo/cdc/cockroach.sql`, run as the node first starts). The node runs secure, so
   passwords are checked, but accepts SQL without TLS. A single development node needs no licence key and is
   not throttled, and its diagnostics reporting is off.
-- `connect`: Kafka Connect 4.2.2 in distributed mode, on the stack's Kafka, with six connectors
+- On `connect`, the stack's Kafka Connect 4.2.2 (distributed mode, in every `up`), six connectors
   (`demo/cdc/connectors`): Debezium 3.7.1's PostgreSQL connector (`pgoutput`), Oracle connector (LogMiner)
   and CockroachDB connector (a changefeed), and an Apache Iceberg 1.12.0 sink for each, writing through the
   catalog as `cdc` with vended credentials.
@@ -495,9 +553,9 @@ ORDER BY "_cdc"."offset";
 - The history tables are written as `cdc`, group `demo-loaders`: `ana` reads them like any other table.
 - Each `cdc` drops the history tables of the run before and starts the databases empty. `demo.sh cdc` while
   the leg runs only brings it up to date (a changed connector config, image or manifest).
-- The first `cdc` pulls Oracle's image (about 5 GB) and builds Kafka Connect's image from Maven Central.
-- kafbat shows the connectors under Kafka Connect, cluster `cdc`: each one's status, tasks and config, with
-  restart, pause and resume for `oscar`. While the leg is stopped the cluster is unreachable there.
+- The first `cdc` pulls Oracle's image (about 5 GB); `up` builds Kafka Connect's image from Maven Central.
+- kafbat shows the connectors under Kafka Connect, cluster `connect`: each one's status, tasks and config, with
+  restart, pause and resume for `oscar`.
 - Kafka Connect's REST API is on <https://localhost:8186>:
   `curl -s --cacert ~/.nuna-demo/tls/ca.crt --ssl-revoke-best-effort 'https://localhost:8186/connectors?expand=status'`.
 
@@ -505,7 +563,9 @@ ORDER BY "_cdc"."offset";
 demo/demo.sh cdc stop
 ```
 
-deletes the leg, its Kafka topics and consumer groups, and starts Trino and the audit table writer again. The history tables stay, for
+deletes the leg: its connectors, with their offsets (so the next `cdc` snapshots its new databases), its
+databases, Kafka topics and consumer groups; and starts Trino, the audit table writer and the brokerage world's
+generator again. Kafka Connect keeps running, with the brokerage world's sink. The history tables stay, for
 Trino to read.
 
 ## The engines
@@ -516,8 +576,8 @@ demo/demo.sh engines
 
 runs the engine matrix (`catalog-tests-engines`, `EngineMatrixTest`) against this stack instead of one of its
 own: Spark, Kafka Connect and PyIceberg as Kubernetes jobs, then SingleStore's ingest in the demo's SingleStore,
-all into catalog `engines` as `engine-matrix`. Trino and CloudBeaver stop for the run and start again after
-it. It takes about 4 minutes once the engine images exist; the first
+all into catalog `engines` as `engine-matrix`. Trino, CloudBeaver, Kafka Connect and the brokerage world's
+generator stop for the run and start again after it. It takes about 4 minutes once the engine images exist; the first
 run builds them, which takes longer. It leaves Spark's shared tables in `m8.shared.spark`, which the console
 shows, and SingleStore's copies in database `nuna_m8`.
 Results: `catalog-tests-engines/build/engines-run/results.txt`, and every command in `commands.log` there.
@@ -525,9 +585,10 @@ Results: `catalog-tests-engines/build/engines-run/results.txt`, and every comman
 ## Kafka
 
 kafbat on <https://localhost:8182>, where the people above sign in through Keycloak, shows the stack's Kafka:
-the catalog's audit and change topics, and once the engines have run, Kafka Connect's source topic
-`m8-kafka-events` and the sink's control topic. While the CDC leg runs: Debezium's change topics, the sinks'
-control topics, Oracle's schema history and the worker's own `cdc-connect-*` topics.
+the catalog's audit and change topics, the brokerage world's `brokerage.*` topics and its sink's
+`brokerage-lake-control`, Kafka Connect's own `connect-*` topics, and once the engines have run, the engine
+matrix's Kafka Connect source topic `m8-kafka-events` and its sink's control topic. While the CDC leg runs:
+Debezium's change topics, the sinks' control topics and Oracle's schema history.
 ## Stop
 
 ```bash

@@ -1,0 +1,20 @@
+{
+  "connector.class": "org.apache.iceberg.connect.IcebergSinkConnector",
+  "tasks.max": "1",
+  "topics": "brokerage.reference.calendar,brokerage.reference.securities,brokerage.ledger.chart-of-accounts,brokerage.ledger.booking-schemes,brokerage.party.accounts,brokerage.markets.bars-5m,brokerage.markets.prices-eod,brokerage.ledger.financial-transactions,brokerage.ledger.journal-lines,brokerage.ledger.posting-rejections,brokerage.ledger.balances-eod",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false",
+  "iceberg.tables.dynamic-enabled": "true",
+  "iceberg.tables.route-field": "lake_table",
+  "iceberg.tables.auto-create-enabled": "false",
+  "iceberg.tables.evolve-schema-enabled": "false",
+  "iceberg.control.topic": "brokerage-lake-control",
+  "iceberg.control.commit.interval-ms": "15000",
+  "iceberg.catalog.type": "rest",
+  "iceberg.catalog.uri": "http://nuna-catalog:8181",
+  "iceberg.catalog.warehouse": "lakehouse",
+  "iceberg.catalog.token": "${env:NUNA_TOKEN}",
+  "iceberg.catalog.header.X-Iceberg-Access-Delegation": "vended-credentials",
+  "iceberg.catalog.io-impl": "org.apache.iceberg.aws.s3.S3FileIO"
+}

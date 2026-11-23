@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**34 open:** 3 S, 10 M, 16 L, 5 XL.
+**33 open:** 3 S, 10 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,7 +39,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
-| [150](backlog/150.md) | L | Brokerage world 1: the ledger world in Iceberg, booked by the kit's posting engine ported to Java | a new Gradle module (the engine port and its golden, the world's calendar, securities, prices, accounts and personas, the Java writer) and its place in `demo.sh up`; waits on nothing | 2026-11-22 |
 | [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
 | [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
@@ -1757,42 +1756,6 @@ The decision is D46 in `decision-ledger.md`. The item stays open until an overni
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
 
-### 150. Brokerage world 1: the ledger world in Iceberg, booked by the kit's posting engine ported to Java
-
-- Decided: 2026-11-22, D48
-- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
-- Touches: demo-datagen/ settings.gradle.kts demo/demo.sh demo/LakeWriter.java demo/k8s/ demo/README.md
-- Effort: L, a new Gradle module (the engine port and its golden, the world's calendar, securities, prices, accounts and personas, the Java writer) and its place in `demo.sh up`; waits on nothing
-
-The demo's data is a handful of sample tables (`demo/LakeWriter.java`): Xetra trades, FX rates, US quotes, and a toy
-`finance.ledger` with a `journal` and an `accounts` table. Nothing joins, nothing ties out, and none of it is a
-brokerage. D48 and `docs/design/brokerage-world.md` set out the generator; this is its first phase.
-
-What to build:
-- `demo-datagen`, a Gradle module: the demo kit, forked once from Paul's ledger kit v14 (D48 as amended: the ledger
-  kit serves the sequencer, this one only fills Iceberg), with its posting engine ported to Java, reading the 22 booking
-  schemes and the chart of accounts as data exported from the kit (`defs.py`, `schemes_v20.py`, checked against the
-  estate guard's whole deny list first; nothing else from the kit enters the repo).
-- The world at its simplest: the NYSE calendar with T+1, about 300 synthetic securities with identifiers that cannot be
-  real (the design's list), closing prices, parties and accounts, and personas that produce only the transactions the
-  kit has templates for (30 to 35, 40 to 47, 51 and 52, 60 to 65). Seed, anchor date and scale give the same bytes.
-- The Java writer (a Job, like the lake writer) for `brokerage.reference`, `brokerage.markets.prices_eod`,
-  `brokerage.party.accounts` and every `brokerage.ledger` table and view: one commit per business day, a tag
-  `eod-YYYY-MM-DD` on the ledger's balances, `financial_transactions` starting on the v13 shape and gaining
-  `locate_id` when short selling starts, and the views `buying_power` and `running_collected_balance` (R17: derived,
-  never posted). Classifications and the regulated mark as the design's namespace table gives them.
-- `demo.sh up` runs it; the toy `finance.ledger` tables go (the D27 refusal they show moves to
-  `party.beneficial_owners` in item 152; until then the console shows none).
-
-What done looks like:
-- In the fast build: the port reproduces `events_v8.json` (44 financial transactions, 289 journal lines, every one
-  matching) and the kit's own checks (`kit_checks()` in `schemes_v20.py`: LotNotHeld, BalanceBelowZero, the mirror
-  proof, the rounding cases); the same seed gives the same output twice; a 1,000-account month posts with no halt.
-- On the demo: the console shows `brokerage.ledger` with one snapshot and one tag per business day, and the views
-  answer in Trino as `ana`.
-
-Choices made (Paul may overrule): Java rather than Python; the root namespace `brokerage`; 1,000 accounts over a month.
-
 ### 151. Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB
 
 - Decided: 2026-11-22, D48
@@ -2088,3 +2051,4 @@ that dropping does not remove data: "Yes, add the route" (D33, amended).
 | [147](backlog/147.md) | Console: a child namespace's totals in Contents: its tables, their snapshots and the newest commit | done | 2026-11-22 |
 | [148](backlog/148.md) | The audit feed and summary answer 500 where audit tables are configured: the reader loads Iceberg's AWS client factory, which needs the KMS SDK the server leaves out | done | 2026-11-22 |
 | [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |
+| [150](backlog/150.md) | Brokerage world 1: the ledger world streaming into Iceberg, booked by the kit's posting engine ported to Java | done | 2026-11-23 |

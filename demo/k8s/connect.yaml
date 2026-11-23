@@ -1,0 +1,89 @@
+# The demo's Kafka Connect, in every demo.sh up: distributed mode on the stack's Kafka, image connect.Dockerfile
+# (Debezium 3.7.1's sources and the Apache Iceberg 1.12.0 sink). It runs the brokerage world's sink, brokerage-lake
+# (demo/brokerage/connector.json), and, while demo.sh cdc runs, the CDC leg's six connectors (demo/cdc/connectors).
+# demo.sh adds and deletes connectors through its REST API, which ports.yaml publishes on port 8186. Only demo.sh
+# applies this.
+#
+# The worker's own topics are connect-configs, connect-offsets and connect-status, its group nuna-demo-connect.
+# The connectors' token for the catalog (user cdc, group demo-loaders) is in environment variable NUNA_TOKEN, which
+# connector configurations name as ${env:NUNA_TOKEN}. offset.flush.interval.ms is short because the Iceberg sink
+# polls its control topic only about once per offset flush when idle (catalog-tests-engines/images/kafka-connect/run.sh).
+#
+# Memory: 512 MiB asked, up to 1 GiB. demo.sh stops it while up, rate and engines need its room (pause_world). No
+# volumes: its topics, and so its connectors, last as long as Kafka's pod.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: connect-worker
+data:
+  worker.properties: |
+    bootstrap.servers=kafka:9092
+    group.id=nuna-demo-connect
+    config.storage.topic=connect-configs
+    offset.storage.topic=connect-offsets
+    status.storage.topic=connect-status
+    config.storage.replication.factor=1
+    offset.storage.replication.factor=1
+    status.storage.replication.factor=1
+    key.converter=org.apache.kafka.connect.json.JsonConverter
+    value.converter=org.apache.kafka.connect.json.JsonConverter
+    offset.flush.interval.ms=1000
+    plugin.path=/opt/connect-plugins
+    listeners=http://0.0.0.0:8083
+    rest.advertised.host.name=connect
+    config.providers=env
+    config.providers.env.class=org.apache.kafka.common.config.provider.EnvVarConfigProvider
+---
+# The old pod stops before the new one starts (Recreate): there is no room for two workers.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: connect
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: connect}
+  template:
+    metadata:
+      labels: {app: connect}
+      # The worker reads its configuration and its token only as it starts, so a changed file or new tokens
+      # replace the pod.
+      annotations:
+        nuna-demo/manifest: "${MANIFEST_HASH}"
+        nuna-demo/tokens: "${TOKENS_HASH}"
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: connect
+          image: ${CONNECT_IMAGE}
+          imagePullPolicy: Never
+          command: ["/opt/kafka/bin/connect-distributed.sh", "/etc/connect/worker.properties"]
+          env:
+            - {name: KAFKA_HEAP_OPTS, value: "-Xms256m -Xmx384m"}
+            - name: NUNA_TOKEN
+              valueFrom:
+                secretKeyRef: {name: demo-cdc-token, key: token}
+          ports:
+            - containerPort: 8083
+          volumeMounts:
+            - {name: worker, mountPath: /etc/connect, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /connectors, port: 8083}
+            periodSeconds: 3
+            timeoutSeconds: 10
+          resources:
+            requests: {memory: 512Mi}
+            limits: {memory: 1Gi}
+      volumes:
+        - name: worker
+          configMap: {name: connect-worker}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: connect
+spec:
+  selector: {app: connect}
+  ports:
+    - port: 8083

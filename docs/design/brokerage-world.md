@@ -9,6 +9,11 @@ kit, the demo kit, forked once from ledger kit v14 into `demo-datagen` and exten
 kit, and its purpose is data that demonstrates the catalog's console. Where this document says "kit v15" or "kit v16"
 below, read the demo kit's templates (item 155).
 
+**Real time (D48 as amended, 2026-11-22).** Paul: "The demo should be real-time demo that is generating data like a
+real-time eventing system would be. Data should be coming in through both kafka and singlestore." So the generator is a
+live event source running in every `demo.sh up`, not a batch writer, and nothing is backfilled: where this document
+says "Java writer", "backfill" or "the month", read the stream that "The generator" below describes.
+
 ## In one paragraph
 
 One seeded simulation of a US self-clearing retail broker-dealer, by default 1,000 accounts over one calendar month
@@ -98,12 +103,12 @@ beyond margin. Books and records are not modelled as data: under D24 no Iceberg 
 
 | Demo technology | Plays | Holds | Path into the catalog |
 |---|---|---|---|
-| SingleStore `ops` | order management and intraday risk | orders, routes, executions, intraday margin | the change feed (replaces the toy `ops.orders`); Iceberg pipelines bring securities and closing prices back |
+| SingleStore `brokerage` (beside the sample `ops`) | order management and intraday risk | orders (phase 1), routes, executions, intraday margin | the change feed, `brokerage.orders` into `brokerage.trading.orders`; Iceberg pipelines bring securities and closing prices back |
 | PostgreSQL `backoffice` (CDC leg) | customer master, operations apps | party, KYC, payments, ACATS, complaints, AML cases | Debezium (`pgoutput`), Kafka, the Iceberg sink |
 | Oracle `treasury` (CDC leg) | firm finance | GL, bank payments, reserve, net capital | Debezium (LogMiner), the Iceberg sink |
 | CockroachDB `custody` (CDC leg) | books of record that survive a site loss | stock record, CNS, fails, locates | Debezium's CockroachDB connector, the Iceberg sink |
-| Kafka | event backbone | the ledger's transactions and postings, market data, clickstream | the Iceberg sink on plain JSON topics (runs with the CDC leg) |
-| Java writer (a Job, like the lake writer) | reference providers, batch, the backfill | everything, for the month before today | the Iceberg Java library, vended credentials, one commit per business day |
+| Kafka | event backbone | reference data, market data, the ledger's transactions, postings, rejections and balances, clickstream | one Iceberg sink connector (`brokerage-lake`) on plain JSON topics, routing each record to its table by its `lake_table` field; Kafka Connect runs in the base stack |
+| The generator (`demo-datagen`: a bootstrap Job and a Deployment) | the firm's systems of origin | nothing; it sends each event as it happens | to Kafka and SingleStore; through the catalog it only makes tables and views, adds a column and tags each day's end |
 | Spark (the engine matrix's image) | month-end batch | statements, tax, CAT, Rule 606 | Spark SQL `MERGE` into v3 tables; optional, as Spark needs Trino stopped |
 | Trino and CloudBeaver | analysts, each as themselves | reconciliation views, ad hoc | reads with each person's token |
 
@@ -181,17 +186,21 @@ a sanctions match that raise alerts.
   990 to 999, which a secondary source calls reserved for internal use (not confirmed by CUSIP Global Services: flag
   it); proper check digits (CUSIP's double-add-double, Luhn on the ISIN `US` + CUSIP); no FIGIs. The sanctions list is
   synthetic, never OFAC's.
-- **Deterministic.** Seed, anchor date and scale give the same bytes. The anchor defaults to the last business day
-  before the run.
-- **Two modes.** `backfill`, inside `demo.sh up`: the Java writer commits the month into Iceberg, one commit per
-  business day per table (about 900 commits at default scale), CDC history tables in the sink's own shape (`_cdc`
-  included), SingleStore loaded with the open orders. `live`, with the CDC leg: the sources are loaded with the month's
-  end state, Debezium starts without snapshotting those rows (`snapshot.mode=no_data` on PostgreSQL and Oracle; the
-  CockroachDB connector's equivalent to confirm), and the next business day plays at a compressed clock (6.5 hours in
-  about 15 minutes), appending to the backfilled histories.
-- **Scale.** Default 1,000 accounts and about 22 trading days: about 9,000 orders, 30,000 financial transactions,
-  220,000 journal lines, 330,000 balance rows and 500,000 price bars, about 1.5 million rows and 100 MB. A setting
-  raises it; the size at work is settled there.
+- **Deterministic.** Seed, anchor date and scale give the same events. The bootstrap fixes them in the `brokerage`
+  namespace's properties; the anchor is three business days before the day the demo was stood up.
+- **Live (D48 as amended).** `bootstrap`, a Job in `demo.sh up`, makes the topics, namespaces, tables and views (only
+  what is missing). `run`, a Deployment, plays the world for ever: the three catch-up days as fast as the sink takes
+  them, then each business day's 08:00 to 17:00 in 10 minutes of wall time (`BROKERAGE_DAY_MINUTES`). Kafka feeds go
+  out as schemaless JSON (decimals as strings, dates as ISO strings, times as epoch milliseconds) on one-partition
+  topics; the sink commits every 15 seconds. Orders are upserted into SingleStore as they change, and the change feed
+  commits them on the same interval. At 17:00 the clock holds until each table that changed that day holds every row
+  sent, then tags it `eod-YYYY-MM-DD`. `financial_transactions` gains `locate_id` (a schema change the console shows)
+  just before the first short sale. A restart replays the world without sending and carries each topic on from its
+  end offset.
+- **Scale.** Default 1,000 accounts. A business day is about 1,800 financial transactions, 15,700 journal lines, 16,400
+  balance rows, 23,400 bars, 300 closing prices and 430 orders (1,300 order changes), about 58,000 rows, so a demo
+  left running for a working day holds about 50 business days and 3 million rows. A month at that scale (the fast
+  build's test) is 40,000 financial transactions and 346,000 journal lines.
 - **Java, in a Gradle module `demo-datagen`** (a choice made here, Paul may overrule). The kit's engine is ported; the
   22 booking schemes and the chart are data the port reads, exported from the kit, so a new kit version changes data
   and only touches code where it adds a calculation. The port must reproduce `events_v8.json` (44 financial
@@ -201,8 +210,9 @@ a sanctions match that raise alerts.
 
 ## Constraints
 
-- Docker's 7.5 GB: the generator is one Job at the lake writer's size (768 MB). Live mode needs the CDC leg, which
-  stops Trino and the audit writer, so the reconciliations are read after `cdc stop`.
+- Docker's 7.5 GB: the generator runs at 256 MB (384 MB limit) and Kafka Connect, now in the base stack, at 512 MB
+  (1 GB limit); the change feed's pipeline reserves 384 MB inside SingleStore's pod. The CDC leg pauses the generator
+  (scales it to 0) while it runs, and resumes it at `cdc stop`.
 - The demo is shared (Atelier works against it): each phase lands for the overnight rebuild.
 - Synthetic names and identifiers only; the kit enters through the estate guard.
 - Dependencies from Maven only (Iceberg, JDBC drivers, the Kafka client).

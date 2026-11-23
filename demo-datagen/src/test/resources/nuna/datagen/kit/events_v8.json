@@ -1,0 +1,3665 @@
+[
+ {
+  "id": "B0",
+  "sheet": "Trading",
+  "block": "B0",
+  "kind": "Cash",
+  "template": 30,
+  "transaction": "Brokerage Account Open",
+  "title": "Brokerage account opened: $10,000 cash deposit. SL-CA, SL-RCB, SL-BP and GL; the broker liability is established.",
+  "lines": [
+   {
+    "seq": "B0.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Deposit of $10,000: cash in, Net Deposits up."
+   },
+   {
+    "seq": "B0.2",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "B0.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: settled cash in, so net equity rises $10,000."
+   },
+   {
+    "seq": "B0.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "B0.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the same cash in; net equity rises $10,000."
+   },
+   {
+    "seq": "B0.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "B1",
+  "sheet": "Trading",
+  "block": "B1",
+  "kind": "Cash",
+  "template": 40,
+  "transaction": "Order Acceptance (buy)",
+  "title": "Order accepted (buy): 100sh XYZ at market; last $50.00, estimate $51.50 (3% buffer) = $5,150. SL-CA holds the estimate and SL-BP commits it; SL-RCB does not see the order.",
+  "lines": [
+   {
+    "seq": "B1.1",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Debit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": "Hold at the estimate ($5,150): a net-zero pair, so SL-CA totals don't move; it records that the cash is spoken for."
+   },
+   {
+    "seq": "B1.2",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Credit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": null
+   },
+   {
+    "seq": "B1.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Credit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Trade clock recognizes the order at acceptance: commitment $5,150, net equity down by the same. SL-RCB does not see the order until it fills."
+   },
+   {
+    "seq": "B1.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "B3",
+  "sheet": "Trading",
+  "block": "B3",
+  "kind": "Cash",
+  "template": 41,
+  "transaction": "Fill (buy)",
+  "title": "Fill (buy): 3 fills, 40sh @ $50.05 + 40sh @ $50.06 + 20sh @ $50.04 = $5,005.20. SL-RCB encumbers the cost; SL-BP swaps the order commitment for the purchase commitment and frees the $144.80 overage; SL-SHARE opens one lot per fill.",
+  "lines": [
+   {
+    "seq": "B3.1",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Debit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": "Hold released; position opened at cost ($5,005.20); the purchase is owed until settlement (payable)."
+   },
+   {
+    "seq": "B3.2",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Credit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": null
+   },
+   {
+    "seq": "B3.3",
+    "layer": "SL-CA",
+    "def": 1002,
+    "side": "Debit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities at Cost",
+    "note": null
+   },
+   {
+    "seq": "B3.4",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Credit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "B3.5",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Credit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": "Withdraw clock recognizes the purchase at execution: encumbrance $5,005.20, net equity down by the same."
+   },
+   {
+    "seq": "B3.6",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "B3.7",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Debit",
+    "amount": 5150,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Order commitment ($5,150) swapped for the purchase commitment ($5,005.20); net equity rises by the $144.80 overage."
+   },
+   {
+    "seq": "B3.8",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Credit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "B3.9",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 144.8,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   },
+   {
+    "seq": "B3.10",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Debit",
+    "amount": 40,
+    "lot": "F-001",
+    "instrument": "XYZ",
+    "v109": "Share Lot - F-001",
+    "note": "40sh @ $50.05, NYSE. Opened at execution, in shares. Cost (F-001 $2,002.00) is the fill's, read from the execution, not posted."
+   },
+   {
+    "seq": "B3.11",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Debit",
+    "amount": 40,
+    "lot": "F-002",
+    "instrument": "XYZ",
+    "v109": "Share Lot - F-002",
+    "note": "40sh @ $50.06, NYSE. Opened at execution, in shares. Cost (F-002 $2,002.40) is the fill's, read from the execution, not posted."
+   },
+   {
+    "seq": "B3.12",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Debit",
+    "amount": 20,
+    "lot": "F-003",
+    "instrument": "XYZ",
+    "v109": "Share Lot - F-003",
+    "note": "20sh @ $50.04, EDGX. Opened at execution, in shares. Cost (F-003 $1,000.80) is the fill's, read from the execution, not posted."
+   },
+   {
+    "seq": "B3.13",
+    "layer": "SL-SHARE",
+    "def": 3002,
+    "side": "Credit",
+    "amount": 100,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Share Position [Control]",
+    "note": "Share position [Control], 100sh. Sum of lots = [Control] + pending delivery. OMS validates sells against this balance less open sell holds."
+   }
+  ]
+ },
+ {
+  "id": "B7",
+  "sheet": "Trading",
+  "block": "B7",
+  "kind": "Cash",
+  "template": 42,
+  "transaction": "Settlement (buy)",
+  "title": "Settlement (buy), T+1: $5,005.20 out; 100sh received at DTC; cash $10,000 \u2192 $4,994.80.",
+  "lines": [
+   {
+    "seq": "B7.1",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Debit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": "Settlement: cash $5,005.20 out; payable cleared."
+   },
+   {
+    "seq": "B7.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "B7.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA; the encumbrance clears against it. No net-equity line: the purchase was recognized at execution."
+   },
+   {
+    "seq": "B7.4",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Debit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "B7.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA; the purchase commitment clears. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "B7.6",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Debit",
+    "amount": 5005.2,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "S1",
+  "sheet": "Trading",
+  "block": "S1",
+  "kind": "Cash",
+  "template": 43,
+  "transaction": "Order Acceptance (sell)",
+  "title": "Order accepted (sell): 50sh XYZ at market. The OMS checked availability against SL-SHARE (position 100 \u2212 reserved 0); SL-SHARE reserves the 50sh (a net-zero pair). No money moves.",
+  "lines": [
+   {
+    "seq": "S1.1",
+    "layer": "SL-SHARE",
+    "def": 3004,
+    "side": "Debit",
+    "amount": 50,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Open Sell Order Hold",
+    "note": "50sh spoken for by the open sell order; the OMS checked 50 <= position 100 - reserved 0 before this posting."
+   },
+   {
+    "seq": "S1.2",
+    "layer": "SL-SHARE",
+    "def": 3005,
+    "side": "Credit",
+    "amount": 50,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Shares Reserved for Open Orders",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "S3",
+  "sheet": "Trading",
+  "block": "S3",
+  "kind": "Cash",
+  "template": 44,
+  "transaction": "Fill (sell)",
+  "title": "Fill (sell): 2 fills, 30sh @ $65.03 + 20sh @ $64.98 = $3,250.50 gross. Cost $2,502.60 relieved (the fills name their lots: F-001 40sh, F-002 10sh \u2014 the earliest, by the customer's default FIFO method, applied by the order gateway); gain $747.90 recognized; fees $0.10. SL-BP credits the proceeds now; SL-RCB waits for settlement, so the two diverge. SL-SHARE moves the sold shares to pending delivery; the lots stay open until settlement.",
+  "lines": [
+   {
+    "seq": "S3.1",
+    "layer": "SL-SHARE",
+    "def": 3005,
+    "side": "Debit",
+    "amount": 50,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Shares Reserved for Open Orders",
+    "note": "Sell reservation released for the shares filled; the sold shares leave the position and wait in pending delivery, by lot."
+   },
+   {
+    "seq": "S3.2",
+    "layer": "SL-SHARE",
+    "def": 3004,
+    "side": "Credit",
+    "amount": 50,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Open Sell Order Hold",
+    "note": null
+   },
+   {
+    "seq": "S3.3",
+    "layer": "SL-CA",
+    "def": 1003,
+    "side": "Debit",
+    "amount": 3250.5,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Receivable - Unsettled Sales",
+    "note": "Proceeds $3,250.50 receivable until settlement; cost $2,502.60 out of Securities at Cost; gain $747.90 recognized at trade date (book); fees $0.10 accrued."
+   },
+   {
+    "seq": "S3.4",
+    "layer": "SL-CA",
+    "def": 1002,
+    "side": "Credit",
+    "amount": 2502.6,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities at Cost",
+    "note": "Position relieved at execution, at the cost of the named lots (per lot: remaining cost before \u2212 after). Shares: 100sh \u2192 50sh in SL-SHARE."
+   },
+   {
+    "seq": "S3.5",
+    "layer": "SL-CA",
+    "def": 1202,
+    "side": "Credit",
+    "amount": 747.9,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Realized Gain/Loss",
+    "note": null
+   },
+   {
+    "seq": "S3.6",
+    "layer": "SL-CA",
+    "def": 1301,
+    "side": "Debit",
+    "amount": 0.07,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "SEC Transaction Fee",
+    "note": null
+   },
+   {
+    "seq": "S3.7",
+    "layer": "SL-CA",
+    "def": 1302,
+    "side": "Debit",
+    "amount": 0.03,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "FINRA Trading Activity Fee",
+    "note": "FINRA TAF accrued (illustrative; at the 2026 rate, 50sh \u00d7 $0.000195 = $0.01)."
+   },
+   {
+    "seq": "S3.8",
+    "layer": "SL-CA",
+    "def": 1102,
+    "side": "Credit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Accrued Fees Payable",
+    "note": null
+   },
+   {
+    "seq": "S3.9",
+    "layer": "SL-RCB",
+    "def": 5102,
+    "side": "Credit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Accrued Fees",
+    "note": "Withdraw clock: sale proceeds aren't recognized until settlement; only the $0.10 fee is encumbered now."
+   },
+   {
+    "seq": "S3.10",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "S3.11",
+    "layer": "SL-BP",
+    "def": 4002,
+    "side": "Debit",
+    "amount": 3250.5,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Unsettled Sale Proceeds",
+    "note": "Trade clock credits the gross proceeds at execution ($3,250.50) and commits the $0.10 fee; net equity up $3,250.40."
+   },
+   {
+    "seq": "S3.12",
+    "layer": "SL-BP",
+    "def": 4103,
+    "side": "Credit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Accrued Fees",
+    "note": null
+   },
+   {
+    "seq": "S3.13",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 3250.4,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   },
+   {
+    "seq": "S3.14",
+    "layer": "SL-SHARE",
+    "def": 3002,
+    "side": "Debit",
+    "amount": 50,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Share Position [Control]",
+    "note": "50sh out of the share position [Control] at execution. 100sh \u2192 50sh."
+   },
+   {
+    "seq": "S3.15",
+    "layer": "SL-SHARE",
+    "def": 3003,
+    "side": "Credit",
+    "amount": 40,
+    "lot": "F-001",
+    "instrument": "XYZ",
+    "v109": "Shares Pending Delivery - F-001",
+    "note": "40sh of lot F-001, named by the fill, move to pending delivery. The lot itself stays open until settlement."
+   },
+   {
+    "seq": "S3.16",
+    "layer": "SL-SHARE",
+    "def": 3003,
+    "side": "Credit",
+    "amount": 10,
+    "lot": "F-002",
+    "instrument": "XYZ",
+    "v109": "Shares Pending Delivery - F-002",
+    "note": "10sh of lot F-002, named by the fill, move to pending delivery. Lot stays open until settlement."
+   }
+  ]
+ },
+ {
+  "id": "S7",
+  "sheet": "Trading",
+  "block": "S7",
+  "kind": "Cash",
+  "template": 45,
+  "transaction": "Settlement (sell)",
+  "title": "Settlement (sell), T+1: net cash $3,250.40 in ($3,250.50 gross \u2212 $0.10 fees); 50sh delivered. SL-RCB catches up and the two clocks converge. Lots relieved by the final identification: F-001 closed, F-002 40sh \u2192 30sh.",
+  "lines": [
+   {
+    "seq": "S7.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 3250.4,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Settlement: net cash $3,250.40 in; receivable and fee payable cleared."
+   },
+   {
+    "seq": "S7.2",
+    "layer": "SL-CA",
+    "def": 1102,
+    "side": "Debit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Accrued Fees Payable",
+    "note": null
+   },
+   {
+    "seq": "S7.3",
+    "layer": "SL-CA",
+    "def": 1003,
+    "side": "Credit",
+    "amount": 3250.5,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Receivable - Unsettled Sales",
+    "note": null
+   },
+   {
+    "seq": "S7.4",
+    "layer": "SL-RCB",
+    "def": 5102,
+    "side": "Debit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Accrued Fees",
+    "note": "Withdraw clock recognizes the proceeds now: Cash [Control] in, Encumbrance - Accrued Fees cleared; net equity up $3,250.50."
+   },
+   {
+    "seq": "S7.5",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 3250.4,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   },
+   {
+    "seq": "S7.6",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 3250.5,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "S7.7",
+    "layer": "SL-BP",
+    "def": 4002,
+    "side": "Credit",
+    "amount": 3250.5,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Unsettled Sale Proceeds",
+    "note": "Trade clock: the sale credit is swapped for cash. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "S7.8",
+    "layer": "SL-BP",
+    "def": 4103,
+    "side": "Debit",
+    "amount": 0.1,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Accrued Fees",
+    "note": null
+   },
+   {
+    "seq": "S7.9",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 3250.4,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   },
+   {
+    "seq": "S7.10",
+    "layer": "SL-SHARE",
+    "def": 3003,
+    "side": "Debit",
+    "amount": 40,
+    "lot": "F-001",
+    "instrument": "XYZ",
+    "v109": "Shares Pending Delivery - F-001",
+    "note": "Lots relieved by the final identification: pending delivery cleared against each lot."
+   },
+   {
+    "seq": "S7.11",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Credit",
+    "amount": 40,
+    "lot": "F-001",
+    "instrument": "XYZ",
+    "v109": "Share Lot - F-001",
+    "note": "40sh @ $50.05, NYSE: relieved at settlement; the lot closes at zero."
+   },
+   {
+    "seq": "S7.12",
+    "layer": "SL-SHARE",
+    "def": 3003,
+    "side": "Debit",
+    "amount": 10,
+    "lot": "F-002",
+    "instrument": "XYZ",
+    "v109": "Shares Pending Delivery - F-002",
+    "note": null
+   },
+   {
+    "seq": "S7.13",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Credit",
+    "amount": 10,
+    "lot": "F-002",
+    "instrument": "XYZ",
+    "v109": "Share Lot - F-002",
+    "note": "40sh @ $50.06, NYSE: 10 of 40sh relieved at settlement; 30sh remain."
+   }
+  ]
+ },
+ {
+  "id": "C1",
+  "sheet": "Trading",
+  "block": "C1",
+  "kind": "Cash",
+  "template": 40,
+  "transaction": "Order Acceptance (buy)",
+  "title": "Order accepted (buy): 10sh XYZ at limit $51.50, estimate $515. SL-CA holds it and SL-BP commits it; SL-RCB does not see it.",
+  "lines": [
+   {
+    "seq": "C1.1",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Debit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": "Hold at the estimate ($515): a net-zero pair, so SL-CA totals don't move; it records that the cash is spoken for."
+   },
+   {
+    "seq": "C1.2",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Credit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": null
+   },
+   {
+    "seq": "C1.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Credit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Trade clock recognizes the order at acceptance: commitment $515, net equity down by the same. SL-RCB does not see the order until it fills."
+   },
+   {
+    "seq": "C1.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "C2",
+  "sheet": "Trading",
+  "block": "C2",
+  "kind": "Cash",
+  "template": 46,
+  "transaction": "Order Cancellation (buy)",
+  "title": "Order cancelled (buy) before any fill: hold and commitment released. No SL-RCB or SL-SHARE journal lines.",
+  "lines": [
+   {
+    "seq": "C2.1",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Debit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": "Order cancelled before any fill: the hold pair is released."
+   },
+   {
+    "seq": "C2.2",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Credit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": null
+   },
+   {
+    "seq": "C2.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Debit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Commitment released; net equity (buying power) back up $515."
+   },
+   {
+    "seq": "C2.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 515,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "C3",
+  "sheet": "Trading",
+  "block": "C3",
+  "kind": "Cash",
+  "template": 43,
+  "transaction": "Order Acceptance (sell)",
+  "title": "Order accepted (sell): 10sh XYZ at market. The OMS checked 10 \u2264 position 50 \u2212 reserved 0; SL-SHARE reserves the shares. No money moves.",
+  "lines": [
+   {
+    "seq": "C3.1",
+    "layer": "SL-SHARE",
+    "def": 3004,
+    "side": "Debit",
+    "amount": 10,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Open Sell Order Hold",
+    "note": "10sh spoken for; OMS checked 10 <= position 50 - reserved 0."
+   },
+   {
+    "seq": "C3.2",
+    "layer": "SL-SHARE",
+    "def": 3005,
+    "side": "Credit",
+    "amount": 10,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Shares Reserved for Open Orders",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "C4",
+  "sheet": "Trading",
+  "block": "C4",
+  "kind": "Cash",
+  "template": 47,
+  "transaction": "Order Cancellation (sell)",
+  "title": "Order cancelled (sell) before any fill: the SL-SHARE reservation is released; no lot identified, no cost computed.",
+  "lines": [
+   {
+    "seq": "C4.1",
+    "layer": "SL-SHARE",
+    "def": 3005,
+    "side": "Debit",
+    "amount": 10,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Shares Reserved for Open Orders",
+    "note": null
+   },
+   {
+    "seq": "C4.2",
+    "layer": "SL-SHARE",
+    "def": 3004,
+    "side": "Credit",
+    "amount": 10,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Open Sell Order Hold",
+    "note": "Hold zeroed. Nothing was identified; no lot touched."
+   }
+  ]
+ },
+ {
+  "id": "D1",
+  "sheet": "Money Movement",
+  "block": "D1",
+  "kind": "Cash",
+  "template": 31,
+  "transaction": "Deposit Initiation",
+  "title": "ACH deposit initiated: $5,000. SL-CA records the uncollected deposit and the obligation to credit the brokerage account when the funds arrive; SL-BP gives good-faith buying power now; SL-RCB waits.",
+  "lines": [
+   {
+    "seq": "D1.1",
+    "layer": "SL-CA",
+    "def": 1004,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Uncollected Deposit",
+    "note": "ACH initiated: the uncollected deposit ($5,000) and the obligation to credit the brokerage account when the funds arrive."
+   },
+   {
+    "seq": "D1.2",
+    "layer": "SL-CA",
+    "def": 1105,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Uncollected Deposit - Payable",
+    "note": null
+   },
+   {
+    "seq": "D1.3",
+    "layer": "SL-BP",
+    "def": 4003,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Uncollected Deposit",
+    "note": "Good-faith credit: buying power rises $5,000 before the funds are collected. SL-RCB waits for settlement."
+   },
+   {
+    "seq": "D1.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "D2",
+  "sheet": "Money Movement",
+  "block": "D2",
+  "kind": "Cash",
+  "template": 32,
+  "transaction": "Deposit Settlement",
+  "title": "ACH deposit settled: $5,000 arrives; cash $8,245.20 \u2192 $13,245.20. SL-RCB catches up; SL-BP swaps its credit for cash. Net Deposits +$5,000. Converged.",
+  "lines": [
+   {
+    "seq": "D2.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Funds arrive: cash $5,000 in, the in-transit pair clears, Net Deposits up."
+   },
+   {
+    "seq": "D2.2",
+    "layer": "SL-CA",
+    "def": 1004,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Uncollected Deposit",
+    "note": null
+   },
+   {
+    "seq": "D2.3",
+    "layer": "SL-CA",
+    "def": 1105,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Uncollected Deposit - Payable",
+    "note": null
+   },
+   {
+    "seq": "D2.4",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "D2.5",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock recognizes the deposit now: net equity up $5,000."
+   },
+   {
+    "seq": "D2.6",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "D2.7",
+    "layer": "SL-BP",
+    "def": 4003,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Uncollected Deposit",
+    "note": "Trade clock: the good-faith credit is swapped for cash. No net-equity line: recognized at initiation."
+   },
+   {
+    "seq": "D2.8",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "W1",
+  "sheet": "Money Movement",
+  "block": "W1",
+  "kind": "Cash",
+  "template": 33,
+  "transaction": "Withdrawal Initiation",
+  "title": "ACH withdrawal initiated: $2,000. SL-RCB encumbers it and SL-BP commits it at instruction \u2014 a committed outflow, unlike a buy order.",
+  "lines": [
+   {
+    "seq": "W1.1",
+    "layer": "SL-CA",
+    "def": 1405,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Withdrawal Hold",
+    "note": "Withdrawal instructed: a hold pair ($2,000) marks the cash as spoken for; SL-CA totals don't move."
+   },
+   {
+    "seq": "W1.2",
+    "layer": "SL-CA",
+    "def": 1406,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Withdrawals",
+    "note": null
+   },
+   {
+    "seq": "W1.3",
+    "layer": "SL-RCB",
+    "def": 5104,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Pending Withdrawal",
+    "note": "Withdraw clock encumbers the withdrawal at instruction: net equity down $2,000."
+   },
+   {
+    "seq": "W1.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "W1.5",
+    "layer": "SL-BP",
+    "def": 4105,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Pending Withdrawal",
+    "note": "Trade clock commits it too: net equity down $2,000."
+   },
+   {
+    "seq": "W1.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "W2",
+  "sheet": "Money Movement",
+  "block": "W2",
+  "kind": "Cash",
+  "template": 34,
+  "transaction": "Withdrawal Settlement",
+  "title": "ACH withdrawal settled: $2,000 sent; cash $13,245.20 \u2192 $11,245.20; hold released; Net Deposits $15,000 \u2192 $13,000.",
+  "lines": [
+   {
+    "seq": "W2.1",
+    "layer": "SL-CA",
+    "def": 1406,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Withdrawals",
+    "note": "Funds sent: cash $2,000 out ($13,245.20 \u2192 $11,245.20), Net Deposits $15,000 \u2192 $13,000, hold pair released."
+   },
+   {
+    "seq": "W2.2",
+    "layer": "SL-CA",
+    "def": 1405,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Withdrawal Hold",
+    "note": null
+   },
+   {
+    "seq": "W2.3",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "W2.4",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "W2.5",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash out against the encumbrance. No net-equity line: recognized at instruction."
+   },
+   {
+    "seq": "W2.6",
+    "layer": "SL-RCB",
+    "def": 5104,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Pending Withdrawal",
+    "note": null
+   },
+   {
+    "seq": "W2.7",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash out against the commitment. No net-equity line: recognized at instruction."
+   },
+   {
+    "seq": "W2.8",
+    "layer": "SL-BP",
+    "def": 4105,
+    "side": "Debit",
+    "amount": 2000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Pending Withdrawal",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M0",
+  "sheet": "Margin",
+  "block": "M0",
+  "kind": "Margin",
+  "template": 30,
+  "transaction": "Brokerage Account Open",
+  "title": "Brokerage account opened: $25,000 cash deposit; margin approved. SMA $25,000, MLA $25,000, BP $50,000.",
+  "lines": [
+   {
+    "seq": "M0.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 25000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Deposit of $25,000: cash in, Net Deposits up."
+   },
+   {
+    "seq": "M0.2",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 25000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "M0.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 25000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: settled cash in, so net equity rises $25,000."
+   },
+   {
+    "seq": "M0.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 25000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M0.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 25000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the same cash in; net equity rises $25,000."
+   },
+   {
+    "seq": "M0.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 25000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M1a",
+  "sheet": "Margin",
+  "block": "M1a",
+  "kind": "Margin",
+  "template": 40,
+  "transaction": "Order Acceptance (buy)",
+  "title": "Order accepted (buy): 100sh XYZ at $400 market, estimate $40,000. BP check $40,000 \u2264 $50,000 \u2713. SL-CA holds it and SL-BP commits it; SMA unchanged.",
+  "lines": [
+   {
+    "seq": "M1a.1",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": "Hold at the estimate ($40,000): a net-zero pair, so SL-CA totals don't move; it records that the cash is spoken for."
+   },
+   {
+    "seq": "M1a.2",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": null
+   },
+   {
+    "seq": "M1a.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Trade clock recognizes the order at acceptance: commitment $40,000, net equity down by the same. SL-RCB does not see the order until it fills."
+   },
+   {
+    "seq": "M1a.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M1b",
+  "sheet": "Margin",
+  "block": "M1b",
+  "kind": "Margin",
+  "template": 41,
+  "transaction": "Fill (buy)",
+  "title": "Fill (buy): 100sh XYZ @ $400 = $40,000. SL-RCB encumbers the cost and SL-BP swaps the order commitment for the purchase commitment, as on a cash brokerage account. SMA \u2212$20,000 (50% of the purchase; derived, not posted).",
+  "lines": [
+   {
+    "seq": "M1b.1",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": "Hold released; position opened at cost ($40,000); the purchase is owed until settlement (payable)."
+   },
+   {
+    "seq": "M1b.2",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": null
+   },
+   {
+    "seq": "M1b.3",
+    "layer": "SL-CA",
+    "def": 1002,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities at Cost",
+    "note": null
+   },
+   {
+    "seq": "M1b.4",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M1b.5",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": "Withdraw clock recognizes the purchase at execution: encumbrance $40,000, net equity down by the same."
+   },
+   {
+    "seq": "M1b.6",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M1b.7",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Order commitment ($40,000) swapped for the purchase commitment ($40,000); no difference, so no net-equity line."
+   },
+   {
+    "seq": "M1b.8",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M1b.9",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Debit",
+    "amount": 100,
+    "lot": "M-001",
+    "instrument": "XYZ",
+    "v109": "Share Lot - M-001",
+    "note": "100sh @ $400, Market. Opened at execution, in shares. Cost ($40,000) is the fill's, not posted."
+   },
+   {
+    "seq": "M1b.10",
+    "layer": "SL-SHARE",
+    "def": 3002,
+    "side": "Credit",
+    "amount": 100,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Share Position [Control]",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M1c",
+  "sheet": "Margin",
+  "block": "M1c",
+  "kind": "Margin",
+  "template": 42,
+  "transaction": "Settlement (buy)",
+  "title": "Settlement (buy), T+1: the $40,000 is paid from Cash, $25,000 \u2192 \u2212$15,000: the $15,000 below zero is the margin debit. 100sh received. SL-RCB and SL-BP: Cash [Control] follows; the encumbrance and commitment clear.",
+  "lines": [
+   {
+    "seq": "M1c.1",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": "Settlement: the $40,000 is paid from Cash ($25,000 \u2192 \u2212$15,000); payable cleared. A negative Cash balance is the margin debit, what the customer owes."
+   },
+   {
+    "seq": "M1c.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "M1c.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA Cash and goes negative with it; the encumbrance clears against it. No net-equity line: the purchase was recognized at execution."
+   },
+   {
+    "seq": "M1c.4",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M1c.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA Cash; the purchase commitment clears. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "M1c.6",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Debit",
+    "amount": 40000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M4a",
+  "sheet": "Margin",
+  "block": "M4a",
+  "kind": "Margin",
+  "template": 40,
+  "transaction": "Order Acceptance (buy)",
+  "title": "Order accepted (buy ABC): 25sh at market, estimate $5,000. BP check $5,000 \u2264 $15,000 \u2713; BP $15,000 \u2192 $10,000.",
+  "lines": [
+   {
+    "seq": "M4a.1",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": "Hold at the estimate ($5,000): a net-zero pair, so SL-CA totals don't move; it records that the cash is spoken for."
+   },
+   {
+    "seq": "M4a.2",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": null
+   },
+   {
+    "seq": "M4a.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Trade clock recognizes the order at acceptance: commitment $5,000, net equity down by the same. SL-RCB does not see the order until it fills."
+   },
+   {
+    "seq": "M4a.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M4b",
+  "sheet": "Margin",
+  "block": "M4b",
+  "kind": "Margin",
+  "template": 41,
+  "transaction": "Fill (buy)",
+  "title": "Fill (buy ABC): 25sh @ $200 = $5,000. SL-RCB encumbers the cost; SL-BP swaps the order commitment for the purchase commitment. SMA $7,500 \u2192 $5,000 (50% of the purchase; derived).",
+  "lines": [
+   {
+    "seq": "M4b.1",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": "Hold released; position opened at cost ($5,000); the purchase is owed until settlement (payable)."
+   },
+   {
+    "seq": "M4b.2",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": null
+   },
+   {
+    "seq": "M4b.3",
+    "layer": "SL-CA",
+    "def": 1002,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities at Cost",
+    "note": null
+   },
+   {
+    "seq": "M4b.4",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M4b.5",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": "Withdraw clock recognizes the purchase at execution: encumbrance $5,000, net equity down by the same."
+   },
+   {
+    "seq": "M4b.6",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M4b.7",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Order commitment ($5,000) swapped for the purchase commitment ($5,000); no difference, so no net-equity line."
+   },
+   {
+    "seq": "M4b.8",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M4b.9",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Debit",
+    "amount": 25,
+    "lot": "M-002",
+    "instrument": "ABC",
+    "v109": "Share Lot - M-002",
+    "note": "25sh @ $200, Market. Opened at execution, in shares. Day trade buy. Cost ($5,000) is the fill's."
+   },
+   {
+    "seq": "M4b.10",
+    "layer": "SL-SHARE",
+    "def": 3002,
+    "side": "Credit",
+    "amount": 25,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Share Position [Control]",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M4c",
+  "sheet": "Margin",
+  "block": "M4c",
+  "kind": "Margin",
+  "template": 43,
+  "transaction": "Order Acceptance (sell)",
+  "title": "Order accepted (sell ABC): 25sh. The OMS checked 25 \u2264 position 25 \u2212 reserved 0; SL-SHARE reserves the shares. No money moves.",
+  "lines": [
+   {
+    "seq": "M4c.1",
+    "layer": "SL-SHARE",
+    "def": 3004,
+    "side": "Debit",
+    "amount": 25,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Open Sell Order Hold",
+    "note": "25sh spoken for by the day-trade sell; OMS checked 25 <= position 25 - reserved 0."
+   },
+   {
+    "seq": "M4c.2",
+    "layer": "SL-SHARE",
+    "def": 3005,
+    "side": "Credit",
+    "amount": 25,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Shares Reserved for Open Orders",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M4d",
+  "sheet": "Margin",
+  "block": "M4d",
+  "kind": "Margin",
+  "template": 44,
+  "transaction": "Fill (sell)",
+  "title": "Fill (sell ABC): 25sh @ $205 = $5,125. Cost $5,000 relieved (lot M-002); $125 gain recognized at trade date. SL-BP credits the proceeds; SL-RCB waits for settlement. SMA $5,000 \u2192 $7,625 (same-day combination, Reg T \u00a7\u00a7220.4(c)(1), 220.5: the purchase's $2,500 charge reversed and the $125 gain added). Fees omitted on this sheet; on every sale the Section 31 fee and TAF accrue as on Trading S3.",
+  "lines": [
+   {
+    "seq": "M4d.1",
+    "layer": "SL-SHARE",
+    "def": 3005,
+    "side": "Debit",
+    "amount": 25,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Shares Reserved for Open Orders",
+    "note": "Sell reservation released for the shares filled; the sold shares leave the position and wait in pending delivery, by lot."
+   },
+   {
+    "seq": "M4d.2",
+    "layer": "SL-SHARE",
+    "def": 3004,
+    "side": "Credit",
+    "amount": 25,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Open Sell Order Hold",
+    "note": null
+   },
+   {
+    "seq": "M4d.3",
+    "layer": "SL-CA",
+    "def": 1003,
+    "side": "Debit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Receivable - Unsettled Sales",
+    "note": "Proceeds $5,125 receivable until settlement; cost $5,000 out of Securities at Cost; gain $125 recognized at trade date (book)."
+   },
+   {
+    "seq": "M4d.4",
+    "layer": "SL-CA",
+    "def": 1002,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities at Cost",
+    "note": null
+   },
+   {
+    "seq": "M4d.5",
+    "layer": "SL-CA",
+    "def": 1202,
+    "side": "Credit",
+    "amount": 125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Realized Gain/Loss",
+    "note": "Short-term gain (held under a year): $125."
+   },
+   {
+    "seq": "M4d.6",
+    "layer": "SL-BP",
+    "def": 4002,
+    "side": "Debit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Unsettled Sale Proceeds",
+    "note": "Trade clock credits the gross proceeds at execution ($5,125); net equity up $5,125."
+   },
+   {
+    "seq": "M4d.7",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   },
+   {
+    "seq": "M4d.8",
+    "layer": "SL-SHARE",
+    "def": 3002,
+    "side": "Debit",
+    "amount": 25,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Share Position [Control]",
+    "note": "25sh out of the share position [Control] at sell execution. 25sh \u2192 0."
+   },
+   {
+    "seq": "M4d.9",
+    "layer": "SL-SHARE",
+    "def": 3003,
+    "side": "Credit",
+    "amount": 25,
+    "lot": "M-002",
+    "instrument": "ABC",
+    "v109": "Shares Pending Delivery - M-002",
+    "note": "25sh of lot M-002 identified for delivery. Lot stays open until settlement."
+   }
+  ]
+ },
+ {
+  "id": "M4e",
+  "sheet": "Margin",
+  "block": "M4e",
+  "kind": "Margin",
+  "template": 45,
+  "transaction": "Settlement (sell)",
+  "title": "Settlement (sell ABC), T+1: $5,125 in. SL-RCB recognizes the proceeds now; the GL records the $5,125 received. Lot M-002 relieved.",
+  "lines": [
+   {
+    "seq": "M4e.1",
+    "layer": "SL-CA",
+    "def": 1003,
+    "side": "Credit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Receivable - Unsettled Sales",
+    "note": "Settlement: net cash $5,125 in; receivable cleared."
+   },
+   {
+    "seq": "M4e.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Sell proceeds in. Net of the two settlements: +$125."
+   },
+   {
+    "seq": "M4e.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock recognizes the proceeds now: Cash [Control] in; net equity up $5,125."
+   },
+   {
+    "seq": "M4e.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M4e.5",
+    "layer": "SL-BP",
+    "def": 4002,
+    "side": "Credit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Unsettled Sale Proceeds",
+    "note": "Trade clock: the sale credit is swapped for cash. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "M4e.6",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 5125,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   },
+   {
+    "seq": "M4e.7",
+    "layer": "SL-SHARE",
+    "def": 3003,
+    "side": "Debit",
+    "amount": 25,
+    "lot": "M-002",
+    "instrument": "ABC",
+    "v109": "Shares Pending Delivery - M-002",
+    "note": "Lots relieved by the final identification: pending delivery cleared against each lot."
+   },
+   {
+    "seq": "M4e.8",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Credit",
+    "amount": 25,
+    "lot": "M-002",
+    "instrument": "ABC",
+    "v109": "Share Lot - M-002",
+    "note": "25sh @ $200; closed at this row. CR: lot relieved at settlement. Day trade lot closes at zero."
+   }
+  ]
+ },
+ {
+  "id": "M4f",
+  "sheet": "Margin",
+  "block": "M4f",
+  "kind": "Margin",
+  "template": 42,
+  "transaction": "Settlement (buy)",
+  "title": "Settlement (buy ABC), T+1: $5,000 out, after the sale proceeds \u2014 Cash \u2212$9,875 \u2192 \u2212$14,875. The GL posts each settlement gross.",
+  "lines": [
+   {
+    "seq": "M4f.1",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": "Settlement: cash $5,000 out; payable cleared."
+   },
+   {
+    "seq": "M4f.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Cash out for the buy, after the sale proceeds settled: \u2212$9,875 \u2192 \u2212$14,875."
+   },
+   {
+    "seq": "M4f.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA; the encumbrance clears against it. No net-equity line: the purchase was recognized at execution."
+   },
+   {
+    "seq": "M4f.4",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M4f.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA; the purchase commitment clears. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "M4f.6",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M7",
+  "sheet": "Margin",
+  "block": "M7",
+  "kind": "Margin",
+  "template": 30,
+  "transaction": "Deposit",
+  "title": "Deposit (wire): $37,375, collected on receipt (contrast Money Movement D1/D2, which stage an ACH deposit). SMA $7,625 \u2192 $45,000; BP $15,250 \u2192 $90,000, enough for the $90,000 order.",
+  "lines": [
+   {
+    "seq": "M7.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 37375,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Deposit of $37,375: cash in, Net Deposits up."
+   },
+   {
+    "seq": "M7.2",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 37375,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "M7.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 37375,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: settled cash in, so net equity rises $37,375."
+   },
+   {
+    "seq": "M7.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 37375,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M7.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 37375,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the same cash in; net equity rises $37,375."
+   },
+   {
+    "seq": "M7.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 37375,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M8a",
+  "sheet": "Margin",
+  "block": "M8a",
+  "kind": "Margin",
+  "template": 40,
+  "transaction": "Order Acceptance (buy)",
+  "title": "Order accepted (buy): 200sh XYZ at $450 market, estimate $90,000. BP check $90,000 \u2264 $90,000 \u2713 \u2014 exactly at the line; all buying power committed.",
+  "lines": [
+   {
+    "seq": "M8a.1",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": "Hold at the estimate ($90,000): a net-zero pair, so SL-CA totals don't move; it records that the cash is spoken for."
+   },
+   {
+    "seq": "M8a.2",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": null
+   },
+   {
+    "seq": "M8a.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Trade clock recognizes the order at acceptance: commitment $90,000, net equity down by the same. SL-RCB does not see the order until it fills."
+   },
+   {
+    "seq": "M8a.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M8b",
+  "sheet": "Margin",
+  "block": "M8b",
+  "kind": "Margin",
+  "template": 41,
+  "transaction": "Fill (buy)",
+  "title": "Fill (buy): 200sh XYZ @ $450 = $90,000. SL-RCB encumbers the cost; SL-BP swaps the commitment. SMA $45,000 \u2192 $0 (derived).",
+  "lines": [
+   {
+    "seq": "M8b.1",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": "Hold released; position opened at cost ($90,000); the purchase is owed until settlement (payable)."
+   },
+   {
+    "seq": "M8b.2",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": null
+   },
+   {
+    "seq": "M8b.3",
+    "layer": "SL-CA",
+    "def": 1002,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities at Cost",
+    "note": null
+   },
+   {
+    "seq": "M8b.4",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M8b.5",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": "Withdraw clock recognizes the purchase at execution: encumbrance $90,000, net equity down by the same."
+   },
+   {
+    "seq": "M8b.6",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M8b.7",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Order commitment ($90,000) swapped for the purchase commitment ($90,000); no difference, so no net-equity line."
+   },
+   {
+    "seq": "M8b.8",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M8b.9",
+    "layer": "SL-SHARE",
+    "def": 3001,
+    "side": "Debit",
+    "amount": 200,
+    "lot": "M-003",
+    "instrument": "XYZ",
+    "v109": "Share Lot - M-003",
+    "note": "200sh @ $450, Market. Opened at execution, in shares. Cost ($90,000) is the fill's."
+   },
+   {
+    "seq": "M8b.10",
+    "layer": "SL-SHARE",
+    "def": 3002,
+    "side": "Credit",
+    "amount": 200,
+    "lot": null,
+    "instrument": "XYZ",
+    "v109": "Share Position [Control]",
+    "note": "200sh added to the share position [Control]. Total XYZ: 300sh."
+   }
+  ]
+ },
+ {
+  "id": "M8c",
+  "sheet": "Margin",
+  "block": "M8c",
+  "kind": "Margin",
+  "template": 42,
+  "transaction": "Settlement (buy)",
+  "title": "Settlement (buy), T+1: the $90,000 is paid from Cash, $22,500 \u2192 \u2212$67,500: a $67,500 margin debit. 200sh received (300sh in all). House maintenance $40,500; equity $67,500 \u2713.",
+  "lines": [
+   {
+    "seq": "M8c.1",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": "Settlement: the $90,000 is paid from Cash ($22,500 \u2192 \u2212$67,500, margin debit $67,500); payable cleared."
+   },
+   {
+    "seq": "M8c.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "M8c.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA Cash and goes negative with it; the encumbrance clears against it. No net-equity line: the purchase was recognized at execution."
+   },
+   {
+    "seq": "M8c.4",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "M8c.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA Cash; the purchase commitment clears. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "M8c.6",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Debit",
+    "amount": 90000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M10a",
+  "sheet": "Margin",
+  "block": "M10a",
+  "kind": "Margin",
+  "template": 30,
+  "transaction": "Deposit",
+  "title": "Deposit: $10,000 received. Cash \u2212$67,500 \u2192 \u2212$57,500 (margin debit $57,500); equity $32,500; house surplus $5,500: the call is met.",
+  "lines": [
+   {
+    "seq": "M10a.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Deposit of $10,000: Cash up, so the margin debit falls $67,500 \u2192 $57,500; Net Deposits up."
+   },
+   {
+    "seq": "M10a.2",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "M10a.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: settled cash in, so net equity rises $10,000."
+   },
+   {
+    "seq": "M10a.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M10a.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the same cash in; net equity rises $10,000."
+   },
+   {
+    "seq": "M10a.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M11a",
+  "sheet": "Margin",
+  "block": "M11a",
+  "kind": "Margin",
+  "template": 51,
+  "transaction": "Interest Accrual",
+  "title": "Interest accrued: $620. SL-RCB and SL-BP see it at accrual, as they do fees.",
+  "lines": [
+   {
+    "seq": "M11a.1",
+    "layer": "SL-CA",
+    "def": 1303,
+    "side": "Debit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Margin Interest",
+    "note": "Interest accrued: expense and payable $620."
+   },
+   {
+    "seq": "M11a.2",
+    "layer": "SL-CA",
+    "def": 1103,
+    "side": "Credit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Accrued Margin Interest Payable",
+    "note": null
+   },
+   {
+    "seq": "M11a.3",
+    "layer": "SL-RCB",
+    "def": 5103,
+    "side": "Credit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Accrued Interest",
+    "note": "Withdraw clock sees the accrued interest now, as it does fees: encumbrance $620, net equity down by the same."
+   },
+   {
+    "seq": "M11a.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M11a.5",
+    "layer": "SL-BP",
+    "def": 4104,
+    "side": "Credit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Accrued Interest",
+    "note": "Trade clock commits it: commitment $620, net equity down by the same."
+   },
+   {
+    "seq": "M11a.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M11b",
+  "sheet": "Margin",
+  "block": "M11b",
+  "kind": "Margin",
+  "template": 52,
+  "transaction": "Interest Capitalization",
+  "title": "Interest capitalized: $620 charged to Cash, \u2212$57,500 \u2192 \u2212$58,120 (margin debit $58,120); equity $32,500 \u2192 $31,880; house surplus $5,500 \u2192 $4,880.",
+  "lines": [
+   {
+    "seq": "M11b.1",
+    "layer": "SL-CA",
+    "def": 1103,
+    "side": "Debit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Accrued Margin Interest Payable",
+    "note": "Interest capitalized: the $620 payable is charged to Cash (\u2212$57,500 \u2192 \u2212$58,120)."
+   },
+   {
+    "seq": "M11b.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "M11b.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] down $620; the accrued-interest encumbrance clears. No net-equity line: recognized at accrual."
+   },
+   {
+    "seq": "M11b.4",
+    "layer": "SL-RCB",
+    "def": 5103,
+    "side": "Debit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Accrued Interest",
+    "note": null
+   },
+   {
+    "seq": "M11b.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] down $620; the accrued-interest commitment clears. No net-equity line: recognized at accrual."
+   },
+   {
+    "seq": "M11b.6",
+    "layer": "SL-BP",
+    "def": 4104,
+    "side": "Debit",
+    "amount": 620,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Accrued Interest",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M12a",
+  "sheet": "Margin",
+  "block": "M12a",
+  "kind": "Margin",
+  "template": 33,
+  "transaction": "Withdrawal Initiation",
+  "title": "Withdrawal initiated: $4,000, within RCB of $4,880 (= min(SMA $9,380, House Surplus $4,880)). Both clocks recognize it now. The same financial transaction and booking as Money Movement W1 on the cash brokerage account.",
+  "lines": [
+   {
+    "seq": "M12a.1",
+    "layer": "SL-CA",
+    "def": 1405,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Withdrawal Hold",
+    "note": "Withdrawal instructed: a hold pair ($4,000) marks the money as spoken for; Cash moves at settlement."
+   },
+   {
+    "seq": "M12a.2",
+    "layer": "SL-CA",
+    "def": 1406,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Withdrawals",
+    "note": null
+   },
+   {
+    "seq": "M12a.3",
+    "layer": "SL-RCB",
+    "def": 5104,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Pending Withdrawal",
+    "note": "Withdraw clock encumbers the withdrawal at instruction: net equity down $4,000."
+   },
+   {
+    "seq": "M12a.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M12a.5",
+    "layer": "SL-BP",
+    "def": 4105,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Pending Withdrawal",
+    "note": "Trade clock commits it too: net equity down $4,000."
+   },
+   {
+    "seq": "M12a.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M12b",
+  "sheet": "Margin",
+  "block": "M12b",
+  "kind": "Margin",
+  "template": 34,
+  "transaction": "Withdrawal Settlement",
+  "title": "Withdrawal settled: $4,000 sent from Cash, \u2212$58,120 \u2192 \u2212$62,120: the margin debit grows by the withdrawal. No net-equity line: recognized at M12a.",
+  "lines": [
+   {
+    "seq": "M12b.1",
+    "layer": "SL-CA",
+    "def": 1406,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Withdrawals",
+    "note": "Funds sent: the hold pair clears; Net Deposits down $4,000; Cash \u2212$58,120 \u2192 \u2212$62,120."
+   },
+   {
+    "seq": "M12b.2",
+    "layer": "SL-CA",
+    "def": 1405,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Withdrawal Hold",
+    "note": null
+   },
+   {
+    "seq": "M12b.3",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "M12b.4",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "M12b.5",
+    "layer": "SL-RCB",
+    "def": 5104,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Pending Withdrawal",
+    "note": "Cash [Control] down $4,000 against the encumbrance. No net-equity line: recognized at instruction."
+   },
+   {
+    "seq": "M12b.6",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   },
+   {
+    "seq": "M12b.7",
+    "layer": "SL-BP",
+    "def": 4105,
+    "side": "Debit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Pending Withdrawal",
+    "note": "Cash [Control] down $4,000 against the commitment. No net-equity line: recognized at instruction."
+   },
+   {
+    "seq": "M12b.8",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 4000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M13a",
+  "sheet": "Margin",
+  "block": "M13a",
+  "kind": "Margin",
+  "template": 30,
+  "transaction": "Deposit",
+  "title": "Deposit: $5,000 received. Cash \u2212$62,120 \u2192 \u2212$57,120 (the deposit reduces the margin debit); equity $27,880 \u2192 $32,880; house surplus $880 \u2192 $5,880; SMA $5,380 \u2192 $10,380; RCB = min($10,380, $5,880) = $5,880.",
+  "lines": [
+   {
+    "seq": "M13a.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Deposit of $5,000: Cash up (margin debit $62,120 \u2192 $57,120), Net Deposits up."
+   },
+   {
+    "seq": "M13a.2",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "M13a.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: settled cash in, so net equity rises $5,000."
+   },
+   {
+    "seq": "M13a.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M13a.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the same cash in; net equity rises $5,000."
+   },
+   {
+    "seq": "M13a.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 5000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M13b",
+  "sheet": "Margin",
+  "block": "M13b",
+  "kind": "Margin",
+  "template": 33,
+  "transaction": "Withdrawal Initiation",
+  "title": "Withdrawal initiated: $5,500, within RCB of $5,880, from a brokerage account that already owes a $57,120 margin debit: the withdrawal will be paid by a larger debit. Net equity $32,880 \u2192 $27,380 on both clocks; SMA $10,380 \u2192 $4,880.",
+  "lines": [
+   {
+    "seq": "M13b.1",
+    "layer": "SL-CA",
+    "def": 1405,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Withdrawal Hold",
+    "note": "Withdrawal instructed: a hold pair ($5,500) marks the money as spoken for; Cash moves at settlement."
+   },
+   {
+    "seq": "M13b.2",
+    "layer": "SL-CA",
+    "def": 1406,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Withdrawals",
+    "note": null
+   },
+   {
+    "seq": "M13b.3",
+    "layer": "SL-RCB",
+    "def": 5104,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Pending Withdrawal",
+    "note": "Withdraw clock encumbers the withdrawal at instruction: net equity down $5,500."
+   },
+   {
+    "seq": "M13b.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "M13b.5",
+    "layer": "SL-BP",
+    "def": 4105,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Pending Withdrawal",
+    "note": "Trade clock commits it too: net equity down $5,500."
+   },
+   {
+    "seq": "M13b.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "M13c",
+  "sheet": "Margin",
+  "block": "M13c",
+  "kind": "Margin",
+  "template": 34,
+  "transaction": "Withdrawal Settlement",
+  "title": "Withdrawal settled: $5,500 sent from Cash, \u2212$57,120 \u2192 \u2212$62,620 (margin debit $62,620). No net-equity line: recognized at M13b.",
+  "lines": [
+   {
+    "seq": "M13c.1",
+    "layer": "SL-CA",
+    "def": 1406,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Withdrawals",
+    "note": "Funds sent: the hold pair clears; Net Deposits down $5,500; Cash \u2212$57,120 \u2192 \u2212$62,620."
+   },
+   {
+    "seq": "M13c.2",
+    "layer": "SL-CA",
+    "def": 1405,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Withdrawal Hold",
+    "note": null
+   },
+   {
+    "seq": "M13c.3",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "M13c.4",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "M13c.5",
+    "layer": "SL-RCB",
+    "def": 5104,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Pending Withdrawal",
+    "note": "Cash [Control] down $5,500 against the encumbrance. No net-equity line: recognized at instruction."
+   },
+   {
+    "seq": "M13c.6",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   },
+   {
+    "seq": "M13c.7",
+    "layer": "SL-BP",
+    "def": 4105,
+    "side": "Debit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Pending Withdrawal",
+    "note": "Cash [Control] down $5,500 against the commitment. No net-equity line: recognized at instruction."
+   },
+   {
+    "seq": "M13c.8",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 5500,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "SH0",
+  "sheet": "Short",
+  "block": "SH0",
+  "kind": "Margin",
+  "template": 30,
+  "transaction": "Brokerage Account Open",
+  "title": "Brokerage account opened: $10,000 wire deposit, collected on receipt; margin approved. SMA $10,000; selling power $20,000.",
+  "lines": [
+   {
+    "seq": "SH0.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Deposit of $10,000: cash in, Net Deposits up."
+   },
+   {
+    "seq": "SH0.2",
+    "layer": "SL-CA",
+    "def": 1201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Deposits",
+    "note": null
+   },
+   {
+    "seq": "SH0.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: settled cash in, so net equity rises $10,000."
+   },
+   {
+    "seq": "SH0.4",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "SH0.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the same cash in; net equity rises $10,000."
+   },
+   {
+    "seq": "SH0.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "SH1a",
+  "sheet": "Short",
+  "block": "SH1a",
+  "kind": "Margin",
+  "template": 60,
+  "transaction": "Order Acceptance (sell short)",
+  "title": "Order accepted (sell short): 200sh ABC at market, estimate $10,000. Borrow located (Reg SHO 203(b)(1)); margin equity $10,000 \u2265 $2,000; selling power check $10,000 \u2264 $20,000 \u2713. SL-BP commits the estimate; no cash and no shares are spoken for, so SL-CA and SL-SHARE post nothing.",
+  "lines": [
+   {
+    "seq": "SH1a.1",
+    "layer": "SL-BP",
+    "def": 4107,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Short Orders",
+    "note": "Trade clock recognizes the short order at acceptance: commitment $10,000, net equity down by the same. A short order consumes selling power as a buy order consumes buying power (Reg T 50% either way)."
+   },
+   {
+    "seq": "SH1a.2",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "SH1b",
+  "sheet": "Short",
+  "block": "SH1b",
+  "kind": "Margin",
+  "template": 61,
+  "transaction": "Fill (sell short)",
+  "title": "Fill (sell short): 200sh ABC @ $50.00 = $10,000, short lot SH-001. The short position opens at the proceeds; no gain or loss until the cover. SL-BP releases the order commitment, credits the proceeds and commits them against the short; SL-RCB waits for settlement. SMA $10,000 \u2192 $5,000 (50% of $10,000).",
+  "lines": [
+   {
+    "seq": "SH1b.1",
+    "layer": "SL-CA",
+    "def": 1003,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Receivable - Unsettled Sales",
+    "note": "Proceeds $10,000 receivable until settlement; the short position opens at the proceeds."
+   },
+   {
+    "seq": "SH1b.2",
+    "layer": "SL-CA",
+    "def": 1107,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities Sold Short at Proceeds",
+    "note": "Carried at the proceeds of its lots (per lot: the short sale fill's amount); market value is derived on read."
+   },
+   {
+    "seq": "SH1b.3",
+    "layer": "SL-BP",
+    "def": 4107,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Short Orders",
+    "note": "Order commitment released ($10,000). The proceeds are credited at execution (the credit mirrors the receivable) and committed against the short (the commitment mirrors Securities Sold Short at Proceeds). Net equity up $10,000, back to SL-CA equity of $10,000."
+   },
+   {
+    "seq": "SH1b.4",
+    "layer": "SL-BP",
+    "def": 4002,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Unsettled Sale Proceeds",
+    "note": null
+   },
+   {
+    "seq": "SH1b.5",
+    "layer": "SL-BP",
+    "def": 4108,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Short Sale Proceeds",
+    "note": null
+   },
+   {
+    "seq": "SH1b.6",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   },
+   {
+    "seq": "SH1b.7",
+    "layer": "SL-SHARE",
+    "def": 3102,
+    "side": "Debit",
+    "amount": 200,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Short Position [Control]",
+    "note": "Short position opened at execution, in shares: 200sh the customer owes the firm (the firm in turn owes its lender)."
+   },
+   {
+    "seq": "SH1b.8",
+    "layer": "SL-SHARE",
+    "def": 3101,
+    "side": "Credit",
+    "amount": 200,
+    "lot": "SH-001",
+    "instrument": "ABC",
+    "v109": "Short Lot - SH-001",
+    "note": "Short lot SH-001: 200sh @ $50.00 = $10,000, keyed by the short sale fill. Proceeds are the fill's; SL-SHARE holds shares only."
+   }
+  ]
+ },
+ {
+  "id": "SH1c",
+  "sheet": "Short",
+  "block": "SH1c",
+  "kind": "Margin",
+  "template": 62,
+  "transaction": "Settlement (sell short)",
+  "title": "Settlement (sell short), T+1: $10,000 proceeds in; Cash $10,000 \u2192 $20,000. $15,000 is required under the 150% rule, so only $5,000 (RCB) may be withdrawn. SL-RCB takes the proceeds in and encumbers them until the cover. The firm delivers borrowed shares and gives its lender $10,000 of cash collateral.",
+  "lines": [
+   {
+    "seq": "SH1c.1",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": "Settlement: $10,000 proceeds in; receivable cleared."
+   },
+   {
+    "seq": "SH1c.2",
+    "layer": "SL-CA",
+    "def": 1003,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Receivable - Unsettled Sales",
+    "note": null
+   },
+   {
+    "seq": "SH1c.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Withdraw clock: proceeds in and encumbered until the cover's execution: net equity stays $10,000 = SL-CA equity. RCB is derived and does not rise."
+   },
+   {
+    "seq": "SH1c.4",
+    "layer": "SL-RCB",
+    "def": 5106,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Short Sale Proceeds",
+    "note": null
+   },
+   {
+    "seq": "SH1c.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Trade clock: the sale credit is swapped for cash. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "SH1c.6",
+    "layer": "SL-BP",
+    "def": 4002,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Credit - Unsettled Sale Proceeds",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "SH4a",
+  "sheet": "Short",
+  "block": "SH4a",
+  "kind": "Margin",
+  "template": 63,
+  "transaction": "Order Acceptance (buy to cover)",
+  "title": "Order accepted (buy to cover): 200sh ABC at market, estimate $16,000. Closing order: no buying power check, up to the open short quantity (an order gateway assumption; margin operations to confirm). SL-CA holds the cash; SL-BP commits the estimate.",
+  "lines": [
+   {
+    "seq": "SH4a.1",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": "Hold at the estimate ($16,000): a net-zero pair recording that $16,000 of Cash is spoken for by the cover."
+   },
+   {
+    "seq": "SH4a.2",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": null
+   },
+   {
+    "seq": "SH4a.3",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Trade clock recognizes the cover at acceptance: commitment $16,000, net equity down by the same."
+   },
+   {
+    "seq": "SH4a.4",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   }
+  ]
+ },
+ {
+  "id": "SH4b",
+  "sheet": "Short",
+  "block": "SH4b",
+  "kind": "Margin",
+  "template": 64,
+  "transaction": "Fill (buy to cover)",
+  "title": "Fill (buy to cover): 200sh ABC @ $80 = $16,000, naming short lot SH-001. Proceeds relieved $10,000 (remaining proceeds before $10,000 \u2212 after $0); loss $6,000 recognized at trade date (book). Both clocks release the short's proceeds encumbrance and commitment, so the loss reaches their net equity. SMA $5,000 \u2192 $13,000 (50% of the cover, the Reg T requirement released). No short position remains: the calls are met.",
+  "lines": [
+   {
+    "seq": "SH4b.1",
+    "layer": "SL-CA",
+    "def": 1402,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Reserve for Open Buy Orders",
+    "note": "Hold released; the short position closed at its proceeds; the purchase is owed until settlement."
+   },
+   {
+    "seq": "SH4b.2",
+    "layer": "SL-CA",
+    "def": 1401,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Open Order Hold - Buy",
+    "note": null
+   },
+   {
+    "seq": "SH4b.3",
+    "layer": "SL-CA",
+    "def": 1107,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Securities Sold Short at Proceeds",
+    "note": "Relieved per lot: remaining proceeds before \u2212 after. Lot SH-001, 200 of 200sh: $10,000 \u2192 $0."
+   },
+   {
+    "seq": "SH4b.4",
+    "layer": "SL-CA",
+    "def": 1202,
+    "side": "Debit",
+    "amount": 6000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Realized Gain/Loss",
+    "note": "Loss $6,000 = proceeds $10,000 \u2212 cover cost $16,000 (book)."
+   },
+   {
+    "seq": "SH4b.5",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "SH4b.6",
+    "layer": "SL-RCB",
+    "def": 5106,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Short Sale Proceeds",
+    "note": "The short's proceeds encumbrance released ($10,000) and the cover encumbered at execution ($16,000): net equity down $6,000, the loss, to $4,000 = SL-CA equity."
+   },
+   {
+    "seq": "SH4b.7",
+    "layer": "SL-RCB",
+    "def": 5201,
+    "side": "Debit",
+    "amount": 6000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Withdraw Clock",
+    "note": null
+   },
+   {
+    "seq": "SH4b.8",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "SH4b.9",
+    "layer": "SL-BP",
+    "def": 4101,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Open Orders",
+    "note": "Order commitment swapped for the purchase commitment ($16,000), and the short's proceeds commitment released ($10,000): net equity up $10,000 to $4,000 = SL-CA equity."
+   },
+   {
+    "seq": "SH4b.10",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "SH4b.11",
+    "layer": "SL-BP",
+    "def": 4108,
+    "side": "Debit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Short Sale Proceeds",
+    "note": null
+   },
+   {
+    "seq": "SH4b.12",
+    "layer": "SL-BP",
+    "def": 4201,
+    "side": "Credit",
+    "amount": 10000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Net Equity - Trade Clock",
+    "note": null
+   },
+   {
+    "seq": "SH4b.13",
+    "layer": "SL-SHARE",
+    "def": 3103,
+    "side": "Debit",
+    "amount": 200,
+    "lot": "SH-001",
+    "instrument": "ABC",
+    "v109": "Shares Pending Cover - SH-001",
+    "note": "200sh of short lot SH-001, named by the fill, wait to be returned; the lot stays open until settlement."
+   },
+   {
+    "seq": "SH4b.14",
+    "layer": "SL-SHARE",
+    "def": 3102,
+    "side": "Credit",
+    "amount": 200,
+    "lot": null,
+    "instrument": "ABC",
+    "v109": "Short Position [Control]",
+    "note": "Short position closed at execution: 200sh \u2192 0."
+   }
+  ]
+ },
+ {
+  "id": "SH4c",
+  "sheet": "Short",
+  "block": "SH4c",
+  "kind": "Margin",
+  "template": 65,
+  "transaction": "Settlement (buy to cover)",
+  "title": "Settlement (buy to cover), T+1: $16,000 paid from Cash, $20,000 \u2192 $4,000. Lot SH-001 closes at zero. The firm returns the shares and its lender returns the $16,000 collateral. Equity $4,000 = Net Deposits $10,000 \u2212 realized loss $6,000.",
+  "lines": [
+   {
+    "seq": "SH4c.1",
+    "layer": "SL-CA",
+    "def": 1101,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Payable - Unsettled Purchases",
+    "note": "Settlement: $16,000 paid from Cash ($20,000 \u2192 $4,000); payable cleared."
+   },
+   {
+    "seq": "SH4c.2",
+    "layer": "SL-CA",
+    "def": 1001,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash",
+    "note": null
+   },
+   {
+    "seq": "SH4c.3",
+    "layer": "SL-RCB",
+    "def": 5001,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA Cash; the encumbrance clears. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "SH4c.4",
+    "layer": "SL-RCB",
+    "def": 5101,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Encumbrance - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "SH4c.5",
+    "layer": "SL-BP",
+    "def": 4001,
+    "side": "Credit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Cash [Control]",
+    "note": "Cash [Control] mirrors SL-CA Cash; the purchase commitment clears. No net-equity line: recognized at execution."
+   },
+   {
+    "seq": "SH4c.6",
+    "layer": "SL-BP",
+    "def": 4102,
+    "side": "Debit",
+    "amount": 16000,
+    "lot": null,
+    "instrument": "USD",
+    "v109": "Commitment - Unsettled Purchases",
+    "note": null
+   },
+   {
+    "seq": "SH4c.7",
+    "layer": "SL-SHARE",
+    "def": 3101,
+    "side": "Debit",
+    "amount": 200,
+    "lot": "SH-001",
+    "instrument": "ABC",
+    "v109": "Short Lot - SH-001",
+    "note": "Lot SH-001 relieved at settlement and closes at zero; the customer's obligation to the firm is closed."
+   },
+   {
+    "seq": "SH4c.8",
+    "layer": "SL-SHARE",
+    "def": 3103,
+    "side": "Credit",
+    "amount": 200,
+    "lot": "SH-001",
+    "instrument": "ABC",
+    "v109": "Shares Pending Cover - SH-001",
+    "note": null
+   }
+  ]
+ }
+]

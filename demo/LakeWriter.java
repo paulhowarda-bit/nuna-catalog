@@ -1,7 +1,6 @@
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -46,7 +45,6 @@ public class LakeWriter {
     static final Namespace XETRA = Namespace.of("markets", "equities", "eu", "xetra");
     static final Namespace FX = Namespace.of("markets", "fx");
     static final Namespace US = Namespace.of("markets", "equities", "us");
-    static final Namespace LEDGER = Namespace.of("finance", "ledger");
     static final Namespace REFERENCE = Namespace.of("reference");
 
     public static void main(String[] args) throws Exception {
@@ -69,7 +67,7 @@ public class LakeWriter {
 
     static void seed(RESTCatalog catalog) {
         for (String ns : List.of("markets", "markets.equities", "markets.equities.eu", "markets.equities.eu.xetra",
-                "markets.equities.us", "markets.fx", "finance", "finance.ledger", "reference")) {
+                "markets.equities.us", "markets.fx", "reference")) {
             Namespace namespace = Namespace.of(ns.split("\\."));
             if (!catalog.namespaceExists(namespace)) {
                 catalog.createNamespace(namespace);
@@ -83,20 +81,6 @@ public class LakeWriter {
                 Types.NestedField.optional(3, "ask", Types.DoubleType.get()),
                 Types.NestedField.optional(4, "quoted_at", Types.TimestampType.withZone())), null);
         append(quotes, row(quotes, "AAPL", 227.10, 227.12, utc("2026-11-10T14:30:00")));
-
-        // finance is made regulated after this; journal is classified, accounts stays unclassified and closed (D27).
-        Table journal = create(catalog, TableIdentifier.of(LEDGER, "journal"), 3, new Schema(
-                Types.NestedField.optional(1, "entry_id", Types.LongType.get()),
-                Types.NestedField.optional(2, "account", Types.StringType.get()),
-                Types.NestedField.optional(3, "amount", Types.DecimalType.of(18, 2)),
-                Types.NestedField.optional(4, "posted_at", Types.DateType.get())), "month(posted_at)");
-        append(journal, row(journal, 1L, "4000-REV", dec("1250.00"), LocalDate.parse("2026-11-02")),
-                row(journal, 2L, "1100-CASH", dec("-1250.00"), LocalDate.parse("2026-11-02")));
-        append(journal, row(journal, 3L, "6100-FEES", dec("42.50"), LocalDate.parse("2026-11-09")));
-        Table accounts = create(catalog, TableIdentifier.of(LEDGER, "accounts"), 2, new Schema(
-                Types.NestedField.optional(1, "account", Types.StringType.get()),
-                Types.NestedField.optional(2, "name", Types.StringType.get())), null);
-        append(accounts, row(accounts, "4000-REV", "Revenue"), row(accounts, "1100-CASH", "Cash"), row(accounts, "6100-FEES", "Fees"));
 
         Table countries = create(catalog, TableIdentifier.of(REFERENCE, "countries"), 2, new Schema(
                 Types.NestedField.optional(1, "iso2", Types.StringType.get()),

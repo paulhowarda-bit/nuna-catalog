@@ -1,0 +1,900 @@
+{
+ "source": "ledger kit v14, defs.py (chart of accounts v24); the demo kit's own copy from here on (D48)",
+ "dimensions": [
+  {
+   "id": 1,
+   "name": "BrokerageAccount",
+   "description": "the brokerageAccountReference: the numeric id the brokerage account master assigns to the brokerage account; nothing else about it is in the ledger"
+  },
+  {
+   "id": 2,
+   "name": "Currency",
+   "description": "what a Money balance is denominated in: the instrument master id of the currency (ISO 4217 numeric, 840 USD), or of an asset used as money"
+  },
+  {
+   "id": 3,
+   "name": "Security",
+   "description": "the instrument master id of the security a position, lot or hold is in"
+  },
+  {
+   "id": 4,
+   "name": "Lot",
+   "description": "the financialTransactionId of the fill that opened the lot: a buy fill for a share lot, a short sale fill for a short lot"
+  }
+ ],
+ "roots": [
+  {
+   "id": 2,
+   "parent": null,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "postable": false,
+   "code": "SL-CA",
+   "name": "Client accounting",
+   "description": "journal of record; the brokerage account's own double-entry view, Assets = Liabilities + Equity"
+  },
+  {
+   "id": 3,
+   "parent": null,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "postable": false,
+   "code": "SL-SHARE",
+   "name": "Share lots",
+   "description": "the brokerage account's share lots, share position and sell holds, and its short lots and short position, in units of the security (shares, exponent 5); a book of record for the share position (R14); valued at cost the open lots tie to SL-CA 1002 at checkpoints (R7)"
+  },
+  {
+   "id": 4,
+   "parent": null,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "postable": false,
+   "code": "SL-BP",
+   "name": "Buying power",
+   "description": "trade clock: how much the brokerage account can trade; recognises money leaving at acceptance (orders) or execution (fees), money arriving at execution or initiation; buying power is derived, not posted"
+  },
+  {
+   "id": 5,
+   "parent": null,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "postable": false,
+   "code": "SL-RCB",
+   "name": "Running collected balance",
+   "description": "withdraw clock: how much the brokerage account can withdraw; recognises money leaving at execution or instruction, money arriving at settlement; the collected balance is derived, not posted"
+  }
+ ],
+ "summaries": [
+  {
+   "id": 1000,
+   "parent": 2,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1000",
+   "name": "SL-CA assets"
+  },
+  {
+   "id": 1100,
+   "parent": 2,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1100",
+   "name": "SL-CA liabilities"
+  },
+  {
+   "id": 1200,
+   "parent": 2,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "1200",
+   "name": "SL-CA equity"
+  },
+  {
+   "id": 1300,
+   "parent": 2,
+   "naturalClass": "Expense",
+   "measure": "Money",
+   "code": "1300",
+   "name": "SL-CA expenses"
+  },
+  {
+   "id": 3000,
+   "parent": 3,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "code": "3000",
+   "name": "SL-SHARE share lots"
+  },
+  {
+   "id": 3100,
+   "parent": 3,
+   "naturalClass": "Liability",
+   "measure": "Units",
+   "code": "3100",
+   "name": "SL-SHARE short lots"
+  },
+  {
+   "id": 4000,
+   "parent": 4,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "4000",
+   "name": "SL-BP assets"
+  },
+  {
+   "id": 4100,
+   "parent": 4,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4100",
+   "name": "SL-BP liabilities"
+  },
+  {
+   "id": 4200,
+   "parent": 4,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "4200",
+   "name": "SL-BP equity"
+  },
+  {
+   "id": 5000,
+   "parent": 5,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "5000",
+   "name": "SL-RCB assets"
+  },
+  {
+   "id": 5100,
+   "parent": 5,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5100",
+   "name": "SL-RCB liabilities"
+  },
+  {
+   "id": 5200,
+   "parent": 5,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "5200",
+   "name": "SL-RCB equity"
+  }
+ ],
+ "definitions": [
+  {
+   "id": 1001,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1001",
+   "name": "Cash",
+   "description": "Settled funds. Moves at settlement only. One balance per brokerage account: positive is the credit balance, owed to the brokerage account; negative is the debit balance (Reg T 220.2), the margin debit the brokerage account owes the firm.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1002,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1002",
+   "name": "Securities at Cost",
+   "description": "The position at cost, one ledger account per security, keyed by (BrokerageAccount, Currency, Security). Opens at buy execution, relieved at sell execution at the cost of the lots the sell fill names (calculation IdentifyLotsNamed: per lot, remaining cost before the fill less remaining cost after, R12); the gain goes to 1202. The share count is in SL-SHARE (3002); at checkpoints the remaining cost of the open lots equals this balance (R7c).",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2,
+    3
+   ],
+   "root": 2
+  },
+  {
+   "id": 1003,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1003",
+   "name": "Receivable - Unsettled Sales",
+   "description": "Sell: gross proceeds from execution to settlement.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1004,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1004",
+   "name": "Uncollected Deposit",
+   "description": "Funds in transit from the bank, from initiation to settlement.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1401,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1401",
+   "name": "Open Order Hold - Buy",
+   "description": "Holds cash at acceptance at the estimate (net-zero pair); released at execution per fill or on cancel. Offset: 1402.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1405,
+   "parent": 1000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "1405",
+   "name": "Withdrawal Hold",
+   "description": "Cash held for an outbound transfer, from instruction to settlement. Offset: 1406.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1101,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1101",
+   "name": "Payable - Unsettled Purchases",
+   "description": "Buy: the pending amount, from execution to settlement. The brokerage account owes the cost; cash moves at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1102,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1102",
+   "name": "Accrued Fees Payable",
+   "description": "Total fees accrued at execution; clears at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1103,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1103",
+   "name": "Accrued Margin Interest Payable",
+   "description": "Interest on the margin debit, accrued; capitalized to Cash.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1105,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1105",
+   "name": "Uncollected Deposit - Payable",
+   "description": "Obligation to credit the brokerage account when the funds arrive. Offset of 1004.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1107,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1107",
+   "name": "Securities Sold Short at Proceeds",
+   "description": "The short position at the proceeds of its open short lots, one ledger account per security, keyed by (BrokerageAccount, Currency, Security), as 1002 carries a long position at cost. Opens at short sale execution; relieved at cover execution by the short lots the cover fill names (calculation IdentifyShortLotsNamed: per lot, remaining proceeds before the fill less remaining proceeds after, R12); the gain or loss goes to 1202. Market value is derived on read, never posted. At checkpoints the remaining proceeds of the open short lots equal this balance (R7c).",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2,
+    3
+   ],
+   "root": 2
+  },
+  {
+   "id": 1402,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1402",
+   "name": "Reserve for Open Buy Orders",
+   "description": "Cash set aside for pending buy orders. Contra to 1401.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1406,
+   "parent": 1100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "1406",
+   "name": "Reserve for Withdrawals",
+   "description": "Cash set aside for a withdrawal. Contra to 1405.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1201,
+   "parent": 1200,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "1201",
+   "name": "Net Deposits",
+   "description": "Lifetime net deposits minus withdrawals.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1202,
+   "parent": 1200,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "1202",
+   "name": "Realized Gain/Loss",
+   "description": "Accumulated realized gain or loss (book): proceeds less original cost on a sale, original proceeds less cover cost on a cover; a credit balance is a net gain, a debit balance a net loss; the 1099-B reports the cost basis system's adjusted basis (wash sales, corporate actions), which can differ. The holding period comes from the lot's acquisition date at 1099-B time; it is not carried on this ledger account.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1301,
+   "parent": 1300,
+   "naturalClass": "Expense",
+   "measure": "Money",
+   "code": "1301",
+   "name": "SEC Transaction Fee",
+   "description": "Section 31 fee expense of the brokerage account.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1302,
+   "parent": 1300,
+   "naturalClass": "Expense",
+   "measure": "Money",
+   "code": "1302",
+   "name": "FINRA Trading Activity Fee",
+   "description": "FINRA TAF expense of the brokerage account.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 1303,
+   "parent": 1300,
+   "naturalClass": "Expense",
+   "measure": "Money",
+   "code": "1303",
+   "name": "Margin Interest",
+   "description": "Interest expense of the brokerage account.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 2
+  },
+  {
+   "id": 3001,
+   "parent": 3000,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "code": "3001",
+   "name": "Share Lot - [Fill]",
+   "description": "Debit-normal. One ledger account per buy fill, keyed by (BrokerageAccount, Security, Lot = the fill id). Its balance is the lot's remaining shares. Opened at buy execution; relieved at sell settlement (calculation SettlePending); closes at zero (R13). The lot's fill amount and shares (the reference of the remaining-cost rule, R12) and its acquisition date are the buy fill transaction's; they are not posted.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    3,
+    4
+   ],
+   "root": 3
+  },
+  {
+   "id": 3002,
+   "parent": 3000,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "code": "3002",
+   "name": "Share Position [Control]",
+   "description": "Credit-normal contra within SL-SHARE, keyed by (BrokerageAccount, Security): the brokerage account's share count of record, per security. After every Posting sum of 3001 = 3002 + sum of 3003 (R7). The order management system validates a sell quantity against this balance less open sell holds (3004).",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    3
+   ],
+   "root": 3
+  },
+  {
+   "id": 3003,
+   "parent": 3000,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "code": "3003",
+   "name": "Shares Pending Delivery - [Fill]",
+   "description": "Credit-normal contra within SL-SHARE, keyed by (BrokerageAccount, Security, Lot). Shares a sell fill names, held against the lot from execution until settlement relieves them from it.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    3,
+    4
+   ],
+   "root": 3
+  },
+  {
+   "id": 3004,
+   "parent": 3000,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "code": "3004",
+   "name": "Open Sell Order Hold",
+   "description": "Debit-normal, keyed by (BrokerageAccount, Security). Shares spoken for by open sell orders: posted at acceptance, released per fill or on cancel. Offset: 3005. Net zero in shares; the share position control (3002) is unchanged by it.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    3
+   ],
+   "root": 3
+  },
+  {
+   "id": 3005,
+   "parent": 3000,
+   "naturalClass": "Asset",
+   "measure": "Units",
+   "code": "3005",
+   "name": "Shares Reserved for Open Orders",
+   "description": "Credit-normal contra, keyed by (BrokerageAccount, Security). The offset of 3004.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    3
+   ],
+   "root": 3
+  },
+  {
+   "id": 3101,
+   "parent": 3100,
+   "naturalClass": "Liability",
+   "measure": "Units",
+   "code": "3101",
+   "name": "Short Lot - [Fill]",
+   "description": "Credit-normal: shares the brokerage account owes the firm. One ledger account per short sale fill, keyed by (BrokerageAccount, Security, Lot = the short sale fill's financialTransactionId). Opened at short sale execution; relieved at cover settlement (calculation SettleShortPending); closes at zero. The lot's proceeds and shares (the reference of the remaining-proceeds rule, R12) are the short sale fill's; they are not posted. Not the firm's stock record: there the offset of a customer short is the firm's borrow.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    3,
+    4
+   ],
+   "root": 3
+  },
+  {
+   "id": 3102,
+   "parent": 3100,
+   "naturalClass": "Liability",
+   "measure": "Units",
+   "code": "3102",
+   "name": "Short Position [Control]",
+   "description": "Debit-normal contra, keyed by (BrokerageAccount, Security): the brokerage account's short position of record, per security. After every Posting sum of 3101 = 3102 + sum of 3103 (R7). Closes at cover execution.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    3
+   ],
+   "root": 3
+  },
+  {
+   "id": 3103,
+   "parent": 3100,
+   "naturalClass": "Liability",
+   "measure": "Units",
+   "code": "3103",
+   "name": "Shares Pending Cover - [Fill]",
+   "description": "Debit-normal, keyed by (BrokerageAccount, Security, Lot). Shares a cover fill names, held against the short lot from the cover's execution until its settlement relieves them from it.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    3,
+    4
+   ],
+   "root": 3
+  },
+  {
+   "id": 4001,
+   "parent": 4000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "4001",
+   "name": "Cash [Control]",
+   "description": "Control. Mirrors SL-CA 1001. Debit-normal. Posted on cash financial transactions (debit when cash arrives, credit when it leaves).",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4002,
+   "parent": 4000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "4002",
+   "name": "Credit - Unsettled Sale Proceeds",
+   "description": "Mirrors SL-CA 1003: credits buying power at sell execution. Debit-normal, like a receivable: it adds to net equity until settlement replaces it with cash.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4003,
+   "parent": 4000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "4003",
+   "name": "Credit - Uncollected Deposit",
+   "description": "The good-faith amount of a pending deposit, credited to buying power at initiation. Debit-normal: it adds to net equity until settlement replaces it with cash.",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4101,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4101",
+   "name": "Commitment - Open Orders",
+   "description": "Acceptance-timing commitment. Posted when an order is accepted; at execution it is swapped for 4102 and any overage returns to net equity; released on cancel. Credit-normal, contra to cash: it reduces net equity while it stands.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4102,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4102",
+   "name": "Commitment - Unsettled Purchases",
+   "description": "Mirrors SL-CA 1101 on the trade clock. Credit-normal; cleared at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4103,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4103",
+   "name": "Commitment - Accrued Fees",
+   "description": "Mirrors SL-CA 1102 on the trade clock. Credit-normal; cleared at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4104,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4104",
+   "name": "Commitment - Accrued Interest",
+   "description": "Mirrors SL-CA 1103 on the trade clock. Credit-normal; cleared when the interest is capitalized.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4105,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4105",
+   "name": "Commitment - Pending Withdrawal",
+   "description": "Mirrors SL-CA 1405 on the trade clock. Credit-normal; cleared at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4107,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4107",
+   "name": "Commitment - Open Short Orders",
+   "description": "Acceptance-timing commitment of an open short sale order, at the estimate: the short consumes selling power as a buy consumes buying power. No SL-CA mirror: a short order speaks for no cash. Released at execution (per fill, by the fill's estimatedAmount) or on cancel. Credit-normal.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4108,
+   "parent": 4100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "4108",
+   "name": "Commitment - Short Sale Proceeds",
+   "description": "Mirrors SL-CA 1107 on the trade clock: committed at short sale execution, released at cover execution, so Net Equity - Trade Clock equals SL-CA equity less open-order commitments while the short is open. Credit-normal.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 4201,
+   "parent": 4200,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "4201",
+   "name": "Net Equity - Trade Clock",
+   "description": "SL-BP's own net equity: 4001 - commitments (4101-4105, 4107, 4108) + credits (4002, 4003). The balancing journal line of every SL-BP journal entry, posted only when that balance changes, by exactly the change; settlement never posts it. Buying power is derived on read, never posted.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 4
+  },
+  {
+   "id": 5001,
+   "parent": 5000,
+   "naturalClass": "Asset",
+   "measure": "Money",
+   "code": "5001",
+   "name": "Cash [Control]",
+   "description": "Control. Mirrors SL-CA 1001. Debit-normal. Posted on cash financial transactions (debit when cash arrives, credit when it leaves).",
+   "normalSide": "Debit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
+   "id": 5101,
+   "parent": 5100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5101",
+   "name": "Encumbrance - Unsettled Purchases",
+   "description": "Mirrors SL-CA 1101 on the withdraw clock: recognized at execution. Credit-normal; cleared at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
+   "id": 5102,
+   "parent": 5100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5102",
+   "name": "Encumbrance - Accrued Fees",
+   "description": "Mirrors SL-CA 1102 on the withdraw clock. Credit-normal; cleared at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
+   "id": 5103,
+   "parent": 5100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5103",
+   "name": "Encumbrance - Accrued Interest",
+   "description": "Mirrors SL-CA 1103 on the withdraw clock: recognized at accrual. Credit-normal; cleared when the interest is capitalized.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
+   "id": 5104,
+   "parent": 5100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5104",
+   "name": "Encumbrance - Pending Withdrawal",
+   "description": "Mirrors SL-CA 1405 on the withdraw clock: recognized at instruction. Credit-normal; cleared at settlement.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
+   "id": 5106,
+   "parent": 5100,
+   "naturalClass": "Liability",
+   "measure": "Money",
+   "code": "5106",
+   "name": "Encumbrance - Short Sale Proceeds",
+   "description": "Settlement-timing encumbrance of a short sale's proceeds: encumbered when they enter Cash [Control] at the short's settlement, released at the cover's execution, so Net Equity - Withdraw Clock equals SL-CA equity while the short is open. Credit-normal. MayReverse (R16): a short covered before it settles takes it below zero until the short's settlement brings the proceeds in. Not a mirror of 1107 (its timing differs).",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  },
+  {
+   "id": 5201,
+   "parent": 5200,
+   "naturalClass": "Equity",
+   "measure": "Money",
+   "code": "5201",
+   "name": "Net Equity - Withdraw Clock",
+   "description": "SL-RCB's own net equity: 5001 - encumbrances (5101-5104, 5106). The balancing journal line of every SL-RCB journal entry, posted only when that balance changes, by exactly the change; settlement posts it for money arriving (sale proceeds, deposits), which this clock recognizes only then. The running collected balance is derived on read, never posted.",
+   "normalSide": "Credit",
+   "keyDimensions": [
+    1,
+    2
+   ],
+   "root": 5
+  }
+ ],
+ "controls": [
+  {
+   "control": 5001,
+   "of": 1001
+  },
+  {
+   "control": 4001,
+   "of": 1001
+  }
+ ],
+ "mirrors": [
+  {
+   "register": 5101,
+   "of": 1101
+  },
+  {
+   "register": 4102,
+   "of": 1101
+  },
+  {
+   "register": 5102,
+   "of": 1102
+  },
+  {
+   "register": 4103,
+   "of": 1102
+  },
+  {
+   "register": 5103,
+   "of": 1103
+  },
+  {
+   "register": 4104,
+   "of": 1103
+  },
+  {
+   "register": 5104,
+   "of": 1405
+  },
+  {
+   "register": 4105,
+   "of": 1405
+  },
+  {
+   "register": 4101,
+   "of": 1401
+  },
+  {
+   "register": 4002,
+   "of": 1003
+  },
+  {
+   "register": 4108,
+   "of": 1107
+  }
+ ],
+ "mayReverse": [
+  1001,
+  4001,
+  5001,
+  4201,
+  5201,
+  1201,
+  1202,
+  5106
+ ],
+ "unitExponent": 5
+}

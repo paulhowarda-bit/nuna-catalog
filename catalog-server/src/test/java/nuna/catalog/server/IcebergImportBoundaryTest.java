@@ -16,12 +16,13 @@ import org.junit.jupiter.api.Test;
  * through Iceberg's own client like any engine (D35). The maintenance worker is a client too: a separate service that
  * commits through the catalog's REST API with Iceberg's client (D30). So is the audit table writer,
  * catalog-audit-tables: a separate service that writes the audit topic to the audit catalog with Iceberg's client
- * (D23).
+ * (D23). And so is the demo's brokerage world, demo-datagen: it makes its tables and views and tags each day's end
+ * through the catalog's REST API with Iceberg's client (D48).
  */
 class IcebergImportBoundaryTest {
 
     private static final Set<String> CLIENTS = Set.of("singlestore-change-feed", "catalog-maintenance",
-            "catalog-audit-tables");
+            "catalog-audit-tables", "demo-datagen");
 
     @Test
     void onlyTheAdapterModuleImportsIceberg() throws IOException {

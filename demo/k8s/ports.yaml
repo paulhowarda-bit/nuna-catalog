@@ -1,6 +1,6 @@
 # The demo's ports on localhost, where Docker Desktop serves LoadBalancer Services, all HTTPS through one front
 # door: 8180 Keycloak, 8181 the catalog and its console, 8182 kafbat, 8183 SingleStore Studio, 8184 Silo's
-# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (only while demo.sh cdc runs, cdc.yaml), 8187
+# console, 8185 CloudBeaver (Trino), 8186 Kafka Connect's REST API (connect.yaml), 8187
 # Silo's S3 API, for engines on other machines. Only demo.sh applies this; a matrix run publishes nothing.
 #
 # The front door is nginx (Deployment front): it ends TLS with the certificate in Secret demo-tls, which demo.sh
