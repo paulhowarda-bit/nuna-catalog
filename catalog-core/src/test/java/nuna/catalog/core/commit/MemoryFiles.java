@@ -6,7 +6,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Locale;
+import java.util.Optional;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,10 +27,9 @@ final class MemoryFiles implements TableFiles {
     }
 
     @Override
-    public Written write(String locationRoot, long version, String json) {
+    public Written write(String locationRoot, long version, String json, Optional<UUID> branch) {
         writes.incrementAndGet();
-        String location = locationRoot + "/metadata/"
-                + String.format(Locale.ROOT, "%05d-%s.metadata.json", version, UUID.randomUUID());
+        String location = locationRoot + "/metadata/" + TableFiles.fileName(version, branch);
         byte[] bytes = json.getBytes(UTF_8);
         files.put(location, bytes);
         return new Written(location, sha256(bytes));

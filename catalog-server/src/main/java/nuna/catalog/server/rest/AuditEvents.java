@@ -13,7 +13,6 @@ import nuna.catalog.core.commit.CommitEvents;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.OutboxEvent;
 import nuna.catalog.store.Pointer;
-import nuna.catalog.store.PointerKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -52,7 +51,7 @@ public class AuditEvents {
     CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
         return commit -> {
             Securable object = securable(commit.object(), catalog, path.apply(commit.object()));
-            OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, PointerKey.MAIN,
+            OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, commit.branch(),
                     commit.before().map(AuditEvents::state).orElse(null), state(commit.after()),
                     commit.updatesJson(), actor));
             return switch (commit.kind()) {

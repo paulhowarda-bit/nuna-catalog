@@ -31,10 +31,15 @@ class Lookup {
 
     /**
      * A table or view as a read sees it. {@code object} is main's record of it: its id, and the grants and governance
-     * it holds on main, which hold on every ref (item 26's choice 12). Through a ref, {@code cut} is the pointer the
-     * ref's cut took for it; on main it is empty.
+     * it holds on main, which hold on every ref (item 26's choice 12). Through a ref, {@code entry} is the ref's cut
+     * entry for it; on main it is empty.
      */
-    record Seen(CatalogObject object, Optional<RefEntry.At> cut) {
+    record Seen(CatalogObject object, Optional<RefEntry> entry) {
+
+        /** The pointer the ref's cut took for it; empty on main. */
+        Optional<RefEntry.At> cut() {
+            return entry.flatMap(RefEntry::pointer);
+        }
     }
 
     private final CatalogStore store;
@@ -67,8 +72,11 @@ class Lookup {
         return onRef(prefix, request, operation).mainOnly(operation.name());
     }
 
-    /** The catalog the prefix names, for a commit or a view's replace: refused on a ref ({@link OnRef#forCommit}). */
-    CatalogRecord forCommit(String prefix, RequestContext request, Operation operation) {
+    /**
+     * What the prefix names, for a commit, a view's replace or a transaction: main or a branch, refused on a tag
+     * ({@link OnRef#forCommit}).
+     */
+    OnRef forCommit(String prefix, RequestContext request, Operation operation) {
         return onRef(prefix, request, operation).forCommit(operation.name());
     }
 
@@ -114,7 +122,7 @@ class Lookup {
     /**
      * The table or view of {@code kind} holding the name in the namespace at {@code levels}, as main or the ref sees
      * it: through a ref, the one its cut names there, whatever main has done with it since (D33, as amended
-     * 2026-11-20).
+     * 2026-11-20), except one main has unregistered: the catalog no longer tracks it, so no ref serves it.
      */
     Optional<Seen> seen(OnRef on, NamespaceRecord namespace, List<String> levels, String name,
                         CatalogObject.Kind kind) {
@@ -126,7 +134,17 @@ class Lookup {
                 .filter(entry -> entry.kind() == RefEntry.of(kind))
                 .map(entry -> new Seen(store.readObject(entry.id()).orElseThrow(() -> new IllegalStateException(
                         "object " + entry.id() + " in the cut of ref " + ref.id() + " has no record")),
-                        entry.pointer()));
+                        Optional.of(entry)))
+                .filter(seen -> seen.object().state() != CatalogObject.State.UNREGISTERED);
+    }
+
+    /**
+     * Whether a caller allowed to write the table may be given storage write access to it through {@code on}: on
+     * main, and on a branch while main still has the table active, since a branch commits only to what main has
+     * (D33); never through a tag, which is read-only (item 26's choice 5).
+     */
+    static boolean writable(OnRef on, CatalogObject object) {
+        return !on.tag() && object.state() == CatalogObject.State.ACTIVE;
     }
 
     /**

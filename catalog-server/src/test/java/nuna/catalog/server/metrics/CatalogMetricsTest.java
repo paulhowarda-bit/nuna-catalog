@@ -76,7 +76,21 @@ class CatalogMetricsTest {
         assertThat(registry.find(COMMITS).counters()).allSatisfy(counter -> {
             assertThat(counter.getId().getTag(CATALOG)).isEqualTo("trading");
             assertThat(counter.getId().getTag(OPERATION_ID)).isEqualTo("updateTable");
+            assertThat(counter.getId().getTag(CatalogMetrics.REF_KIND)).isEqualTo(CatalogMetrics.MAIN);
         });
+    }
+
+    @Test
+    void aCommitOnABranchIsLabelledByTheRefsKindNeverItsName() {
+        UUID id = UUID.randomUUID();
+        metrics.commit("trading", CatalogMetrics.BRANCH, "updateTable",
+                new CommitReply.Success(id, "s3://b/t/m1.json", "sha", "{}", How.COMMITTED));
+        metrics.commit("trading", CatalogMetrics.MAIN, "updateTable",
+                new CommitReply.Success(id, "s3://b/t/m2.json", "sha", "{}", How.COMMITTED));
+
+        assertThat(registry.find(COMMITS).counters()).extracting(counter -> counter.getId().getTag(
+                CatalogMetrics.REF_KIND)).containsExactlyInAnyOrder(CatalogMetrics.BRANCH, CatalogMetrics.MAIN);
+        assertThat(CatalogMetrics.LABELS).contains(CatalogMetrics.REF_KIND);
     }
 
     @Test

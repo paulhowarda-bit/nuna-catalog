@@ -39,8 +39,12 @@ public final class CatalogMetrics {
     public static final String REPORT_TYPE = "report.type";
     public static final String OPERATION = "operation";
     public static final String ENGINE_NAME = "engine.name";
-    /** A ref's kind, never its name (D33, choice 13): {@code branch} or {@code tag}. */
+    /** A ref's kind, never its name (D33, choice 13): {@code main}, {@code branch} or {@code tag}. */
     public static final String REF_KIND = "ref.kind";
+    /** The ref kind of a commit on a catalog's main line. */
+    public static final String MAIN = "main";
+    /** The ref kind of a commit on a branch. */
+    public static final String BRANCH = "branch";
     /** Every label a catalog meter may carry. */
     public static final Set<String> LABELS = Set.of(CATALOG, OPERATION_ID, OUTCOME, ERROR_TYPE, REQUIREMENT_TYPE,
             REPORT_TYPE, OPERATION, ENGINE_NAME, REF_KIND);
@@ -64,12 +68,17 @@ public final class CatalogMetrics {
         this.registry = registry;
     }
 
-    /**
-     * One reply of the commit engine to {@code operationId}: committed, unchanged, replayed, requirement-failed (a
-     * requirement did not hold: 409, with its type), refused (any other 4xx), unknown (the commit may or may not have
-     * happened) or failed (any other 5xx).
-     */
+    /** {@link #commit(String, String, String, CommitReply)} on main: creates, registrations and unregisters. */
     public void commit(String catalog, String operationId, CommitReply reply) {
+        commit(catalog, MAIN, operationId, reply);
+    }
+
+    /**
+     * One reply of the commit engine to {@code operationId} on main or a branch ({@code refKind}, {@link #MAIN} or
+     * {@link #BRANCH}): committed, unchanged, replayed, requirement-failed (a requirement did not hold: 409, with its
+     * type), refused (any other 4xx), unknown (the commit may or may not have happened) or failed (any other 5xx).
+     */
+    public void commit(String catalog, String refKind, String operationId, CommitReply reply) {
         String outcome;
         String requirement = NONE;
         String error = NONE;
@@ -96,8 +105,8 @@ public final class CatalogMetrics {
         }
         Counter.builder(COMMITS)
                 .description("Replies of the commit engine, by operation and outcome")
-                .tags(CATALOG, catalog, OPERATION_ID, operationId, OUTCOME, outcome, REQUIREMENT_TYPE, requirement,
-                        ERROR_TYPE, error)
+                .tags(CATALOG, catalog, REF_KIND, refKind, OPERATION_ID, operationId, OUTCOME, outcome,
+                        REQUIREMENT_TYPE, requirement, ERROR_TYPE, error)
                 .register(registry)
                 .increment();
     }

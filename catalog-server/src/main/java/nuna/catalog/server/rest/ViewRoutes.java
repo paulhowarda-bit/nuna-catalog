@@ -3,6 +3,7 @@ package nuna.catalog.server.rest;
 import nuna.catalog.core.commit.CommitEngine;
 import nuna.catalog.core.commit.CommitReply;
 import nuna.catalog.core.commit.GovernanceChain;
+import nuna.catalog.core.commit.ObjectName;
 import nuna.catalog.iceberg.MetadataViews;
 import nuna.catalog.iceberg.RestRequest;
 import nuna.catalog.server.governance.ReadAudit;
@@ -114,7 +115,10 @@ class ViewRoutes {
         return objects.exists(prefix, namespace, view, Kind.VIEW, RequestContext.of(http, callers));
     }
 
-    /** Replace: a new version of the view (D28 keeps its location where the catalog put it). */
+    /**
+     * Replace: a new version of the view (D28 keeps its location where the catalog put it). Through a branch it goes
+     * to the branch's own pointer of a view its cut names (D33, item 105), as a table's commit does.
+     */
     @PostMapping(VIEW)
     ResponseEntity<String> replace(@PathVariable String prefix, @PathVariable String namespace,
                                    @PathVariable String view,
@@ -122,22 +126,28 @@ class ViewRoutes {
                                    @RequestBody(required = false) String body,
                                    HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.REPLACE_VIEW);
+        OnRef on = lookup.forCommit(prefix, request, Guard.REPLACE_VIEW);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, view);
-        NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchView(qualified));
-        Optional<CatalogObject> existing = lookup.object(record, view, Kind.VIEW);
+        NamespaceRecord record = lookup.namespace(on, levels).orElseThrow(() -> Http.noSuchView(qualified));
+        Optional<Lookup.Seen> existing = lookup.seen(on, record, levels, view, Kind.VIEW);
+        List<String> path = AuditEvents.path(levels, view);
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, view), Guard.REPLACE_VIEW,
+            guard.onCommit(request, on, existing.get().object(), path, Guard.REPLACE_VIEW,
                     Http.noSuchView(qualified));
-        } else {
+        } else if (on.onMain()) {
             guard.onNewObject(request, catalog, record, levels, Guard.CREATE_VIEW, Http.noSuchView(qualified));
+        } else {
+            // A branch creates nothing (D33): a view its cut does not hold is not there, whoever asks.
+            throw Http.noSuchView(qualified);
         }
-        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, view), request)
-                .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
-                        request.caller(), Optional.ofNullable(key));
-        meters.commit(catalog.name(), Operations.REPLACE_VIEW, reply);
-        guard.refused(request, catalog, Guard.REPLACE_VIEW, object -> AuditEvents.path(levels, view), reply);
+        ObjectName name = ObjectRoutes.name(catalog, record, levels, view);
+        CommitReply reply = engines.forCommit(on, path, request, ObjectRoutes.cut(name, existing))
+                .commitView(name, body == null ? "" : body, request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), on.refKind(), Operations.REPLACE_VIEW, reply);
+        guard.refused(request, catalog, Guard.REPLACE_VIEW, object -> path, reply);
+        engines.committed(on, reply, request);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
