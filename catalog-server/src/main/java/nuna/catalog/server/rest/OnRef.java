@@ -2,6 +2,7 @@ package nuna.catalog.server.rest;
 
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.server.metrics.CatalogMetrics;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.Ref;
 import java.util.Objects;
@@ -15,7 +16,8 @@ import java.util.UUID;
  * either ({@link Ref#checkName}), so a prefix parses one way.
  *
  * <p>Reads on a ref resolve names as of its cut; creates, drops, renames, registrations and namespace changes happen
- * on main only and are refused on a ref; a tag takes no write at all (D33, as amended 2026-11-20; choice 5).
+ * on main only and are refused on a ref; commits on a branch swap its own pointers (item 105); a tag takes no write at
+ * all (D33, as amended 2026-11-20; choice 5).
  */
 public record OnRef(CatalogRecord catalog, Optional<Ref> ref) {
 
@@ -85,16 +87,21 @@ public record OnRef(CatalogRecord catalog, Optional<Ref> ref) {
     }
 
     /**
-     * The catalog, for a commit to a table or a replace of a view. A tag refuses it with 400 naming the tag (choice 5);
-     * a branch, until commits on a branch are served (item 105).
+     * This, for a commit to a table, a replace of a view or a transaction: on main or a branch, whose own pointers it
+     * swaps (item 105). A tag refuses it with 400 naming the tag (choice 5).
      *
      * @param operation the refused operation, as the REST spec names it
      */
-    CatalogRecord forCommit(String operation) {
-        if (ref.isPresent()) {
-            throw refused(ref.get(), operation, "commits on a branch are not served yet");
+    OnRef forCommit(String operation) {
+        if (tag()) {
+            throw refused(ref.get(), operation, "a tag is read-only");
         }
-        return catalog;
+        return this;
+    }
+
+    /** What the commit meter labels a commit through this with (choice 13): main or branch, never a name. */
+    String refKind() {
+        return ref.isEmpty() ? CatalogMetrics.MAIN : CatalogMetrics.BRANCH;
     }
 
     /** 400 naming the ref: a tag for being read-only, a branch for {@code why}. */

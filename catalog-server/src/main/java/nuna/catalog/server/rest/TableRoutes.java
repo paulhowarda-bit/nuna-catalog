@@ -49,8 +49,9 @@ import org.springframework.web.util.UriUtils;
 /**
  * The table routes of D13. Creates, commits and registrations go through the commit engine (M3);
  * loads answer 304 from the pointer alone when the client's ETag still holds (D14). Through a branch or tag
- * ({@code catalog@ref}, D33), lists, loads, HEAD, metrics and credentials read as of the ref; every write there is
- * refused ({@link OnRef}), and a tag's credentials only read.
+ * ({@code catalog@ref}, D33), lists, loads, HEAD, metrics and credentials read as of the ref. A commit through a branch
+ * goes to the branch's own pointer (item 105); every other write there is refused ({@link OnRef}), and so is every
+ * write through a tag, whose credentials only read. A branch vends write access only to a table main still has active.
  */
 @RestController
 class TableRoutes {
@@ -122,7 +123,8 @@ class TableRoutes {
         guard.onNamespace(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchNamespace(levels));
         // The name is checked only now, so a bad one tells a caller that may not see the namespace nothing.
         ObjectName name = ObjectRoutes.name(catalog, record, levels, table.name());
-        Target target = new Target(catalog, prefix, namespace, table.name(), request, Optional.ofNullable(delegation));
+        Target target = new Target(OnRef.main(catalog), prefix, namespace, table.name(), request,
+                Optional.ofNullable(delegation));
         if (table.stageCreate()) {
             return staged(target, record, name, json);
         }
@@ -148,10 +150,9 @@ class TableRoutes {
         List<String> levels = Lookup.levels(namespace);
         Lookup.Seen seen = objects.seen(on, levels, table, Kind.TABLE);
         CatalogObject object = seen.object();
-        // A tag is read-only to every engine, so its credentials only read (item 26's choice 5).
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && !on.tag();
-        Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
+                Guard.LOAD_TABLE, Http.noSuchTable(Http.qualified(levels, table))) && Lookup.writable(on, object);
+        Vended vended = vend(new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         boolean cacheable = !vended.expireBefore(clock.instant().plus(settings.credentialRefreshMargin()));
         Map<String, String> labels = GovernanceChain.of(store, object).labels();
@@ -183,7 +184,12 @@ class TableRoutes {
         return objects.exists(prefix, namespace, table, Kind.TABLE, RequestContext.of(http, callers));
     }
 
-    /** A commit, including the commit of a staged create. */
+    /**
+     * A commit, including the commit of a staged create. Through a branch it goes to the branch's own pointer of a
+     * table the branch's cut names (D33, item 105), judged on main's record of it as a commit on main is (choice 12),
+     * and moves the branch's expiry; a staged create happens on main only, so a name the cut lacks is answered as a
+     * missing table once the caller may learn that.
+     */
     @PostMapping(TABLE)
     ResponseEntity<String> commit(@PathVariable String prefix, @PathVariable String namespace,
                                   @PathVariable String table,
@@ -192,24 +198,29 @@ class TableRoutes {
                                   @RequestBody(required = false) String body,
                                   HttpServletRequest http) {
         RequestContext request = RequestContext.of(http, callers);
-        CatalogRecord catalog = lookup.forCommit(prefix, request, Guard.WRITE_DATA);
+        OnRef on = lookup.forCommit(prefix, request, Guard.WRITE_DATA);
+        CatalogRecord catalog = on.catalog();
         List<String> levels = Lookup.levels(namespace);
         String qualified = Http.qualified(levels, table);
-        NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchTable(qualified));
-        Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        NamespaceRecord record = lookup.namespace(on, levels).orElseThrow(() -> Http.noSuchTable(qualified));
+        Optional<Lookup.Seen> existing = lookup.seen(on, record, levels, table, Kind.TABLE);
         List<String> path = AuditEvents.path(levels, table);
-        Operation operation = existing.isPresent() ? guard.commit(request, body) : Guard.CREATE_TABLE;
+        Operation operation = existing.isPresent() ? guard.commit(request, body, on) : Guard.CREATE_TABLE;
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), path, operation, Http.noSuchTable(qualified));
-        } else {
+            guard.onCommit(request, on, existing.get().object(), path, operation, Http.noSuchTable(qualified));
+        } else if (on.onMain()) {
             guard.onNewObject(request, catalog, record, levels, operation, Http.noSuchTable(qualified));
+        } else {
+            // A branch creates nothing (D33): a table its cut does not hold is not there, whoever asks.
+            throw Http.noSuchTable(qualified);
         }
-        Target target = new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation));
-        CommitReply reply = engines.forRequest(catalog, path, request)
-                .commitTable(ObjectRoutes.name(catalog, record, levels, table), body == null ? "" : body,
-                        request.caller(), Optional.ofNullable(key));
-        meters.commit(catalog.name(), Operations.UPDATE_TABLE, reply);
+        ObjectName name = ObjectRoutes.name(catalog, record, levels, table);
+        Target target = new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation));
+        CommitReply reply = engines.forCommit(on, path, request, ObjectRoutes.cut(name, existing))
+                .commitTable(name, body == null ? "" : body, request.caller(), Optional.ofNullable(key));
+        meters.commit(catalog.name(), on.refKind(), Operations.UPDATE_TABLE, reply);
         guard.refused(request, catalog, operation, object -> path, reply);
+        engines.committed(on, reply, request);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -255,7 +266,7 @@ class TableRoutes {
                     + Http.qualified(levels, registration.name()) + ". Commit to the table, or drop or unregister it"
                     + " first; a register would skip the commit rules and the table's journal");
         }
-        Target target = new Target(catalog, prefix, namespace, registration.name(), request,
+        Target target = new Target(OnRef.main(catalog), prefix, namespace, registration.name(), request,
                 Optional.ofNullable(delegation));
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, registration.name()), request)
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
@@ -349,8 +360,8 @@ class TableRoutes {
         List<String> levels = Lookup.levels(namespace);
         CatalogObject object = objects.seen(on, levels, table, Kind.TABLE).object();
         boolean write = guard.onObjectMayWrite(request, catalog, object, AuditEvents.path(levels, table),
-                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table))) && !on.tag();
-        Vended vended = vend(new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation)),
+                Guard.LOAD_CREDENTIALS, Http.noSuchTable(Http.qualified(levels, table))) && Lookup.writable(on, object);
+        Vended vended = vend(new Target(on, prefix, namespace, table, request, Optional.ofNullable(delegation)),
                 object.id(), object.locationRoot(), write);
         return Http.json(200, RestResponse.credentials(vended.credentials()));
     }
@@ -393,7 +404,8 @@ class TableRoutes {
         Map<String, String> labels = table.map(object -> GovernanceChain.of(store, object).labels()).orElse(Map.of());
         Vended vended = table.map(object -> {
             try {
-                return vend(target, object.id(), object.locationRoot(), guard.mayWrite(target.request(), object));
+                return vend(target, object.id(), object.locationRoot(),
+                        Lookup.writable(target.on(), object) && guard.mayWrite(target.request(), object));
             } catch (CatalogError e) {
                 if (e.status() != 503) {
                     throw e;
@@ -404,14 +416,18 @@ class TableRoutes {
         String response = views.loadTable(location, done.metadataJson(), false, vended.config(), vended.credentials(),
                 labels);
         return ResponseEntity.ok()
-                .eTag(ETags.of(location, false, null, vended.epoch(), labels))
+                .eTag(ETags.of(location, false, null, vended.epoch(), labels, target.on().refId()))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(response);
     }
 
-    /** One table of one request, as the URL names it: what credentials are vended for. */
-    private record Target(CatalogRecord catalog, String prefix, String namespace, String table,
-                          RequestContext request, Optional<String> delegation) {
+    /** One table of one request, as the URL names it, on main or a ref: what credentials are vended for. */
+    private record Target(OnRef on, String prefix, String namespace, String table, RequestContext request,
+                          Optional<String> delegation) {
+
+        CatalogRecord catalog() {
+            return on.catalog();
+        }
     }
 
     private Vended vend(Target target, UUID tableId, String location, boolean write) {

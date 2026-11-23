@@ -1,0 +1,16 @@
+Breaks: an Idempotency-Key is not bound to the branch, so a key sent to a branch and to main replays the other's answer.
+Module: catalog-core
+Test: BranchCommitTest#aKeyIsBoundToTheBranch
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..87badc5 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -469,7 +469,6 @@ public final class CommitEngine {
+         List<String> scope = new ArrayList<>(operation == Operation.COMMIT_TRANSACTION
+                 ? List.of(name.catalogId().toString())
+                 : List.of(name.catalogId().toString(), name.namespaceId().toString(), name.name().normalized()));
+-        branch.ifPresent(on -> scope.add(on.ref().id().toString()));
+         String canonical = String.join("\n", operation.name(), String.join("\n", scope),
+                 caller.endUser().map(Principal::id).orElse(""), json);
+         try {

@@ -1,0 +1,17 @@
+Breaks: a branch's first commit to a table applies the request to main's current version instead of the one the branch's cut took.
+Module: catalog-core
+Test: BranchCommitTest#firstAndSecondCommit
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..7996478 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1213,7 +1213,7 @@ public final class CommitEngine {
+             return new Base(key, stored.orElseThrow(
+                     () -> new IllegalStateException("active object " + object.id() + " has no pointer")), stored);
+         }
+-        return new Base(key, stored.orElseGet(() -> cut(object)), stored);
++        return new Base(key, stored.orElseGet(() -> store.readPointer(object.mainKey()).orElseThrow()), stored);
+     }
+ 
+     /** The pointer the branch's cut took for the object; a cut's carries no projection. */

@@ -1,0 +1,17 @@
+Breaks: a commit event on a branch names main as its branch (item 26's choice 13).
+Module: catalog-core
+Test: BranchCommitTest#firstAndSecondCommit
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..20efd8a 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1306,7 +1306,7 @@ public final class CommitEngine {
+ 
+     /** What commit events name as the branch (choice 13): main, or the branch's name. */
+     private String branchName() {
+-        return branch.map(on -> on.ref().name().display()).orElse(PointerKey.MAIN);
++        return PointerKey.MAIN;
+     }
+ 
+     /** D11a: a table's current schema or default partition spec moved. */

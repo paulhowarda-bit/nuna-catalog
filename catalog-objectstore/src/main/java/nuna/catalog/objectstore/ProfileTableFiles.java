@@ -2,6 +2,7 @@ package nuna.catalog.objectstore;
 
 import nuna.catalog.core.commit.TableFiles;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -25,8 +26,8 @@ public final class ProfileTableFiles implements TableFiles {
     }
 
     @Override
-    public Written write(String locationRoot, long version, String json) {
-        StoredMetadata stored = files.write(locationRoot, version, json);
+    public Written write(String locationRoot, long version, String json, Optional<UUID> branch) {
+        StoredMetadata stored = files.write(locationRoot, version, json, branch);
         return new Written(stored.location(), stored.sha256());
     }
 

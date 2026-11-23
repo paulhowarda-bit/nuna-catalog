@@ -29,7 +29,7 @@ line (item 37) and the alert lines on the `nuna.alerts` logger.
 | `requirement.type` | For a commit refused because a requirement failed, that requirement's type in the spec, such as `assert-ref-snapshot-id` or `assert-table-uuid`. It is `none` otherwise. |
 | `report.type` | `scan-report` or `commit-report`. |
 | `operation` | A commit report's snapshot operation: `append`, `replace`, `overwrite` or `delete`. Any other value the client sent is `other`, and a scan report has `none`. |
-| `ref.kind` | A ref's kind, `branch` or `tag` (D33). A ref's name is never a label: names would grow without bound. |
+| `ref.kind` | A ref's kind, `branch` or `tag` (D33); on a commit, `main` or `branch`, where it landed (item 105). A ref's name is never a label: names would grow without bound. |
 | `engine.name` | The `engine-name` in the report's `metadata`, as the client sent it, such as `spark` or `trino`. The first 20 distinct names a server sees are kept; later names count as `other`. So does a name that is not 1 to 32 letters, digits, spaces, dots, hyphens or underscores starting with a letter or digit. It is `none` when the report gives no engine name. |
 
 ## Meters
@@ -37,7 +37,7 @@ line (item 37) and the alert lines on the `nuna.alerts` logger.
 | Meter | Type | Labels | The question it answers |
 |---|---|---|---|
 | `nuna.catalog.requests` | Timer; histogram buckets at 10, 50 and 300 ms | `catalog`, `operation.id`, `outcome` (`2xx`, `3xx`, `4xx`, `5xx`), `error.type` | How long does each kind of Iceberg call take, and how often does it fail, and with what? |
-| `nuna.catalog.commits` | Counter | `catalog`, `operation.id`, `outcome`, `requirement.type`, `error.type` | How do commits end, and how many lose to a concurrent change, by requirement? |
+| `nuna.catalog.commits` | Counter | `catalog`, `ref.kind` (`main`, `branch`), `operation.id`, `outcome`, `requirement.type`, `error.type` | How do commits end, on main and on branches, and how many lose to a concurrent change, by requirement? |
 | `nuna.catalog.credential.vends` | Timer | `catalog`, `outcome` (`issued`, `cached`, `none`, `failed`), `error.type` | How long does vending storage credentials take, how often is it served from the cache, and how often does it fail? |
 | `nuna.catalog.metadata.cache.lookups` | Counter | `outcome` (`hit`, `miss`) | How often is a table's current metadata file served from memory rather than read from the object store? |
 | `nuna.catalog.alerts.metadata.integrity` | Counter | none | Has a metadata file stopped hashing to what its pointer recorded? |
@@ -69,7 +69,9 @@ The histogram's bucket bounds are the build plan's SLOs (R7, M8). They are set i
 
 There is one count for each reply of the commit engine to a route that commits. The routes are `createTable`,
 `updateTable`, `registerTable`, `unregisterTable`, `commitTransaction`, `createView`, `replaceView` and
-`registerView`. A staged create commits nothing, so it is not counted.
+`registerView`. A staged create commits nothing, so it is not counted. A commit through `catalog@branch` (item 105)
+is counted with `ref.kind="branch"`, any other with `ref.kind="main"`; creates, registrations and unregisters happen
+on main only, and a tag takes no commit.
 
 | `outcome` | Meaning |
 |---|---|

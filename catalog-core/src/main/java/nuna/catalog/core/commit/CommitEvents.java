@@ -4,6 +4,7 @@ import nuna.catalog.core.principal.Caller;
 import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.OutboxEvent;
 import nuna.catalog.store.Pointer;
+import nuna.catalog.store.PointerKey;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -34,15 +35,25 @@ public interface CommitEvents {
      * @param before                the pointer it replaced; empty when it created the object
      * @param regulatedSchemaChange it changed the schema or partition spec of a table in a regulated
      *                              namespace, which is journaled and alerted, not blocked (D11a)
+     * @param branch                the branch whose pointer moved: main, or a branch's name (D33, item 26's
+     *                              choice 13)
      */
     record Commit(UUID commitId, Instant at, Caller caller, CatalogObject object, Optional<Pointer> before,
                   Pointer after, String requirementsJson, String updatesJson, boolean regulatedSchemaChange,
-                  Kind kind) {
+                  Kind kind, String branch) {
 
         public Commit(UUID commitId, Instant at, Caller caller, CatalogObject object, Optional<Pointer> before,
                       Pointer after, String requirementsJson, String updatesJson, boolean regulatedSchemaChange) {
             this(commitId, at, caller, object, before, after, requirementsJson, updatesJson, regulatedSchemaChange,
                     Kind.COMMIT);
+        }
+
+        /** A change on main. */
+        public Commit(UUID commitId, Instant at, Caller caller, CatalogObject object, Optional<Pointer> before,
+                      Pointer after, String requirementsJson, String updatesJson, boolean regulatedSchemaChange,
+                      Kind kind) {
+            this(commitId, at, caller, object, before, after, requirementsJson, updatesJson, regulatedSchemaChange,
+                    kind, PointerKey.MAIN);
         }
     }
 }

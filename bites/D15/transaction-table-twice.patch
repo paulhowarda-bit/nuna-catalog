@@ -2,17 +2,17 @@ Breaks: A transaction may name one table twice.
 Module: catalog-server
 Test: RestRoutesTest#transactionsCommitEveryTableOrNone
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-index 3821cd1..31c8432 100644
+index 3a0c36d..301a223 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/TransactionRoutes.java
-@@ -76,9 +76,7 @@ class TransactionRoutes {
-             CatalogObject object = lookup.object(namespace, table, Kind.TABLE)
-                     .orElseThrow(() -> Http.noSuchTable(qualified));
+@@ -85,9 +85,7 @@ class TransactionRoutes {
+             Optional<Lookup.Seen> seen = lookup.seen(on, namespace, levels, table, Kind.TABLE);
+             CatalogObject object = seen.orElseThrow(() -> Http.noSuchTable(qualified)).object();
              List<String> path = AuditEvents.path(levels, table);
--            if (paths.put(Named.of(object), path) != null) {
+-            if (byId.put(object.id(), path) != null) {
 -                throw CatalogError.badRequest("Table " + qualified + " is named more than once in the transaction");
 -            }
-+            paths.put(Named.of(object), path);
-             guard.onObject(request, catalog, object, path, guard.commit(request, commit.json()),
++            byId.put(object.id(), path);
+             byName.put(Named.of(object), path);
+             guard.onCommit(request, on, object, path, guard.commit(request, commit.json(), on),
                      Http.noSuchTable(qualified));
-             changes.add(new CommitEngine.TableChange(ObjectRoutes.name(catalog, namespace, levels, table),

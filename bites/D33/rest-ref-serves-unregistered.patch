@@ -1,0 +1,18 @@
+Breaks: a ref serves a table main has unregistered, which the catalog no longer tracks (security finding 1).
+Module: catalog-server
+Test: RefReadsTest#aTableMainUnregisteredIsGoneFromEveryRef
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index c090b7e..a623057 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -134,8 +134,7 @@ class Lookup {
+                 .filter(entry -> entry.kind() == RefEntry.of(kind))
+                 .map(entry -> new Seen(store.readObject(entry.id()).orElseThrow(() -> new IllegalStateException(
+                         "object " + entry.id() + " in the cut of ref " + ref.id() + " has no record")),
+-                        Optional.of(entry)))
+-                .filter(seen -> seen.object().state() != CatalogObject.State.UNREGISTERED);
++                        Optional.of(entry)));
+     }
+ 
+     /**

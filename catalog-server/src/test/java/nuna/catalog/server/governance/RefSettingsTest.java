@@ -5,12 +5,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefLimits;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
 /** P11's limits and expiry as settings (D33, item 26's choice 11). */
 class RefSettingsTest {
@@ -45,6 +48,20 @@ class RefSettingsTest {
         assertThat(P11.expiring(branch, MADE.plus(DAY.multipliedBy(30)).minusMillis(1))).isTrue();
         assertThat(P11.expiring(branch, MADE.plus(DAY.multipliedBy(30)))).as("expired, not expiring").isFalse();
         assertThat(P11.expiring(tag, MADE.plus(DAY.multipliedBy(1000)))).isFalse();
+    }
+
+    @Test
+    void aBranchChangesAtMostAHundredTablesUnlessConfigured() {
+        assertThat(bind(Map.of()).maxMergeTables()).isEqualTo(100);
+        assertThat(bind(Map.of("nuna.refs.max-merge-tables", "40")).maxMergeTables()).isEqualTo(40);
+        assertThat(bind(Map.of("nuna.refs.max-branches", "7")).maxBranches()).isEqualTo(7);
+        assertThat(P11.maxMergeTables()).isEqualTo(100);
+        assertThatThrownBy(() -> new RefSettings(1, 10, DAY, DAY, DAY, 0)).hasMessageContaining("max-merge-tables");
+    }
+
+    private static RefSettings bind(Map<String, String> properties) {
+        return new Binder(new MapConfigurationPropertySource(properties)).bindOrCreate("nuna.refs",
+                RefSettings.class);
     }
 
     @Test

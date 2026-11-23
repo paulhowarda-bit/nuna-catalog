@@ -24,11 +24,13 @@ import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.Pointer;
+import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.WriteResult;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -74,6 +76,14 @@ class ObjectRoutes {
         }
         return new ObjectName(catalog.id(), namespace.id(), new Name(Names.normalize(name), name),
                 Http.qualified(levels, name));
+    }
+
+    /**
+     * The object a commit through a branch goes to, by the name the request gives and the cut entry the branch has for
+     * it ({@link Engines#forCommit}); none on main, or when nothing holds the name.
+     */
+    static Map<ObjectName, RefEntry> cut(ObjectName name, Optional<Lookup.Seen> seen) {
+        return seen.flatMap(Lookup.Seen::entry).map(entry -> Map.of(name, entry)).orElse(Map.of());
     }
 
     /** The active object of {@code kind} the path names on main; a missing namespace is a missing object. */

@@ -1,0 +1,17 @@
+Breaks: a commit on a branch goes ahead for a table main has dropped or unregistered, writing its file before the store refuses the swap.
+Module: catalog-core
+Test: BranchCommitTest#aTableGoneFromMain
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..e3b7a7d 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1230,7 +1230,7 @@ public final class CommitEngine {
+      */
+     private Optional<CatalogObject> activeOnMain(ObjectName name) {
+         RefEntry entry = branch.orElseThrow().objects().get(name);
+-        return store.readObject(entry.id()).filter(object -> object.state() == CatalogObject.State.ACTIVE);
++        return store.readObject(entry.id());
+     }
+ 
+     /**

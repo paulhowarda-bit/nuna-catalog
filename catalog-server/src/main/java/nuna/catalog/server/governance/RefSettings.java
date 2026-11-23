@@ -5,6 +5,7 @@ import nuna.catalog.store.RefLimits;
 import java.time.Duration;
 import java.time.Instant;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 
 /**
@@ -19,6 +20,9 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param branchMaxLife    how long a branch can live in all, from its creation
  * @param expiryWarning    how long before a branch's expiry the catalog warns of it once, on the change stream, and
  *                         the console marks it
+ * @param maxMergeTables   the most tables and views a branch may change, so that a merge moves them in one
+ *                         transaction (item 26's choice 9): P10's cap, the bound the stores' suites prove for one
+ *                         transaction (D15). A commit that would take a branch past it is refused (item 105).
  */
 @ConfigurationProperties("nuna.refs")
 public record RefSettings(
@@ -26,11 +30,16 @@ public record RefSettings(
         @DefaultValue("1000") int maxTags,
         @DefaultValue("30d") Duration branchIdleExpiry,
         @DefaultValue("180d") Duration branchMaxLife,
-        @DefaultValue("7d") Duration expiryWarning) {
+        @DefaultValue("7d") Duration expiryWarning,
+        @DefaultValue("100") int maxMergeTables) {
 
+    @ConstructorBinding
     public RefSettings {
         if (maxBranches < 0 || maxTags < 0) {
             throw new IllegalArgumentException("nuna.refs.max-branches and nuna.refs.max-tags must be 0 or more");
+        }
+        if (maxMergeTables < 1) {
+            throw new IllegalArgumentException("nuna.refs.max-merge-tables must be at least 1, got " + maxMergeTables);
         }
         for (Duration duration : new Duration[] {branchIdleExpiry, branchMaxLife}) {
             if (duration.isNegative() || duration.isZero()) {
@@ -41,6 +50,12 @@ public record RefSettings(
         if (expiryWarning.isNegative()) {
             throw new IllegalArgumentException("nuna.refs.expiry-warning must not be negative");
         }
+    }
+
+    /** P11's limits and expiry, with the merge cap at its default, 100. */
+    public RefSettings(int maxBranches, int maxTags, Duration branchIdleExpiry, Duration branchMaxLife,
+                       Duration expiryWarning) {
+        this(maxBranches, maxTags, branchIdleExpiry, branchMaxLife, expiryWarning, 100);
     }
 
     /** The limits the store checks a create against (P11). */

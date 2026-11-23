@@ -1,0 +1,17 @@
+Breaks: snapshot expiry's allowance to remove schemas and partition specs with write holds on a branch (choice 14).
+Module: catalog-server
+Test: RefReadsTest#theExpiryAllowanceHoldsOnMainOnly
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+index c26ea89..1019cd4 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Guard.java
+@@ -122,7 +122,7 @@ class Guard {
+      * anyway.
+      */
+     Operation commit(RequestContext request, String body, OnRef on) {
+-        boolean maintenance = on.onMain() && authorizer.maintenance(request.caller());
++        boolean maintenance = authorizer.maintenance(request.caller());
+         Privilege needed = WRITE;
+         try {
+             JsonNode updates = JSON.readTree(body == null ? "" : body).path("updates");

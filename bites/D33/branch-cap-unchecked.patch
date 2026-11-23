@@ -1,0 +1,17 @@
+Breaks: a branch may change any number of tables and views, past what one merge transaction moves (nuna.refs.max-merge-tables, item 26's choice 9).
+Module: catalog-core
+Test: BranchCommitTest#theCap
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..4a08ac0 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1239,7 +1239,7 @@ public final class CommitEngine {
+      * different tables racing at the cap can each pass it.
+      */
+     private Optional<Failure> overCap(int creates) {
+-        if (branch.isEmpty() || creates == 0) {
++        if (branch.isEmpty() || creates >= 0) {
+             return Optional.empty();
+         }
+         Branch on = branch.get();
