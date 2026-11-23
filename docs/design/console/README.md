@@ -14,6 +14,10 @@ Each file here is one offline HTML page. Open it in any browser. It needs no ser
 Atelier's working copies and every earlier version are in `~/atelier-out/nuna-console-redesign/` on Paul's home
 machine. The prototype's sources are in `src/proto_v1/parts/` there.
 
+The prototype's free-form "Set a property", on a catalog and on namespaces, is superseded by D45's amendment of
+2026-11-22: the console shows every property read-only and edits only listed keys that do something, and a catalog's
+settings stay read-only (item 141).
+
 ## Signing in to the prototype
 
 - **Sign in** signs in as `presenter`, who sees everything.

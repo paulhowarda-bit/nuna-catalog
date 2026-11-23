@@ -1,5 +1,5 @@
 // The tabs every catalog object shares, each one its own render function on its own route: governance (with
-// holds, a classification and a DR freeze), grants (every grant that reaches the object, made and revoked here,
+// holds, the four labels people set here and a DR freeze), grants (every grant that reaches the object, made and revoked here,
 // and who may use it), the audit trail, and the dialogs those open; and the catalog's holds, freezes and regulated
 // areas as marks on the tree and in Contents (item 128). The catalog-wide audit feed with its hash chain is the Audit
 // page (audit.js, item 125).
@@ -120,6 +120,7 @@ export async function governanceTab(target, reload) {
   const holds = g.holds || [];
   const attrs = g.attributes || [];
   const nearest = name => attrs.find(a => a.attribute === name);
+  const ownRegulated = attrs.some(a => a.attribute === 'regulated' && String(a.level).endsWith(':' + here) && a.value === 'true');
   const valueWithSource = name => {
     const a = nearest(name);
     const v = effective[name];
@@ -135,9 +136,18 @@ export async function governanceTab(target, reload) {
   const left = h('div', {class: 'panel', id: 'governance'}, h('h2', null, 'Governance ', h('span', {class: 'meta'}, 'each value with where it was set')),
     status,
     facts(ATTRIBUTES.map(name => [name, valueWithSource(name)]), 'effective'),
-    h('div', {class: 'refusal-acts'},
-      h('button', {class: 'btn sm', type: 'button', onclick: () => classify(target, effective.classification, reload)},
+    h('div', {class: 'refusal-acts', 'data-acts': 'labels'},
+      h('button', {class: 'btn sm', type: 'button', 'data-label': 'classification', onclick: () => classify(target, effective.classification, reload)},
         effective.classification ? 'Change the classification' : 'Set a classification'),
+      h('button', {class: 'btn sm', type: 'button', 'data-label': 'owner', onclick: () => setOwner(target, effective.owner, reload)},
+        effective.owner ? 'Change the owner' : 'Set the owner'),
+      target.kind !== 'view' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'retention-class',
+        onclick: () => setRetentionClass(target, effective['retention-class'], reload)},
+      effective['retention-class'] ? 'Change the retention class' : 'Set a retention class') : null,
+      target.kind === 'catalog' || target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
+        onclick: () => setRegulated(target, ownRegulated, effective.regulated === 'true', reload)},
+      ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null),
+    h('div', {class: 'refusal-acts'},
       h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
         target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold'),
       target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', onclick: () => drFreeze(target, !!freeze, reload)},
@@ -165,14 +175,98 @@ export async function governanceTab(target, reload) {
   return h('div', {class: 'stack'}, h('div', {class: 'grid-2'}, left, h('div', {class: 'stack'}, enforced, holdsPanel)), attributes);
 }
 
+// The four labels people set here (D27, amended 2026-11-22): each through the push API's route, recorded with the
+// console as its source; an outside tool that pushes one later records its own.
+
+const RECORDED = 'The change is recorded as set from the console, under your name, in the audit trail.';
+
+/** Where a label set on `target` reaches: the object itself, or everything beneath a catalog or namespace. */
+const reachWords = target => target.kind === 'catalog' || target.kind === 'namespace'
+  ? `Everything beneath this ${target.kind} inherits it, unless it has its own. ` : '';
+
 function classify(target, current, reload) {
   openDialog(`Classify ${lastWord(target)} (${target.kind})`, h('div', null,
-    h('p', null, 'The classification arrives from the data catalogue as a rule; setting it here records the console as its '
-      + 'source until the catalogue next sends one. A table in a regulated area is closed until it is classified.'),
+    h('p', null, 'The classification says how sensitive the data is. Engines receive it with every load. ' + reachWords(target)
+      + 'A table in a regulated area stays closed until it has a classification of its own.'),
+    h('p', {class: 'fine'}, RECORDED),
     dialogForm([field('Classification', select('cls', CLASSES, current || 'confidential'))], 'Set the classification', async (form, out) => {
       const value = form.elements.cls.value;
       const answer = await api.setAttribute(target, 'classification', value, 'console');
+      forgetMarks(target.catalog);
       fill(out, granted(`${what(target)} is ${value}`, answer));
+      reload();
+    })));
+}
+
+function setOwner(target, current, reload) {
+  openDialog(`Set the owner of ${lastWord(target)} (${target.kind})`, h('div', null,
+    h('p', null, `The owner is the person or team answerable for this ${target.kind}. Engines receive it with every load. `
+      + reachWords(target)),
+    h('p', {class: 'fine'}, RECORDED),
+    dialogForm([field('Owner', text('owner', 'A person or team, such as desk-a', current))], 'Set the owner', async (form, out) => {
+      const value = form.elements.owner.value.trim();
+      if (!value) {
+        fill(out, h('p', {class: 'fine grant-hint'}, 'Name the person or team.'));
+        return;
+      }
+      const answer = await api.setAttribute(target, 'owner', value, 'console');
+      fill(out, granted(`${what(target)} is owned by ${value}`, answer));
+      reload();
+    })));
+}
+
+/** An ISO-8601 duration as Java writes one (PT720H, PT1H30M), in words: 30 days, 90 minutes. */
+function ageWords(iso) {
+  const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso || '');
+  if (!m) return iso;
+  const seconds = (+(m[1] || 0)) * 3600 + (+(m[2] || 0)) * 60 + (+(m[3] || 0));
+  if (seconds && seconds % 86400 === 0) return plural(seconds / 86400, 'day');
+  if (seconds && seconds % 3600 === 0) return plural(seconds / 3600, 'hour');
+  if (seconds && seconds % 60 === 0) return plural(seconds / 60, 'minute');
+  return plural(seconds, 'second');
+}
+
+/** Sets a retention class, chosen from those the server is configured with (its maintenance policy names them). */
+function setRetentionClass(target, current, reload) {
+  const body = h('div');
+  openDialog(`Set the retention class of ${lastWord(target)} (${target.kind})`, h('div', null,
+    h('p', null, 'A retention class says how long snapshots must be kept: no commit and no maintenance job may remove a '
+      + 'snapshot younger than its class\'s minimum age, whatever the maintenance policy asks. Engines receive it with '
+      + 'every load. ' + reachWords(target)),
+    h('p', {class: 'fine'}, RECORDED), body));
+  load(body, async () => {
+    const classes = (await api.policy(target))['retention-classes'] || [];
+    if (!classes.length) {
+      return h('p', {class: 'muted', 'data-none': ''}, 'This server has no retention class to choose from. A platform operator '
+        + 'names them in its configuration, nuna.governance.retention-classes.');
+    }
+    const options = classes.map(c => [c.name, c['minimum-snapshot-age']
+      ? `${c.name} · snapshots kept at least ${ageWords(c['minimum-snapshot-age'])}` : `${c.name} · no minimum age`]);
+    const chosen = classes.some(c => c.name === current) ? current : classes[0].name;
+    return dialogForm([field('Retention class', select('rc', options, chosen))], 'Set the retention class', async (form, out) => {
+      const value = form.elements.rc.value;
+      const answer = await api.setAttribute(target, 'retention-class', value, 'console');
+      fill(out, granted(`${what(target)} is in retention class ${value}`, answer));
+      reload();
+    });
+  });
+}
+
+/** Marks a catalog or namespace as a regulated area, or clears its own mark (set to false, so the clearing is recorded). */
+function setRegulated(target, marked, inherited, reload) {
+  const words = marked
+    ? ['Clearing the mark opens the tables beneath this ' + target.kind + ' that have no classification of their own, '
+      + 'unless a level above is regulated too.']
+    : ['A regulated area closes every table beneath this ' + target.kind + ' that has no classification of its own: it '
+      + 'can be found and described, but not read, written or changed until someone classifies it, and it cannot be '
+      + 'unregistered.', inherited ? ' A level above already marks it regulated; a mark here keeps it so if that one is cleared.' : ''];
+  openDialog(marked ? `Clear the regulated mark on ${lastWord(target)}` : `Mark ${lastWord(target)} as a regulated area`, h('div', null,
+    h('p', null, ...words),
+    h('p', {class: 'fine'}, RECORDED),
+    dialogForm(null, marked ? 'Clear the mark' : 'Mark as regulated', async (form, out) => {
+      const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', 'console');
+      forgetMarks(target.catalog);
+      fill(out, granted(marked ? `${what(target)} is no longer a regulated area` : `${what(target)} is a regulated area`, answer));
       reload();
     })));
 }
