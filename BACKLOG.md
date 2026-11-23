@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**35 open:** 4 S, 11 M, 15 L, 5 XL.
+**34 open:** 4 S, 11 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -37,7 +37,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
-| [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
 | [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
 | [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (the demo kit's templates) for wires, ACH returns, journals, fees and ACATS | 2026-11-22 |
@@ -754,6 +753,12 @@ Run in two nightlies by hand on 2026-11-22 (`status/2026-11-22-nightly-2026-11-2
 passed in the second (257 s). In the first, its body passed and its cleanup failed: `kubectl delete namespace ...
 --wait=true` lost the API server (`http2: client connection lost`) while Windows was paging the Docker VM out (item
 135). The bite has still not run; the item still closes when an overnight run's bites show it biting.
+
+Overnight run of 2026-11-23 (testing 02b22ad): the nightly passed, `catalog-maintenance` 3 tests, 0 failures:
+its three overnight tests, `PrivateCaCompactionTest` among them (inferred from the count; the run keeps no nightly
+results that night); the bites again did not run, the heavy build having failed (nine tests, traced
+in `status/2026-11-23-agent-a9284fd56a1d18c39.md`). The item still closes when an overnight run's bites show
+`bites/M6/job-storage-ca-left-out` biting.
 
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
@@ -1914,49 +1919,6 @@ counts it as CPU. This hits the heavy build as it hit the nightly, so a heavy bu
 read beside Windows' numbers, not only the VM's. Item 135 is the host's memory (Paul decides the remedy); item 136
 keeps other sessions' builds off a run by hand.
 
-### 133. Keep released holds and lifted DR freezes in the store, so their history is complete
-
-- Added: 2026-11-22 by item 128
-- Touches: catalog-store-api/, catalog-store-sql/, catalog-store-sql-raft/, catalog-store-oracle/, catalog-store-mongo/, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java, catalog-server/src/main/java/nuna/catalog/server/governance/HoldHistory.java, catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceRoutes.java
-- Effort: L, a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests
-
-What is missing: `GET /management/v1/catalogs/{catalog}/governance/holds` (item 128) lists the holds released and
-DR freezes lifted from the audit topic, because the store deletes a hold's row when it is released
-(`GovernanceStore.releaseHold`) and a freeze's attribute when it is lifted (`removeAttribute`). The read is bounded as
-`GET .../audit` is: the last 20,000 offsets of each partition. Every load and denial is audited to the same topic,
-so in a busy deployment those offsets cover minutes, not the 30 days the console's prototype shows ("Lifted in the
-last 30 days"). The route says how far back it read (`history.since`), so it never claims more than it holds, but the
-console's list of lifted holds will usually stop short at work.
-
-Item 128 took the audit topic because keeping the history in the store is a schema step on all four stores, and
-item 126 held those modules when 128 was built; the queryable audit tables (D23) are read by one named group and
-need item 125's reader.
-
-What done looks like: a hold's release and a freeze's lift recorded in the store with who and when (a released and
-lifted record, or the row kept with `released_at` and `released_by`), on all four stores with a suite in the shared
-test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
-its tests. The audit topic read goes.
-
-**Progress, 2026-11-22 (worktree-agent-a776179e2fcd3c868): built; open until the heavy build passes `GovernanceSuite`
-on all four stores.**
-- The record: `GovernanceLift` (kind `HOLD` or `DR_FREEZE`, the hold's id, the target, reason, placed by and at,
-  lifted by and at). `releaseHold` and `removeAttribute` take who lifts; a release, and a DR freeze's removal, write
-  one in the change's own transaction, with the catalog the level was in, so it outlives the level.
-  `liftedIn(catalog, since)` lists a catalog's lifts at or after `since`, the most recent first.
-- Schema steps, additions only: PostgreSQL `V14__governance_lifts.sql`, CockroachDB `V13__governance_lifts.sql`,
-  Oracle `V15__governance_lifts.sql`, MongoDB step 13 ("governance lifts"): a `governance_lift` table or collection
-  indexed by catalog and lift time. A separate table, not the hold row kept with `released_at`: a server of the
-  previous release would still read a kept row as a standing hold. Its releases during a rolling upgrade are kept
-  only in the audit record of the change.
-- Shared suite: `GovernanceSuite#releasesAndLiftsAreKept` (who and when, repeats `Missing`, the window, one catalog
-  only, the change rows) and `#releasesAndLiftsOutliveTheirLevel` (a dropped namespace, a purged table).
-- The route: `HoldHistory` reads the store for the last 30 days; the audit-topic read is gone. `history` is
-  `{days, since}`; a lift on a level dropped since has a null `path`, and the console names it by kind and id.
-- Not covered: dropping a namespace removes its attributes, a DR freeze among them, without keeping a lift (a frozen
-  namespace's drop is not refused today).
-
-Left: the overnight heavy build's run of the store suites on the four stores.
-
 ### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22
@@ -2009,6 +1971,14 @@ Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-1
 The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
+
+**Seen in the overnight run of 2026-11-23 (sampled by hand every 10 s, 20:10 on 2026-11-22 to 07:00): not met.**
+The nightly passed (91 min), but Windows was below 1.5 GB available in 449 of the nightly's 490 samples (00:44 to
+02:17), at 200 MB at its lowest (02:00:31), and paging in over 1,000 pages a second in 350 of them; the VM's working
+set swung between 1.3 and 5.5 GB, so it was being paged out. The heavy build and Ceph leg before it (00:00 to 00:44)
+were worse: below 1.5 GB in 228 of 232 samples, 47 MB at the lowest. The host stayed short after the run too (21 MB
+at 02:41, 1.15 GB at 07:00), so something besides the run held Windows' memory overnight. The remedies of D46 are in
+place; they are not enough. The log is the session's scratch file, not kept in the repo.
 
 ### 151. Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB
 
@@ -2399,6 +2369,7 @@ order change on three stores or MongoDB's check. Item 157's check stays either w
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [133](backlog/133.md) | Keep released holds and lifted DR freezes in the store, so their history is complete | done | 2026-11-23 |
 | [134](backlog/134.md) | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | done | 2026-11-22 |
 | [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
