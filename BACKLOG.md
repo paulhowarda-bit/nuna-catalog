@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**30 open:** 4 S, 11 M, 10 L, 5 XL.
+**29 open:** 3 S, 11 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -40,7 +40,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
-| [136](backlog/136.md) | S | A nightly or heavy run by hand does not hold other sessions' builds | two scripts take and drop one lock file, and one CLAUDE.md line | 2026-11-22 |
 | [141](backlog/141.md) | M | Console: a settings editor with only the keys that do something; every property shown read-only | a settings editor for tables and namespaces in two console modules over the Iceberg REST routes they already use, the list of keys checked against the Iceberg spec and the commit rules, and a browser test; waited on item 137 (its agent held `browse.js`), which landed on 2026-11-22; waits on item 138 (its agent holds `api.js`) | 2026-11-22 |
 
 ## Open items in full
@@ -1344,28 +1343,6 @@ The decision is D46 in `decision-ledger.md`. The item stays open until an overni
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
 
-### 136. A nightly or heavy run by hand does not hold other sessions' builds
-
-- Added: 2026-11-22 by nightly by hand 2026-11-22
-- Touches: nightly.sh heavy.sh CLAUDE.md
-- Effort: S, two scripts take and drop one lock file, and one CLAUDE.md line
-
-CLAUDE.md tells every agent to start no build while `.overnight/running` exists in the main checkout, and
-`overnight.sh` writes that file for its whole run. A nightly or heavy pass run by hand (`./nightly.sh`, `./heavy.sh`
-in a worktree, at Paul's word) writes nothing, so other sessions' agents keep building beside it.
-
-Evidence: the first nightly by hand on 2026-11-22 failed 13 tests on waits that ran out while five agent worktrees ran
-fast builds (test results written from 15:20 to 16:10, four at once at 16:10) and Windows paged in a median 22,700
-pages a second. The second, with those agents asked by message to hold their builds, passed all 233
-(`status/2026-11-22-nightly-2026-11-22.md`). The session running it could not write `.overnight/running` itself: its
-worktree guard refuses writes to the main checkout.
-
-Done looks like: `nightly.sh` and `heavy.sh` write `.overnight/running` in the main checkout (found with
-`git rev-parse --git-common-dir`) with their pid when it is absent, remove it on exit (a trap) only if it is still
-theirs, and leave a run that already holds it alone; `overnight.sh` keeps working as now (it finds its own lock, or a
-dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too. Checked by running `./nightly.sh
---test-dry-run` and seeing the file appear and go.
-
 ### 141. Console: a settings editor with only the keys that do something; every property shown read-only
 
 - Decided: 2026-11-22, D45
@@ -1523,6 +1500,7 @@ What done looks like:
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
 | [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
 | [139](backlog/139.md) | Console Health: the Store panel, the catalog database's backend, version and self-check | done | 2026-11-22 |
