@@ -21,4 +21,15 @@ error not resumed. The fast build passed.
 
 Not checked: a real agent. The `claude` CLI on this PC is not signed in (`claude auth status`), so none starts until
 Paul runs `claude auth login`. The 07:00 report task still files every failure itself; changing its prompt waits on
-Paul's leave.
+Paul's leave. (Later the same day Paul signed the CLI in and approved the new prompt: the report now leaves an
+agent's failures to that agent.)
+
+Item 176 (Paul: "We probably need to do only local testing until the landing, then we can do the fast testing").
+The sessions of 2026-11-16 to 23 ran the whole fast build 78 times (median 80 s, p90 231 s), one of them 15 times,
+and `:bitesApply` re-checked all 571 bites in each, 1 to 2 minutes. Now it checks only the bites whose patch or files
+changed since they last applied (about 3 s), `land.sh` lands over a `main` that moved only in Markdown, and CLAUDE.md
+says to test the changed module while working and run the fast build once, at landing. Fast build with nothing
+changed: 1 min 27 s before, 18 to 43 s after; after one line changed in `catalog-core`, 5 min 3 s, since every module
+built on it reruns its tests. `test-land.sh` checks `land.sh`'s four cases.
+
+Not checked: a landing over a real Markdown-only move of `main`, outside the scratch repository.
