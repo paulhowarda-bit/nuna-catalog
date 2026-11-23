@@ -175,7 +175,8 @@ class ConsoleBrowserTest {
 
     /**
      * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
-     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log.
+     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log. Each child
+     * namespace gets its totals over the tables beneath it (backlog 147).
      */
     @Test
     void contentsShowEachTablesFormatSnapshotsAndLastCommit() {
@@ -202,12 +203,35 @@ class ConsoleBrowserTest {
         assertThat(contentsCell(positions, 3)).isEqualTo("v3");
         assertThat(contentsCell(positions, 6)).as("created, never appended to").isEqualTo("0");
 
-        // A namespace or a view has no format, snapshots or commit of its own.
+        // A namespace's row counts the tables beneath it, sums their snapshots and names the newest commit by its
+        // table's path below it, as the catalog's totals answer (backlog 147); it has no format of its own. A view
+        // has none of the three.
+        HttpResponse<String> totals = expect(api.manage("GET", "/namespaces/" + ns(equities) + "/namespaces", null),
+                200);
+        assertThat(JsonPath.<List<String>>read(totals.body(), "$.namespaces[*].name")).containsExactly("eu");
+        assertThat(JsonPath.<Integer>read(totals.body(), "$.namespaces[0].tables")).isEqualTo(2);
+        assertThat(JsonPath.<Integer>read(totals.body(), "$.namespaces[0].snapshots")).isEqualTo(3);
+        assertThat(JsonPath.<Boolean>read(totals.body(), "$.namespaces[0].complete")).isTrue();
+        List<String> newest = JsonPath.read(totals.body(), "$.namespaces[0].newest-commit.table");
+        assertThat(newest).hasSize(1).isSubsetOf("trades", "positions");
+
         browser.open("/ui/#" + at("namespace", equities, null, null));
-        for (String name : List.of("eu", "daily")) {
-            WebElement row = contentsRow(name);
-            assertThat(List.of(contentsCell(row, 3), contentsCell(row, 6), contentsCell(row, 7))).containsOnly("–");
-        }
+        WebElement euRow = contentsRow("eu");
+        assertThat(contentsCell(euRow, 1)).isEqualTo("eu · 2 tables");
+        assertThat(contentsCell(euRow, 3)).isEqualTo("–");
+        assertThat(contentsCell(euRow, 6)).isEqualTo("3");
+        assertThat(textContent(euRow.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        assertThat(textContent(euRow.findElement(By.cssSelector("td.last")))).endsWith("· " + newest.getFirst());
+        WebElement daily = contentsRow("daily");
+        assertThat(List.of(contentsCell(daily, 3), contentsCell(daily, 6), contentsCell(daily, 7))).containsOnly("–");
+
+        // The catalog's Contents counts every level beneath each top namespace: trades and positions two levels
+        // down, accounts one.
+        browser.open("/ui/#c=trading");
+        WebElement topRow = contentsRow(top);
+        assertThat(contentsCell(topRow, 1)).isEqualTo(top + " · 3 tables");
+        assertThat(textContent(topRow.findElement(By.cssSelector("td.last"))))
+                .matches(".+ · (equities\\.eu\\.trades|equities\\.eu\\.positions|ledger\\.accounts)");
     }
 
     @Test

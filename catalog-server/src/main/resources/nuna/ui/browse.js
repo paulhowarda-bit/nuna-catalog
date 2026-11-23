@@ -2,7 +2,8 @@
 // The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the Governance and Audit
 // pages. A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit. Contents marks what is
 // held, frozen, regulated or closed until classified (item 128), and gives each table its format, snapshot count and
-// last commit from the catalog's own listing of them (backlog 137), which reads no metadata file.
+// last commit from the catalog's own listing of them (backlog 137), which reads no metadata file; each child namespace
+// gets its totals over the tables beneath it: how many, their snapshots, and the newest commit (backlog 147).
 
 import * as api from './api.js';
 import {$, at, badge, code, copyButton, copyText, facts, fill, fmt, h, icon, load, muted, pill, plural, tabsNav, tbl,
@@ -82,12 +83,19 @@ function queuePill(rows) {
 const tableFacts = (catalog, levels) =>
   api.all(api.managed({catalog, namespace: levels}) + '/tables?pageSize=200', 'tables');
 
+/**
+ * The child namespaces of a level with their totals over the tables beneath them:
+ * [{name, tables, snapshots, complete, newest-commit}].
+ */
+const namespaceTotals = (catalog, levels) =>
+  api.all(api.managed({catalog, namespace: levels}) + '/namespaces?pageSize=200', 'namespaces');
+
 async function contents(catalog, levels) {
-  const [ns, tables, views, q, gov, kept] = await Promise.all([api.namespaces(catalog, levels),
+  const [ns, tables, views, q, gov, kept, totals] = await Promise.all([api.namespaces(catalog, levels),
     levels.length ? api.tables(catalog, levels) : [], levels.length ? api.views(catalog, levels) : [], queue().catch(() => []),
-    governanceMarks(catalog), levels.length ? tableFacts(catalog, levels) : []]);
+    governanceMarks(catalog), levels.length ? tableFacts(catalog, levels) : [], namespaceTotals(catalog, levels)]);
   return {ns, tables: tables.map(t => t.name), views: views.map(v => v.name), q: queueOf(q, catalog), gov,
-    kept: new Map(kept.map(t => [t.name, t]))};
+    kept: new Map(kept.map(t => [t.name, t])), totals: new Map(totals.map(n => [n.name, n]))};
 }
 
 /** A table's last commit: when, then who; an engine acting for someone names them both. */
@@ -97,14 +105,33 @@ function lastCommit(c) {
   return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ', muted('· ' + who)];
 }
 
+/** A namespace's newest commit beneath it: when, then the table, by its path below the namespace. */
+function newestCommit(c) {
+  if (!c) return muted('–');
+  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ',
+    muted('· ' + c.table.join('.'))];
+}
+
+/** A namespace's totals, its cells: a count after its name, its snapshots, its newest commit. A cut-short walk adds +. */
+function totalsCells(t) {
+  if (!t || !t.tables) return {count: null, snaps: muted('–'), last: muted('–'), title: null};
+  const more = t.complete ? '' : '+';
+  return {count: [' ', muted(`· ${fmt(t.tables)}${more} ${t.tables === 1 && !more ? 'table' : 'tables'}`)],
+    snaps: fmt(t.snapshots) + more, last: newestCommit(t['newest-commit']),
+    title: t.complete ? null : 'Counted over the first 1,000 tables and namespaces beneath it'};
+}
+
 function contentsTable(catalog, levels, x) {
   const rows = [
-    ...x.ns.map(n => h('tr', {'data-kind': 'namespace', 'data-name': n[n.length - 1]},
-      h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n})}, n[n.length - 1])),
-      h('td', null, badge([icon('ns'), 'namespace'])), h('td', {class: 'fmt'}, muted('–')),
-      h('td', null, queuePill(queuedUnder(x.q, n))),
-      h('td', {class: 'gov'}, markPills(x.gov.get('namespace:' + n.join('.'))) || muted('–')),
-      h('td', {class: 'num snaps'}, muted('–')), h('td', {class: 'last'}, muted('–')))),
+    ...x.ns.map(n => {
+      const t = totalsCells(x.totals.get(n[n.length - 1]));
+      return h('tr', {'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
+        h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n})}, n[n.length - 1]), t.count),
+        h('td', null, badge([icon('ns'), 'namespace'])), h('td', {class: 'fmt'}, muted('–')),
+        h('td', null, queuePill(queuedUnder(x.q, n))),
+        h('td', {class: 'gov'}, markPills(x.gov.get('namespace:' + n.join('.'))) || muted('–')),
+        h('td', {class: 'num snaps'}, t.snaps), h('td', {class: 'last'}, t.last));
+    }),
     ...x.tables.map(name => {
       const mine = x.q.filter(r => r.name === name && r.namespace.join('.') === levels.join('.'));
       const kept = x.kept.get(name) || {};
@@ -129,7 +156,8 @@ function contentsTable(catalog, levels, x) {
   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', ['Name', 'Kind', 'Format', 'Tonight\'s queue', 'Governance',
     ['Snapshots', 'num'], 'Last commit'], rows),
     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. Format, snapshots and last commit are what the catalog '
-      + 'keeps of each table\'s current metadata; its health, governance and history are on its own page.'));
+      + 'keeps of each table\'s current metadata; its health, governance and history are on its own page. A namespace '
+      + 'counts the tables beneath it that you may describe.'));
 }
 
 const countWords = (n, w) => n ? plural(n, w) : `no ${w}s`;

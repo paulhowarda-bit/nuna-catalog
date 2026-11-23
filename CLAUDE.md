@@ -47,6 +47,11 @@ At work, start with `docs/install-at-work.md`: it says which facts below describ
   1. Merge the current `main` into the branch and run the fast build, `./gradlew build` (skipped for a Markdown-only branch). If that merge conflicts, settle it there, in the branch, as the agent that did the work, and run the build again. Never resolve a conflict in the main checkout.
   2. Run `./land.sh <branch> "<message>"`, with a "Land …" message ending with the attribution line. It takes its turn with any other landing, merges into `main` with `--no-ff` only if `main` has not moved since step 1, so the merge cannot conflict, writes `BACKLOG.md` into that merge, and checks `git cherry`. If `main` has moved, go back to step 1. If the main checkout has changes, another session is working there: report the branch as ready instead.
   3. Release the backlog items the branch finished: `./backlog.sh release <n>`.
+- **Batch branches that are ready together** (Paul, 2026-11-22; D47). When a session has two or more finished branches, land them in one go instead of one at a time, so the fast build runs once, not once per branch after each landing moves `main`:
+  1. Cut a landing branch from the current `main` (`land-<date>-<what>`) and merge each ready branch into it. If two branches conflict, leave the later one out: the agent that did it settles the conflict in its own branch and it goes in the next batch. Never settle one in the landing branch.
+  2. Run the fast build once on the landing branch (skipped if every changed file is Markdown). If it fails, find the branch that broke it (rebuild without each suspect, or read the failure), drop that branch from the batch and send it back to its agent.
+  3. Land the landing branch with `./land.sh`, its message naming every item. If `main` has moved, merge it in, build again, and land.
+  4. Check each original branch with `git cherry -v main <branch>` (no line starting `+`), release each item from its own worktree, and archive and delete each branch and the landing branch.
 - After a branch lands, the session that started the agent archives it, which removes its worktree, then deletes the branch. Neither step needs asking.
 
 ## Bites
