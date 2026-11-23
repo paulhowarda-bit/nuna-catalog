@@ -1,5 +1,5 @@
-# The demo's catalog values, on top of catalog-values.yaml: its image tag, profile s3 on the stack's Silo, and
-# two issuers: demo/Mint.java's tokens (keys served by Service idp) and Keycloak's (keycloak.yaml), which the
+# The demo's catalog values, on top of catalog-values.yaml: its image tag, profile s3 on the stack's Silo, the
+# audit catalog nuna_audit, and two issuers: demo/Mint.java's tokens (keys served by Service idp) and Keycloak's (keycloak.yaml), which the
 # console signs people in with by username and password. Both name a user by the same id (ana is ana at
 # either), so grants and audit see one person. Test keys only.
 image:
@@ -17,6 +17,22 @@ config:
           table-root: s3://warehouse/tables
           allowed-prefixes: [s3://warehouse/tables]
           access-key-id: nunatest
+      # The audit catalog of the queryable audit tables (D23): the audit table writer (audit-tables-values.yaml)
+      # fills nuna_audit.audit.events from the audit topic, and the console's Audit page reads it back.
+      catalogs:
+        nuna_audit:
+          profile: s3
+          kms-key-set: demo-keys
+          legal-entity: Demo Entity
+    audit:
+      # At startup the server grants the readers select on nuna_audit, which the Audit page needs (gary and
+      # presenter, in Keycloak and Mint.java), and the writer's group create and write there (Keycloak's service
+      # account of client nuna-audit-tables). The readers' group may not be demo-grant-admins: the server refuses
+      # to grant a grant admin group anything (D18).
+      tables:
+        catalog: nuna_audit
+        readers: demo-auditors
+        writers: demo-audit-writers
     security:
       issuers:
         - issuer: https://idp.demo/nuna

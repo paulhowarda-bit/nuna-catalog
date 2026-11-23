@@ -20,7 +20,9 @@
     {"name": "demo-analysts"},
     {"name": "demo-grant-admins"},
     {"name": "demo-stewards"},
-    {"name": "demo-operators", "clientRoles": {"cloudbeaver": ["admin"]}}
+    {"name": "demo-operators", "clientRoles": {"cloudbeaver": ["admin"]}},
+    {"name": "demo-auditors"},
+    {"name": "demo-audit-writers"}
   ],
   "users": [
     {
@@ -43,7 +45,7 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "gary-demo", "temporary": false}],
-      "groups": ["/demo-grant-admins"]
+      "groups": ["/demo-grant-admins", "/demo-auditors"]
     },
     {
       "username": "stella",
@@ -76,7 +78,13 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "presenter-demo", "temporary": false}],
-      "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators"]
+      "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators", "/demo-auditors"]
+    },
+    {
+      "username": "service-account-nuna-audit-tables",
+      "enabled": true,
+      "serviceAccountClientId": "nuna-audit-tables",
+      "groups": ["/demo-audit-writers"]
     }
   ],
   "clients": [
@@ -126,6 +134,56 @@
             "access.token.claim": "true",
             "id.token.claim": "true",
             "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "nuna-audit-tables",
+      "name": "Audit table writer",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${NUNA_AUDIT_TABLES_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "nuna-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.custom.audience": "nuna-catalog"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "full.path": "false"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
             "user.attribute": "username",
             "claim.name": "preferred_username",
             "jsonType.label": "String"
