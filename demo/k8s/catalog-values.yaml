@@ -9,12 +9,13 @@ image:
   repository: nuna-catalog
   pullPolicy: Never
 
-# 1Gi with the heap at 60%: at 768Mi and 75% the brokerage world's sink load took the pod over its limit outside the
-# heap, and the kernel killed it (backlog 179).
+# A 1Gi limit with the heap at 60%: at 768Mi and 75% the brokerage world's sink load took the pod over its limit
+# outside the heap, and the kernel killed it (backlog 179). The request stays 768Mi: the demo's node has 94% of its
+# memory requested, and a 1Gi request did not schedule beside the pod it replaces.
 resources:
   requests:
     cpu: 250m
-    memory: 1Gi
+    memory: 768Mi
   limits:
     memory: 1Gi
 
