@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**29 open:** 3 S, 11 M, 10 L, 5 XL.
+**28 open:** 3 S, 10 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -40,7 +40,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
-| [141](backlog/141.md) | M | Console: a settings editor with only the keys that do something; every property shown read-only | a settings editor for tables and namespaces in two console modules over the Iceberg REST routes they already use, the list of keys checked against the Iceberg spec and the commit rules, and a browser test; waited on item 137 (its agent held `browse.js`), which landed on 2026-11-22; waits on item 138 (its agent holds `api.js`) | 2026-11-22 |
 
 ## Open items in full
 
@@ -1343,52 +1342,6 @@ The decision is D46 in `decision-ledger.md`. The item stays open until an overni
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
 
-### 141. Console: a settings editor with only the keys that do something; every property shown read-only
-
-- Decided: 2026-11-22, D45
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/resources/nuna/ui/browse.js, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleSettingsBrowserTest.java, docs/design/console/README.md
-- Effort: M, a settings editor for tables and namespaces in two console modules over the Iceberg REST routes they already use, the list of keys checked against the Iceberg spec and the commit rules, and a browser test; waited on item 137 (its agent held `browse.js`), which landed on 2026-11-22; waits on item 138 (its agent holds `api.js`)
-
-D45, amended 2026-11-22. Paul: "I would like to be able to set properties' in the UI, but properties that mean
-something." The console shows every Iceberg property read-only (tools and SQL may still set any key) and lets people
-edit only keys that do something, chosen from a list, each with a label, a plain explanation and a checked value. A
-catalog's settings stay read-only. Free-form key entry leaves the console.
-
-Evidence:
-- A namespace's Properties tab (`browse.js`, `propertiesTab`, `setProperty`, `removeProperty`) takes any key and
-  any value, and removes any key.
-- The redesign's prototype (`docs/design/console/prototype.html`, the `ns-prop` action) offers "Set a property"
-  with any key on a catalog and on namespaces. A catalog keeps no free-form properties: `CatalogProperties.java`
-  answers only its declared settings, which change only through item 22 (deferred, D41).
-- A table's properties are shown only as a line of `key=value` (`table.js`, `propsDd`), with no editor.
-- The namespace page's subtitle reads `owner` from the namespace's Iceberg properties (`browse.js`,
-  `namespaceTab`), while the owner the catalog enforces is the governance label (D27, item 140).
-
-What done looks like:
-- Tables: every property listed read-only; an editor for the write settings engines honour, each with its label,
-  explanation, allowed values or range, and its default when unset. Candidates, to settle against the Iceberg table
-  spec's write properties and the commit rules (`Rules.java`, D11): `write.format.default` (parquet, avro, orc),
-  `write.parquet.compression-codec` (zstd, gzip, snappy, lz4, brotli, uncompressed) and
-  `write.parquet.compression-level`, `write.target-file-size-bytes`, `write.distribution-mode` (none, hash, range),
-  `write.delete.mode`, `write.update.mode`, `write.merge.mode` (copy-on-write, merge-on-read),
-  `write.metadata.delete-after-commit.enabled`, `write.metadata.previous-versions-max`,
-  `write.metadata.metrics.default`. Left out: the path properties `Rules.PATH_PROPERTIES` police (the catalog assigns
-  locations, D28), `encryption.key-id` (fixed at create, D26), `format-version` (an upgrade, not a setting), and the
-  snapshot-expiry keys (`history.expire.*`), which the maintenance policy governs (D30): the editor links to the
-  policy instead. A change goes through the table's normal commit (`set-properties` / `remove-properties`), so
-  every commit rule, `modify` and the audit trail apply as for any engine.
-- Namespaces: every property listed read-only; an editor for `comment` and `location`. Before building `location`,
-  check what it does in nuna: under D28 the catalog assigns every table's location, never from the namespace, so a
-  namespace's `location` may change nothing. If so, ask Paul whether to leave it out (his decision named it).
-- The catalog's Properties tab stays read-only and links to its maintenance policy; no "Set a property" there.
-- No free-form key entry anywhere in the console.
-- The namespace subtitle's owner is the governance owner, not an Iceberg property.
-- `docs/design/console/README.md` notes what was built.
-- A browser test (`heavy`): a listed setting changed and removed through its editor and read back from the table's
-  metadata; an unlisted property shown and not editable; a value outside the allowed ones refused in the dialog.
-  Bites for any new guarded check.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1505,3 +1458,4 @@ What done looks like:
 | [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
 | [139](backlog/139.md) | Console Health: the Store panel, the catalog database's backend, version and self-check | done | 2026-11-22 |
 | [140](backlog/140.md) | Console: set owner, retention class and regulated, as it sets classification | done | 2026-11-22 |
+| [141](backlog/141.md) | Console: a settings editor with only the keys that do something; every property shown read-only | done | 2026-11-22 |

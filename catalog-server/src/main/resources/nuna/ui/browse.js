@@ -5,13 +5,14 @@
 // last commit from the catalog's own listing of them (backlog 137), which reads no metadata file.
 
 import * as api from './api.js';
-import {$, at, badge, code, copyButton, copyText, dialogForm, facts, field, fill, fmt, granted, h, icon, load, muted,
-  openDialog, pill, plural, tabsNav, tbl, text, when} from './dom.js';
+import {$, at, badge, code, copyButton, copyText, facts, fill, fmt, h, icon, load, muted, pill, plural, tabsNav, tbl,
+  when} from './dom.js';
 import {catalogHref, objectHref, pageHref} from './route.js';
 import {queue, queueOf} from './queue.js';
 import {reveal, treeOf} from './tree.js';
 import {auditTab, governanceMarks, governanceTab, grantsTab, markPills} from './panels.js';
 import {tablePage, viewPage} from './table.js';
+import {NAMESPACE_SETTINGS, settingsTab} from './settings.js';
 
 /** The path above a page: the catalog, then each namespace; a long one folds its far end on a phone. */
 export function crumbsFor(catalog, levels, last) {
@@ -178,8 +179,11 @@ async function catalogProperties(catalog) {
         ['KMS key set', p['kms-key-set'] ? code(p['kms-key-set']) : null],
       ])),
     h('div', {class: 'stack'}, h('div', {class: 'notice'}, icon('info'), h('span', null, h('b', null, 'Set in the deployment\'s configuration.'),
-      ' The Iceberg REST API has no catalog properties of its own; a catalog\'s owner and classification are on its ',
-      h('a', {href: pageHref('governance', catalog, 'holds')}, 'governance'), '. The profile\'s keys and role are never shown.'))));
+      ' The Iceberg REST API has no catalog properties of its own, and the console sets none. A catalog\'s owner and '
+      + 'classification are on its ', h('a', {href: pageHref('governance', catalog, 'holds')}, 'governance'),
+      ', and how its tables are compacted, expired and cleaned is its ',
+      h('a', {href: pageHref('maintenance', catalog), 'data-act': 'policy'}, 'maintenance policy'),
+      '. The profile\'s keys and role are never shown.'))));
 }
 
 // ---- a namespace ----
@@ -213,10 +217,10 @@ function namespaceTab(target, key, sub, reload) {
   if (key === 'audit') return auditTab(target);
   if (key === 'properties') return loading(() => propertiesTab(target, reload));
   return loading(async () => {
-    const [ns, x] = await Promise.all([api.namespace(target.catalog, levels), contents(target.catalog, levels)]);
-    const owner = (ns.properties || {}).owner;
+    const [owner, x] = await Promise.all([api.governance(target).then(g => (g.effective || {}).owner, () => null),
+      contents(target.catalog, levels)]);
     fill(sub, `${countWords(x.tables.length, 'table')} · ${countWords(x.views.length, 'view')} · `
-      + `${countWords(x.ns.length, 'child namespace')}`, owner ? [' · owner ', h('b', null, owner)] : null);
+      + `${countWords(x.ns.length, 'child namespace')}`, owner ? [' · owner ', h('b', {'data-owner': ''}, String(owner))] : null);
     return contentsTable(target.catalog, levels, x);
   });
 }
@@ -227,41 +231,10 @@ function loading(loader) {
   return box;
 }
 
+/** A namespace's properties: its one setting, the comment, and every property read-only (item 141). */
 async function propertiesTab(target, reload) {
   const ns = await api.namespace(target.catalog, target.namespace);
-  const props = ns.properties || {};
-  const keys = Object.keys(props).sort();
-  return h('div', {class: 'panel', id: 'properties'}, h('h2', null, 'Properties ', h('span', {class: 'meta'}, 'Iceberg REST, on the namespace')),
-      keys.length ? tbl('props-tbl stack-line', ['Key', 'Value', ''], keys.map(k => h('tr', {'data-key': k},
-        h('td', {class: 'name'}, k), h('td', {class: 'name wrap'}, props[k]),
-        h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => removeProperty(target, k, reload)}, 'Remove')))))
-        : h('p', {class: 'muted'}, 'No property set on this namespace.'),
-      h('div', {class: 'refusal-acts'},
-        h('button', {class: 'btn sm', type: 'button', onclick: () => setProperty(target, reload)}, 'Set a property'),
-        h('span', {class: 'fine'}, 'Needs ', code('modify'), ' here.')));
-}
-
-function setProperty(target, reload) {
-  openDialog(`Set a property on ${target.namespace.join('.')}`, dialogForm([
-    field('Key', text('key', 'such as comment')),
-    field('Value', text('value', '')),
-  ], 'Set the property', async (form, out) => {
-    const k = form.elements.key.value.trim();
-    if (!k) {
-      fill(out, h('p', {class: 'fine grant-hint'}, 'Name the key.'));
-      return;
-    }
-    const answer = await api.namespaceProperties(target.catalog, target.namespace, {[k]: form.elements.value.value}, []);
-    fill(out, granted(`Set ${k}`, answer));
-    reload();
-  }));
-}
-
-function removeProperty(target, k, reload) {
-  openDialog(`Remove ${k}`, dialogForm(h('p', null, 'The property ', code(k), ' leaves ', code(target.namespace.join('.')), '.'),
-    'Remove the property', async (form, out) => {
-      const answer = await api.namespaceProperties(target.catalog, target.namespace, {}, [k]);
-      fill(out, granted(`Removed ${k}`, answer));
-      reload();
-    }));
+  return settingsTab({target, settings: NAMESPACE_SETTINGS, props: ns.properties || {}, ctx: {}, reload,
+    needs: 'the properties update an engine sends',
+    write: (updates, removals) => api.namespaceProperties(target.catalog, target.namespace, updates, removals)});
 }

@@ -1,7 +1,7 @@
 // A table's and a view's pages, each tab on its own route. The table's metadata comes from loadTable (with every
 // snapshot, and no storage credentials), asked once a minute at most: every load is audited. Its metadata log is the
 // catalog's commit journal, with who made each change (item 130). "Compact now", for a caller who may modify the table,
-// and a request while it waits (item 114).
+// and a request while it waits (item 114). Its Properties tab changes the listed write settings (item 141).
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
@@ -12,6 +12,7 @@ import {sourceWords, tableHealthTab} from './health.js';
 import {auditTab, exportDialog, governanceSummary, governanceTab, grantsTab} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
+import {settingsTab, TABLE_SETTINGS} from './settings.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -19,8 +20,13 @@ const pathOf = target => [...target.namespace, target.name].join('.');
 
 const loads = new Map();
 
+const loadKey = target => target.catalog + '\u001f' + target.kind + '\u001f' + pathOf(target);
+
+/** Forgets a load, so the next one reads what a change just committed. */
+const forget = target => loads.delete(loadKey(target));
+
 function loadOnce(target, loader) {
-  const key = target.catalog + '\u001f' + target.kind + '\u001f' + pathOf(target);
+  const key = loadKey(target);
   const hit = loads.get(key);
   if (hit && Date.now() - hit.at < 60_000) return hit.promise;
   const promise = loader();
@@ -53,7 +59,8 @@ function addCount(tabs, key, n) {
 // ---- the table page ----
 
 const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['snapshots', 'Snapshots and refs'], ['partitioning', 'Partitioning'],
-  ['health', 'Health'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'], ['metadata-log', 'Metadata log']];
+  ['properties', 'Properties'], ['health', 'Health'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
+  ['metadata-log', 'Metadata log']];
 
 export function tablePage(target, tab) {
   const main = h('div', {class: 'nc-main', id: 'table-page'});
@@ -64,7 +71,7 @@ export function tablePage(target, tab) {
     h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
   main.append(h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name), title, acts), tabs);
   const body = tabBody(main);
-  const metadata = loadTable(target);
+  let metadata = loadTable(target);
   metadata.then(t => {
     const m = t.metadata;
     title.insertBefore(badge(`iceberg v${m['format-version']}`, 'strong'), title.children[2] || null);
@@ -73,6 +80,11 @@ export function tablePage(target, tab) {
     addCount(tabs, 'partitioning', (m['partition-specs'] || []).length);
   }, () => {});
   const reload = () => show();
+  const afterChange = () => {
+    forget(target);
+    metadata = loadTable(target);
+    show();
+  };
   headMarks(target, title);
   mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
@@ -97,7 +109,8 @@ export function tablePage(target, tab) {
         } catch (error) {
           return refusedLoad(error, 'Health, Governance, Grants and Audit');
         }
-        return {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab}[key](target, t);
+        return {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
+          properties: (x, y) => propertiesTab(x, y, afterChange)}[key](target, t);
       });
     }
   };
@@ -185,12 +198,22 @@ function overviewTab(target, t) {
         ['Last sequence number', code(String(m['last-sequence-number'] ?? ''))],
         m['next-row-id'] !== undefined ? ['Next row id', code(String(m['next-row-id']))] : null,
         ['Last updated', when(m['last-updated-ms'])],
-        ['Properties', propsDd(m.properties)],
+        ['Properties', [propsDd(m.properties), ' ', h('a', {href: objectHref(target, 'properties')}, 'Settings')]],
       ]))),
     h('div', {class: 'stack'}, health, gov,
       refs.length ? panel('Refs', null, facts(refs.map(([name, ref]) => [refBadge(name, ref.type),
         [ref['snapshot-id'] === m['current-snapshot-id'] ? 'current snapshot' : code(String(ref['snapshot-id'])),
           ref['max-ref-age-ms'] ? muted(` · kept ${Math.round(ref['max-ref-age-ms'] / 86_400_000)} days`) : null]]))) : null));
+}
+
+/** The table's settings and every property it has (item 141). */
+function propertiesTab(target, t, reload) {
+  const m = t.metadata;
+  const props = m.properties || {};
+  return settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: 'a commit to the table, as an engine makes it, so every commit rule applies',
+    ctx: {formatVersion: m['format-version'], codec: props['write.parquet.compression-codec'] || 'zstd'},
+    write: (updates, removals) => api.tableProperties(target.catalog, target.namespace, target.name, m['table-uuid'],
+      updates, removals)});
 }
 
 const refBadge = (name, type) => badge([icon(type === 'tag' ? 'tag' : 'branch'), name], type === 'tag' ? 'ref-t' : 'ref-b');
@@ -607,9 +630,8 @@ function metadataLogTab(target, t) {
       panel('Kept', `${plural(kept, 'file')} in the table's metadata`, facts([
         [code('write.metadata.previous-versions-max'), props['write.metadata.previous-versions-max']
           ? [props['write.metadata.previous-versions-max'], ' · table'] : '100 · built-in'],
-        [code('write.metadata.delete-after-commit.enabled'), props['write.metadata.delete-after-commit.enabled']
-          ? [props['write.metadata.delete-after-commit.enabled'], ' · table'] : 'false · built-in'],
-      ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the current one and those before it, up to the limit.'))));
+      ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the current one and those before it, '
+        + 'up to the limit. A file that falls off the list is removed by the orphan scan.'))));
 }
 
 // ---- the view page ----
