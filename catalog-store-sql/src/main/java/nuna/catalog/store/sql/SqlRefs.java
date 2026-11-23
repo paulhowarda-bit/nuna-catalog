@@ -331,12 +331,18 @@ final class SqlRefs {
                 row.getString("from_name"), Optional.ofNullable(instant(row, "expires_at")));
     }
 
-    private static RefPointers pointers(ResultSet row) throws SQLException {
+    /**
+     * One row of {@link #listPointers}. {@code wasNull} answers for the last column read, so the head's version is
+     * judged before the ref's columns are read: read after them, it would judge the ref's expiry instead, and a branch
+     * with no pointer of its own would be read as having one.
+     */
+    static RefPointers pointers(ResultSet row) throws SQLException {
         RefEntry.At cut = new RefEntry.At(row.getLong("version"), row.getString("metadata_location"),
                 row.getString("sha256"));
-        long head = row.getLong("head_version");
-        return new RefPointers(ref(row), cut, row.wasNull() ? Optional.empty()
-                : Optional.of(new RefEntry.At(head, row.getString("head_location"), row.getString("head_sha256"))));
+        long version = row.getLong("head_version");
+        Optional<RefEntry.At> head = row.wasNull() ? Optional.empty()
+                : Optional.of(new RefEntry.At(version, row.getString("head_location"), row.getString("head_sha256")));
+        return new RefPointers(ref(row), cut, head);
     }
 
     private static RefEntry entry(ResultSet row) throws SQLException {

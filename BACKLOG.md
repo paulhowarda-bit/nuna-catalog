@@ -1087,6 +1087,26 @@ Left:
   meanwhile goes unseen. Holding an absent pointer needs the four stores.
 - Finding 11: credentials scoped to a branch (item 113), and the M6 adversarial case (item 112).
 
+## 2026-11-23: the overnight heavy build's two failures of this item, fixed
+
+Branch `worktree-agent-a9284fd56a1d18c39`. The overnight run of 2026-11-23 tested main at 02b22ad.
+
+- `PostgresStoreSuiteTest$Refs` and `CockroachStoreSuiteTest$Refs`, "every ref whose cut names a table lists the
+  pointer its cut took, and a branch its own": `NullPointerException: metadataLocation`. Cause: b0b459b,
+  `SqlRefs.pointers` called `row.wasNull()` after `ref(row)` had read the ref's columns, so it answered for
+  `expires_at`, not `head_version`. A branch expires, so one with no pointer of its own was read as having one, and
+  `RefEntry.At` refused its null location. A tag (no expiry) came out right by chance. Oracle and MongoDB read the
+  heads apart and passed. Fixed: the head is judged before the ref is read. `SqlRefsRowsTest` (fast) checks the row
+  on a stub `ResultSet` that answers `wasNull` as JDBC does; bite `D33/sql-ref-pointers-head-read-late` (BITES, 1 of
+  3).
+- `IcebergClientConfigTest#stockClientReadsATagAndCommitsOnABranch` expected `BadRequestException` ("a tag is
+  read-only") and got `UnsupportedOperationException`. Cause: a3876b9's test, line 176. A tag's `/v1/config` lists
+  only reads (`AdvertisedEndpoints.READ`, item 104), so iceberg-core refuses the commit at its endpoint check before
+  sending it, as designed. Fixed in the test, which now expects that; the server's own 400 stays covered by
+  `RefReadsTest#writesOnATagAre400`.
+
+Left: both run in the heavy build only; the next overnight run confirms them.
+
 ### 106. Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26)
 
 - Added: 2026-11-20 by agent on item 26
@@ -1418,6 +1438,16 @@ Left:
 - A flagged table (D20) merges only for a trusted engine. The console is not one, so for such a table the console can
   show the dry run but cannot merge it.
 - The console's screens (item 109).
+
+## 2026-11-23: the merge route's cases in the audit gate
+
+Branch `worktree-agent-a9284fd56a1d18c39`. This item's landing (7990cf7) added `POST
+/management/v1/catalogs/{catalog}/refs/{ref}/merge` without cases in `MutatingRoutesAuditTest`, so both of its tests
+would have listed it as a route without a case at the next heavy build. Added: a branch that changed nothing merges by
+ending, with its `ref` record; the steward, who holds manage-tags but not create, is refused and audited as a denial.
+
+Left: those two tests still fail until item 114's `POST .../tables/{table}/maintenance/requests` gets its cases too
+(the overnight run of 2026-11-23 found that gap; it is not this item's). The heavy build runs them.
 
 ### 108. Cleanup protects every ref, and the worker warns of and ends expired branches (item 26)
 
