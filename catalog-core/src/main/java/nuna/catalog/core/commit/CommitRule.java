@@ -51,8 +51,8 @@ public interface CommitRule {
 
     /**
      * @param type   the Iceberg error class name
-     * @param denial for a refusal a legal hold or DR freeze makes, the reason the REST layer audits it under as a
-     *               denial (D18): {@code legal_hold} or {@code dr_freeze}; empty for any other rejection
+     * @param denial for a refusal governance makes, the reason the REST layer audits it under as a denial (D18):
+     *               {@code legal_hold}, {@code dr_freeze} or {@code snapshot_min_age}; empty for any other rejection
      */
     record Rejection(int status, String type, String message, Optional<String> denial) {
 
@@ -64,7 +64,10 @@ public interface CommitRule {
             return new Rejection(403, "ForbiddenException", message, Optional.empty());
         }
 
-        /** A 403 a legal hold or DR freeze makes, audited as a denial with {@code reason} (D18). */
+        /**
+         * A 403 governance makes (a legal hold, a DR freeze, the minimum snapshot age), audited as a denial with
+         * {@code reason} (D18).
+         */
         public static Rejection refused(String reason, String message) {
             return new Rejection(403, "ForbiddenException", message, Optional.of(reason));
         }

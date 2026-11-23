@@ -1,0 +1,17 @@
+Breaks: a snapshot removal the minimum snapshot age refuses is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GovernanceRefusalTest#aSnapshotRemovalYoungerThanTheMinimumAgeIsAuditedAsADenial
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
+index 9c99d51..4afaf8a 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
+@@ -131,7 +131,7 @@ public final class Rules {
+         for (Map.Entry<Long, Long> snapshot : before.snapshotTimestamps().entrySet()) {
+             if (!after.snapshotTimestamps().containsKey(snapshot.getKey())
+                     && Instant.ofEpochMilli(snapshot.getValue()).isAfter(youngestRemovable)) {
+-                return Optional.of(Rejection.refused("snapshot_min_age", "Snapshot " + snapshot.getKey() + " of "
++                return Optional.of(Rejection.forbidden("Snapshot " + snapshot.getKey() + " of "
+                         + change.object().id() + " is younger than " + minimum + ", " + whose
+                         + ": it cannot be removed yet"));
+             }

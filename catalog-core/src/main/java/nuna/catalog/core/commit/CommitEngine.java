@@ -693,7 +693,7 @@ public final class CommitEngine {
                             + " is frozen for DR reconcile and cannot be unregistered");
                 }
                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {
-                    return new Failure(403, "ForbiddenException", "Table " + display(request) + " is regulated or"
+                    return Failure.refused(object, "flagged", "Table " + display(request) + " is regulated or"
                             + " has a row/column policy and cannot be unregistered; a steward removes the flag first");
                 }
                 default -> throw new IllegalStateException("unregisterObject answered " + result);
