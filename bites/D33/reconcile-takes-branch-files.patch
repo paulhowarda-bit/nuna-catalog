@@ -1,0 +1,17 @@
+Breaks: the DR reconcile's walk takes a branch's metadata files as files that follow main's, so main's pointer can move into a branch's chain (security finding 12; item 111).
+Module: catalog-core
+Test: ReconcileBranchFilesTest#aBranchsCommitsPastMainsHeadAreNotTaken+aBranchsFileAndMainsAreNotTwoProvenFiles
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 48880e7..c878e14 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -333,7 +333,7 @@ public final class Reconcile {
+         for (String location : listed) {
+             long version = version(location);
+             // A branch's file is never main's, but the pointer's own file is never judged so (finding 12).
+-            if (version <= from.version() || TableFiles.onBranch(location)) {
++            if (version <= from.version()) {
+                 continue;
+             }
+             TableFiles.Read read = files.read(location, "");
