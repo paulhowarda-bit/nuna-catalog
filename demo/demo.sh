@@ -976,6 +976,9 @@ up() {
   apply keycloak.yaml
   k wait --for=condition=available --timeout=8m deployment/postgres deployment/kafka deployment/idp \
     deployment/kafka-ui deployment/keycloak deployment/s3 >/dev/null
+  # silo-signin.yaml's patch replaces Silo's pod, and the new one waits for Keycloak: until the rollout ends,
+  # the old pod answers alone, and a bucket made in it goes with it.
+  k rollout status deployment/s3 --timeout=8m >/dev/null
   # The seed job makes the warehouse bucket. It runs on every up: a new Silo pod starts without it.
   k delete job seed --ignore-not-found >/dev/null
   apply seed.yaml
