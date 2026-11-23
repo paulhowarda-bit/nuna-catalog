@@ -287,7 +287,8 @@ class MergeTest {
         assertThat(main.version()).isEqualTo(cut.version() + 3);
         TableMetadata onMain = TableMetadataParser.fromJson(files.read(main.metadataLocation(), main.sha256()).json());
         assertThat(onMain.currentSnapshot().snapshotId()).as("the branch's version").isEqualTo(3L);
-        assertThat(onMain.snapshots()).extracting(s -> s.snapshotId()).containsExactly(1L, 2L, 3L);
+        assertThat(onMain.snapshots()).extracting(s -> s.snapshotId()).as("main's expiry of 1 stands")
+                .containsExactly(2L, 3L);
         assertThat(merged.moved().getFirst().table().rebased()).isTrue();
         assertThat(merged.moved().getFirst().table().since().commits()).isEqualTo(2);
         assertThat(landed.getLast().swaps().getFirst().journal().updatesJson()).contains("\"rebased-over\":2");

@@ -53,8 +53,9 @@ import java.util.function.Function;
  * its own maintenance, compaction and snapshot expiry, moves too, rebased over it (Paul, 2026-11-22, "maintenance
  * doesn't count"; {@link MergeMetadata#beyondMaintenance}): main takes the branch's version, whose snapshots hold every
  * row main's maintenance kept, since a {@code replace} snapshot holds no rows its parent lacks and the cut's files stay
- * while a ref names them (choice 14); the next night compacts and expires it again. Anything else main did since the
- * cut (data, a definition change, a drop, a view's replace) is a conflict, and any conflict moves nothing.
+ * while a ref names them (choice 14); what main's expiry removed stays removed, and the next night compacts again.
+ * Anything else main did since the cut (data, a definition change, a drop, a view's replace) is a conflict, and any
+ * conflict moves nothing.
  *
  * <p>Each table or view moved is judged as a commit on main of the whole change from main's metadata to the branch's,
  * since a merge carries no list of updates (D11, D24, D37; security finding 3): every rule of the catalog's profile, a
@@ -347,8 +348,8 @@ public final class Merge {
                 MergeMetadata.definitionChange(cutJson.get(), branchJson.get()),
                 engine.judge(o, before, after, governance),
                 CommitEngine.schemaOrSpecChanged(before, after) && governance.regulated(),
-                Optional.of(MergeMetadata.merged(branchJson.get(), mainJson.get(), onMain.metadataLocation(),
-                        clock.millis())));
+                Optional.of(MergeMetadata.merged(cutJson.get(), branchJson.get(), mainJson.get(),
+                        onMain.metadataLocation(), clock.millis())));
     }
 
     /**

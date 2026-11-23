@@ -107,7 +107,7 @@ class MergeMetadataTest {
         Chain branch = cut.then(append(3, 2L, 3, T0 + 2 * DAY), main(3)).then(append(5, 3L, 4, T0 + 3 * DAY), main(5));
         long at = System.currentTimeMillis();
 
-        String copy = MergeMetadata.merged(branch.json, main.json, main.location, at);
+        String copy = MergeMetadata.merged(cut.json, branch.json, main.json, main.location, at);
 
         TableMetadata merged = TableMetadataParser.fromJson(copy);
         TableMetadata fromBranch = TableMetadataParser.fromJson(branch.json);
@@ -129,11 +129,32 @@ class MergeMetadataTest {
         Chain main = cut.then(setProperties("write.metadata.previous-versions-max", "2"));
         Chain branch = main.then(append(3, 2L, 3, T0 + 2 * DAY), main(3));
 
-        TableMetadata merged = TableMetadataParser.fromJson(MergeMetadata.merged(branch.json, main.json, main.location,
-                System.currentTimeMillis()));
+        TableMetadata merged = TableMetadataParser.fromJson(MergeMetadata.merged(main.json, branch.json, main.json,
+                main.location, System.currentTimeMillis()));
 
         assertThat(merged.previousFiles()).extracting(TableMetadata.MetadataLogEntry::file)
                 .containsExactly(main.locations.get(main.locations.size() - 2), main.location);
+    }
+
+    @Test
+    void theCopyKeepsWhatMainsExpiryRemoved() {
+        Chain tagged = cut.then(tag("q3", 1));
+        Chain main = tagged.then(removeRef("q3"), removeSnapshots(1));
+        Chain branch = tagged.then(append(3, 2L, 3, T0 + 2 * DAY), main(3));
+        assertThat(MergeMetadata.beyondMaintenance(tagged.json, main.json)).as("expiry is main's maintenance").isEmpty();
+
+        TableMetadata merged = TableMetadataParser.fromJson(MergeMetadata.merged(tagged.json, branch.json, main.json,
+                main.location, System.currentTimeMillis()));
+
+        assertThat(merged.snapshots()).extracting(Snapshot::snapshotId)
+                .as("main expired 1 and its tag; the branch's own 3 stays").containsExactly(2L, 3L);
+        assertThat(merged.refs()).containsOnlyKeys("main");
+        assertThat(merged.snapshotLog()).extracting(entry -> entry.snapshotId()).containsExactly(2L, 3L);
+
+        Chain kept = branch.then(tag("audit", 1));
+        assertThat(TableMetadataParser.fromJson(MergeMetadata.merged(tagged.json, kept.json, main.json, main.location,
+                System.currentTimeMillis())).snapshots()).extracting(Snapshot::snapshotId)
+                .as("a ref the branch made keeps the snapshot it names").containsExactly(1L, 2L, 3L);
     }
 
     // ---- building metadata as clients commit it ----
@@ -189,6 +210,10 @@ class MergeMetadataTest {
     private static String tag(String name, long snapshotId) {
         return "{\"action\":\"set-snapshot-ref\",\"ref-name\":\"" + name + "\",\"type\":\"tag\",\"snapshot-id\":"
                 + snapshotId + "}";
+    }
+
+    private static String removeRef(String name) {
+        return "{\"action\":\"remove-snapshot-ref\",\"ref-name\":\"" + name + "\"}";
     }
 
     private static String removeSnapshots(long id) {

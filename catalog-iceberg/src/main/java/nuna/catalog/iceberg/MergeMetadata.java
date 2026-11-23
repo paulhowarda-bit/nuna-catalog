@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -75,14 +76,20 @@ public final class MergeMetadata {
     }
 
     /**
-     * Main's own copy of a branch's table metadata, for main's next version: the branch's metadata whole, its metadata
-     * log replaced by main's, ending with main's current file, and stamped {@code atMillis} (or later, so the log stays
-     * in order). Its predecessor is main's file, so a DR reconcile walks from main's chain into it as into any commit
-     * on main, and never into the branch's files (D37; backlog 107's choice).
+     * Main's own copy of a branch's table metadata, for main's next version: the branch's metadata, its metadata log
+     * replaced by main's, ending with main's current file, and stamped {@code atMillis} (or later, so the log stays in
+     * order). Its predecessor is main's file, so a DR reconcile walks from main's chain into it as into any commit on
+     * main, and never into the branch's files (D37; backlog 107's choice). What main's expiry removed since the cut
+     * stays removed: the cut's refs main no longer has, which the branch left as the cut had them, and the cut's
+     * snapshots main no longer has that none of the branch's remaining refs names, as Iceberg's expiry removes
+     * ancestors. The snapshots the branch made stay.
      *
+     * @param cutJson      the table's metadata as the branch's cut took it
      * @param mainLocation where {@code mainJson}, main's current metadata, is stored
      */
-    public static String merged(String branchJson, String mainJson, String mainLocation, long atMillis) {
+    public static String merged(String cutJson, String branchJson, String mainJson, String mainLocation,
+                                long atMillis) {
+        TableMetadata cut = TableMetadataParser.fromJson(cutJson);
         TableMetadata main = TableMetadataParser.fromJson(mainLocation, mainJson);
         TableMetadata branch = TableMetadataParser.fromJson(branchJson);
         ObjectNode copy;
@@ -102,6 +109,22 @@ public final class MergeMetadata {
                 TableProperties.METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT);
         ArrayNode entries = copy.putArray("metadata-log");
         log.subList(Math.max(0, log.size() - keep), log.size()).forEach(entries::add);
+        TableMetadata.Builder kept = TableMetadata.buildFrom(TableMetadataParser.fromJson(copy.toString()));
+        Set<Long> named = new HashSet<>();
+        for (Map.Entry<String, SnapshotRef> ref : branch.refs().entrySet()) {
+            if (main.ref(ref.getKey()) == null && ref.getValue().equals(cut.ref(ref.getKey()))) {
+                kept.removeRef(ref.getKey());
+            } else {
+                named.add(ref.getValue().snapshotId());
+            }
+        }
+        kept.removeSnapshots(branch.snapshots().stream().map(Snapshot::snapshotId)
+                .filter(id -> cut.snapshot(id) != null && main.snapshot(id) == null && !named.contains(id)).toList());
+        try {
+            copy = (ObjectNode) Metadata.REQUESTS.readTree(TableMetadataParser.toJson(kept.build()));
+        } catch (JsonProcessingException e) {
+            throw new UncheckedIOException(e);
+        }
         copy.put("last-updated-ms", Math.max(atMillis, Math.max(main.lastUpdatedMillis(), branch.lastUpdatedMillis())));
         return TableMetadataParser.toJson(TableMetadataParser.fromJson(copy.toString()));
     }
