@@ -563,8 +563,8 @@ class RefMergeRoutesTest {
         try {
             ResponseEntity<String> response = call.call();
             JsonNode error = Management.JSON.readTree(response.getBody()).get("error");
-            return new Answer(response.getStatusCode().value(), error.get("type").asString(),
-                    error.get("message").asString());
+            return new Answer(response.getStatusCode().value(), error == null ? null : error.get("type").asString(),
+                    error == null ? null : error.get("message").asString());
         } catch (CatalogError e) {
             return new Answer(e.status(), e.type(), e.getMessage());
         } catch (AccessDenied e) {
