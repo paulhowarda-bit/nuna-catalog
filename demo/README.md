@@ -3,8 +3,8 @@
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
 catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
 Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, makes a branch and a tag of the catalog,
-syncs SingleStore and Iceberg in both directions, starts the brokerage world, a live generator whose data reaches Iceberg through
-Kafka and SingleStore, and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
+syncs SingleStore and Iceberg in both directions, starts the brokerage world, a live generator whose data
+reaches Iceberg through Kafka and SingleStore, and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
 CockroachDB into Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
 ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
 
@@ -459,7 +459,7 @@ Catalog `lakehouse` has refs of its own (D33). A tag keeps every table as it was
 branch starts as the whole catalog at one moment and takes commits of its own, copying no file, until a merge
 moves what it changed onto main, every table in one transaction. An engine reaches a ref as a warehouse of its own,
 `lakehouse@<ref>`, so any Iceberg client can read it, and write to a branch. The console shows them on the
-catalog's tab **Branches and tags**.
+catalog's tab **Branches and tags**. `docs/refs.md` says how refs work, for engine users and operators.
 
 `up` makes two, through the management API as `ana`, whose group `demo-analysts` holds `create` on `lakehouse`, the
 right that making, merging and deleting a ref needs:
@@ -474,13 +474,14 @@ It makes them once per lake: the tag, made last, says they are made. Like everyt
 catalog's PostgreSQL, so after `demo/demo.sh down`, or a Docker Desktop restart, the next `up` makes them again.
 
 Trino has a catalog for the branch, `lakehouse_dev` (`iceberg.rest-catalog.warehouse=lakehouse@dev`, in
-`k8s/trino.yaml`), beside `lakehouse`, which reads and writes main. The tag has none: read it in the console or
-through the REST API (step 1).
+`k8s/trino.yaml`), beside `lakehouse`, which reads and writes main: an engine's catalog configuration names one ref.
+The tag has none: read it in the console or through the REST API (step 1).
 
 These are not the tables' own tags. The lake writer's tag `eod-2026-11-09` and branch `surveillance-review` in the
 trades table, and the brokerage world's tag `eod-<day>` on each table that changed that day, are Iceberg's refs
 inside one table: the console lists them on the table's Snapshots tab, under "Iceberg refs in this table". A
-catalog ref such as `@sample` cuts every table at once, and the console shows it as a rounded `@` chip.
+catalog ref such as `@sample` cuts every table at once, and the console shows it as a rounded `@` chip. How the two
+nest: `docs/refs.md`, "Catalog refs and Iceberg's refs inside a table".
 
 ### Try it
 
@@ -524,7 +525,8 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
    Run the four queries again: `dev` has the new rows, and main still has none of 2026-11-11. In the console,
    `@dev`'s page (its name on the Branches and tags tab) lists the two tables under **Changes**. A branch takes
    commits to the tables it has; creating, dropping or renaming a table or namespace happens on main only, and
-   `lakehouse_dev` answers such a statement with the catalog's 400.
+   `lakehouse_dev` answers such a statement with the catalog's 400 (`docs/refs.md`, "What a tag and a branch
+   allow").
 
 3. **Preview and merge in the console.** On the Branches and tags tab, choose **Merge…** on `@dev`'s line. The
    preview is the catalog's dry run, which moves nothing: "Ready: 2 tables would move to main in one transaction",
@@ -548,7 +550,7 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
    ```
 
    and then the merge, the same call without `?dry-run=true`. It answers 200 with main's new versions, or 409 with
-   every conflict.
+   every conflict. The merge's rules, rights and answers: `docs/refs.md`, "Merging a branch".
 
 4. **The conflict when main moved too.** Make `dev` again: on the Branches and tags tab, **Make a branch or tag**,
    Kind **Branch**, Name `dev`, From "main, as it is now", then **Make it**. `lakehouse_dev` reads it at once. In
