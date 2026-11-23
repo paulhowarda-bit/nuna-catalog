@@ -1003,3 +1003,15 @@ dialog { color: var(--text); }
 .kpi-v.na { color: var(--text-2); }
 .props-tbl td.name { overflow-wrap: anywhere; }
 td.wrap { overflow-wrap: anywhere; }
+/* a settings table (item 141): what each setting does under its name, its value, then Change and Reset */
+.tbl.settings td { vertical-align: top; }
+.tbl.settings td.setting code { font-size: var(--t-12); color: var(--text-2); }
+.tbl.settings td.setting .fine { margin: 4px 0 0; max-width: 64ch; }
+.tbl.settings td.setting-v { overflow-wrap: anywhere; }
+.tbl.settings td.setting-acts { white-space: nowrap; text-align: right; }
+.tbl.settings td.setting-acts .btn + .btn { margin-left: 6px; }
+.tbl.settings td.setting-acts .fine { white-space: normal; }
+.props-tbl td.prop-note { max-width: 48ch; }
+@container frame (max-width: 760px) {
+  .tbl.settings td.setting-acts { text-align: left; }
+}

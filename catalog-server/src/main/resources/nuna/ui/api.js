@@ -121,6 +121,18 @@ export async function table(catalog, levels, name) {
     {headers: {'X-Iceberg-Access-Delegation': 'none'}});
 }
 
+/**
+ * Sets and removes a table's properties in one commit, as an engine commits them: asserted against the table's UUID,
+ * so a table dropped and made again under the name is never changed by a page loaded before.
+ */
+export async function tableProperties(catalog, levels, name, uuid, updates, removals) {
+  const changes = [];
+  if (Object.keys(updates).length) changes.push({action: 'set-properties', updates});
+  if (removals.length) changes.push({action: 'remove-properties', removals});
+  return send(`${await rest(catalog)}/namespaces/${ns(levels)}/tables/${encodeURIComponent(name)}`,
+    {method: 'POST', body: {requirements: [{type: 'assert-table-uuid', uuid}], updates: changes}});
+}
+
 export async function view(catalog, levels, name) {
   return call(`${await rest(catalog)}/namespaces/${ns(levels)}/views/${encodeURIComponent(name)}`);
 }
