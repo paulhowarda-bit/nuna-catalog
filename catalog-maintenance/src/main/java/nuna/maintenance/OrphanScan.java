@@ -95,12 +95,22 @@ final class OrphanScan {
         return ((HasTableOperations) table).operations().current();
     }
 
-    /** What some metadata reaches; a second pass reads only snapshots and manifests the first had not. */
-    private static final class Reach {
+    /**
+     * What some metadata reaches; a second pass reads only snapshots and manifests the first had not. The catalog's
+     * refs are reached the same way ({@link RefReach}).
+     */
+    static final class Reach {
 
         final Set<String> files = ConcurrentHashMap.newKeySet();
         final Set<Long> snapshots = new HashSet<>();
         final Set<String> manifests = ConcurrentHashMap.newKeySet();
+
+        /** A pass that reads no snapshot of {@code skipped}, by id: those a pass before it read, or known to miss. */
+        static Reach skipping(Set<Long> skipped) {
+            Reach reach = new Reach();
+            reach.snapshots.addAll(skipped);
+            return reach;
+        }
 
         /** A pass that skips what this one read, keeping only that, not its files. */
         Reach next() {

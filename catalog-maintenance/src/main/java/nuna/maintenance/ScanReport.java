@@ -22,6 +22,8 @@ final class ScanReport {
         COMPACTION("compaction"),
         PURGE("purge"),
         DELETION("deletion"),
+        /** Warning of or ending one branch the work list's refs section named (D33). */
+        REFS("refs"),
         /** A report of the worker's own work to the catalog (D38), which did not take it; the work went on. */
         REPORT("report");
 
@@ -60,11 +62,25 @@ final class ScanReport {
     int purgesSkipped;
     /** Files deleted: due pending deletions and purged objects' files. */
     int filesDeleted;
+    /**
+     * Files left alone because a catalog ref reaches them (D33), by the ref's kind: unreferenced on main and not
+     * recorded, or due and completed without being deleted.
+     */
+    final Map<Management.RefKind, Integer> kept = new EnumMap<>(Management.RefKind.class);
+    /** Branches whose expiry warning this scan sent (D33). */
+    int refsWarned;
+    /** Branches past their expiry this scan ended (D33). */
+    int refsEnded;
     final List<String> failures = new ArrayList<>();
     /** How many of {@link #failures} are of each kind. */
     final Map<Failure, Integer> failuresByKind = new EnumMap<>(Failure.class);
     /** The first of {@link #failures} of each kind. */
     final Map<Failure, String> firstFailures = new EnumMap<>(Failure.class);
+
+    /** Counts files a ref keeps, by its kind. */
+    void kept(Map<Management.RefKind, Integer> byKind) {
+        byKind.forEach((kind, files) -> kept.merge(kind, files, Integer::sum));
+    }
 
     void failed(Failure kind, String what, RuntimeException e) {
         failed(kind, what + ": " + e);
@@ -84,6 +100,7 @@ final class ScanReport {
                 + needs + "), compactions " + compactionsStarted + " (" + compactionsCutOff + " cut off, "
                 + tablesLeftOver + " tables left over), files recorded " + filesRecorded + " (" + filesOutside
                 + " outside), purged " + purged + " (" + purgesSkipped + " skipped), files deleted " + filesDeleted
+                + ", files kept for refs " + kept + ", branches warned " + refsWarned + " and ended " + refsEnded
                 + ", failures " + failures.size();
     }
 }
