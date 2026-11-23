@@ -1,0 +1,16 @@
+Breaks: a branch past its expiry is listed without being asked for.
+Module: catalog-server
+Test: RefRoutesTest#aBranchPastItsExpiryIsListedOnlyWhenAskedForAndSaysSo
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 90105ce7..4d28a3ce 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -160,7 +160,7 @@ class RefRoutes {
+         ObjectNode body = Management.JSON.createObjectNode();
+         ArrayNode refs = body.putArray("refs");
+         boolean creators = mayCreate(request, catalog, "listRefs");
+-        page.items().stream().filter(ref -> expired || !ref.expiredAt(now)).forEach(ref -> {
++        page.items().stream().filter(ref -> true).forEach(ref -> {
+             ObjectNode node = ref(ref, now, creators);
+             if (ref.kind() == Ref.Kind.BRANCH) {
+                 node.put("changed-count", store.countOwnPointers(ref.id()));

@@ -3,17 +3,20 @@
 // catalog's commit journal, with who made each change (item 130). "Compact now", for a caller who may modify the table,
 // and a request while it waits (item 114). Its Properties tab changes the listed write settings (item 141). A view's
 // Governance tab is the table's, in words for a view and without the labels that do nothing to one (item 146).
+// Read through a catalog branch or tag (item 109), a table loads through catalog@ref, its metadata log is the ref's,
+// the tabs that are main's say so, and Compact now is not offered; a table's own refs are its "Iceberg refs".
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
   load, muted, panel, pill, plural, s, sizeWords, tabsNav, tbl, when} from './dom.js';
-import {objectHref} from './route.js';
+import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
 import {auditTab, exportDialog, governanceSummary, governanceTab, grantsTab} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
+import {readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -21,7 +24,7 @@ const pathOf = target => [...target.namespace, target.name].join('.');
 
 const loads = new Map();
 
-const loadKey = target => target.catalog + '\u001f' + target.kind + '\u001f' + pathOf(target);
+const loadKey = target => warehouseOf(target) + '\u001f' + target.kind + '\u001f' + pathOf(target);
 
 /** Forgets a load, so the next one reads what a change just committed. */
 const forget = target => loads.delete(loadKey(target));
@@ -36,8 +39,8 @@ function loadOnce(target, loader) {
   return promise;
 }
 
-const loadTable = target => loadOnce(target, () => api.table(target.catalog, target.namespace, target.name));
-const loadView = target => loadOnce(target, () => api.view(target.catalog, target.namespace, target.name));
+const loadTable = target => loadOnce(target, () => api.table(warehouseOf(target), target.namespace, target.name));
+const loadView = target => loadOnce(target, () => api.view(warehouseOf(target), target.namespace, target.name));
 
 /** What a load that failed leaves: the catalog's answer, and that the other tabs are checked on their own. */
 function refusedLoad(error, others) {
@@ -59,19 +62,24 @@ function addCount(tabs, key, n) {
 
 // ---- the table page ----
 
-const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['snapshots', 'Snapshots and refs'], ['partitioning', 'Partitioning'],
+const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['snapshots', 'Snapshots'], ['partitioning', 'Partitioning'],
   ['properties', 'Properties'], ['health', 'Health'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
   ['metadata-log', 'Metadata log']];
 
-export function tablePage(target, tab) {
+export function tablePage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'table-page'});
   const key = TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
   const tabs = tabsNav('Table', TABLE_TABS, key, k => objectHref(target, k || null));
   const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(),
     h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
-  main.append(h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name), title, acts), tabs);
+  const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, acts);
+  main.append(head, tabs);
   const body = tabBody(main);
+  refChrome(route, acts, head);
+  // A note names the ref as the list has it, so a tag shows as a tag; a ref that is not live keeps its name.
+  const noted = async (what, content) => target.ref
+    ? [refNote(await readingRef(target.catalog, target.ref) || target.ref, what), content] : content;
   let metadata = loadTable(target);
   metadata.then(t => {
     const m = t.metadata;
@@ -87,7 +95,8 @@ export function tablePage(target, tab) {
     show();
   };
   headMarks(target, title);
-  mayModify(target).then(may => {
+  // Compact now is main's: the worker compacts main only.
+  if (!target.ref) mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
       onclick: () => askDialog(target, 'compaction', key === 'health' ? reload : null)}, icon('play'), 'Compact now'));
   });
@@ -95,13 +104,13 @@ export function tablePage(target, tab) {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
     } else if (key === 'health') {
-      load(body, () => tableHealthTab(target, reload));
+      load(body, async () => noted('health', await tableHealthTab(target, reload)));
     } else if (key === 'governance') {
-      load(body, () => governanceTab(target, reload));
+      load(body, async () => noted('governance', await governanceTab(target, reload)));
     } else if (key === 'grants') {
-      fill(body, grantsTab(target));
+      load(body, () => noted('grants', grantsTab(target)));
     } else if (key === 'audit') {
-      fill(body, auditTab(target));
+      load(body, () => noted('audit', auditTab(target)));
     } else {
       load(body, async () => {
         let t;
@@ -110,8 +119,10 @@ export function tablePage(target, tab) {
         } catch (error) {
           return refusedLoad(error, 'Health, Governance, Grants and Audit');
         }
-        return {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
-          properties: (x, y) => propertiesTab(x, y, afterChange)}[key](target, t);
+        const ref = await readingRef(target.catalog, target.ref);
+        const shown = {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
+          properties: (x, y) => propertiesTab(x, y, afterChange, ref)}[key](target, t);
+        return target.ref && key === 'snapshots' ? [refNote(ref || target.ref, 'snapshots'), shown] : shown;
       });
     }
   };
@@ -184,7 +195,8 @@ function overviewTab(target, t) {
         kpi('Rows', rowsWords(sum['total-records']), sizeWords(sum['total-files-size'])),
         kpi('Data files', sum['total-data-files'] !== undefined ? fmt(sum['total-data-files']) : '–',
           sum['total-delete-files'] !== undefined ? `${fmt(sum['total-delete-files'])} delete files` : null),
-        kpi(h('a', {href: objectHref(target, 'snapshots')}, 'Snapshots'), fmt(snaps.length), refs.length ? plural(refs.length, 'ref') : 'no refs'),
+        kpi(h('a', {href: objectHref(target, 'snapshots')}, 'Snapshots'), fmt(snaps.length), target.ref ? `as @${target.ref} has them`
+          : refs.length ? plural(refs.length, 'Iceberg ref') : 'no Iceberg refs'),
         kpi(h('a', {href: objectHref(target, 'schema')}, 'Schemas'), fmt(schemas.length),
           schemas.length > 1 ? plural(schemas.length - 1, 'change') : 'as created')),
       h('div', {class: 'panel'}, h('h2', null, 'Current state'), facts([
@@ -202,19 +214,25 @@ function overviewTab(target, t) {
         ['Properties', [propsDd(m.properties), ' ', h('a', {href: objectHref(target, 'properties')}, 'Settings')]],
       ]))),
     h('div', {class: 'stack'}, health, gov,
-      refs.length ? panel('Refs', null, facts(refs.map(([name, ref]) => [refBadge(name, ref.type),
+      refs.length ? panel('Iceberg refs in this table', null, facts(refs.map(([name, ref]) => [refBadge(name, ref.type),
         [ref['snapshot-id'] === m['current-snapshot-id'] ? 'current snapshot' : code(String(ref['snapshot-id'])),
           ref['max-ref-age-ms'] ? muted(` · kept ${Math.round(ref['max-ref-age-ms'] / 86_400_000)} days`) : null]]))) : null));
 }
 
-/** The table's settings and every property it has (item 141). */
-function propertiesTab(target, t, reload) {
+/** The table's settings and every property it has (item 141); through a branch a change commits on it, through a tag none is offered. */
+function propertiesTab(target, t, reload, ref) {
   const m = t.metadata;
   const props = m.properties || {};
-  return settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: 'a commit to the table, as an engine makes it, so every commit rule applies',
+  if (target.ref && ref && ref.kind === 'tag') {
+    return [refNote(ref, 'props'), readOnlyNote(ref, target.catalog, 'updateTable'),
+      panel('Properties', 'in the metadata file the tag keeps', Object.keys(props).length
+        ? facts(Object.entries(props).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [code(k), String(v)])) : muted('No property is set.'))];
+  }
+  const tab = settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: 'a commit to the table, as an engine makes it, so every commit rule applies',
     ctx: {formatVersion: m['format-version'], codec: props['write.parquet.compression-codec'] || 'zstd'},
-    write: (updates, removals) => api.tableProperties(target.catalog, target.namespace, target.name, m['table-uuid'],
+    write: (updates, removals) => api.tableProperties(warehouseOf(target), target.namespace, target.name, m['table-uuid'],
       updates, removals)});
+  return target.ref ? [refNote(ref || target.ref, 'props'), tab] : tab;
 }
 
 const refBadge = (name, type) => badge([icon(type === 'tag' ? 'tag' : 'branch'), name], type === 'tag' ? 'ref-t' : 'ref-b');
@@ -229,7 +247,8 @@ async function healthSummary(target) {
   if (a && a['needs-compaction']) words.push((a.reasons || []).map(r => (REASONS[r] || [null, null, r])[2]).join(' '));
   words.push(c ? `Last compaction ${at(c['ended-at'] || c['started-at'])}, ${c.outcome}.` : 'No compaction has run for this table.');
   return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'health')}, 'Health'), ' ',
-    a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
+    target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
+  target.ref ? h('p', {class: 'fine'}, 'Health is assessed and maintained on main only. Main\'s health of this table.') : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)
     : pill('ok', icon('check'), 'No compaction needed'),
@@ -508,10 +527,10 @@ function snapshotsTab(target, t) {
   const first = list[list.length - 1]['timestamp-ms'];
   const last = list[0]['timestamp-ms'];
   const box = h('div', {class: 'stack'},
-    panel('History and refs', `${plural(list.length, 'snapshot')} · ${dayOf(first) === dayOf(last) ? dayOf(last) : `${dayOf(first)} to ${dayOf(last)}`}`,
+    panel('History and Iceberg refs', `${plural(list.length, 'snapshot')} · ${dayOf(first) === dayOf(last) ? dayOf(last) : `${dayOf(first)} to ${dayOf(last)}`}`,
       lanes(target, list, m, select), h('p', {class: 'fine only-sm'}, 'Opens at the newest snapshot; older ones are to the left.')),
     h('div', {class: 'grid-21'},
-      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'Refs'], tbody), more),
+      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'Iceberg refs'], tbody), more),
       h('div', {class: 'stack'}, h('div', {class: 'panel', id: 'selected-snapshot'}, h('h2', null, 'Selected snapshot ', meta), raw,
         h('div', {class: 'refusal-acts'}, sql, wholeB)), expiry)));
   select(current);
@@ -561,6 +580,8 @@ function partitionTab(target, t) {
 
 /** What one commit changed, in a few words: its update actions, each once, in order. */
 function changeWords(updates) {
+  const merge = Array.isArray(updates) ? updates.find(u => u.action === 'merge-branch') : null;
+  if (merge) return `Took @${merge.branch}'s version ${fmt(merge['branch-version'])} as main's next version, in the merge of @${merge.branch}`;
   const actions = [...new Set((updates || []).map(u => u.action))];
   return actions.length ? actions.join(', ') : muted('no update');
 }
@@ -597,7 +618,7 @@ function metadataLogTab(target, t) {
     return [tr, det];
   };
   let id = null;
-  const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token)).then(answer => {
+  const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token, target.ref)).then(answer => {
     const entries = answer.journal || [];
     tbody.append(...entries.flatMap(row));
     shown += entries.length;
@@ -639,14 +660,16 @@ function metadataLogTab(target, t) {
 
 const VIEW_TABS = [['', 'Overview'], ['versions', 'Versions'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit']];
 
-export function viewPage(target, tab) {
+export function viewPage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'view-page'});
   const key = VIEW_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('view')), h('h1', {tabindex: '-1'}, target.name));
   const tabs = tabsNav('View', VIEW_TABS, key, k => objectHref(target, k || null));
-  main.append(h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name), title,
-    h('div', {class: 'side'}, copyLinkButton())), tabs);
+  const side = h('div', {class: 'side'}, copyLinkButton());
+  const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, side);
+  main.append(head, tabs);
   const body = tabBody(main);
+  refChrome(route, side, head);
   const loaded = loadView(target);
   loaded.then(v => {
     title.append(badge('view', 'strong'));

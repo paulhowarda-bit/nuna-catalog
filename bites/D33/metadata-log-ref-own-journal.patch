@@ -1,0 +1,16 @@
+Breaks: a branch's metadata log shows main's commits since the cut as the branch's.
+Module: catalog-server
+Test: MetadataLogRefTest#throughABranchItsOwnVersionsComeFromItsJournalAndTheRestFromMainsAtTheCut
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index c74b00a9..d7990258 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -382,7 +382,7 @@ class LifecycleRoutes {
+             named.put("cut-version", held.cut().version());
+             ArrayNode journal = body.putArray("journal");
+             LogPage page = refLogPage(before.orElse(reads.version() + 1), size, held.cut().version(),
+-                    next -> store.readJournal(on.key(object.id()), JournalStore.EARLIEST, JournalStore.LATEST, next),
++                    next -> store.readJournal(object.mainKey(), JournalStore.EARLIEST, JournalStore.LATEST, next),
+                     mains);
+             page.entries().forEach(entry -> journal.add(journal(entry)));
+             page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));

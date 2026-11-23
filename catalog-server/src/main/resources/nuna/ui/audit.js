@@ -13,7 +13,7 @@ import {auditTab, describe} from './panels.js';
 /** The kinds the feed filters by, each a set of record types. */
 const KINDS = [
   ['all', 'All', null],
-  ['change', 'Changes', ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'purge',
+  ['change', 'Changes', ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
     'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass']],
   ['read', 'Reads', ['read', 'audit-read']],
   ['cred', 'Credentials', ['credential-issue']],

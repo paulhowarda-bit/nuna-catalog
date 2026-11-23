@@ -198,10 +198,10 @@ class RefRoutesTest {
         create("dev", "branch", null, null);
         caller = HAL;
 
-        assertThat(json(routes.list("gate", null, null, http)).get("refs")).hasSize(1);
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs")).hasSize(1);
         assertThat(json(routes.read("gate", "dev", http)).get("name").asString()).isEqualTo("dev");
         caller = NED;
-        assertThat(answer(() -> routes.list("gate", null, null, http)).status()).isEqualTo(404);
+        assertThat(answer(() -> routes.list("gate", null, null, false, http)).status()).isEqualTo(404);
         assertThat(answer(() -> routes.read("gate", "dev", http)).status()).isEqualTo(404);
 
         assertThat(denials()).extracting(Denial::operation).containsExactly("listRefs", "loadRef");
@@ -212,12 +212,12 @@ class RefRoutesTest {
         create("dev", "branch", null, null);
         create("v1", "tag", null, null);
 
-        assertThat(json(routes.list("gate", null, null, http)).get("refs").valueStream()
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
                 .map(ref -> ref.get("created-by").asString()).toList()).containsExactly("bea", "bea");
         assertThat(json(routes.read("gate", "dev", http)).get("created-by").asString()).isEqualTo("bea");
         for (Caller other : List.of(HAL, VIC)) {
             caller = other;
-            JsonNode listed = json(routes.list("gate", null, null, http)).get("refs");
+            JsonNode listed = json(routes.list("gate", null, null, false, http)).get("refs");
             assertThat(listed).as("listed to %s", other).hasSize(2);
             assertThat(listed.valueStream().filter(ref -> ref.has("created-by")).toList()).as("listed to %s", other)
                     .isEmpty();
@@ -373,7 +373,7 @@ class RefRoutesTest {
 
         clock.advance(DAY.multipliedBy(30));
 
-        assertThat(json(routes.list("gate", null, null, http)).get("refs").valueStream()
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
                 .map(ref -> ref.get("name").asString()).toList()).containsExactly("v1");
         assertThat(answer(() -> routes.read("gate", "dev", http)).status()).isEqualTo(404);
         assertThat(answer(() -> routes.renew("gate", "dev", null, http)).status()).isEqualTo(404);
@@ -442,6 +442,57 @@ class RefRoutesTest {
                 .containsExactly("Staff");
         assertThat(json(routes.read("gate", "v1", http)).has("changed")).isFalse();
         assertThat(denials()).as("a table left out is not a refusal").isEmpty();
+    }
+
+    // ---- what the console needs before the click (backlog 109) ----
+
+    @Test
+    void theListCarriesTheLimitsWhatTheCallerMayDoAndEachBranchsChangedCount() {
+        UUID dev = id(create("dev", "branch", null, null));
+        pointers.put(new PointerKey(staff.id(), dev.toString()), pointer(staff, 2));
+        pointers.put(new PointerKey(orders.id(), dev.toString()), pointer(orders, 4));
+        create("qa", "branch", null, null);
+        create("v1", "tag", null, null);
+
+        JsonNode list = json(routes.list("gate", null, null, false, http));
+
+        JsonNode limits = list.get("limits");
+        assertThat(limits.get("max-branches").asInt()).isEqualTo(2);
+        assertThat(limits.get("max-tags").asInt()).isEqualTo(3);
+        assertThat(limits.get("max-merge-tables").asInt()).isEqualTo(100);
+        assertThat(limits.get("branch-idle-expiry").asString()).isEqualTo(Duration.ofDays(30).toString());
+        assertThat(limits.get("branch-max-life").asString()).isEqualTo(Duration.ofDays(180).toString());
+        assertThat(limits.get("expiry-warning").asString()).isEqualTo(Duration.ofDays(7).toString());
+        assertThat(list.get("may").get("create").asBoolean()).isTrue();
+        assertThat(json(routes.read("gate", "dev", http)).get("may").get("create").asBoolean()).isTrue();
+        Map<String, JsonNode> byName = new HashMap<>();
+        list.get("refs").valueStream().forEach(ref -> byName.put(ref.get("name").asString(), ref));
+        assertThat(byName.get("dev").get("changed-count").asLong()).isEqualTo(2);
+        assertThat(byName.get("qa").get("changed-count").asLong()).isZero();
+        assertThat(byName.get("v1").has("changed-count")).as("a tag changes nothing").isFalse();
+
+        caller = HAL;
+        JsonNode halList = json(routes.list("gate", null, null, false, http));
+        assertThat(halList.get("may").get("create").asBoolean()).isFalse();
+        assertThat(json(routes.read("gate", "dev", http)).get("may").get("create").asBoolean()).isFalse();
+        assertThat(halList.get("refs").valueStream().filter(ref -> ref.get("name").asString().equals("dev"))
+                .findFirst().orElseThrow().get("changed-count").asLong())
+                .as("counted as the dry run counts them, names left out").isEqualTo(2);
+        assertThat(denials()).as("asking is no refusal").isEmpty();
+    }
+
+    @Test
+    void aBranchPastItsExpiryIsListedOnlyWhenAskedForAndSaysSo() {
+        create("dev", "branch", null, null);
+        create("v1", "tag", null, null);
+        clock.advance(DAY.multipliedBy(30));
+
+        assertThat(json(routes.list("gate", null, null, false, http)).get("refs").valueStream()
+                .map(ref -> ref.get("name").asString()).toList()).containsExactly("v1");
+        JsonNode all = json(routes.list("gate", null, null, true, http)).get("refs");
+        assertThat(all.valueStream().map(ref -> ref.get("name").asString()).toList()).containsExactly("dev", "v1");
+        assertThat(all.valueStream().filter(ref -> ref.has("expired")).map(ref -> ref.get("name").asString())
+                .toList()).containsExactly("dev");
     }
 
     // ---- the maintenance worker ----
@@ -775,6 +826,8 @@ class RefRoutesTest {
                     case "listRefObjects" -> entries((UUID) args[0], (UUID) args[1],
                             RefEntry.of((CatalogObject.Kind) args[2]));
                     case "readPointer" -> Optional.ofNullable(pointers.get((PointerKey) args[0]));
+                    case "countOwnPointers" -> pointers.keySet().stream()
+                            .filter(key -> key.branch().equals(args[0].toString())).count();
                     case "claimKey" -> claimKey((IdempotencyClaim) args[0]);
                     case "readKey" -> readKey((String) args[0], (Instant) args[1]);
                     case "awaitKey" -> readKey((String) args[0], clock.instant());

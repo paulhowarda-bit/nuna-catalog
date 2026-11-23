@@ -1,0 +1,16 @@
+Breaks: every branch is listed as having changed nothing.
+Module: catalog-server
+Test: RefRoutesTest#theListCarriesTheLimitsWhatTheCallerMayDoAndEachBranchsChangedCount
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 90105ce7..fba24d57 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -163,7 +163,7 @@ class RefRoutes {
+         page.items().stream().filter(ref -> expired || !ref.expiredAt(now)).forEach(ref -> {
+             ObjectNode node = ref(ref, now, creators);
+             if (ref.kind() == Ref.Kind.BRANCH) {
+-                node.put("changed-count", store.countOwnPointers(ref.id()));
++                node.put("changed-count", 0L);
+             }
+             if (ref.expiredAt(now)) {
+                 node.put("expired", true);

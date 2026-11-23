@@ -135,11 +135,18 @@ class RefRoutes {
         this.clock = clock;
     }
 
-    /** The catalog's refs by name, a branch past its expiry left out; paged. */
+    /**
+     * The catalog's refs by name, paged. A branch past its expiry is left out, unless {@code expired=true}: then it is
+     * listed with {@code expired}, as it holds its name until the maintenance worker ends it. Each branch has its
+     * {@code changed-count}, the tables and views with a pointer of its own, all of them, as the merge's dry run counts
+     * them to the same callers. The answer carries the catalog's {@code limits} (P11's settings) and what the caller
+     * {@code may} do, asked, not required, so the console offers only what the server would allow (backlog 109).
+     */
     @GetMapping(path = REFS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> list(@PathVariable("catalog") String prefix,
                                 @RequestParam(required = false) String pageToken,
-                                @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+                                @RequestParam(required = false) Integer pageSize,
+                                @RequestParam(defaultValue = "false") boolean expired, HttpServletRequest http) {
         Request request = management.request(http);
         CatalogRecord catalog = management.catalog(prefix, request, "listRefs", null);
         Instant now = now();
@@ -153,9 +160,32 @@ class RefRoutes {
         ObjectNode body = Management.JSON.createObjectNode();
         ArrayNode refs = body.putArray("refs");
         boolean creators = mayCreate(request, catalog, "listRefs");
-        page.items().stream().filter(ref -> !ref.expiredAt(now)).forEach(ref -> refs.add(ref(ref, now, creators)));
+        page.items().stream().filter(ref -> expired || !ref.expiredAt(now)).forEach(ref -> {
+            ObjectNode node = ref(ref, now, creators);
+            if (ref.kind() == Ref.Kind.BRANCH) {
+                node.put("changed-count", store.countOwnPointers(ref.id()));
+            }
+            if (ref.expiredAt(now)) {
+                node.put("expired", true);
+            }
+            refs.add(node);
+        });
         page.nextToken().ifPresent(token -> body.put("next-page-token", token));
+        body.set("limits", limits());
+        body.putObject("may").put("create", creators);
         return GovernanceRoutes.json(200, body);
+    }
+
+    /** P11's settings, as the console words them: {@code nuna.refs.*}. */
+    private ObjectNode limits() {
+        ObjectNode limits = Management.JSON.createObjectNode();
+        limits.put("max-branches", settings.maxBranches());
+        limits.put("max-tags", settings.maxTags());
+        limits.put("max-merge-tables", settings.maxMergeTables());
+        limits.put("branch-idle-expiry", settings.branchIdleExpiry().toString());
+        limits.put("branch-max-life", settings.branchMaxLife().toString());
+        limits.put("expiry-warning", settings.expiryWarning().toString());
+        return limits;
     }
 
     /** One ref; for a branch, also the tables and views it changed that the caller can describe. */
@@ -166,10 +196,12 @@ class RefRoutes {
         CatalogRecord catalog = management.catalog(prefix, request, "loadRef", null);
         Instant now = now();
         Ref ref = live(catalog, name, now);
-        ObjectNode body = ref(ref, now, mayCreate(request, catalog, "loadRef"));
+        boolean creators = mayCreate(request, catalog, "loadRef");
+        ObjectNode body = ref(ref, now, creators);
         if (ref.kind() == Ref.Kind.BRANCH) {
             body.set("changed", changed(request, ref));
         }
+        body.putObject("may").put("create", creators);
         return GovernanceRoutes.json(200, body);
     }
 

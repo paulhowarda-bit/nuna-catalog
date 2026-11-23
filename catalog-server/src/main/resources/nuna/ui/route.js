@@ -1,9 +1,11 @@
 // Where the console is: kept in the URL fragment, so any page or tab can be reloaded or shared. A namespace's
-// levels are joined by the unit separator 0x1F, as the catalog's own paths join them.
+// levels are joined by the unit separator 0x1F, as the catalog's own paths join them. `r` names the catalog's branch
+// or tag a browse page reads (item 109): links within the catalog's, a namespace's, a table's and a view's pages keep
+// it; every other page drops it. A ref's own page is k=ref with its name in n.
 
 export const SEP = '\u001f';
 
-/** {page, c, k, ns: [], n, tab, g} from the fragment. A catalog with no page is that catalog's browse page. */
+/** {page, c, k, ns: [], n, tab, g, r} from the fragment. A catalog with no page is that catalog's browse page. */
 export function parse() {
   const p = new URLSearchParams(location.hash.slice(1));
   const ns = p.get('ns') ? p.get('ns').split(SEP) : [];
@@ -15,6 +17,7 @@ export function parse() {
     n: p.get('n') || null,
     tab: p.get('tab') || null,
     g: p.get('g') || null,
+    r: p.get('r') || null,
   };
 }
 
@@ -27,18 +30,23 @@ export function href(o) {
   if (o.n) p.set('n', o.n);
   if (o.tab) p.set('tab', o.tab);
   if (o.g) p.set('g', o.g);
+  if (o.r && !o.page) p.set('r', o.r);
   return '#' + p.toString();
 }
 
-/** A catalog, namespace, table or view's page: {catalog, kind, namespace, name}. */
-export const objectHref = (target, tab) => href({c: target.catalog, k: target.kind, ns: target.namespace, n: target.name, tab});
+/** A catalog, namespace, table or view's page: {catalog, kind, namespace, name, ref}; through the ref when one is named. */
+export const objectHref = (target, tab) => href({c: target.catalog, k: target.kind, ns: target.namespace, n: target.name, tab,
+  r: target.ref});
 
 export const pageHref = (page, c, tab, g) => href({page, c: page === 'health' ? null : c, tab, g});
 
-export const catalogHref = (c, tab) => href({c, tab});
+export const catalogHref = (c, tab, r) => href({c, tab, r});
 
 /** The target a route names, for the API. */
-export const targetOf = r => ({catalog: r.c, kind: r.k, namespace: r.ns, name: r.n});
+export const targetOf = r => ({catalog: r.c, kind: r.k, namespace: r.ns, name: r.n, ref: r.r});
+
+/** The warehouse Iceberg REST reads a target through: the catalog, or `catalog@ref` for a branch or tag (item 104). */
+export const warehouseOf = target => target.ref ? `${target.catalog}@${target.ref}` : target.catalog;
 
 /** A dotted path for people: catalog-relative, with the name last. */
 export const dotted = target => [...(target.namespace || []), ...(target.name ? [target.name] : [])].join('.');
