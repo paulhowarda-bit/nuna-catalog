@@ -223,6 +223,25 @@ export const exportGrants = catalog => call(`/management/v1/catalogs/${enc(catal
 /** The whole deployment's catalog health over the last day; platform operators only. */
 export const catalogHealth = () => call('/management/v1/health/catalog');
 
+/** This server's own figures, with the catalog's database as it finds it (item 139); platform operators only. */
+export const serverHealth = () => call('/management/v1/health/server?store=true');
+
+/**
+ * The tables and views behind their DR watermark (D37, item 138), by id, `pageSize` a page and at most `maxPages`
+ * pages: {tables, more}, `more` when the readout had more than were read. Platform operators only.
+ */
+export async function drBehind(pageSize, maxPages) {
+  const tables = [];
+  let pageToken = null;
+  for (let page = 0; page < maxPages; page++) {
+    const body = await call('/management/v1/dr/watermarks?pageSize=' + pageSize + (pageToken ? '&pageToken=' + enc(pageToken) : ''));
+    tables.push(...(body.tables || []));
+    pageToken = body['next-page-token'];
+    if (!pageToken) return {tables, more: false};
+  }
+  return {tables, more: true};
+}
+
 /** The maintenance worker's recent scans and its last successful one; platform operators only. */
 export const scans = () => call('/management/v1/maintenance/scans');
 
