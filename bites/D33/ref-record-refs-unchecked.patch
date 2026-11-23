@@ -1,0 +1,16 @@
+Breaks: the catalog records deletions without checking that they name every ref now naming the table, so files a ref made after the worker read the work list reaches are recorded.
+Module: catalog-server
+Test: MaintenanceRefsTest#aRecordNotNamingEveryRefOfTheTableIsRefused
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+index 5135330..4d18c38 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+@@ -243,7 +243,7 @@ class MaintenanceRoutes {
+             }
+         }
+         List<RefPointers> named = store.listRefPointers(object.id());
+-        if (!named.stream().allMatch(ref -> checked.contains(ref.ref().id()))) {
++        if (false) {
+             ObjectNode refused = Management.JSON.createObjectNode();
+             refused.putObject("error").put("message", "A ref naming " + id + " was made since its files were checked"
+                     + " against its refs: check them against refs").put("type", "RefsChangedException")
