@@ -248,13 +248,25 @@ async function storePanel() {
         : h('span', {class: 'warn-n'}, (BACKENDS[store.configured] || store.configured) + ' · not reached')],
       ['self-check', 'Self-check at start', h('span', {class: allowed.length ? 'warn-n' : null}, at(check.at) + ' · '
         + (allowed.length ? `started despite ${plural(allowed.length, 'finding')}` : 'passed'))],
+      ['pitr', 'Point-in-time recovery window', windowWords(store['pitr-window-seconds']) + ' · declared'],
     ]),
     store.unreadable ? h('p', {class: 'fine', id: 'health-store-unreadable'}, 'The database did not answer: ', store.unreadable) : null,
     allowed.length ? h('ul', {class: 'stack', id: 'health-store-findings'}, allowed.map(f =>
       h('li', {'data-code': f.code}, code(f.code), ' ', h('span', {class: 'fine'}, f.detail)))) : null,
     h('p', {class: 'fine'}, 'Each server checks its database\'s durability when it starts, and starts despite a finding '
-      + 'only when ', code('nuna.database.allow-unsafe'), ' names it. Point-in-time recovery is not shown: it is the '
-      + 'database\'s own backup setting, which the catalog cannot read.'));
+      + 'only when ', code('nuna.database.allow-unsafe'), ' names it.'),
+    h('p', {class: 'fine', id: 'health-store-pitr'}, 'The point-in-time recovery window is the one this deployment '
+      + 'declares in ', code('nuna.governance.pitr-window'), ', not read from the database. The catalog relies on it: '
+      + 'orphan removal deletes only files older than it, and a dropped table is kept longer than it, so a database '
+      + 'restored to any point within it never names a deleted file. The database\'s own backups must keep at least '
+      + 'that long; the catalog cannot check that they do.'));
+}
+
+/** A declared window in seconds, in whole days or hours when it is one. */
+function windowWords(seconds) {
+  if (seconds % 86400 === 0) return plural(seconds / 86400, 'day');
+  if (seconds % 3600 === 0) return plural(seconds / 3600, 'hour');
+  return took(1000 * seconds);
 }
 
 // ---- the maintenance worker's scans, on Maintenance: platform operators only ----

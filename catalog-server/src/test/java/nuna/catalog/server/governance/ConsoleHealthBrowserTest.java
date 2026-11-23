@@ -37,7 +37,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *       tables behind their watermark, the one never verified counted apart, the most versions behind linking to
  *       its table, and the longest lag.</li>
  *   <li>Store: the backend and version this server finds on its database, and its self-check at start with each
- *       finding {@code nuna.database.allow-unsafe} let through, as {@code /health/server?store=true} answers.</li>
+ *       finding {@code nuna.database.allow-unsafe} let through, as {@code /health/server?store=true} answers; and the
+ *       point-in-time recovery window the deployment declares, {@code nuna.governance.pitr-window} (backlog 145),
+ *       with what relies on it.</li>
  *   <li>Anyone else sees neither panel, and both routes refuse them.</li>
  * </ul>
  *
@@ -61,6 +63,9 @@ class ConsoleHealthBrowserTest {
 
     @Autowired
     private GovernanceServer.TestClock clock;
+
+    @Autowired
+    private GovernanceSettings governance;
 
     @Value("${local.server.port}")
     private int port;
@@ -157,7 +162,15 @@ class ConsoleHealthBrowserTest {
             assertThat(driver.findElements(By.cssSelector("#health-store-findings li"))).extracting(li -> li
                     .getDomAttribute("data-code")).containsExactlyElementsOf(allowed);
         }
-        assertThat(browser.await(By.id("health-store")).getText()).contains("Point-in-time recovery is not shown");
+        long pitr = governance.pitrWindow().toSeconds();
+        assertThat(JsonPath.<Number>read(own, "$.store['pitr-window-seconds']").longValue()).isEqualTo(pitr);
+        assertThat(pitr % 86_400).as("the test server declares whole days").isZero();
+        assertThat(fact("health-store", "pitr")).isEqualTo(pitr / 86_400 + (pitr == 86_400 ? " day" : " days")
+                + " · declared");
+        assertThat(browser.await(By.id("health-store-pitr")).getText())
+                .contains("nuna.governance.pitr-window", "not read from the database",
+                        "The database's own backups must keep at least that long");
+        assertThat(browser.await(By.id("health-store")).getText()).doesNotContain("is not shown");
         assertThat(driver.findElements(By.id("health-store-unreadable"))).isEmpty();
     }
 
