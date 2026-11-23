@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**53 open:** 19 S, 15 M, 14 L, 5 XL.
+**49 open:** 16 S, 14 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -51,11 +51,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [170](backlog/170.md) | M | Console: a table dropped on main or made after a ref's point, read through the ref or on main, says when, by whom and which refs hold it (design 6.4's edge states) | a read of which live refs hold an object (and the drop's actor, from the drop's journal or audit record), a fast route test with bites, and three states on the table page | 2026-11-23 |
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
-| [173](backlog/173.md) | S | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | the tree's listings and links take the route's ref, its cache keyed by ref as well as catalog, and a browser case; the REST listings through a ref exist (item 104) | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
-| [183](backlog/183.md) | S | Console: sign-in opens the catalog used last, or the one with the most tables the user may read; an empty catalog names the other (Atelier's review Q1) | the landing's choice (the catalog last used in this browser, else the one with the most tables the caller may read, else the first), an empty catalog's headline naming the other, and a browser case | 2026-11-23 |
-| [184](backlog/184.md) | M | Console: rail items, tabs and buttons a user's groups can never use are hidden, and each role lands where its work is (Atelier's review Q3) | the console needs what each caller may do across a catalog (audit readers, platform operators, manage-tags, manage-grants) before it draws the rail and tabs; check what the server's answers already carry (`may` fields, the token's groups) and add a small read only if none does; then the rail, the tabs, the governance and table buttons, each role's landing, and browser cases for ana, gary and oscar | 2026-11-23 |
-| [185](backlog/185.md) | S | Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4) | the box opens an exact dotted path by fetching each level on demand, as a deep link does, and its empty answer says what it searched; a browser case | 2026-11-23 |
 | [186](backlog/186.md) | S | Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5) | the console reads the actor of the commit that made the current snapshot, as the Metadata log tab does (`LifecycleRoutes` answers each entry's actor and engine), for Overview and a By column on Snapshots, and the Contents cell's wording; M if a snapshot cannot be paired with its commit from the log's answer and the server needs a field | 2026-11-23 |
 | [187](backlog/187.md) | S | Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6) | kind chips over the feed's existing type filter, the By kind rows as links, every filter in the hash, audit reads hidden by default, and the range's wording; a browser case as gary | 2026-11-23 |
 | [188](backlog/188.md) | S | Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7) | one Technical details disclosure in `dom.js`'s result and failure boxes for status, route and request ID, and plain captions in place of config keys and routes; the browser tests that read those texts change with them | 2026-11-23 |
@@ -2855,31 +2851,6 @@ Done looks like:
   The read is audited on the ref (`through @name`). A fast test with a bite in `bites/D33/`.
 - The console offers the button through a ref again, exporting through it, the file named `{path}@{ref}`.
 
-### 173. Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4)
-
-- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
-- Touches: catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, the tree's listings and links take the route's ref, its cache keyed by ref as well as catalog, and a browser case; the REST listings through a ref exist (item 104)
-
-Atelier's design (`docs/design/console/wireframes.html`, chapter 6, 6.3) has every browse page keep the ref it reads.
-Item 109 carries `r=` on the catalog, namespace, table and view pages and every link in them, but the tree beside them
-(`tree.js`) still lists main's namespaces, tables and views (`api.namespaces`, `api.tables`, `api.views` on the
-catalog) and its links drop the ref, so a click in the tree leaves the ref. Atelier accepted this as item 109's
-departure 4.
-
-The REST listings already answer through a ref, from its cut (`/v1/{catalog}@{ref}/namespaces…`, item 104,
-`RefReadsTest`), so this is the console's work only.
-
-Done looks like: reading through a ref, the tree lists each level through `catalog@ref` (a table made on main after
-the cut is not there; one dropped on main since is), marks the ref beside the catalog's node, and its links keep `r=`;
-on main it is as today. Its cache is keyed by catalog and ref. A `ConsoleBrowserTest` case (heavy) opens a table
-through a tag and follows the tree to another table without leaving the tag.
-
-Atelier's live review (2026-11-23, `docs/design/console/review-2026-11-23/console-review-2026-11-23.md`,
-finding F3 and quick win Q2) found the same trap: reading `rates` through `@sample`, a click on `fx` in the tree lands
-on main with no word (`13-tree-click-drops-ref.png`). The rail's Catalog link drops the ref too; carry `r=` there as
-well (`app.js`).
-
 ### 177. Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low)
 
 - Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
@@ -2899,61 +2870,6 @@ file), so no commit is overwritten, but it is a file main should never hold. Doi
 Done when register and revive refuse a location `TableFiles.onBranch` marks, with 400 `BadRequestException`, on main
 and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
 checked with `git apply --check`, not run).
-
-### 183. Console: sign-in opens the catalog used last, or the one with the most tables the user may read; an empty catalog names the other (Atelier's review Q1)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, the landing's choice (the catalog last used in this browser, else the one with the most tables the caller may read, else the first), an empty catalog's headline naming the other, and a browser case
-
-Atelier's live review of the console (Paul, 2026-11-23: "I am having trouble navigating the UI", `docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F2) found
-that sign-in lands on `#p=overview&c=engines` for `ana` and `gary`: "No table in engines is yours to select", "0 of 0".
-The catalog with the data, `lakehouse`, is one picker away and nothing says so. Screenshots `01-landing-1440.png`,
-`41-gary-landing.png`. Atelier's design had `lakehouse` as the default.
-
-Done looks like: sign-in opens the catalog this browser used last (kept per viewer, as a convenience: it may come
-back empty), else the catalog with the most tables the caller may read, else the first. A catalog with nothing the
-caller may read says so in plain words and links the one that has tables ("Nothing in engines you may read. lakehouse
-has 17 tables"). A browser case signs in with no history and lands on the catalog with tables.
-
-### 184. Console: rail items, tabs and buttons a user's groups can never use are hidden, and each role lands where its work is (Atelier's review Q3)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: M, the console needs what each caller may do across a catalog (audit readers, platform operators, manage-tags, manage-grants) before it draws the rail and tabs; check what the server's answers already carry (`may` fields, the token's groups) and add a small read only if none does; then the rail, the tabs, the governance and table buttons, each role's landing, and browser cases for ana, gary and oscar
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F4 and F12): as `ana` the rail's Audit and Health and a table's Audit tab each
-answer a red "Refused by the catalog" box, `403 ForbiddenException`, "ana holds no privilege that gives select for
-readAuditFeed", "only platform operators may call readCatalogHealth", "audited as a denial", and `gary`'s feed then
-shows `ana`'s denials. As `ana` (no `manage-tags`) a table's Governance tab offers Change the classification, Change
-the owner, Set a retention class and Place a hold; Compact now and Export metadata sit on every table. Screenshots
-`20-audit-ana.png`, `20-health-ana.png`, `10-rates-audit.png`, `21-trades-governance.png`, `20-governance-ana.png`.
-The design limited the rail by role ("gary sees only Catalog, Governance and Audit", `docs/design/console/README.md`).
-
-Done looks like: a rail item, tab or button the caller's groups can never use is not drawn; one that depends on the
-object is drawn disabled with the reason as its title. `gary` lands on Audit and `oscar` on Health. Where a refusal
-still happens, it leads with plain words ("Audit is open to auditors. Your groups: demo-analysts.") and keeps the
-status, exception and request ID behind a disclosure (item 188). Browsing the menu writes no denials. Browser cases
-for `ana`, `gary` and `oscar` check what each sees.
-
-### 185. Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, the box opens an exact dotted path by fetching each level on demand, as a deep link does, and its empty answer says what it searched; a browser case
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F1): on `lakehouse` with the tree folded, "Go to a path" (the header box and the `/`
-key) answers `rates` and `markets.fx.rates` with "No path matches. Try fewer words. Go to a path finds the paths the
-console has listed so far", and Enter does nothing. After opening `markets` and `fx`, `rates` is found, but a brokerage
-table still is not. Screenshots `06-goto-rates.png`, `23-goto-journal.png`, `23-goto-rates-after.png`.
-
-The full fix, a server route that finds every name the caller may describe, is Atelier's structural change S1, not
-filed yet. This item is the quick part.
-
-Done looks like: typing a full dotted path (`markets.fx.rates`) and Enter opens it from any page with the tree folded,
-fetching each level as a deep link does; a path that does not exist says so. With no match, the box says "Not found
-among the N names listed so far. Open a namespace, or type the full dotted path", and never "Try fewer words" for one
-word. A browser case opens a table by its dotted path with the tree folded.
 
 ### 186. Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5)
 
@@ -3241,9 +3157,13 @@ Done looks like: a share below the scale is drawn as an off-scale marker at its 
 | [164](backlog/164.md) | One failing heavy test skips every bite, and one hung test can hold a leg until 06:30 | done | 2026-11-23 |
 | [165](backlog/165.md) | An agent for each module whose tests fail in the overnight run, while the run goes on | done | 2026-11-23 |
 | [166](backlog/166.md) | The overnight run tests in a worktree, not a clone | done | 2026-11-23 |
+| [173](backlog/173.md) | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | done | 2026-11-23 |
 | [174](backlog/174.md) | Demo: every UI signs in through Keycloak, Silo's console and Keycloak's admin console included | done | 2026-11-23 |
 | [175](backlog/175.md) | Brokerage world: the bootstrap fixes the world's settings on a brokerage namespace the change feed made | done | 2026-11-23 |
 | [176](backlog/176.md) | The fast build re-checks every bite each time, and agents run it again and again before landing | done | 2026-11-23 |
 | [179](backlog/179.md) | The demo catalog is OOMKilled under the brokerage world's load: 768Mi with a 75% heap leaves too little outside the heap | done | 2026-11-23 |
 | [180](backlog/180.md) | Demo: ana and presenter browse Silo's console, read-only | done | 2026-11-23 |
 | [181](backlog/181.md) | The brokerage world on the real clock: each event at its own time of day, quiet off-hours, its sink restarted when it fails | done | 2026-11-23 |
+| [183](backlog/183.md) | Console: sign-in opens the catalog used last, or the one with the most tables the user may read; an empty catalog names the other (Atelier's review Q1) | done | 2026-11-23 |
+| [184](backlog/184.md) | Console: rail items, tabs and buttons a user's groups can never use are hidden, and each role lands where its work is (Atelier's review Q3) | done | 2026-11-23 |
+| [185](backlog/185.md) | Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4) | done | 2026-11-23 |

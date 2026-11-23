@@ -17,6 +17,7 @@ import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
 import {readingRef, readOnlyNote, refChrome, refNote} from './refs.js';
+import {closedNote, trailOpen, trailWords} from './access.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -88,7 +89,8 @@ export function tablePage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'table-page'});
   const key = TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
-  const tabs = tabsNav('Table', TABLE_TABS, key, k => objectHref(target, k || null));
+  const tabs = tabsNav('Table', TABLE_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key,
+    k => objectHref(target, k || null));
   // The export is main's metadata and journal, so a page read through a ref offers none (item 109; item 172).
   const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(), target.ref ? null
     : h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
@@ -125,6 +127,8 @@ export function tablePage(target, tab, route) {
       load(body, () => throughRef(target, () => metadata, 'governance', () => governanceTab(target, reload)));
     } else if (key === 'grants') {
       load(body, () => throughRef(target, () => metadata, 'grants', () => grantsTab(target)));
+    } else if (key === 'audit' && !trailOpen(target.catalog)) {
+      fill(body, closedNote(trailWords(target.catalog)));
     } else if (key === 'audit') {
       load(body, () => throughRef(target, () => metadata, 'audit', () => auditTab(target)));
     } else {
@@ -696,7 +700,8 @@ export function viewPage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'view-page'});
   const key = VIEW_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('view')), h('h1', {tabindex: '-1'}, target.name));
-  const tabs = tabsNav('View', VIEW_TABS, key, k => objectHref(target, k || null));
+  const tabs = tabsNav('View', VIEW_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key,
+    k => objectHref(target, k || null));
   const side = h('div', {class: 'side'}, copyLinkButton());
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, side);
   main.append(head, tabs);
@@ -711,6 +716,7 @@ export function viewPage(target, tab, route) {
     if (key === null) fill(body, h('div', {class: 'empty'}, h('h3', null, 'A view has no such tab')));
     else if (key === 'governance') load(body, () => throughRef(target, () => loaded, null, () => governanceTab(target, show)));
     else if (key === 'grants') load(body, () => throughRef(target, () => loaded, null, () => grantsTab(target)));
+    else if (key === 'audit' && !trailOpen(target.catalog)) fill(body, closedNote(trailWords(target.catalog)));
     else if (key === 'audit') load(body, () => throughRef(target, () => loaded, null, () => auditTab(target)));
     else {
       load(body, async () => {

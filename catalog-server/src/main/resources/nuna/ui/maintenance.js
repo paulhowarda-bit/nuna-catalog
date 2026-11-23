@@ -10,6 +10,7 @@ import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialo
 import {emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
 import {sourceWords, workerPanel} from './health.js';
 import {mayModifyAny, pickDialog} from './requests.js';
+import {nothingToRead} from './overview.js';
 
 /** The policy keys, in the order the prototype lists them; a key under an .enabled key is indented. */
 const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'snapshot-expiry.min-snapshots-to-keep',
@@ -19,8 +20,9 @@ const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'sn
 export function maintenancePage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'maintenance'});
   load(main, async () => {
-    const [rows, tables, may] = await Promise.all([queue(true).then(all => queueOf(all, catalog)),
-      estate(true).then(all => all.filter(t => t.catalog === catalog)), mayModifyAny(catalog)]);
+    const [rows, everywhere, may] = await Promise.all([queue(true).then(all => queueOf(all, catalog)), estate(true),
+      mayModifyAny(catalog)]);
+    const tables = everywhere.filter(t => t.catalog === catalog);
     const assessed = lastAssessed(rows);
     // The queue lists only assessed tables that need compaction; the estate says which tables are not assessed yet.
     const c = estateCounts(tables);
@@ -45,7 +47,7 @@ export function maintenancePage(catalog) {
         eyebrow: `${catalog} · maintenance`,
         title: rows.length
           ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
-          : !c.total ? `No table in ${catalog} is yours to select.`
+          : !c.total ? nothingToRead(catalog, everywhere, 'maintenance')
             : c.unassessed ? shapeWords(c) : `Every table you may read in ${catalog} is in shape.`,
         sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
           + 'each one\'s assessment is on its Health tab.',

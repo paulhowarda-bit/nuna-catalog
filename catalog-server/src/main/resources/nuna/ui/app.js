@@ -4,9 +4,10 @@
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
-import {$, $$, failure, fill, h, icon, pill} from './dom.js';
-import {href, objectHref, pageHref, parse, remembered, SEP} from './route.js';
-import {keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
+import {auditOpen, groupWords, keepAccess, operates, readsData} from './access.js';
+import {$, $$, failure, fill, fmt, h, icon, pill} from './dom.js';
+import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
+import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
 import {maintenancePage} from './maintenance.js';
 import {healthPage} from './health.js';
@@ -54,6 +55,56 @@ function pickTheme(value) {
     // the choice then lasts this page only
   }
   applyTheme();
+}
+
+// ---- the catalog a sign-in opens: the one used last in this browser, else the one with the most tables the caller
+// may read, else the first (Atelier's review, F2). Kept per viewer as a convenience: it may come back empty. ----
+
+const LAST = 'nuna.catalog';
+
+function lastCatalog() {
+  try {
+    return localStorage.getItem(LAST);
+  } catch {
+    return null;
+  }
+}
+
+function keepCatalog(c) {
+  try {
+    if (c && c !== lastCatalog()) localStorage.setItem(LAST, c);
+  } catch {
+    // remembered for this page only
+  }
+}
+
+async function landingCatalog(names) {
+  const last = lastCatalog();
+  if (last && names.includes(last)) return last;
+  let rows = [];
+  try {
+    rows = await estate();
+  } catch {
+    // the estate only ranks the catalogs; without it the first is taken
+  }
+  const counts = new Map(names.map(n => [n, 0]));
+  for (const t of rows) if (counts.has(t.catalog)) counts.set(t.catalog, counts.get(t.catalog) + 1);
+  return names.reduce((best, n) => counts.get(n) > counts.get(best) ? n : best, names[0]);
+}
+
+/** Where a caller's work is (item 184): Overview for those who read data, Audit for auditors, Health for operators. */
+function homeHref(c) {
+  if (readsData()) return pageHref('overview', c);
+  if (auditOpen(c)) return pageHref('audit', c);
+  if (operates()) return pageHref('health');
+  return href({c});
+}
+
+/** A page the caller's groups cannot use, reached by a link: said in plain words, and the catalog is never asked. */
+function closedPage(title, words) {
+  return h('div', {class: 'nc-main', id: 'closed-page'}, h('div', {class: 'ph'}, h('h1', {tabindex: '-1'}, title)),
+    h('div', {class: 'empty', 'data-closed': ''}, h('h3', null, words), h('p', null, `Your groups: ${groupWords()}. Ask a grant `
+      + 'admin if your work needs it.')));
 }
 
 // ---- the menu: a rail on a wide screen, a drawer on a phone ----
@@ -106,16 +157,21 @@ function setChrome(navKey, rail, ref) {
   // The top chip names the ref a browse page reads (item 109): lakehouse @dev.
   for (const b of $$('[data-cat]')) fill(b, cat || '–', ref ? h('span', {class: 'pick-ref'}, '@' + ref) : null);
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
-  const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat}), maintenance: pageHref('maintenance', cat),
+  const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat, r: ref}), maintenance: pageHref('maintenance', cat),
     governance: pageHref('governance', cat), audit: pageHref('audit', cat), health: pageHref('health')};
+  // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
+  // read, Audit is for audit readers and those who manage the catalog's grants, Health for platform operators.
+  const open = {overview: readsData(), catalog: true, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
+    health: operates()};
   for (const a of $$('a[data-k]', navEl)) {
     const k = a.dataset.k;
+    a.hidden = !open[k];
     a.href = hrefs[k];
     a.setAttribute('aria-label', $('.nl', a).textContent);
     if (k === navKey) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
-  $('[data-brand]').href = pageHref('overview', cat);
+  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('health');
   const count = $('.count', navEl);
   queue().then(rows => {
     const n = queueOf(rows, cat).length;
@@ -278,8 +334,21 @@ function gotoCandidates() {
   return seen;
 }
 
+/** A full dotted path typed into Go to a path, such as markets.fx.rates, or null. */
+const dottedTyped = () => {
+  const typed = gotoIn.value.trim();
+  return /^[^\s./]+(\.[^\s./]+)+$/.test(typed) ? typed : null;
+};
+
+/** The ref the page shown reads, which Go to a path keeps (item 173): none off the browse pages and on a ref's own page. */
+const readingNow = () => {
+  const r = parse();
+  return !r.page && r.k !== 'ref' ? r.r : null;
+};
+
 function gotoDraw() {
   const words = gotoIn.value.trim().toLowerCase().split(/[\s./]+/).filter(Boolean);
+  const typedPath = dottedTyped();
   const all = gotoCandidates();
   const marks = new Map(queued.map(r => [keyOfRow(r), r]));
   if (!words.length) {
@@ -290,12 +359,24 @@ function gotoDraw() {
     gotoItems = all.filter(x => words.every(w => x.path.toLowerCase().includes(w)))
       .sort((a, b) => (a.target.kind === 'namespace') - (b.target.kind === 'namespace') || a.path.length - b.path.length).slice(0, 9);
     gotoH.textContent = gotoItems.length ? `${gotoItems.length === 9 ? 'First 9' : gotoItems.length} match${gotoItems.length === 1 ? '' : 'es'}`
-      : 'No path matches';
+      : 'No path listed so far matches';
+    // A full dotted path opens even when the console has not listed it yet: Enter looks it up, level by level, as a
+    // deep link does (Atelier's review, F1).
+    if (typedPath && !gotoItems.some(x => x.path === typedPath)) {
+      gotoItems = [{target: {kind: 'path'}, path: typedPath}, ...gotoItems].slice(0, 9);
+      if (gotoItems.length === 1) gotoH.textContent = 'Not listed so far; Enter looks it up';
+    }
   }
   gotoAt = Math.min(gotoAt, Math.max(0, gotoItems.length - 1));
   gotoList.replaceChildren(...gotoItems.map((it, i) => {
     const parts = it.path.split('.');
     const kind = it.target.kind;
+    if (kind === 'path') {
+      const li = h('li', {role: 'option', id: 'goto-o' + i, 'aria-selected': String(i === gotoAt), 'data-goto-path': it.path},
+        icon('search', 'ic'), h('span', {class: 'gp'}, 'Open ', h('b', null, it.path)), h('span', {class: 'gx'}, h('span', {class: 'badge'}, 'look up')));
+      li.addEventListener('click', () => gotoOpen(i));
+      return li;
+    }
     const row = kind === 'table' ? marks.get([cat, it.path].join('.')) : null;
     const reasons = row ? row.assessment.reasons || [] : [];
     const extra = kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
@@ -313,8 +394,8 @@ function gotoDraw() {
     return li;
   }));
   if (!gotoItems.length) {
-    gotoList.append(h('li', {class: 'none'}, 'Try fewer words. Go to a path finds the paths the console has listed so far: open a '
-      + 'namespace in the tree to list what is in it.'));
+    gotoList.append(h('li', {class: 'none'}, `Not found among the ${fmt(all.length)} ${all.length === 1 ? 'name' : 'names'} listed so far in ${cat}. `
+      + 'Open a namespace, or type the full dotted path, such as markets.fx.rates.'));
   }
   gotoMark();
 }
@@ -333,8 +414,64 @@ function gotoMark() {
 function gotoOpen(i) {
   const it = gotoItems[i];
   if (!it) return;
+  if (it.target.kind === 'path') {
+    lookUp(it.path);
+    return;
+  }
   gotoDlg.close();
-  location.hash = objectHref(it.target, gotoTab === 'audit' ? 'audit' : null);
+  location.hash = objectHref({...it.target, ref: readingNow()}, gotoTab === 'audit' ? 'audit' : null);
+}
+
+const absent = error => {
+  if (error && error.status === 404) return [];
+  throw error;
+};
+
+/**
+ * Finds a dotted path in the catalog shown, through the ref it reads: a namespace by that path, else a table or a view
+ * named by its last part in the namespace above it. Null when there is none.
+ */
+async function find(path) {
+  const parts = path.split('.');
+  const ref = readingNow();
+  const wh = warehouseOf({catalog: cat, ref});
+  const found = {catalog: cat, ref};
+  try {
+    await api.namespace(wh, parts);
+    return {...found, kind: 'namespace', namespace: parts};
+  } catch (error) {
+    absent(error);
+  }
+  if (parts.length < 2) return null;
+  const levels = parts.slice(0, -1);
+  const name = parts[parts.length - 1];
+  const [tables, views] = await Promise.all([api.tables(wh, levels).catch(absent), api.views(wh, levels).catch(absent)]);
+  if (tables.some(t => t.name === name)) return {...found, kind: 'table', namespace: levels, name};
+  if (views.some(v => v.name === name)) return {...found, kind: 'view', namespace: levels, name};
+  return null;
+}
+
+async function lookUp(path) {
+  const asked = gotoIn.value;
+  gotoH.textContent = `Looking up ${path} in ${cat}…`;
+  let target;
+  try {
+    target = await find(path);
+  } catch (error) {
+    if (gotoIn.value !== asked) return;
+    gotoH.textContent = `Could not look up ${path}`;
+    gotoList.replaceChildren(h('li', {class: 'none'}, failure(error, {compact: true})));
+    return;
+  }
+  if (!gotoDlg.open || gotoIn.value !== asked) return;
+  if (!target) {
+    gotoH.textContent = `No namespace, table or view ${path} in ${cat}`;
+    gotoList.replaceChildren(h('li', {class: 'none', 'data-goto-none': path}, `${cat} has no namespace, table or view at ${path} that `
+      + 'your groups may see. Check the spelling, or type part of the name to search what is listed.'));
+    return;
+  }
+  gotoDlg.close();
+  location.hash = objectHref(target, gotoTab === 'audit' ? 'audit' : null);
 }
 
 async function openGoto(tab = null) {
@@ -394,9 +531,13 @@ function render() {
   const r = parse();
   const names = catalogs.map(c => c.name);
   const fallback = cat && names.includes(cat) ? cat : names[0] || null;
-  if (!r.page && !r.c) {
-    if (names.length) location.replace(pageHref('overview', fallback));
-    else location.replace(pageHref('health'));
+  if (!r.page && !r.c && (names.length || operates())) {
+    if (!names.length) location.replace(pageHref('health'));
+    else if (cat && names.includes(cat)) location.replace(homeHref(cat));
+    else {
+      slot.replaceChildren(h('p', {class: 'loading-line'}, 'Loading…'));
+      landingCatalog(names).then(c => { if (!parse().page && !parse().c) location.replace(homeHref(c)); });
+    }
     return;
   }
   // Health is the whole deployment's: platform operators see it though they may hold nothing in any catalog.
@@ -417,6 +558,7 @@ function render() {
     return;
   }
   cat = r.c || fallback;
+  if (r.page !== 'health') keepCatalog(cat);
   const tabOnly = same(prev, r);
   let content;
   let navKey;
@@ -437,11 +579,11 @@ function render() {
   } else if (r.page === 'audit') {
     navKey = 'audit';
     title = 'Audit';
-    content = auditPage(cat);
+    content = auditOpen(cat) ? auditPage(cat) : closedPage('Audit', `Audit is open to auditors and to those who manage ${cat}'s grants.`);
   } else if (r.page === 'health') {
     navKey = 'health';
     title = 'Health';
-    content = healthPage();
+    content = operates() ? healthPage() : closedPage('Health', 'Service health is open to platform operators.');
   } else if (!r.page && r.c) {
     navKey = 'catalog';
     rail = true;
@@ -475,7 +617,9 @@ async function start() {
   showWho();
   fill(slot, h('p', {class: 'loading-line'}, 'Loading…'));
   try {
-    catalogs = await api.catalogs();
+    const listed = await api.catalogs();
+    keepAccess(listed);
+    catalogs = listed.catalogs;
   } catch (error) {
     fill(slot, h('div', {class: 'nc-main'}, failure(error, {big: true})));
     return;

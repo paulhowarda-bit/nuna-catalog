@@ -176,6 +176,101 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * Sign-in opens the catalog this browser used last, else the one with the most tables the caller may read
+     * (Atelier's review, F2; backlog 183); a catalog with nothing the caller may read says so in plain words. This
+     * server has one catalog, so the landing is the catalog with tables and the empty headline names no other.
+     */
+    @Test
+    void signInOpensTheCatalogWithTablesAndAnEmptyOneSaysSo() {
+        signIn(tester());
+        browser.open("/ui/");
+        browser.await("sign-in did not open the overview of trading",
+                d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
+        browser.await(By.cssSelector("#overview-kpis"));
+        assertThat(driver.executeScript("return localStorage.getItem('nuna.catalog')")).isEqualTo("trading");
+
+        // Grant administrators read no table (D18).
+        signIn(api.grantAdmin());
+        browser.open("/ui/#p=overview&c=trading");
+        browser.awaitText(By.cssSelector("#overview h1"), "Nothing in trading you may read.");
+        assertThat(driver.findElements(By.cssSelector("#overview h1 a[data-other-catalog]"))).isEmpty();
+    }
+
+    /**
+     * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
+     * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Health; a grant admin
+     * on Audit, with no Overview or Maintenance; a platform operator on Health.
+     */
+    @Test
+    void eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs() {
+        signIn(tester());
+        browser.open("/ui/");
+        browser.await("the tester did not land on the overview", d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
+        assertThat(rail()).containsExactly("overview", "catalog", "maintenance", "governance");
+        browser.open("/ui/#" + at("table", eu, "trades", "governance"));
+        browser.await(By.cssSelector("#governance .status-row"));
+        assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab]")))
+                .extracting(a -> a.getDomAttribute("data-tab")).doesNotContain("audit").contains("grants");
+        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels']"))).isEmpty();
+        tab("grants");
+        browser.await(By.cssSelector("[data-grants='own']"));
+        assertThat(driver.findElements(By.cssSelector(".nc-main form.grant-form"))).isEmpty();
+        browser.open("/ui/#p=audit&c=trading");
+        assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                .isEqualTo("Audit is open to auditors and to those who manage trading's grants.");
+
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        assertThat(rail()).containsExactly("catalog", "governance", "audit");
+
+        signIn(api.operator());
+        browser.open("/ui/");
+        browser.await("the operator did not land on Health", d -> d.getCurrentUrl().endsWith("#p=health"));
+        assertThat(rail()).containsExactly("catalog", "governance", "health");
+    }
+
+    /** The rail's items drawn for the caller, by key. */
+    private List<String> rail() {
+        browser.await(By.cssSelector("#nav a[data-k][aria-current='page'], #nav a[data-k]:not([hidden])"));
+        return driver.findElements(By.cssSelector("#nav a[data-k]")).stream()
+                .filter(a -> a.getDomAttribute("hidden") == null).map(a -> a.getDomAttribute("data-k")).toList();
+    }
+
+    /**
+     * Go to a path opens a full dotted path the console has not listed yet, looking up each level as a deep link
+     * does, from a page with no tree; a path that is not there says so, and a word with no match says what was
+     * searched (Atelier's review, F1; backlog 185).
+     */
+    @Test
+    void goToAPathOpensAFullDottedPathNotListedYet() {
+        String path = top + ".equities.eu.trades";
+        signIn(tester());
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis"));
+        browser.await(By.cssSelector(".nc-go")).click();
+        WebElement box = browser.await(By.id("goto-in"));
+        box.sendKeys(path);
+        browser.await(By.cssSelector("#goto-list [data-goto-path='" + path + "']"));
+        box.sendKeys(Keys.ENTER);
+        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        assertThat(driver.getCurrentUrl()).contains("k=table", "n=trades", "ns=" + top + "%1Fequities%1Feu");
+
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis"));
+        browser.await(By.cssSelector(".nc-go")).click();
+        box = browser.await(By.id("goto-in"));
+        box.sendKeys("zzqq");
+        assertThat(textContent(browser.await(By.cssSelector("#goto-list li.none"))))
+                .startsWith("Not found among the ").contains("listed so far in trading").doesNotContain("fewer words");
+        box.clear();
+        box.sendKeys(top + ".equities.nothing_here");
+        box.sendKeys(Keys.ENTER);
+        browser.await(By.cssSelector("#goto-list [data-goto-none='" + top + ".equities.nothing_here']"));
+        assertThat(driver.getCurrentUrl()).endsWith("#p=overview&c=trading");
+    }
+
+    /**
      * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
      * them answers (backlog 137): the last commit is the newest entry of the table's metadata log. Each child
      * namespace gets its totals over the tables beneath it (backlog 147).
@@ -380,10 +475,13 @@ class ConsoleBrowserTest {
         assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
                 + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"));
 
-        // Reading an object's audit trail needs manage-grants.
+        // Reading an object's audit trail needs manage-grants: the tab is not offered, and a link to it says so
+        // without asking the catalog (backlog 184), which would refuse it.
         browser.open("/ui/#" + at("table", eu, "trades", "audit"));
-        assertShownVerbatim(refusal("#audit"), api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null,
-                AUTH, tester()));
+        assertThat(textContent(browser.await(By.cssSelector("#table-page [data-closed] h3"))))
+                .isEqualTo("An object's audit trail is open to those who manage trading's grants.");
+        assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab='audit']"))).isEmpty();
+        expect(api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null, AUTH, tester()), 403);
 
         // Grant administrators are kept away from the data itself (D18).
         signIn(api.grantAdmin());
@@ -743,7 +841,8 @@ class ConsoleBrowserTest {
     /**
      * A table read as of a tag (D33, backlog 109): the page loads through trading@<tag> and shows what the tag keeps,
      * not what main committed since; the band, the top chip and the first crumb name the tag; the read-only note
-     * quotes what the catalog answers a commit through it; and "Read main instead" goes back to main.
+     * quotes what the catalog answers a commit through it; the tree lists the tag's tables, not one made on main
+     * since, and a click in it keeps the tag (backlog 173); and "Read main instead" goes back to main.
      */
     @Test
     void aTableIsReadAsOfATag() {
@@ -752,8 +851,10 @@ class ConsoleBrowserTest {
         expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
         expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
         expect(api.rest("POST", "/namespaces/" + ns + "/tables/orders", Api.SET_PROPERTY.formatted("before")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("fills")), 200);
         expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
         try {
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("late")), 200);
             expect(api.rest("POST", "/namespaces/" + ns + "/tables/orders", Api.SET_PROPERTY.formatted("after")), 200);
             HttpResponse<String> refused = api.send("POST", "/v1/" + Api.CATALOG + "@" + tag + "/namespaces/" + ns
                     + "/tables/orders", Api.SET_PROPERTY.formatted("through-the-tag"));
@@ -773,6 +874,18 @@ class ConsoleBrowserTest {
             assertThat(textContent(note.findElement(By.cssSelector(".refusal-msg"))))
                     .isEqualTo(JsonPath.<String>read(refused.body(), "$.error.message"));
             assertThat(properties(ns)).containsEntry("k", "after");
+
+            // The tree reads the tag too: it names it beside the catalog, lists what the tag keeps and not the table
+            // made on main since, and a click in it stays on the tag.
+            browser.await(By.cssSelector(".tree[data-ref='" + tag + "'] [data-tree-ref='" + tag + "']"));
+            browser.await(node("table:" + ns + ".fills"));
+            assertThat(driver.findElements(node("table:" + ns + ".late"))).isEmpty();
+            driver.findElement(node("table:" + ns + ".fills")).click();
+            browser.awaitText(By.cssSelector("#table-page h1"), "fills");
+            assertThat(driver.getCurrentUrl()).contains("n=fills", "r=" + tag);
+            browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
+            assertThat(driver.findElement(By.cssSelector("#nav a[data-k='catalog']")).getDomAttribute("href"))
+                    .contains("r=" + tag);
 
             driver.findElement(By.xpath("//div[@data-ref-band='" + tag + "']//a[normalize-space()='Read main instead']"))
                     .click();

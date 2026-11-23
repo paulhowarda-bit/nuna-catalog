@@ -1,0 +1,17 @@
+Breaks: The catalog list says every caller operates the deployment.
+Module: catalog-server
+Test: CatalogListTest#theAnswerSaysWhetherTheCallerOperatesTheDeploymentOrReadsTheAuditFeed
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+index 65931bb4..5600263b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java
+@@ -132,7 +132,7 @@ class UiRoutes {
+                         .ifPresent(record -> catalogs.add(Map.of("name", name, "may", may(caller, record)))));
+         Map<String, Object> may = new TreeMap<>();
+         may.put("read-audit-feed", readsAuditFeed(caller));
+-        may.put("operate", in(caller, separation.platformOperatorGroups()));
++        may.put("operate", true);
+         return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON)
+                 .body(JSON.writeValueAsString(Map.of("catalogs", catalogs, "may", may)));
+     }

@@ -88,11 +88,11 @@
 <dialog class="goto" id="goto" aria-label="Go to a path">
   <form method="dialog" class="goto-form" data-goto-form>
     <label class="goto-field"><svg class="ic" aria-hidden="true"><use href="#i-search"/></svg><span class="vh">Path</span>
-      <input id="goto-in" type="text" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="goto-list" autocomplete="off" spellcheck="false" placeholder="Type part of a path, such as equities trades">
+      <input id="goto-in" type="text" role="combobox" aria-autocomplete="list" aria-expanded="true" aria-controls="goto-list" autocomplete="off" spellcheck="false" placeholder="Part of a name, or a full dotted path such as markets.fx.rates">
       <kbd>Esc</kbd></label>
     <p class="goto-h" id="goto-h">Loaded so far</p>
     <ul class="goto-list" id="goto-list" role="listbox" aria-labelledby="goto-h"></ul>
-    <p class="goto-foot fine"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> to move, <kbd>Enter</kbd> to open. Matches every word you type, in any order, among the paths the console has listed so far and tonight's queue.</p>
+    <p class="goto-foot fine"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> to move, <kbd>Enter</kbd> to open. Matches every word you type, in any order, among the paths listed so far and tonight's queue; a full dotted path opens even when it has not been listed.</p>
   </form>
 </dialog>
 
