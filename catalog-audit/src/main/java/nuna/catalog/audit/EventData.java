@@ -7,7 +7,7 @@ package nuna.catalog.audit;
 public sealed interface EventData
         permits Commit, GrantChange, Drop, BreakGlass, ObjectRead, Denial, AuthFailure, CredentialIssue,
         NamespaceChange, Rename, EngineChange, StorageSetup, GovernanceChange, HoldChange, Undrop, Purge,
-        AuditRead, Unregister, LabelChange, PurgeClaim, FileDeletion, MaintenanceExemption {
+        AuditRead, Unregister, LabelChange, PurgeClaim, FileDeletion, MaintenanceExemption, RefChange {
 
     EventType type();
 

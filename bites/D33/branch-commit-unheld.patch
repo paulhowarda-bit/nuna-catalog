@@ -1,0 +1,17 @@
+Breaks: a commit on a branch does not hold the branch, so it lands on a branch that has ended (D33, item 103).
+Module: catalog-core
+Test: BranchCommitTest#firstAndSecondCommit+aCommitAfterTheBranchEnded
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..3f3163e 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1301,7 +1301,7 @@ public final class CommitEngine {
+     }
+ 
+     private Optional<RefLock> refLock() {
+-        return branch.map(on -> new RefLock.Hold(on.ref().id()));
++        return Optional.empty();
+     }
+ 
+     /** What commit events name as the branch (choice 13): main, or the branch's name. */

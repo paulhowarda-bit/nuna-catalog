@@ -1,0 +1,17 @@
+Breaks: a commit on a branch ignores main's legal holds, so it removes a held table's snapshots (D24, security finding 4).
+Module: catalog-core
+Test: BranchCommitTest#aLegalHoldHoldsABranch
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..92e3f35 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1280,7 +1280,7 @@ public final class CommitEngine {
+         return new CommitRule.Governance() {
+             @Override
+             public boolean held() {
+-                return governance.held();
++                return false;
+             }
+ 
+             @Override

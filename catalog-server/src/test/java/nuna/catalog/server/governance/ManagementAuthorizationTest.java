@@ -220,6 +220,41 @@ class ManagementAuthorizationTest {
     }
 
     @Test
+    void makingRenewingAndDeletingARefNeedCreateOnTheCatalog() {
+        String name = "auth-" + Api.suffix();
+        String body = "{\"name\":\"" + name + "\",\"kind\":\"branch\"}";
+        refused(api.manage("POST", "/refs", body, AUTH, api.steward()));
+        expect(api.manage("POST", "/refs", body), 201);
+        clock.advance(java.time.Duration.ofDays(1));
+        refused(api.manage("POST", "/refs/" + name + "/renew", null, AUTH, api.steward()));
+        expect(api.manage("POST", "/refs/" + name + "/renew", null), 200);
+        refused(api.manage("DELETE", "/refs/" + name, null, AUTH, api.steward()));
+        expect(api.manage("DELETE", "/refs/" + name, null), 204);
+    }
+
+    @Test
+    void listingAndReadingRefsNeedAnyHoldingInTheCatalog() {
+        String name = "auth-" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + name + "\",\"kind\":\"tag\"}"), 201);
+        hidden(api.manage("GET", "/refs", null, AUTH, api.outsider()), "NoSuchWarehouseException");
+        hidden(api.manage("GET", "/refs/" + name, null, AUTH, api.outsider()), "NoSuchWarehouseException");
+        expect(api.manage("GET", "/refs", null, AUTH, api.bystander()), 200);
+        expect(api.manage("GET", "/refs/" + name, null, AUTH, api.bystander()), 200);
+    }
+
+    @Test
+    void warningOfAndEndingABranchAreForTheMaintenancePrincipal() {
+        String id = JsonPath.read(expect(api.manage("POST", "/refs", "{\"name\":\"auth-" + Api.suffix()
+                + "\",\"kind\":\"branch\"}"), 201).body(), "$.id");
+        refused(api.manage("POST", "/maintenance/refs/" + id + "/warn", null));
+        refused(api.manage("POST", "/maintenance/refs/" + id + "/end", null, AUTH, api.operator()));
+        expectError(api.manage("POST", "/maintenance/refs/" + id + "/warn", null, AUTH, api.maintenance()), 409,
+                "RefNotExpiringException");
+        expectError(api.manage("POST", "/maintenance/refs/" + id + "/end", null, AUTH, api.maintenance()), 409,
+                "RefNotExpiredException");
+    }
+
+    @Test
     void theDrWatermarksAreForAPlatformOperator() {
         refused(api.send("GET", "/management/v1/dr/watermarks", null));
         refused(api.send("GET", "/management/v1/dr/watermarks", null, AUTH, api.maintenance()));

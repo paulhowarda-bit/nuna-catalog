@@ -118,6 +118,11 @@ final class TestCatalog {
     final TestS3 s3;
     final String bucket;
     final JdbcTemplate jdbc;
+    /**
+     * The server's own store, for what no route does yet: a commit on a catalog branch and a merge (items 105 and 107;
+     * RefCleanupTest).
+     */
+    final nuna.catalog.store.CatalogStore store;
     /** The server's database, as its JDBC URL. */
     private final String database;
     private final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build();
@@ -186,6 +191,7 @@ final class TestCatalog {
                 .properties(properties)
                 .run(args.toArray(String[]::new));
         jdbc = server.getBean(JdbcTemplate.class);
+        store = server.getBean(nuna.catalog.store.CatalogStore.class);
         int port = server.getEnvironment().getRequiredProperty("local.server.port", Integer.class);
         uri = URI.create("http://" + host + ":" + port + "/");
     }

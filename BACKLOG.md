@@ -853,6 +853,23 @@ tag as a client would.
 - Left: the stock `RESTCatalog` test in `IcebergClientConfigTest` (heavy), once item 106 lands, and the heavy build
   passing it. `ConformanceServer` needs no change for it if the tag is made through item 106's route.
 
+**Update, 2026-11-22 (item 105's branch, worktree-agent-a4085e6c5aba86c01):**
+- The stock-client test is written: `IcebergClientConfigTest#stockClientReadsATagAndCommitsOnABranch` makes a tag
+  and a branch through item 106's route, reads a table on the tag as the tag took it, is refused a commit there (400
+  naming the tag), and commits on the branch (item 105). It compiles; it is heavy and has not run.
+- Security finding 1 (high, from the security review of 2026-11-22, shared with item 105): through a ref, an object
+  main has unregistered answers 404 (`Lookup.seen`), on a tag and a branch; unregister is not refused while a ref
+  names the object. A branch vends write credentials only while main's object is active (`Lookup.writable`), so a
+  table main has dropped since loads read-only there. Tests: `RefReadsTest` `aTableMainDroppedIsReadOnlyOnABranch`
+  and `aTableMainUnregisteredIsGoneFromEveryRef`. Bites: `rest-branch-vends-write-for-dropped`,
+  `rest-ref-serves-unregistered`.
+- Security finding 5 (medium): `RefReadsTest` cases through a tag and a branch: a caller holding nothing is answered
+  404 with the denial audited; one who may only describe is refused 403; a flagged table gives an untrusted engine no
+  storage access (`flagged_table`); an unclassified table in a regulated area is closed (D27). Bite:
+  `rest-ref-load-unguarded`, the load's guard skipped on a ref.
+- `D33/rest-tag-vends-write` was recorded again against `Lookup.writable`, with the same break.
+- Left: the heavy build passing the stock-client test (the overnight run's).
+
 Choices made (Paul may overrule):
 - Through a ref, rights and governance (holds, regulated, freezes) are checked against main's record of the namespace,
   table or view, by its id. Why: rights on a ref are those on main (choice 12), and a cut keeps no grants.
@@ -879,6 +896,7 @@ Choices made (Paul may overrule):
 ### 105. Commits on a branch write its own pointer (item 26)
 
 - Added: 2026-11-20 by agent on item 26
+- Decided: 2026-11-22, D33
 - Touches: catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/test/java/nuna/catalog/core/commit/ catalog-server/src/main/java/nuna/catalog/server/rest/
 - Effort: L, the engine's twelve reads and swaps of main's key become the ref's, for tables, views and transactions, with the merge cap and the unknown-outcome path on a branch; most tests need only Java; waits on items 103 and 104
 
@@ -903,6 +921,167 @@ racing, a transaction across two tables on a branch, the cap, and a commit after
 (heavy) with a stock `RESTCatalog` on `<catalog>@<branch>` commit two tables, leave main unchanged, and read the
 branch's rows back. Fast build green; bites recorded in `bites/D33/`. Waits on items 103 and 104. Items 107, 108
 and 111 wait on this one.
+
+**The rule for a DR freeze on a branch (Paul, 2026-11-22, D33 as amended: "Only the merge"):** a DR freeze does not
+refuse a commit on a branch; it binds the merge (item 107), which refuses a frozen table while the freeze stands. A
+branch's commit to a table under a freeze lands, and main is unchanged. Every other rule main applies binds a commit
+on a branch: grants, D20, D27, D17's switch, legal holds (D24), the minimum snapshot age with the retention class's
+(D24, D30), and the rules of `Rules.standard`.
+
+**Progress, 2026-11-22 (worktree-agent-a4085e6c5aba86c01): built; the engine and route tests run in the fast build;
+the stock-client test is written and compiles (heavy, not run). Open until the heavy build passes it, and for the Left
+below.**
+- Built for item 108, as its own commit (b0b459b): `RefStore.listRefPointers(objectId)` with the record
+  `RefPointers` (each ref whose cut names the table or view: the ref, its cut entry and the branch's own pointer, if
+  any), and `RefStore.countOwnPointers(refId)` (for this item's cap), on PostgreSQL/CockroachDB, Oracle and MongoDB,
+  with two `RefSuite` cases (heavy).
+- The engine: `CommitEngine.on(Branch)` gives an engine whose `commitTable`, `commitView` and `commitTransaction` go
+  to the branch. `Branch` carries the ref, the cap and each object the request names as the branch's cut holds it. A
+  commit reads the branch's own pointer (`ref.key(id)`), else the pointer the cut took; checks the client's
+  requirements and applies the request to that version; judges it with every rule as on main, against main's
+  governance, but with no DR freeze; and swaps the branch's key under `RefLock.Hold(ref)`. The first commit creates
+  the branch's pointer at version 1 (the swap expects nothing there). A lost swap is retried within P10's bound; an
+  unknown outcome is settled with `findCommit` on the branch's key; an Idempotency-Key is replayed, bound to the
+  branch. A transaction holds the branch's own pointers of the tables it leaves unchanged.
+- The object is main's record of it, by the cut entry's id, while main has it active: one main has dropped,
+  unregistered or purged since answers 404 ("main has dropped or unregistered it since branch dev was made"), before
+  anything is written; the store's `Inactive` for the object (main dropped it between the read and the swap) answers
+  the same. A branch that has ended (merged, deleted, or past its expiry when the store commits) answers 404
+  `NoSuchWarehouseException` ("Branch dev is gone: merged, deleted or past its expiry").
+- The cap: `nuna.refs.max-merge-tables` (`RefSettings`, default 100, at least 1). A commit or transaction that would
+  give the branch more own pointers than that answers 400 naming the setting, before any file is written.
+- The marker (security finding 12): a file a branch writes is named `<version>-<uuid>.branch-<ref id>.metadata.json`
+  (`TableFiles.fileName` and `TableFiles.BRANCH_MARK`, in catalog-core), in the table's `metadata/` directory beside
+  main's (`MetadataFiles.write`, in catalog-objectstore, through `ProfileTableFiles`); main's files keep
+  `<version>-<uuid>.metadata.json`. `TableFiles.onBranch(location)` tells them apart by the file's own name.
+- The record: the `Commit` event (outbox and audit) names the branch it landed on, `main` or the branch's name, so
+  `ArchivedCommits.read`, which keeps only commits on `main`, never takes a branch's commit as proof of main's swap.
+  The commit meter `nuna.catalog.commits` gains `ref.kind` (`main` or `branch`, never a name).
+- After a commit that lands, `Engines.committed` moves the branch's expiry `nuna.refs.branch-idle-expiry` ahead, never
+  past its whole life, with a `ref` event (renewed) naming who committed (choice 11), once the move gains an hour.
+- The routes: `OnRef.forCommit` refuses a tag only; the table commit, the view replace and `/transactions/commit`
+  find each object through the branch's cut (`Lookup.seen`), authorize it on main's record (`Guard.onCommit`) and pass
+  the cut entries to `Engines.forCommit` and `Engines.forTransaction`. A name the branch's cut does not hold answers
+  404, whoever asks: a branch creates nothing.
+- Docs: `deploy/README.md` (the cap, the renewal on commit, and, for item 108, keeping the replicas' clocks within
+  well under an hour); `docs/observability/catalog-metrics.md` (`ref.kind` on commits). `application.yaml` holds no
+  `nuna.refs.*` setting, so the cap is documented there, not added to it.
+
+**The security review (Nuna Security Expert session, 2026-11-22), done:**
+- Finding 1 (high; with item 104): through a ref, an object main has unregistered answers 404 (`Lookup.seen`), on the
+  tag and the branch, for load, HEAD, credentials and commits; unregister is not refused while a ref names the object.
+  A branch vends write credentials only while main's object is active (`Lookup.writable`), so a table main dropped
+  since loads read-only on the branch. Every state but active refuses a commit on a branch (`activeOnMain`, and the
+  store's `Inactive`). Tests: `RefReadsTest` `aTableMainDroppedIsReadOnlyOnABranch`,
+  `aTableMainUnregisteredIsGoneFromEveryRef`; `BranchCommitTest#aTableGoneFromMain`. Bites:
+  `rest-branch-vends-write-for-dropped`, `rest-ref-serves-unregistered`, `branch-commit-to-inactive`.
+- Finding 4 (medium): a commit on a branch applies every check main applies, through `Guard.onCommit` and the engine's
+  rules: D20 (an untrusted engine's commit to a flagged table: 403, audited), D27 (an unclassified table in a regulated
+  area: closed), D17's switch, the legal hold and the minimum snapshot age. D20's maintenance exemption and snapshot
+  expiry's allowance to remove schemas and partition specs hold on main only (choice 14). As corrected by Paul's
+  decision the same day, a DR freeze does not refuse a commit on a branch (above); the freeze test shows the branch's
+  commit landing and main unchanged, with no bite. Tests: `RefReadsTest` `aFlaggedTableRefusesAnUntrustedCommitOnABranch`,
+  `theMaintenanceExemptionHoldsOnMainOnly`, `theExpiryAllowanceHoldsOnMainOnly`,
+  `anUnclassifiedTableTakesNoCommitOnABranch`, `anIdentityLessWriteIsRefusedOnABranch`; `BranchCommitTest`
+  `aLegalHoldHoldsABranch`, `theMinimumSnapshotAgeHoldsABranch`, `aFreezeDoesNotHoldABranch`. Bites:
+  `rest-branch-commit-unguarded` (D20, D27 and D17 go through the one new call, so one bite breaks all three tests),
+  `rest-branch-maintenance-exempted`, `rest-branch-expiry-allowance`, `branch-hold-ignored`,
+  `branch-retention-class-ignored`.
+- Finding 5 (medium; item 104's, recorded there too): `RefReadsTest` cases through a tag and a branch: a caller holding
+  nothing is answered 404 and the denial audited (`aCallerHoldingNothingIsTold404`); one who may only describe is
+  refused 403 (`aDescriberIsRefusedTheLoad`); a flagged table gives an untrusted engine no storage access, load or
+  credentials (`aFlaggedTableRefusesAnUntrustedEngineThroughARef`); an unclassified table in a regulated area is closed
+  (`anUnclassifiedTableIsClosedThroughARef`). Bite: `rest-ref-load-unguarded`, the load's guard skipped on a ref.
+- Finding 11 (low): a branch's write credentials cover main's whole table prefix, so an engine on a branch could write
+  main's files. Recorded in item 113 (a grant that names a branch needs credentials scoped to the branch) and item 112
+  ("a tag's credentials refuse PutObject" joins the M6 adversarial set).
+- Finding 12 (high; the storage half): the marker and the record above. Test: `MetadataFileNameTest`
+  `aBranchsFilesAreMarked` (Java only: a branch's file carries `.branch-<ref id>`, main's never, and a directory
+  named so does not count); `BranchCommitTest#firstAndSecondCommit` checks every file a branch writes is marked and
+  main's are not. Bites: `branch-file-unmarked`, `rest-branch-commit-audited-as-main`, `branch-event-names-main`. The
+  Reconcile half is item 111's (Left).
+
+**How the merge (item 107) must treat a branch's files (choice made, Paul may overrule):** the merge swaps main's
+pointer to the branch's marked file as it is, without copying or renaming it. Main's chain then holds marked files
+only where main's pointer, or a commit on main archived with `branch: main` (the merge's swap), names them. Why: a copy
+would write every merged version again and give its new file a hash the branch's commits never recorded; the marker
+only has to keep a branch's files from counting as main's until main takes them.
+
+Tests, Java only, in the fast build:
+- `BranchCommitTest` (catalog-core, 11): the first and second commit, a view, two first commits racing, a transaction
+  across two tables, the cap, a commit after the branch ended, a table gone from main, the freeze, the legal hold, the
+  retention class's minimum, and the Idempotency-Key bound to the branch. Over a store double that judges a batch as
+  the stores do (the branch held and alive at commit time, every swapped object active, every pointer as expected,
+  and a branch's batch swapping only its own keys).
+- `RefReadsTest` (catalog-server, 29, 15 of them new): commits, a view replace and a transaction on a branch through
+  the real routes, guard and engine, writing to the in-JVM object store (which now takes PUTs), the renewal, and the
+  findings' cases above. `writesOnABranchAre400` now holds for creates, drops, renames, registrations and namespace
+  changes only.
+- `MetadataFileNameTest#aBranchsFilesAreMarked`, `CatalogMetricsTest` (the `ref.kind` label), `RefSettingsTest` (the
+  cap's default, its binding and its floor).
+
+Heavy, written and compiled, not run (the overnight run's heavy build runs them):
+`IcebergClientConfigTest#stockClientReadsATagAndCommitsOnABranch` (a stock `RESTCatalog` reads a table on a tag made
+through item 106's route, is refused a commit there, commits two tables in one transaction on a branch and appends a
+data file, reads the branch's properties, snapshot and planned files back, and finds main unchanged; the module has no
+Parquet writer, so the rows are read back as the planned data file and its record count), and `RefSuite`'s
+`aBranchCountsItsOwnPointers` and `everyRefNamingATableListsItsPointers` on every store.
+
+Bites in `bites/D33/`, 20 new: `branch-file-unmarked`, `branch-commit-swaps-main`, `branch-first-commit-reads-main`,
+`branch-cap-unchecked`, `branch-commit-to-inactive`, `branch-key-unbound`, `branch-hold-ignored`,
+`branch-retention-class-ignored`, `branch-commit-unheld`, `branch-ended-answered-as-table`, `branch-event-names-main`,
+`rest-branch-commit-audited-as-main`, `rest-branch-commit-metered-as-main`, `rest-branch-vends-write-for-dropped`,
+`rest-ref-serves-unregistered`, `rest-ref-load-unguarded`, `rest-branch-commit-unguarded`,
+`rest-branch-maintenance-exempted`, `rest-branch-expiry-allowance`, `rest-branch-not-renewed`. Ten older bites this
+change moved were recorded again with the same breaks: `D18/create-name-checked-first` and `D33/rest-tag-vends-write`
+(fast); `D15/guard-not-held`, `D15/transaction-partial`, `D15/transaction-cap-unchecked`,
+`D15/transaction-table-twice`, `D15/transaction-unguarded`, `M5/commit-unguarded`, `M6/real-near-expiry-304` and
+`OBS-41/location-in-attributes` (heavy tests, checked with `git apply --check` only).
+Each of the 20 new bites and the two fast re-recorded ones was run with `bites/run.sh <patch>...` and seen
+to bite on an assertion, the tree restored after each: "22 bites, 0 not biting or not restored (0 of them
+SETUP)".
+
+Choices made (Paul may overrule):
+- The cap counts the branch's own pointers with a store read before the swap, not inside the commit. Why: an exact
+  count needs a check in the commit transaction of all four stores. First commits to different tables racing at the
+  cap can each pass it, so a branch can end a few tables over; the merge (item 107) should refuse a branch over the
+  cap with a message saying to split it, rather than run a transaction past P10's bound.
+- A branch's own pointer starts at version 1, whatever the cut's version, and its first file is `00001-…`. Why: a swap
+  that creates a pointer expects nothing and writes version 1 (`PointerSwap`); the cut's version stays in the cut
+  entry and the commit event's `before`.
+- The marker is the file name, `.branch-<ref id>` before `.metadata.json`, not a directory or an object tag. Why: a
+  listing shows it, every store keeps it, and Iceberg reads any file name; the id, not the branch's name, since names
+  can be reused once a branch ends.
+- The `Commit` event's `branch` is the branch's name, as `ObjectRead.branch` is for a read (choice 13). A branch can
+  never be named `main`, so `main` means main.
+- The expiry moves after the commit, not in its transaction, and only once the move gains an hour
+  (`Engines.RENEWAL_STEP`). Why: item 103 keeps the store's commit free of ref writes; a busy branch is not rewritten,
+  nor a `ref` event sent, on every commit. A renewal that fails is logged and the commit stands.
+- An Idempotency-Key used on a branch is bound to the branch's id, so the same key and body on main or another branch
+  is "used for a different request" (400), as for a different table.
+- A commit on a branch to a name its cut does not hold answers 404 before any authorization. Why: a branch creates
+  nothing (question 1 (b)), so there is no create to authorize; asking for `create` would answer 403 for a table that
+  is not there.
+- Through a ref, an unregistered object answers 404, but unregister is not refused while a ref names the object. Why:
+  the catalog no longer tracks it (D13), and refusing would let any ref block main's unregister.
+- A transaction on a branch names each table's audit path by the object's id, since its engine finds each by its cut
+  entry; on main by name, as before.
+
+Left:
+- The heavy build passing `IcebergClientConfigTest#stockClientReadsATagAndCommitsOnABranch` and the two `RefSuite`
+  cases: the overnight run's.
+- Reconcile (item 111, finding 12), not this item's code: `Reconcile` must skip marked files
+  (`TableFiles.onBranch`) when it builds main's chain, and filter the archive match on the ref, so only commits on
+  `main` prove main's swaps. Tests: a branch's two commits past main's head are not taken while main's own successor
+  still is; and a branch file plus main's file at the same predecessor do not count as two proven children. Bites for
+  both filters.
+- Reconcile must skip branch files (finding 12, with item 111) before any build with this item goes to work, where a
+  real failover reconcile can run.
+- The merge (item 107) treats a branch's files as above, refuses a branch over the cap, and refuses a frozen table.
+- A transaction on a branch cannot hold a table it leaves unchanged and has not committed to yet: it reads the cut's
+  version, and `PointerHold` cannot say "no pointer here", so a first commit to that table on the branch landing
+  meanwhile goes unseen. Holding an absent pointer needs the four stores.
+- Finding 11: credentials scoped to a branch (item 113), and the M6 adversarial case (item 112).
 
 ### 106. Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26)
 
@@ -935,6 +1114,96 @@ past expiry answering 404 everywhere; `ManagementAuthorizationTest` and `Mutatin
 107, 108 and 109 wait on this one.
 
 **Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
+
+**Progress, 2026-11-20 (worktree-agent-a7b98848ac0492b9e): built; not landed on its own. Items 106 and 108 land
+together, in one merge: item 108's agent starts from this branch, and the session lands item 108's branch. Open until
+the heavy build passes the route tests below.**
+- Routes (`governance/RefRoutes.java`), under `/management/v1/catalogs/{catalog}/refs`: `GET` (paged, a branch past
+  its expiry left out), `POST` (`{"name", "kind": "branch" | "tag", "from"}`, `from` defaulting to main; 201 with
+  the ref), `GET …/{ref}` (for a branch, `changed`: each table and view of its cut it has its own pointer for, that
+  the caller can describe, with the cut's version and the branch's), `POST …/{ref}/renew` (200) and
+  `DELETE …/{ref}` (204). A ref answers `id`, `name`, `kind`, `from`, `created-at`, `created-by` and, for a branch,
+  `expires-at`, `max-expires-at` and `expiring`. Create, renew and delete need `create` on the catalog, list and
+  read any holding in it (choice 12), refusals audited as `Denial`s; each write takes an Idempotency-Key
+  (`ManagementIdempotency`, D10) and writes its `ref` record to the outbox with the change.
+- P11 as settings (`RefSettings`, `nuna.refs.*`): `max-branches` 50, `max-tags` 1000, `branch-idle-expiry` 30d,
+  `branch-max-life` 180d, `expiry-warning` 7d. A create past a limit answers 409 `RefLimitException` naming the
+  setting. A branch's creation and a renewal set its expiry 30 days ahead, never past 180 days from its creation
+  (choice 11; `RefSettings.expiryAfter`, which item 105's commits use too). A branch past its expiry answers 404
+  `NoSuchRefException` on every route and is left out of the list; its name stays taken (409, saying so) until the
+  worker ends it.
+- The worker's side here (item 108 calls it): the work list's `refs` section (`GET /management/v1/maintenance/work?
+  section=refs`, also walked after `deletions`): items `{id, catalog, name, expires-at, action}`, `action` `end` for
+  a branch past its expiry and `warn` for one within `expiry-warning` of it whose warning was not sent; one store
+  page of one declared catalog per page, so a page can be empty with a token. `POST /management/v1/maintenance/refs/
+  {id}/warn` sends one `ref` event (expiring) to the audit topic and the change stream, once for each expiry the
+  branch reaches (200 `{"id", "expires-at", "sent"}`; 409 `RefNotExpiringException` outside the window; 503 while
+  Kafka is down, the warning not marked sent). `POST …/{id}/end` deletes a branch past its expiry with a `ref` event
+  (expired) naming the worker (204; 409 `RefNotExpiredException` for a tag or an open branch). Both are for a
+  maintenance principal acting as itself.
+- Audit and meters (choice 13): `EventType.REF` (`nuna.catalog.ref`, `RefChange`: created, renewed, deleted, merged
+  with its tables, expiring, expired), mapped in `AuditRows` (the row names the catalog), on the change stream, with
+  a golden line in `events-v1.jsonl`. Gauges `nuna.catalog.refs` {`catalog`, `ref.kind`} and
+  `nuna.catalog.refs.expiring` {`catalog`}, read from the store at most every 30 s, the same on every server
+  (`docs/observability/catalog-metrics.md`); the label `ref.kind` joins `CatalogMetrics.LABELS`.
+  `deploy/README.md` ("Before production") names the settings and routes.
+- Tests, Java only and run: `RefRoutesTest` (17: rights, create, limits, bad names and sources, renewal and its cap,
+  a tag's renewal, delete, expiry everywhere, idempotent replay, the changed tables by describe, the worker's
+  rights, warn once per expiry, a failed warning sent next time, end, the work list and its pages), `RefSettingsTest`
+  (4), `RefGaugesTest` (3); `AuditRowsTest`, `EventCodecTest` (golden line), `ChangeStreamTest`,
+  `CatalogMetricsTest` cover the new type and meters. Heavy, not run: `MutatingRoutesAuditTest` (a case and a
+  refusal for each of the five writes) and `ManagementAuthorizationTest` (three new tests).
+- Bites: 13 in `bites/D33/` (`ref-*`), and the two D13 change-stream bites recorded again (the event list they break moved). All 15 were seen to bite in the fast build, each designated test failing on an assertion with the bite applied; none was only checked with `git apply --check`. Create, renew and delete under `describe` or open to anyone, and list and read for outsiders, bite `RefRoutesTest`'s two rights tests; a renewal past the whole life bites `RefRoutesTest` and `RefSettingsTest`; unbounded limits, a branch past its expiry still served, a warning sent twice, the work list naming a warned branch again, the key ignored, an end before expiry and an end open to anyone each bite their `RefRoutesTest` test; `ref` left out of `AuditRows` bites `AuditRowsTest`, and off the change stream `ChangeStreamTest`.
+
+Waits on the heavy build: `MutatingRoutesAuditTest#everyMutatingRouteEmitsItsAuditRecord` and
+`#everyMutatingManagementRouteAuditsItsRefusals`, `ManagementAuthorizationTest`'s three ref tests, and the routes on
+PostgreSQL (the store suites already cover the store side, item 102).
+
+Beyond the `Touches:` line, the branch also changed `governance/` `AuditRuntime.java`, `GovernanceWiring.java`,
+`ManagementIdempotency.java` and `RefSettings.java`, the metrics tests, `docs/observability/catalog-metrics.md`,
+`build-plan.md` and `bites/` (D13 and D33); none is in items 103's or 104's areas. `application.yaml` was not changed.
+
+Left for other items: a commit on a branch moving its expiry (item 105, with `RefSettings.expiryAfter`); the merge
+route and `nuna.refs.max-merge-tables` (items 105 and 107: add it to `RefSettings`); the worker's calls (item 108).
+`changed` reads every table's own pointer in the cut, one read each; a store listing of a branch's own pointers
+(which the merge needs too) would make it one read.
+
+Choices made (Paul may overrule):
+- A route answering the expiry warning, rather than an outbox write: the warning changes nothing in the store, so
+  the route delivers it at once through the relay's own fan-out (audit topic, then change stream) and fails closed
+  503 without Kafka. Why: no store write exists that only appends to the outbox, and the store is item 103's.
+- "Once" is a marker in the idempotency store, keyed by the ref's id and the expiry warned of, longer than any
+  client's key (128 characters) so no request can take it, lapsing at that expiry. Why: no new store field; a
+  renewed branch is warned of again as its new expiry nears.
+- The worker's routes name a ref by id under `/management/v1/maintenance/refs/{id}/warn|end`, as the DR watermark's
+  do. Why: the worker's lists span catalogs, and an id never names another ref.
+- `ManagementIdempotency`, a copy of the Iceberg routes' protocol for the management API. Why: theirs is package-
+  private in `rest/`, which item 104 holds.
+- Every `ref` event goes on the change stream, not only the warning. Why: a ref made or deleted is a change to
+  what engines read, as a namespace change is.
+- `from` defaults to main; `kind` is required and case-insensitive; a name is at most 1,000 characters. Why: as the
+  other management bodies.
+- A renewal never shortens a branch's life, and one that would change nothing answers 200 with no record. A tag's
+  renewal answers 400. Why: as an attribute set to its own value.
+- A limit refusal is 409 `RefLimitException`. Why: it depends on what the catalog holds, as a conflict does.
+- Holds and DR freezes do not stop a ref's create, renewal or deletion. Why: none changes a table on main; the
+  merge (item 107) judges each moved table as a commit (choice 8).
+- Defaults live in `RefSettings`, not `application.yaml`. Why: as `GovernanceSettings`.
+- The gauges are read from the store and are the same on every server (take the maximum, not the sum). Why: the
+  limits are per catalog, not per server.
+
+**Security findings 8 and 9 (2026-11-22, folded in on item 108's branch, which carries this item):**
+- 8: the two refusals that had tests but no bites now have them, each seen to bite:
+  `bites/D33/ref-route-renew-needs-describe.patch` (a renewal asks only describe on the catalog;
+  `RefRoutesTest#makingRenewingAndDeletingNeedCreateOnTheCatalog`) and `bites/D33/ref-route-changed-unfiltered.patch`
+  (a branch's changed tables are listed whatever the caller can describe;
+  `RefRoutesTest#readingABranchListsWhatItChangedThatTheCallerCanDescribe`).
+- 9: a ref's `created-by`, a principal's id and so personal data, is shown in listings and reads only to a caller
+  holding `create` on the catalog; the create and renew answers keep it, their caller holding `create`.
+  `RefRoutesTest#whoMadeARefIsShownOnlyToThoseWhoMayMakeOne`; bite `bites/D33/ref-list-created-by-shown.patch`.
+  Choice made (Paul may overrule): shown to `create` holders rather than dropped from the list. Why: those who may
+  make and delete a catalog's refs are the ones who need to know whose a ref is, and elsewhere a principal's id is
+  shown only to those who administer (audit readers, grant admins); the audit record names the maker for the rest.
 
 ### 107. Merge a branch into main, per table, in one bounded transaction (item 26)
 
@@ -1038,6 +1307,78 @@ once. Fast build green; bites recorded in `bites/D33/` (main's reach alone; the 
 and 106.
 
 **Landing order (2026-11-20, at Paul's "can you fix these"):** items 106 and 108 land together, in one merge. Item 106's create route is the only way a ref comes to exist, and until item 108 lands the worker's orphan scan and expiry read only main, so a tag's or a branch's files could be deleted in between. Item 108's worktree starts from item 106's finished branch, and the session lands item 108's branch, which holds both. Item 105 may land on its own: without item 106 no branch exists to commit to.
+
+## Built (2026-11-22, branch `worktree-agent-a563f7f74bc5ac1ad`)
+
+On item 106's branch, with item 105's store read `RefStore.listRefPointers` merged in (b0b459b; both land together).
+
+- **The work list** names, in each table entry (the tables and requests sections), every ref whose cut names the
+  table: `{"id", "kind", "metadata-locations"}`, a tag's cut, a branch's cut and its own head once it has one
+  (`MaintenanceRoutes.refs`).
+- **The worker** keeps every file a ref reaches (`RefReach`): before expiry, a manifest rewrite or an orphan scan
+  records files left unreferenced on main, it reads each ref's metadata as the orphan scan reads main's, skipping the
+  snapshots main still has, branches before tags, and records only the files no ref reaches. The others are counted
+  in `nuna.maintenance.files.kept`, labelled `ref.kind`.
+- **The record** (`POST .../objects/{id}/pending-deletions`) now requires `refs`, the ids of the refs the files were
+  checked against. When a ref now naming the table is not among them, the catalog answers 409
+  `RefsChangedException` with `refs`, the table's refs now as the work list shows them. The worker checks the files
+  again against those, up to three reads (`Worker.REF_READS`), then leaves the table to the next scan as a failure of
+  its job.
+- **The recheck:** each due deletion in the work list names the refs created after it was recorded, less an hour
+  (`MaintenanceRoutes.RECHECK_MARGIN`), and, when there are some and its table is active, the table's namespace and
+  name. The worker loads the table, reads those refs with the table's access, and completes a file one reaches without
+  deleting it. A dropped table's such files wait.
+- **Expiry of branches:** the worker reads the refs section first in each scan, sends each warning
+  (`nuna.maintenance.refs.warned`) and ends each branch past its expiry (`nuna.maintenance.refs.ended`); a failure is
+  of kind `refs`.
+- Maintenance stays on main: nothing in the worker expires, rewrites or compacts a branch.
+- Tests: `RefReachTest` (5), `WorkerRefsTest` (4) and `MaintenanceRefsTest` (3), fast; `WorkerMetricsTest` covers the
+  new meters and label. `RefCleanupTest` (heavy, Silo, 7 tests, written, not run) covers what "Done when" names and
+  security finding 10. `MaintenanceRoutesTest` and `MutatingRoutesAuditTest` (heavy) send `refs` and check that a
+  record without it is refused.
+- Bites in `bites/D33/`, each seen to bite on an assertion in a fast test: `worker-main-reach-only` (main's reach
+  alone), `worker-deletion-recheck-skipped` (the recheck skipped), `worker-refs-not-read-again`,
+  `worker-expired-branch-not-ended`, `ref-record-refs-unchecked`, `ref-work-list-later-refs-omitted` and
+  `ref-work-list-head-omitted`.
+- The work list has five sections now, so a scan that cannot read it counts five `work-list` failures (`TelemetryTest`
+  and the heavy `ScanMetricsTest`; item 114 left the heavy one at three). Eight bites the change moved were recorded
+  again with the same break: `bites/D30/pending-deletion-before-window`, `pending-deletion-outside-table` and
+  `pending-deletions-open` (heavy tests, `git apply --check`), `bites/OBS-40/last-success-on-a-failed-scan` (heavy,
+  `git apply --check`), and `failure-counters-registered-late`, `failure-message-in-labels`,
+  `files-deleted-counts-recorded` and `meter-not-in-docs`, each seen to bite in `WorkerMetricsTest`.
+
+Choice made (Paul may overrule): the record names the ids of the refs the worker read, not the time it read them.
+Why: a ref's `createdAt` is taken before its create transaction commits (on MongoDB before its cut is written in
+batches), so a time check misses a ref whose create was under way while the worker read the work list; a list of ids
+cannot.
+
+Choice made (Paul may overrule): the recheck covers refs created up to an hour before the file was recorded. Why: it
+covers a create under way while the catalog checked the record, which the id check cannot see, and clocks that
+differ between replicas.
+
+Choice made (Paul may overrule): a due file of a dropped table that a ref made since names waits, rather than being
+checked or deleted. Why: a dropped table cannot be loaded to read the ref's metadata with its access, and the ref
+also stops the table's purge (item 103), which deletes the file with the rest once the ref is gone.
+
+Choice made (Paul may overrule): every ref the store holds protects its files, a branch past its expiry included,
+until the worker ends it. Why: P11 says a ref blocks cleanup for everything it references, and the branch still
+exists until it is ended; the refs section is read before the tables, so an ended branch's files are free at the same
+scan's jobs.
+
+Choice made (Paul may overrule): a file both a branch and a tag reach counts as kept for the branch. Why: a file is
+counted once, and each kind is read in a pass that skips what the passes before it read.
+
+Choice made (Paul may overrule): the worker reads a table's refs up to three times for one record, then leaves it.
+Why: a table whose refs change at every read is rare, and the next scan tries again; expiry's files left unrecorded
+are found by the orphan scan.
+
+Choice made (Paul may overrule): `RefCleanupTest` makes commits on a branch and the merge through the server's store,
+since items 105 and 107 have no routes on this branch. A branch's own head is a metadata file main once had.
+
+Left: the heavy tests have not run. The overnight heavy build must run `RefCleanupTest` on Silo, the Ceph leg's
+`:catalog-maintenance:test` (which runs it on Ceph), `MaintenanceRoutesTest`, `MutatingRoutesAuditTest` and
+`ScanMetricsTest`, and the bites run must see the four heavy bites above bite. Once
+item 105 lands, `RefCleanupTest` could commit on a branch through `lake@<branch>` instead of the store.
 
 ### 109. Console: the catalog's refs, the merge preview and a ref selector (item 26)
 
@@ -1146,6 +1487,9 @@ Build:
 - `docs/refs.md`: how an engine names a ref (`warehouse=<catalog>@<ref>`), what a branch and a tag allow, merge and
   its conflicts, P11's limits and expiry, and how catalog refs differ from Iceberg's refs inside a table.
 - `build-plan.md`: the v1.x milestone line marked done, naming the run that closed it.
+- From the security review of 2026-11-22 (finding 11, recorded by item 105): "a tag's credentials refuse PutObject"
+  joins the M6 adversarial set, against a real store: a client holding a tag's vended credentials tries to write the
+  table's files and is refused.
 
 Done, and item 26 with it, the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh` (the engine
 matrix included) and bites are all green with items 102 to 111 landed. Waits on items 102 to 111.
@@ -1166,6 +1510,12 @@ when Paul asks.
 
 Done when a grant can name a branch, a write on a branch is allowed by a grant naming it or by the table's grant on
 every ref, the governance routes and the console show the branch, and a test on each store shows it.
+
+From the security review of 2026-11-22 (finding 11, low, recorded by item 105): a branch's vended write credentials
+cover the table's whole prefix, main's files included, so a group allowed to write only on `dev` could still write
+main's files with them. A grant that names a branch needs credentials scoped to the branch rather than the table's
+whole prefix; the catalog marks only a branch's metadata files (`<version>-<uuid>.branch-<ref id>.metadata.json`), so
+the engines' data and manifest files would need a place of the branch's own too.
 
 ### 115. Row filters and column masks stored in the catalog, served to Trino (D20)
 

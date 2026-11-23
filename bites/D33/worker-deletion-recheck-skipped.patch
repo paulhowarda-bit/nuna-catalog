@@ -1,0 +1,16 @@
+Breaks: the worker deletes a due file without checking it against the refs made since it was recorded, so a tag made between expiry's read and its record loses the file.
+Module: catalog-maintenance
+Test: WorkerRefsTest#dueFilesAreCheckedAgainstTheRefsMadeSinceTheyWereRecorded
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+index cab9f2a..4ca3bf8 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+@@ -564,7 +564,7 @@ final class Worker implements AutoCloseable {
+             boolean failed = false;
+             try {
+                 spans.part(ScanSpans.Part.DELETION, () -> {
+-                    Rechecked checked = recheck(catalog, object, deletions, report);
++                    Rechecked checked = new Rechecked(deletions, List.of(), Map.of());
+                     List<String> locations = checked.delete().stream().map(Management.DeletionWork::location).toList();
+                     if (!locations.isEmpty()) {
+                         locations.forEach(location -> bytes.addAndGet(size(location)));

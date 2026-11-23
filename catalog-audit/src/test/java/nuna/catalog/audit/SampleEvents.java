@@ -60,7 +60,10 @@ public final class SampleEvents {
                 new LabelChange(NAMESPACE, "classification", "confidential", ACTOR),
                 new PurgeClaim(TABLE, ACTOR),
                 new FileDeletion(FileDeletion.Action.RECORDED, TABLE, 3, Instant.parse("2026-11-14T10:15:30.123Z"), ACTOR),
-                new MaintenanceExemption(TABLE, "loadTable", ACTOR));
+                new MaintenanceExemption(TABLE, "loadTable", ACTOR),
+                new RefChange(RefChange.Action.MERGED, UUID.fromString("f0000000-0000-0000-0000-000000000001"), "dév",
+                        RefChange.Kind.BRANCH, CATALOG, "main", Instant.parse("2026-12-07T10:15:30.123Z"),
+                        List.of(TABLE), ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

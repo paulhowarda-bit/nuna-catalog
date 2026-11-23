@@ -34,6 +34,7 @@ import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
@@ -744,6 +745,16 @@ public final class OracleCatalogStore implements CatalogStore {
     @Override
     public WriteResult deleteRef(UUID refId, Change change) {
         return refs.delete(refId, change);
+    }
+
+    @Override
+    public long countOwnPointers(UUID refId) {
+        return refs.countOwn(refId);
+    }
+
+    @Override
+    public List<RefPointers> listRefPointers(UUID objectId) {
+        return refs.listPointers(objectId);
     }
 
     @Override

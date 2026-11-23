@@ -62,6 +62,20 @@ public interface RefStore {
      */
     WriteResult deleteRef(UUID refId, Change change);
 
+    /**
+     * How many tables and views of its cut the ref has its own pointer for: those a branch's commits have changed. A
+     * commit that would give a branch more than {@code nuna.refs.max-merge-tables} is refused (item 26's choice 9), so
+     * a merge always fits in one transaction. 0 for a tag, and for a ref the store does not have.
+     */
+    long countOwnPointers(UUID refId);
+
+    /**
+     * Every ref whose cut names the table or view, by the ref's normalized name: the ref, the pointer its cut took for
+     * it, and for a branch its own pointer for it when it has one. A branch past its expiry counts until it is deleted;
+     * on MongoDB an entry counts only while its ref exists.
+     */
+    List<RefPointers> listRefPointers(UUID objectId);
+
     /** The namespace at {@code normalizedPath} in the ref's cut, from the catalog down. */
     Optional<RefEntry> findRefNamespace(UUID refId, List<String> normalizedPath);
 

@@ -1,0 +1,18 @@
+Breaks: the work list names a branch to warn of after its warning went out.
+Module: catalog-server
+Test: RefRoutesTest#theWorkListNamesTheBranchesToWarnOfAndToEnd
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+index 06ff200..8d101ae 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
+@@ -260,9 +260,7 @@ class MaintenanceRoutes {
+         if (record.isPresent()) {
+             Page<Ref> listed = store.listRefs(record.get().id(), new PageRequest(within, page.size()));
+             for (Ref ref : listed.items()) {
+-                String action = ref.expiredAt(now) ? "end" : refSettings.expiring(ref, now)
+-                        && !(store.readKey(RefRoutes.warned(ref.id(), ref.expiresAt().orElseThrow()), now)
+-                        instanceof KeyState.Done) ? "warn" : null;
++                String action = ref.expiredAt(now) ? "end" : refSettings.expiring(ref, now) ? "warn" : null;
+                 if (action != null) {
+                     ObjectNode item = items.addObject();
+                     item.put("id", ref.id().toString());

@@ -1,0 +1,17 @@
+Breaks: a commit on a branch ignores the retention class's minimum snapshot age (D24, D30, security finding 4).
+Module: catalog-core
+Test: BranchCommitTest#theMinimumSnapshotAgeHoldsABranch
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..8c902c1 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1290,7 +1290,7 @@ public final class CommitEngine {
+ 
+             @Override
+             public Optional<GovernanceAttribute> nearest(GovernanceAttribute.Kind kind) {
+-                return kind == GovernanceAttribute.Kind.DR_FREEZE ? Optional.empty() : governance.nearest(kind);
++                return Optional.empty();
+             }
+         };
+     }

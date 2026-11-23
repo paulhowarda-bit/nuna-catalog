@@ -50,6 +50,7 @@ import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.RefLock;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
 import nuna.catalog.store.Securable;
@@ -762,6 +763,16 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public WriteResult deleteRef(UUID refId, Change change) {
         return refs.delete(refId, change);
+    }
+
+    @Override
+    public long countOwnPointers(UUID refId) {
+        return refs.countOwn(refId);
+    }
+
+    @Override
+    public List<RefPointers> listRefPointers(UUID objectId) {
+        return refs.listPointers(objectId);
     }
 
     @Override

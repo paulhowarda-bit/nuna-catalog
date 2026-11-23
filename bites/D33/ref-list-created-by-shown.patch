@@ -1,0 +1,18 @@
+Breaks: listing and reading refs show who made each, a principal's id, to anyone holding anything in the catalog.
+Module: catalog-server
+Test: RefRoutesTest#whoMadeARefIsShownOnlyToThoseWhoMayMakeOne
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 528ccd2..066b6c5 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -511,9 +511,7 @@ class RefRoutes {
+         node.put("kind", ref.kind().name().toLowerCase(Locale.ROOT));
+         node.put("from", ref.fromName());
+         node.put("created-at", ref.createdAt().toString());
+-        if (withCreator) {
+-            node.put("created-by", ref.createdBy());
+-        }
++        node.put("created-by", ref.createdBy());
+         ref.expiresAt().ifPresent(expiry -> {
+             node.put("expires-at", expiry.toString());
+             node.put("max-expires-at", settings.lastExpiry(ref.createdAt()).toString());

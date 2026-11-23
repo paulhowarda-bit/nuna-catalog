@@ -1,0 +1,15 @@
+Breaks: the worker never reads the work list's refs section, so no branch near its expiry is warned of and none past it is ended.
+Module: catalog-maintenance
+Test: WorkerRefsTest#branchesAreWarnedOfAndEndedBeforeTheTablesAreRead
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+index cab9f2a..edb7135 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+@@ -167,7 +167,6 @@ final class Worker implements AutoCloseable {
+                         clock, this::load);
+             }
+             orphansDue.clear();
+-            pages(Management.Section.REFS, management::refs, refs -> refs.forEach(r -> expire(r, report)), report);
+             pages(Management.Section.TABLES, management::tables,
+                     tables -> tables.forEach(t -> maintain(t, now, report)), report);
+             List<Management.RequestWork> requests = new ArrayList<>();

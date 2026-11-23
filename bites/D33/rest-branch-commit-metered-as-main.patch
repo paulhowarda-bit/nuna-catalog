@@ -1,0 +1,17 @@
+Breaks: a commit on a branch is metered with ref.kind main (choice 13).
+Module: catalog-server
+Test: RefReadsTest#aCommitOnABranchSwapsItsOwnPointer
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java b/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java
+index dc817b4..ca44e6b 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/OnRef.java
+@@ -101,7 +101,7 @@ public record OnRef(CatalogRecord catalog, Optional<Ref> ref) {
+ 
+     /** What the commit meter labels a commit through this with (choice 13): main or branch, never a name. */
+     String refKind() {
+-        return ref.isEmpty() ? CatalogMetrics.MAIN : CatalogMetrics.BRANCH;
++        return CatalogMetrics.MAIN;
+     }
+ 
+     /** 400 naming the ref: a tag for being read-only, a branch for {@code why}. */

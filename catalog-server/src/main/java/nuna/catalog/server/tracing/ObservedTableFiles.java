@@ -3,6 +3,7 @@ package nuna.catalog.server.tracing;
 import io.micrometer.common.KeyValues;
 import io.micrometer.observation.ObservationRegistry;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -35,8 +36,8 @@ public final class ObservedTableFiles implements TableFiles {
     }
 
     @Override
-    public Written write(String locationRoot, long version, String json) {
-        return observe("write", () -> files.write(locationRoot, version, json), written -> "written");
+    public Written write(String locationRoot, long version, String json, Optional<UUID> branch) {
+        return observe("write", () -> files.write(locationRoot, version, json, branch), written -> "written");
     }
 
     /** {@code intact}, or {@code mismatch} when the bytes read do not hash as expected. */

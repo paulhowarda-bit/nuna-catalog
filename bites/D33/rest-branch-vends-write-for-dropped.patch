@@ -1,0 +1,17 @@
+Breaks: a branch vends write credentials for a table main has dropped since, which no commit on the branch may change (security finding 1).
+Module: catalog-server
+Test: RefReadsTest#aTableMainDroppedIsReadOnlyOnABranch
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+index c090b7e..dac171d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/rest/Lookup.java
+@@ -144,7 +144,7 @@ class Lookup {
+      * (D33); never through a tag, which is read-only (item 26's choice 5).
+      */
+     static boolean writable(OnRef on, CatalogObject object) {
+-        return !on.tag() && object.state() == CatalogObject.State.ACTIVE;
++        return !on.tag();
+     }
+ 
+     /**

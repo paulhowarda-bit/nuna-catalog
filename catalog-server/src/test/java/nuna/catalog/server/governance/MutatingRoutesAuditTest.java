@@ -195,7 +195,7 @@ class MutatingRoutesAuditTest {
         cases.put("POST " + M + "/objects/{id}/purge", id -> api.manage("POST", "/objects/" + dropped() + "/purge",
                 null, rid(id)));
         cases.put("POST " + M + "/objects/{id}/pending-deletions", id -> api.manage("POST",
-                "/objects/" + dropped() + "/pending-deletions", "{\"locations\":[\"s3://x/y\"]}", rid(id)));
+                "/objects/" + dropped() + "/pending-deletions", "{\"locations\":[\"s3://x/y\"],\"refs\":[]}", rid(id)));
         cases.put("POST " + M + "/objects/{id}/pending-deletions/complete", id -> api.manage("POST",
                 "/objects/" + dropped() + "/pending-deletions/complete", "{\"ids\":[\"" + UUID.randomUUID() + "\"]}",
                 rid(id)));
@@ -210,6 +210,17 @@ class MutatingRoutesAuditTest {
                 "/maintenance/tables/" + api.id(withTable(), "tables", "t") + "/dr-watermark", "{}", rid(id)));
         cases.put("PUT /management/v1/maintenance/jobs/{id}", id -> api.manage("PUT", "/maintenance/jobs/"
                 + UUID.randomUUID(), "{}", rid(id)));
+        // The steward holds manage-tags on the catalog, not create (D33, choice 12).
+        cases.put("POST " + M + "/refs", id -> api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "tag"),
+                rid(id, api.steward())));
+        cases.put("POST " + M + "/refs/{ref}/renew", id -> api.manage("POST", "/refs/m7-" + Api.suffix() + "/renew",
+                null, rid(id, api.steward())));
+        cases.put("DELETE " + M + "/refs/{ref}", id -> api.manage("DELETE", "/refs/m7-" + Api.suffix(), null,
+                rid(id, api.steward())));
+        cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> api.manage("POST", "/maintenance/refs/"
+                + UUID.randomUUID() + "/warn", null, rid(id)));
+        cases.put("POST /management/v1/maintenance/refs/{id}/end", id -> api.manage("POST", "/maintenance/refs/"
+                + UUID.randomUUID() + "/end", null, rid(id)));
         return cases;
     }
 
@@ -421,7 +432,46 @@ class MutatingRoutesAuditTest {
             expect(api.manage("DELETE", freeze, null, "Authorization", api.operator()), 204);
             return EventType.COMMIT;
         });
+
+        cases.put("POST " + M + "/refs", id -> {
+            expect(api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "tag"), rid(id)), 201);
+            return EventType.REF;
+        });
+        cases.put("POST " + M + "/refs/{ref}/renew", id -> {
+            String name = "m7-" + Api.suffix();
+            expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
+            // A renewal at the instant the branch was made would change nothing, and record nothing.
+            clock.advance(Duration.ofDays(1));
+            expect(api.manage("POST", "/refs/" + name + "/renew", null, rid(id)), 200);
+            return EventType.REF;
+        });
+        cases.put("DELETE " + M + "/refs/{ref}", id -> {
+            String name = "m7-" + Api.suffix();
+            expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
+            expect(api.manage("DELETE", "/refs/" + name, null, rid(id)), 204);
+            return EventType.REF;
+        });
+        cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> {
+            String branch = JsonPath.read(expect(api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "branch"),
+                    "X-Request-ID", "made-" + id), 201).body(), "$.id");
+            clock.advance(Duration.ofDays(24));
+            expect(api.manage("POST", "/maintenance/refs/" + branch + "/warn", null, "X-Request-ID", id,
+                    GovernanceServer.PRINCIPAL, "maintenance"), 200);
+            return EventType.REF;
+        });
+        cases.put("POST /management/v1/maintenance/refs/{id}/end", id -> {
+            String branch = JsonPath.read(expect(api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "branch"),
+                    "X-Request-ID", "made-" + id), 201).body(), "$.id");
+            clock.advance(Duration.ofDays(31));
+            expect(api.manage("POST", "/maintenance/refs/" + branch + "/end", null, "X-Request-ID", id,
+                    GovernanceServer.PRINCIPAL, "maintenance"), 204);
+            return EventType.REF;
+        });
         return cases;
+    }
+
+    private static String ref(String name, String kind) {
+        return "{\"name\":\"" + name + "\",\"kind\":\"" + kind + "\"}";
     }
 
     /** A namespace whose table's pointer row is put back to version 1 after two commits, as a DR replica lags. */
@@ -492,7 +542,7 @@ class MutatingRoutesAuditTest {
     private String deletions(String object) {
         String location = JsonPath.read(expect(api.manage("GET", "/objects/" + object + "/export", null), 200).body(),
                 "$.object.location");
-        return "{\"locations\":[\"" + location + "/data/expired.parquet\"]}";
+        return "{\"locations\":[\"" + location + "/data/expired.parquet\"],\"refs\":[]}";
     }
 
     private static String rename(String namespace, String from, String to) {

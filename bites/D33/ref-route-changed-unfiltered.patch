@@ -1,0 +1,17 @@
+Breaks: reading a branch lists every table it changed, whether or not the caller can describe it.
+Module: catalog-server
+Test: RefRoutesTest#readingABranchListsWhatItChangedThatTheCallerCanDescribe
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 528ccd2..dfc9f12 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -433,9 +433,6 @@ class RefRoutes {
+         List<Authorizer.Decision> decisions = asks.isEmpty() ? List.of() : authorizer.decide(request.caller(), asks);
+         ArrayNode changed = Management.JSON.createArrayNode();
+         for (int i = 0; i < objects.size(); i++) {
+-            if (!decisions.get(i).allowed()) {
+-                continue;
+-            }
+             RefEntry object = objects.get(i);
+             ObjectNode item = changed.addObject();
+             ArrayNode namespace = item.putArray("namespace");

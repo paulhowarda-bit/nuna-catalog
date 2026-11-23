@@ -1,0 +1,17 @@
+Breaks: a commit that finds its branch ended is answered as if main had dropped the table, not 404 NoSuchWarehouseException for the branch.
+Module: catalog-core
+Test: BranchCommitTest#aCommitAfterTheBranchEnded
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index b202be9..f84a125 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1265,7 +1265,7 @@ public final class CommitEngine {
+      * object on main; on main, the object.
+      */
+     private Failure inactive(CommitResult.Inactive inactive, ObjectName name, CatalogObject.Kind kind) {
+-        if (inactive.subject() == CommitResult.Subject.REF) {
++        if (inactive.subject() == null) {
+             return new Failure(404, "NoSuchWarehouseException", "Branch " + branchName()
+                     + " is gone: merged, deleted or past its expiry");
+         }

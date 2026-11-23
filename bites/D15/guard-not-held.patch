@@ -3,14 +3,15 @@ Module: catalog-core
 Test: TransactionTest$Retrying#guardMovedBeforeTheSwap
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-index 8bc44f8..ff95515 100644
+index b202be9..4e9e4cc 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
-@@ -897,7 +897,8 @@ public final class CommitEngine {
+@@ -965,8 +965,8 @@ public final class CommitEngine {
                                  && governance.get(i).regulated();
                          planned.add(new Planned(object, base, changed, json, regulated));
                      }
--                    case Outcome.NoChange noChange -> held.add(new PointerHold(object.mainKey(), base));
+-                    case Outcome.NoChange noChange ->
+-                            base.expected().ifPresent(read -> held.add(new PointerHold(base.key(), read)));
 +                    case Outcome.NoChange noChange -> {
 +                    }
                      case Outcome.RequirementFailed failed -> {

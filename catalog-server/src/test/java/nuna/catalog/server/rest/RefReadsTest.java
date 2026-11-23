@@ -11,6 +11,7 @@ import com.jayway.jsonpath.JsonPath;
 import com.sun.net.httpserver.HttpServer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Proxy;
@@ -35,6 +36,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.Denial;
+import nuna.catalog.audit.MaintenanceExemption;
 import nuna.catalog.audit.ObjectRead;
 import nuna.catalog.core.Names;
 import nuna.catalog.core.commit.CommitRule;
@@ -48,6 +51,7 @@ import nuna.catalog.objectstore.StoreKind;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.governance.RefSettings;
 import nuna.catalog.server.ConfigRoute;
 import nuna.catalog.server.ErrorResponsesForTests;
 import nuna.catalog.server.governance.AuditTrail;
@@ -65,6 +69,10 @@ import nuna.catalog.store.CatalogObject.Kind;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogSettings;
 import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.Change;
+import nuna.catalog.store.CommitBatch;
+import nuna.catalog.store.CommitResult;
+import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.Name;
@@ -72,8 +80,10 @@ import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.Page;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
+import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefLock;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.WriteResult;
@@ -106,6 +116,28 @@ class RefReadsTest {
     /** Write on namespace desk, and describe on the catalog. */
     private static final Caller MO = new Caller(new Principal("mo", Set.of("desk-writers", "catalog-describers")),
             "spark", false, Optional.empty());
+    /** The maintenance principal, acting as itself through an engine that is not trusted: write on desk. */
+    private static final Caller MAINTENANCE = new Caller(new Principal("maint", Set.of("desk-writers")), "spark",
+            false, Optional.empty());
+    /** A trusted engine acting as itself, naming no end user: write on desk. */
+    private static final Caller ETL = new Caller(new Principal("etl", Set.of("desk-writers")), "trino", true,
+            Optional.empty());
+    /** Modify on namespace desk. */
+    private static final Caller OWNER = new Caller(new Principal("ow", Set.of("desk-owners")), "spark", false,
+            Optional.empty());
+    /** Describe on the catalog, and nothing else. */
+    private static final Caller DESCRIBER = new Caller(new Principal("di", Set.of("catalog-describers")), "spark",
+            false, Optional.empty());
+    /** Select on a namespace of the catalog other than desk: nothing on desk, its tables or the catalog. */
+    private static final Caller STRANGER = new Caller(new Principal("st", Set.of("elsewhere-readers")), "spark",
+            false, Optional.empty());
+    /** An append of snapshot 7 made as main moved to it, which needs write. */
+    private static final String APPEND = """
+            {"requirements":[],"updates":[{"action":"add-snapshot","snapshot":{"snapshot-id":7,"sequence-number":1,\
+            "timestamp-ms":%d,"manifest-list":"s3://warehouse/tables/snap-7.avro","summary":{"operation":"append"},\
+            "schema-id":0,"first-row-id":0,"added-rows":10}},\
+            {"action":"set-snapshot-ref","ref-name":"main","type":"branch","snapshot-id":7}]}"""
+            .formatted(NOW.toEpochMilli());
 
     private final CatalogRecord catalog = new CatalogRecord(UUID.randomUUID(), "trading", "trading");
     private final NamespaceRecord desk = new NamespaceRecord(catalog.id(), UUID.randomUUID(), catalog.id(),
@@ -116,14 +148,23 @@ class RefReadsTest {
     /** Named trades in the tag's cut; renamed fills on main since. */
     private final CatalogObject fills = object("fills", Kind.TABLE);
     private final CatalogObject daily = object("daily", Kind.VIEW);
-    private final List<CatalogObject> onMain = List.of(orders, fills, daily);
+    /** Main's objects, active or not: only an active one holds its name. */
+    private final List<CatalogObject> onMain = new CopyOnWriteArrayList<>(List.of(orders, fills, daily));
 
     private final Map<String, Ref> refs = new HashMap<>();
     private final Map<UUID, List<RefEntry>> cuts = new HashMap<>();
     private final Map<PointerKey, Pointer> pointers = new HashMap<>();
     private final List<GrantRecord> grants = List.of(
             grant(new Securable(Securable.Kind.NAMESPACE, desk.id()), "desk-writers", Privilege.WRITE),
-            grant(new Securable(Securable.Kind.CATALOG, catalog.id()), "catalog-describers", Privilege.DESCRIBE));
+            grant(new Securable(Securable.Kind.CATALOG, catalog.id()), "catalog-describers", Privilege.DESCRIBE),
+            grant(new Securable(Securable.Kind.NAMESPACE, UUID.randomUUID()), "elsewhere-readers",
+                    Privilege.SELECT),
+            grant(new Securable(Securable.Kind.NAMESPACE, desk.id()), "desk-owners", Privilege.MODIFY));
+    private final List<GovernanceAttribute> attributes = new CopyOnWriteArrayList<>();
+    private final AtomicReference<Caller> caller = new AtomicReference<>(MO);
+    /** The batches the store committed, and the branches it renewed. */
+    private final List<CommitBatch> batches = new CopyOnWriteArrayList<>();
+    private final List<Renewal> renewals = new CopyOnWriteArrayList<>();
 
     /** The metadata files the object store serves, by path ({@code /bucket/key}). */
     private final Map<String, byte[]> files = new ConcurrentHashMap<>();
@@ -145,11 +186,22 @@ class RefReadsTest {
     private String ordersWip;
     private String tradesCut;
     private String dailyCut;
+    private String fillsMain;
 
     @BeforeEach
     void serve() throws IOException, ReflectiveOperationException {
         objectStore = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         objectStore.createContext("/", exchange -> {
+            if (exchange.getRequestMethod().equals("PUT")) {
+                byte[] sent = exchange.getRequestBody().readAllBytes();
+                String signed = exchange.getRequestHeaders().getFirst("x-amz-content-sha256");
+                byte[] written = signed != null && signed.startsWith("STREAMING-") ? unchunked(sent) : sent;
+                files.put(exchange.getRequestURI().getPath(), written);
+                exchange.getResponseHeaders().add("ETag", "\"" + digest("MD5", written) + "\"");
+                exchange.sendResponseHeaders(200, -1);
+                exchange.close();
+                return;
+            }
             byte[] body = files.get(exchange.getRequestURI().getPath());
             int status = body == null ? 404 : 200;
             if (body == null) {
@@ -166,7 +218,7 @@ class RefReadsTest {
         ordersMain = tableFile(orders, "orders", 2, "main");
         ordersWip = tableFile(orders, "orders", 3, "wip");
         tradesCut = tableFile(fills, "trades", 1, "trades-cut");
-        String fillsMain = tableFile(fills, "fills", 2, "fills-main");
+        fillsMain = tableFile(fills, "fills", 2, "fills-main");
         dailyCut = viewFile(daily, 1, "cut");
         String dailyMain = viewFile(daily, 2, "main");
         pointers.put(orders.mainKey(), pointer(ordersMain, 2));
@@ -184,11 +236,7 @@ class RefReadsTest {
         wip = ref("wip", Ref.Kind.BRANCH, Optional.of(NOW.plus(Duration.ofDays(30))));
         Ref stale = ref("stale", Ref.Kind.BRANCH, Optional.of(NOW.minus(Duration.ofDays(1))));
         for (Ref branch : List.of(dev, wip, stale)) {
-            cuts.put(branch.id(), List.of(
-                    namespaceEntry(branch, desk.id(), "desk"),
-                    entry(branch, orders.id(), RefEntry.Kind.TABLE, "orders", ordersCut, 1),
-                    entry(branch, fills.id(), RefEntry.Kind.TABLE, "fills", fillsMain, 2),
-                    entry(branch, daily.id(), RefEntry.Kind.VIEW, "daily", dailyCut, 1)));
+            cut(branch);
         }
         pointers.put(wip.key(orders.id()), pointer(ordersWip, 2));
 
@@ -196,23 +244,25 @@ class RefReadsTest {
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, null);
         Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
-        AuditPublisher publisher = event -> { };
+        AuditPublisher publisher = audited::add;
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
-        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
+        // D17's switch on, and maint the maintenance principal.
+        Authorizer authorizer = new Authorizer(store, store, store, separation, true, Set.of("maint"));
         Denials denials = DenialsForTests.denials(publisher, settings, clock);
         Holdings holdings = new Holdings(authorizer, store, settings, separation, denials);
         Guard guard = new Guard(authorizer, denials, publisher, settings, clock, holdings);
         Prefixes prefixes = new Prefixes(holdings, store, clock);
         Lookup lookup = new Lookup(store, settings, prefixes);
         AuditEvents events = new AuditEvents(settings);
-        Callers callers = request -> MO;
+        Callers callers = request -> caller.get();
         storage = new CatalogStorage(new StorageSettings(Map.of("warehouse", new StorageSettings.Profile(
                 StoreKind.MINIO, "http://127.0.0.1:" + objectStore.getAddress().getPort(), "us-east-1", ROOT,
                 List.of(ROOT), null, "catalog", "catalog-secret", null, null, null)), Map.of(),
                 Duration.ofMinutes(30), 100, false), store, settings, clock, ObservationRegistry.NOOP);
         ServerAlerts alerts = new ServerAlerts(1_000_000, 100, registry);
         Engines engines = new Engines(store, storage, new MetadataCache(1_000_000), alerts, events, clock,
-                new DefaultListableBeanFactory().getBeanProvider(CommitRule.class));
+                new DefaultListableBeanFactory().getBeanProvider(CommitRule.class),
+                new RefSettings(50, 1000, Duration.ofDays(30), Duration.ofDays(180), Duration.ofDays(7)));
         Idempotency idempotency = new Idempotency(store, clock);
         ObjectRoutes objects = new ObjectRoutes(store, lookup, idempotency, events, settings, guard, clock);
         MetadataViews views = new MetadataViews(settings.metadataCacheChars());
@@ -423,16 +473,275 @@ class RefReadsTest {
     }
 
     @Test
-    @DisplayName("creates, drops, renames, registrations and namespace changes on a branch are refused with 400, and"
-            + " commits until they are served")
+    @DisplayName("creates, drops, renames, registrations and namespace changes on a branch are refused with 400, before"
+            + " anything is read past the ref; commits are served (item 105)")
     void writesOnABranchAre400() throws Exception {
-        for (Write write : WRITES) {
+        for (Write write : WRITES.stream().filter(write -> !write.commit()).toList()) {
             calls.clear();
             assertRefused(write, "trading@dev", write.operation() + " is refused on branch dev of catalog trading: "
-                    + (write.commit() ? "commits on a branch are not served yet"
-                            : "creates, drops, renames, registrations and namespace changes happen on main only"));
+                    + "creates, drops, renames, registrations and namespace changes happen on main only");
             assertThat(calls).as(write.operation()).containsOnly("findCatalog", "listGrantsOfGroups", "findRef");
         }
+    }
+
+    // ---- commits on a branch (item 105) ----
+
+    @Test
+    @DisplayName("a commit on a branch writes a file marked with the branch and creates the branch's own pointer under"
+            + " a hold on the branch; main's does not move, the branch then loads it, and the commit is metered as on a"
+            + " branch, never by its name")
+    void aCommitOnABranchSwapsItsOwnPointer() throws Exception {
+        String location = committed(perform(commit("trading@dev", "orders", APPEND)));
+
+        assertThat(location).startsWith(orders.locationRoot() + "/metadata/00001-")
+                .endsWith(".branch-" + dev.id() + ".metadata.json");
+        assertThat(pointers.get(dev.key(orders.id())).metadataLocation()).isEqualTo(location);
+        assertThat(pointers.get(orders.mainKey()).metadataLocation()).isEqualTo(ordersMain);
+        assertThat(batches).singleElement().satisfies(batch -> {
+            assertThat(batch.ref()).contains(new RefLock.Hold(dev.id()));
+            assertThat(batch.outbox()).anySatisfy(event -> assertThat(event.payloadJson())
+                    .contains("\"branch\":\"dev\""));
+        });
+        assertLoaded(perform(get("/v1/trading@dev/namespaces/desk/tables/orders")), location, "cut");
+        assertLoaded(perform(get("/v1/trading/namespaces/desk/tables/orders")), ordersMain, "main");
+        assertThat(registry.get(CatalogMetrics.COMMITS).tag(CatalogMetrics.REF_KIND, CatalogMetrics.BRANCH)
+                .tag(CatalogMetrics.OUTCOME, "committed").counter().count()).isEqualTo(1);
+        assertThat(registry.find(CatalogMetrics.COMMITS).tag(CatalogMetrics.REF_KIND, CatalogMetrics.MAIN).counter())
+                .isNull();
+        assertThat(renewals).as("dev's expiry is 30 days ahead already").isEmpty();
+    }
+
+    @Test
+    @DisplayName("a view's replace on a branch goes to the branch's own pointer; main's does not move")
+    void aViewReplaceOnABranch() throws Exception {
+        caller.set(OWNER);
+
+        String location = committed(perform(post("/v1/trading@dev/namespaces/desk/views/daily")
+                .contentType("application/json").content("""
+                        {"requirements":[],"updates":[{"action":"set-properties","updates":{"comment":"weekly"}}]}\
+                        """)));
+
+        assertThat(location).startsWith(daily.locationRoot() + "/metadata/00001-")
+                .endsWith(".branch-" + dev.id() + ".metadata.json");
+        assertThat(pointers.get(dev.key(daily.id())).metadataLocation()).isEqualTo(location);
+        assertThat(batches).singleElement().satisfies(batch -> assertThat(batch.ref())
+                .contains(new RefLock.Hold(dev.id())));
+        assertThat(registry.get(CatalogMetrics.COMMITS).tag(CatalogMetrics.REF_KIND, CatalogMetrics.BRANCH)
+                .tag(CatalogMetrics.OPERATION_ID, "replaceView").counter().count()).isEqualTo(1);
+        MockHttpServletResponse onMain = perform(get("/v1/trading/namespaces/desk/views/daily"));
+        assertThat(JsonPath.<String>read(onMain.getContentAsString(), "$.metadata.properties.marker"))
+                .isEqualTo("main");
+    }
+
+    @Test
+    @DisplayName("a transaction on a branch swaps each table's own pointer in one batch; main's do not move")
+    void aTransactionOnABranch() throws Exception {
+        MockHttpServletResponse response = perform(post("/v1/trading@dev/transactions/commit")
+                .contentType("application/json").content("""
+                        {"table-changes":[{"identifier":{"namespace":["desk"],"name":"orders"},%s},\
+                        {"identifier":{"namespace":["desk"],"name":"fills"},%s}]}""".formatted(
+                        APPEND.substring(1, APPEND.length() - 1), APPEND.substring(1, APPEND.length() - 1))));
+
+        assertThat(response.getStatus()).as(response.getContentAsString()).isEqualTo(204);
+        assertThat(batches).singleElement().satisfies(batch -> {
+            assertThat(batch.ref()).contains(new RefLock.Hold(dev.id()));
+            assertThat(batch.swaps()).extracting(PointerSwap::key)
+                    .containsExactlyInAnyOrder(dev.key(orders.id()), dev.key(fills.id()));
+        });
+        assertThat(pointers.get(orders.mainKey()).metadataLocation()).isEqualTo(ordersMain);
+        assertThat(pointers.get(fills.mainKey()).metadataLocation()).isEqualTo(fillsMain);
+        assertThat(registry.get(CatalogMetrics.COMMITS).tag(CatalogMetrics.REF_KIND, CatalogMetrics.BRANCH)
+                .tag(CatalogMetrics.OPERATION_ID, "commitTransaction").counter().count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a commit that lands on a branch moves its expiry 30 days ahead with a renewed event naming who"
+            + " committed (choice 11); a refused one does not")
+    void aCommitRenewsTheBranch() throws Exception {
+        Ref hot = ref("hot", Ref.Kind.BRANCH, Optional.of(NOW.plus(Duration.ofDays(5))));
+        cut(hot);
+        attributes.add(attribute(orders.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true"));
+        assertThat(perform(commit("trading@hot", "orders", APPEND)).getStatus()).isEqualTo(403);
+        assertThat(renewals).isEmpty();
+
+        committed(perform(commit("trading@hot", "fills", APPEND)));
+
+        assertThat(renewals).singleElement().satisfies(renewal -> {
+            assertThat(renewal.refId()).isEqualTo(hot.id());
+            assertThat(renewal.expiresAt()).isEqualTo(NOW.plus(Duration.ofDays(30)));
+            assertThat(renewal.change().outbox()).singleElement().satisfies(event -> assertThat(event.payloadJson())
+                    .contains("RENEWED").contains("\"principal\":\"mo\""));
+        });
+    }
+
+    @Test
+    @DisplayName("through a branch, a table main has dropped since is served read-only: its load and credentials vend"
+            + " no write, and a commit to it is answered 404 (security finding 1)")
+    void aTableMainDroppedIsReadOnlyOnABranch() throws Exception {
+        onMain.replaceAll(o -> o.id().equals(orders.id()) ? retired(o, CatalogObject.State.DROPPED) : o);
+
+        assertLoaded(perform(get("/v1/trading@dev/namespaces/desk/tables/orders")), ordersCut, "cut");
+        assertThat(perform(get("/v1/trading@dev/namespaces/desk/tables/orders/credentials")).getStatus())
+                .isEqualTo(200);
+        assertThat(vended).extracting(CredentialVending.Request::write).containsExactly(false, false);
+        assertThat(perform(get("/v1/trading/namespaces/desk/tables/orders")).getStatus()).isEqualTo(404);
+
+        MockHttpServletResponse refused = perform(commit("trading@dev", "orders", APPEND));
+        assertThat(refused.getStatus()).as(refused.getContentAsString()).isEqualTo(404);
+        assertThat(JsonPath.<String>read(refused.getContentAsString(), "$.error.message"))
+                .endsWith("(main has dropped or unregistered it since branch dev was made)");
+        assertThat(batches).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a table main has unregistered is served through no ref: the tag and the branch answer 404 for its"
+            + " load, existence, credentials and commits (security finding 1)")
+    void aTableMainUnregisteredIsGoneFromEveryRef() throws Exception {
+        onMain.replaceAll(o -> o.id().equals(fills.id()) ? retired(o, CatalogObject.State.UNREGISTERED) : o);
+
+        for (String table : List.of("/v1/trading@eod/namespaces/desk/tables/trades",
+                "/v1/trading@dev/namespaces/desk/tables/fills")) {
+            assertThat(perform(get(table)).getStatus()).as(table).isEqualTo(404);
+            assertThat(perform(head(table)).getStatus()).as(table).isEqualTo(404);
+            assertThat(perform(get(table + "/credentials")).getStatus()).as(table).isEqualTo(404);
+        }
+        assertThat(perform(commit("trading@dev", "fills", APPEND)).getStatus()).isEqualTo(404);
+        assertThat(vended).isEmpty();
+        assertThat(batches).isEmpty();
+    }
+
+    // ---- authorization through a ref (security finding 5, for item 104) ----
+
+    @Test
+    @DisplayName("through a tag or a branch, a caller holding nothing on a table is told it does not exist, and the"
+            + " refusal is audited")
+    void aCallerHoldingNothingIsTold404() throws Exception {
+        caller.set(STRANGER);
+        for (String prefix : List.of("trading@eod", "trading@dev")) {
+            MockHttpServletResponse response = perform(get("/v1/" + prefix + "/namespaces/desk/tables/orders"));
+            assertThat(response.getStatus()).as(prefix + ": " + response.getContentAsString()).isEqualTo(404);
+            assertThat(JsonPath.<String>read(response.getContentAsString(), "$.error.type"))
+                    .isEqualTo("NoSuchTableException");
+        }
+        assertThat(denials()).hasSize(2).allSatisfy(denial -> {
+            assertThat(denial.operation()).isEqualTo("loadTable");
+            assertThat(denial.securable().id()).isEqualTo(orders.id());
+            assertThat(denial.actor().principal()).isEqualTo("st");
+        });
+    }
+
+    @Test
+    @DisplayName("through a tag or a branch, a caller who may only describe a table is refused its load with 403")
+    void aDescriberIsRefusedTheLoad() throws Exception {
+        caller.set(DESCRIBER);
+        for (String prefix : List.of("trading@eod", "trading@dev")) {
+            assertForbidden(perform(get("/v1/" + prefix + "/namespaces/desk/tables/orders")));
+        }
+        assertThat(denials()).hasSize(2).allSatisfy(denial -> assertThat(denial.privilege()).isEqualTo("select"));
+    }
+
+    @Test
+    @DisplayName("through a tag or a branch, a table with a row/column policy gives an engine that is not trusted no"
+            + " storage access: its load and credentials are refused (D20)")
+    void aFlaggedTableRefusesAnUntrustedEngineThroughARef() throws Exception {
+        attributes.add(attribute(orders.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true"));
+        for (String prefix : List.of("trading@eod", "trading@dev")) {
+            assertForbidden(perform(get("/v1/" + prefix + "/namespaces/desk/tables/orders")));
+            assertForbidden(perform(get("/v1/" + prefix + "/namespaces/desk/tables/orders/credentials")));
+        }
+        assertThat(denials()).hasSize(4).allSatisfy(denial -> assertThat(denial.reason()).startsWith("flagged_table"));
+        assertThat(vended).isEmpty();
+    }
+
+    @Test
+    @DisplayName("through a tag or a branch, an unclassified table in a regulated area is closed (D27)")
+    void anUnclassifiedTableIsClosedThroughARef() throws Exception {
+        attributes.add(attribute(new Securable(Securable.Kind.NAMESPACE, desk.id()), GovernanceAttribute.Kind.REGULATED,
+                "true"));
+        for (String prefix : List.of("trading@eod", "trading@dev")) {
+            assertForbidden(perform(get("/v1/" + prefix + "/namespaces/desk/tables/orders")));
+        }
+        assertThat(denials()).hasSize(2).allSatisfy(denial -> assertThat(denial.reason()).startsWith("unclassified"));
+    }
+
+    // ---- governance on a branch's commits (security finding 4) ----
+
+    @Test
+    @DisplayName("on a branch, an engine that is not trusted may not commit to a table with a row/column policy (D20):"
+            + " 403, audited, nothing written")
+    void aFlaggedTableRefusesAnUntrustedCommitOnABranch() throws Exception {
+        attributes.add(attribute(orders.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true"));
+        int files = this.files.size();
+
+        assertForbidden(perform(commit("trading@dev", "orders", APPEND)));
+
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("updateTable");
+            assertThat(denial.reason()).startsWith("flagged_table");
+        });
+        assertThat(this.files).hasSize(files);
+        assertThat(batches).isEmpty();
+    }
+
+    @Test
+    @DisplayName("the maintenance exemption holds on main only (choice 14): the maintenance principal's commit to a"
+            + " flagged table lands on main, exempted and audited, and is refused on a branch")
+    void theMaintenanceExemptionHoldsOnMainOnly() throws Exception {
+        caller.set(MAINTENANCE);
+        attributes.add(attribute(orders.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true"));
+
+        String message = assertForbidden(perform(commit("trading@dev", "orders", APPEND)));
+        assertThat(message).contains("the maintenance exemption holds on main only");
+        assertThat(denials()).singleElement().satisfies(denial -> assertThat(denial.reason())
+                .startsWith("flagged_table"));
+
+        committed(perform(commit("trading", "orders", APPEND)));
+        assertThat(audited).extracting(CatalogEvent::data).hasAtLeastOneElementOfType(MaintenanceExemption.class);
+        assertThat(pointers).doesNotContainKey(dev.key(orders.id()));
+    }
+
+    @Test
+    @DisplayName("on a branch, removing unused schemas and partition specs needs modify, even from the maintenance"
+            + " principal: snapshot expiry's allowance holds on main only (choice 14)")
+    void theExpiryAllowanceHoldsOnMainOnly() throws Exception {
+        caller.set(MAINTENANCE);
+
+        assertForbidden(perform(commit("trading@dev", "orders", """
+                {"requirements":[],"updates":[{"action":"remove-schemas","schema-ids":[5]}]}""")));
+
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.privilege()).isEqualTo("modify");
+            assertThat(denial.reason()).startsWith("no_privilege");
+        });
+    }
+
+    @Test
+    @DisplayName("on a branch, an unclassified table in a regulated area takes no commit (D27)")
+    void anUnclassifiedTableTakesNoCommitOnABranch() throws Exception {
+        attributes.add(attribute(new Securable(Securable.Kind.NAMESPACE, desk.id()), GovernanceAttribute.Kind.REGULATED,
+                "true"));
+
+        assertForbidden(perform(commit("trading@dev", "orders", APPEND)));
+
+        assertThat(denials()).singleElement().satisfies(denial -> assertThat(denial.reason())
+                .startsWith("unclassified"));
+        assertThat(batches).isEmpty();
+    }
+
+    @Test
+    @DisplayName("on a branch, a trusted engine that names no end user may not write to a regulated area with D17's"
+            + " switch on")
+    void anIdentityLessWriteIsRefusedOnABranch() throws Exception {
+        caller.set(ETL);
+        attributes.add(attribute(new Securable(Securable.Kind.NAMESPACE, desk.id()), GovernanceAttribute.Kind.REGULATED,
+                "true"));
+        attributes.add(attribute(orders.securable(), GovernanceAttribute.Kind.CLASSIFICATION, "internal"));
+
+        assertForbidden(perform(commit("trading@dev", "orders", APPEND)));
+
+        assertThat(denials()).singleElement().satisfies(denial -> assertThat(denial.reason())
+                .startsWith("identity_less"));
+        assertThat(batches).isEmpty();
     }
 
     // ---- /v1/config ----
@@ -509,6 +818,40 @@ class RefReadsTest {
         assertThat(response.getStatus()).as(write.operation() + ": " + body).isEqualTo(400);
         assertThat(JsonPath.<String>read(body, "$.error.type")).isEqualTo("BadRequestException");
         assertThat(JsonPath.<String>read(body, "$.error.message")).isEqualTo(message);
+    }
+
+    /** A commit of {@code body} to table {@code table} of namespace desk, through {@code prefix}. */
+    private static MockHttpServletRequestBuilder commit(String prefix, String table, String body) {
+        return post("/v1/" + prefix + "/namespaces/desk/tables/" + table).contentType("application/json").content(body);
+    }
+
+    /** The metadata location a commit answered 200 with. */
+    private static String committed(MockHttpServletResponse response) throws Exception {
+        assertThat(response.getStatus()).as(response.getContentAsString()).isEqualTo(200);
+        return JsonPath.read(response.getContentAsString(), "$['metadata-location']");
+    }
+
+    /** The message of a 403. */
+    private static String assertForbidden(MockHttpServletResponse response) throws Exception {
+        String body = response.getContentAsString();
+        assertThat(response.getStatus()).as(body).isEqualTo(403);
+        assertThat(JsonPath.<String>read(body, "$.error.type")).isEqualTo("ForbiddenException");
+        return JsonPath.read(body, "$.error.message");
+    }
+
+    private List<Denial> denials() {
+        return audited.stream().map(CatalogEvent::data).filter(Denial.class::isInstance).map(Denial.class::cast)
+                .toList();
+    }
+
+    private GovernanceAttribute attribute(Securable target, GovernanceAttribute.Kind kind, String value) {
+        return new GovernanceAttribute(target, kind, value, "test", "admin", NOW);
+    }
+
+    private static CatalogObject retired(CatalogObject object, CatalogObject.State state) {
+        return new CatalogObject(object.catalogId(), object.id(), object.namespaceId(), object.name(), object.kind(),
+                state, Optional.of(NOW), state == CatalogObject.State.DROPPED ? Optional.of(NOW.plus(Duration.ofDays(7)))
+                        : Optional.empty(), object.locationRoot(), Optional.empty());
     }
 
     private void assertLoaded(MockHttpServletResponse response, String location, String marker) throws Exception {
@@ -605,10 +948,32 @@ class RefReadsTest {
     }
 
     private static String sha256(byte[] bytes) {
+        return digest("SHA-256", bytes);
+    }
+
+    private static String digest(String algorithm, byte[] bytes) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+            return HexFormat.of().formatHex(MessageDigest.getInstance(algorithm).digest(bytes));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException(e);
+        }
+    }
+
+    /** The bytes of an {@code aws-chunked} body, as S3 stores them: each chunk's data, without its header. */
+    private static byte[] unchunked(byte[] sent) {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        int at = 0;
+        while (true) {
+            int end = at;
+            while (sent[end] != '\r' || sent[end + 1] != '\n') {
+                end++;
+            }
+            int size = Integer.parseInt(new String(sent, at, end - at, UTF_8).split(";")[0].trim(), 16);
+            if (size == 0) {
+                return bytes.toByteArray();
+            }
+            bytes.write(sent, end + 2, size);
+            at = end + 2 + size + 2;
         }
     }
 
@@ -660,12 +1025,13 @@ class RefReadsTest {
                         case "readNamespace" -> Optional.of(desk).filter(ns -> ns.id().equals(args[0]));
                         case "listNamespaces" -> new Page<>(args[0].equals(catalog.id()) ? List.of(desk) : List.of(),
                                 Optional.empty());
-                        case "findObject" -> onMain.stream().filter(o -> o.namespaceId().equals(args[0])
-                                && o.name().normalized().equals(args[1])).findFirst();
+                        case "findObject" -> onMain.stream().filter(o -> o.state() == CatalogObject.State.ACTIVE
+                                && o.namespaceId().equals(args[0]) && o.name().normalized().equals(args[1]))
+                                .findFirst();
                         case "readObject" -> onMain.stream().filter(o -> o.id().equals(args[0])).findFirst();
-                        case "listObjects" -> new Page<>(onMain.stream().filter(o -> o.namespaceId().equals(args[0])
-                                && o.kind() == args[1]).sorted(Comparator.comparing(o -> o.name().normalized()))
-                                .toList(), Optional.empty());
+                        case "listObjects" -> new Page<>(onMain.stream().filter(o -> o.state()
+                                == CatalogObject.State.ACTIVE && o.namespaceId().equals(args[0]) && o.kind() == args[1])
+                                .sorted(Comparator.comparing(o -> o.name().normalized())).toList(), Optional.empty());
                         case "readPointer" -> Optional.ofNullable(pointers.get((PointerKey) args[0]));
                         case "findRef" -> Optional.ofNullable(refs.get((String) args[1]))
                                 .filter(r -> r.catalogId().equals(args[0]));
@@ -684,10 +1050,47 @@ class RefReadsTest {
                         case "listGrantsOfGroups" -> new Page<>(grants.stream()
                                 .filter(g -> ((Set<String>) args[1]).contains(g.grant().group())).toList(),
                                 Optional.empty());
-                        case "attributesOf", "holdsOn" -> List.of();
+                        case "attributesOf" -> attributes.stream()
+                                .filter(a -> ((Set<Securable>) args[0]).contains(a.target())).toList();
+                        case "holdsOn" -> List.of();
+                        case "countOwnPointers" -> pointers.keySet().stream()
+                                .filter(key -> key.branch().equals(args[0].toString())).count();
+                        case "commit" -> commit((CommitBatch) args[0]);
+                        case "renewRef" -> {
+                            renewals.add(new Renewal((UUID) args[0], (Instant) args[1], (Change) args[2]));
+                            yield WriteResult.APPLIED;
+                        }
                         default -> throw new UnsupportedOperationException(call);
                     };
                 });
+    }
+
+    /** Swaps each pointer that is as the batch expects, as the stores do; a branch's batch swaps its own only. */
+    private synchronized CommitResult commit(CommitBatch batch) {
+        for (PointerSwap swap : batch.swaps()) {
+            assertThat(batch.ref().map(lock -> lock.owns(swap.key())).orElse(swap.key().branch()
+                    .equals(PointerKey.MAIN))).as("a batch swaps its branch's own pointers, or main's").isTrue();
+            Optional<Pointer> actual = Optional.ofNullable(pointers.get(swap.key()));
+            if (!actual.map(Pointer::metadataLocation).equals(swap.expected().map(Pointer::metadataLocation))) {
+                return new CommitResult.Conflict(swap.key(), actual);
+            }
+        }
+        batch.swaps().forEach(swap -> pointers.put(swap.key(), swap.next()));
+        batches.add(batch);
+        return new CommitResult.Committed(batch.commitId());
+    }
+
+    /** A branch's renewal: its new expiry, and the change carrying its event. */
+    private record Renewal(UUID refId, Instant expiresAt, Change change) {
+    }
+
+    /** The branch's cut, as every branch's here: desk, orders and daily as the tag took them, fills as main has it. */
+    private void cut(Ref branch) {
+        cuts.put(branch.id(), List.of(
+                namespaceEntry(branch, desk.id(), "desk"),
+                entry(branch, orders.id(), RefEntry.Kind.TABLE, "orders", ordersCut, 1),
+                entry(branch, fills.id(), RefEntry.Kind.TABLE, "fills", fillsMain, 2),
+                entry(branch, daily.id(), RefEntry.Kind.VIEW, "daily", dailyCut, 1)));
     }
 
     /** The namespace at a normalized path in a ref's cut. */

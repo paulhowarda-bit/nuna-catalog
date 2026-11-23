@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -31,6 +32,8 @@ import org.slf4j.LoggerFactory;
  * One scan of the catalog's work list (D30 (2)), as {@link #runOnce} does it:
  *
  * <ol>
+ *   <li><b>Refs</b> (D33, choice 11): each branch whose expiry is near is warned of, and each past it ended, so an
+ *       ended branch's files are no longer kept at this scan's jobs.</li>
  *   <li><b>Tables</b> whose resolved policy runs a job, with the catalog's guardrails applied (a hold stops expiry
  *       and orphan removal, a DR freeze every job, and only active tables are listed): snapshot expiry and manifest
  *       rewrite at every scan. While the nightly cleanup window is open (D30, amended 2026-11-15), each table whose
@@ -38,7 +41,8 @@ import org.slf4j.LoggerFactory;
  *       removal on is due an orphan scan, at most once a night and once per orphan interval. Each table is loaded by
  *       name first and left alone unless it is still the table the work list named, by id. Nothing here deletes:
  *       every file a job leaves unreferenced goes to the catalog's pending-deletion list, which holds it for the
- *       database's PITR window (D30 (5), (8)).</li>
+ *       database's PITR window (D30 (5), (8)), unless a catalog ref, a branch or tag, still reaches it (D33, item
+ *       26's choice 14, {@link RefReach}).</li>
  *   <li><b>Compaction</b>: Jobs for the tables that need one, neediest first, as many at once as the settings allow,
  *       each to stop at the window's end ({@link NightlyCompaction}).</li>
  *   <li><b>Requests</b> (backlog 114): the jobs callers asked for, inside the window or outside it. Each requested
@@ -48,8 +52,9 @@ import org.slf4j.LoggerFactory;
  *       is not recorded, and its table is scanned again the next night.</li>
  *   <li><b>Purges</b>: each dropped object past its window is claimed, everything under its location deleted, and
  *       the purge completed (D30 (6)). A worker that died part-way gets its own claim back and starts again.</li>
- *   <li><b>Deletions</b> the catalog lists as due: deleted with the worker's own storage identity, then reported
- *       done.</li>
+ *   <li><b>Deletions</b> the catalog lists as due: each checked first against the refs made since it was recorded,
+ *       then deleted with the worker's own storage identity and reported done; one such a ref reaches is reported
+ *       done without being deleted.</li>
  * </ol>
  *
  * <p>Outside the window nothing heavy starts but what was requested, after a restart too: expiry, manifest rewrite,
@@ -162,6 +167,7 @@ final class Worker implements AutoCloseable {
                         clock, this::load);
             }
             orphansDue.clear();
+            pages(Management.Section.REFS, management::refs, refs -> refs.forEach(r -> expire(r, report)), report);
             pages(Management.Section.TABLES, management::tables,
                     tables -> tables.forEach(t -> maintain(t, now, report)), report);
             List<Management.RequestWork> requests = new ArrayList<>();
@@ -204,6 +210,30 @@ final class Worker implements AutoCloseable {
             each.accept(page.items());
             token = page.nextToken();
         } while (token.isPresent());
+    }
+
+    // ---- refs ----
+
+    /**
+     * Warns of a branch whose expiry is near, or ends one past it (D33, choice 11), as the work list's refs section
+     * says. Read before the tables, so an ended branch's files are no longer kept at this scan's jobs. One that was
+     * renewed, ended or warned of since the list was read is left alone; a failure is reported and the scan goes on.
+     */
+    private void expire(Management.RefExpiry ref, ScanReport report) {
+        try {
+            if (Management.RefExpiry.END.equals(ref.action())) {
+                if (management.endRef(ref.id())) {
+                    report.refsEnded++;
+                    LOG.info("Ended branch {} ({}) of {}, past its expiry {}", ref.name(), ref.id(), ref.catalog(),
+                            ref.expiresAt());
+                }
+            } else if (management.warnRef(ref.id())) {
+                report.refsWarned++;
+            }
+        } catch (RuntimeException e) {
+            LOG.warn("Failed to {} branch {} ({})", ref.action(), ref.name(), ref.id(), e);
+            report.failed(ScanReport.Failure.REFS, ref.action() + " of ref " + ref.id(), e);
+        }
     }
 
     // ---- tables ----
@@ -397,6 +427,11 @@ final class Worker implements AutoCloseable {
      * Hands files a job left unreferenced to the catalog's pending-deletion list. Only those beneath the table's own
      * location as written, no segment empty, {@code .} or {@code ..}: the catalog refuses any other, which would
      * refuse the whole batch, and a file elsewhere is not the worker's to delete.
+     *
+     * <p>Only files no catalog ref reaches either (D33, item 26's choice 14): each ref the work list named for the
+     * table is read, and the record names those refs. When the catalog answers that a ref naming the table was made
+     * since, it hands back the table's refs now, and the files are checked against those, up to {@link #REF_READS}
+     * times in all.
      */
     private void record(Management.TableWork work, Table table, Collection<String> files, ScanReport report) {
         if (files.isEmpty()) {
@@ -411,9 +446,30 @@ final class Worker implements AutoCloseable {
                 report.filesOutside++;
             }
         }
-        management.recordDeletions(work.catalog(), work.id(), beneath);
-        report.filesRecorded += beneath.size();
+        // Main's own snapshots reach none of the files, which its last job left unreferenced: not read again.
+        Set<Long> onMain = new HashSet<>();
+        table.snapshots().forEach(snapshot -> onMain.add(snapshot.snapshotId()));
+        List<Management.RefWork> refs = work.refs();
+        for (int read = 1; ; read++) {
+            RefReach.Split split = RefReach.split(beneath, refs, table.io(), onMain);
+            try {
+                management.recordDeletions(work.catalog(), work.id(), split.unreached(),
+                        refs.stream().map(Management.RefWork::id).toList());
+            } catch (Management.RefsChanged e) {
+                if (read == REF_READS) {
+                    throw e;
+                }
+                refs = e.refs;
+                continue;
+            }
+            report.filesRecorded += split.unreached().size();
+            report.kept(split.kept());
+            return;
+        }
     }
+
+    /** How many times a record of deletions reads the table's refs before it gives up until the next scan. */
+    static final int REF_READS = 3;
 
     /** The catalog's own test for a recorded file ({@code MaintenanceRoutes.beneath}). */
     static boolean beneath(String location, String root) {
@@ -504,15 +560,25 @@ final class Worker implements AutoCloseable {
             UUID object = (UUID) key.get(1);
             Instant started = clock.instant();
             AtomicLong bytes = new AtomicLong();
+            AtomicLong deleted = new AtomicLong();
             boolean failed = false;
             try {
                 spans.part(ScanSpans.Part.DELETION, () -> {
-                    List<String> locations = deletions.stream().map(Management.DeletionWork::location).toList();
-                    locations.forEach(location -> bytes.addAndGet(size(location)));
-                    storage.delete(locations);
-                    management.completeDeletions(catalog, object,
-                            deletions.stream().map(Management.DeletionWork::id).toList());
-                    report.filesDeleted += deletions.size();
+                    Rechecked checked = recheck(catalog, object, deletions, report);
+                    List<String> locations = checked.delete().stream().map(Management.DeletionWork::location).toList();
+                    if (!locations.isEmpty()) {
+                        locations.forEach(location -> bytes.addAndGet(size(location)));
+                        storage.delete(locations);
+                    }
+                    List<UUID> done = new ArrayList<>();
+                    checked.delete().forEach(deletion -> done.add(deletion.id()));
+                    checked.keep().forEach(deletion -> done.add(deletion.id()));
+                    if (!done.isEmpty()) {
+                        management.completeDeletions(catalog, object, done);
+                    }
+                    deleted.set(locations.size());
+                    report.filesDeleted += locations.size();
+                    report.kept(checked.kept());
                 });
             } catch (RuntimeException e) {
                 LOG.warn("Failed deleting {} files of {}", deletions.size(), object, e);
@@ -520,9 +586,47 @@ final class Worker implements AutoCloseable {
                 failed = true;
             }
             health.ran(HealthReports.Job.DELETION, object, started, clock.instant(), failed,
-                    failed ? HealthReports.Counts.NONE : HealthReports.Counts.deleted(deletions.size(), bytes.get()),
+                    failed ? HealthReports.Counts.NONE : HealthReports.Counts.deleted(deleted.get(), bytes.get()),
                     report);
         });
+    }
+
+    /** One object's due deletions as the recheck splits them: to delete, to complete without deleting, kept by kind. */
+    private record Rechecked(List<Management.DeletionWork> delete, List<Management.DeletionWork> keep,
+                             Map<Management.RefKind, Integer> kept) {
+    }
+
+    /**
+     * Checks one object's due deletions against the refs made since each was recorded (D33, choice 14), whose metadata
+     * it reads with the table's own access, the worker's identity reading nothing: one such a ref reaches is completed
+     * without being deleted, the ref keeping it. While the table cannot be loaded, being dropped or failing to load,
+     * those deletions wait; a dropped table's files go with its purge, which a ref naming it also stops. A deletion no
+     * ref made since names is deleted.
+     */
+    private Rechecked recheck(String catalog, UUID object, List<Management.DeletionWork> deletions,
+                              ScanReport report) {
+        List<Management.DeletionWork> later = deletions.stream().filter(deletion -> !deletion.refs().isEmpty())
+                .toList();
+        if (later.isEmpty()) {
+            return new Rechecked(deletions, List.of(), Map.of());
+        }
+        List<Management.DeletionWork> delete = new ArrayList<>(deletions.stream()
+                .filter(deletion -> deletion.refs().isEmpty()).toList());
+        Optional<Table> table = later.getFirst().table().flatMap(named -> load(new Management.TableWork(catalog,
+                object, named.namespace(), named.name(), "", Map.of()), report));
+        if (table.isEmpty()) {
+            LOG.info("{} due files of {} wait: refs made since they were recorded name it, and it cannot be loaded",
+                    later.size(), object);
+            return new Rechecked(delete, List.of(), Map.of());
+        }
+        Map<UUID, Management.RefWork> refs = new LinkedHashMap<>();
+        later.forEach(deletion -> deletion.refs().forEach(ref -> refs.putIfAbsent(ref.id(), ref)));
+        RefReach.Split split = RefReach.split(later.stream().map(Management.DeletionWork::location).toList(),
+                List.copyOf(refs.values()), table.get().io(), Set.of());
+        Set<String> unreached = Set.copyOf(split.unreached());
+        List<Management.DeletionWork> keep = new ArrayList<>();
+        later.forEach(deletion -> (unreached.contains(deletion.location()) ? delete : keep).add(deletion));
+        return new Rechecked(delete, keep, split.kept());
     }
 
     /**

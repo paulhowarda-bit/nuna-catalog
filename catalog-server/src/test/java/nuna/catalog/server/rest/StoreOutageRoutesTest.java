@@ -31,6 +31,7 @@ import nuna.catalog.objectstore.StoreKind;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Privilege;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.governance.RefSettings;
 import nuna.catalog.server.ErrorResponsesForTests;
 import nuna.catalog.server.StoreOutage;
 import nuna.catalog.server.metrics.CatalogMetrics;
@@ -117,7 +118,8 @@ class StoreOutageRoutesTest {
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ServerAlerts alerts = new ServerAlerts(1_000_000, 100, registry);
         Engines engines = new Engines(store, storage, new MetadataCache(1_000_000), alerts, events, clock,
-                new DefaultListableBeanFactory().getBeanProvider(CommitRule.class));
+                new DefaultListableBeanFactory().getBeanProvider(CommitRule.class),
+                new RefSettings(50, 1000, Duration.ofDays(30), Duration.ofDays(180), Duration.ofDays(7)));
         ObjectRoutes objects = new ObjectRoutes(store, lookup, new Idempotency(store, clock), events, settings, guard,
                 clock);
         // No metadata views, metrics sink or read audit: an outage is answered before any of them is reached.
