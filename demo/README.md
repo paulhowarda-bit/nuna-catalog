@@ -509,8 +509,9 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
 1. **Read as of the tag.** In the console, open catalog `lakehouse`, tab **Branches and tags**
    (<https://localhost:8181/ui/#c=lakehouse&tab=refs>). It lists `@dev`, a branch with 2 changed tables, and
    `@sample`, a tag, both made by `ana`. On `@sample`'s line, choose **Read**. The band under the title says
-   "Reading the tag @sample", and the catalog lists what the tag holds: on a new lake, `markets` and `reference`,
-   and no `brokerage`. Open `markets`, `fx`, `rates`: its **Snapshots** tab lists the three the sample data made.
+   "Reading the tag @sample", and the catalog lists its namespaces live, as main does, `brokerage` among them; the
+   tables beneath are the tag's, the sample data's, and none of `brokerage`'s. Open `markets`, `fx`, `rates`: its
+   **Snapshots** tab lists the three the sample data made.
    **Read main instead** goes back to main. An engine reads the tag as the warehouse `lakehouse@sample`, as this
    call to the REST API does:
 
