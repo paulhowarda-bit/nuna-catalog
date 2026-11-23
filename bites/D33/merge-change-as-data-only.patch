@@ -1,0 +1,17 @@
+Breaks: a merge classes every table's change as data alone, so write lets a caller land a schema or property change made on the branch (security finding 3).
+Module: catalog-core
+Test: MergeTest#aSchemaChangeNeedsModify
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+index 315bedf..4e630d2 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+@@ -345,7 +345,7 @@ public final class Merge {
+                 ? rebased(onMainFacts, Metadata.tableLink(cutJson.get(), cut.metadataLocation()).facts())
+                 : onMainFacts;
+         return new Table(entry, namespace, object, cut, branch, main, since, Optional.empty(), moved,
+-                MergeMetadata.definitionChange(cutJson.get(), branchJson.get()),
++                Optional.empty(),
+                 engine.judge(o, before, after, governance),
+                 CommitEngine.schemaOrSpecChanged(before, after) && governance.regulated(),
+                 Optional.of(MergeMetadata.merged(cutJson.get(), branchJson.get(), mainJson.get(),

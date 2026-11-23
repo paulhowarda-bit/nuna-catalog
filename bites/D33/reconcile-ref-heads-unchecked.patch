@@ -1,0 +1,17 @@
+Breaks: the DR reconcile's report on refs never reads a branch's own pointers, so a branch whose head names a file the DR store lacks goes unreported (item 111).
+Module: catalog-core
+Test: ReconcileRefsTest#aBranchWhoseHeadIsMissingIsReportedAndNoOtherRef
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 48880e7..321b253 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -557,7 +557,7 @@ public final class Reconcile {
+         eachInCut(ref.id(), catalogId, new ArrayList<>(), (entry, path) -> {
+             RefEntry.At at = entry.pointer().orElseThrow();
+             named.add(new RefFile(entry.id(), entry.kind(), path, RefPointer.CUT, at.version(), at.metadataLocation()));
+-            if (ref.kind() == Ref.Kind.BRANCH) {
++            if (ref.kind() == Ref.Kind.TAG) {
+                 store.readPointer(ref.key(entry.id())).ifPresent(head -> named.add(new RefFile(entry.id(),
+                         entry.kind(), path, RefPointer.HEAD, head.version(), head.metadataLocation())));
+             }

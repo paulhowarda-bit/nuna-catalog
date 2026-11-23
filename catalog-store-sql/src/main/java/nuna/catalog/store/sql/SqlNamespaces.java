@@ -27,7 +27,9 @@ import java.util.UUID;
 /**
  * Namespaces (D28). A create share-locks its parent and a drop locks the namespace for update, so
  * a child create and its parent's drop serialize. The unique (parent, normalized name) index makes
- * a create wait for an open create of the same name.
+ * a create wait for an open create of the same name. A drop is refused while a ref's cut names a
+ * table or view of the namespace, in any state, since a read through the ref takes its governance
+ * from the namespace (D33, backlog 157).
  */
 final class SqlNamespaces {
 
@@ -131,6 +133,10 @@ final class SqlNamespaces {
                     || exists(connection, "SELECT 1 FROM catalog_object WHERE namespace_id = ? AND state = 'ACTIVE'",
                     namespaceId)) {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_EMPTY);
+            }
+            if (exists(connection, "SELECT 1 FROM catalog_object o JOIN ref_entry e ON e.object_id = o.id"
+                    + " WHERE o.namespace_id = ?", namespaceId)) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
             }
             if (Guards.held(connection, namespaceId, locked.get().catalogId(), locked.get().ancestors())) {
                 return new WriteResult.Refused(WriteResult.Reason.HELD);

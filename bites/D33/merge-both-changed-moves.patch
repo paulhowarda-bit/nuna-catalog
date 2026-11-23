@@ -1,0 +1,17 @@
+Breaks: a table main committed to since the cut moves anyway, the branch's version overwriting main's commit (item 26's choice 7).
+Module: catalog-core
+Test: MergeTest#conflictsMoveNothing
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+index be01593..5777f91 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+@@ -310,7 +310,7 @@ public final class Merge {
+         Pointer onMain = main.orElseThrow(() -> new IllegalStateException("active object " + o.id()
+                 + " has no pointer"));
+         GovernanceChain governance = GovernanceChain.of(store, o);
+-        boolean moved = onMain.version() != cut.version();
++        boolean moved = false;
+         Optional<String> branchJson = engine.load(o, branch, governance);
+         Optional<String> mainJson = engine.load(o, onMain, governance);
+         Optional<String> cutJson = moved && o.kind() == CatalogObject.Kind.TABLE ? engine.load(o, cut, governance)

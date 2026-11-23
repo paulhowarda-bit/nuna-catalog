@@ -48,6 +48,9 @@ import tools.jackson.databind.node.ObjectNode;
  * is taken too; an {@code accept} entry it contradicts stops its table and is reported (backlog 10).
  * The answer lists the tables with something to report, and table locations in storage that no table or
  * view of any catalog holds (written after the database's last change; the operator registers them by name).
+ * Under {@code refs} it lists every branch and tag whose cut, or a branch's own pointer, names a metadata file storage
+ * lacks, with the tables and views concerned ({@link Reconcile#checkRefs}): a report only, with or without
+ * {@code apply}, since no branch is walked or rewound (D33, amended 2026-11-20: "A report only"; item 111).
  *
  * <p>Each step is taken only when storage holds every file it adds, data included, and the walk stops at the first
  * that lacks one, with or without a DR watermark (D37, amended 2026-11-20: "Walk with a file check"; item 83). With
@@ -109,6 +112,9 @@ class ReconcileRoutes {
         if (rewind) {
             return GovernanceRoutes.json(200, rewind(catalog, request, reconcile, apply));
         }
+        // Refs are reported, never moved (D33, amended 2026-11-20: "A report only"; item 111). Read before any table is
+        // walked, so a store that fails them fails the request with nothing applied.
+        List<Reconcile.RefCheck> checks = reconcile.checkRefs(catalog.id());
 
         ObjectNode answer = Management.JSON.createObjectNode();
         answer.put("apply", apply);
@@ -140,6 +146,10 @@ class ReconcileRoutes {
             reported.add(table(plan, levels, applied));
         });
         answer.put("tables-checked", checked[0]);
+        ArrayNode refs = answer.putArray("refs");
+        checks.stream().filter(check -> !check.missing().isEmpty() || check.problem().isPresent())
+                .forEach(check -> refs.add(ref(check)));
+        answer.put("refs-checked", checks.size());
         ArrayNode unknown = answer.putArray("unknown-locations");
         for (String location : files.tableLocations()) {
             if (!known(location)) {
@@ -312,6 +322,30 @@ class ReconcileRoutes {
             node.put("steps-applied", applied.stepsApplied());
             applied.problem().ifPresent(problem -> node.put("apply-problem", problem));
         }
+        return node;
+    }
+
+    /**
+     * A branch or tag that names metadata files storage lacks: each with its table or view as the ref's cut names it,
+     * and whether the cut's pointer names it or the branch's own.
+     */
+    private static ObjectNode ref(Reconcile.RefCheck check) {
+        ObjectNode node = Management.JSON.createObjectNode();
+        node.put("id", check.ref().id().toString());
+        node.put("name", check.ref().name().display());
+        node.put("kind", check.ref().kind().name().toLowerCase(Locale.ROOT));
+        ArrayNode missing = node.putArray("missing");
+        for (Reconcile.RefFile file : check.missing()) {
+            ObjectNode m = missing.addObject();
+            m.put("id", file.object().toString());
+            m.put("kind", file.kind().name().toLowerCase(Locale.ROOT));
+            ArrayNode path = m.putArray("path");
+            file.path().forEach(path::add);
+            m.put("pointer", file.pointer().name().toLowerCase(Locale.ROOT));
+            m.put("version", file.version());
+            m.put("metadata-location", file.metadataLocation());
+        }
+        check.problem().ifPresent(problem -> node.put("problem", problem));
         return node;
     }
 }

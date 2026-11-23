@@ -120,8 +120,19 @@ class ManagementGuard {
                 "only platform operators may call " + operation);
     }
 
-    private AccessDenied refuse(Request request, nuna.catalog.audit.Securable named, String operation,
-                                Decision.Denied denied) {
+    /**
+     * A refusal by main's commit rules, a legal hold, a DR freeze or the minimum snapshot age among them, of
+     * {@code operation} on {@code named}, which needed {@code privilege}: audited as a denial with the rules' reason,
+     * as {@code Guard.refused} audits a commit's (D18), and 403.
+     */
+    AccessDenied ruled(Request request, nuna.catalog.audit.Securable named, String operation, Privilege privilege,
+                       String reason, String message) {
+        return denials.refuse(request.actor(), operation, named, privilege.wireName(), reason, message);
+    }
+
+    /** The authorizer's refusal of {@code operation} on {@code named}, audited as a denial (D18); 403. */
+    AccessDenied refuse(Request request, nuna.catalog.audit.Securable named, String operation,
+                        Decision.Denied denied) {
         return denials.refuse(request.actor(), operation, named,
                 denied.privilege() == null ? null : denied.privilege().wireName(),
                 denied.reason().name().toLowerCase(Locale.ROOT), denied.message());

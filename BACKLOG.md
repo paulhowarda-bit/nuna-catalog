@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 3 S, 10 M, 15 L, 5 XL.
+**35 open:** 4 S, 11 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -45,6 +45,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
 | [156](backlog/156.md) | M | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files | 2026-11-22 |
+| [157](backlog/157.md) | S | A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7) | one read in each store's namespace drop, one route answer, a suite case, a fast route test and four bites; the suite case then waits for the overnight heavy build | 2026-11-23 |
+| [158](backlog/158.md) | M | A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race) | a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build | 2026-11-23 |
 
 ## Open items in full
 
@@ -1073,9 +1075,12 @@ Left:
   (`TableFiles.onBranch`) when it builds main's chain, and filter the archive match on the ref, so only commits on
   `main` prove main's swaps. Tests: a branch's two commits past main's head are not taken while main's own successor
   still is; and a branch file plus main's file at the same predecessor do not count as two proven children. Bites for
-  both filters.
+  both filters. **Built with item 111 (2026-11-22, worktree-agent-a2bdec51732f81323):** the walk skips marked files,
+  never the pointer it starts from (`ReconcileBranchFilesTest`, bites `D33/reconcile-takes-branch-files` and
+  `D33/reconcile-skips-a-marked-pointer`); the archive's filter was already on main (`ArchivedCommits.read` keeps
+  only commits on `main`; bite `M8/reconcile-archive-reads-other-branches`).
 - Reconcile must skip branch files (finding 12, with item 111) before any build with this item goes to work, where a
-  real failover reconcile can run.
+  real failover reconcile can run. **Met once item 111's branch lands**: it carries the filter above.
 - The merge (item 107) treats a branch's files as above, refuses a branch over the cap, and refuses a frozen table.
 - A transaction on a branch cannot hold a table it leaves unchanged and has not committed to yet: it reads the cut's
   version, and `PointerHold` cannot say "no pointer here", so a first commit to that table on the branch landing
@@ -1208,7 +1213,7 @@ Choices made (Paul may overrule):
 
 - Added: 2026-11-20 by agent on item 26
 - Decided: 2026-11-22, D33
-- Touches: catalog-core/src/main/java/nuna/catalog/core/refs/ catalog-core/src/test/java/nuna/catalog/core/refs/ catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/main/java/nuna/catalog/core/commit/TableFiles.java catalog-core/src/test/java/nuna/catalog/core/commit/MergeTest.java catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java catalog-iceberg/src/test/java/nuna/catalog/iceberg/MergeMetadataTest.java catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/main/java/nuna/catalog/server/governance/ManagementGuard.java catalog-server/src/main/java/nuna/catalog/server/rest/Engines.java catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java catalog-server/src/test/java/nuna/catalog/server/governance/ catalog-tests-conformance/src/test/java/nuna/catalog/conformance/IcebergClientConfigTest.java
 - Effort: L, the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106
 
 Part of item 26 (D33); its design section says why (choices 7 to 10 and 12).
@@ -1272,6 +1277,147 @@ chapter 6, "Branches and tags"; the screens show these answers):
 - Before the click, whether the caller may merge: their right on each table the merge would move (write or modify).
 - The merge's answer: main's new version for each table moved.
 - The journal entry each merged version writes, readable as such.
+
+## Built (2026-11-23, branch `worktree-agent-a35ef01c938c4c6c2`)
+
+**Choice made (Paul may overrule): a merge gives main its own copy, so a DR reconcile never follows a branch's chain.**
+Main does not take the branch's pointer and file. It takes its own copy of the branch's metadata, written unmarked
+(`00042-<uuid>.metadata.json`) at main's next version, whose metadata log is main's log ending with main's current
+file (`MergeMetadata.merged`). Its predecessor is therefore main's file, never a `.branch-` file. A reconcile after a
+failover walks main's chain into a merged version as into any commit on main: a later file of main's proves it, or the
+archive's `Commit` event on main for the merge's commit id does, and if neither does it fails safe as for any unproven
+version. It never meets a branch's file, so item 111 can treat every marked file as outside main's chain. The cost is
+one extra file per table moved; the branch's own files stay until cleanup, and its snapshots and data files are shared.
+This replaces item 105's "main takes the branch's pointer as is" for the merge, and the `TableFiles.BRANCH_MARK` doc now
+says so.
+
+**How the rebase over main's maintenance works** (Paul, 2026-11-22: "maintenance doesn't count"). For each table the
+plan reads three files: the cut's, main's and the branch's. If main has moved since the cut,
+`MergeMetadata.beyondMaintenance(cut, main)` decides whether that was only maintenance:
+- Main's definition must be the cut's: format version, location, properties, current schema, spec and sort order.
+  Main may only have lost schemas and specs, as expiry removes unused ones.
+- Every snapshot main added must be a `replace` (compaction, manifest rewrites).
+- Every ref main has must be one the cut had, with the same retention, and reached from the cut's snapshot only
+  through main's new `replace` snapshots.
+
+Anything else (data, a property, a schema, a rollback, a new ref, a drop) is a conflict. A rebased table moves as the
+branch has it: main takes the branch's version, so the snapshots main's compaction made disappear from main. That loses
+no rows, because a `replace` snapshot holds no rows its parent lacked. The cut's data files are still there because
+cleanup protects every file a ref names (choice 14, item 108). The files compaction wrote become orphans for the orphan
+scan, and the next night compacts the table again.
+
+What main's expiry removed since the cut stays removed (the security review's low note, 2026-11-23).
+`MergeMetadata.merged` leaves out of main's copy:
+- every ref of the cut that main no longer has and the branch left as the cut had it;
+- then every snapshot of the cut that main no longer has and that no remaining ref names (the branch's head among
+  them), as Iceberg's expiry removes ancestors.
+
+The snapshots the branch made stay, and so does any older snapshot a ref the branch made or moved names. Time travel on
+main therefore reaches no history main had expired. Without this, the copy listed the cut's snapshots again until the
+next night's expiry: bounded, but main's history should stay as main's expiry left it. Tests:
+`MergeMetadataTest#theCopyLeavesOutWhatMainsExpiryRemoved` and `MergeTest#aRebaseOverCompactionAndExpiry`. Bite:
+`merge-copy-keeps-expired`. The rules judge the merge without main's maintenance snapshots (they are left out of the "before"
+side), so the minimum snapshot age is not asked of them. A legal hold is the exception: under a hold the rules see
+every snapshot main has, so a held table compacted since the cut cannot merge (`legal_hold`).
+
+**Built:**
+- `MergeMetadata` (catalog-iceberg): `beyondMaintenance`, `definitionChange` (what the branch changed beyond
+  snapshots, refs and statistics, from the cut, which is main's definition once maintenance is set aside), `merged`
+  and `journal`.
+- `Merge` (catalog-core, from `CommitEngine.merging()`):
+  - `plan(ref, cap)` is the dry run and each attempt. It counts the branch's own pointers first and stops past the
+    cap. Then it walks the cut and, for each table or view with an own pointer, reads main and the cut and records:
+    the conflict (changed beyond maintenance; dropped or purged on main; a view replaced on main; a regulated
+    table's file failing its hash), or else `definition`, main's verdict and the D11a flag. It also records main's
+    commits since the cut, counted from the versions, with who made the first 100 from the journal.
+  - `merge(...)` refuses over the cap or on any conflict, then asks the caller's rights through a callback, then
+    refuses on main's verdict. Only then does it write main's copies and send one `CommitBatch`: main's swaps, each
+    journaled under the merge's id as one `merge-branch` update with a `Commit` event on main; every own pointer of
+    the branch held; and `RefLock.End`.
+  - A swap lost to a commit on main or on the branch plans again within P10's bound. A branch gone answers `Gone`,
+    and an unknown outcome is settled by `findCommit`. A branch that changed nothing is ended with
+    `deleteRef` and the merge's record.
+- `CommitEngine`: `judge`, `load`, `committed` and `backOff` are now package-private, so the merge judges, reads,
+  caches and alerts exactly as a commit does.
+- The route `POST /management/v1/catalogs/{catalog}/refs/{ref}/merge` (`RefRoutes`):
+  - A merge needs `create` on the catalog. It then asks, in one `Authorizer.decide` batch, `write` (data alone) or
+    `modify` (a definition change, and always for a view) on each table, with storage access, so D27, D20 and D17
+    apply. Refusals are audited through `ManagementGuard.refuse`; the rules' refusals (`legal_hold`, `dr_freeze`,
+    `snapshot_min_age`) through `ManagementGuard.ruled`, as `Guard.refused` does for a commit.
+  - Answers:
+    - 200 with the ref, then each table moved: its namespace, name and kind, `cut-version`, `main-version`,
+      `branch-version`, `version` (main's new one), `rebased`, `definition-change` and `metadata-location`.
+    - 409 `RefMergeConflictException`, with a message naming each conflict as `ns.table (cut version 2, main
+      version 3 | main dropped, branch version 1): why` and a `conflicts` array.
+    - 409 `RefLimitException` past `nuna.refs.max-merge-tables`.
+    - 400 for a tag; 404 for a branch gone.
+  - It writes one `ref` event (MERGED, naming the tables moved) with the batch, beside each table's `Commit` event on
+    main. An Idempotency-Key replays the answer.
+- The dry run, `?dry-run=true`, needs any holding in the catalog and writes nothing. It answers 200 with:
+  - `answer`: what the merge itself would answer now (the conflict, cap or rules error, else `{"code":200}`);
+  - `may-merge`: `create` held and the right on every table that moves;
+  - `tables`, each with the fields above plus `conflict` and `dropped-at`, `main-commits` (`count`, and `by` only
+    for a caller holding `create`, as `created-by` is shown), `verdict` (`allowed`, and `type`, `message` and
+    `reason` when refused) and `right` (`needs`, `allowed`);
+  - `hidden`: how many tables the caller cannot describe. Those are counted, never named, in the tables and in the
+    conflict message ("and 1 the caller cannot describe"): security finding 2.
+- The journal entry each merged version writes reads as such: `[{"action":"merge-branch","branch":"dev","branch-id":
+  …,"branch-version":2,"branch-location":…,"cut-version":2,"rebased-over":0,"definition-change":"properties [stage]
+  changed"}]`. The same text is the `Commit` event's `updates`.
+
+**How the security findings are met:**
+- Finding 2: the real merge needs `create` on the catalog, which implies `describe` on every table in it, so its
+  answers can name everything. The dry run asks `describe` per table in the same batch and counts what it may not
+  name. Test: `RefMergeRoutesTest#theDryRunNamesOnlyWhatTheCallerCanDescribe`. Bite: `merge-route-names-hidden`.
+- Finding 3: every rule of the profile judges the change from main's metadata to the branch's (`CommitEngine.judge`,
+  main's engine, so the DR freeze binds the merge). The right comes from the whole change. D11a's flag, journal text
+  and alert fire for a regulated schema change. Refusals are audited.
+  - Engine tests: `MergeTest#aSchemaChangeNeedsModify`, `#aHoldSetAfterTheBranchCommit`,
+    `#aHoldKeepsMainsMaintenanceSnapshots`, `#aFreezeRefusesTheMerge`, `#theRulesSeeTheWholeChange` and
+    `#aRegulatedSchemaChangeIsJournaledAndAlerted`.
+  - Route tests: `RefMergeRoutesTest#theRightFollowsTheChange` and `#mainsRulesRefuseAMergeAsADenial`.
+  - Bites: `merge-change-as-data-only`, `merge-hold-skipped`, `merge-freeze-skipped` and
+    `merge-route-rights-unchecked`.
+
+**Tests**, all fast (Java only) unless marked:
+- `MergeMetadataTest`: 12 tests.
+- `MergeTest`: 15 tests. They cover a table moving, a view moving or conflicting, a branch that changed nothing,
+  conflicts (both sides changed, dropped), the rebase over compaction and expiry, the race with main, a branch gone,
+  the cap, rights, holds, the freeze, the rules, D11a and the dry run.
+- `RefMergeRoutesTest`: 7 tests, covering a merge with its events, journal and key replay; rights; the 409; the
+  rules' denial; the dry run's hiding; the dry run of a merge that would land; and a tag and the cap.
+- Heavy, written and compiled, not run: `IcebergClientConfigTest#stockWritersMergeABranchIntoMain`. A stock writer
+  appends on the branch while another appends to a different table on main. The merge moves only the first; main then
+  plans the branch's data file from main's own (unmarked) file, and the other table keeps main's rows. A steward may
+  ask the dry run but gets 403 on the merge. A second branch whose table main also changed gets 409.
+
+**Other choices made (Paul may overrule):**
+- Over the cap answers 409 `RefLimitException`, like the ref limits: it depends on the branch's state, not on the
+  request.
+- The dry run's `answer` is what the merge would answer whatever the caller holds. The caller's own position is shown
+  separately, in `may-merge` and each table's `right`, so a viewer sees the conflicts and an author sees what they
+  lack.
+- A view moved on main since the cut always conflicts (main does no maintenance on views), and a view's change always
+  needs `modify`, as a view replace does.
+- A merge refuses the maintenance exemption (D20, D30): a maintenance principal merging a flagged table is refused as
+  any engine that is not trusted, since a merge is not maintenance.
+- "Data alone" means snapshots, refs and statistics. A branch that removed unused schemas or specs changed the
+  definition, since maintenance runs on main only (choice 14).
+- A refusal by the right releases the Idempotency-Key (403s are not recorded, as on every management route); a 409 is
+  recorded.
+
+Left:
+- The heavy build running `IcebergClientConfigTest#stockWritersMergeABranchIntoMain`: the overnight run's.
+- Who dropped a table on main. The store keeps only `droppedAt`, which the dry run shows as `dropped-at`; "by whom"
+  needs the audit's `Drop` event or a store column.
+- Item 111: Reconcile can rely on main's chain never naming a marked file, per the choice above.
+- Statistics are not compared: statistics main set since the cut are replaced by the branch's, and the next analyze
+  sets them again.
+- A held table compacted on main since the cut cannot merge while the hold stands. Cutting a new branch, or ending the
+  hold, lets it through.
+- A flagged table (D20) merges only for a trusted engine. The console is not one, so for such a table the console can
+  show the dry run but cannot merge it.
+- The console's screens (item 109).
 
 ### 108. Cleanup protects every ref, and the worker warns of and ends expired branches (item 26)
 
@@ -1450,7 +1596,7 @@ the README's walk works as written; checked by hand and recorded in `status/`. W
 
 - Decided: 2026-11-20, D33
 - Added: 2026-11-20 by agent on item 26
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java deploy/README.md
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java deploy/README.md catalog-core/src/test/java/nuna/catalog/core/commit/ReconcileRefsTest.java catalog-core/src/test/java/nuna/catalog/core/commit/ReconcileBranchFilesTest.java catalog-server/src/test/java/nuna/catalog/server/dr/DrRefReportRouteTest.java bites/D33/reconcile-takes-branch-files.patch bites/D33/reconcile-skips-a-marked-pointer.patch bites/D33/reconcile-ref-heads-unchecked.patch bites/D33/dr-reconcile-refs-unreported.patch backlog/105.md
 - Effort: M, one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java`
 
 Part of item 26 (D33, D37). Written for question 3's recommended answer (a), report only; another answer changes it,
@@ -1468,6 +1614,84 @@ other ref. Fast build green; bite recorded in `bites/D33/`. Waits on Paul's answ
 105 and 100.
 
 **Decided 2026-11-20 (D33, amended):** a report only, as this item says (question 3 (a), "A report only"); it no longer waits on that answer.
+
+**Reconcile skips branch files (finding 12) before any build with item 105 goes to work, where a real failover
+reconcile can run.** Security finding 12's Reconcile half is built here with the report, so this branch meets that
+condition once it lands; item 105's Left says so too.
+
+**Progress, 2026-11-22 (worktree-agent-a2bdec51732f81323): built; the Java tests run in the fast build; the route
+test is written and compiles (heavy, not run). Open until the heavy build passes it.** Started from the uncommitted
+work a session left on 2026-11-20 (a patch against 9c067cc and two test files): neither source file had changed since,
+so its report and both tests were kept, the tests brought to item 105's marked files and item 106's routes.
+- The report: `Reconcile.checkRefs(catalogId)` reads the catalog's refs (`listRefs`), walks each one's cut
+  (`listRefNamespaces`, `listRefObjects`, tables and views) and, for a branch, reads its own pointer for each object
+  of the cut (`readPointer(ref.key(id))`). It asks the DR store whether it holds each metadata file a ref names
+  (`TableFiles.exists`), once a file however many refs name it, and answers every ref checked with the files it
+  lacks (`RefFile`: the object's id and kind, its path in the cut, `CUT` or `HEAD`, the version and the location).
+  Nothing moves.
+- The route: `POST .../dr-reconcile` without `rewind` answers `refs` (each ref naming a missing file, or whose
+  check had a `problem`: id, name, kind and `missing`) and `refs-checked`, with or without `apply`. The refs are
+  read before any table is walked.
+- The chain filter (finding 12): `Reconcile`'s walk skips every file `TableFiles.onBranch` marks when it builds the
+  files that follow main's, so a branch's file is never a step, a tip or a proof of another file; the pointer the
+  walk starts from is never judged so. Item 107 decided that main never takes a branch's pointer or a `.branch-`
+  file: a merge writes main's own unmarked copy of the branch's metadata at main's version + 1, whose metadata log
+  ends in main's previous file. So every marked file lies off main's chain, a merge is walked as any commit on main
+  is (proven by a later file, the archive or `accept`), and only a `register` can start main's pointer on a marked
+  file; the walk then follows main's unmarked files from it. The archive half was already on main:
+  `ArchivedCommits.read` keeps only commits whose `branch` is `main` (`ArchivedCommits.java:67`,
+  `ArchivedCommitsTest#readsEachTablesSwapsFromEveryChain`, bite `M8/reconcile-archive-reads-other-branches`);
+  nothing changed there.
+- The runbook: `deploy/README.md`'s DR steps gain step 6, "Check the refs": what `refs` lists, and to delete each
+  listed ref or keep it for the primary's return; the thaw is now step 7.
+
+Tests, Java only, in the fast build:
+- `ReconcileRefsTest` (catalog-core, 7): a branch whose own pointer names a missing file is listed with that table
+  and no other ref, though main's pointers name missing files too; nothing listed when the DR store holds every file;
+  a missing cut file listed for every ref naming it, with its namespaces' names, the store asked once a file; a
+  branch listed for its cut's file and its own, each named so; a view checked as a table is; a branch past its
+  expiry left out; a file the store cannot answer for stops that ref's check with a problem and no other. Over a
+  store double that pages one entry at a time.
+- `ReconcileBranchFilesTest` (catalog-core, 3): a branch's two commits past main's head are not taken while main's
+  own successor, proven by the archive, still is; a branch's file and main's at one predecessor, each with a file
+  built on it, are not two proven files (main's is taken); a pointer on a branch's file, as a register can start it,
+  still walks main's files after it.
+
+Heavy, written and compiled, not run: `DrRefReportRouteTest` (catalog-server, `dr` package; the governance tests'
+package is item 107's claim): a tag and two branches made through the refs route, one branch's commit through
+`trading@<branch>`, its file taken out of the S3 store; the reconcile lists that branch with the table, `head`,
+version 1 and the file, and no other ref naming a file of the test's table; main's pointer and the branch's are
+unchanged; once the branch is deleted through the route it is gone from the report.
+
+Bites in `bites/D33/`: `reconcile-takes-branch-files` (the filter removed; both first tests of
+`ReconcileBranchFilesTest`), `reconcile-skips-a-marked-pointer` (the pointer judged by the mark too; the third),
+`reconcile-ref-heads-unchecked` (a branch's own pointers not read; `ReconcileRefsTest`), and
+`dr-reconcile-refs-unreported` (the route lists a ref only with a problem; `DrRefReportRouteTest`, heavy, checked with
+`git apply --check` only). The three fast ones were run with `bites/run.sh <patch>...` and each bit on an
+assertion, the tree restored: "3 bites, 0 not biting or not restored (0 of them SETUP)". Every recorded bite still
+applies against this branch (538, `git apply --check`, and the fast build's `:bitesApply`).
+
+Fast build (`./gradlew build`, 2026-11-23 after the overnight run released Docker): BUILD SUCCESSFUL in 6m 50s, 1462
+tests, 0 failures.
+
+Choices made (Paul may overrule):
+- The report walks each ref's cut and reads a branch's own pointer for each object of it, not `listRefPointers` for
+  each of main's objects. Why: a ref's cut names tables main has dropped since, whose files cleanup keeps for the ref
+  (item 108), and gives each table's path as the ref has it. It costs one pointer read for each object of each
+  branch's cut.
+- Only the metadata file each pointer names is checked, as this item says, not the manifests and data its version
+  adds. Why: the item asks for that, and checking a version whole as the walk does would read every manifest of
+  every ref's tables. A ref whose metadata file reached the DR store but whose data did not is not listed.
+- A branch past its expiry is left out: it is gone for every route, and the maintenance worker ends it.
+- The refs are listed with the walk (`{}` or `{"apply": true}`), not with the rewind: the rewind's answer is about
+  main's pointers, and the runbook reads the refs once, after the walk.
+- The refs are read before any table is walked, so a store that fails them fails the request with nothing applied.
+- A file the DR store cannot be asked about stops that ref's check, with a `problem` naming the file; the other refs
+  are checked.
+
+Left:
+- The heavy build passing `DrRefReportRouteTest` (the overnight run's), and with it the bite
+  `dr-reconcile-refs-unreported` run.
 
 ### 112. Branches, tags and merge: engines on refs, the docs and the gate (item 26)
 
@@ -1924,6 +2148,115 @@ that dropping does not remove data: "Yes, add the route" (D33, amended).
 - Tests: `RefSuite` on all four stores (heavy); `RefRoutesTest` (fast) for the right, the hold and freeze refusals, the
   audit event and the 404 afterwards. Bites in `bites/D33/`: the right check removed; the hold check removed; the
   `ref_entry` delete skipped.
+
+### 157. A namespace drop is refused while a ref's cut names an object in it (item 26, security finding 7)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java catalog-store-api/src/main/java/nuna/catalog/store/NamespaceStore.java catalog-store-api/src/main/java/nuna/catalog/store/WriteResult.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java catalog-server/src/test/java/nuna/catalog/server/rest/GovernanceRefusalTest.java docs/storage-design.md bites/D33/sql-namespace-drop-ignores-refs.patch bites/D33/oracle-namespace-drop-ignores-refs.patch bites/D33/mongo-namespace-drop-ignores-refs.patch bites/D33/rest-namespace-drop-referenced-unmapped.patch bites/D18/legal-hold-namespace-drop-refusal-unaudited.patch backlog/158.md status/2026-11-23-agent-a4896cd1ad5f1a1e9.md
+- Effort: S, one read in each store's namespace drop, one route answer, a suite case, a fast route test and four bites; the suite case then waits for the overnight heavy build
+
+Part of item 26 (D33). The security review of 2026-11-22, finding 7 (low).
+
+What is wrong: a namespace drop checks only for child namespaces and ACTIVE objects before it deletes the namespace
+with its grants and governance attributes (`SqlNamespaces.drop`, catalog-store-sql, :130-141 before this item;
+`OracleNamespaces.drop` and `MongoNamespaces.drop` the same). A table dropped on main that a tag still keeps (a ref's
+cut names it, and its purge is refused while it does, item 103) is no ACTIVE object, so its namespace can be dropped
+under it. A read through the tag builds the table's governance chain from the table's record on main
+(`GovernanceChain.of`: its namespace id, then that namespace's parents), which stops at the dropped namespace: the
+namespace's `regulated=true` no longer applies, so a hash mismatch on a read through the tag only raises an alert
+instead of failing closed (D5), and the D17 switch stops applying to those reads.
+
+Evidence: `NamespaceSuite#dropRefusesANonEmptyNamespace` shows a namespace with only dropped objects drops; no check
+anywhere reads `ref_entry` (or MongoDB's `ref_entry` collection) on a namespace drop.
+
+Done looks like: each store's drop answers `Refused(REFERENCED)` while any ref's cut names a table or view, in any
+state, whose namespace on main is the one being dropped, read inside the drop's transaction as its emptiness check
+is; the REST drop answers it 409 `NamespaceNotEmptyException`; a `RefSuite` case on all four stores (heavy) and a
+fast route test, with bites in `bites/D33/`.
+
+**Progress, 2026-11-23 (worktree-agent-a4896cd1ad5f1a1e9): built; open until the heavy build passes the suite case
+on all four stores.**
+- Stores: `SqlNamespaces.drop` (PostgreSQL and CockroachDB) and `OracleNamespaces.drop` answer `Refused(REFERENCED)`
+  when `SELECT 1 FROM catalog_object o JOIN ref_entry e ON e.object_id = o.id WHERE o.namespace_id = ?` finds a row,
+  read after the existing emptiness check under the namespace's lock. `MongoNamespaces.drop` reads the ids of every
+  object of the namespace and asks `MongoRefs.referenced`, as the purge claim does, in the drop's snapshot (an entry
+  counts only while its ref exists). Javadoc of `NamespaceStore.dropNamespace` and `WriteResult.Reason.REFERENCED`;
+  storage-design section 8 gains a bullet.
+- Route: `NamespaceRoutes.drop` answers `REFERENCED` with 409 `NamespaceNotEmptyException`, "Namespace <ns> is not
+  empty: a branch or tag names a table or view in it".
+- Tests: `RefSuite#aRefKeepsItsObjectsNamespace` (heavy, all four stores): a namespace with a dropped table a tag and
+  a branch name is refused and writes nothing, its `regulated` flag stays; a namespace with a dropped view likewise;
+  a namespace the refs name only as a namespace (its table made after them) drops; refused while an expired branch,
+  then a tag copied from it, names the table; drops once every ref is deleted, taking the flag with it.
+  `RefSuite#everyTableInACutHasItsNamespace`'s writer now accepts `REFERENCED` for a namespace whose table a cut
+  caught. `GovernanceRefusalTest#aNamespaceDropARefStillNeedsIsNotEmpty` (fast): the route's 409, and no denial.
+- Bites in `bites/D33/`: `sql-namespace-drop-ignores-refs`, `oracle-namespace-drop-ignores-refs`,
+  `mongo-namespace-drop-ignores-refs` (suite cases: checked with `git apply --check` only), and
+  `rest-namespace-drop-referenced-unmapped` (fast: run, BITES). `bites/D18/legal-hold-namespace-drop-refusal-unaudited`
+  recorded again with the same break, its context having moved.
+- Choice made (Paul may overrule): the answer is the existing `Refused(REFERENCED)`, clearer than `NOT_EMPTY`; the
+  route maps it to 409 `NamespaceNotEmptyException`, the only 409 the REST spec gives the drop, so Iceberg clients
+  raise their usual exception, with a message that names the refs. Like `NOT_EMPTY` it is no denial: a state the
+  caller can change.
+- Choice made (Paul may overrule): an object counts when its namespace on main (`catalog_object.namespace_id`) is the
+  one dropped, not the namespace the cut recorded for it, because a read through a ref builds the object's governance
+  from its record on main (`GovernanceChain.of`). A cut that names the namespace itself, but no table or view of it,
+  does not keep it: the route already serves such a namespace through the ref with no properties (D33 as amended
+  2026-11-20).
+- Choice made (Paul may overrule): any state, as the item says, unregistered and purged included; a purged object
+  cannot be named (its purge is refused while a ref names it) and an unregistered one is not served through a ref,
+  so they cost only the read.
+- Choice made (Paul may overrule): the answers come in the order `Missing(NAMESPACE)`, `NOT_EMPTY`, `REFERENCED`,
+  `HELD`.
+- Choice made (Paul may overrule): a plain read in the drop's transaction, as the emptiness check is, with no new
+  lock. It does not see a ref create from main still in flight; that race is item 158, which says how to close it.
+
+Left: the heavy build running `RefSuite#aRefKeepsItsObjectsNamespace` and the changed
+`everyTableInACutHasItsNamespace` on all four stores, and the three store bites run against them (the overnight run).
+
+### 158. A ref made from main while a table and then its namespace are dropped can name a table whose namespace is gone (item 157's race)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java docs/storage-design.md bites/D33/
+- Effort: M, a lock-order change on three stores and a check in MongoDB's ref create, each with a suite case that holds a ref create open; the cases then wait for the overnight heavy build
+
+Found while building item 157 (security finding 7). Item 157 refuses a namespace drop while a ref's cut names a
+table or view of it, read in the drop's transaction as its emptiness check is. That read sees only refs that have
+committed, and nothing makes a namespace drop wait for a ref create in flight:
+
+- PostgreSQL and CockroachDB (`SqlRefs.create`): the create locks the catalog's row `FOR UPDATE`, reads its cut in
+  one `INSERT ... SELECT`, then commits. The namespace drop locks only the namespace. So: the cut's statement
+  snapshot sees table T active in namespace N; T's drop commits; N's drop commits, seeing no active object and no
+  committed entry naming T; the ref commits, naming T, whose namespace main no longer has. The window is the cut
+  statement and the commit, longer on a large catalog. Oracle (`OracleRefs.create`) is the same at one SCN.
+- MongoDB (`MongoRefs.create`): the cut is read in a snapshot session, its entries are written in batches outside
+  any transaction, then one transaction inserts the ref, so the window also holds every batch. The drop marks its
+  parent (the catalog, for a top-level namespace), which the ref's transaction marks too, so only drops that overlap
+  that last transaction conflict with it.
+
+The result is the state finding 7 describes (a read through the ref loses the namespace's `regulated` flag), reached
+by a race instead of in sequence. It needs a ref create from main in flight across both drops.
+
+Done looks like:
+- SQL stores: the namespace drop locks the catalog's row before the namespace, `FOR SHARE` on PostgreSQL and
+  CockroachDB, for update on Oracle (no shared lock), the order `putGrantIf` takes (catalog, then securable), so a
+  drop waits for a ref create in flight and then reads its entries, and a create waits for a drop in flight and then
+  cuts without the namespace. Check every write that locks a namespace and then the catalog first: none did when this
+  item was written.
+- MongoDB: the ref's insert transaction refuses or retries the create when a table or view of its cut no longer has
+  its namespace on main, or another way to the same end that does not read the whole cut in one transaction.
+- A `RefSuite` case on all four stores (heavy): a ref create held open before its COMMIT (the commit hook, as
+  `NamespaceSuite`'s `duringAnOpenDrop` holds a drop) while a table of the cut and then its namespace are dropped; the
+  namespace drop answers `Refused(REFERENCED)` or the ref's cut leaves the table out, never both applied. Bites in
+  `bites/D33/`.
+
+**From the security review (Nuna Security Expert session, 2026-11-23):** item 158 may follow item 157; it is no
+go-to-work condition. The race needs a ref create in flight across two drops, by a caller already holding drop rights
+on the namespace, and its harm is finding 7's low one (the namespace's `regulated` flag and the D17 switch stop
+applying to reads through that ref); it grants no new access. A second way to close it, the builder's choice:
+`GovernanceChain.of` now stops when the object's namespace is gone; refusing a ref read whose object's namespace is
+missing (fail closed, audited as a denial) closes this race and any other path to the same state, without the lock
+order change on three stores or MongoDB's check. Item 157's check stays either way, so reads do not start failing.
 
 ## Done and dropped
 

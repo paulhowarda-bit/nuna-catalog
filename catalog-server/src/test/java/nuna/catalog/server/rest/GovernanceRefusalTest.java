@@ -74,9 +74,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
  * and the table or namespace, its reason is {@code legal_hold}, {@code dr_freeze}, {@code snapshot_min_age} or
  * {@code flagged} followed by the message the caller gets, and the answer is the 403 ForbiddenException it always
  * was. The commit engine answers its refusals as a reply, not a throw, so the routes learn which 403s are these from
- * the reply. The table, namespace and transaction routes, guard, authorizer, commit engine and its rules (with a
- * deployment minimum snapshot age of two days) are the real ones, served by Spring MVC, over a store double that
- * refuses an unregister or drop as a store would and fails any other write, so this needs only Java.
+ * the reply. A namespace drop the store refuses because a ref still names a table or view in it is no denial but a
+ * 409 NamespaceNotEmptyException, as a namespace with tables gets (backlog 157). The table, namespace and transaction
+ * routes, guard, authorizer, commit engine and its rules (with a deployment minimum snapshot age of two days) are the
+ * real ones, served by Spring MVC, over a store double that refuses an unregister or drop as a store would and fails
+ * any other write, so this needs only Java.
  */
 class GovernanceRefusalTest {
 
@@ -320,6 +322,20 @@ class GovernanceRefusalTest {
             assertThat(denial.reason()).isEqualTo("legal_hold: " + message);
             assertThat(denial.actor().principal()).isEqualTo("mo");
         });
+    }
+
+    @Test
+    void aNamespaceDropARefStillNeedsIsNotEmpty() throws Exception {
+        storeRefuses = WriteResult.Reason.REFERENCED;
+
+        MockHttpServletResponse response = perform(delete("/v1/desks/namespaces/sales"));
+
+        String body = response.getContentAsString();
+        assertThat(response.getStatus()).as(body).isEqualTo(409);
+        assertThat(JsonPath.<String>read(body, "$.error.type")).isEqualTo("NamespaceNotEmptyException");
+        assertThat(JsonPath.<String>read(body, "$.error.message"))
+                .isEqualTo("Namespace sales is not empty: a branch or tag names a table or view in it");
+        assertThat(denials()).as("a state the caller can change, as a namespace with tables is").isEmpty();
     }
 
     // ---- helpers ----

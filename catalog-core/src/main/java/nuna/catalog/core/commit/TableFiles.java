@@ -14,8 +14,8 @@ public interface TableFiles {
     /**
      * What the name of a metadata file a commit on a branch writes carries, then the branch's id (D33): see
      * {@link #fileName}. Storage alone tells such a file from main's, as a DR reconcile reads storage after a
-     * failover, when the store may not know a branch's latest commits: main's chain takes one only where main's
-     * pointer, or a commit on main the archive proves (a merge), names it.
+     * failover, when the store may not know a branch's latest commits. A merge gives main its own unmarked copy,
+     * after main's file (backlog 107), so main's chain never runs through a branch's files.
      */
     String BRANCH_MARK = ".branch-";
 

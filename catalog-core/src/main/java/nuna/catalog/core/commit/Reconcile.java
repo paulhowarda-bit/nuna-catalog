@@ -21,6 +21,8 @@ import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerSwap;
+import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefEntry;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -33,6 +35,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.LongStream;
 
 /**
@@ -50,6 +55,12 @@ import java.util.stream.LongStream;
  * own transaction (D23), so the archive holds one only for a swap that committed on the primary, the same
  * standard a successor proves. Only a table under a DR freeze moves, so no commit races the walk.
  *
+ * <p>A commit on a branch writes its file in the same folder, built on the file it read, and its first builds on
+ * main's file at the branch's cut (D33). Such a file is marked in its name ({@link TableFiles#onBranch}), and the
+ * walk never takes one as a file that follows main's: neither as a step nor as a file that proves another (security
+ * finding 12; item 111). A merge writes main's own unmarked copy (item 107), but a register can start the pointer on
+ * a marked file; the pointer is never judged so, and its files that follow are walked as any pointer's are.
+ *
  * <p>Storage replicates to DR asynchronously and not in write order, so a proven file's manifests and data may not
  * have arrived. The walk takes a step only when storage holds every file it adds to the version before it, data
  * included, checked as it plans, and stops at the first step that lacks one (D37, amended 2026-11-20: "Walk with a
@@ -61,6 +72,11 @@ import java.util.stream.LongStream;
  * judges the versions between them, or the walk takes nothing for it and reports it for the {@linkplain #rewind
  * rewind}, which moves it back to its watermark, gives up the commits in between and records the watermark at the
  * version it writes, in the same commit (item 100). A table with no watermark is walked from its pointer.
+ *
+ * <p>The walk and the rewind move main's pointers only. A catalog's branches and tags (D33) keep pointers of their own,
+ * each table's and view's in the ref's cut and a branch's own heads, and after a failover these may name metadata
+ * files storage never got. {@link #checkRefs} reports every ref that does; nothing walks or rewinds a branch (D33,
+ * amended 2026-11-20: "A report only"; item 111).
  */
 public final class Reconcile {
 
@@ -119,7 +135,30 @@ public final class Reconcile {
     public record Rewound(Rewind rewind, Optional<Pointer> to, Optional<String> problem) {
     }
 
+    /** Which pointer of a ref names a file: the one its cut took, or a branch's own, its head for that object. */
+    public enum RefPointer { CUT, HEAD }
+
+    /**
+     * A metadata file a ref names for one table or view (D33).
+     *
+     * @param object  the table's or view's id
+     * @param path    its namespace levels and name in the ref's cut, as of the ref's point
+     * @param pointer whether the ref's cut names the file or the branch's own pointer does
+     */
+    public record RefFile(UUID object, RefEntry.Kind kind, List<String> path, RefPointer pointer, long version,
+                          String metadataLocation) {
+    }
+
+    /**
+     * A ref and the metadata files it names that storage lacks, in the order its cut lists them.
+     *
+     * @param problem why the rest of its files could not be checked
+     */
+    public record RefCheck(Ref ref, List<RefFile> missing, Optional<String> problem) {
+    }
+
     private static final int JOURNAL_PAGE = 500;
+    private static final int REF_PAGE = 200;
 
     private record Node(String location, long version, String sha256, Metadata.TableLink link) {
     }
@@ -293,7 +332,8 @@ public final class Reconcile {
         Set<String> parents = new HashSet<>();
         for (String location : listed) {
             long version = version(location);
-            if (version <= from.version()) {
+            // A branch's file is never main's, but the pointer's own file is never judged so (finding 12).
+            if (version <= from.version() || TableFiles.onBranch(location)) {
                 continue;
             }
             TableFiles.Read read = files.read(location, "");
@@ -486,6 +526,86 @@ public final class Reconcile {
         Optional<String> refused = swap(object, before, next, true, updates, caller, events, "rewind");
         return refused.isPresent() ? new Rewound(plan, Optional.empty(), refused)
                 : new Rewound(plan, Optional.of(next), Optional.empty());
+    }
+
+    /**
+     * Checks the catalog's refs against storage after a failover (D33, amended 2026-11-20: "A report only"; item 111):
+     * each metadata file a ref's cut names for a table or view, and for a branch each file its own pointers name, its
+     * heads, must be in storage. It reports and moves nothing: no branch is walked or rewound, and the runbook says to
+     * delete a ref that names a file storage lacks. A branch past its expiry is gone for every route and is left out, as
+     * the walk leaves out dropped tables. The refs are read from their records, so cut entries a ref's failed create
+     * left behind on MongoDB, which count only while the ref's document exists, are never read. Each file is checked
+     * once, however many refs name it.
+     *
+     * @return every ref checked, by name, each with the files it names that storage lacks
+     */
+    public List<RefCheck> checkRefs(UUID catalogId) {
+        Instant now = clock.instant();
+        Map<String, Boolean> stored = new HashMap<>();
+        List<RefCheck> checked = new ArrayList<>();
+        pages(page -> store.listRefs(catalogId, page), ref -> {
+            if (!ref.expiredAt(now)) {
+                checked.add(check(ref, catalogId, stored));
+            }
+        });
+        return checked;
+    }
+
+    /** The files {@code ref} names that storage lacks; {@code stored} holds the answers storage already gave. */
+    private RefCheck check(Ref ref, UUID catalogId, Map<String, Boolean> stored) {
+        List<RefFile> named = new ArrayList<>();
+        eachInCut(ref.id(), catalogId, new ArrayList<>(), (entry, path) -> {
+            RefEntry.At at = entry.pointer().orElseThrow();
+            named.add(new RefFile(entry.id(), entry.kind(), path, RefPointer.CUT, at.version(), at.metadataLocation()));
+            if (ref.kind() == Ref.Kind.BRANCH) {
+                store.readPointer(ref.key(entry.id())).ifPresent(head -> named.add(new RefFile(entry.id(),
+                        entry.kind(), path, RefPointer.HEAD, head.version(), head.metadataLocation())));
+            }
+        });
+        List<RefFile> missing = new ArrayList<>();
+        for (RefFile file : named) {
+            try {
+                if (!stored.computeIfAbsent(file.metadataLocation(), files::exists)) {
+                    missing.add(file);
+                }
+            } catch (RuntimeException e) {
+                return new RefCheck(ref, missing, Optional.of("storage cannot say whether it holds "
+                        + file.metadataLocation() + ", so the ref's files after it are not checked: " + e.getMessage()));
+            }
+        }
+        return new RefCheck(ref, missing, Optional.empty());
+    }
+
+    /**
+     * Each table and view in the ref's cut beneath {@code parentId} (the catalog, or a namespace), depth first, with
+     * its namespace levels and name in the cut; {@code levels} are the names above {@code parentId}.
+     */
+    private void eachInCut(UUID refId, UUID parentId, List<String> levels, BiConsumer<RefEntry, List<String>> each) {
+        pages(page -> store.listRefNamespaces(refId, parentId, page), namespace -> {
+            levels.add(namespace.name().display());
+            for (CatalogObject.Kind kind : List.of(CatalogObject.Kind.TABLE, CatalogObject.Kind.VIEW)) {
+                pages(page -> store.listRefObjects(refId, namespace.id(), kind, page), entry -> {
+                    List<String> path = new ArrayList<>(levels);
+                    path.add(entry.name().display());
+                    each.accept(entry, List.copyOf(path));
+                });
+            }
+            eachInCut(refId, namespace.id(), levels, each);
+            levels.removeLast();
+        });
+    }
+
+    /** Every item of a paged listing, page by page. */
+    private static <T> void pages(Function<PageRequest, Page<T>> list, Consumer<T> each) {
+        PageRequest request = PageRequest.first(REF_PAGE);
+        while (true) {
+            Page<T> page = list.apply(request);
+            page.items().forEach(each);
+            if (page.nextToken().isEmpty()) {
+                return;
+            }
+            request = request.after(page);
+        }
     }
 
     /** A table's or a view's metadata facts, read as its kind's metadata; throws on a file that is not. */
