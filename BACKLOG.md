@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**28 open:** 4 S, 9 M, 10 L, 5 XL.
+**27 open:** 3 S, 9 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,7 +39,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
-| [149](backlog/149.md) | S | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | a close for the reader that leaves the server's shared S3 client open, and a test | 2026-11-22 |
 
 ## Open items in full
 
@@ -1334,34 +1333,6 @@ The decision is D46 in `decision-ledger.md`. The item stays open until an overni
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
 
-### 149. The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected
-
-- Added: 2026-11-22 by the agent on item 148
-- Touches: catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java, catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java
-- Effort: S, a close for the reader that leaves the server's shared S3 client open, and a test
-
-`AuditFeed.reader()` opens a new `EventsReader` whenever the audit table's pointer has moved (the writer commits about
-once a minute) and drops the old one without closing it. `EventsReader.open` makes an Iceberg `S3FileIO`, and Iceberg
-logs a WARN from the finalizer for every one collected unclosed. The nuna-demo's server log, 2026-11-22, three of them
-in the minutes after Paul's click-through:
-
-```
-{"log":{"level":"WARN","logger":"org.apache.iceberg.aws.s3.S3FileIO"},"process":{"thread":{"name":"Finalizer"}},
- "message":"Unclosed S3FileIO instance created by:\n\torg.apache.iceberg.aws.s3.S3FileIO.<init>(S3FileIO.java:146)
- ...\n\tnuna.audittables.EventsReader.open(EventsReader.java:198)\n\tnuna.catalog.server.governance.AuditFeed.reader(
- AuditFeed.java:139) ...
-```
-
-`EventsReaderOnTheServerTest` (item 148) prints the same warning. With item 148 fixed the feed works, so a server
-whose Audit page is open logs one such WARN for about each commit of the writer.
-
-Closing the `S3FileIO` as it stands would close the S3 client it was handed (Iceberg 1.12's `PrefixedS3Client.close`
-closes it), which is the server's client for the audit catalog (`AuditFeed.s3`), shared by every reader after it.
-
-What done looks like: a replaced reader is closed without closing the shared S3 client (for example, the reader hands
-`S3FileIO` a client whose `close` does nothing), and a test shows a replaced reader is closed and the next one still
-reads.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -1487,3 +1458,4 @@ reads.
 | [146](backlog/146.md) | Console: a Governance tab on the view page, to see and set a view's labels and holds | done | 2026-11-22 |
 | [147](backlog/147.md) | Console: a child namespace's totals in Contents: its tables, their snapshots and the newest commit | done | 2026-11-22 |
 | [148](backlog/148.md) | The audit feed and summary answer 500 where audit tables are configured: the reader loads Iceberg's AWS client factory, which needs the KMS SDK the server leaves out | done | 2026-11-22 |
+| [149](backlog/149.md) | The audit feed leaves each replaced reader's S3FileIO unclosed, and Iceberg logs a WARN with a stack trace for each when it is collected | done | 2026-11-22 |

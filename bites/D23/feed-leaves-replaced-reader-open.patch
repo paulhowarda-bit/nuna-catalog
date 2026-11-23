@@ -1,0 +1,17 @@
+Breaks: the audit feed drops the reader it replaces without closing it, so Iceberg finds its S3FileIO unclosed and logs a WARN with a stack trace as it collects each one.
+Module: catalog-server
+Test: AuditFeedReaderTest#aReplacedReaderIsClosedAndTheSharedClientStaysOpen
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java
+index 30e5c18..470328e 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditFeed.java
+@@ -141,9 +141,6 @@ class AuditFeed {
+             EventsReader replaced = reader;
+             reader = EventsReader.open(name, pointer.metadataLocation(), s3(catalog));
+             location = pointer.metadataLocation();
+-            if (replaced != null) {
+-                replaced.close();
+-            }
+         }
+         return reader;
+     }
