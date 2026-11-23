@@ -141,7 +141,7 @@ function setChrome(navKey, rail, ref) {
   // The top chip names the ref a browse page reads (item 109): lakehouse @dev.
   for (const b of $$('[data-cat]')) fill(b, cat || '–', ref ? h('span', {class: 'pick-ref'}, '@' + ref) : null);
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
-  const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat}), maintenance: pageHref('maintenance', cat),
+  const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat, r: ref}), maintenance: pageHref('maintenance', cat),
     governance: pageHref('governance', cat), audit: pageHref('audit', cat), health: pageHref('health')};
   for (const a of $$('a[data-k]', navEl)) {
     const k = a.dataset.k;

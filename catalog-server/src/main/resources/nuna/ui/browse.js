@@ -53,10 +53,15 @@ export function notFound(what) {
  * open levels and filter stay as they were.
  */
 export function browse(slot, r) {
-  const st = treeOf(r.c);
+  // A ref's own page (k=ref) names the ref in n, and reads main's tree; every other page reads r's.
+  const st = treeOf(r.c, r.k === 'ref' ? null : r.r);
   let box = $(':scope > .browse', slot);
   if (!box || box.dataset.catalog !== r.c) box = h('div', {class: 'browse', 'data-catalog': r.c});
-  if (st.el.parentNode !== box) box.prepend(st.el);
+  if (st.el.parentNode !== box) {
+    const old = $(':scope > .tree', box);
+    if (old) old.replaceWith(st.el);
+    else box.prepend(st.el);
+  }
   const target = {catalog: r.c, kind: r.k, namespace: r.ns, name: r.n, ref: r.r};
   let main;
   if (r.k === 'table' && r.n) main = tablePage(target, r.tab, r);

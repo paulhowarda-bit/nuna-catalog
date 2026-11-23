@@ -764,7 +764,8 @@ class ConsoleBrowserTest {
     /**
      * A table read as of a tag (D33, backlog 109): the page loads through trading@<tag> and shows what the tag keeps,
      * not what main committed since; the band, the top chip and the first crumb name the tag; the read-only note
-     * quotes what the catalog answers a commit through it; and "Read main instead" goes back to main.
+     * quotes what the catalog answers a commit through it; the tree lists the tag's tables, not one made on main
+     * since, and a click in it keeps the tag (backlog 173); and "Read main instead" goes back to main.
      */
     @Test
     void aTableIsReadAsOfATag() {
@@ -773,8 +774,10 @@ class ConsoleBrowserTest {
         expect(api.rest("POST", "/namespaces", "{\"namespace\":[\"" + ns + "\"]}"), 200);
         expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
         expect(api.rest("POST", "/namespaces/" + ns + "/tables/orders", Api.SET_PROPERTY.formatted("before")), 200);
+        expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("fills")), 200);
         expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
         try {
+            expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("late")), 200);
             expect(api.rest("POST", "/namespaces/" + ns + "/tables/orders", Api.SET_PROPERTY.formatted("after")), 200);
             HttpResponse<String> refused = api.send("POST", "/v1/" + Api.CATALOG + "@" + tag + "/namespaces/" + ns
                     + "/tables/orders", Api.SET_PROPERTY.formatted("through-the-tag"));
@@ -794,6 +797,18 @@ class ConsoleBrowserTest {
             assertThat(textContent(note.findElement(By.cssSelector(".refusal-msg"))))
                     .isEqualTo(JsonPath.<String>read(refused.body(), "$.error.message"));
             assertThat(properties(ns)).containsEntry("k", "after");
+
+            // The tree reads the tag too: it names it beside the catalog, lists what the tag keeps and not the table
+            // made on main since, and a click in it stays on the tag.
+            browser.await(By.cssSelector(".tree[data-ref='" + tag + "'] [data-tree-ref='" + tag + "']"));
+            browser.await(node("table:" + ns + ".fills"));
+            assertThat(driver.findElements(node("table:" + ns + ".late"))).isEmpty();
+            driver.findElement(node("table:" + ns + ".fills")).click();
+            browser.awaitText(By.cssSelector("#table-page h1"), "fills");
+            assertThat(driver.getCurrentUrl()).contains("n=fills", "r=" + tag);
+            browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
+            assertThat(driver.findElement(By.cssSelector("#nav a[data-k='catalog']")).getDomAttribute("href"))
+                    .contains("r=" + tag);
 
             driver.findElement(By.xpath("//div[@data-ref-band='" + tag + "']//a[normalize-space()='Read main instead']"))
                     .click();

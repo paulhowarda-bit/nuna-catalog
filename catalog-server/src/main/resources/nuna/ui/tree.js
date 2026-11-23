@@ -1,10 +1,12 @@
 // The catalog's tree, on the left of every browse page: namespaces, tables and views, each level listed from
 // Iceberg REST when it is first opened. A table in tonight's queue carries a mark, and so does whatever a hold, a DR
-// freeze or a regulated flag is set on, from the catalog's governance summary and holds list (item 128).
+// freeze or a regulated flag is set on, from the catalog's governance summary and holds list (item 128). Read through
+// a catalog branch or tag (r=, item 109), the tree lists each level through catalog@ref, names the ref beside the
+// catalog, and its links keep it (item 173); each ref has a tree of its own.
 
 import * as api from './api.js';
 import {$, failure, h, icon} from './dom.js';
-import {SEP, catalogHref, objectHref, remember} from './route.js';
+import {SEP, catalogHref, objectHref, remember, warehouseOf} from './route.js';
 import {queue, queueOf} from './queue.js';
 import {governanceMarks} from './panels.js';
 
@@ -12,20 +14,21 @@ const trees = new Map();
 
 const keyOf = levels => levels.join(SEP);
 
-/** The tree of one catalog, made once and kept while the console stays in that catalog. */
-export function treeOf(catalog) {
-  let st = trees.get(catalog);
+/** The tree of one catalog as a ref reads it (main when `ref` is null), made once and kept while the console stays there. */
+export function treeOf(catalog, ref = null) {
+  const id = catalog + (ref ? '@' + ref : '');
+  let st = trees.get(id);
   if (st) return st;
   const input = h('input', {type: 'text', 'aria-label': 'Filter names in the tree', placeholder: 'Filter names in the tree',
     spellcheck: 'false', autocomplete: 'off'});
   const ul = h('ul', {'aria-label': 'Namespaces and tables'});
-  const el = h('div', {class: 'tree', 'data-catalog': catalog}, h('div', {class: 'tree-in'},
+  const el = h('div', {class: 'tree', 'data-catalog': catalog, 'data-ref': ref || null}, h('div', {class: 'tree-in'},
     h('label', {class: 'field'}, icon('search'), input), ul,
     h('p', {class: 'tree-key'}, [['m-bad', 'equality deletes'], ['m-warn', 'small files or deletes'], ['m-held', 'held'],
       ['m-frozen', 'DR freeze'], ['m-reg', 'regulated']]
       .map(([c, w]) => h('span', null, h('i', {class: c}), w)))));
-  st = {catalog, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map(), gov: new Map()};
-  trees.set(catalog, st);
+  st = {catalog, ref, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map(), gov: new Map()};
+  trees.set(id, st);
   input.addEventListener('input', () => draw(st));
   queue().then(rows => {
     for (const r of queueOf(rows, catalog)) st.marks.set(keyOf([...r.namespace, r.name]), r.assessment.reasons || []);
@@ -40,8 +43,9 @@ function ask(st, levels) {
   const key = keyOf(levels);
   if (!st.asked.has(key)) {
     const c = st.catalog;
-    st.asked.set(key, Promise.all([api.namespaces(c, levels), levels.length ? api.tables(c, levels) : [],
-      levels.length ? api.views(c, levels) : []])
+    const wh = warehouseOf({catalog: c, ref: st.ref});
+    st.asked.set(key, Promise.all([api.namespaces(wh, levels), levels.length ? api.tables(wh, levels) : [],
+      levels.length ? api.views(wh, levels) : []])
       .then(([ns, tables, views]) => {
         const kids = {ns: ns.map(x => x.slice()), tables: tables.map(t => t.name), views: views.map(v => v.name)};
         for (const n of kids.ns) remember({catalog: c, kind: 'namespace', namespace: n});
@@ -97,8 +101,10 @@ function markOf(st, key, isNamespace, node) {
 function draw(st) {
   const f = st.input.value.trim().toLowerCase();
   const c = st.catalog;
-  const items = [h('li', null, h('a', {class: 'node', href: catalogHref(c), 'aria-current': st.cur === 'catalog' ? 'true' : null,
-    'data-node': 'catalog'}, h('span', {class: 'tw'}), icon('db', 'ic ico-n'), h('span', {class: 'nm'}, c),
+  const ref = st.ref || undefined;
+  const items = [h('li', null, h('a', {class: 'node', href: catalogHref(c, null, ref), 'aria-current': st.cur === 'catalog' ? 'true' : null,
+    'data-node': 'catalog'}, h('span', {class: 'tw'}), icon('db', 'ic ico-n'), h('span', {class: 'nm'}, c,
+    ref ? h('span', {class: 'pick-ref', 'data-tree-ref': ref}, '@' + ref) : null),
     markOf(st, null, false, 'catalog')))];
   const nameHit = name => !f || name.toLowerCase().includes(f);
   const deepHit = levels => {
@@ -133,7 +139,7 @@ function draw(st) {
         }
         draw(st);
       });
-      items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind: 'namespace', namespace: n}),
+      items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind: 'namespace', namespace: n, ref}),
         'aria-current': st.cur === 'namespace:' + key ? 'true' : null, 'aria-expanded': String(open), 'data-node': 'namespace:' + n.join('.')},
       tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), markOf(st, key, true, 'namespace:' + n.join('.')))));
       if (open) walk(n, depth + 1);
@@ -142,7 +148,7 @@ function draw(st) {
       for (const name of names) {
         if (!nameHit(name)) continue;
         const key = keyOf([...levels, name]);
-        items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind, namespace: levels, name}),
+        items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind, namespace: levels, name, ref}),
           'aria-current': st.cur === kind + ':' + key ? 'true' : null, 'data-node': kind + ':' + [...levels, name].join('.')},
         h('span', {class: 'tw'}), icon(kind, 'ic ' + (kind === 'view' ? 'ico-v' : 'ico-t')), h('span', {class: 'nm'}, name),
         markOf(st, kind === 'table' ? key : null, false, kind + ':' + [...levels, name].join('.')))));
@@ -157,7 +163,7 @@ function draw(st) {
 /** What the tree has listed beneath a level so far, or null. */
 export const listed = (st, levels) => st.got.get(keyOf(levels)) || null;
 
-/** Forgets a level, so the next look lists it again (after a change beneath it). */
+/** Forgets a catalog's trees, every ref's, so the next look lists them again (after a change beneath them). */
 export function forget(catalog) {
-  trees.delete(catalog);
+  for (const id of [...trees.keys()]) if (id === catalog || id.startsWith(catalog + '@')) trees.delete(id);
 }
