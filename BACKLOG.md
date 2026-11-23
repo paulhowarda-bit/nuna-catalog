@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 3 S, 10 M, 15 L, 5 XL.
+**34 open:** 3 S, 10 M, 16 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -29,7 +29,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [106](backlog/106.md) | L | Ref management routes: create, list, renew and delete, with P11's limits and expiry (item 26) | five routes with their rights, idempotency, limits, audit and meters, and the work list's expiry section, with route tests; waits on item 102 | 2026-11-20 |
 | [107](backlog/107.md) | L | Merge a branch into main, per table, in one bounded transaction (item 26) | the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106 | 2026-11-20 |
 | [108](backlog/108.md) | L | Cleanup protects every ref, and the worker warns of and ends expired branches (item 26) | the orphan scan and expiry across several metadata files per table, the recheck of files recorded before a ref was made, and the expiry section, with heavy tests on Silo; waits on items 105 and 106 | 2026-11-20 |
-| [109](backlog/109.md) | M | Console: the catalog's refs, the merge preview and a ref selector (item 26) | one panel and a selector over routes that exist, four actions, one browser test case; waits on items 104, 106 and 107 | 2026-11-20 |
+| [109](backlog/109.md) | L | Console: the catalog's refs, the merge preview and a ref selector (item 26) | the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107 | 2026-11-20 |
 | [110](backlog/110.md) | M | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | the lake writer's new steps, one more Trino catalog and the README's walk, checked by hand in the running demo; waits on items 107 and 109 | 2026-11-20 |
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
@@ -45,6 +45,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
+| [156](backlog/156.md) | M | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files | 2026-11-22 |
 
 ## Open items in full
 
@@ -938,6 +939,7 @@ past expiry answering 404 everywhere; `ManagementAuthorizationTest` and `Mutatin
 ### 107. Merge a branch into main, per table, in one bounded transaction (item 26)
 
 - Added: 2026-11-20 by agent on item 26
+- Decided: 2026-11-22, D33
 - Touches: catalog-core/src/main/java/nuna/catalog/core/refs/ catalog-core/src/test/java/nuna/catalog/core/refs/ catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/
 - Effort: L, the merge's plan, its judgement per table, the conflict report and dry run, and the race with main, over the store's batch (item 103); the merge engine's tests need only Java; waits on items 103, 105 and 106
 
@@ -964,6 +966,44 @@ both conflicts; one dropped on main conflicts; a race with a main commit; a hold
 dry run. Route tests (heavy) with two stock writers, one on the branch and one on main: the merge moves only what
 only the branch changed, main then reads the branch's rows there, and the rights and audit hold. Fast build green;
 bites recorded in `bites/D33/`. Waits on items 103, 105 and 106. Item 109 waits on this one.
+
+## Added 2026-11-22, before the build
+
+**Decided 2026-11-22 (D33, amended):**
+- Main's own maintenance does not make a conflict. Paul: "No, maintenance doesn't count". Only data, schema and
+  property changes on main since the cut conflict; compaction and snapshot expiry on main do not, and the merge
+  rebases over them. Say in this item how the rebase works (for example: main takes the branch's version, the next
+  night compacts again, and choice 14 keeps the files), and test a branch that merges after main was compacted and
+  expired.
+- A DR freeze binds the merge, not commits on a branch. Paul: "Only the merge". Item 105 lets a branch commit to a
+  frozen table; the merge of that table is refused while the freeze stands.
+
+**From the security review (Nuna Security Expert session, 2026-11-22):**
+- Finding 2 (medium): the merge must not reveal names the caller cannot see. Conflicts and moved tables the caller
+  cannot describe are counted, not named, as item 106's read route already filters (`RefRoutes`, the branch's
+  changed tables). A refusal over such a table follows Holdings (404 or 403) through `Guard.refused`. A fast test and
+  a bite.
+- Finding 3 (medium): the merge takes its right and its rules from the whole change between main's metadata and the
+  branch's, because a merge carries no list of updates. Without that, a caller holding only write lands a schema or
+  property change made on the branch with modify, and a branch that dropped old snapshots before a legal hold was set
+  removes them from main while the table is held.
+  - Every rule runs on that change: `drFreeze`, `pathProperties`, the `encryption.key-id` immutability rule, the D28
+    file-IO property ban, `retentionHold` and `snapshotMinimumAge`.
+  - D27, D20 and the D17 switch run through `Authorizer`.
+  - The D11a journal entry and alert fire for a schema change on a regulated table.
+  - Refusals go through `Guard.refused`.
+  - Engine tests: a schema change needs modify; a hold set after the branch removed snapshots refuses the merge; a
+    freeze refuses it.
+  - Bites: the change classed as data-only; the hold skipped; the freeze skipped.
+
+**What the console's design needs from the merge** (item 109's design, `docs/design/console/wireframes.html`
+chapter 6, "Branches and tags"; the screens show these answers):
+- The dry run's whole answer: the success shape; the 409's exception name (`RefMergeConflictException`) and message;
+  for each table, the verdict of main's rules, holds and freezes (D11, D24, D37) on its change; main's commits since
+  the cut (how many, by whom); and, for a table dropped on main, when and by whom.
+- Before the click, whether the caller may merge: their right on each table the merge would move (write or modify).
+- The merge's answer: main's new version for each table moved.
+- The journal entry each merged version writes, readable as such.
 
 ### 108. Cleanup protects every ref, and the worker warns of and ends expired branches (item 26)
 
@@ -1003,7 +1043,7 @@ and 106.
 
 - Added: 2026-11-20 by agent on item 26
 - Touches: catalog-server/src/main/resources/nuna/ui/ catalog-server/src/test/java/nuna/catalog/server/ConsoleTest.java catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: M, one panel and a selector over routes that exist, four actions, one browser test case; waits on items 104, 106 and 107
+- Effort: L, the ten screens of Atelier's design (2026-11-22) and the server reads they need beyond items 104 to 107 (below); was M before the design; waits on items 104, 106 and 107
 
 Part of item 26 (D33); its design section says why (choice 15).
 
@@ -1018,6 +1058,34 @@ ref selector on the namespace and table pages, reading through `catalog@ref`. Th
 Done when `ConsoleTest` (fast) covers the new files' rules (no inline code, no markup written), and
 `ConsoleBrowserTest` (heavy, Chrome) makes a branch, commits on it through a stock client, previews and merges it,
 and reads a table as of a tag. Waits on items 104, 106 and 107. Item 110 waits on this one.
+
+## The design, 2026-11-22
+
+Atelier's design is the spec: `docs/design/console/prototype.html` (open with `?user=presenter` for every action,
+`?user=gary` for the refusals, `&refs=full` for a limit reached) and `docs/design/console/wireframes.html`, chapter 6,
+"Branches and tags": ten screens, each with a figure, its layout and a table of element, words, when shown and data,
+every data source marked "106 built", "107 to build" or "gap". It settles the two labels (a catalog ref is a rounded
+`@name` chip under "Branches and tags"; a table's own Iceberg ref is a square badge under "Iceberg refs in this
+table"; the table tab "Snapshots and refs" becomes "Snapshots"), the refs tab and its limit, expiring, empty and ended
+states, which ref a page reads (top chip, crumb `c@ref`, the "Reading @x" selector, a band; tags read-only with the
+server's 400 text), contents through a ref, a ref's own page, the merge (dry run, conflicts, confirm, result, a race,
+over the cap, a hold or freeze), make, renew and delete with every refusal `RefRoutes` sends, audit, and a phone at
+390 px. Kept as drawn: an "Ended lately" panel for the last day.
+
+**What the design needs beyond items 104 to 107** (the "gap" rows), built here unless the item named does it:
+1. The limits: max branches, max tags and `nuna.refs.max-merge-tables`, from a route (or the list's answer).
+2. Each branch's changed-tables count in the list.
+3. The caller's rights before the click: whether they may create (on the catalog); for a merge, item 107 answers.
+4. The dry run's whole answer (item 107).
+5. The merge's answer with main's new version per table (item 107).
+6. A branch's own commits, not only versions (the read route gives versions only).
+7. Ended refs, and an expired branch still holding its name: a state on the list, or the `ref` audit records by
+   catalog and subject.
+8. A description on create. It needs a column on the `ref` record on four stores; if that proves larger than this
+   item can carry, add it as an item of its own and leave the field out.
+9. The cut time of a ref made from a ref, and the cut's version of each unchanged table.
+10. Audit records filterable by their `branch` field.
+11. The journal entry for a merged version (item 107).
 
 ### 110. Demo: a catalog tag, a branch with Trino on it, and a merge (item 26)
 
@@ -1501,6 +1569,48 @@ a brokerage person.
 
 What done looks like: for each template, a lifecycle on a cash and a margin account runs through the engine in the
 fast build with every self-check passing, and the generator produces those events.
+
+### 156. Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6)
+
+- Decided: 2026-11-22, D33 (amended)
+- Added: 2026-11-22 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
+- Touches: catalog-store-api/src/main/java/nuna/catalog/store/RefStore.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java bites/D33/
+- Effort: M, one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files
+
+## What is wrong
+
+Data dropped on main can stay readable forever and can never be purged. The security review of branches (item 26,
+2026-11-22, finding 6) found the protection a ref gives a table is all or nothing:
+
+- A purge claim is refused while any ref's cut names the object (`SqlObjects.claimPurge`, the `ref_entry` check).
+- Tags never expire, and a ref made from another copies its cut (`SqlRefs`), so the protection can be carried on
+  indefinitely.
+- Any holder of `create` on the catalog can make or delete a tag (`RefRoutes`). The table's owners cannot take their
+  table out of a tag; the only way out is to delete the whole tag, which may be someone else's point-in-time record.
+
+So personal data loaded by mistake and dropped on main stays readable on every older tag to anyone still holding
+select on it, and its files are never purged.
+
+## The decision
+
+Paul, 2026-11-22, asked whether table owners should be able to remove a dropped table from tags or whether to accept
+that dropping does not remove data: "Yes, add the route" (D33, amended).
+
+## What done looks like
+
+- A management route removes one table or view from refs: from every ref of the catalog, or from the refs it names.
+  It takes the object by id, so it reaches an object main has dropped or unregistered.
+- It needs `manage-tags` on the object (inherited as every privilege is). That right is in the TAGS duty, which D18's
+  separation of duties keeps apart from DATA, so a data writer cannot use it to erase history. A refusal is audited
+  through `Guard.refused` and follows Holdings (404 for a caller holding nothing, 403 otherwise).
+- It is refused while the object is under a legal hold (D24) or a DR freeze (D37), with a denial.
+- In one transaction on each of the four stores it deletes the object's `ref_entry` rows and any branch pointer for it
+  in the named refs. Once no ref names a dropped object, its purge claim goes through as for any dropped object.
+- It publishes a `ref` audit event naming the object and each ref it left, through the outbox.
+- Reads of the object through a ref it left answer 404, as for a name the cut never held.
+- Tests: `RefSuite` on all four stores (heavy); `RefRoutesTest` (fast) for the right, the hold and freeze refusals, the
+  audit event and the 404 afterwards. Bites in `bites/D33/`: the right check removed; the hold check removed; the
+  `ref_entry` delete skipped.
 
 ## Done and dropped
 

@@ -8,11 +8,13 @@ Each file here is one offline HTML page. Open it in any browser. It needs no ser
 
 | File | What it is | Atelier's version |
 |---|---|---|
-| [prototype.html](prototype.html) | The console as it will be built, to click through. It has every page, every tab on every table, both demo catalogs, light and dark, and phone width. The data is illustrative but agrees across pages. | `console_prototype_v11` |
-| [wireframes.html](wireframes.html) | The document behind the prototype. It holds the three directions considered (Ice line was chosen), every screen with numbered notes, and each panel's data status (whether its route exists today, needs a new route, or is proposed). It also has the design tokens, type scale and component states. | `wireframes_v17` |
+| [prototype.html](prototype.html) | The console as it will be built, to click through. It has every page, every tab on every table, both demo catalogs, light and dark, and phone width. The data is illustrative but agrees across pages. Since v14 it also has catalog branches and tags (item 109): open it with `?user=presenter` to do everything or `?user=gary` to be refused, and add `&refs=full` to see the limit reached. | `console_prototype_v14` (v11 plus the refs work) |
+| [wireframes.html](wireframes.html) | The document behind the prototype. It holds the three directions considered (Ice line was chosen), every screen with numbered notes, and each panel's data status (whether its route exists today, needs a new route, or is proposed). It also has the design tokens, type scale and component states. Chapter 6, "Branches and tags" (key 6), specifies item 109's screens for a builder: each screen's layout and a table of every element's words, when it shows and its data, tagged as built (item 106), to build (107) or a gap no item promises yet; it ends with those gaps and the questions for Paul. | `wireframes_v20` (v17 plus chapter 6) |
 
 Atelier's working copies and every earlier version are in `~/atelier-out/nuna-console-redesign/` on Paul's home
-machine. The prototype's sources are in `src/proto_v1/parts/` there.
+machine. The prototype's sources are in `src/proto_v1/parts/` there, and the refs work's in `src/proto_v12/` (prototype) and `src/v18/` (chapter 6).
+
+The refs design (2026-11-22) was drawn on the console as built that day, not on v11 alone, and against the refs routes on branch `refs-106-current` and item 107's merge as item 26 specifies it.
 
 The prototype's free-form "Set a property", on a catalog and on namespaces, is superseded by D45's amendment of
 2026-11-22: the console shows every property read-only and edits only listed keys that do something, and a catalog's
