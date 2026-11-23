@@ -49,6 +49,8 @@ import software.amazon.awssdk.auth.credentials.AwsSessionCredentials;
  * <p>Compaction ({@link #compaction()}) runs the maintenance worker's own compaction Job (D30 (3)) on a table of
  * small files, in a namespace of its own beside {@value #NAMESPACE}. The audit table ({@link #auditTables()}) runs the
  * audit table writer (D23) from its image and chart, and Spark and PyIceberg read its table as the readers' group.
+ * Catalog refs ({@link #refs()}, D33) have Spark and PyIceberg read a tag, be refused writes there, commit to two
+ * tables on a branch, and read main after the branch merges through the management API.
  *
  * <p>Spark runs first and leaves its tables in {@code m8.shared.spark}: v2 and v3, already evolved (four
  * rows, one with the added column set), v3 with a deletion vector, four that took DELETE, UPDATE and MERGE
@@ -645,11 +647,64 @@ class EngineMatrixTest {
     }
 
     /**
+     * Catalog branches and tags (D33, backlog 112), as a stock client names a ref: by the warehouse it asks
+     * {@code /v1/config} for, {@code engines@<ref>}, whose prefix the catalog answers and, for a tag, only its read
+     * endpoints. PyIceberg makes {@code m8.refs.a} (three rows) and {@code m8.refs.b} (one row) on main, tag
+     * {@code m8-tag}, a fourth row in {@code a}, then branch {@code m8-dev} ({@code images/python/refs_matrix.py
+     * setup}). Spark, then PyIceberg ({@code images/spark/refs_matrix.py branch}, {@code images/python/refs_matrix.py
+     * branch}): each reads the tag as it was cut; is refused a write there, by the store, as the tag's credentials only
+     * read, and a change of properties, by the client itself, as the tag's endpoints leave out table commits; commits
+     * a row to both tables on the branch; and reads the branch and main, which the branch's commits leave alone. The
+     * merge goes through the management API: its dry run moves both tables and the caller may merge; the merge moves
+     * both; the branch is gone after it; PyIceberg and then Spark read both engines' rows on main, and Spark reads the
+     * tag unchanged. Each count is {@code <rows in a> <sum of a's ids> <rows in b> <sum of b's ids>}. The cleanup
+     * deletes the tag (the merge ended the branch), purges the tables and drops the namespace; a run that stopped
+     * halfway is cleaned up by the next one's setup.
+     */
+    @Test
+    @Order(6)
+    void refs() {
+        Map<String, String> results = runEngine("refs", () -> {
+            String setup = job("refs-setup", PYTHON_IMAGE, List.of("python", "-u", "/scripts/refs_matrix.py",
+                    "setup"), "1Gi");
+            String spark = job("refs-spark", SPARK_IMAGE, List.of("bash", "/scripts/run.sh",
+                    "/scripts/refs_matrix.py", "branch"), "2Gi");
+            String pyiceberg = job("refs-pyiceberg", PYTHON_IMAGE, List.of("python", "-u", "/scripts/refs_matrix.py",
+                    "branch"), "1Gi");
+            String merge = job("refs-merge", PYTHON_IMAGE, List.of("python", "-u", "/scripts/refs_matrix.py",
+                    "merge"), "1Gi");
+            String main = job("refs-main", SPARK_IMAGE, List.of("bash", "/scripts/run.sh",
+                    "/scripts/refs_matrix.py", "main"), "2Gi");
+            String cleanup = job("refs-cleanup", PYTHON_IMAGE, List.of("python", "-u", "/scripts/refs_matrix.py",
+                    "cleanup"), "1Gi");
+            return String.join("\n", setup, spark, pyiceberg, merge, main, cleanup);
+        });
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("refs setup", "201 201");
+        for (String engine : List.of("spark", "pyiceberg")) {
+            expected.put("refs " + engine + ".tag.read", "3 6 1 1");
+            expected.put("refs " + engine + ".tag.write", "refused store");
+            expected.put("refs " + engine + ".tag.alter", "refused endpoint");
+            expected.put("refs " + engine + ".branch.main", "4 10 1 1");
+        }
+        expected.put("refs spark.branch.write", "5 20 2 11");
+        expected.put("refs pyiceberg.branch.write", "6 40 3 31");
+        expected.put("refs merge.dry-run", "200 200 2 true a,b");
+        expected.put("refs merge", "200 a,b");
+        expected.put("refs merge.branch", "404");
+        expected.put("refs pyiceberg.main", "6 40 3 31");
+        expected.put("refs spark.main", "6 40 3 31");
+        expected.put("refs spark.main.tag", "3 6 1 1");
+        expected.put("refs cleanup", "204 404");
+        assertThat(results).containsAllEntriesOf(expected);
+    }
+
+    /**
      * SingleStore reads Iceberg tables through pipelines (D35) into database {@code nuna_m8}. On its own the
      * harness starts it (the plain dev image) for this test only; an existing stack already has it.
      */
     @Test
-    @Order(6)
+    @Order(7)
     void singlestore() {
         Map<String, String> results = runEngine("singlestore", () -> {
             if (!existing) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Spark against the catalog: REST catalog "fid", vended credentials, purge delegated to the server (F10).
-# Runs the engine matrix's script, or the script and arguments given (compaction_matrix.py setup|check).
+# Runs the engine matrix's script, or the script and arguments given (compaction_matrix.py setup|check,
+# refs_matrix.py branch|main).
 set -euo pipefail
 if [ $# -eq 0 ]; then
   set -- /scripts/spark_matrix.py

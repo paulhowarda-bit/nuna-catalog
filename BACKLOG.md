@@ -1917,6 +1917,114 @@ Build:
 Done, and item 26 with it, the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh` (the engine
 matrix included) and bites are all green with items 102 to 111 landed. Waits on items 102 to 111.
 
+## Built, 2026-11-23 (branch `worktree-agent-a5e5f6e6ecd0db4ce`)
+
+Main merged in at 7d7609b7 (items 109 and 156 landed).
+
+- **The engine matrix** (`catalog-tests-engines`, overnight, written and compiled, not run): `EngineMatrixTest#refs`,
+  `@Order(6)`, between the audit table case and SingleStore (now 7). Two scripts:
+  `images/python/refs_matrix.py` (setup, branch, merge, cleanup) and `images/spark/refs_matrix.py` (branch, main),
+  baked into their images. Six Jobs:
+  1. PyIceberg makes `m8.refs.a` (three rows) and `m8.refs.b` (one row) on main, tag `m8-tag`, a fourth row in `a`,
+     then branch `m8-dev`, through the management API (`201 201`).
+  2. Spark, on catalogs `tag` and `dev` (fid's settings, warehouse `engines@m8-tag` and `engines@m8-dev`):
+     - reads the tag as cut (`3 6 1 1`: rows and id sums of a and b);
+     - is refused an INSERT on the tag by the store (`refused store`);
+     - is refused `ALTER TABLE … SET TBLPROPERTIES` there by Iceberg's REST client (`refused endpoint`);
+     - inserts a row into both tables on the branch (`5 20 2 11`);
+     - reads main, untouched (`4 10 1 1`).
+  3. PyIceberg does the same: `append` refused by the store, a property change refused by the client, a row appended
+     to each table on the branch (`6 40 3 31`), and main untouched.
+  4. The merge through `POST …/refs/m8-dev/merge`:
+     - the dry run moves a and b, and the caller may merge (`200 200 2 true a,b`);
+     - the merge moves both (`200 a,b`);
+     - the branch reads 404 after it;
+     - PyIceberg reads both engines' rows on main (`6 40 3 31`).
+  5. Spark reads the same on main, and the tag unchanged (`3 6 1 1`).
+  6. The cleanup deletes the tag (204; the branch is already gone, 404), purges both tables and drops the namespace.
+- **The M6 adversarial set** (`catalog-server`, heavy, written and compiled, not run):
+  `VendingRouteTest#aTagsCredentialsRefusePutObject`, beside `selectOnlyCallersGetReadOnlyCredentials`, with real STS
+  credentials on the run's S3 store. A caller holding create and modify makes a tag. Through `trading@<tag>` both the
+  load and the credentials route vend read-only credentials (only READ sets audited): they read the table's file, and
+  the store refuses PutObject of a data file and of a metadata file, CreateMultipartUpload and DeleteObject (403). The
+  same caller's credentials on main write. The tag is deleted at the end (204). Bite
+  `bites/D33/rest-tag-vends-write-on-a-real-store.patch`: `Lookup.writable` ignores the tag, so the tag's credentials
+  write; checked with `git apply --check` (a heavy test), and applies again after the merge of main.
+- **`docs/refs.md`**, written from the code. Its sections:
+  - Naming a ref;
+  - What a tag and a branch allow;
+  - Making, reading and deleting refs, with the console's Branches and tags tab as it now is;
+  - Merging a branch: maintenance not counting, conflicts, rules and rights, limits, what main gets, the dry run;
+  - Limits and expiry (P11);
+  - Files, purges and namespaces;
+  - Taking a table out of refs;
+  - After a regional failover;
+  - Catalog refs and Iceberg's refs inside a table.
+
+  There is no docs index (no README at the root or in `docs/`), so `deploy/README.md`'s "Branches and tags" bullet
+  links it.
+- **`build-plan.md`**: the v1.x line for branches, tags and merge says what is built, item by item, and that it closes on
+  the first green overnight run with items 102 to 111 landed. Not marked done.
+
+Checked: `./gradlew build` (fast) green after merging main: "All 571 bites apply.", "BUILD SUCCESSFUL". It compiles
+both new tests; neither runs in it.
+
+### Choices made (Paul may overrule)
+
+1. **The adversarial case sits in `VendingRouteTest`, not `catalog-objectstore`'s `VendingTest`.** Whether a tag
+   vends write is the server's decision (`Lookup.writable`); the vendor below it knows nothing of refs. The case also
+   checks the same caller's credentials on main write, so it is the tag that refuses, not the caller's rights.
+2. **The matrix asserts who refuses a write on a tag, not only that it fails.** Data writes are refused by the store,
+   because both engines write data files before any commit, with the tag's read-only credentials. Metadata-only
+   commits are refused by the client, because a tag's `/v1/config` leaves out the commit endpoints and both clients
+   check them. Neither engine reaches the catalog's own 400, which the fast route tests cover. A change in either
+   layer fails the case, rather than passing it through the other.
+3. **Setup, the merge and the cleanup are PyIceberg Jobs calling the management API with `requests`** (PyIceberg's own
+   dependency), not calls from the harness. The other cases reach the catalog only from inside the cluster, as Service
+   `nuna-catalog`, and this keeps every step and every answer (CALL lines) in the Jobs' logs.
+4. **Order 6, after the audit table case.** It stays out of that case's reads of the audit topic, and its Spark Jobs
+   run before SingleStore takes its memory. It also runs against a stack already up (`-Pengines.stack`): it needs only
+   the engine group's `create` on catalog `engines`. Its setup first removes what an interrupted run left.
+5. **Main moves past the tag but not past the branch's cut.** The fourth row lands after the tag and before the
+   branch. So the merge has nothing to conflict with, and the tag's reads differ from main's, which shows the merge
+   left the tag alone.
+
+### Where the code differs from this item's plan
+
+1. **`build-plan.md`.** The plan says to mark the milestone done, naming the run that closed it. No such run has
+   happened, so the line says what is built and what closes it.
+2. **"Refused a write on a tag."** With stock engines the catalog never sees the write: the store refuses the data and
+   the client refuses the commit. Iceberg Java 1.12 throws `UnsupportedOperationException` and PyIceberg 0.12
+   `NotImplementedError`, both "Server does not support endpoint: POST
+   /v1/{prefix}/namespaces/{namespace}/tables/{table}". The catalog's 400 ("updateTable is refused on tag eod of
+   catalog trading: a tag is read-only") is what a client that does not check gets. The page says all three.
+3. **Merge conflicts.** D33 says changed on both sides is a conflict. The code, after Paul's amendment of 2026-11-22,
+   rebases over main's maintenance (compaction, manifest rewrites, snapshot expiry). Main's other changes conflict:
+   data, the definition, and an Iceberg ref made or moved. So do a view main replaced, a table main dropped,
+   unregistered or purged, and a regulated table whose file fails its hash. A held table compacted on main since the
+   cut cannot merge while the hold stands.
+4. **Topics the plan does not list.** The plan's list of topics leaves out the dry run, taking a table out of refs, the
+   DR ref report, the purge and namespace rules, and the console. They were built or decided after the plan (items 107,
+   111, 156, 157 and 109), and the page covers them.
+5. **Naming a ref.** The plan says `warehouse=<catalog>@<ref>`. The code also takes the prefix in the path, treats
+   `catalog@main` as main and matches names without regard to case. For a missing ref or an expired branch it answers
+   404 `NoSuchWarehouseException` on `/v1/config` and every other route.
+6. **P11 as `build-plan.md` words it.** It says "a branch expires 30 days after its last commit". In the code a commit
+   moves the expiry only once the move gains an hour (`Engines.RENEWAL_STEP`). A branch past its expiry keeps its name
+   until the worker ends it. The merge cap, `nuna.refs.max-merge-tables` (100), also bounds a branch's commits. The
+   page follows the code; P11's row is left as Paul set it.
+
+### Left
+
+- Not yet run: the refs engine case (the overnight run's `./nightly.sh` runs the engine matrix) and
+  `aTagsCredentialsRefusePutObject` (its heavy build). The new bite was checked with `git apply --check` only.
+- The first run will test what could not be checked here:
+  - the error text each engine gives for the store's refusal: Spark's failed task carrying the S3 403, and pyarrow's
+    "access denied" or 403;
+  - that both clients send `engines@<ref>` in the path as the catalog answers it.
+- This item, and item 26 with it, closes the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh`
+  and bites are all green with items 102 to 111 landed. Item 110 (the demo) is still being built.
+
 ### 113. Grants that name a branch (later, D33)
 
 - Decided: 2026-11-20, D33
