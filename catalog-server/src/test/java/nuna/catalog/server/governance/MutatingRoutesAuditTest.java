@@ -217,6 +217,11 @@ class MutatingRoutesAuditTest {
                 null, rid(id, api.steward())));
         cases.put("DELETE " + M + "/refs/{ref}", id -> api.manage("DELETE", "/refs/m7-" + Api.suffix(), null,
                 rid(id, api.steward())));
+        cases.put("POST " + M + "/refs/{ref}/merge", id -> api.manage("POST", "/refs/m7-" + Api.suffix() + "/merge",
+                null, rid(id, api.steward())));
+        // The steward holds no modify on the table, which a request for its maintenance needs.
+        cases.put("POST " + M + "/namespaces/{namespace}/tables/{table}/maintenance/requests", id -> api.manage("POST",
+                target("table") + "/maintenance/requests", "{\"job\":\"compaction\"}", rid(id, api.steward())));
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> api.manage("POST", "/maintenance/refs/"
                 + UUID.randomUUID() + "/warn", null, rid(id)));
         cases.put("POST /management/v1/maintenance/refs/{id}/end", id -> api.manage("POST", "/maintenance/refs/"
@@ -450,6 +455,18 @@ class MutatingRoutesAuditTest {
             expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
             expect(api.manage("DELETE", "/refs/" + name, null, rid(id)), 204);
             return EventType.REF;
+        });
+        cases.put("POST " + M + "/refs/{ref}/merge", id -> {
+            // A branch that changed nothing merges by ending, with its ref event (merged).
+            String name = "m7-" + Api.suffix();
+            expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
+            expect(api.manage("POST", "/refs/" + name + "/merge", null, rid(id)), 200);
+            return EventType.REF;
+        });
+        cases.put("POST " + M + "/namespaces/{namespace}/tables/{table}/maintenance/requests", id -> {
+            expect(api.manage("POST", target("table") + "/maintenance/requests", "{\"job\":\"compaction\"}",
+                    rid(id)), 202);
+            return EventType.GOVERNANCE_CHANGE;
         });
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> {
             String branch = JsonPath.read(expect(api.manage("POST", "/refs", ref("m7-" + Api.suffix(), "branch"),

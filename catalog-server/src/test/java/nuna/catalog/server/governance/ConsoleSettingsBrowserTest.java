@@ -89,7 +89,8 @@ class ConsoleSettingsBrowserTest {
         api.table(ns, "orders");
         browser.signIn(tester());
         browser.open("/ui/#" + at("table", ns, "orders"));
-        awaitValue("write.parquet.compression-codec", "zstd · default");
+        // Iceberg writes the codec into every table it creates, so a new table shows it as set.
+        awaitValue("write.parquet.compression-codec", "zstd · set");
 
         String asked = change("write.parquet.compression-codec");
         assertThat(asked).contains("How engines compress the Parquet files they write");
@@ -107,7 +108,7 @@ class ConsoleSettingsBrowserTest {
         size.sendKeys("256 MB");
         submit("write.target-file-size-bytes is 268435456");
         assertThat(tableProperties(ns, "orders")).containsEntry("write.target-file-size-bytes", "268435456");
-        awaitValue("write.target-file-size-bytes", "268435456 256 MB · set");
+        awaitValue("write.target-file-size-bytes", "256 MB (268,435,456 bytes) · set");
 
         // Reset removes the property, and the default applies again.
         setting("write.parquet.compression-codec").findElement(By.cssSelector("button[data-act='reset']")).click();

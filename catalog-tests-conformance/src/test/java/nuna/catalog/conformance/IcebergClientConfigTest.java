@@ -25,7 +25,6 @@ import org.apache.iceberg.TableMetadata;
 import org.apache.iceberg.catalog.Namespace;
 import org.apache.iceberg.catalog.TableCommit;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.exceptions.BadRequestException;
 import org.apache.iceberg.exceptions.CommitFailedException;
 import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.rest.RESTCatalog;
@@ -173,7 +172,8 @@ class IcebergClientConfigTest {
                 Table tagged = onTag.loadTable(orders);
                 assertThat(tagged.properties()).containsEntry("stage", "cut");
                 assertThatThrownBy(() -> tagged.updateProperties().set("batch", "0").commit())
-                        .isInstanceOf(BadRequestException.class).hasMessageContaining("a tag is read-only");
+                        .isInstanceOf(UnsupportedOperationException.class)
+                        .hasMessageContaining("Server does not support endpoint: POST /v1/{prefix}/namespaces/{namespace}/tables/{table}");
             }
             String appended;
             try (RESTCatalog onBranch = client(ConformanceServer.WAREHOUSE + "@" + branch)) {
