@@ -222,7 +222,7 @@ function propertiesTab(target, t, reload, ref) {
   const m = t.metadata;
   const props = m.properties || {};
   if (target.ref && ref && ref.kind === 'tag') {
-    return [refNote(ref, 'props'), readOnlyNote(ref, target.catalog, 'commitTable'),
+    return [refNote(ref, 'props'), readOnlyNote(ref, target.catalog, 'updateTable'),
       panel('Properties', 'in the metadata file the tag keeps', Object.keys(props).length
         ? facts(Object.entries(props).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [code(k), String(v)])) : muted('No property is set.'))];
   }

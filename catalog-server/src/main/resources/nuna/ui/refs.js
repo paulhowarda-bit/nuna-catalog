@@ -580,7 +580,7 @@ function tagKeeps(c, r, cut) {
     panel('Engines', null, h('pre', {class: 'raw'}, `warehouse=${c}@${r.name}`),
       h('p', {class: 'fine'}, 'Read-only credentials, and read endpoints only. A write through the tag is refused before it reaches a table:'),
       h('div', {class: 'refusal compact'}, h('p', {class: 'refusal-code'}, '400 BadRequestException'),
-        h('p', {class: 'refusal-msg'}, `commitTable is refused on tag ${r.name} of catalog ${c}: a tag is read-only`))));
+        h('p', {class: 'refusal-msg'}, `updateTable is refused on tag ${r.name} of catalog ${c}: a tag is read-only`))));
 }
 
 async function recordTab(c, r) {
@@ -843,7 +843,7 @@ export function makeDialog(c, list, preset = {}) {
     const made = answer.body || {name: nm};
     fill(out, granted(`Made the ${kind} @${made.name}`, answer, h('span', null, h('a', {href: refHref(c, made.name)}, `Open @${made.name}`), ' · ',
       h('a', {href: href({c, r: made.name})}, `Read ${c} on @${made.name}`))));
-    $('button[type=submit]', form).disabled = true;
+    $('button[type=submit]', form).hidden = true;
     refreshSoon();
   }));
   openDialog('Make a branch or tag', body);
@@ -867,7 +867,7 @@ export async function renewDialog(c, r) {
     fill(out, after && after === r['expires-at']
       ? granted(`@${r.name} is unchanged`, answer, 'A renewal never shortens a branch\'s life, and this one is at its end. Merge it, or make a new branch.')
       : granted(`Renewed @${r.name}: it expires ${after ? refAt(after) : ''}`, answer));
-    $('button[type=submit]', form).disabled = true;
+    $('button[type=submit]', form).hidden = true;
     refreshSoon();
   }));
   openDialog(`Renew @${r.name}`, body);
@@ -889,7 +889,7 @@ export function deleteDialog(c, r, list) {
       RESULTS.set(resultKey(c, r.name), () => granted(`Deleted @${r.name} at ${time}`, answer,
         h('span', null, 'It is gone from every route; its record stays in the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.')));
       fill(out, granted(`Deleted @${r.name}`, answer));
-      $('button[type=submit]', form).disabled = true;
+      $('button[type=submit]', form).hidden = true;
       refreshSoon(r.name);
     }));
   $('button[type=submit]', body).classList.add('danger');

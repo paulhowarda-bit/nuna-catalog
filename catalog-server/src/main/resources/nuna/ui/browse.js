@@ -322,7 +322,7 @@ async function refPropertiesTab(target) {
   const [ns, r] = await Promise.all([api.namespace(target.catalog, target.namespace), readingRef(target.catalog, target.ref)]);
   const props = Object.entries(ns.properties || {}).sort(([a], [b]) => a.localeCompare(b));
   return h('div', {class: 'stack'}, refNote(r || target.ref, 'nsprops'),
-    r ? readOnlyNote(r, target.catalog, 'updateNamespaceProperties', true) : null,
+    r ? readOnlyNote(r, target.catalog, 'updateProperties', true) : null,
     panel('Properties', 'main\'s, read now', props.length ? facts(props.map(([k, v]) => [code(k), String(v)])) : muted('No property is set.')));
 }
 
