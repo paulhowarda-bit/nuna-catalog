@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 6 S, 12 M, 10 L, 5 XL.
+**32 open:** 6 S, 11 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -25,7 +25,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [60](backlog/60.md) | S | CredentialExpiryTest's first request answered 401 | the reason was in the test's output; one timeout and a Java-only test | 2026-11-18 |
 | [70](backlog/70.md) | M | A route-level heavy test that the server on Oracle and on MongoDB answers a database outage with 503 and Retry-After | two heavy Spring tests in one module, each needing its database behind a link it can cut; written, waits on an overnight heavy build in which both pass | 2026-11-19 |
 | [89](backlog/89.md) | M | A compaction Job against a store behind a private CA, end to end | a TLS store with a private CA beside the existing Kubernetes compaction test, and one overnight test that runs a real Job | 2026-11-20 |
-| [92](backlog/92.md) | M | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight. | 2026-11-20 |
 | [97](backlog/97.md) | M | A KMS key for MinIO and Ceph storage profiles (D26) | a KMS beside the Silo and Ceph test stores, the key id each takes, and whether their STS session policies enforce the SSE condition keys; waits on Paul if on-prem keys are not wanted yet | 2026-11-20 |
 | [98](backlog/98.md) | S | A storage profile's KMS key is not recorded with the profile, so a change of key is not audited | built 2026-11-20 (it was M); left is the heavy build's run of the store test on the four stores, and a fix if one fails | 2026-11-20 |
 | [104](backlog/104.md) | L | Reads on a ref: the catalog@ref prefix, config, loads and listings (item 26) | every Iceberg read route learns the ref, with route tests and a stock client test; waits on item 102 | 2026-11-20 |
@@ -854,79 +853,6 @@ passed in the second (257 s). In the first, its body passed and its cleanup fail
 --wait=true` lost the API server (`http2: client connection lost`) while Windows was paging the Docker VM out (item
 135). The bite has still not run; the item still closes when an overnight run's bites show it biting.
 
-### 92. DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind
-
-- Added: 2026-11-20 by local_505e1ac6-ef25-415d-a419-30d734018bd1
-- Touches: deploy/helm/nuna-maintenance/, catalog-maintenance/README.md, docs/install-at-work.md, catalog-tests-load/src/test/java/nuna/catalog/load/DrDrillTest.java, deploy/README.md, docs/observability/dr-watermark.md
-- Effort: M, the chart comments and the two docs are an hour; the drill leg is a day: a second Silo store, a replicator the test pauses, the verifier run in DR, and an overnight-only test that can be checked only overnight.
-
-Item 28 built the DR replication watermark (D37, amended 2026-11-20): the watermark on all four stores, the
-verifier in the maintenance worker, its routes, readout, meters and alerts, the rewind, and the reconcile stopping at
-the watermark. Three parts were left:
-
-- **The worker chart's values** (`deploy/helm/nuna-maintenance/values.yaml`) do not describe
-  `nuna.maintenance.dr.replicas.<profile>` (endpoint, region, path-style access, keys, CA bundle) or
-  `nuna.maintenance.dr.verify-interval`. The chart already renders them, as any setting under `config`, with the
-  secret key in `secrets.values` and a CA bundle in `storageCaConfigMap`, as `deploy/README.md`'s runbook says; items
-  87 and 88 held the chart while item 28 ran. Done when the values file comments them as it does `storage`.
-- **The worker's settings in `catalog-maintenance/README.md` and `docs/install-at-work.md`** (held by item 88 then):
-  the DR replicas and the verify interval, the DR store's read-only keys, and that the verifier is off without a
-  replica. Done when both list them.
-- **The overnight drill's leg with the DR store behind** (item 28's gate): `DrDrillTest` gains a leg on two Silo
-  stores and a replicator the test pauses: region lost, DR promoted, a verifier pass in DR, freeze, rewind, thaw;
-  every table reads whole in DR, and the lost tail is exactly the commits whose files never arrived. Done when the
-  leg is in and an overnight run has passed it.
-
-## Progress, 2026-11-20 (worktree-agent-abb88ef3bcbfecca6), still open
-
-- **The chart's values.** `deploy/helm/nuna-maintenance/values.yaml` comments `config.nuna.maintenance.dr` as it
-  does `storage`: `verify-interval` (PT1M), and a commented `replicas.<profile>` example (endpoint, region,
-  path-style-access, the read-only `access-key-id`, `ca-bundle`), the verifier off without a replica, the secret key
-  in `secrets.values` as `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a DR store's CA in
-  `storageCaConfigMap`. `replicas` stays commented rather than `{}`, so a release with no replica renders no empty
-  map. `helm template` (helm 3 from winget) rendered the chart with and without a replica, exit 0 both; with one, the
-  ConfigMap holds `dr.replicas.ceph.*` and the Secret the replica's key; `helm lint` passed.
-- **The worker README.** `catalog-maintenance/README.md` has a section "The DR verifier", the `dr.*` settings in its
-  table, the DR store's read-only keys under "The identity it needs" (`s3:ListBucket` on each replicated bucket,
-  `s3:GetObject` beneath the prefixes), the chart's DR values and secret key, and the DR tests.
-- **install-at-work.** Not changed: `docs/install-at-work.md` is held by item 23. The bullet for its section 6, for
-  the session that lands this to add:
-
-  > - The DR verifier (D37, amended 2026-11-20) is off until `dr.replicas.<profile>` names, for a storage profile,
-  >   its DR store: the same buckets and paths on the DR region's endpoint (`endpoint`, `region`,
-  >   `path-style-access`, `access-key-id`, `ca-bundle`; the secret key in `secrets.values` as
-  >   `nuna.maintenance.dr.replicas.<profile>.secret-access-key`, a private CA's bundle in `storageCaConfigMap`). Give
-  >   it keys of its own that may only read the DR store: `s3:ListBucket` on each replicated bucket and
-  >   `s3:GetObject` beneath the profile's prefixes. `dr.verify-interval` sets how often it passes (1 minute by
-  >   default). An AWS DR bucket under another name waits on PLT-4. `deploy/README.md` ("Recovering in the DR
-  >   region") says when to run it in each region.
-
-- **The drill's leg.** `DrDrillTest#aRewindGivesUpExactlyTheCommitsWhoseFilesNeverReachedTheDrStore` (overnight,
-  Silo only): a stack with a second Silo of its own as the DR store (`Stack.withDrStore`, `TestS3.siloOfItsOwn`),
-  the primary bucket copied there by `Replicator`, a thread the test pauses, and a DR user that may only read. The
-  maintenance worker runs from its runnable jar (`catalog-maintenance`'s new `execJar` configuration). Tables a, b,
-  c (c format 3) and a quiet one; one paced writer each, appending through `Appender` with the store client, so each
-  snapshot's manifest list exists (item 93). The verifier runs in the primary region; the test waits for each
-  table's first watermark before the writers start (item 99), pauses the replicator, lets the writers run on, and
-  computes from what was copied which commits reached the DR store whole. It then waits until the primary's
-  watermarks stop exactly at the last whole version (failing at once on one above it), loses the region, promotes
-  DR, and in DR: servers on the DR store, freeze, the worker on the DR store (two passes, none failed, watermarks
-  unchanged), the rewind's plan (exactly a, b, c; each `lost` tail exactly the commits whose files never arrived, in
-  order, by `m8-writer`), the rewind (each table at the version after its pointer, main at the last kept commit),
-  the verifier passing the rewound versions, the walk (`{"apply":false}` and `{"apply":true}`: nothing listed,
-  nothing unknown, no pointer moved), thaw. Then every table reads whole from the DR store as an engine reads it
-  (metadata, every manifest list, manifest, data and delete file), its history is exactly the kept commits, and a
-  commit to each succeeds. Its lost tails stay under the work list's 100 versions (item 100). The expectations
-  follow D37 "Check from the watermark" as landed by item 28 (5df8b5d): the walk runs after the verifier's pass
-  over the rewound versions, as the runbook's step 5 says.
-- **Not run.** The leg is tagged `overnight` and has not run anywhere: it compiles in the fast build, which starts
-  no container. The first leg changed only to give its appenders the store client and its stack per test.
-
-Left: an overnight run passing both legs of `DrDrillTest`, and the install-at-work bullet above. For
-`deploy/README.md` (not this branch's), once this lands: "the chart's values do not describe them yet (item 92)"
-becomes "`values.yaml` comments them", and the drill sentence at the runbook's end can say the leg with the DR
-store behind runs the verifier in both regions, the rewind and the walk.
-
 ### 97. A KMS key for MinIO and Ceph storage profiles (D26)
 
 - Decided: 2026-11-20, D26
@@ -1670,6 +1596,7 @@ dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too.
 | [88](backlog/88.md) | Compaction Jobs do not trust a storage profile's CA bundle | done | 2026-11-20 |
 | [90](backlog/90.md) | An issuer whose keys cannot be fetched answers 503 with Retry-After, not 401 | done | 2026-11-20 |
 | [91](backlog/91.md) | On AWS, the worker's tests that build their own Storage sign in as the run's admin, which the delete policy refuses | done | 2026-11-20 |
+| [92](backlog/92.md) | DR verifier: the worker chart's values, its settings in the worker README and install-at-work, and the drill's leg with the DR store behind | done | 2026-11-22 |
 | [93](backlog/93.md) | The DR drill's appender names manifest lists that never exist, so the walk with a file check stops at its first commit | done | 2026-11-22 |
 | [94](backlog/94.md) | The demo's object store on its own port, 8187, for engines on other machines | done | 2026-11-20 |
 | [95](backlog/95.md) | Change feed: opt-in singlestore.append-only for insert-only tables | done | 2026-11-20 |
