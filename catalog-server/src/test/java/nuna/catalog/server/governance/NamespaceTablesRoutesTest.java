@@ -58,9 +58,10 @@ import tools.jackson.databind.JsonNode;
  * A namespace's tables with each one's format, snapshot count and last commit, for the console's Contents (D45,
  * backlog 137): read from the pointer's projection and the journal entry of its version, never from the object store;
  * a table the caller may not describe is left out; a caller who holds nothing on the namespace is answered as for one
- * that does not exist, and audited; paged, and bounded in rows and in the tables one page looks at. The route, guard
- * and authorizer are the real ones over a store double, which fails any call it does not expect, so this needs only
- * Java.
+ * that does not exist, and audited; paged, and bounded in rows and in the tables one page looks at. Beside it, each
+ * child namespace's totals over the tables beneath it (backlog 147), with the same rules and bounds, and a table the
+ * caller may not describe not counted. The route, guard and authorizer are the real ones over a store double, which
+ * fails any call it does not expect, so this needs only Java.
  */
 class NamespaceTablesRoutesTest {
 
@@ -91,6 +92,14 @@ class NamespaceTablesRoutesTest {
     private final CatalogObject positions = table(desk, "positions");
     private final CatalogObject daily = object(desk, "daily", Kind.VIEW);
     private final CatalogObject visitors = table(lobby, "visitors");
+    /** Below desk: an empty namespace, and eu, which holds fills and, a level further down, quotes. */
+    private final NamespaceRecord archive = namespace(desk, "archive");
+    private final NamespaceRecord eu = namespace(desk, "eu");
+    private final NamespaceRecord xetra = namespace(eu, "xetra");
+    /** Two snapshots, last committed an hour ago. */
+    private final CatalogObject fills = table(eu, "fills");
+    /** Five snapshots, last committed ten seconds ago: the newest commit anywhere. */
+    private final CatalogObject quotes = table(xetra, "quotes");
 
     private final MockHttpServletRequest http = new MockHttpServletRequest();
     private final NamespaceTablesRoutes routes;
@@ -109,6 +118,10 @@ class NamespaceTablesRoutesTest {
                 new JournalEntry("trino", "ana", "trino", "[]", "[]")));
         commits(positions, 3, 0, List.of(new JournalEntry("ingest", null, null, "[]", "[]")));
         commits(visitors, 2, 1, List.of(new JournalEntry("ingest", null, null, "[]", "[]")));
+        commits(fills, 2, 2, List.of(new JournalEntry("ingest", null, null, "[]", "[]")), Duration.ofHours(1));
+        commits(quotes, 2, 5, List.of(
+                new JournalEntry("etl", null, "spark", "[]", "[]"),
+                new JournalEntry("spark", "bo", "spark", "[]", "[]")), Duration.ofSeconds(10));
 
         CatalogStore store = store();
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
@@ -241,12 +254,170 @@ class NamespaceTablesRoutesTest {
         });
     }
 
+    // ---- a child namespace's totals (backlog 147) ----
+
+    /**
+     * Rita may describe all of desk: its row counts every table beneath it, at every depth, and names the newest
+     * commit by its path below desk; lobby, where she holds nothing, is no row.
+     */
+    @Test
+    void eachChildNamespaceIsOneRowWithItsTotalsOverEveryTableBeneathIt() {
+        JsonNode top = totals(null, null, null);
+
+        assertThat(top.has("next-page-token")).isFalse();
+        assertThat(rowNames(top)).containsExactly("desk");
+        JsonNode deskRow = top.get("namespaces").get(0);
+        assertThat(deskRow.get("tables").asInt()).as("trades, positions, fills and quotes; not the view").isEqualTo(4);
+        assertThat(deskRow.get("snapshots").asLong()).isEqualTo(3 + 0 + 2 + 5);
+        assertThat(deskRow.get("complete").asBoolean()).isTrue();
+        JsonNode newest = deskRow.get("newest-commit");
+        assertThat(newest.get("table").valueStream().map(JsonNode::asString)).containsExactly("eu", "xetra", "quotes");
+        assertThat(newest.get("version").asLong()).isEqualTo(2);
+        assertThat(newest.get("committed-at").asString()).isEqualTo(NOW.minusSeconds(10).toString());
+        assertThat(newest.get("principal").asString()).isEqualTo("spark");
+        assertThat(newest.get("end-user").asString()).isEqualTo("bo");
+
+        JsonNode below = totals("desk", null, null);
+        assertThat(rowNames(below)).containsExactly("archive", "eu");
+        JsonNode empty = below.get("namespaces").get(0);
+        assertThat(empty.get("tables").asInt()).isZero();
+        assertThat(empty.get("snapshots").asLong()).isZero();
+        assertThat(empty.get("complete").asBoolean()).isTrue();
+        assertThat(empty.has("newest-commit")).isFalse();
+        JsonNode euRow = below.get("namespaces").get(1);
+        assertThat(euRow.get("tables").asInt()).isEqualTo(2);
+        assertThat(euRow.get("snapshots").asLong()).isEqualTo(7);
+        assertThat(euRow.get("newest-commit").get("table").valueStream().map(JsonNode::asString))
+                .containsExactly("xetra", "quotes");
+        assertThat(denials()).as("totals record nothing per table").isEmpty();
+
+        caller = OTTO;
+        JsonNode otto = totals(null, null, null);
+        assertThat(rowNames(otto)).containsExactly("lobby");
+        JsonNode lobby = otto.get("namespaces");
+        assertThat(lobby.get(0).get("tables").asInt()).isEqualTo(1);
+        assertThat(lobby.get(0).get("snapshots").asLong()).isEqualTo(1);
+        assertThat(lobby.get(0).get("newest-commit").get("table").valueStream().map(JsonNode::asString))
+                .containsExactly("visitors");
+    }
+
+    /**
+     * Tom holds select on trades alone: desk's row counts trades and nothing else, though it holds three more tables
+     * beneath it; the namespaces below desk, where he holds nothing, are no rows.
+     */
+    @Test
+    void aTableTheCallerMayNotDescribeIsNotCounted() {
+        caller = TOM;
+
+        JsonNode top = totals(null, null, null);
+
+        assertThat(rowNames(top)).containsExactly("desk");
+        JsonNode deskRow = top.get("namespaces").get(0);
+        assertThat(deskRow.get("tables").asInt()).isEqualTo(1);
+        assertThat(deskRow.get("snapshots").asLong()).isEqualTo(3);
+        assertThat(deskRow.get("newest-commit").get("table").valueStream().map(JsonNode::asString))
+                .as("quotes committed later, but Tom may not describe it").containsExactly("trades");
+        assertThat(deskRow.get("newest-commit").get("principal").asString()).isEqualTo("trino");
+        assertThat(totals("desk", null, null).get("namespaces")).isEmpty();
+        assertThat(denials()).as("a table not counted is not a refusal").isEmpty();
+    }
+
+    @Test
+    void aCallerWhoHoldsNothingOnTheParentIsAnsweredAsForANamespaceThatDoesNotExist() {
+        caller = OTTO;
+        Throwable refused = catchThrowable(() -> routes.namespaces("gate", "desk", null, null, http));
+        assertThat(refused).isInstanceOfSatisfying(CatalogError.class, error -> {
+            assertThat(error.status()).isEqualTo(404);
+            assertThat(error.type()).isEqualTo("NoSuchNamespaceException");
+        });
+        assertThat(denials()).extracting(Denial::operation).containsExactly("listNamespaceTotals");
+
+        caller = NED;
+        assertThat(catchThrowable(() -> routes.namespaces("gate", null, null, null, http)))
+                .isInstanceOfSatisfying(CatalogError.class, error ->
+                        assertThat(error.type()).isEqualTo("NoSuchWarehouseException"));
+    }
+
+    @Test
+    void namespacePagesWalkEveryChildOnce() {
+        for (int i = 0; i < 4; i++) {
+            namespace(desk, "c" + i);
+        }
+        List<String> paged = new ArrayList<>();
+        String token = null;
+        do {
+            JsonNode page = totals("desk", token, 2);
+            assertThat(page.get("namespaces").size()).isLessThanOrEqualTo(2);
+            paged.addAll(rowNames(page));
+            token = page.has("next-page-token") ? page.get("next-page-token").asString() : null;
+        } while (token != null);
+
+        assertThat(paged).containsExactly("archive", "c0", "c1", "c2", "c3", "eu");
+    }
+
+    @Test
+    void aNamespacePageHoldsAtMostTwoHundredRows() {
+        for (int i = 0; i < NamespaceTablesRoutes.MAX_PAGE + 50; i++) {
+            namespace(desk, "n" + i);
+        }
+
+        JsonNode page = totals("desk", null, 100_000);
+
+        assertThat(page.get("namespaces")).hasSize(NamespaceTablesRoutes.MAX_PAGE);
+        assertThat(page.has("next-page-token")).isTrue();
+    }
+
+    /**
+     * A page looks at 1,000 tables and namespaces at most. big, beneath which there are more, waits for the next page
+     * after archive; there it is the first row, counted over what it looked at and marked incomplete; eu follows.
+     */
+    @Test
+    void aNamespacePageLooksAtAThousandTablesAndNamespacesAtMost() {
+        NamespaceRecord big = namespace(desk, "big");
+        for (int i = 0; i < NamespaceTablesRoutes.MAX_EXAMINED + 100; i++) {
+            table(big, "b" + i);
+        }
+
+        JsonNode first = totals("desk", null, null);
+        assertThat(rowNames(first)).containsExactly("archive");
+        assertThat(first.has("next-page-token")).isTrue();
+
+        JsonNode second = totals("desk", first.get("next-page-token").asString(), null);
+        assertThat(rowNames(second)).containsExactly("big");
+        JsonNode cut = second.get("namespaces").get(0);
+        assertThat(cut.get("complete").asBoolean()).isFalse();
+        assertThat(cut.get("tables").asInt()).isEqualTo(NamespaceTablesRoutes.MAX_EXAMINED - 1);
+        assertThat(second.has("next-page-token")).isTrue();
+
+        JsonNode third = totals("desk", second.get("next-page-token").asString(), null);
+        assertThat(rowNames(third)).containsExactly("eu");
+        assertThat(third.get("namespaces").get(0).get("complete").asBoolean()).isTrue();
+        assertThat(third.has("next-page-token")).isFalse();
+    }
+
+    @Test
+    void aNamespaceTokenTheStoreDidNotIssueIsABadRequest() {
+        assertThat(catchThrowable(() -> routes.namespaces("gate", "desk", "nope", null, http)))
+                .isInstanceOfSatisfying(CatalogError.class, error -> assertThat(error.status()).isEqualTo(400));
+    }
+
     // ---- helpers ----
 
     private JsonNode tables(String namespace, String token, Integer size) {
         ResponseEntity<String> response = routes.tables("gate", namespace, token, size, http);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         return Management.JSON.readTree(response.getBody());
+    }
+
+    /** The child namespaces of {@code namespace}, or of the catalog when it is null, with their totals. */
+    private JsonNode totals(String namespace, String token, Integer size) {
+        ResponseEntity<String> response = routes.namespaces("gate", namespace, token, size, http);
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        return Management.JSON.readTree(response.getBody());
+    }
+
+    private static List<String> rowNames(JsonNode body) {
+        return body.get("namespaces").valueStream().map(row -> row.get("name").asString()).toList();
     }
 
     private static List<String> names(JsonNode body) {
@@ -289,11 +460,18 @@ class NamespaceTablesRoutesTest {
      * projection gives the format and snapshot count as the commit engine writes it.
      */
     private void commits(CatalogObject table, int format, int snapshots, List<JournalEntry> entries) {
+        commits(table, format, snapshots, entries, Duration.ofMinutes(1));
+    }
+
+    /** {@link #commits}, the last of them {@code lastAgo} before now. */
+    private void commits(CatalogObject table, int format, int snapshots, List<JournalEntry> entries,
+                         Duration lastAgo) {
         PointerKey key = table.mainKey();
         List<JournalRecord> records = new ArrayList<>();
         for (int i = 0; i < entries.size(); i++) {
             long version = i + 1;
-            records.add(new JournalRecord(UUID.randomUUID(), key, NOW.minusSeconds(60L * (entries.size() - i)),
+            records.add(new JournalRecord(UUID.randomUUID(), key,
+                    NOW.minus(lastAgo).minusSeconds(60L * (entries.size() - 1 - i)),
                     entries.get(i), version == 1 ? Optional.empty() : Optional.of(location(table, version - 1)),
                     location(table, version), version));
         }
@@ -355,6 +533,11 @@ class NamespaceTablesRoutesTest {
                     case "findCatalog" -> Optional.of(catalog).filter(c -> c.normalizedName().equals(args[0]));
                     case "findNamespace" -> findNamespace((List<String>) args[1]);
                     case "readNamespace" -> Optional.ofNullable(namespaces.get((UUID) args[0]));
+                    case "listNamespaces" -> page(namespaces.values().stream()
+                            .filter(ns -> ns.parentId().equals(args[0]))
+                            .sorted(Comparator.comparing((NamespaceRecord ns) -> ns.name().normalized())
+                                    .thenComparing(NamespaceRecord::id))
+                            .toList(), (PageRequest) args[1]);
                     case "readObject" -> Optional.ofNullable(objects.get((UUID) args[0]));
                     case "listObjects" -> page(objects.values().stream()
                             .filter(o -> o.namespaceId().equals(args[0]) && o.kind() == args[1]
