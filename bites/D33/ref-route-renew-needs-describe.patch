@@ -1,0 +1,16 @@
+Breaks: renewing a branch needs only describe on the catalog.
+Module: catalog-server
+Test: RefRoutesTest#makingRenewingAndDeletingNeedCreateOnTheCatalog
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index 528ccd2..5560ca9 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -227,7 +227,7 @@ class RefRoutes {
+                                  HttpServletRequest http) {
+         Request request = management.request(http);
+         Target target = management.target(request, "renewRef", Privilege.CREATE, prefix, null, null, null);
+-        guard.require(request, target, "renewRef", Privilege.CREATE);
++        guard.require(request, target, "renewRef", Privilege.DESCRIBE);
+         return idempotency.run(Optional.ofNullable(key), request.caller(), "RENEW_REF",
+                 target.catalog().id() + "/" + Names.normalize(name), "", ticket -> renew(target, request, name, ticket));
+     }
