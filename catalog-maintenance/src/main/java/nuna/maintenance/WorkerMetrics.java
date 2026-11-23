@@ -23,8 +23,9 @@ import java.util.function.ToIntFunction;
  *
  * <p>Every meter is registered when the worker starts, so a dashboard or an alert sees zeros before the first scan,
  * not nothing. A label holds only a bounded value, a failure's kind, a scan's outcome, a reason for compaction or a
- * ref's kind: never a table, namespace, file or ref's name, which would make a series per table and may be sensitive. The one exception,
- * which Paul accepted (D30, amended 2026-11-15), is {@value #TABLE_NEED}: a series for every table that needs
+ * ref's kind: never a table, namespace, file or ref's name, which would make a series per table and may be sensitive.
+ * The one exception, which Paul accepted (D30, amended 2026-11-15), is {@value #TABLE_NEED}: a series for every table
+ * that needs
  * compaction, labelled with its catalog, namespace and name, registered when its assessment finds it needy. A name
  * keeps one set of label keys.
  */
@@ -87,7 +88,8 @@ final class WorkerMetrics {
                     report -> report.filesDeleted),
             new Count(PREFIX + "refs.warned", "Branches whose expiry warning the worker sent",
                     report -> report.refsWarned),
-            new Count(PREFIX + "refs.ended", "Branches past their expiry the worker ended", report -> report.refsEnded));
+            new Count(PREFIX + "refs.ended", "Branches past their expiry the worker ended",
+                    report -> report.refsEnded));
 
     private final MeterRegistry registry;
     private final Clock clock;

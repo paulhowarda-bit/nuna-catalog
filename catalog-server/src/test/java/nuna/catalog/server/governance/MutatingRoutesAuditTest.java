@@ -195,7 +195,7 @@ class MutatingRoutesAuditTest {
         cases.put("POST " + M + "/objects/{id}/purge", id -> api.manage("POST", "/objects/" + dropped() + "/purge",
                 null, rid(id)));
         cases.put("POST " + M + "/objects/{id}/pending-deletions", id -> api.manage("POST",
-                "/objects/" + dropped() + "/pending-deletions", "{\"locations\":[\"s3://x/y\"]}", rid(id)));
+                "/objects/" + dropped() + "/pending-deletions", "{\"locations\":[\"s3://x/y\"],\"refs\":[]}", rid(id)));
         cases.put("POST " + M + "/objects/{id}/pending-deletions/complete", id -> api.manage("POST",
                 "/objects/" + dropped() + "/pending-deletions/complete", "{\"ids\":[\"" + UUID.randomUUID() + "\"]}",
                 rid(id)));
@@ -542,7 +542,7 @@ class MutatingRoutesAuditTest {
     private String deletions(String object) {
         String location = JsonPath.read(expect(api.manage("GET", "/objects/" + object + "/export", null), 200).body(),
                 "$.object.location");
-        return "{\"locations\":[\"" + location + "/data/expired.parquet\"]}";
+        return "{\"locations\":[\"" + location + "/data/expired.parquet\"],\"refs\":[]}";
     }
 
     private static String rename(String namespace, String from, String to) {

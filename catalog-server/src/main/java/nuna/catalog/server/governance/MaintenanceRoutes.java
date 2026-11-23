@@ -20,13 +20,17 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Ref;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -74,6 +78,12 @@ class MaintenanceRoutes {
 
     private static final int PAGE = 100;
     private static final int MAX_FILES = 1000;
+    /**
+     * How long before a deletion was recorded a ref made counts as made since (D33, item 26's choice 14): a ref whose
+     * create was under way while the worker read the table's refs, or dated by another server's clock, is still
+     * checked against.
+     */
+    static final Duration RECHECK_MARGIN = Duration.ofHours(1);
     private static final List<String> JOBS = List.of(MaintenancePolicy.EXPIRY_ENABLED, MaintenancePolicy.ORPHAN_ENABLED,
             MaintenancePolicy.COMPACTION_ENABLED, MaintenancePolicy.REWRITE_ENABLED);
 
@@ -108,9 +118,11 @@ class MaintenanceRoutes {
 
     /**
      * What the maintenance worker has to do, page by page: first every active table whose resolved maintenance
-     * policy (D30) runs a job, with the policy in force, which leaves out what a hold or a DR freeze stops; then
+     * policy (D30) runs a job, with the policy in force, which leaves out what a hold or a DR freeze stops, and the
+     * refs whose cut names it, whose files cleanup keeps (D33, {@link #refs(List, ArrayNode)}); then
      * the purge queue (dropped objects past their window that no hold or freeze covers, and every claimed one);
-     * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers; then the
+     * then the pending deletions that are due, of active or dropped tables that no hold or freeze covers, each with
+     * the refs made since it was recorded; then the
      * requested jobs waiting (backlog 114), by the time asked, each with its table as the tables section shows it,
      * of tables whose resolved policy runs the job still; then the branches past their expiry, to end, and those
      * within {@code nuna.refs.expiry-warning} of it that have not been warned of, to warn of ({@link #refs}). Each
@@ -167,7 +179,8 @@ class MaintenanceRoutes {
                 }
                 case DELETIONS -> {
                     Page<PendingDeletion> listed = store.listDueDeletions(now, page);
-                    listed.items().forEach(deletion -> deletions.add(deletion(deletion)));
+                    Map<UUID, List<RefPointers>> named = new HashMap<>();
+                    listed.items().forEach(deletion -> deletions.add(deletion(deletion, named)));
                     yield listed.nextToken();
                 }
                 case REQUESTS -> {
@@ -190,9 +203,13 @@ class MaintenanceRoutes {
 
     /**
      * Records files of an active or dropped table that the worker no longer needs, to delete once the database's
-     * PITR window has passed (D30). Body: {@code {"locations": [...]}}, each beneath the table's location, at most
-     * 1,000. Answers 201 with how many are now pending and when the new ones may be deleted. A file already pending
-     * keeps its earlier time; when every one was, nothing is written and the answer is 200.
+     * PITR window has passed (D30). Body: {@code {"locations": [...], "refs": [...]}}: the locations each beneath the
+     * table's location, at most 1,000; the refs the ids of the catalog refs whose metadata the worker checked them
+     * against (D33, item 26's choice 14), empty when none named the table. Answers 201 with how many are now pending
+     * and when the new ones may be deleted. A file already pending keeps its earlier time; when every one was, nothing
+     * is written and the answer is 200. Answers 409 when a ref now naming the table is not among {@code refs}, made
+     * since the worker read the table's refs, with {@code refs} the table's refs now, as the work list shows them: the
+     * worker checks the files again against those.
      */
     @PostMapping(path = DELETIONS, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> record(@PathVariable("catalog") String prefix, @PathVariable String id,
@@ -203,13 +220,36 @@ class MaintenanceRoutes {
         nuna.catalog.audit.Securable audit = audit(catalog, object);
         guard.requireMaintenance(request, audit, "recordPendingDeletions");
         String root = object.locationRoot().endsWith("/") ? object.locationRoot() : object.locationRoot() + "/";
+        JsonNode json = Management.body(body);
         Set<String> locations = new LinkedHashSet<>();
-        for (JsonNode location : list(Management.body(body), "locations")) {
+        for (JsonNode location : list(json, "locations")) {
             if (!location.isString() || !beneath(location.asString(), root)) {
                 throw CatalogError.badRequest("Every location must lie beneath the table's location " + root
                         + ", with no empty, . or .. segment, not " + location);
             }
             locations.add(location.asString());
+        }
+        JsonNode sent = json.get("refs");
+        if (sent == null || !sent.isArray()) {
+            throw CatalogError.badRequest("Field refs must be an array of the ids of the refs the files were checked"
+                    + " against, empty when none named the table");
+        }
+        Set<UUID> checked = new HashSet<>();
+        for (JsonNode ref : sent) {
+            try {
+                checked.add(UUID.fromString(ref.asString()));
+            } catch (RuntimeException e) {
+                throw CatalogError.badRequest("Not a ref id: " + ref);
+            }
+        }
+        List<RefPointers> named = store.listRefPointers(object.id());
+        if (!named.stream().allMatch(ref -> checked.contains(ref.ref().id()))) {
+            ObjectNode refused = Management.JSON.createObjectNode();
+            refused.putObject("error").put("message", "A ref naming " + id + " was made since its files were checked"
+                    + " against its refs: check them against refs").put("type", "RefsChangedException")
+                    .put("code", 409);
+            refs(named, refused.putArray("refs"));
+            return GovernanceRoutes.json(409, refused);
         }
         Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
         Instant notBefore = now.plus(settings.pitrWindow());
@@ -445,10 +485,34 @@ class MaintenanceRoutes {
         levels.get().forEach(namespace::add);
         ObjectNode policy = node.putObject("policy");
         resolved.forEach((key, setting) -> policy.put(key, setting.value()));
+        refs(store.listRefPointers(table.id()), node.putArray("refs"));
         return Optional.of(node);
     }
 
-    private ObjectNode deletion(PendingDeletion deletion) {
+    /**
+     * Refs whose cut names a table, as the work list and a refused record show them (D33, item 26's choice 14):
+     * {@code {"id", "kind", "metadata-locations"}}, the metadata each reaches for the table, a tag's cut, a branch's
+     * cut and its own head once it has one. Every ref the store holds counts, a branch past its expiry until it is
+     * ended.
+     */
+    private static void refs(List<RefPointers> named, ArrayNode items) {
+        for (RefPointers ref : named) {
+            ObjectNode item = items.addObject();
+            item.put("id", ref.ref().id().toString());
+            item.put("kind", ref.ref().kind().name().toLowerCase(Locale.ROOT));
+            ArrayNode locations = item.putArray("metadata-locations");
+            locations.add(ref.cut().metadataLocation());
+            ref.head().ifPresent(head -> locations.add(head.metadataLocation()));
+        }
+    }
+
+    /**
+     * A due deletion as the work list shows it. With {@code refs}, the refs naming its table that were made since it
+     * was recorded, less {@link #RECHECK_MARGIN} (D33, item 26's choice 14), which the worker checks it against before
+     * deleting it; and when there are some and the table is active, its {@code namespace} and {@code name} now, to load
+     * it by. {@code named} holds each object's refs, read once a page.
+     */
+    private ObjectNode deletion(PendingDeletion deletion, Map<UUID, List<RefPointers>> named) {
         ObjectNode node = Management.JSON.createObjectNode();
         node.put("id", deletion.id().toString());
         node.put("object-id", deletion.objectId().toString());
@@ -458,6 +522,18 @@ class MaintenanceRoutes {
         }
         node.put("location", deletion.location());
         node.put("not-before", deletion.notBefore().toString());
+        Instant since = deletion.recordedAt().minus(RECHECK_MARGIN);
+        List<RefPointers> later = named.computeIfAbsent(deletion.objectId(), store::listRefPointers).stream()
+                .filter(ref -> ref.ref().createdAt().isAfter(since)).toList();
+        refs(later, node.putArray("refs"));
+        if (!later.isEmpty()) {
+            store.readObject(deletion.objectId()).filter(object -> object.state() == CatalogObject.State.ACTIVE)
+                    .ifPresent(table -> management.levels(table.catalogId(), table.namespaceId()).ifPresent(levels -> {
+                        ArrayNode namespace = node.putArray("namespace");
+                        levels.forEach(namespace::add);
+                        node.put("name", table.name().display());
+                    }));
+        }
         return node;
     }
 
