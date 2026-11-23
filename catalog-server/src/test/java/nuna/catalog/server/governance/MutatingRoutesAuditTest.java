@@ -219,6 +219,9 @@ class MutatingRoutesAuditTest {
                 rid(id, api.steward())));
         cases.put("POST " + M + "/refs/{ref}/merge", id -> api.manage("POST", "/refs/m7-" + Api.suffix() + "/merge",
                 null, rid(id, api.steward())));
+        // The tester holds create and modify, not manage-tags (backlog 156).
+        cases.put("POST " + M + "/objects/{id}/refs/remove", id -> api.manage("POST", "/objects/"
+                + api.id(withTable(), "tables", "t") + "/refs/remove", "{\"all-refs\":true}", rid(id)));
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> api.manage("POST", "/maintenance/refs/"
                 + UUID.randomUUID() + "/warn", null, rid(id)));
         cases.put("POST /management/v1/maintenance/refs/{id}/end", id -> api.manage("POST", "/maintenance/refs/"
@@ -458,6 +461,17 @@ class MutatingRoutesAuditTest {
             String name = "m7-" + Api.suffix();
             expect(api.manage("POST", "/refs", ref(name, "branch"), "X-Request-ID", "made-" + id), 201);
             expect(api.manage("POST", "/refs/" + name + "/merge", null, rid(id)), 200);
+            return EventType.REF;
+        });
+        cases.put("POST " + M + "/objects/{id}/refs/remove", id -> {
+            // The tester makes the tag; the steward, who holds manage-tags, takes a dropped table out of it (backlog 156).
+            String name = "m7-" + Api.suffix();
+            String ns = withTable();
+            String object = api.id(ns, "tables", "t");
+            expect(api.manage("POST", "/refs", ref(name, "tag"), "X-Request-ID", "made-" + id), 201);
+            expect(api.rest("DELETE", "/namespaces/" + ns + "/tables/t", null), 204);
+            expect(api.manage("POST", "/objects/" + object + "/refs/remove", "{\"refs\":[\"" + name + "\"]}",
+                    rid(id, api.steward())), 200);
             return EventType.REF;
         });
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> {
