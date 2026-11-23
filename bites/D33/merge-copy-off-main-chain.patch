@@ -1,0 +1,17 @@
+Breaks: main's copy keeps the branch's metadata log, so its predecessor is the branch's marked file and a DR reconcile after a failover would follow the branch's chain (backlog 107's choice).
+Module: catalog-iceberg
+Test: MergeMetadataTest#theCopyIsTheBranchsMetadataAfterMainsFile
+
+diff --git a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
+index 680ab70..18b0b23 100644
+--- a/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
++++ b/catalog-iceberg/src/main/java/nuna/catalog/iceberg/MergeMetadata.java
+@@ -107,7 +107,7 @@ public final class MergeMetadata {
+                 .put("metadata-file", mainLocation));
+         int keep = branch.propertyAsInt(TableProperties.METADATA_PREVIOUS_VERSIONS_MAX,
+                 TableProperties.METADATA_PREVIOUS_VERSIONS_MAX_DEFAULT);
+-        ArrayNode entries = copy.putArray("metadata-log");
++        ArrayNode entries = Metadata.REQUESTS.createArrayNode();
+         log.subList(Math.max(0, log.size() - keep), log.size()).forEach(entries::add);
+         TableMetadata.Builder kept = TableMetadata.buildFrom(TableMetadataParser.fromJson(copy.toString()));
+         Set<Long> named = new HashSet<>();

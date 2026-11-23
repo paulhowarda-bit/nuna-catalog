@@ -1,0 +1,19 @@
+Breaks: a namespace drop on PostgreSQL and CockroachDB reads no ref, so a namespace whose dropped table a tag still names is dropped with its regulated flag (security finding 7).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Refs#aRefKeepsItsObjectsNamespace
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java
+index 6af1b8c..3783b6f 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlNamespaces.java
+@@ -134,10 +134,6 @@ final class SqlNamespaces {
+                     namespaceId)) {
+                 return new WriteResult.Refused(WriteResult.Reason.NOT_EMPTY);
+             }
+-            if (exists(connection, "SELECT 1 FROM catalog_object o JOIN ref_entry e ON e.object_id = o.id"
+-                    + " WHERE o.namespace_id = ?", namespaceId)) {
+-                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+-            }
+             if (Guards.held(connection, namespaceId, locked.get().catalogId(), locked.get().ancestors())) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);
+             }

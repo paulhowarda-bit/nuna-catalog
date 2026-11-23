@@ -1,0 +1,17 @@
+Breaks: the reconcile route lists a ref only when its check also had a problem, so a ref naming files the DR store lacks is left out of the answer (item 111).
+Module: catalog-server
+Test: DrRefReportRouteTest#aBranchWhoseHeadTheDrStoreLacksIsReportedAndNoOtherRef
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+index 81e76d8..3f1ebe0 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/ReconcileRoutes.java
+@@ -147,7 +147,7 @@ class ReconcileRoutes {
+         });
+         answer.put("tables-checked", checked[0]);
+         ArrayNode refs = answer.putArray("refs");
+-        checks.stream().filter(check -> !check.missing().isEmpty() || check.problem().isPresent())
++        checks.stream().filter(check -> !check.missing().isEmpty() && check.problem().isPresent())
+                 .forEach(check -> refs.add(ref(check)));
+         answer.put("refs-checked", checks.size());
+         ArrayNode unknown = answer.putArray("unknown-locations");

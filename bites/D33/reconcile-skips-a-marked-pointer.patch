@@ -1,0 +1,18 @@
+Breaks: the DR reconcile's walk judges main's own pointer by the branch mark too, so a table whose pointer a register started on a branch's file is never walked (item 111).
+Module: catalog-core
+Test: ReconcileBranchFilesTest#aPointerOnABranchsFileWalksMainsFilesAfterIt
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+index 48880e7..1442b25 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Reconcile.java
+@@ -323,7 +323,8 @@ public final class Reconcile {
+     }
+ 
+     private Plan walk(CatalogObject table, Pointer from, Set<String> accept, Optional<List<ArchivedCommit>> archived) {
+-        List<String> listed = files.metadataFiles(table.locationRoot());
++        List<String> listed = files.metadataFiles(table.locationRoot()).stream()
++                .filter(location -> !TableFiles.onBranch(location)).toList();
+         if (!listed.contains(from.metadataLocation())) {
+             return stopped(table, from, List.of(), "storage does not hold the pointer's file "
+                     + from.metadataLocation() + "; storage is behind the database");

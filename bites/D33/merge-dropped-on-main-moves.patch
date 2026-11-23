@@ -1,0 +1,17 @@
+Breaks: a table dropped on main since the cut is planned to move instead of being reported as a conflict (item 26's choice 7).
+Module: catalog-core
+Test: MergeTest#conflictsMoveNothing
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+index be01593..7b77ccb 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+@@ -301,7 +301,7 @@ public final class Merge {
+         Optional<CatalogObject> object = store.readObject(entry.id());
+         Optional<Pointer> main = object.flatMap(o -> store.readPointer(o.mainKey()));
+         Since since = since(entry.id(), cut, main);
+-        if (object.isEmpty() || object.get().state() != CatalogObject.State.ACTIVE) {
++        if (object.isEmpty()) {
+             String gone = object.map(o -> o.state().name().toLowerCase(Locale.ROOT)
+                     + o.droppedAt().map(when -> " at " + when).orElse("")).orElse("purged");
+             return conflict(entry, namespace, object, cut, branch, main, since, "main has " + gone + " it");

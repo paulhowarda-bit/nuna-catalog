@@ -30,7 +30,7 @@ public class AuditEvents {
 
     private final RestSettings settings;
 
-    AuditEvents(RestSettings settings) {
+    public AuditEvents(RestSettings settings) {
         this.settings = settings;
     }
 
@@ -48,7 +48,7 @@ public class AuditEvents {
      * The commit events of a request that changes several objects, each named by {@code path}. A dropped
      * object brought back by a register is also an undrop; an unregister moves no pointer, so it is only that.
      */
-    CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
+    public CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
         return commit -> {
             Securable object = securable(commit.object(), catalog, path.apply(commit.object()));
             OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, commit.branch(),

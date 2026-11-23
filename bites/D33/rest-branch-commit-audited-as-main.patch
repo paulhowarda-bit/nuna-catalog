@@ -3,11 +3,11 @@ Module: catalog-server
 Test: RefReadsTest#aCommitOnABranchSwapsItsOwnPointer
 
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java b/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java
-index c449f8e..98b2630 100644
+index 4ece5e0..b9a1f91 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/rest/AuditEvents.java
 @@ -51,7 +51,7 @@ public class AuditEvents {
-     CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
+     public CommitEvents commits(String catalog, Function<CatalogObject, List<String>> path, Actor actor) {
          return commit -> {
              Securable object = securable(commit.object(), catalog, path.apply(commit.object()));
 -            OutboxEvent committed = event(commit.at(), new Commit(commit.commitId(), object, commit.branch(),

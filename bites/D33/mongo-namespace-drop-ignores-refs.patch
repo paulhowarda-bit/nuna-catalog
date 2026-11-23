@@ -1,0 +1,18 @@
+Breaks: a namespace drop on MongoDB reads no ref, so a namespace whose dropped table a tag still names is dropped with its regulated flag (security finding 7).
+Module: catalog-store-mongo
+Test: MongoStoreSuiteTest$Refs#aRefKeepsItsObjectsNamespace
+
+diff --git a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java
+index 24e8cb9..3e99272 100644
+--- a/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java
++++ b/catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoNamespaces.java
+@@ -159,9 +159,6 @@ final class MongoNamespaces {
+             List<BsonValue> objects = tx.collection(OBJECT).find(tx.session, new BsonDocument("namespaceId",
+                     uuid(namespaceId))).projection(new BsonDocument("_id", new BsonInt32(1)))
+                     .map(object -> object.get("_id")).into(new ArrayList<>());
+-            if (!MongoRefs.referenced(tx.database, tx.session, objects).isEmpty()) {
+-                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+-            }
+             UUID catalogId = uuid(namespace.get("catalogId"));
+             if (Guards.held(tx, namespaceId, catalogId, uuidList(namespace.get("ancestors")))) {
+                 return new WriteResult.Refused(WriteResult.Reason.HELD);

@@ -32,6 +32,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.bson.BsonArray;
 import org.bson.BsonDocument;
+import org.bson.BsonInt32;
 import org.bson.BsonString;
 import org.bson.BsonValue;
 
@@ -40,7 +41,10 @@ import org.bson.BsonValue;
  * A new namespace marks its parent namespace, so a concurrent drop of the parent conflicts with
  * it. A catalog is never removed, so a top-level namespace does not mark it, and creates under
  * one catalog do not conflict. The drop of a namespace marks its parent, catalog included, so a
- * namespace created later under the same name stamps higher than the drop.
+ * namespace created later under the same name stamps higher than the drop. A drop is refused while
+ * a ref's cut names a table or view of the namespace, in any state, read in the drop's snapshot as
+ * a purge claim reads refs, since a read through the ref takes its governance from the namespace
+ * (D33, backlog 157).
  */
 final class MongoNamespaces {
 
@@ -151,6 +155,12 @@ final class MongoNamespaces {
                     || tx.exists(OBJECT, new BsonDocument("namespaceId", uuid(namespaceId))
                     .append("state", new BsonString(CatalogObject.State.ACTIVE.name())))) {
                 return new WriteResult.Refused(WriteResult.Reason.NOT_EMPTY);
+            }
+            List<BsonValue> objects = tx.collection(OBJECT).find(tx.session, new BsonDocument("namespaceId",
+                    uuid(namespaceId))).projection(new BsonDocument("_id", new BsonInt32(1)))
+                    .map(object -> object.get("_id")).into(new ArrayList<>());
+            if (!MongoRefs.referenced(tx.database, tx.session, objects).isEmpty()) {
+                return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
             }
             UUID catalogId = uuid(namespace.get("catalogId"));
             if (Guards.held(tx, namespaceId, catalogId, uuidList(namespace.get("ancestors")))) {

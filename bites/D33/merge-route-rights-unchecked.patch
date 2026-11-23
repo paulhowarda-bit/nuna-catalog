@@ -1,0 +1,17 @@
+Breaks: the merge route asks no right on the tables it moves, so create on the catalog alone lands a schema change on a table the caller may only write (security finding 3; item 26's choice 12).
+Module: catalog-server
+Test: RefMergeRoutesTest#theRightFollowsTheChange
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index e913b81..4b1fa71 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -339,7 +339,7 @@ class RefRoutes {
+         Ref ref = branch(catalog, name, now);
+         String[] answer = new String[1];
+         Merge.Outcome outcome = merging(catalog, request).merge(ref, settings.maxMergeTables(), request.caller(),
+-                plan -> require(request, catalog, plan), merged -> {
++                plan -> { }, merged -> {
+                     answer[0] = Management.JSON.writeValueAsString(merged(merged, now));
+                     RefChange event = event(RefChange.Action.MERGED, ref, ref.expiresAt(), target.audit(), request,
+                             merged.moved().stream().map(moved -> securable(catalog, moved.table())).toList());

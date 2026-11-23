@@ -1,0 +1,17 @@
+Breaks: main's rules judge a merge with the DR freeze lifted, as for a commit on a branch, so a merge lands on a frozen table (Paul, 2026-11-22: a freeze binds the merge; security finding 3).
+Module: catalog-core
+Test: MergeTest#aFreezeRefusesTheMerge
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index 3f13783..8aff527 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -1137,7 +1137,7 @@ public final class CommitEngine {
+ 
+     Optional<Failure> judge(CatalogObject object, Facts before, Facts after, CommitRule.Governance governance) {
+         CommitRule.Change change = new CommitRule.Change(object, before, after, clock.instant(),
+-                branch.isPresent() ? unfrozen(governance) : governance);
++                unfrozen(governance));
+         for (CommitRule rule : rules) {
+             Optional<Rejection> rejection = rule.judge(change);
+             if (rejection.isPresent()) {
