@@ -197,6 +197,39 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * Go to a path opens a full dotted path the console has not listed yet, looking up each level as a deep link
+     * does, from a page with no tree; a path that is not there says so, and a word with no match says what was
+     * searched (Atelier's review, F1; backlog 185).
+     */
+    @Test
+    void goToAPathOpensAFullDottedPathNotListedYet() {
+        String path = top + ".equities.eu.trades";
+        signIn(tester());
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis"));
+        browser.await(By.cssSelector(".nc-go")).click();
+        WebElement box = browser.await(By.id("goto-in"));
+        box.sendKeys(path);
+        browser.await(By.cssSelector("#goto-list [data-goto-path='" + path + "']"));
+        box.sendKeys(Keys.ENTER);
+        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        assertThat(driver.getCurrentUrl()).contains("k=table", "n=trades", "ns=" + top + "%1Fequities%1Feu");
+
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis"));
+        browser.await(By.cssSelector(".nc-go")).click();
+        box = browser.await(By.id("goto-in"));
+        box.sendKeys("zzqq");
+        assertThat(textContent(browser.await(By.cssSelector("#goto-list li.none"))))
+                .startsWith("Not found among the ").contains("listed so far in trading").doesNotContain("fewer words");
+        box.clear();
+        box.sendKeys(top + ".equities.nothing_here");
+        box.sendKeys(Keys.ENTER);
+        browser.await(By.cssSelector("#goto-list [data-goto-none='" + top + ".equities.nothing_here']"));
+        assertThat(driver.getCurrentUrl()).endsWith("#p=overview&c=trading");
+    }
+
+    /**
      * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
      * them answers (backlog 137): the last commit is the newest entry of the table's metadata log. Each child
      * namespace gets its totals over the tables beneath it (backlog 147).

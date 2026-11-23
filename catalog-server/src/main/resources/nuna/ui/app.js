@@ -4,8 +4,8 @@
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
-import {$, $$, failure, fill, h, icon, pill} from './dom.js';
-import {href, objectHref, pageHref, parse, remembered, SEP} from './route.js';
+import {$, $$, failure, fill, fmt, h, icon, pill} from './dom.js';
+import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
 import {maintenancePage} from './maintenance.js';
@@ -313,8 +313,21 @@ function gotoCandidates() {
   return seen;
 }
 
+/** A full dotted path typed into Go to a path, such as markets.fx.rates, or null. */
+const dottedTyped = () => {
+  const typed = gotoIn.value.trim();
+  return /^[^\s./]+(\.[^\s./]+)+$/.test(typed) ? typed : null;
+};
+
+/** The ref the page shown reads, which Go to a path keeps (item 173): none off the browse pages and on a ref's own page. */
+const readingNow = () => {
+  const r = parse();
+  return !r.page && r.k !== 'ref' ? r.r : null;
+};
+
 function gotoDraw() {
   const words = gotoIn.value.trim().toLowerCase().split(/[\s./]+/).filter(Boolean);
+  const typedPath = dottedTyped();
   const all = gotoCandidates();
   const marks = new Map(queued.map(r => [keyOfRow(r), r]));
   if (!words.length) {
@@ -325,12 +338,24 @@ function gotoDraw() {
     gotoItems = all.filter(x => words.every(w => x.path.toLowerCase().includes(w)))
       .sort((a, b) => (a.target.kind === 'namespace') - (b.target.kind === 'namespace') || a.path.length - b.path.length).slice(0, 9);
     gotoH.textContent = gotoItems.length ? `${gotoItems.length === 9 ? 'First 9' : gotoItems.length} match${gotoItems.length === 1 ? '' : 'es'}`
-      : 'No path matches';
+      : 'No path listed so far matches';
+    // A full dotted path opens even when the console has not listed it yet: Enter looks it up, level by level, as a
+    // deep link does (Atelier's review, F1).
+    if (typedPath && !gotoItems.some(x => x.path === typedPath)) {
+      gotoItems = [{target: {kind: 'path'}, path: typedPath}, ...gotoItems].slice(0, 9);
+      if (gotoItems.length === 1) gotoH.textContent = 'Not listed so far; Enter looks it up';
+    }
   }
   gotoAt = Math.min(gotoAt, Math.max(0, gotoItems.length - 1));
   gotoList.replaceChildren(...gotoItems.map((it, i) => {
     const parts = it.path.split('.');
     const kind = it.target.kind;
+    if (kind === 'path') {
+      const li = h('li', {role: 'option', id: 'goto-o' + i, 'aria-selected': String(i === gotoAt), 'data-goto-path': it.path},
+        icon('search', 'ic'), h('span', {class: 'gp'}, 'Open ', h('b', null, it.path)), h('span', {class: 'gx'}, h('span', {class: 'badge'}, 'look up')));
+      li.addEventListener('click', () => gotoOpen(i));
+      return li;
+    }
     const row = kind === 'table' ? marks.get([cat, it.path].join('.')) : null;
     const reasons = row ? row.assessment.reasons || [] : [];
     const extra = kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
@@ -348,8 +373,8 @@ function gotoDraw() {
     return li;
   }));
   if (!gotoItems.length) {
-    gotoList.append(h('li', {class: 'none'}, 'Try fewer words. Go to a path finds the paths the console has listed so far: open a '
-      + 'namespace in the tree to list what is in it.'));
+    gotoList.append(h('li', {class: 'none'}, `Not found among the ${fmt(all.length)} ${all.length === 1 ? 'name' : 'names'} listed so far in ${cat}. `
+      + 'Open a namespace, or type the full dotted path, such as markets.fx.rates.'));
   }
   gotoMark();
 }
@@ -368,8 +393,64 @@ function gotoMark() {
 function gotoOpen(i) {
   const it = gotoItems[i];
   if (!it) return;
+  if (it.target.kind === 'path') {
+    lookUp(it.path);
+    return;
+  }
   gotoDlg.close();
-  location.hash = objectHref(it.target, gotoTab === 'audit' ? 'audit' : null);
+  location.hash = objectHref({...it.target, ref: readingNow()}, gotoTab === 'audit' ? 'audit' : null);
+}
+
+const absent = error => {
+  if (error && error.status === 404) return [];
+  throw error;
+};
+
+/**
+ * Finds a dotted path in the catalog shown, through the ref it reads: a namespace by that path, else a table or a view
+ * named by its last part in the namespace above it. Null when there is none.
+ */
+async function find(path) {
+  const parts = path.split('.');
+  const ref = readingNow();
+  const wh = warehouseOf({catalog: cat, ref});
+  const found = {catalog: cat, ref};
+  try {
+    await api.namespace(wh, parts);
+    return {...found, kind: 'namespace', namespace: parts};
+  } catch (error) {
+    absent(error);
+  }
+  if (parts.length < 2) return null;
+  const levels = parts.slice(0, -1);
+  const name = parts[parts.length - 1];
+  const [tables, views] = await Promise.all([api.tables(wh, levels).catch(absent), api.views(wh, levels).catch(absent)]);
+  if (tables.some(t => t.name === name)) return {...found, kind: 'table', namespace: levels, name};
+  if (views.some(v => v.name === name)) return {...found, kind: 'view', namespace: levels, name};
+  return null;
+}
+
+async function lookUp(path) {
+  const asked = gotoIn.value;
+  gotoH.textContent = `Looking up ${path} in ${cat}…`;
+  let target;
+  try {
+    target = await find(path);
+  } catch (error) {
+    if (gotoIn.value !== asked) return;
+    gotoH.textContent = `Could not look up ${path}`;
+    gotoList.replaceChildren(h('li', {class: 'none'}, failure(error, {compact: true})));
+    return;
+  }
+  if (!gotoDlg.open || gotoIn.value !== asked) return;
+  if (!target) {
+    gotoH.textContent = `No namespace, table or view ${path} in ${cat}`;
+    gotoList.replaceChildren(h('li', {class: 'none', 'data-goto-none': path}, `${cat} has no namespace, table or view at ${path} that `
+      + 'your groups may see. Check the spelling, or type part of the name to search what is listed.'));
+    return;
+  }
+  gotoDlg.close();
+  location.hash = objectHref(target, gotoTab === 'audit' ? 'audit' : null);
 }
 
 async function openGoto(tab = null) {
