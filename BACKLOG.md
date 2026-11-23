@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**27 open:** 3 S, 9 M, 10 L, 5 XL.
+**33 open:** 3 S, 10 M, 14 L, 6 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -39,6 +39,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
+| [150](backlog/150.md) | L | Brokerage world 1: the ledger world in Iceberg, booked by the kit's posting engine ported to Java | a new Gradle module (the engine port and its golden, the world's calendar, securities, prices, accounts and personas, the Java writer) and its place in `demo.sh up`; waits on nothing | 2026-11-22 |
+| [151](backlog/151.md) | L | Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB | the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150 | 2026-11-22 |
+| [152](backlog/152.md) | L | Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode | the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (kit v15) for wires, ACH returns, journals and fees and (kit v16) for ACATS | 2026-11-22 |
+| [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (kit v16) for dividends and splits | 2026-11-22 |
+| [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
+| [155](backlog/155.md) | XL | Ledger kit v15 and v16: templates and booking schemes for the events the brokerage world needs (D48) | two kit versions, each with new messages in schema 20, booking schemes in schema 12, ledger account definitions in schema 11, workbook sheets and checks, and the kit's reviews; waits on nothing | 2026-11-22 |
 
 ## Open items in full
 
@@ -1332,6 +1338,167 @@ Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-1
 The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
+
+### 150. Brokerage world 1: the ledger world in Iceberg, booked by the kit's posting engine ported to Java
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ settings.gradle.kts demo/demo.sh demo/LakeWriter.java demo/k8s/ demo/README.md
+- Effort: L, a new Gradle module (the engine port and its golden, the world's calendar, securities, prices, accounts and personas, the Java writer) and its place in `demo.sh up`; waits on nothing
+
+The demo's data is a handful of sample tables (`demo/LakeWriter.java`): Xetra trades, FX rates, US quotes, and a toy
+`finance.ledger` with a `journal` and an `accounts` table. Nothing joins, nothing ties out, and none of it is a
+brokerage. D48 and `docs/design/brokerage-world.md` set out the generator; this is its first phase.
+
+What to build:
+- `demo-datagen`, a Gradle module: the posting engine of Paul's ledger kit v14 ported to Java, reading the 22 booking
+  schemes and the chart of accounts as data exported from the kit (`defs.py`, `schemes_v20.py`, checked against the
+  estate guard's whole deny list first; nothing else from the kit enters the repo).
+- The world at its simplest: the NYSE calendar with T+1, about 300 synthetic securities with identifiers that cannot be
+  real (the design's list), closing prices, parties and accounts, and personas that produce only the transactions the
+  kit has templates for (30 to 35, 40 to 47, 51 and 52, 60 to 65). Seed, anchor date and scale give the same bytes.
+- The Java writer (a Job, like the lake writer) for `brokerage.reference`, `brokerage.markets.prices_eod`,
+  `brokerage.party.accounts` and every `brokerage.ledger` table and view: one commit per business day, a tag
+  `eod-YYYY-MM-DD` on the ledger's balances, `financial_transactions` starting on the v13 shape and gaining
+  `locate_id` when short selling starts, and the views `buying_power` and `running_collected_balance` (R17: derived,
+  never posted). Classifications and the regulated mark as the design's namespace table gives them.
+- `demo.sh up` runs it; the toy `finance.ledger` tables go (the D27 refusal they show moves to
+  `party.beneficial_owners` in item 152; until then the console shows none).
+
+What done looks like:
+- In the fast build: the port reproduces `events_v8.json` (44 financial transactions, 289 journal lines, every one
+  matching) and the kit's own checks (`kit_checks()` in `schemes_v20.py`: LotNotHeld, BalanceBelowZero, the mirror
+  proof, the rounding cases); the same seed gives the same output twice; a 1,000-account month posts with no halt.
+- On the demo: the console shows `brokerage.ledger` with one snapshot and one tag per business day, and the views
+  answer in Trino as `ana`.
+
+Choices made (Paul may overrule): Java rather than Python; the root namespace `brokerage`; 1,000 accounts over a month.
+
+### 151. Brokerage world 2: trading and custody, the OMS in SingleStore and the stock record and CNS in CockroachDB
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/singlestore/ demo/cdc/cockroach.sql demo/cdc/connectors/ demo/demo.sh demo/README.md
+- Effort: L, the OMS tables in SingleStore and their change feed, the clearing domain in CockroachDB and Iceberg, and three reconciliation views; waits on item 150
+
+Second phase of D48 (`docs/design/brokerage-world.md`). The ledger's fills come from somewhere: an order management
+system and a clearing house.
+
+What to build:
+- In SingleStore `ops`, replacing the toy `ops.orders`: orders, order events, routes and executions, consistent with
+  the ledger's fills (same fill ids, prices, quantities), copied to `brokerage.trading` by the change feed; securities
+  and closing prices loaded back from Iceberg by Iceberg pipelines.
+- `brokerage.clearing`: CNS obligations per security and settlement date, settlements, fails, the stock record by
+  location, locates (the kit's `locateId` joins them to short sales). Backfilled to Iceberg, and loaded into
+  CockroachDB `custody` for the CDC leg in place of the toy `positions.holdings`.
+- `brokerage.recon` views for ties 1, 3 and 4 of the design.
+- Seeded break: one fail to deliver aged into a Reg SHO 204 close-out.
+
+What done looks like: on a clean world the three views return no rows, and with the seeded break exactly the seeded
+rows, read in Trino as `ana`; an `UPDATE` to an order in SingleStore reaches `brokerage.trading.orders` as before.
+
+### 152. Brokerage world 3: party, money movement and compliance, the CDC sources, the governance moments and live mode
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/cdc/ demo/k8s/cdc.yaml demo/k8s/keycloak-realm.json demo/k8s/demo-values.yaml demo/CloudBeaverUsers.java demo/demo.sh demo/README.md
+- Effort: L, the PostgreSQL and Oracle sources, the compliance domain, the governance set-up and a live mode over the CDC leg; waits on item 151, and on item 155 (kit v15) for wires, ACH returns, journals and fees and (kit v16) for ACATS
+
+Third phase of D48 (`docs/design/brokerage-world.md`).
+
+What to build:
+- PostgreSQL `backoffice`, replacing the toy `settlement.instructions`: parties, accounts, roles, CIP checks,
+  suitability profiles, beneficial owners, trusted contacts, payments, ACH returns, ACATS transfers, complaints, AML
+  alerts and cases. Oracle `treasury`: bank payments, replacing the toy `PAYMENTS`. Their histories land in
+  `brokerage.party`, `brokerage.money_movement` and `brokerage.compliance` through Debezium and the Iceberg sink, with
+  current-state views; the backfill writes the same histories in the sink's shape.
+- Sanctions screening against a synthetic list in OFAC's SDN layout; surveillance alerts; seeded structuring deposits
+  and one sanctions match.
+- Governance: the classifications and regulated namespaces of the design's table; tax ids, birth dates, addresses and
+  bank account numbers flagged (D20); a legal hold on `compliance.aml_cases`; `party.beneficial_owners` landing
+  unclassified, so the catalog refuses it (D27) until a steward classifies it; a new person `cora` (password
+  `cora-demo`) in a new group `demo-compliance`, the only group that reads `compliance`, in Keycloak, CloudBeaver and
+  the catalog's grants.
+- `demo.sh live`: with the CDC leg up, the sources loaded with the month's end state, Debezium started without
+  snapshotting those rows, the next business day played at a compressed clock; the ledger's transactions and postings
+  on Kafka topics the Iceberg sink writes to `brokerage.ledger`, visible in kafbat.
+- The events kit v15 and v16 add (item 155), once each version is in the port.
+
+What done looks like: a live day reaches every history table with no gap and no duplicate against the backfill (a
+count per table and key); `ana` is refused `compliance` and `cora` reads it; a snapshot expiry on `aml_cases` is
+refused while the hold stands; `stella` classifying `beneficial_owners` ends its refusal.
+
+Choice made (Paul may overrule): one new person, `cora`, for compliance.
+
+### 153. Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/cdc/oracle.sql demo/demo.sh demo/README.md
+- Effort: L, the firm-level domains and the month-end close; waits on item 152, and on item 155 (kit v16) for dividends and splits
+
+Fourth phase of D48 (`docs/design/brokerage-world.md`).
+
+What to build:
+- The General Ledger in Oracle (`brokerage.finance`) and its tie to the sub-ledgers (ControlOfTotal); margin
+  (`brokerage.margin`: house requirements, account snapshots with the intraday margin level of FINRA 4210 as amended
+  from 2026-06-04, calls); the 15c3-3 reserve computation and net capital (`brokerage.regulatory`).
+- Tax lots and realizations with wash sales, 1099-B lines (`brokerage.tax`); confirms and month-end statements
+  (`brokerage.client_reporting`); best-execution reviews; CAT order events and a Rule 606 report.
+- Asset servicing (`brokerage.reference.corporate_actions`, `brokerage.asset_servicing`) once kit v16 books it.
+- The month-end close as one multi-table commit (`/transactions/commit`) with a tag `month-end-YYYY-MM`; a trade bust
+  after the close corrected on a branch and merged, while the tag keeps what the statements said.
+- Spark as the month-end batch where the demo's memory allows (it needs Trino stopped); the Java writer otherwise.
+- The remaining ties of the design (2 and 5 to 9) as `brokerage.recon` views.
+
+What done looks like: every tie holds on a clean world and returns exactly the seeded rows otherwise; reading the
+statements at the month-end tag after the bust's correction gives what they said before it.
+
+### 154. Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/ demo/demo.sh demo/README.md demo/k8s/ docs/install-at-work.md
+- Effort: M, two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153
+
+Fifth phase of D48 (`docs/design/brokerage-world.md`).
+
+What to build: five-minute bars and live quotes (`brokerage.markets`) and sessions and click events
+(`brokerage.digital`) on Kafka through the Iceberg sink in live mode; maintenance policies per namespace (short
+snapshot retention and frequent compaction on the streaming tables, D30); the scale setting (accounts, days), with a
+note in `docs/install-at-work.md` on sizing it there.
+
+What done looks like: after a live day the health dashboard (D38) ranks the streaming tables among the neediest, and a
+maintenance run fixes them without touching the held `compliance.aml_cases`.
+
+### 155. Ledger kit v15 and v16: templates and booking schemes for the events the brokerage world needs (D48)
+
+- Decided: 2026-11-22, D48
+- Added: 2026-11-22 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: none (Paul's ledger kit lives outside this repo)
+- Effort: XL, two kit versions, each with new messages in schema 20, booking schemes in schema 12, ledger account definitions in schema 11, workbook sheets and checks, and the kit's reviews; waits on nothing
+
+Paul chose to extend the kit rather than keep the brokerage world inside it or show the events it cannot book as
+unbooked (D48, "C: extend the kit"). Kit v14 books cash and ACH money movement, long and short equities and margin
+interest; a month at a brokerage also has the events below, and the generator does not produce one until the kit can
+book it. The order follows the phases that need them (`docs/design/brokerage-world.md`; a choice Paul may overrule):
+
+- Kit v15, money and fees (item 152): wire deposit received; wire withdrawal initiated, settled and cancelled; an ACH
+  deposit returned before and after settlement, with its Nacha return code; a cash journal between two brokerage
+  accounts; an account fee charged and reversed (wire fee, ACATS-out fee, hard-to-borrow fee on shorts); short sell
+  and buy to cover cancelled (v14's own "not done").
+- Kit v16, transfers and asset servicing (items 152 and 153): ACATS received (cash, and positions whose lots carry the
+  delivering firm's cost and acquisition date) and delivered (lots out at remaining cost, no gain); a cash dividend on
+  a long position (entitled at the ex-date, paid on the pay date); a payment in lieu charged to a short position;
+  forward and reverse splits (lots rescaled, cost unchanged, cash in lieu of fractions).
+
+Each version is built the way v14 was: the workbook first, with its checks; then the schemas, the booking schemes and
+the engine, whose run must print ALL MATCH for every financial transaction of the new workbook and pass every check;
+then the change list and the kit's reviews (margin, CPA, ledger). The port in `demo-datagen` follows each version: new
+booking schemes as data, new calculations as code, and the new version's golden in its tests.
+
+What done looks like: kit v15 and v16 exist beside v14 with their workbooks, schemas, engine runs and change lists; the
+port reproduces each version's golden in the fast build.
 
 ## Done and dropped
 
