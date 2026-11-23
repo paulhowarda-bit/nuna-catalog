@@ -197,8 +197,9 @@ class NamespaceRoutes {
                                 Reply.error(409, "NamespaceNotEmptyException",
                                         "Namespace " + Http.dotted(levels) + " is not empty");
                         case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
-                                throw Http.forbidden("Namespace " + Http.dotted(levels)
-                                        + " is under a legal hold and cannot be dropped");
+                                throw guard.refuse(request, catalog, record, levels, Guard.DROP_NAMESPACE, "legal_hold",
+                                        "Namespace " + Http.dotted(levels)
+                                                + " is under a legal hold and cannot be dropped");
                         default -> throw new IllegalStateException("dropNamespace answered " + result);
                     };
                 });

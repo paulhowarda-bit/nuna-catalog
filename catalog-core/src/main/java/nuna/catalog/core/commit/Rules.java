@@ -96,7 +96,8 @@ public final class Rules {
      * A snapshot younger than the deployment's minimum snapshot age, or than its table's retention class allows,
      * may not be removed (D24, D30): the guardrail holds whoever expires snapshots, the maintenance worker or an
      * engine. The larger of the two minimums applies; governance is read only when a commit removes a snapshot
-     * the deployment's minimum alone lets go.
+     * the deployment's minimum alone lets go. A refusal is audited as a denial with reason {@code snapshot_min_age}
+     * (D18).
      *
      * @param deploymentMinimum the minimum age of every snapshot ({@code nuna.governance.minimum-snapshot-age})
      * @param classMinimum      the minimum snapshot age of a retention class, empty for a class with none
@@ -130,8 +131,9 @@ public final class Rules {
         for (Map.Entry<Long, Long> snapshot : before.snapshotTimestamps().entrySet()) {
             if (!after.snapshotTimestamps().containsKey(snapshot.getKey())
                     && Instant.ofEpochMilli(snapshot.getValue()).isAfter(youngestRemovable)) {
-                return Optional.of(Rejection.forbidden("Snapshot " + snapshot.getKey() + " of " + change.object().id()
-                        + " is younger than " + minimum + ", " + whose + ": it cannot be removed yet"));
+                return Optional.of(Rejection.refused("snapshot_min_age", "Snapshot " + snapshot.getKey() + " of "
+                        + change.object().id() + " is younger than " + minimum + ", " + whose
+                        + ": it cannot be removed yet"));
             }
         }
         return Optional.empty();
