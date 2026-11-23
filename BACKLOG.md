@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**33 open:** 3 S, 10 M, 15 L, 5 XL.
+**34 open:** 3 S, 11 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -45,6 +45,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [153](backlog/153.md) | L | Brokerage world 4: the firm's books and reporting, the GL, margin, the reserve, tax, statements and CAT | the firm-level domains and the month-end close; waits on item 152, and on item 155 (the demo kit's templates) for dividends and splits | 2026-11-22 |
 | [154](backlog/154.md) | M | Brokerage world 5: volume and upkeep, streaming tables, maintenance policies and the scale setting | two streams through the existing sink, maintenance policies per namespace and a scale setting; waits on item 153 | 2026-11-22 |
 | [155](backlog/155.md) | L | The demo kit: templates and booking schemes for the events the brokerage world needs beyond ledger kit v14 (D48) | about sixteen templates as booking-scheme data, two new calculations (lots received by transfer, lots rescaled by a split) and the engine's tests; waits on item 150 (the port) | 2026-11-22 |
+| [156](backlog/156.md) | M | Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6) | one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files | 2026-11-22 |
 
 ## Open items in full
 
@@ -1501,6 +1502,48 @@ a brokerage person.
 
 What done looks like: for each template, a lifecycle on a cash and a margin account runs through the engine in the
 fast build with every self-check passing, and the generator produces those events.
+
+### 156. Remove a table from refs: an audited route, gated by manage-tags, so a dropped table's data can leave tags (item 26, finding 6)
+
+- Decided: 2026-11-22, D33 (amended)
+- Added: 2026-11-22 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
+- Touches: catalog-store-api/src/main/java/nuna/catalog/store/RefStore.java catalog-store-api/src/test/java/nuna/catalog/store/suite/RefSuite.java catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleRefs.java catalog-store-mongo/src/main/java/nuna/catalog/store/mongo/MongoRefs.java catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/RefRoutesTest.java bites/D33/
+- Effort: M, one store operation on four stores and their suite, one route with its audit event, tests and bites; waits on items 105, 106 and 108, which hold the same files
+
+## What is wrong
+
+Data dropped on main can stay readable forever and can never be purged. The security review of branches (item 26,
+2026-11-22, finding 6) found the protection a ref gives a table is all or nothing:
+
+- A purge claim is refused while any ref's cut names the object (`SqlObjects.claimPurge`, the `ref_entry` check).
+- Tags never expire, and a ref made from another copies its cut (`SqlRefs`), so the protection can be carried on
+  indefinitely.
+- Any holder of `create` on the catalog can make or delete a tag (`RefRoutes`). The table's owners cannot take their
+  table out of a tag; the only way out is to delete the whole tag, which may be someone else's point-in-time record.
+
+So personal data loaded by mistake and dropped on main stays readable on every older tag to anyone still holding
+select on it, and its files are never purged.
+
+## The decision
+
+Paul, 2026-11-22, asked whether table owners should be able to remove a dropped table from tags or whether to accept
+that dropping does not remove data: "Yes, add the route" (D33, amended).
+
+## What done looks like
+
+- A management route removes one table or view from refs: from every ref of the catalog, or from the refs it names.
+  It takes the object by id, so it reaches an object main has dropped or unregistered.
+- It needs `manage-tags` on the object (inherited as every privilege is). That right is in the TAGS duty, which D18's
+  separation of duties keeps apart from DATA, so a data writer cannot use it to erase history. A refusal is audited
+  through `Guard.refused` and follows Holdings (404 for a caller holding nothing, 403 otherwise).
+- It is refused while the object is under a legal hold (D24) or a DR freeze (D37), with a denial.
+- In one transaction on each of the four stores it deletes the object's `ref_entry` rows and any branch pointer for it
+  in the named refs. Once no ref names a dropped object, its purge claim goes through as for any dropped object.
+- It publishes a `ref` audit event naming the object and each ref it left, through the outbox.
+- Reads of the object through a ref it left answer 404, as for a name the cut never held.
+- Tests: `RefSuite` on all four stores (heavy); `RefRoutesTest` (fast) for the right, the hold and freeze refusals, the
+  audit event and the 404 afterwards. Bites in `bites/D33/`: the right check removed; the hold check removed; the
+  `ref_entry` delete skipped.
 
 ## Done and dropped
 
