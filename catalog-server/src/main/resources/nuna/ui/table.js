@@ -597,7 +597,9 @@ function partitionTab(target, t) {
 
 /**
  * What one commit changed, in a few words: its update actions, each once, in order. A create, a registration and a
- * revive (a registration of a dropped table's file, at a later version) keep their request instead of a list of updates.
+ * revive (a registration of a dropped table's file, at a later version) keep their request instead of a list of updates;
+ * all three are main's. A commit on a branch, its first included, keeps the engine's list of updates like any commit:
+ * the branch's version 1 is made from the cut's file, not created.
  */
 function changeWords(updates, version) {
   if (updates && !Array.isArray(updates)) {
@@ -626,9 +628,12 @@ function metadataLogTab(target, t) {
   let shown = 0;
   const row = e => {
     const btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false',
-      'aria-label': `Version ${e['new-version']}, what it changed`}, 'Show');
-    const tr = h('tr', {class: e['new-location'] === t['metadata-location'] ? 'is-cur' : null, 'data-version': String(e['new-version'])},
-      h('td', {class: 'num'}, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
+      'aria-label': `Version ${e['new-version']}${e.branch ? ` on ${e.branch === 'main' ? 'main' : '@' + e.branch}` : ''}, what it changed`}, 'Show');
+    // Through a ref, each entry names its line: the branch's own versions number from 1, so main's can share them.
+    const line = e.branch ? h('span', {class: 'mlog-line'}, e.branch === 'main' ? 'main' : '@' + e.branch) : null;
+    const tr = h('tr', {class: e['new-location'] === t['metadata-location'] ? 'is-cur' : null, 'data-version': String(e['new-version']),
+      'data-line': e.branch || null},
+      h('td', {class: 'num'}, line, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
       h('td', {class: 'wrap'}, changeWords(e.updates, e['new-version'])), h('td', {class: 'by'}, byWords(e)), h('td', null, btn));
     const det = h('tr', {class: 'mlog-det', hidden: true}, h('td', {colspan: '5'},
       h('p', {class: 'fine'}, code(e['new-location'] || '')), jsonPre({'commit-id': e['commit-id'], updates: e.updates || []})));

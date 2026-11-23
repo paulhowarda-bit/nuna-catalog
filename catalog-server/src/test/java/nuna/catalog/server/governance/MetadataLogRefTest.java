@@ -53,10 +53,12 @@ import tools.jackson.databind.JsonNode;
 
 /**
  * A table's metadata log read through a catalog ref (D33, backlog 109): through a branch, the versions it committed of
- * its own come from its own journal and the rest from main's, below and at the cut, never main's commits since; through
- * a tag, main's log as the cut left it; through a ref made from a branch, that branch's own versions below the cut,
- * then main's; through a ref made from one that has ended, the log stops at the cut unless main wrote it. The route,
- * guard and authorizer are the real ones over a store double, so this needs only Java.
+ * its own come from its own journal, numbered from 1 as the store numbers them (item 105), and then main's, at and below
+ * the cut, never main's commits since; through a tag, main's log as the cut left it; through a ref made from a branch,
+ * that branch's own versions up to its cut, then main's; through a ref made from one that has ended, the log stops at
+ * the cut unless main wrote it. Two lines hold the same version numbers, so each entry names its line and a page token
+ * names the line it stopped in. The route, guard and authorizer are the real ones over a store double, so this needs
+ * only Java; {@code RefMergeRoutesTest} reads the log of commits the real commit engine made on a branch.
  */
 class MetadataLogRefTest {
 
@@ -74,20 +76,24 @@ class MetadataLogRefTest {
     private final List<GrantRecord> grants = List.of(new GrantRecord(new Grant(catalog.id(),
             new Securable(Securable.Kind.NAMESPACE, hr.id()), "readers", Privilege.SELECT.wireName()), "test",
             Instant.EPOCH));
-    /** Made when main was at version 3; it committed 4 to 6 of its own. Main went on to 5. */
+    /** Made when main was at version 3; it committed its own versions 1 to 3. Main went on to 5. */
     private final Ref dev = ref("dev", Ref.Kind.BRANCH);
     /** Made when main was at version 3. */
     private final Ref v1 = ref("v1", Ref.Kind.TAG);
     /** Its cut does not hold staff, as for a table made after it. */
     private final Ref later = ref("later", Ref.Kind.BRANCH);
-    /** Made from dev when dev was at version 6, while main was at 5. */
+    /** Made from dev when dev was at its own version 3, while main was at 5: the same number as dev's cut. */
     private final Ref v2 = ref("v2", Ref.Kind.TAG, dev);
-    /** Made from dev when dev was at version 6; it committed 7 and 8 of its own. */
+    /** Made from dev when dev was at its own version 3; it committed its own versions 1 and 2. */
     private final Ref dev2 = ref("dev2", Ref.Kind.BRANCH, dev);
-    /** Made from a branch that has since ended, at the branch's own version 4. */
+    /** Made from a branch that has since ended, at the branch's own version 2: main's 2 is another file. */
     private final Ref orphan = ref("orphan", Ref.Kind.TAG, ref("old", Ref.Kind.BRANCH));
     /** Made from a branch that has since ended, which had not changed staff: its cut is main's version 3. */
     private final Ref kept = ref("kept", Ref.Kind.TAG, ref("older", Ref.Kind.BRANCH));
+    /** Made when main was at version 3; it has not changed staff. */
+    private final Ref quiet = ref("quiet", Ref.Kind.BRANCH);
+    /** Made from quiet, which had no pointer of its own for staff: its cut is quiet's, main's version 3. */
+    private final Ref hush = ref("hush", Ref.Kind.TAG, quiet);
     private final Map<PointerKey, List<JournalRecord>> journals = new HashMap<>();
 
     private final LifecycleRoutes lifecycle;
@@ -96,8 +102,8 @@ class MetadataLogRefTest {
     MetadataLogRefTest() {
         http.setAttribute(RequestIds.class.getName(), "request-1");
         journals.put(staff.mainKey(), journal(staff.mainKey(), "main", 1, 5));
-        journals.put(dev.key(staffId), journal(dev.key(staffId), "dev", 4, 6));
-        journals.put(dev2.key(staffId), journal(dev2.key(staffId), "dev2", 7, 8));
+        journals.put(dev.key(staffId), journal(dev.key(staffId), "dev", 1, 3));
+        journals.put(dev2.key(staffId), journal(dev2.key(staffId), "dev2", 1, 2));
         CatalogStore store = store();
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, null);
@@ -130,29 +136,48 @@ class MetadataLogRefTest {
     void throughABranchItsOwnVersionsComeFromItsJournalAndTheRestFromMainsAtTheCut() {
         JsonNode log = log("DEV", null, null);
 
-        assertThat(log.get("pointer").get("version").asLong()).isEqualTo(6);
-        assertThat(log.get("pointer").get("metadata-location").asString()).isEqualTo("dev-6");
+        assertThat(log.get("pointer").get("version").asLong()).isEqualTo(3);
+        assertThat(log.get("pointer").get("metadata-location").asString()).isEqualTo("dev-3");
         assertThat(log.get("ref").get("name").asString()).isEqualTo("dev");
         assertThat(log.get("ref").get("kind").asString()).isEqualTo("branch");
         assertThat(log.get("ref").get("cut-version").asLong()).isEqualTo(3);
         assertThat(locations(log)).as("main's 4 and 5, made since the cut, are not the branch's")
-                .containsExactly("dev-6", "dev-5", "dev-4", "main-3", "main-2", "main-1");
+                .containsExactly("dev-3", "dev-2", "dev-1", "main-3", "main-2", "main-1");
+        assertThat(versions(log)).containsExactly(3L, 2L, 1L, 3L, 2L, 1L);
+        assertThat(lines(log)).containsExactly("dev", "dev", "dev", "main", "main", "main");
     }
 
     @Test
     void throughABranchThePagesCrossTheCutWithoutAGapOrARepeat() {
-        List<String> read = new ArrayList<>();
-        String token = null;
-        int pages = 0;
-        do {
-            JsonNode log = log("dev", token, 4);
-            read.addAll(locations(log));
-            token = log.has("next-page-token") ? log.get("next-page-token").asString() : null;
-            pages++;
-        } while (token != null);
+        for (int size = 1; size <= 7; size++) {
+            List<String> read = new ArrayList<>();
+            String token = null;
+            int pages = 0;
+            do {
+                JsonNode log = log("dev", token, size);
+                read.addAll(locations(log));
+                token = log.has("next-page-token") ? log.get("next-page-token").asString() : null;
+                pages++;
+            } while (token != null);
 
-        assertThat(read).containsExactly("dev-6", "dev-5", "dev-4", "main-3", "main-2", "main-1");
-        assertThat(pages).isEqualTo(2);
+            assertThat(read).as("pages of " + size + ": the branch's 3 to 1, then main's 3 to 1, each once")
+                    .containsExactly("dev-3", "dev-2", "dev-1", "main-3", "main-2", "main-1");
+            assertThat(pages).isEqualTo((6 + size - 1) / size);
+        }
+    }
+
+    @Test
+    void aPageTokenNamesItsLineAndMainsTokenIsNotOne() {
+        JsonNode first = log("dev", null, 4);
+        String token = first.get("next-page-token").asString();
+
+        assertThat(PageToken.decode(token, 2).getFirst()).as("main's line, by its key").isEqualTo(PointerKey.MAIN);
+        assertThat(locations(log("dev", token, 4))).containsExactly("main-2", "main-1");
+        String mains = log(null, null, 2).get("next-page-token").asString();
+        assertThatThrownBy(() -> log("dev", mains, 4)).as("a version alone cannot say which line")
+                .isInstanceOfSatisfying(CatalogError.class, e -> assertThat(e.status()).isEqualTo(400));
+        assertThat(locations(log("dev", PageToken.encode(UUID.randomUUID().toString(), "2"), 4)))
+                .as("a line the log no longer reads, as when the branch it named has ended").isEmpty();
     }
 
     @Test
@@ -168,10 +193,11 @@ class MetadataLogRefTest {
     void throughARefMadeFromABranchTheVersionsBelowItsCutAreTheBranchsThenMains() {
         JsonNode tag = log("v2", null, null);
 
-        assertThat(tag.get("pointer").get("metadata-location").asString()).isEqualTo("dev-6");
-        assertThat(tag.get("ref").get("cut-version").asLong()).isEqualTo(6);
-        assertThat(locations(tag)).as("dev's 4 to 6, not main's, then main's below dev's cut")
-                .containsExactly("dev-6", "dev-5", "dev-4", "main-3", "main-2", "main-1");
+        assertThat(tag.get("pointer").get("metadata-location").asString()).isEqualTo("dev-3");
+        assertThat(tag.get("ref").get("cut-version").asLong()).isEqualTo(3);
+        assertThat(locations(tag)).as("dev's 3 to 1, not main's of the same numbers, then main's at dev's cut")
+                .containsExactly("dev-3", "dev-2", "dev-1", "main-3", "main-2", "main-1");
+        assertThat(lines(tag)).containsExactly("dev", "dev", "dev", "main", "main", "main");
         assertThat(tag.get("ref").has("log-stops-at-cut")).isFalse();
 
         List<String> read = new ArrayList<>();
@@ -182,15 +208,20 @@ class MetadataLogRefTest {
             token = log.has("next-page-token") ? log.get("next-page-token").asString() : null;
         } while (token != null);
         assertThat(read).as("its own, then dev's, then main's, across pages")
-                .containsExactly("dev2-8", "dev2-7", "dev-6", "dev-5", "dev-4", "main-3", "main-2", "main-1");
+                .containsExactly("dev2-2", "dev2-1", "dev-3", "dev-2", "dev-1", "main-3", "main-2", "main-1");
+
+        JsonNode hushed = log("hush", null, null);
+        assertThat(locations(hushed)).as("quiet had none of its own, so its cut, main's, is the tag's")
+                .containsExactly("main-3", "main-2", "main-1");
+        assertThat(hushed.get("ref").has("log-stops-at-cut")).isFalse();
     }
 
     @Test
     void throughARefMadeFromOneThatHasEndedTheLogStopsAtTheCutUnlessMainWroteIt() {
         JsonNode orphaned = log("orphan", null, null);
 
-        assertThat(orphaned.get("pointer").get("metadata-location").asString()).isEqualTo("old-4");
-        assertThat(locations(orphaned)).as("main's 4 is not the file the cut took").isEmpty();
+        assertThat(orphaned.get("pointer").get("metadata-location").asString()).isEqualTo("old-2");
+        assertThat(locations(orphaned)).as("main's 2 is not the file the cut took").isEmpty();
         assertThat(orphaned.get("ref").get("log-stops-at-cut").asBoolean()).isTrue();
         assertThat(orphaned.has("next-page-token")).isFalse();
 
@@ -218,6 +249,14 @@ class MetadataLogRefTest {
 
     private static List<String> locations(JsonNode log) {
         return log.get("journal").valueStream().map(entry -> entry.get("new-location").asString()).toList();
+    }
+
+    private static List<Long> versions(JsonNode log) {
+        return log.get("journal").valueStream().map(entry -> entry.get("new-version").asLong()).toList();
+    }
+
+    private static List<String> lines(JsonNode log) {
+        return log.get("journal").valueStream().map(entry -> entry.get("branch").asString()).toList();
     }
 
     private Ref ref(String name, Ref.Kind kind) {
@@ -252,13 +291,14 @@ class MetadataLogRefTest {
 
     private List<RefPointers> refPointers(UUID objectId) {
         RefEntry.At cut = new RefEntry.At(3, "main-3", "sha-main-3");
-        RefEntry.At devs = new RefEntry.At(6, "dev-6", "sha-dev-6");
+        RefEntry.At devs = new RefEntry.At(3, "dev-3", "sha-dev-3");
         return objectId.equals(staffId)
                 ? List.of(new RefPointers(dev, cut, Optional.of(devs)), new RefPointers(v1, cut, Optional.empty()),
                         new RefPointers(v2, devs, Optional.empty()),
-                        new RefPointers(dev2, devs, Optional.of(new RefEntry.At(8, "dev2-8", "sha-dev2-8"))),
-                        new RefPointers(orphan, new RefEntry.At(4, "old-4", "sha-old-4"), Optional.empty()),
-                        new RefPointers(kept, cut, Optional.empty()))
+                        new RefPointers(dev2, devs, Optional.of(new RefEntry.At(2, "dev2-2", "sha-dev2-2"))),
+                        new RefPointers(orphan, new RefEntry.At(2, "old-2", "sha-old-2"), Optional.empty()),
+                        new RefPointers(kept, cut, Optional.empty()), new RefPointers(quiet, cut, Optional.empty()),
+                        new RefPointers(hush, cut, Optional.empty()))
                 : List.of();
     }
 
@@ -280,7 +320,7 @@ class MetadataLogRefTest {
                             Optional.empty());
                     case "readPointer" -> Optional.of(new Pointer("main-5", 5, "sha-main-5", new byte[0]))
                             .filter(p -> args[0].equals(staff.mainKey()));
-                    case "findRef" -> List.of(dev, v1, later, v2, dev2, orphan, kept).stream()
+                    case "findRef" -> List.of(dev, v1, later, v2, dev2, orphan, kept, quiet, hush).stream()
                             .filter(r -> r.catalogId().equals(args[0]) && r.name().normalized().equals(args[1]))
                             .findFirst();
                     case "listRefPointers" -> refPointers((UUID) args[0]);

@@ -2,15 +2,15 @@ Breaks: anyone signed in may read an object's metadata log, without select on it
 Module: catalog-server
 Test: ManagementAuthorizationTest#theMetadataLogNeedsSelect
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-index d2034c4..41aad7d 100644
+index 3039358c..4746c526 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-@@ -343,8 +343,6 @@ class LifecycleRoutes {
+@@ -359,8 +359,6 @@ class LifecycleRoutes {
          CatalogRecord catalog = management.catalog(prefix, request, "readMetadataLog", Privilege.SELECT);
          CatalogObject object = existing(catalog, id);
          List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
 -        guard.require(request, Authorizer.Target.of(object),
 -                Management.audit(catalog, levels, object.name().display(), object), "readMetadataLog", Privilege.SELECT);
          int size = pageSize == null ? LOG_PAGE : Math.clamp(pageSize, 1, LOG_PAGE_MAX);
-         Optional<Long> before = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()).map(LifecycleRoutes::before);
+         Optional<String> token = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty());
          ObjectNode body = Management.JSON.createObjectNode();

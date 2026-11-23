@@ -211,8 +211,11 @@ export function failure(error, opts = {}) {
         opts.big ? h('button', {class: 'btn sm', type: 'button', onclick: e => copyText(location.href, e.currentTarget)},
           icon('link'), 'Copy link to this page') : null));
   }
+  // No status: the network failed (api.js marks it), or the console's own code did, after the catalog answered or
+  // before it asked. A caller that knows what was going on (signing in) names it in `opts.title`.
+  const title = opts.title || (error && error.unreached ? 'The request did not reach the catalog' : 'The console failed to show this');
   return h('div', {class: 'refusal' + (opts.compact ? ' compact' : ''), role: 'alert'},
-    h('p', {class: 'refusal-h'}, icon('alert'), 'The request did not reach the catalog'),
+    h('p', {class: 'refusal-h'}, icon('alert'), title),
     h('p', {class: 'refusal-msg'}, String(error && error.message || error)));
 }
 
@@ -387,7 +390,25 @@ export function chips(box, rows, keysOf) {
 
 /** Tabs that are links to their pages; the shown one carries aria-current. */
 export function tabsNav(label, list, current, hrefOf) {
-  return h('nav', {class: 'tabs', 'aria-label': label}, list.map(([key, text, count]) =>
+  const nav = h('nav', {class: 'tabs', 'aria-label': label}, list.map(([key, text, count]) =>
     h('a', {href: hrefOf(key), 'aria-current': (current || '') === key ? 'page' : null, 'data-tab': key || 'overview'},
       text, count !== null && count !== undefined ? [' ', h('span', {class: 'c'}, fmt(count))] : null)));
+  // On a phone the row scrolls sideways (the design's 6.9): its edges fade where tabs go on, and the current tab is
+  // kept in view as the row gets its width and its tabs their counts, until the reader scrolls it.
+  edgeCue(nav);
+  const cur = nav.querySelector('[aria-current="page"]');
+  if (cur && 'ResizeObserver' in window) {
+    let moved = false;
+    for (const e of ['pointerdown', 'wheel', 'touchstart']) nav.addEventListener(e, () => { moved = true; }, {passive: true});
+    const watch = new ResizeObserver(() => {
+      if (moved || !nav.clientWidth) return;
+      const box = nav.getBoundingClientRect();
+      const at = cur.getBoundingClientRect();
+      if (at.right > box.right) nav.scrollLeft += at.right - box.right + 24;
+      else if (at.left < box.left) nav.scrollLeft -= box.left - at.left + 24;
+    });
+    watch.observe(nav);
+    for (const a of nav.children) watch.observe(a);
+  }
+  return nav;
 }
