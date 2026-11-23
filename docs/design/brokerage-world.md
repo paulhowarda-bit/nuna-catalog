@@ -2,7 +2,12 @@
 
 Paul, 2026-11-22: "we need to create a data generator to truly demonstrate the nuna catalog capabilities", built on
 his ledger kit v14 and on research into what a brokerage does outside its ledger. This is the plan he answered (D48).
-Items 150 to 154 build it in five phases; item 155 extends the kit.
+Items 150 to 154 build it in five phases; item 155 extends the demo kit.
+
+**Two kits (D48 as amended, 2026-11-22).** Paul's ledger kit is for building the sequencer. The generator has its own
+kit, the demo kit, forked once from ledger kit v14 into `demo-datagen` and extended there; it never follows the ledger
+kit, and its purpose is data that demonstrates the catalog's console. Where this document says "kit v15" or "kit v16"
+below, read the demo kit's templates (item 155).
 
 ## In one paragraph
 
