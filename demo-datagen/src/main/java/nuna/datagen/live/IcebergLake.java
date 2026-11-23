@@ -87,18 +87,22 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     public void bootstrap(Kit kit, World.Settings settings, LocalDate pacedFrom, Map<Feed, Long> offsets) {
         for (Namespace ns : NAMESPACES) {
             if (!namespaces.namespaceExists(ns)) {
-                Map<String, String> properties = new LinkedHashMap<>();
-                if (ns.equals(ROOT)) {
-                    properties.put(SEED, String.valueOf(settings.seed()));
-                    properties.put(START, settings.start().toString());
-                    properties.put(ACCOUNTS, String.valueOf(settings.accounts()));
-                    properties.put(SECURITIES, String.valueOf(settings.securities()));
-                    properties.put(PACED_FROM, pacedFrom.toString());
-                    offsets.forEach((feed, n) -> properties.put(OFFSET + feed.source, String.valueOf(n)));
-                }
-                namespaces.createNamespace(ns, properties);
+                namespaces.createNamespace(ns);
                 System.out.println("created namespace " + ns);
             }
+        }
+        // The settings go on brokerage whoever made it: SingleStore's change feed makes it, with no properties, when it
+        // first makes brokerage.trading, and in demo.sh up the feeds start before the bootstrap.
+        if (!namespaces.loadNamespaceMetadata(ROOT).containsKey(SEED)) {
+            Map<String, String> properties = new LinkedHashMap<>();
+            properties.put(SEED, String.valueOf(settings.seed()));
+            properties.put(START, settings.start().toString());
+            properties.put(ACCOUNTS, String.valueOf(settings.accounts()));
+            properties.put(SECURITIES, String.valueOf(settings.securities()));
+            properties.put(PACED_FROM, pacedFrom.toString());
+            offsets.forEach((feed, n) -> properties.put(OFFSET + feed.source, String.valueOf(n)));
+            namespaces.setProperties(ROOT, properties);
+            System.out.println("fixed the world's settings on namespace " + ROOT);
         }
         for (Feed f : Feed.values()) {
             if (f.path != Feed.Path.KAFKA) {
