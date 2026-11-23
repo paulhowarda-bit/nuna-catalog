@@ -551,7 +551,7 @@ export function refPage(c, name, tab) {
     const side = h('div', {class: 'side'}, h('a', {class: 'btn sm primary', href: href({c, r: r.name})}, icon('catalog'), `Read ${c} on @${r.name}`),
       copyButton(`${c}@${r.name}`, 'Copy warehouse'),
       may && r.kind === 'branch' ? h('button', {class: 'btn sm', type: 'button', onclick: () => renewDialog(c, r)}, 'Renew') : null,
-      may ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => deleteDialog(c, r, list)}, icon('x'), 'Delete') : null);
+      may ? h('button', {class: 'btn sm ghost', type: 'button', 'data-act': 'ref-delete', onclick: () => deleteDialog(c, r, list)}, icon('x'), 'Delete') : null);
     const kpis = h('div', {class: 'kpis ref-kpis'},
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Point'), h('p', {class: 'kpi-v sm'}, cut ? refAt(cut) : '–'),
         h('p', {class: 'kpi-d'}, isMain(r.from) ? 'main as it was then' : `@${r.from}'s point; its commits to ${refAt(r['created-at'])}`)),
@@ -943,7 +943,8 @@ export async function renewDialog(c, r) {
 }
 
 export function deleteDialog(c, r, list) {
-  const n = r['changed-count'] || 0;
+  // The list's refs carry changed-count; one ref's own answer (its page) lists them as changed instead.
+  const n = Math.max(r['changed-count'] || 0, (r.changed || []).length);
   const kids = live(list).filter(t => t.from === r.name);
   const body = h('div', null,
     h('p', null, r.kind === 'tag' ? ['Engines reading ', code(`${c}@${r.name}`), ' get 404 from then on. The tables themselves are untouched.']

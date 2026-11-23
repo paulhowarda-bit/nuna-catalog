@@ -720,6 +720,14 @@ class ConsoleBrowserTest {
         assertThat(moves.findElements(By.cssSelector("dl.mm-v dd"))).extracting(ConsoleBrowser::textContent)
                 .containsExactly(String.valueOf(cut), String.valueOf(mainNow), String.valueOf(onBranch));
 
+        // The page's Delete warns that the branch's commit was never merged: one ref's answer lists its changed
+        // tables, where the list gives a count.
+        browser.await(By.cssSelector("button[data-act='ref-delete']")).click();
+        WebElement delete = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(textContent(delete.findElement(By.id("dlg-h")))).isEqualTo("Delete the branch @" + branch);
+        assertThat(textContent(delete)).contains("Its changes to 1 table were never merged and are lost.");
+        delete.findElement(By.cssSelector("button.dlg-x")).click();
+
         browser.await(By.cssSelector("button[data-act='ref-merge']")).click();
         WebElement confirm = browser.await(By.cssSelector("dialog.dlg"));
         assertThat(textContent(confirm.findElement(By.id("dlg-h")))).isEqualTo("Merge @" + branch + " into main");
