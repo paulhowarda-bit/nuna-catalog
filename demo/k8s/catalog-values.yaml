@@ -9,12 +9,16 @@ image:
   repository: nuna-catalog
   pullPolicy: Never
 
+# 1Gi with the heap at 60%: at 768Mi and 75% the brokerage world's sink load took the pod over its limit outside the
+# heap, and the kernel killed it (backlog 179).
 resources:
   requests:
     cpu: 250m
-    memory: 768Mi
+    memory: 1Gi
   limits:
-    memory: 768Mi
+    memory: 1Gi
+
+javaToolOptions: "-XX:MaxRAMPercentage=60 -XX:+ExitOnOutOfMemoryError"
 
 config:
   spring:
