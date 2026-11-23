@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**38 open:** 8 S, 11 M, 14 L, 5 XL.
+**39 open:** 9 S, 11 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -50,6 +50,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [161](backlog/161.md) | S | Console: the Metadata log tab fails on a create's, register's or revive's journal entry | one function in the console's table page and its browser test; the heavy browser test is what takes the time | 2026-11-23 |
 | [162](backlog/162.md) | S | ConsoleHealthTest reads the estate legend's count and words on two lines | one assertion in one browser test | 2026-11-23 |
 | [163](backlog/163.md) | S | ConsoleSettingsBrowserTest expects zstd as a default, but iceberg-core 1.12 sets it on every new table | one browser test's expected values (or, if Paul wants the console to call it a default, one display rule) | 2026-11-23 |
+| [166](backlog/166.md) | S | The overnight run tests in a worktree, not a clone | one script's setup step and the lock lookup in two others; waits on item 164, which changes overnight.sh | 2026-11-23 |
 
 ## Open items in full
 
@@ -2345,6 +2346,23 @@ An unlanded branch, `worktree-heavy-fixes-2026-11-23` (d1cd8ce, "WIP ... not yet
 
 Done looks like: the test uses a setting Iceberg does not write itself (or expects `set`), and passes in the overnight
 heavy build.
+
+### 166. The overnight run tests in a worktree, not a clone
+
+- Added: 2026-11-23 by local_6bfbb32c-ac81-4e4a-b672-f31d74f1b73d
+- Touches: overnight.sh, nightly.sh, heavy.sh, CLAUDE.md
+- Effort: S, one script's setup step and the lock lookup in two others; waits on item 164, which changes overnight.sh
+
+`overnight.sh` tests main's tip in `.overnight/clone`, a `git clone` of the main checkout with its own copy of the
+history (line 136), while every session and agent works in a worktree. Paul asked why there are two kinds of copy and,
+told a worktree would also do, answered "ok do it" (2026-11-23). The clone also makes `nightly.sh` and `heavy.sh`
+special-case it: there `--git-common-dir` names the clone, not the main checkout, so each looks for a folder named
+`clone` beside `runs/` to find the run's lock (backlog 136).
+
+Done looks like: `overnight.sh` makes `.overnight/worktree` with `git worktree add --detach`, locks it so `git worktree
+prune` and `remove` leave it alone, and resets it to main's tip each night; `nightly.sh` and `heavy.sh` find the lock
+through `--git-common-dir` alone; CLAUDE.md names the worktree; `./overnight.sh --dry` in a scratch home runs every
+leg's plumbing in the new worktree; the old `.overnight/clone` is deleted.
 
 ## Done and dropped
 
