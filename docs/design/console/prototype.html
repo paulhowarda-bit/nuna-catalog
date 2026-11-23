@@ -990,6 +990,178 @@ dialog { color: var(--text); }
 /* v9: a tab is a link to its page; the shown one carries aria-current. The kinds table breaks between event types, not inside one */
 .tabs a[aria-current="page"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
 .tbl.kinds code { overflow-wrap: normal; word-break: normal; hyphens: none; }
+/* ================================================================================ v12: branches and tags (item 109) */
+/* A catalog ref has its own hue, teal-green, apart from the accent (links, Iceberg branches) and held violet (Iceberg tags). */
+:root {
+  --cref-ink: oklch(45% 0.09 168); --cref-wash: oklch(95.5% 0.03 168); --cref-mark: oklch(58% 0.11 168);
+  --ctag-ink: oklch(45% 0.07 140); --ctag-wash: oklch(95.5% 0.03 140);
+}
+:root[data-theme="dark"], .theme-dark {
+  --cref-ink: oklch(82% 0.1 168); --cref-wash: oklch(30% 0.05 168); --cref-mark: oklch(74% 0.11 168);
+  --ctag-ink: oklch(84% 0.09 140); --ctag-wash: oklch(30% 0.045 140);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --cref-ink: oklch(82% 0.1 168); --cref-wash: oklch(30% 0.05 168); --cref-mark: oklch(74% 0.11 168);
+    --ctag-ink: oklch(84% 0.09 140); --ctag-wash: oklch(30% 0.045 140);
+  }
+}
+:root[data-theme="light"] {
+  --cref-ink: oklch(45% 0.09 168); --cref-wash: oklch(95.5% 0.03 168); --cref-mark: oklch(58% 0.11 168);
+  --ctag-ink: oklch(45% 0.07 140); --ctag-wash: oklch(95.5% 0.03 140);
+}
+
+.cref { display: inline-flex; align-items: center; gap: 3px; padding: 1px 7px 1px 5px; border-radius: 999px; background: var(--cref-wash); color: var(--cref-ink);
+  font: 500 var(--t-12)/1.5 var(--f-mono); white-space: nowrap; vertical-align: baseline; }
+.cref .ic { width: 12px; height: 12px; }
+.cref .at { opacity: .7; margin-right: -2px; }
+.cref.t { background: var(--ctag-wash); color: var(--ctag-ink); }
+.cref.m { background: transparent; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.cref.big { font-size: inherit; padding: 2px 12px 2px 8px; letter-spacing: -0.01em; }
+.cref.big .ic { width: 18px; height: 18px; }
+a .cref { text-decoration: none; }
+a:hover .cref { box-shadow: inset 0 0 0 1px currentColor; }
+.warn-ink { color: var(--warn-ink); }
+tr.is-warn > td:first-child { box-shadow: inset 3px 0 0 var(--warn-mark); }
+.kpi.is-warn .kpi-v { color: var(--warn-ink); }
+.kpi-v.sm { font-size: var(--t-16, 16px); letter-spacing: 0; line-height: 1.3; margin-top: 10px; }
+.kpi-v.mono { font-family: var(--f-mono); overflow-wrap: anywhere; }
+.row-acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; align-items: center; }
+.refs-tbl td.name .why { font-family: var(--f-ui); white-space: normal; display: inline-block; max-width: 46ch; margin-top: 3px; }
+.refs-explain { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5, 20px); margin-top: var(--s5, 20px); align-items: start; }
+.refs-explain > .panel { margin: 0; }
+.panel-h > h2 { font: inherit; margin: 0; display: flex; align-items: baseline; gap: 10px; flex: 1 1 auto; }
+.tx-steps { list-style: decimal; }
+.ref-page .title-row h1 { font-size: var(--t-22); }
+td.acts { width: 1%; white-space: nowrap; }
+.btn.danger, .btn.ghost.danger { color: var(--bad-ink, var(--warn-ink)); }
+
+/* the selector, beside a page's title */
+.ref-wrap { position: relative; }
+.ref-pick { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); color: var(--text); cursor: pointer; font: 500 var(--t-13)/1 var(--f-ui); }
+.ref-pick .lbl { color: var(--text-2); font-size: var(--t-12); }
+.ref-pick.on { border-color: var(--cref-mark); box-shadow: 0 0 0 1px var(--cref-mark); }
+.ref-pick.on.t { border-color: var(--ctag-ink); box-shadow: 0 0 0 1px var(--ctag-ink); }
+.ref-pick:hover { background: var(--surface-2); }
+.ref-menu { left: auto; right: 0; min-width: 300px; max-height: 60vh; overflow: auto; }
+.ref-menu a { display: grid; gap: 4px; padding: 8px 10px; border-radius: var(--r-sm); color: var(--text); text-decoration: none; }
+.ref-menu a > span { font-size: var(--t-12); color: var(--text-2); }
+.ref-menu a:hover, .ref-menu a:focus-visible { background: var(--surface-2); }
+.ref-menu a[aria-checked="true"] { background: var(--cref-wash); box-shadow: inset 2px 0 0 var(--cref-mark); }
+.ref-menu a.is-warn > span { color: var(--warn-ink); }
+.ref-menu .mh { font: 600 var(--t-12)/1 var(--f-ui); color: var(--text-2); text-transform: none; padding: 10px 10px 4px; border-top: 1px solid var(--line); margin-top: 4px; }
+.ref-menu .mfoot { display: flex; align-items: center; gap: 6px; border-top: 1px solid var(--line); border-radius: 0; margin-top: 4px; padding-top: 10px; color: var(--accent); font-size: var(--t-13); }
+
+/* the band every page read through a ref carries */
+.ref-band { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px 14px; margin: 0 0 16px; border-radius: var(--r-md);
+  background: var(--cref-wash); border: 1px solid oklch(from var(--cref-mark) l c h / .45); }
+.ref-band.t { background: var(--ctag-wash); border-color: oklch(from var(--ctag-ink) l c h / .35); }
+.ref-band.warn { background: linear-gradient(90deg, var(--warn-wash), var(--cref-wash) 60%); border-color: var(--warn-mark); }
+.ref-band .rb-ic { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--surface); color: var(--cref-ink); }
+.ref-band.t .rb-ic { color: var(--ctag-ink); }
+.ref-band.warn .rb-ic { color: var(--warn-ink); }
+.ref-band .rb-txt p { margin: 0; font-size: var(--t-13); }
+.ref-band .rb-txt p + p { margin-top: 3px; }
+.ref-band .rb-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.ref-note { margin-bottom: 14px; }
+.notice.ref-note { background: var(--cref-wash); color: var(--text); }
+
+/* the ref line */
+.rl-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+.rl-scroll svg { display: block; width: 100%; min-width: 900px; height: auto; }
+.rl-scroll .tick { stroke: var(--line); stroke-width: 1; }
+.rl-scroll .t { font: 400 12px var(--f-mono); fill: var(--text-2); }
+.rl-scroll .tb { font: 600 14px var(--f-mono); fill: var(--text); }
+.rl-scroll .sea { fill: var(--surface-2); opacity: .55; }
+.rl-scroll .wl { stroke: var(--accent); stroke-width: 2.5; }
+.rl-scroll .now { stroke: var(--text); stroke-width: 1; stroke-dasharray: 2 3; }
+.rl-scroll .now-t { font: 600 12px var(--f-mono); fill: var(--text); }
+.rl-scroll .pole { stroke: var(--ctag-ink); stroke-width: 1.2; }
+.rl-scroll .flag { fill: var(--ctag-ink); }
+.rl-scroll .flag-t { font: 500 13px var(--f-mono); fill: var(--ctag-ink); }
+.rl-scroll .br { fill: none; stroke: var(--cref-mark); stroke-width: 2.5; }
+.rl-scroll .br-life { stroke: var(--cref-mark); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .7; }
+.rl-scroll .br-end { stroke: var(--cref-ink); stroke-width: 2; }
+.rl-scroll .cm { fill: var(--surface); stroke: var(--cref-ink); stroke-width: 2; }
+.rl-scroll .br-t { font: 600 14px var(--f-mono); fill: var(--cref-ink); }
+.rl-scroll .br-e { font: 400 13px var(--f-mono); fill: var(--text-2); }
+.rl-scroll .rl-br.warn .br, .rl-scroll .rl-br.warn .br-life { stroke: var(--warn-mark); }
+.rl-scroll .rl-br.warn .br-end { stroke: var(--warn-ink); }
+.rl-scroll .rl-br.warn .cm { stroke: var(--warn-ink); }
+.rl-scroll .rl-br.warn .br-t, .rl-scroll .rl-br.warn .br-e { fill: var(--warn-ink); font-weight: 600; }
+.rl-scroll a:hover .br, .rl-scroll a:focus-visible .br { stroke-width: 4; }
+.rl-scroll a:hover .flag-t, .rl-scroll a:hover .br-t { text-decoration: underline; }
+
+/* the merge */
+.merge-verdict { margin: 0; }
+.mm-key { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: -4px 0 10px; }
+.mm-key i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 50%; }
+.mm-key .k-cut { background: var(--accent); }
+.mm-key .k-bc { background: var(--surface); box-shadow: inset 0 0 0 2px var(--cref-ink); }
+.mm-key .k-mc { width: 2px; height: 12px; border-radius: 0; background: var(--text-2); }
+.mm-key .k-mv { width: 14px; height: 2px; border-radius: 0; background: var(--cref-mark); }
+.mm-key .k-x { width: 10px; height: 10px; border-radius: 0; background: linear-gradient(45deg, transparent 42%, var(--bad-ink, #b3261e) 42% 58%, transparent 58%), linear-gradient(-45deg, transparent 42%, var(--bad-ink, #b3261e) 42% 58%, transparent 58%); }
+.mm-rows { display: grid; gap: 0; }
+.mm-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) auto; grid-template-areas: "name vis v" "chk chk chk"; gap: 4px 14px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.mm-row:first-child { border-top: 0; }
+.mm-row.moved, .mm-row.dropped { box-shadow: inset 3px 0 0 var(--bad-mark, var(--warn-mark)); padding-left: 10px; }
+.mm-name { grid-area: name; min-width: 0; }
+.mm-name code { overflow-wrap: break-word; }
+.ro-note { padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
+.ro-note .refusal-h { color: var(--text); }
+.ro-note .refusal-msg { font: 500 var(--t-13)/1.45 var(--f-mono); margin: 6px 0; }
+.mm-name .fine { margin-top: 4px; }
+.mm-vis { grid-area: vis; min-width: 0; }
+.mm-checks { grid-area: chk; margin: 0; display: flex; gap: 6px; align-items: center; }
+.mm-checks .ic { color: var(--ok-ink, var(--accent)); }
+.mm-v { grid-area: v; display: grid; grid-template-columns: auto auto; gap: 1px 8px; margin: 0; font: 500 var(--t-12)/1.35 var(--f-mono); }
+.mm-v dt { color: var(--text-2); font-weight: 400; }
+.mm-v dd { margin: 0; text-align: right; }
+.mm { display: block; width: 100%; height: auto; max-height: 64px; }
+.mm .mm-main { stroke: var(--accent); stroke-width: 2.5; }
+.mm .mm-main.gone { stroke-dasharray: 3 3; }
+.mm .mm-br { fill: none; stroke: var(--cref-mark); stroke-width: 2.5; }
+.mm .mm-cut { fill: var(--accent); }
+.mm .mm-mc { stroke: var(--text-2); stroke-width: 1.5; }
+.mm .mm-bc { fill: var(--surface); stroke: var(--cref-ink); stroke-width: 2; }
+.mm .mm-arrow { fill: none; stroke: var(--cref-mark); stroke-width: 2.5; }
+.mm .mm-head { fill: none; stroke: var(--cref-mark); stroke-width: 2.5; stroke-linejoin: round; }
+.mm .mm-x { stroke: var(--bad-ink, #b3261e); stroke-width: 2.5; stroke-linecap: round; }
+.tx-steps { margin: 0 0 10px; padding-left: 22px; display: grid; gap: 8px; font-size: var(--t-13); }
+.tx-steps li::marker { font: 600 var(--t-12) var(--f-mono); color: var(--cref-ink); }
+.merge-act .refusal-acts { align-items: center; }
+.settle { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+.refs-empty { text-align: left; }
+.ref-hint { padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); }
+.ref-hint p { margin: 0; }
+.ref-hint p + p { margin-top: 4px; }
+.on-ref { white-space: nowrap; }
+.cref.gone { background: transparent; color: var(--text-2); box-shadow: inset 0 0 0 1px var(--line-strong); text-decoration: line-through; }
+.notice.warn-note { background: var(--warn-wash); color: var(--text); margin-bottom: 16px; }
+.ref-hint.full { background: var(--warn-wash); }
+.dlg-body .wrap-tbl { overflow-x: auto; }
+.dlg-body > div { min-width: 0; }
+.pick-ref { margin-left: 2px; color: var(--cref-ink); font-weight: 500; }
+.gone-row td.name { text-decoration: line-through; text-decoration-color: var(--text-2); }
+
+@container frame (max-width: 760px) {
+  .ref-band { grid-template-columns: auto 1fr; }
+  .ref-band .rb-acts { grid-column: 1 / -1; justify-content: flex-start; }
+  .ref-menu { right: auto; left: 0; min-width: min(300px, calc(100vw - 48px)); }
+  .ph .side .ref-wrap { order: -1; }
+  .mm-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name v" "vis vis" "chk chk"; }
+  .rl-scroll svg { min-width: 900px; }
+  .refs-tbl td.acts { width: auto; }
+  .row-acts { justify-content: flex-start; flex-wrap: wrap; }
+  .panel-h { flex-wrap: wrap; }
+  .ph .side.tbl-acts:has(.ref-wrap) { display: flex; }
+  .ph .side.tbl-acts:has(.ref-wrap) > .btn { display: none; }
+  .mm-key { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+  .refs-tbl tr[data-kind="tag"] td.acts { display: block; }
+  .panel-h > h2 { flex-wrap: wrap; flex-basis: 100%; }
+  .refs-explain { grid-template-columns: minmax(0, 1fr); }
+  .kpi-v.sm { font-size: var(--t-14); }
+}
 </style>
 </head>
 <body>
@@ -1527,7 +1699,7 @@ dialog { color: var(--text); }
                   </dl>
                 </div>
                 <div class="panel hide-sm">
-                  <h2>Refs</h2>
+                  <h2>Iceberg refs in this table</h2>
                   <dl class="facts">
                     <dt><span class="badge ref-b"><svg class="ic"><use href="#i-branch"/></svg>main</span></dt><dd>current snapshot</dd>
                     <dt><span class="badge ref-b"><svg class="ic"><use href="#i-branch"/></svg>surveillance-review</span></dt><dd>current snapshot, made with the hold</dd>
@@ -1569,7 +1741,7 @@ dialog { color: var(--text); }
 </template>
 <template id="tab-snapshots">
             <div class="panel">
-              <h2>History and refs <span class="meta">311 snapshots · 9 Nov to 20 Nov</span></h2>
+              <h2>History and Iceberg refs <span class="meta">311 snapshots · 9 Nov to 20 Nov</span></h2>
               <div class="lanes">
                 <svg viewBox="0 0 1000 150" role="img" aria-label="Snapshot history of trades: a tagged snapshot on 9 November, 302 snapshots from 16 to 20 November, then the last eight on 20 November, with main and the surveillance-review branch at the newest">
                   <text class="tb" x="16" y="70">main</text>
@@ -1603,7 +1775,7 @@ dialog { color: var(--text); }
                 <h2>Snapshots <span class="meta">newest first · 20 Nov</span></h2>
                 <div class="wrap-tbl">
                   <table class="tbl compact snaps stack-line">
-                    <thead><tr><th>Snapshot</th><th>Committed</th><th>Operation</th><th class="num">Rows</th><th class="num">Files</th><th>Refs</th></tr></thead>
+                    <thead><tr><th>Snapshot</th><th>Committed</th><th>Operation</th><th class="num">Rows</th><th class="num">Files</th><th>Iceberg refs</th></tr></thead>
                     <tbody>
                       <tr class="is-cur"><td class="name">5218840923716659201</td><td class="tnum">17:30:12</td><td>append</td><td class="num">+18,204</td><td class="num">+3</td><td><span class="badge ref-b">main</span> <span class="muted nowrap">+1 branch</span></td></tr>
                       <tr><td class="name">7730125544810923346</td><td class="tnum">17:20:09</td><td>append</td><td class="num">+21,880</td><td class="num">+3</td><td></td></tr>
@@ -1893,7 +2065,7 @@ const dayOf = (m) => 1 + Math.floor(m / 1440);
 const hm = (m) => `${p2(Math.floor((((m % 1440) + 1440) % 1440) / 60))}:${p2(((m % 60) + 60) % 60)}`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dateOf = (m) => new Date(Date.UTC(2026, 10, 1) + m * 60000);
-const dayLabel = (m) => { const d = dayOf(m); if (d >= 1) return `${d} Nov`; const x = dateOf(m); return `${x.getUTCDate()} ${MONTHS[x.getUTCMonth()]}${x.getUTCFullYear() === 2026 ? '' : ' ' + x.getUTCFullYear()}`; };
+const dayLabel = (m) => { const d = dayOf(m); if (d >= 1 && d <= 30) return `${d} Nov`; const x = dateOf(m); return `${x.getUTCDate()} ${MONTHS[x.getUTCMonth()]}${x.getUTCFullYear() === 2026 ? '' : ' ' + x.getUTCFullYear()}`; };
 const longDate = (m) => { const x = dateOf(m); return `${x.getUTCDate()} ${MONTHS[x.getUTCMonth()]} ${x.getUTCFullYear()}`; };
 const atMin = (m) => `${dayLabel(m)} ${hm(m)}`;
 const atSec = (sec) => `${atMin(Math.floor(sec / 60))}:${p2(sec % 60)}`;
@@ -2345,6 +2517,7 @@ function tradesSnaps() {
 }
 const snapLabel = (sn) => (dayOf(sn.m) === 21 ? '' : dayLabel(sn.m) + ' ') + hm(sn.m) + ':' + p2(sn.sec);
 function snapWords(sn) {
+  if (sn.words) return sn.words;
   if (sn.op === 'replace') return `Compacted ${fmt(sn.merged)} small files into ${fmt(sn.into)}`;
   if (sn.op === 'delete' || (sn.addD && sn.rows < 0)) return `Deleted ${fmt(-sn.rows)} rows with one ${sn.eq ? 'equality' : 'position'}-delete file`;
   if (sn.op === 'overwrite') return `Rewrote one data file, changing ${fmt(sn.rows)} rows`;
@@ -2494,6 +2667,7 @@ function metaWords(t, e) {
   if (e.kind === 'spec') return `Added partition spec 1: ${specsOf(t)[1].fields.filter(f => f[5]).map(f => `${f[2]}(${f[0]})`).join(', ') || 'hourly'}`;
   if (e.kind === 'props') return 'Set write.format.default=parquet and write.parquet.compression-codec=zstd';
   if (e.kind === 'branch') return 'Created the branch surveillance-review at the current snapshot';
+  if (e.kind === 'merge') return `Took @${e.from}'s version ${fmt(e.branchV)} as main's next version, in the merge of @${e.from}`;
   return `Created the table, format ${t.fmt}`;
 }
 // the commit's updates, as the commit journal keeps them
@@ -2504,14 +2678,237 @@ function metaUpdates(t, e) {
   if (e.kind === 'schema') return [['action', 'add-schema'], ['schema-id', e.sid], ...e.add.map(f => ['field', `${f[0]}: ${f[1]} ${f[2]}`]), ['action', 'set-current-schema'], ['schema-id', -1]];
   if (e.kind === 'spec') return [['action', 'add-spec'], ['spec-id', 1], ['action', 'set-default-spec'], ['spec-id', -1]];
   if (e.kind === 'props') return [['action', 'set-properties'], ['write.format.default', 'parquet'], ['write.parquet.compression-codec', 'zstd']];
+  if (e.kind === 'merge') return [['action', 'merge-from-ref'], ['ref', e.from], ['ref-version', e.branchV], ['metadata-location', e.file]];
   if (e.kind === 'branch') return [['action', 'set-snapshot-ref'], ['ref-name', 'surveillance-review'], ['type', 'branch'], ['snapshot-id', snapsOf(t)[0].id]];
   return [['action', 'assign-uuid'], ['uuid', uuidOf('uuid' + t.path)], ['action', 'upgrade-format-version'], ['format-version', t.fmt.slice(1)], ['action', 'add-schema'], ['schema-id', 0]];
+}
+
+/* ================================================================================ v12: the catalog's branches and tags (D33; items 104 to 109) */
+// A catalog ref keeps every table's and view's pointer and name as of its point (its cut). A branch adds its own
+// pointers for the tables it changed; a tag never changes. Iceberg's own refs, inside one table's metadata, are another thing.
+const DAYM = 1440;
+// P11's settings, nuna.refs.*
+const REF_SET = { maxBranches: 50, maxTags: 1000, idle: 30 * DAYM, life: 180 * DAYM, warn: 7 * DAYM, maxMerge: 100 };
+const fullDate = (m) => { const x = dateOf(m); return `${x.getUTCDate()} ${MONTHS[x.getUTCMonth()]}${x.getUTCFullYear() !== 2026 ? ' ' + x.getUTCFullYear() : ''}`; };
+const refAt = (m) => `${fullDate(m)} ${hm(m)}`;
+const nowMin = () => Math.floor(sessionSec() / 60);
+function untilWords(m) {
+  const d = m - nowMin();
+  if (d <= 0) return 'expired';
+  if (d < 120) return `in ${d} minutes`;
+  if (d < 2 * DAYM) return `in ${Math.round(d / 60)} hours`;
+  return `in ${Math.round(d / DAYM)} days`;
+}
+const isoMin = (m, sec = 0) => { const x = dateOf(m); return `${x.toISOString().slice(0, 16)}:${p2(sec)}Z`; };
+
+// a table dropped on main since some refs were made: main has no such table; a ref whose cut is older still reads it
+const GONE = new Map();
+(function gone() {
+  const path = 'sandbox.stella.lineage_draft', parts = path.split('.');
+  const g = { path, ns: parts.slice(0, -1), name: parts[parts.length - 1], kind: 'table', fmt: 'v2', schemas: 1, specs: 1, cls: 'internal', cat: 'lakehouse', gen: true,
+    gone: { at: MIN(19, 14, 30), sec: 41, by: 'stella' }, seed: seedOf(path), fam: 'scratch', cadence: 'static', created: MIN(-40, 10, 5), files: 9, rows: '64 K', rowsN: 64000, bytes: 3.1e6 };
+  g.lastMin = MIN(-9, 16, 5);
+  g.last = [atMin(g.lastMin), ''];
+  g.series = { newest: g.lastMin, every: 2400, n: 3 };
+  g.snaps = 3; g.partition = g.seed % 48;
+  GONE.set(path, g);
+})();
+
+// what each branch committed on itself, newest last; a tag commits nothing
+const RC = (path, m, sec, op, rows, files, words) => ({ path, m, sec, op, rows, files, words });
+const REFS = {
+  lakehouse: [
+    { name: 'dev', kind: 'branch', from: 'main', by: 'ana', eng: 'spark', at: MIN(20, 16, 20), sec: 3,
+      why: 'Removing duplicate rows from two of ana\'s working tables before they are shared',
+      commits: [RC('sandbox.ana.trades_copy', MIN(20, 16, 31), 8, 'overwrite', -18412, 4, 'Rewrote 4 data files, removing 18,412 duplicate rows'),
+        RC('sandbox.ana.trades_copy', MIN(20, 16, 52), 40, 'append', 1204, 1, 'Appended 1,204 corrected rows in 1 file'),
+        RC('sandbox.ana.fees_study', MIN(20, 17, 5), 12, 'overwrite', 3880, 2, 'Rewrote 2 data files, changing 3,880 rows')] },
+    { name: 'ci-risk-1184', kind: 'branch', from: 'main', by: 'svc-risk-ci', eng: 'spark', at: MIN(21, 6, 12), sec: 5,
+      why: 'Pull request 1184 of the risk models repository: its data checks run here before the change reaches main',
+      commits: [RC('risk.stress.approvals', MIN(21, 6, 31), 40, 'overwrite', 214, 1, 'Rewrote 1 data file, restating 214 approvals'),
+        RC('risk.models.tiers', MIN(21, 6, 33), 2, 'append', 12, 1, 'Appended 12 rows in 1 file'),
+        RC('risk.var.correlations', MIN(21, 6, 35), 17, 'overwrite', 40960, 3, 'Rewrote 3 data files, changing 40,960 rows'),
+        RC('risk.var.correlations', MIN(21, 6, 41), 55, 'append', 2048, 1, 'Appended 2,048 rows in 1 file')] },
+    { name: 'stella-lineage', kind: 'branch', from: 'main', by: 'stella', eng: 'trino', at: MIN(-7, 11, 0), sec: 30,
+      why: 'Lineage notes for the October controls review',
+      warned: MIN(16, 15, 40),
+      commits: [RC('sandbox.stella.lineage_draft', MIN(-7, 13, 15), 9, 'append', 640, 1, 'Appended 640 rows in 1 file'),
+        RC('sandbox.stella.lineage_notes', MIN(-7, 14, 2), 33, 'append', 212, 1, 'Appended 212 rows in 1 file'),
+        RC('sandbox.stella.lineage_notes', MIN(-7, 15, 40), 4, 'overwrite', 58, 1, 'Rewrote 1 data file, changing 58 rows')] },
+    { name: 'matter-2026-114', kind: 'tag', from: 'main', by: 'stella', eng: 'console', at: MIN(20, 18, 3), sec: 20,
+      why: 'The catalog at the hold on xetra.trades, for the trade surveillance review' },
+    { name: 'dev-before-dedupe', kind: 'tag', from: 'dev', by: 'ana', eng: 'spark', at: MIN(20, 16, 25), sec: 30,
+      why: 'dev before its first commit, to compare against' },
+    { name: 'close-2026-11-18', kind: 'tag', from: 'main', by: 'svc-finance-load', eng: 'spark', at: MIN(18, 22, 15), sec: 0,
+      why: 'The month-to-date close of 18 November, kept for the controllers' },
+  ],
+  engines: [],
+};
+// refs that ended in the last day: gone from every route, still on the audit record
+const ENDED = [
+  { name: 'fx-check', kind: 'branch', from: 'main', by: 'ana', at: MIN(12, 11, 2), ended: MIN(20, 9, 40), endSec: 12, how: 'deleted', endBy: 'ana', expiresAt: MIN(12, 11, 2) + 30 * DAYM },
+  { name: 'q3-backfill', kind: 'branch', from: 'main', by: 'svc-history-load', at: MIN(-60, 8, 0), ended: MIN(21, 2, 5), endSec: 0, how: 'expired', endBy: 'nuna-maintenance', expiresAt: MIN(21, 1, 58) },
+];
+for (const c of CATS) for (const r of REFS[c]) {
+  r.cat = c;
+  r.id = uuidOf('ref' + c + r.name);
+  r.commits = r.commits || [];
+  const src = r.from === 'main' ? null : REFS[c].find(x => x.name === r.from);
+  r.cut = src ? src.at : r.at; // a ref made from a branch takes that branch's cut, and its own pointers then
+  if (r.kind === 'branch') {
+    const last = r.commits.length ? r.commits[r.commits.length - 1].m : r.at;
+    r.maxExpires = r.at + REF_SET.life;
+    r.expires = Math.min(last + REF_SET.idle, r.maxExpires);
+  }
+}
+for (const e of ENDED) e.id = uuidOf('ref-ended' + e.name);
+// a branch past its expiry that the worker has not ended yet: gone from every route, but its name is still held
+const HELD = [{ name: 'q4-plan-draft', kind: 'branch', from: 'main', by: 'ana', at: MIN(-10, 9, 0), expiresAt: MIN(21, 5, 10), warnedAt: MIN(14, 5, 12), endsAt: MIN(22, 2, 5) }];
+for (const e of HELD) e.id = uuidOf('ref-held' + e.name);
+const heldName = (c, name) => c === 'lakehouse' ? HELD.find(e => e.name.toLowerCase() === String(name).toLowerCase()) || null : null;
+// ?refs=full: the catalog as it is when nuna.refs.max-branches is set to the branches it holds, to show the limit's refusal
+if (query.get('refs') === 'full') REF_SET.maxBranches = REFS.lakehouse.filter(r => r.kind === 'branch').length;
+const refsOf = (c) => REFS[c].filter(r => !r.ended);
+const findRef = (c, name) => name ? refsOf(c).find(r => r.name.toLowerCase() === String(name).toLowerCase()) || null : null;
+const expiring = (r) => r.kind === 'branch' && r.expires - nowMin() <= REF_SET.warn;
+const refMark = (r) => '@' + r.name;
+
+// the tables and views a ref holds: main's as at its cut, a table main dropped later included, one made later left out
+function refHas(r, t) {
+  if (!r) return !t.gone;
+  if (t.gone) return t.created <= r.cut && t.gone.at > r.cut;
+  return t.created == null || t.created <= r.cut;
+}
+// a branch's own commits, by table; a tag made from a branch keeps that branch's commits up to its own making
+function ownCommits(r, path) {
+  if (!r) return [];
+  if (r.kind === 'tag' && r.from !== 'main') { const src = findRef(r.cat, r.from) || REFS[r.cat].find(x => x.name === r.from); return src ? src.commits.filter(x => x.path === path && x.m <= r.at) : []; }
+  return r.commits.filter(x => x.path === path);
+}
+const changedPaths = (r) => [...new Set(r.commits.map(x => x.path))];
+const tableAny = (path) => TB.get(path) || GONE.get(path) || null;
+
+// main's version of a table at minute m: the commit journal's newest entry at or before it
+function verAt(t, m) {
+  const { all, total, unlisted } = metaLogOf(t);
+  if (m >= NOW || m >= all[0].m) return total;
+  const lastHist = all.findIndex(e => e.kind === 'create' || e.kind === 'props' || e.kind === 'schema' || e.kind === 'spec');
+  const ev = all.slice(0, lastHist < 0 ? all.length : lastHist);
+  const e = ev.find(x => x.m <= m);
+  if (e) return e.v;
+  const oldest = ev[ev.length - 1], hist = all.slice(ev.length);
+  if (!oldest) return (hist.find(x => x.m <= m) || hist[hist.length - 1]).v;
+  if (unlisted && hist.length && m > hist[0].m) return hist[0].v + Math.max(1, Math.round(unlisted * (m - hist[0].m) / Math.max(1, oldest.m - hist[0].m)));
+  return (hist.find(x => x.m <= m) || hist[hist.length - 1]).v;
+}
+const mainCommitsSince = (t, m) => t.gone ? [] : metaLogOf(t).all.filter(e => e.m > m && (e.kind === 'snapshot' || e.kind === 'expire'));
+
+// a table as a ref has it: the metadata file its pointer names. Built on the table's own record, so every tab draws it
+const VIEWS = new Map();
+function onRef(t, r) {
+  if (!r || t.kind !== 'table') return t;
+  const key = r.cat + '|' + r.name + '|' + t.path + '|' + r.commits.length;
+  if (VIEWS.has(key)) return VIEWS.get(key);
+  const v = Object.create(t);
+  const own = ownCommits(r, t.path);
+  const cutV = verAt(t, r.cut);
+  // main's snapshots as at the cut; for a cut older than main's kept snapshots, the ones its metadata file held then
+  let base = snapsOf(t).filter(sn => sn.m <= r.cut);
+  if (!base.length) base = oldSnaps(t, r.cut);
+  const head = own.map((c, i) => ({ m: c.m, sec: c.sec, id: digitsOf('br' + r.name + t.path + i, 19), who: r.by, eng: r.eng, op: c.op, rows: c.rows, addF: c.op === 'append' ? c.files : c.files,
+    remF: c.op === 'overwrite' ? c.files : 0, addD: 0, words: c.words, branch: r.kind === 'branch' ? r.name : r.from })).reverse();
+  let td = base.length ? base[0].totalData : t.files, tdl = base.length ? base[0].totalDel : 0;
+  const snaps = [...head, ...base].map((sn, i) => Object.assign({}, sn, { idx: i, cur: i === 0 }));
+  snaps.forEach(sn => { if (sn.totalData == null) { sn.totalData = td; sn.totalDel = tdl; } });
+  v._snaps = snaps; v._byMin = null;
+  // its metadata log: main's journal to the cut, then the branch's own commits
+  const ml = metaLogOf(t);
+  let kept = ml.all.filter(e => e.m <= r.cut);
+  if (kept.length && kept[0].v !== cutV) kept = oldLog(t, r.cut, cutV, base);
+  const mine = own.map((c, i) => ({ m: c.m, sec: c.sec, kind: 'snapshot', sn: head[own.length - 1 - i], who: r.by, eng: r.eng, v: cutV + i + 1, onRef: r.name }));
+  const all = [...mine.reverse(), ...kept];
+  all.forEach(e => { if (!e.file) e.file = `${String(e.v).padStart(5, '0')}-${uuidOf('meta' + t.path + e.v + (e.onRef || ''))}.metadata.json`; });
+  v._mlog = { kept: all.slice(0, 101), all, total: cutV + own.length, unlisted: 0 };
+  v.lastMin = snaps.length ? snaps[0].m : t.lastMin;
+  v.last = [refAt(v.lastMin), ''];
+  v.snaps = snaps.length;
+  const dr = own.reduce((a, c) => a + (c.op === 'append' || c.rows < 0 ? c.rows : 0), 0), df = own.reduce((a, c) => a + (c.op === 'append' ? c.files : 0), 0);
+  if (t.rowsN) { v.rowsN = Math.max(0, t.rowsN + dr); v.rows = fmtRows(v.rowsN); }
+  v.files = Math.max(1, (base.length ? base[0].totalData : t.files) + df);
+  v.q = null; v.compactReq = null; v.full = false;
+  v.ref = r; v.cutV = cutV; v.own = own; v.base = t;
+  VIEWS.set(key, v);
+  return v;
+}
+// the snapshots main's metadata held at an old cut: the table's own rhythm, back five days from it, as expiry then kept them
+function oldSnaps(t, cut) {
+  const every = t.series ? t.series.every : 1440, n = Math.max(1, Math.min(60, Math.floor(5 * DAYM / Math.max(1, every))));
+  const [who, eng] = writerOf(t), before = metaLogOf(t).all.find(e => e.m <= cut), newest = before ? before.m : t.series ? Math.min(cut, t.series.newest) : cut;
+  const out = [];
+  for (let j = 0; j < n; j++) out.push({ m: Math.round(newest - j * every), sec: (t.seed + j * 31) % 60, id: digitsOf('old' + t.path + cut + j, 19), who, eng, op: 'append', rows: 100 + (hash32(t.seed, j, 9) % 4000), addF: 1, remF: 0, addD: 0, totalData: Math.max(1, t.files - j), totalDel: 0 });
+  return out.filter(sn => sn.m > t.created);
+}
+function oldLog(t, cut, cutV, base) {
+  const out = base.slice(0, 101).map((sn, i) => ({ m: sn.m, sec: sn.sec, kind: 'snapshot', sn, who: sn.who, eng: sn.eng, v: cutV - i }));
+  return out.filter(e => e.v > 0);
+}
+
+// the merge's plan, as the dry run answers it: per table, main still at the cut moves; main moved too, or dropped it, conflicts
+function mergePlan(r) {
+  const rows = changedPaths(r).map(path => {
+    const t = tableAny(path), own = r.commits.filter(x => x.path === path);
+    const cutV = verAt(t, r.cut), branchV = cutV + own.length;
+    if (t.gone) return { path, t, cutV, branchV, mainV: null, state: 'dropped', own, since: [] };
+    const since = mainCommitsSince(t, r.cut), mainV = metaLogOf(t).total;
+    return { path, t, cutV, branchV, mainV, state: mainV === cutV ? 'moves' : 'moved', own, since };
+  });
+  return { rows, moves: rows.filter(x => x.state === 'moves'), conflicts: rows.filter(x => x.state !== 'moves') };
+}
+
+// the audit stream's records of refs: changes to the refs themselves name the catalog; commits and reads on a ref name the ref
+function curateRefs() {
+  const at = (m) => [m, 0];
+  const refEv = (c, m, sec, who, eng, action, ref, extra = {}) => curated(null, m, sec, who, eng, 'ref', 'change', refWords(action, ref, extra), 'ref' + action, 'create',
+    Object.assign({ cat: c, refEv: { action, name: ref.name, kind: ref.kind, from: ref.from, id: ref.id, expiresAt: extra.expiresAt ?? ref.expires ?? null, tables: extra.tables || [] }, partition: 5 + (seedOf('refs' + c) % 40) }));
+  const L = REFS.lakehouse, by = (n) => L.find(r => r.name === n);
+  refEv('lakehouse', MIN(20, 9, 40), 12, 'ana', 'console', 'DELETED', ENDED[0], { expiresAt: ENDED[0].expiresAt });
+  refEv('lakehouse', MIN(20, 16, 20), 3, 'ana', 'spark', 'CREATED', by('dev'), { expiresAt: MIN(20, 16, 20) + REF_SET.idle });
+  refEv('lakehouse', MIN(20, 16, 25), 30, 'ana', 'spark', 'CREATED', by('dev-before-dedupe'));
+  refEv('lakehouse', MIN(20, 18, 3), 20, 'stella', 'console', 'CREATED', by('matter-2026-114'));
+  refEv('lakehouse', MIN(21, 2, 5), 0, 'nuna-maintenance', 'nuna-maintenance', 'EXPIRED', ENDED[1], { expiresAt: ENDED[1].expiresAt });
+  refEv('lakehouse', MIN(21, 6, 12), 5, 'svc-risk-ci', 'spark', 'CREATED', by('ci-risk-1184'), { expiresAt: MIN(21, 6, 12) + REF_SET.idle });
+  for (const r of L) {
+    if (r.kind !== 'branch') continue;
+    r.commits.forEach((cm, i) => {
+      const t = tableAny(cm.path);
+      if (!TB.get(cm.path) || cm.m < DAY0) return;
+      curated(cm.path, cm.m, cm.sec, r.by, r.eng, 'commit', 'change', [cm.words, ' on ', ['code', '@' + r.name]], 'commitTable', 'write', { branch: r.name, refName: r.name, refV: verAt(t, r.cut) + r.commits.filter(x => x.path === cm.path).indexOf(cm) + 1 });
+    });
+  }
+  // reads through refs: the CI job checks its branch, stella reads trades as the tag keeps it, ana looks at her result
+  const rd = (path, m, sec, who, eng, ref) => {
+    if (eng === 'spark') curated(path, m, sec, who, eng, 'credential-issue', 'cred', ["Read credentials for the table's own prefix, for 30 minutes, through ", ['code', '@' + ref]], 'loadCredentials', 'select', { branch: ref, refName: ref });
+    curated(path, m, sec, who, eng, 'read', 'read', ['Loaded the table through ', ['code', '@' + ref]], 'loadTable', 'select', { branch: ref, refName: ref });
+  };
+  rd('sandbox.ana.trades_copy', MIN(20, 17, 8), 44, 'ana', 'spark', 'dev');
+  rd(TRADES, MIN(20, 18, 10), 2, 'stella', 'trino', 'matter-2026-114');
+  rd('risk.stress.approvals', MIN(21, 6, 44), 10, 'svc-risk-ci', 'spark', 'ci-risk-1184');
+  rd('risk.var.correlations', MIN(21, 6, 44), 11, 'svc-risk-ci', 'spark', 'ci-risk-1184');
+}
+function refWords(action, ref, x = {}) {
+  const k = ref.kind === 'tag' ? 'tag' : 'branch';
+  if (action === 'CREATED') return [`Made the ${k} `, ['code', '@' + ref.name], ` from ${ref.from === 'main' ? 'main' : '@' + ref.from}`, k === 'branch' ? `; it expires ${refAt(x.expiresAt ?? ref.expires)} unless a commit or a renewal moves that` : '; it never expires'];
+  if (action === 'RENEWED') return ['Renewed the branch ', ['code', '@' + ref.name], `: it now expires ${refAt(x.expiresAt)}`];
+  if (action === 'DELETED') return [`Deleted the ${k} `, ['code', '@' + ref.name], k === 'branch' ? '; changes main never took are gone with it' : ''];
+  if (action === 'MERGED') return ['Merged the branch ', ['code', '@' + ref.name], ` into main: ${x.tables.length} table${x.tables.length === 1 ? '' : 's'} moved in one transaction, and the branch ended`];
+  if (action === 'EXPIRING') return ['Warned that the branch ', ['code', '@' + ref.name], ` expires ${refAt(x.expiresAt)}`];
+  return ['Ended the branch ', ['code', '@' + ref.name], `, which expired ${refAt(x.expiresAt)}`];
 }
 
 /* ================================================================================ the audit stream: every record, from one seed per table and minute */
 // Kinds as the console groups them, each with the CloudEvents types it covers
 const AK = {
-  read: ['Reads', 'nuna.catalog.read'], change: ['Changes', 'nuna.catalog.commit, namespace, governance, hold'], cred: ['Credentials', 'nuna.catalog.credential-issue'],
+  read: ['Reads', 'nuna.catalog.read'], change: ['Changes', 'nuna.catalog.commit, namespace, governance, hold, ref'], cred: ['Credentials', 'nuna.catalog.credential-issue'],
   refusal: ['Refusals', 'nuna.catalog.denial'], other: ['Other', 'nuna.catalog.file-deletion, grant, audit-read, maintenance-request'],
 };
 const AK_ORDER = ['read', 'change', 'cred', 'refusal', 'other'];
@@ -2591,7 +2988,7 @@ function readWeight(t) {
 const CUR = [];
 // the one table the worker's 03:00 scan failed on: a batch table in history, not held
 const SCAN_FAIL = [...TB.values()].find(x => x.kind === 'table' && x.ns[0] === 'history' && !x.hold && !x.frozen && x.cadence === 'batch' && x.cat === 'lakehouse');
-function curated(path, m, sec, who, eng, type, kind, words, op, priv, extra) { CUR.push(Object.assign({ cat: catOf(path), path, m, sec, who, eng, type, kind, words, op, priv, cur: true }, extra)); }
+function curated(path, m, sec, who, eng, type, kind, words, op, priv, extra) { CUR.push(Object.assign({ cat: path ? catOf(path) : null, path, m, sec, who, eng, type, kind, words, op, priv, cur: true }, extra)); }
 (function curate() {
   for (const r of AUDIT) {
     if (r.type === 'commit' && /^(Appended|Deleted|Compacted)/.test(String(r.what[0]))) continue; // trades' commits come from its snapshots, below
@@ -2619,6 +3016,7 @@ function curated(path, m, sec, who, eng, type, kind, words, op, priv, extra) { C
   });
   ['m8.shared.spark.t_drop_purge', 'm8.shared.spark.t_replace', 'm8.compaction.t_expire', 'm8.shared.pyiceberg.t_overwrite', 'm8.shared.spark.t_maint', 'm8.compaction.t_binpack']
     .forEach((p, i) => curated(p, MIN(20, 23, 10) + Math.floor(i / 2), 5 + i * 7, 'nuna-maintenance', 'nuna-maintenance', 'file-deletion', 'other', [`Deleted ${120 + i * 37} unreferenced files, ${fmtBytes((0.34 + i * 0.07) * 1e9)}`], 'deleteFiles', 'write'));
+  curateRefs();
 })();
 const inWindow = (x) => x.m >= DAY0 && x.m < NOW;
 
@@ -2715,7 +3113,7 @@ function recordsOf(s, m, kinds, actor) {
 }
 const CUR_BY_MIN = new Map();
 for (const x of CUR) { if (!CUR_BY_MIN.has(x.m)) CUR_BY_MIN.set(x.m, []); CUR_BY_MIN.get(x.m).push(x); }
-for (const x of CUR) { const s = SRC_BY.get(x.path); x.partition = s ? s.partition : 3; x.src = s; }
+for (const x of CUR) { const s = SRC_BY.get(x.path); x.partition = x.partition ?? (s ? s.partition : 3); x.src = s; }
 const recKey = (r) => `${r.path}|${r.m}|${r.sec}|${r.type}|${r.j ?? r.who}`;
 const byNewest = (a, b) => b.m - a.m || b.sec - a.sec || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0) || String(a.j ?? 0).localeCompare(String(b.j ?? 0));
 
@@ -2730,12 +3128,13 @@ function totalsOf(filter) {
     if (kinds.has('change') && s.path !== TRADES) out.change += commitsIn(s.t, from, to);
   }
   const set = new Set(srcs.map(s => s.path));
-  for (const x of CUR) if (set.has(x.path) && kinds.has(x.kind) && x.m >= from && x.m < to) out[x.kind]++;
+  // a ref's own records name the catalog, not a table: they count for the whole catalog only
+  for (const x of CUR) if ((set.has(x.path) || (filter.refs && x.path == null && x.cat === filter.cat)) && kinds.has(x.kind) && x.m >= from && x.m < to) out[x.kind]++;
   return out;
 }
 const sumOf = (o) => AK_ORDER.reduce((a, k) => a + o[k], 0);
 const ALLK = new Set(AK_ORDER);
-const catTotals = (c) => totalsOf({ srcs: SRC.filter(s => s.cat === c), kinds: ALLK });
+const catTotals = (c) => totalsOf({ srcs: SRC.filter(s => s.cat === c), kinds: ALLK, refs: true, cat: c });
 const liveTotals = (c) => { const o = { read: 0, change: 0, cred: 0, refusal: 0, other: 0 }; for (const x of LIVE) if (!c || x.cat === c) o[x.kind]++; return o; };
 function deployTotals() {
   const o = { read: 0, change: 0, cred: 0, refusal: 0, other: 0 };
@@ -2761,18 +3160,18 @@ function chainOf(r) {
   if (r.live) off = HEAD[p] + LIVE.filter(x => x.partition === p && (x.m * 60 + x.sec) < (r.m * 60 + r.sec)).length;
   else {
     const later = partitionCount(p, r.m + 1, NOW);
-    const same = minuteRecords(r.m, SRC.filter(s => s.partition === p), ALLK, null).filter(x => x.partition === p || (x.src && x.src.partition === p));
+    const same = minuteRecords(r.m, SRC.filter(s => s.partition === p), ALLK, null, true).filter(x => x.partition === p || (x.src && x.src.partition === p));
     const pos = same.findIndex(x => recKey(x) === recKey(r));
     off = HEAD[p] - 1 - later - Math.max(0, pos);
   }
   const H = (o) => hexOf(`chain:${p}:${o}`, 64);
   return (r._chain = { p, off, prev: H(off - 1), self: H(off), verified: !r.live && r.m < MIN(21, 6, 0) });
 }
-function minuteRecords(m, srcs, kinds, actor) {
+function minuteRecords(m, srcs, kinds, actor, refs) {
   const out = [];
   for (const s of srcs) out.push(...recordsOf(s, m, kinds, actor));
   const set = srcs.length === SRC.length ? null : new Set(srcs.map(s => s.path));
-  for (const x of CUR_BY_MIN.get(m) || []) if ((!set || set.has(x.path)) && kinds.has(x.kind) && (!actor || x.who === actor)) out.push(x);
+  for (const x of CUR_BY_MIN.get(m) || []) if ((!set || set.has(x.path) || (refs && x.path == null)) && kinds.has(x.kind) && (!actor || x.who === actor)) out.push(x);
   return out.sort(byNewest);
 }
 // the 20,000 offsets an object's own audit route reads, newest first: how far back they reach
@@ -2795,12 +3194,15 @@ windowOf.memo = {};
 function parse() {
   const p = new URLSearchParams(location.hash.slice(1));
   return { page: p.get('p'), c: p.get('c'), k: p.get('k'), ns: p.get('ns') ? p.get('ns').split(SEP) : [], n: p.get('n'), tab: p.get('tab'), g: p.get('g'),
-    q: p.get('q'), kind: p.get('kind'), who: p.get('who'), at: p.get('at') };
+    q: p.get('q'), kind: p.get('kind'), who: p.get('who'), at: p.get('at'), r: p.get('r') };
 }
 function href(o) {
   const p = new URLSearchParams();
   if (o.page) p.set('p', o.page);
   if (o.c) p.set('c', o.c);
+  // a browse link keeps the ref being read unless it names another, or r: null for main
+  const rr = o.r !== undefined ? o.r : !o.page && RN && o.c === RN.cat && o.k !== 'ref' ? RN.name : null;
+  if (rr) p.set('r', rr);
   if (o.k) p.set('k', o.k);
   if (o.ns && o.ns.length) p.set('ns', o.ns.join(SEP));
   if (o.n) p.set('n', o.n);
@@ -2824,6 +3226,7 @@ let user = query.has('user') ? USERS[query.get('user')] || null : USERS[store.ge
 store.set('nuna-user', user ? user.id : null);
 let theme = ['light', 'dark', 'auto'].includes(store.get('nuna-theme', 'local')) ? store.get('nuna-theme', 'local') : 'auto';
 let cat = 'lakehouse';
+let RN = null; // the catalog ref the browse pages read, or null for main
 let prev = null;
 let icePlayed = false;
 const expanded = new Set(['markets', 'markets.equities', 'markets.equities.eu', 'markets.equities.eu.xetra']);
@@ -2862,7 +3265,7 @@ const narrow = () => consoleEl.clientWidth <= 760;
 function setChrome(navKey, rail, c) {
   consoleEl.classList.toggle('rail', railPick ?? !!rail);
   syncMenuBtn();
-  for (const b of $$('[data-cat]')) b.textContent = c;
+  for (const b of $$('[data-cat]')) b.replaceChildren(c, ...(RN ? [h('span', { class: 'pick-ref' }, '@' + RN.name)] : []));
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === c));
   for (const n of $$('[data-name]')) n.textContent = user.id;
   for (const n of $$('[data-groups]')) n.textContent = user.groups;
@@ -2989,7 +3392,7 @@ function enhance(scope) {
 function crumbsFor(parts, last) {
   const nav = h('nav', { class: 'crumbs', 'aria-label': 'Path' });
   const c = parts.length ? catOf(parts[0]) : cat;
-  const items = [[c, href({ c })]];
+  const items = [[RN && RN.cat === c ? `${c}@${RN.name}` : c, href({ c })]];
   parts.forEach((p, i) => items.push([p, nsHref(parts.slice(0, i + 1).join('.'))]));
   const far = items.length + (last ? 1 : 0) > 3 ? items.length + (last ? 1 : 0) - 3 : 0;
   if (far) nav.append(h('span', { class: 'ell' }, h('a', { href: items[far - 1][1], 'aria-label': 'Up the path' }, '…'), h('span', { class: 'sep' }, '/')));
@@ -3040,7 +3443,7 @@ function refusalBody(ref) {
 }
 
 /* ================================================================================ table pages */
-const TABLE_TABS = (t) => [['', 'Overview'], ['schema', 'Schema', t.schemas], ['snapshots', 'Snapshots and refs', t.snaps], ['partitioning', 'Partitioning', t.specs],
+const TABLE_TABS = (t) => [['', 'Overview'], ['schema', 'Schema', t.schemas], ['snapshots', 'Snapshots', t.snaps], ['partitioning', 'Partitioning', t.specs], ['properties', 'Properties'],
   ['health', 'Health'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'], ['metadata-log', 'Metadata log']];
 function tableHead(t, ref, tab) {
   const ph = h('div', { class: 'ph' }, crumbsFor(t.ns, t.name));
@@ -3049,21 +3452,25 @@ function tableHead(t, ref, tab) {
     title.append(h('span', { class: 'badge strong' }, t.kind === 'view' ? 'view' : t.fmt));
     if (t.kind === 'table') {
       if (t.hold) title.append(heldPill());
-      title.append(healthPill(t));
+      if (!t.ref) title.append(healthPill(t));
+      if (t.base && t.base.gone) title.append(h('span', { class: 'pill warn' }, `Dropped on main ${fullDate(t.base.gone.at)}`));
       if (t.cls) title.append(h('span', { class: 'badge' }, t.cls));
     }
   }
   ph.append(title);
+  const where = { c: t.cat, k: t.kind === 'view' ? 'view' : 'table', ns: t.ns, n: t.name, tab };
   if (!ref && t.kind === 'table') {
-    ph.append(h('div', { class: 'side tbl-acts' },
+    ph.append(h('div', { class: 'side tbl-acts' }, refPick(where),
       h('button', { class: 'btn sm', type: 'button', 'data-copy': 'link' }, icon('link'), 'Copy link'),
       h('button', { class: 'btn sm', type: 'button', 'data-act': 'export-meta', 'data-path': t.path }, icon('down'), 'Export metadata'),
-      h('button', { class: 'btn sm', type: 'button', 'data-act': 'compact', 'data-path': t.path }, icon('play'), 'Compact now')));
+      RN ? null : h('button', { class: 'btn sm', type: 'button', 'data-act': 'compact', 'data-path': t.path }, icon('play'), 'Compact now')));
     if (t.compactReq) title.append(h('span', { class: 'pill accent' }, icon('clock'), `Compaction requested ${t.compactReq.at}`));
   }
   const list = t.kind === 'view' ? [['', 'Overview'], ['versions', 'Versions', t.versions], ['grants', 'Grants'], ['audit', 'Audit']]
     : TABLE_TABS(t).filter(([k]) => !ref || ref.open.includes(k));
-  return [ph, tabsNav(t.kind === 'view' ? 'View' : 'Table', list, tab, (k) => tableHref(t, k || null))];
+  if (!ref && t.kind === 'view') ph.append(h('div', { class: 'side' }, refPick(where)));
+  if (t.base && t.base.gone) ph.append(h('div', { class: 'notice ref-note' }, icon('info'), h('span', null, h('b', null, `${t.base.gone.by} dropped ${t.path} on main on ${refAt(t.base.gone.at)}.`), ` @${t.ref.name} was made before then, so it still reads the table as it was; main answers 404 for it.`)));
+  return [ph, RN && !ref ? refBand(RN, where) : '', tabsNav(t.kind === 'view' ? 'View' : 'Table', list, tab, (k) => tableHref(t, k || null))];
 }
 const LOADED = new Map();
 function pageTable(t, tab) {
@@ -3082,11 +3489,12 @@ function pageTable(t, tab) {
     main.append(refusalBody(ref)); return main;
   }
   // a tab drawn from the table's metadata is a load, and every load is on record: one per table per minute of browsing
-  if (['', 'schema', 'snapshots', 'partitioning', 'metadata-log'].includes(key) && !(LOADED.get(t.path) > performance.now() - 60000)) {
-    LOADED.set(t.path, performance.now());
-    liveRecord({ path: t.path, type: 'read', kind: 'read', op: t.kind === 'view' ? 'loadView' : 'loadTable', priv: 'select', words: [t.kind === 'view' ? 'Loaded the view, from the console' : 'Loaded the table, from the console'], rid: uuidOf('load' + t.path + clockTicks) });
+  const lk = (RN ? RN.name + '|' : '') + t.path;
+  if (['', 'schema', 'snapshots', 'partitioning', 'properties', 'metadata-log'].includes(key) && !(LOADED.get(lk) > performance.now() - 60000)) {
+    LOADED.set(lk, performance.now());
+    liveRecord(Object.assign({ path: t.path, type: 'read', kind: 'read', op: t.kind === 'view' ? 'loadView' : 'loadTable', priv: 'select', words: RN ? [`Loaded the ${t.kind} through `, ['code', '@' + RN.name], ', from the console'] : [t.kind === 'view' ? 'Loaded the view, from the console' : 'Loaded the table, from the console'], rid: uuidOf('load' + t.path + clockTicks) }, RN ? { branch: RN.name, refName: RN.name } : {}));
   }
-  if (t.kind === 'view') { main.append(...[viewTab(t, key)].flat()); return main; }
+  if (t.kind === 'view') { main.append(...[viewTab(t, key)].flat().filter(x => x != null)); return main; }
   if (t.full && ['', 'schema', 'snapshots', 'partitioning'].includes(key)) {
     main.append($('#tab-' + (key || 'overview')).content.cloneNode(true));
     if (key === 'schema') schemaTab(main);
@@ -3094,10 +3502,12 @@ function pageTable(t, tab) {
     if (key === '') { propsToggle(main); addMini(main, t); fillFull(main, t); }
     return main;
   }
-  const body = { '': genericOverview, health: healthTab, governance: governanceTab, schema: schemaTabFor, snapshots: snapshotsTabFor, partitioning: partitionTabFor,
+  const body = { '': genericOverview, health: healthTab, governance: governanceTab, schema: schemaTabFor, snapshots: snapshotsTabFor, partitioning: partitionTabFor, properties: propertiesTabFor,
     grants: (x) => grantsTabFor(x.cat, x.path, 'table'), audit: auditTabFor, 'metadata-log': metaLogTabFor }[key];
   if (!body) return notFound();
-  main.append(...[body(t)].flat());
+  // through a ref, Health, Governance, Grants and Audit are main's record of the table, by its id: say so and draw main's
+  if (t.ref && ['health', 'governance', 'grants', 'audit'].includes(key)) { main.append(mainsOnly(t.ref, key), ...[body(t.base)].flat().filter(x => x != null)); return main; }
+  main.append(...[body(t)].flat().filter(x => x != null));
   if (key === '') addMini(main, t);
   return main;
 }
@@ -3163,7 +3573,7 @@ function genericOverview(t) {
     h('div', { class: 'kpis' },
       h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Rows'), h('p', { class: 'kpi-v' }, t.rows), h('p', { class: 'kpi-d hide-sm' }, fmtBytes(t.bytes))),
       h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Data files'), h('p', { class: 'kpi-v' }, fmt(files)), h('p', { class: 'kpi-d hide-sm' }, dels ? `${fmt(dels)} delete files` : 'no delete files')),
-      h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, h('a', { href: tableHref(t, 'snapshots') }, 'Snapshots')), h('p', { class: 'kpi-v' }, fmt(t.snaps)), h('p', { class: 'kpi-d hide-sm' }, t.hold ? 'none expired while held' : t.frozen ? 'none expired while frozen' : 'kept 5 days')),
+      h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, h('a', { href: tableHref(t, 'snapshots') }, 'Snapshots')), h('p', { class: 'kpi-v' }, fmt(t.snaps)), h('p', { class: 'kpi-d hide-sm' }, t.ref ? `as @${t.ref.name} has them` : t.hold ? 'none expired while held' : t.frozen ? 'none expired while frozen' : 'kept 5 days')),
       h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, h('a', { href: tableHref(t, 'schema') }, 'Schemas')), h('p', { class: 'kpi-v' }, String(t.schemas)), h('p', { class: 'kpi-d hide-sm' }, t.schemas > 1 ? `${t.schemas - 1} change${t.schemas > 2 ? 's' : ''}` : 'as created'))),
     h('div', { class: 'panel' }, h('h2', null, 'Current state'),
       h('dl', { class: 'facts' },
@@ -3173,7 +3583,8 @@ function genericOverview(t) {
         h('dt', null, 'Schema, spec, order'), h('dd', null, `schema ${t.schemas - 1} of ${t.schemas} · partition spec ${t.specs - 1} of ${t.specs} · sort order ${order ? 1 : 0}`),
         h('dt', null, 'Format'), h('dd', null, `${t.fmt} · parquet, zstd`),
         h('dt', null, 'Created'), h('dd', null, longDate(t.created)))));
-  const right = h('div', { class: 'stack' },
+  const right = h('div', { class: 'stack' }, t.ref ? h('div', { class: 'panel' }, h('h2', null, 'Health ', h('span', { class: 'meta' }, 'main\'s')),
+      h('p', { class: 'fine' }, 'Health is assessed and maintained on main only. ', h('a', { href: href({ c: t.cat, k: 'table', ns: t.ns, n: t.name, tab: 'health', r: null }) }, 'Main\'s health of this table'), '.')) :
     h('div', { class: 'panel' }, h('h2', null, h('a', { class: 'h-link', href: tableHref(t, 'health') }, 'Health'), ' ', h('span', { class: 'meta' }, 'assessed 06:50')),
       h('p', null, t.q ? h('span', { class: 'pill ' + REASON[t.q[1]][0] }, `${REASON[t.q[1]][1]} · score ${t.q[2].toFixed(1)}`) : healthPill(t), t.q ? [' ', h('span', { class: 'badge' }, ordinal(t.q[0]) + ' tonight')] : null),
       h('p', { class: 'muted fine' }, healthWords(t))),
@@ -3407,21 +3818,32 @@ function nsRow(dotted) {
     h('td', null, h('span', { class: 'badge' }, icon('ns'), 'namespace')), h('td', null, h('span', { class: 'muted' }, '—')),
     h('td', null, user.reads ? health : h('span', { class: 'muted' }, '—')), h('td', null, user.reads && gov.length ? gov.flatMap((g, i) => i ? [' ', g] : [g]) : h('span', { class: 'muted' }, '—')),
     h('td', { class: 'num' }, user.reads && snaps ? fmt(snaps) : h('span', { class: 'muted' }, '—')),
-    h('td', null, user.reads && newest ? [h('span', { class: 'tnum' }, newest.last[0]), ' ', h('span', { class: 'muted' }, '· ' + newest.path.slice(dotted.length + 1))] : h('span', { class: 'muted' }, '—')));
+    h('td', null, user.reads && newest ? [h('span', { class: 'tnum' }, newest.last[0]), ' ', h('span', { class: 'muted' }, '· ' + newest.path.slice(dotted.length + 1))] : h('span', { class: 'muted' }, '—')),
+    RN ? h('td', { class: 'on-ref' }, (() => { const n = changedPaths(RN).filter(p => p.startsWith(dotted + '.')).length; return n ? h('span', { class: 'cref' }, `${n} changed here`) : h('span', { class: 'muted' }, '—'); })()) : null);
 }
 function objRow(t) {
+  if (RN && t.kind === 'table') t = onRef(t, RN);
   const health = t.kind === 'view' ? h('span', { class: 'muted' }, '—') : t.q ? h('span', { class: 'pill ' + REASON[t.q[1]][0] }, REASON[t.q[1]][1]) : healthPill(t);
   const gov = t.kind === 'view' ? [h('span', { class: 'muted' }, '—')] : [t.hold ? heldPill() : null, t.cls ? h('span', { class: 'badge' }, t.cls) : h('span', { class: 'muted' }, t.closed ? 'Closed until classified' : 'Not classified')].filter(Boolean);
   return h('tr', null, h('td', { class: 'name' }, h('a', { href: tableHref(t) }, t.name)),
     h('td', null, h('span', { class: 'badge' }, icon(t.kind === 'view' ? 'view' : 'table'), t.kind)), h('td', null, h('span', { class: 'badge strong' }, t.fmt)),
     h('td', null, user.reads ? health : h('span', { class: 'muted' }, '—')), h('td', null, user.reads ? gov.flatMap((g, i) => i ? [' ', g] : [g]) : h('span', { class: 'muted' }, '—')),
-    h('td', { class: 'num' }, t.snaps ? fmt(t.snaps) : '—'), h('td', null, t.last ? [h('span', { class: 'tnum' }, t.last[0]), ' ', h('span', { class: 'muted' }, '· ' + t.last[1])] : h('span', { class: 'muted' }, '—')));
+    h('td', { class: 'num' }, t.snaps ? fmt(t.snaps) : '—'), h('td', null, t.last ? [h('span', { class: 'tnum' }, t.last[0]), t.last[1] ? [' ', h('span', { class: 'muted' }, '· ' + t.last[1])] : null] : h('span', { class: 'muted' }, '—')),
+    RN ? h('td', { class: 'on-ref' }, onRefCell(t)) : null);
+}
+function onRefCell(t) {
+  if (t.kind !== 'table') return h('span', { class: 'muted' }, 'as at the point');
+  if (t.own && t.own.length) return h('span', { class: 'cref' }, `changed here · v${fmt(t.cutV + t.own.length)}`);
+  if (t.base && t.base.gone) return h('span', { class: 'pill warn' }, `dropped on main ${fullDate(t.base.gone.at)}`);
+  return h('span', { class: 'muted' }, `as at the point · v${fmt(t.cutV)}`);
 }
 function pageNamespace(dotted, tab) {
   const main = h('div', { class: 'nc-main' });
   const parts = dotted ? dotted.split('.') : [];
   const c = dotted ? catOf(dotted) : cat;
-  const { nss, objs } = childrenOf(dotted);
+  const kids = childrenOf(dotted), nss = kids.nss;
+  // through a ref: the tables it holds, one main dropped since included, one made since left out
+  const objs = RN ? [...kids.objs.filter(o => refHas(RN, o)), ...[...GONE.values()].filter(g => g.cat === c && g.ns.join('.') === dotted && refHas(RN, g))].sort((a, b) => a.name.localeCompare(b.name)) : kids.objs;
   const top = parts[0];
   const ph = h('div', { class: 'ph' }, dotted ? crumbsFor(parts.slice(0, -1), parts[parts.length - 1]) : null,
     h('div', { class: 'title-row' }, h('span', { class: 'kind' }, icon(dotted ? 'ns' : 'db')), h('h1', { tabindex: '-1' }, dotted ? parts[parts.length - 1] : c), h('code', { class: 'muted' }, dotted || 'catalog')));
@@ -3431,17 +3853,20 @@ function pageNamespace(dotted, tab) {
   ph.append(h('p', { class: 'sub' }, dotted
     ? [`${count(tables, 'table')} · ${views ? count(views, 'view') : 'no views'} · ${nss.length ? count(nss.length, 'child namespace') : 'no child namespaces'} · owner `, h('b', null, c === 'engines' ? 'engine-platform' : OWNERS[top]), parts.length > 1 ? [', set on ', h('code', null, top)] : ', set here']
     : [`${count(ROOTS[c].length, 'namespace')} · `, h('b', null, `${fmt(all.length)} tables`), ' · ', user.reads ? [queued ? `${queued} queued for tonight` : 'nothing queued for tonight', ' · ', held ? `${held} held` : 'nothing held', frozen.length ? ` · ${frozen.join(', ')} frozen for DR` : ''] : 'tables you may describe']));
-  ph.append(h('div', { class: 'side' }, h('button', { class: 'btn sm', type: 'button', 'data-copy': 'text', 'data-text': dotted || c }, icon('copy'), 'Copy path'),
+  ph.append(h('div', { class: 'side' }, tab === 'refs' ? null : refPick({ c, k: dotted ? 'namespace' : null, ns: parts, tab }), h('button', { class: 'btn sm', type: 'button', 'data-copy': 'text', 'data-text': dotted || c }, icon('copy'), 'Copy path'),
     h('button', { class: 'btn sm', type: 'button', 'data-copy': 'link' }, icon('link'), 'Copy link')));
   // the catalog's own Governance, Grants and Audit are its pages; a namespace draws its own
   const rootPage = { governance: pageHref('governance', c), grants: pageHref('governance', c, 'grants'), audit: pageHref('audit', c) };
-  main.append(ph, tabsNav('Namespace', [['', 'Contents', nss.length + objs.length], ['properties', 'Properties'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit']],
-    tab, (k) => dotted ? nsHref(dotted, k || null) : rootPage[k] || href({ c, tab: k || null })));
-  if (tab) { main.append(...[nsTab(dotted, tab)].flat()); return main; }
+  const nsTabs = [['', 'Contents', nss.length + objs.length], ['properties', 'Properties'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit']];
+  if (!dotted) nsTabs.push(['refs', 'Branches and tags', refsOf(c).length]);
+  main.append(ph, RN && tab !== 'refs' ? refBand(RN, { c, k: dotted ? 'namespace' : null, ns: parts, tab }) : '', tabsNav(dotted ? 'Namespace' : 'Catalog', nsTabs,
+    tab, (k) => dotted ? nsHref(dotted, k || null) : k === 'refs' ? refsHref(c) : rootPage[k] || href({ c, tab: k || null })));
+  if (!dotted && tab === 'refs') { main.append(...[refsTab(c)].flat().filter(x => x != null)); return main; }
+  if (tab) { main.append(...[nsTab(dotted, tab)].flat().filter(x => x != null)); return main; }
   const tbody = h('tbody', null, nss.map(n => nsRow(n)), objs.map(objRow));
   for (const td of $$('td', tbody)) if (td.textContent.trim() === '—') td.classList.add('na');
   main.append(h('div', { class: 'panel' }, h('div', { class: 'wrap-tbl' }, h('table', { class: 'tbl contents stack-line' },
-    h('thead', null, h('tr', null, ['Name', 'Kind', 'Format', 'Health', 'Governance'].map(x => h('th', null, x)), h('th', { class: 'num' }, 'Snapshots'), h('th', null, 'Last commit'))), tbody))));
+    h('thead', null, h('tr', null, ['Name', 'Kind', 'Format', 'Health', 'Governance'].map(x => h('th', null, x)), h('th', { class: 'num' }, 'Snapshots'), h('th', null, RN ? 'Last commit here' : 'Last commit'), RN ? h('th', null, 'On @' + RN.name) : null)), tbody))));
   if (dotted === 'markets.equities.eu.xetra') {
     main.append(h('div', { class: 'notice' }, icon('info'), h('span', null, h('b', null, 'The view ', h('code', null, 'xetra_daily'), ' lives one level up'), ', in ',
       h('a', { href: nsHref('markets.equities.eu') }, h('code', null, 'markets.equities.eu')), ', and reads ', h('code', null, 'trades'), ' through SingleStore. Its two versions are on its page.')));
@@ -3450,13 +3875,19 @@ function pageNamespace(dotted, tab) {
 }
 function pageBrowse(r) {
   let main, cur, ok = true;
-  if (r.k === 'table' || r.k === 'view') {
-    const t = TB.get([...r.ns, r.n].join('.'));
-    if (!t || t.cat !== cat) ok = false; else { main = pageTable(t, r.tab); cur = t.path; [...t.ns.keys()].forEach(i => expanded.add(t.ns.slice(0, i + 1).join('.'))); }
+  if (r.r && !RN) { main = noSuchRef(cat, r.r); cur = null; }
+  else if (r.k === 'ref') { main = pageRef(cat, r.n, r.tab); cur = ''; }
+  else if (r.k === 'table' || r.k === 'view') {
+    const path = [...r.ns, r.n].join('.'), base = TB.get(path) || GONE.get(path);
+    if (!base || base.cat !== cat) ok = false;
+    else if (base.gone && !RN) main = droppedPage(base);
+    else if (RN && !refHas(RN, base)) main = notOnRef(base, RN);
+    else main = pageTable(RN ? onRef(base, RN) : base, r.tab);
+    if (ok) { cur = base.path; [...base.ns.keys()].forEach(i => expanded.add(base.ns.slice(0, i + 1).join('.'))); }
   } else if (r.ns.length) {
     const d = r.ns.join('.');
     if (!NSSET.has(d) || catOf(d) !== cat) ok = false; else { main = pageNamespace(d, r.tab); cur = d; r.ns.forEach((_, i) => expanded.add(r.ns.slice(0, i + 1).join('.'))); }
-  } else { main = pageNamespace('', r.tab); cur = ''; }
+  } else if (!main) { main = pageNamespace('', r.tab); cur = ''; }
   if (!ok) { main = notFound(); cur = null; }
   const tree = treeEl();
   drawTree(tree, cur);
@@ -3465,6 +3896,25 @@ function pageBrowse(r) {
   const old = $(':scope > .nc-main', browse);
   if (old) old.replaceWith(main); else browse.append(main);
   return browse;
+}
+// what an engine is answered for a warehouse naming a ref that does not exist, and what the console shows for it
+function noSuchRef(c, name) {
+  const ended = ENDED.find(e => e.name.toLowerCase() === name.toLowerCase()) || (() => { const x = heldName(c, name); return x && { how: 'expired', ended: x.expiresAt, held: x }; })();
+  return h('div', { class: 'nc-main' }, h('div', { class: 'ph' }, h('h1', { tabindex: '-1' }, `${c}@${name}`)),
+    refusalBox('404 NoSuchWarehouseException', `The given warehouse does not exist: ${c}@${name} (catalog ${c} has no branch or tag ${name})`, uuidOf('nowh' + c + name),
+      [ended ? [h('b', null, ended.how === 'expired' ? `@${name} expired at ${refAt(ended.held ? ended.held.expiresAt : ended.expiresAt)}` : `@${name} was deleted on ${refAt(ended.ended)}`), ended.held ? `; its name is held until the worker ends it, ${refAt(ended.held.endsAt)}. ` : ended.how === 'expired' ? `; the worker ended it at ${refAt(ended.ended)}. ` : ` by ${ended.endBy}. `] : null,
+        h('a', { href: href({ c, r: null }) }, `Read ${c} on main`), ' or ', h('a', { href: refsHref(c) }, 'see its branches and tags'), '.'], { at: sessionAt(), audit: 'not a denial: nothing is audited' }));
+}
+function droppedPage(g) {
+  const keep = refsOf(g.cat).filter(r => refHas(r, g));
+  return h('div', { class: 'nc-main' }, h('div', { class: 'ph' }, crumbsFor(g.ns, g.name), h('div', { class: 'title-row' }, h('span', { class: 'kind' }, icon('table')), h('h1', { tabindex: '-1' }, g.name), h('span', { class: 'pill warn' }, 'Dropped on main'))),
+    refusalBox('404 NoSuchTableException', `Table does not exist: ${g.path}`, uuidOf('gone' + g.path), [h('b', null, `${g.gone.by} dropped it on ${refAt(g.gone.at)}.`), ' Main has no such table. ',
+      keep.length ? ['A ref made before then still reads it: ', keep.map((r, i) => [i ? ', ' : '', h('a', { href: href({ c: g.cat, k: 'table', ns: g.ns, n: g.name, r: r.name }) }, cref(r))]), '.'] : 'No ref holds it.'], { at: sessionAt(), audit: 'not a denial: nothing is audited' }));
+}
+function notOnRef(t, r) {
+  return h('div', { class: 'nc-main' }, h('div', { class: 'ph' }, crumbsFor(t.ns, t.name), h('div', { class: 'title-row' }, h('h1', { tabindex: '-1' }, t.name))),
+    refBand(r, { c: t.cat, k: 'table', ns: t.ns, n: t.name }),
+    refusalBox('404 NoSuchTableException', `Table does not exist: ${t.path}`, uuidOf('noref' + r.name + t.path), [h('b', null, `${t.path} was made on ${refAt(t.created)}, after @${r.name}'s point, ${refAt(r.cut)}.`), ' A ref holds only what main held then.'], { at: sessionAt(), audit: 'not a denial: nothing is audited' }));
 }
 function notFound() {
   return h('div', { class: 'nc-main' }, h('div', { class: 'ph' }, h('h1', { tabindex: '-1' }, 'Nothing at this path')),
@@ -3902,7 +4352,8 @@ function render() {
   if (!r.page && !r.c) { location.replace(DEFAULT[user.id]()); return; }
   signinEl.hidden = true; consoleEl.hidden = false;
   cat = CATS.includes(r.c) ? r.c : cat;
-  const tabOnly = same(prev, r);
+  RN = !r.page && r.c && r.r && r.k !== 'ref' ? findRef(cat, r.r) : null;
+  const tabOnly = same(prev, r) && (prev.r || null) === (r.r || null);
   let content, navKey, rail = false, title;
   const page = r.page;
   if (page === 'overview') { navKey = 'overview'; title = 'Overview'; content = !user.reads ? notOffered('Overview') : pageOverview(cat); }
@@ -3910,7 +4361,7 @@ function render() {
   else if (page === 'governance') { navKey = 'governance'; title = 'Governance'; content = pageGovernance(cat, r.tab, r.g); }
   else if (page === 'audit') { navKey = 'audit'; title = 'Audit'; content = pageAudit(cat, r); }
   else if (page === 'health') { navKey = 'health'; title = 'Health'; content = !user.reads ? notOffered('Health') : pageHealth(); }
-  else if (r.c && !page) { navKey = 'catalog'; rail = true; content = pageBrowse(r); title = r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat); }
+  else if (r.c && !page) { navKey = 'catalog'; rail = true; content = pageBrowse(r); title = r.k === 'ref' ? '@' + r.n : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat); }
   else { navKey = null; title = 'Not found'; content = notFound(); }
   setChrome(navKey, rail, cat);
   const keepTree = rail && content.classList.contains('browse');
@@ -3918,7 +4369,7 @@ function render() {
   slot.append(h('p', { class: 'proto-foot only-sm' }, 'Illustrative data: names from the nuna demo; counts, sizes and times invented.'));
   for (const old of $$(':scope > .proto-foot', slot).slice(0, -1)) old.remove();
   enhance(keepTree ? $(':scope > .nc-main', content) : content);
-  doc.title = `${title} · ${cat} · nuna`;
+  doc.title = `${title} · ${cat}${RN ? '@' + RN.name : ''} · nuna`;
   if (tabOnly && prev.tab !== r.tab) {
     for (const el of $$('.nc-main > .tabs ~ *', slot)) fadeIn(el);
     const t = $('.tabs a[aria-current="page"]', slot); if (t) t.focus({ preventScroll: true });
@@ -4287,10 +4738,14 @@ function eventOf(r) {
   const ptr = (v) => ({ metadataLocation: `${loc}/metadata/${String(v).padStart(5, '0')}-${uuidOf('meta' + t.path + v)}.metadata.json`, version: v, sha256: hexOf('sha' + t.path + v, 64) });
   const text = r.words.map(x => Array.isArray(x) ? x[1] : x).join('');
   let data;
-  if (r.type === 'read') data = { object, branch: /branch/.test(text) ? 'surveillance-review' : 'main', served: ptr(ver), actor };
+  const rf = r.refName ? REFS[r.cat].find(x => x.name === r.refName) : null;
+  const rv = rf && t && t.kind === 'table' ? r.refV ?? verAt(t, rf.cut) + ownCommits(rf, t.path).filter(x => x.m * 60 + x.sec <= r.m * 60 + r.sec).length : null;
+  if (r.type === 'ref') { const e = r.refEv; return { specversion: '1.0', id: uuidOf('ev' + recKey(r)), source: `/nuna/catalog/${r.cat}`, type: 'nuna.catalog.ref', time: isoAt(sec, ms), subject: e.id, datacontenttype: 'application/json', dataschema: 'urn:nuna:catalog:event:ref:1',
+    data: { action: e.action, ref: { id: e.id, name: e.name, kind: e.kind.toUpperCase() }, catalog: r.cat, from: e.from, expiresAt: e.expiresAt != null ? isoMin(e.expiresAt) : null, tables: e.tables, actor } }; }
+  if (r.type === 'read') data = { object, branch: r.branch || (/branch/.test(text) ? 'surveillance-review' : 'main'), served: rv != null ? ptr(rv) : ptr(ver), actor };
   else if (r.type === 'credential-issue') data = { object, storageProfile: 'warehouse', locationPrefix: loc + '/', access: 'READ', sessionName: `nuna-${r.who}-${hexOf(recKey(r), 8)}`, expiresAt: isoAt(sec + 1800), actor };
-  else if (r.type === 'commit') data = { commitId: uuidOf('commit' + recKey(r)), object, branch: /^Created the branch/.test(text) ? 'surveillance-review' : 'main', before: ptr(ver - 1), after: ptr(ver),
-    updates: r.expiry ? [{ action: 'remove-snapshots', 'snapshot-ids': `${t && t.expired} ids` }] : r.sn ? [{ action: 'add-snapshot', snapshot: { 'snapshot-id': r.sn.id, operation: r.sn.op, summary: Object.fromEntries(snapSummary(t, r.sn, false)) } }, { action: 'set-snapshot-ref', 'ref-name': 'main', type: 'branch', 'snapshot-id': r.sn.id }] : [{ action: 'set-snapshot-ref', 'ref-name': 'surveillance-review', type: 'branch' }], actor };
+  else if (r.type === 'commit') data = { commitId: uuidOf('commit' + recKey(r)), object, branch: r.branch || (/^Created the branch/.test(text) ? 'surveillance-review' : 'main'), before: ptr((rv ?? ver) - 1), after: ptr(rv ?? ver),
+    updates: r.op === 'mergeRef' ? [{ action: 'merge-from-ref', ref: r.mergedFrom }] : r.prop ? [{ action: 'set-properties', updates: r.prop }] : r.refName ? [{ action: 'add-snapshot', note: 'on the ref' }, { action: 'set-snapshot-ref', 'ref-name': 'main', type: 'branch' }] : r.expiry ? [{ action: 'remove-snapshots', 'snapshot-ids': `${t && t.expired} ids` }] : r.sn ? [{ action: 'add-snapshot', snapshot: { 'snapshot-id': r.sn.id, operation: r.sn.op, summary: Object.fromEntries(snapSummary(t, r.sn, false)) } }, { action: 'set-snapshot-ref', 'ref-name': 'main', type: 'branch', 'snapshot-id': r.sn.id }] : [{ action: 'set-snapshot-ref', 'ref-name': 'surveillance-review', type: 'branch' }], actor };
   else if (r.type === 'denial') data = { operation: r.op, securable: t || r.nsPath ? object : null, privilege: r.priv, reason: r.reason || text.replace(/^Refused \S+: "|"$/g, ''), actor };
   else if (r.type === 'hold') data = { action: /^Released/.test(text) ? 'RELEASED' : 'PLACED', holdId: uuidOf('holdid' + text), target: object, reason: (r.words.find(Array.isArray) || [0, text])[1], actor };
   else if (r.type === 'governance' && r.attr) data = { action: 'SET', target: object, attribute: r.attr, value: Object.fromEntries((r.words.find(Array.isArray) || [0, ''])[1].split(', ').map(kv => kv.split('='))), provenance: 'api', actor };
@@ -4315,7 +4770,8 @@ function recordDetail(r) {
 }
 function feedRow(r, showPath) {
   const btn = h('button', { class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false', 'aria-label': `Record of ${dayLabel(r.m)} ${atOf(r)}, ${r.who}, ${AK[r.kind][0].toLowerCase()}` }, 'Show record');
-  const where = showPath && (r.path || r.nsPath) ? [' · ', r.path ? pathLink(r.path) : h('a', { href: nsHref(r.nsPath) }, r.nsPath)] : null;
+  const where = showPath && r.refEv ? [' · ', findRef(r.cat, r.refEv.name) && findRef(r.cat, r.refEv.name).id === r.refEv.id ? h('a', { href: refHref(r.cat, r.refEv.name) }, cref({ name: r.refEv.name, kind: r.refEv.kind })) : cref({ name: r.refEv.name, kind: r.refEv.kind })]
+    : showPath && (r.path || r.nsPath) ? [' · ', r.path ? pathLink(r.path) : h('a', { href: nsHref(r.nsPath) }, r.nsPath)] : null;
   const el = h('div', { class: 'feed-row' + (r.kind === 'refusal' ? ' is-refused' : '') + (r.live ? ' is-live' : '') },
     h('span', { class: 't' }, `${dayLabel(r.m)} ${hm(r.m)}:${p2(r.sec)}`),
     h('span', { class: 'w' }, h('b', null, r.who), h('br'), h('span', { class: 'via' }, ['console', 'data catalogue'].includes(r.eng) ? r.eng : r.who === 'nuna-maintenance' ? 'the worker' : r.eng === r.who ? '' : 'via ' + r.eng)),
@@ -4329,14 +4785,15 @@ function feedRow(r, showPath) {
   return el;
 }
 // newest first, a minute at a time, yielding to the page so the first rows show while it searches on
+const throughRef = (x, q) => (x.refName || '').toLowerCase() === q || (x.refEv && x.refEv.name.toLowerCase() === q) || (x.mergedFrom || '').toLowerCase() === q;
 function walker(o) {
-  const live = o.to >= NOW ? LIVE.filter(x => x.cat === o.cat && o.kinds.has(x.kind) && (!o.actor || x.who === o.actor) && o.match(x.path || x.nsPath || '')).slice().reverse() : [];
+  const live = o.to >= NOW ? LIVE.filter(x => x.cat === o.cat && o.kinds.has(x.kind) && (!o.actor || x.who === o.actor) && o.match(x.path || x.nsPath || '') && (!o.refQ || throughRef(x, o.refQ))).slice().reverse() : [];
   const W = { buf: live, m: o.to - 1, done: false };
   W.step = (budget, want) => {
     const t0 = performance.now();
     while (!W.done && W.buf.length < want && performance.now() - t0 < budget) {
       if (W.m < o.from) { W.done = true; break; }
-      W.buf.push(...minuteRecords(W.m, o.srcs, o.kinds, o.actor).filter(x => x.cat === o.cat));
+      W.buf.push(...minuteRecords(W.m, o.srcs, o.kinds, o.actor, o.refs).filter(x => x.cat === o.cat && (!o.refQ || throughRef(x, o.refQ))));
       W.m--;
     }
     if (W.m < o.from) W.done = true;
@@ -4356,7 +4813,7 @@ function feedPanel(o) {
   const inScope = o.scope === 'catalog' ? all : all.filter(s => s.path === o.path || s.path.startsWith(o.path + '.'));
   const actors = [...new Set([...inScope.flatMap(s => [...s.actors]), ...LIVE.filter(x => x.cat === o.cat).map(x => x.who)])].sort((a, b) => (a.startsWith('svc-') - b.startsWith('svc-')) || a.localeCompare(b));
   const who = h('select', { name: 'who', 'aria-label': 'Who' }, h('option', { value: '' }, 'Anyone'), actors.map(a => h('option', { value: a, selected: a === st.who }, a)));
-  const pathIn = h('input', { type: 'search', name: 'q', 'aria-label': 'Table or namespace', placeholder: 'Table or namespace', value: st.q || null, list: 'dl-feed-ns', autocomplete: 'off', spellcheck: 'false' });
+  const pathIn = h('input', { type: 'search', name: 'q', 'aria-label': 'Table or namespace', placeholder: 'Table, namespace or @ref', value: st.q || null, list: 'dl-feed-ns', autocomplete: 'off', spellcheck: 'false' });
   const dlist = h('datalist', { id: 'dl-feed-ns' }, NSLIST.filter(n => catOf(n) === o.cat).map(n => h('option', { value: n })));
   const AT = [['', 'Up to now, 07:00'], [MIN(21, 6, 0), 'Before 06:00'], [MIN(21, 4, 0), 'Before 04:00'], [MIN(21, 0, 0), 'Before midnight'], [MIN(20, 22, 30), 'Before 22:30 on 20 Nov'], [MIN(20, 18, 0), 'Before 18:00 on 20 Nov'], [MIN(20, 12, 0), 'Before 12:00 on 20 Nov']];
   const atSel = h('select', { name: 'at', 'aria-label': 'Up to' }, AT.map(([v, l]) => h('option', { value: String(v), selected: String(v) === String(st.at ?? '') }, l)));
@@ -4367,17 +4824,19 @@ function feedPanel(o) {
   let W = null, shown = 0, gen = 0;
   const matchOf = (q) => {
     if (!q) return () => true;
+    if (q.startsWith('@')) return () => true;
     const exact = all.some(s => s.path === q || s.path.startsWith(q + '.')) || NSSET.has(q);
     return exact ? (p) => p === q || p.startsWith(q + '.') : (p) => p.includes(q);
   };
   function opts() {
     const kinds = st.kind === 'all' ? ALLK : st.kind === 'acts' ? ACTS : new Set([st.kind]), match = matchOf(st.q);
-    const srcs = all.filter(s => match(s.path) && (!st.who || s.actors.has(st.who)));
-    return { cat: o.cat, srcs, kinds, actor: st.who || null, match, from: o.from ?? DAY0, to: st.at ?? NOW };
+    const refQ = st.q && st.q.startsWith('@') ? st.q.slice(1).toLowerCase() : null;
+    const srcs = refQ ? all.filter(s => CUR.some(x => x.path === s.path && (x.refName || '').toLowerCase() === refQ)) : all.filter(s => match(s.path) && (!st.who || s.actors.has(st.who)));
+    return { cat: o.cat, srcs, kinds, actor: st.who || null, match, from: o.from ?? DAY0, to: st.at ?? NOW, refs: o.scope === 'catalog' && (!st.q || !!refQ), refQ };
   }
   function counts() {
-    const O = opts(), base = Object.assign({}, O, { kinds: ALLK }), tot = O.actor ? null : totalsOf(base);
-    const lv = O.to >= NOW ? LIVE.filter(x => x.cat === o.cat && O.match(x.path || x.nsPath || '') && (!O.actor || x.who === O.actor)) : [];
+    const O = opts(), base = Object.assign({}, O, { kinds: ALLK }), tot = O.actor || O.refQ ? null : totalsOf(base);
+    const lv = O.to >= NOW ? LIVE.filter(x => x.cat === o.cat && O.match(x.path || x.nsPath || '') && (!O.actor || x.who === O.actor) && (!O.refQ || throughRef(x, O.refQ))) : [];
     const inK = (k, x) => k === 'all' || (k === 'acts' ? ACTS.has(x) : x === k);
     const sumK = (k) => AK_ORDER.filter(x => inK(k, x)).reduce((a, x) => a + tot[x], 0);
     box.replaceChildren(...[['acts', 'Actions'], ['all', 'All'], ...AK_ORDER.map(k => [k, AK[k][0]])].map(([k, label]) => {
@@ -4479,7 +4938,7 @@ function pageAudit(c, r) {
 
 /* ------------------------------------------------------------------ a table's own tabs, for any table */
 function auditTabFor(t) {
-  const s = SRC_BY.get(t.path), w = windowOf(s.partition);
+  const s = SRC_BY.get(t.path) || { partition: t.partition ?? seedOf(t.path) % 48 }, w = windowOf(s.partition);
   const feed = feedPanel({ cat: t.cat, scope: 'table', path: t.path, from: w.from, init: {}, page: 12 });
   return h('div', { class: 'grid-21' }, h('div', { class: 'panel' }, feed),
     h('div', { class: 'stack' },
@@ -4554,7 +5013,7 @@ function snapshotsTabFor(t) {
       h('td', { class: 'name' }, h('button', { class: 'row-pick', type: 'button', 'aria-label': `Snapshot ${sn.id}, ${snapLabel(sn)}, ${sn.op}` }, sn.id)), h('td', { class: 'tnum' }, snapLabel(sn)),
       h('td', null, sn.op, sn.who === 'nuna-maintenance' ? [' ', h('span', { class: 'muted' }, '· worker')] : null),
       h('td', { class: 'num' }, sn.rows < 0 ? '−' + fmt(-sn.rows) : sn.op === 'overwrite' ? '±' + fmt(sn.rows) : sn.rows ? '+' + fmt(sn.rows) : '0'),
-      h('td', { class: 'num' }, sn.op === 'replace' ? `${fmt(sn.merged)} → ${fmt(sn.into)}` : sn.addD ? '+1 delete' : sn.op === 'overwrite' ? '+1 −1' : '+' + sn.addF),
+      h('td', { class: 'num' }, sn.op === 'replace' ? `${fmt(sn.merged)} → ${fmt(sn.into)}` : sn.addD ? '+1 delete' : sn.op === 'overwrite' ? `+${sn.addF || 1} −${sn.remF || 1}` : '+' + sn.addF),
       h('td', null, sn.cur ? h('span', { class: 'badge ref-b' }, 'main') : null));
     tr.addEventListener('click', () => select(sn));
     return tr;
@@ -4573,9 +5032,12 @@ function snapshotsTabFor(t) {
     h('dl', { class: 'facts one' }, h('dt', null, h('code', null, 'snapshot-expiry.enabled')), h('dd', null, protect ? [h('b', null, 'false'), ' · guardrail'] : ['true · ', h('span', { class: 'muted' }, `catalog ${t.cat}`)]),
       h('dt', null, h('code', null, 'max-snapshot-age')), h('dd', null, `${POLICY[t.cat]['max-snapshot-age'][0]} · ${POLICY[t.cat]['max-snapshot-age'][1] ? 'catalog ' + t.cat : 'built-in'}`)),
     h('p', { class: 'fine' }, protect ? `Nothing expires while it is ${protect}.` : t.expired ? `Last night's expiry removed ${plural(t.expired, 'snapshot')}.` : 'Last night it had nothing past 5 days to expire.'));
-  return [panel('History and refs', `${plural(list.length, 'snapshot')} · ${dayLabel(list[list.length - 1].m) === dayLabel(list[0].m) ? dayLabel(list[0].m) : `${dayLabel(list[list.length - 1].m)} to ${dayLabel(list[0].m)}`}`, lanesFor(t, list, select)),
-    h('div', { class: 'grid-21' }, panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'Refs'], tbody), moreP),
-      h('div', { class: 'stack' }, h('div', { class: 'panel' }, h('h2', null, 'Selected snapshot ', meta), raw, h('div', { class: 'refusal-acts' }, copy, wholeB)), expiry))];
+  const r = t.ref || null;
+  const icebergNote = r ? h('div', { class: 'notice ref-note' }, icon('info'), h('span', null, h('b', null, `These are the snapshots @${r.name} reaches.`), ` Inside the table, its own Iceberg branch is still called main: the catalog's ref chooses which metadata file is read, and that file's refs are Iceberg's.`)) : null;
+  return [icebergNote, panel('History and Iceberg refs', `${plural(list.length, 'snapshot')} · ${dayLabel(list[list.length - 1].m) === dayLabel(list[0].m) ? dayLabel(list[0].m) : `${dayLabel(list[list.length - 1].m)} to ${dayLabel(list[0].m)}`}`, lanesFor(t, list, select)),
+    h('div', { class: 'grid-21' }, panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'Iceberg refs'], tbody), moreP),
+      h('div', { class: 'stack' }, h('div', { class: 'panel' }, h('h2', null, 'Selected snapshot ', meta), raw, h('div', { class: 'refusal-acts' }, copy, wholeB)),
+        r ? panel('Expiry', null, h('p', { class: 'fine' }, `Never on a ${r.kind}. Expiry runs on main only, and keeps every snapshot any ref reaches while the ref exists.`)) : expiry))];
 }
 function partitionTabFor(t) {
   const specs = specsOf(t), cur = specs.length - 1, order = sortOf(t);
@@ -4686,10 +5148,13 @@ function nsTab(dotted, tab) {
   if (tab === 'grants') return grantsTabFor(c, dotted, 'namespace');
   if (tab === 'properties') {
     const props = nsProps(dotted);
-    return h('div', { class: 'grid-21' }, panel('Properties', 'Iceberg REST, on the namespace', tbl('', ['Key', 'Value'], props.map(([k, v, live]) => h('tr', { class: live ? 'is-new' : null }, h('td', { class: 'name' }, k), h('td', { class: 'name' }, v)))),
-      h('div', { class: 'refusal-acts' }, h('button', { class: 'btn sm', type: 'button', 'data-act': 'ns-prop', 'data-path': dotted }, 'Set a property'), h('span', { class: 'fine' }, 'Needs ', h('code', null, 'modify'), dotted ? ' here.' : ` on ${c}.`))),
+    return [RN ? mainsOnly(RN, 'nsprops') : null, h('div', { class: 'grid-21' }, panel('Properties', 'Iceberg REST, on the namespace', tbl('', ['Key', 'Value'], props.map(([k, v, live]) => h('tr', { class: live ? 'is-new' : null }, h('td', { class: 'name' }, k), h('td', { class: 'name' }, v)))),
+      RN ? h('div', { class: 'refusal compact' }, h('p', { class: 'refusal-h' }, icon('lock'), `What the catalog answers a change through @${RN.name}`), h('p', { class: 'refusal-code' }, '400 BadRequestException'),
+        h('p', { class: 'refusal-msg' }, RN.kind === 'tag' ? `updateNamespaceProperties is refused on tag ${RN.name} of catalog ${c}: a tag is read-only` : `updateNamespaceProperties is refused on branch ${RN.name} of catalog ${c}: creates, drops, renames, registrations and namespace changes happen on main only`),
+        h('p', { class: 'fine' }, 'So the console offers no change here. ', h('a', { href: href({ c, k: dotted ? 'namespace' : null, ns: dotted ? dotted.split('.') : [], tab: 'properties', r: null }) }, 'Set it on main'), '.'))
+      : h('div', { class: 'refusal-acts' }, h('button', { class: 'btn sm', type: 'button', 'data-act': 'ns-prop', 'data-path': dotted }, 'Set a property'), h('span', { class: 'fine' }, 'Needs ', h('code', null, 'modify'), dotted ? ' here.' : ` on ${c}.`))),
       panel('Beneath it', null, h('dl', { class: 'facts' }, h('dt', null, 'Tables'), h('dd', null, fmt(dotted ? tablesUnder(dotted).length : tablesIn(c).length)),
-        h('dt', null, 'Namespaces'), h('dd', null, fmt(NSLIST.filter(n => dotted ? n.startsWith(dotted + '.') : catOf(n) === c).length)))));
+        h('dt', null, 'Namespaces'), h('dd', null, fmt(NSLIST.filter(n => dotted ? n.startsWith(dotted + '.') : catOf(n) === c).length)))))];
   }
   // governance
   const under = tablesUnder(dotted), held = under.filter(t => t.hold), cls = under.filter(t => t.cls).length;
@@ -4866,6 +5331,527 @@ function grantsTab(main, g, c) {
   label(); duties(); list();
 }
 
+
+/* ================================================================================ v12: branches and tags in the console (item 109) */
+// A catalog ref is shown as @name in the ref ink everywhere; Iceberg's refs inside one table keep their old badges and no @.
+function cref(r, o = {}) {
+  const name = typeof r === 'string' ? r : r.name, kind = typeof r === 'string' ? (r === 'main' ? 'main' : 'branch') : r.kind;
+  return h('span', { class: 'cref ' + (kind === 'tag' ? 't' : kind === 'main' ? 'm' : 'b') + (o.big ? ' big' : '') + (o.warn ? ' warn' : '') },
+    icon(kind === 'tag' ? 'tag' : kind === 'main' ? 'catalog' : 'branch'), kind === 'main' ? null : h('span', { class: 'at' }, '@'), name);
+}
+const refHref = (c, name, tab) => href({ c, k: 'ref', n: name, tab, r: null });
+const refsHref = (c) => href({ c, tab: 'refs', r: null });
+const mayRefs = (c) => mayDo(c, 'create', c);
+// the changed tables the caller may describe: the server's `changed` leaves the others out, so every count does too
+const seenPaths = (r) => changedPaths(r).filter(p => mayDo(r.cat, 'describe', p));
+const kindWord = (r) => r.kind === 'tag' ? 'tag' : 'branch';
+const expiryPill = (r) => r.kind !== 'branch' ? null : expiring(r) ? h('span', { class: 'pill warn' }, icon('clock'), `Expires ${untilWords(r.expires)}`) : null;
+function refFacts(r) {
+  const made = [`Made from `, r.from === 'main' ? 'main' : cref(findRef(r.cat, r.from) || { name: r.from, kind: 'branch' }), ` by `, h('b', null, r.by), ` on ${refAt(r.at)}`];
+  return made;
+}
+
+/* ------------------------------------------------------------------ the ref selector, on the catalog, namespace and table pages */
+function refPick(where) {
+  const c = where.c, cur = RN;
+  const btn = h('button', { class: 'ref-pick' + (cur ? ' on ' + (cur.kind === 'tag' ? 't' : 'b') : ''), type: 'button', 'aria-haspopup': 'menu', 'aria-expanded': 'false',
+    'aria-label': `Reading ${cur ? kindWord(cur) + ' ' + cur.name : 'main'}. Choose a branch or tag` },
+  h('span', { class: 'lbl' }, 'Reading'), cur ? cref(cur) : cref('main'), icon('chev'));
+  const item = (r) => {
+    const name = r ? r.name : null, on = (cur ? cur.name : null) === name;
+    const sub = !r ? 'the catalog as it is now' : r.kind === 'tag' ? `tag · ${refAt(r.at)} · read-only` : `branch · ${plural(seenPaths(r).length, 'table')} changed · ${expiring(r) ? 'expires ' + untilWords(r.expires) : 'expires ' + fullDate(r.expires)}`;
+    return h('a', { role: 'menuitemradio', 'aria-checked': String(on), href: href(Object.assign({}, where, { r: name })), class: r && expiring(r) ? 'is-warn' : null },
+      h('b', null, r ? cref(r) : cref('main')), h('span', null, sub));
+  };
+  const list = refsOf(c);
+  const menu = h('div', { class: 'menu ref-menu', role: 'menu', 'aria-label': 'Branches and tags', hidden: true },
+    item(null),
+    list.filter(r => r.kind === 'branch').length ? [h('p', { class: 'mh' }, 'Branches'), list.filter(r => r.kind === 'branch').map(item)] : null,
+    list.filter(r => r.kind === 'tag').length ? [h('p', { class: 'mh' }, 'Tags'), list.filter(r => r.kind === 'tag').map(item)] : null,
+    h('a', { class: 'mfoot', href: refsHref(c) }, `Branches and tags of ${c}`, icon('right')));
+  const wrap = h('div', { class: 'ref-wrap' }, btn, menu);
+  const set = (open) => { menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); if (open) ($('[aria-checked="true"]', menu) || $('a', menu)).focus(); };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); set(menu.hidden); });
+  menu.addEventListener('keydown', (e) => {
+    const items = $$('a', menu), i = items.indexOf(doc.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus(); }
+    if (e.key === 'Escape') { e.stopPropagation(); set(false); btn.focus(); }
+  });
+  doc.addEventListener('click', (e) => { if (!wrap.contains(e.target)) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
+  return wrap;
+}
+
+/* ------------------------------------------------------------------ the band every page read through a ref carries */
+function refBand(r, where) {
+  const back = h('a', { class: 'btn sm', href: href(Object.assign({}, where, { r: null })) }, 'Read main instead');
+  const more = h('a', { class: 'btn sm ghost', href: refHref(r.cat, r.name) }, `About ${refMark(r)}`);
+  if (r.kind === 'tag') {
+    return h('div', { class: 'ref-band t', role: 'note' }, h('span', { class: 'rb-ic' }, icon('lock')),
+      h('div', { class: 'rb-txt' }, h('p', null, h('b', null, 'Reading the tag ', cref(r), `: ${r.cat} as it was at ${refAt(r.cut)}.`), ' Read-only: no engine and no console page can change anything through it.'),
+        h('p', { class: 'fine' }, ...refFacts(r), '. It never expires.')),
+      h('div', { class: 'rb-acts' }, more, back));
+  }
+  const n = seenPaths(r).length;
+  return h('div', { class: 'ref-band b' + (expiring(r) ? ' warn' : ''), role: 'note' }, h('span', { class: 'rb-ic' }, icon('branch')),
+    h('div', { class: 'rb-txt' }, h('p', null, h('b', null, 'Reading the branch ', cref(r), '.'), ` ${plural(n, 'table')} changed on it; every other table reads as main had it at ${refAt(r.cut)}.`),
+      h('p', { class: 'fine' }, ...refFacts(r), '. ', expiring(r) ? h('b', { class: 'warn-ink' }, `Expires ${untilWords(r.expires)}, ${refAt(r.expires)}.`) : `Expires ${refAt(r.expires)} unless a commit or a renewal moves it.`)),
+    h('div', { class: 'rb-acts' }, mayRefs(r.cat) && expiring(r) ? h('button', { class: 'btn sm', type: 'button', 'data-act': 'ref-renew', 'data-id': r.name }, 'Renew') : null,
+      mayRefs(r.cat) ? h('a', { class: 'btn sm', href: refHref(r.cat, r.name, 'merge') }, 'Preview the merge') : null, more, back));
+}
+// what a tab that is main's says when it is opened through a ref
+function mainsOnly(r, what) {
+  const words = {
+    health: [h('b', null, 'Health and maintenance are main\'s.'), ` The worker compacts and expires main only; a ${kindWord(r)}'s tables are never compacted or expired, and every file ${refMark(r)} reaches is kept while it exists.`],
+    governance: [h('b', null, 'Governance holds on every ref.'), ` Holds, freezes, classifications and the regulated area are main's record of the table, by its id: what you see here binds `, cref(r), ' too, and a merge is judged by it.'],
+    grants: [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', cref(r), ', and no one else: a grant cannot name a branch yet (item 113).'],
+    audit: [h('b', null, 'This is the table\'s whole audit trail.'), ' Records of reads and commits through a ref name it, as ', h('code', null, 'on @' + r.name), ' or ', h('code', null, 'through @' + r.name), '.'],
+    props: r.kind === 'tag' ? [h('b', null, 'Read-only through a tag.'), ' These are the properties in the metadata file the tag keeps.']
+      : [h('b', null, 'A change here commits on ', cref(r), '.'), ' Main keeps its own properties until a merge takes this file.'],
+    nsprops: [h('b', null, 'Namespace properties are live.'), ' They are main\'s, read now, whichever ref you read; they change on main only.'],
+  }[what];
+  return h('div', { class: 'notice ref-note' }, icon('info'), h('span', null, words));
+}
+
+/* ------------------------------------------------------------------ the catalog's Branches and tags tab */
+function refsTab(c) {
+  const list = refsOf(c), br = list.filter(r => r.kind === 'branch'), tg = list.filter(r => r.kind === 'tag'), may = mayRefs(c);
+  const out = [];
+  out.push(h('div', { class: 'kpis refs-kpis' },
+    h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, icon('branch'), 'Open branches'), h('p', { class: 'kpi-v' }, `${br.length}`, h('small', null, ` of ${REF_SET.maxBranches}`)), h('p', { class: 'kpi-d' }, 'nuna.refs.max-branches')),
+    h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, icon('tag'), 'Tags'), h('p', { class: 'kpi-v' }, `${tg.length}`, h('small', null, ` of ${fmt(REF_SET.maxTags)}`)), h('p', { class: 'kpi-d' }, 'nuna.refs.max-tags')),
+    h('div', { class: 'kpi' + (br.some(expiring) ? ' is-warn' : '') }, h('p', { class: 'kpi-l' }, icon('clock'), 'Expiring within 7 days'), h('p', { class: 'kpi-v' }, String(br.filter(expiring).length)),
+      h('p', { class: 'kpi-d' }, br.some(expiring) ? br.filter(expiring).map(r => '@' + r.name).join(', ') : 'none')),
+    h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Tables changed on branches'), h('p', { class: 'kpi-v' }, String(br.reduce((a, r) => a + seenPaths(r).length, 0))),
+      h('p', { class: 'kpi-d' }, `a merge moves at most ${REF_SET.maxMerge}`))));
+  if (!list.length) {
+    out.push(h('div', { class: 'empty refs-empty' }, h('h3', null, `No branch or tag in ${c} yet`),
+      h('p', null, 'A tag keeps every table in the catalog as it is now, read-only, for as long as you keep it. A branch does the same and then takes commits of its own, which you merge into main when they are ready, all tables in one transaction.'),
+      may ? h('div', { class: 'refusal-acts' }, h('button', { class: 'btn primary', type: 'button', 'data-act': 'ref-new', 'data-c': c }, icon('branch'), 'Make a branch or tag')) : null,
+      h('p', { class: 'fine' }, 'Engines read a ref as a warehouse of its own: ', h('code', null, `${c}@<name>`), '.')));
+    out.push(refsExplain(c));
+    return out;
+  }
+  if (REF_SET.maxBranches <= br.length) out.push(h('div', { class: 'notice warn-note' }, icon('alert'), h('span', null, h('b', null, `${c} holds ${br.length} of ${REF_SET.maxBranches} open branches.`), ' A new branch is refused until one is merged, deleted or expires. Tags are counted apart.')));
+  out.push(h('div', { class: 'panel refline-panel' }, h('h2', null, 'Every ref on one line ', h('span', { class: 'meta' }, 'main is the waterline; branches run beneath it to their expiry')), refLine(c, list),
+    h('p', { class: 'fine only-sm' }, 'Opens at today; earlier refs are to the left.')));
+  const rows = list.slice().sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'branch' ? -1 : 1) || (a.kind === 'branch' ? a.expires - b.expires : b.at - a.at)).map(r => refRow(c, r, may));
+  const chipsBox = h('div', { class: 'chips', role: 'group', 'aria-label': 'Show' },
+    [['all', 'All', list.length], ['branch', 'Branches', br.length], ['tag', 'Tags', tg.length]].map(([f, l, n], i) => h('button', { class: 'chip', type: 'button', 'data-f': f, 'aria-pressed': String(i === 0) }, l, ' ', h('span', { class: 'n' }, String(n)))));
+  const tbody = h('tbody', null, rows);
+  out.push(h('div', null,
+    h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, 'Branches and tags ', h('span', { class: 'meta' }, `of ${c}, as GET …/refs lists them`)), chipsBox,
+        may ? h('button', { class: 'btn sm primary', type: 'button', 'data-act': 'ref-new', 'data-c': c }, icon('branch'), 'Make a branch or tag') : null),
+      tbl('refs-tbl stack-line', ['Ref', 'Made', 'Expires', 'Changed tables', ''], tbody),
+      may ? null : h('p', { class: 'fine' }, h('b', null, `Making, renewing, deleting and merging need create on ${c}.`), ` Your groups hold none, so the console offers you none of them; reading through a ref needs only what reading main needs.`))),
+    endedPanel(c), refsExplain(c));
+  queueMicrotask(() => chips(chipsBox, () => $$('tr', tbody), (tr) => tr.dataset.kind));
+  return out;
+}
+function refRow(c, r, may) {
+  const n = changedPaths(r).length, seen = changedPaths(r).filter(p => mayDo(c, 'describe', p)).length;
+  const acts = h('div', { class: 'row-acts' },
+    h('a', { class: 'btn sm ghost', href: href({ c, r: r.name }) }, 'Read'),
+    may && r.kind === 'branch' ? h('a', { class: 'btn sm', href: refHref(c, r.name, 'merge') }, 'Merge…') : null,
+    may && r.kind === 'branch' ? h('button', { class: 'btn sm ghost', type: 'button', 'data-act': 'ref-renew', 'data-id': r.name }, 'Renew') : null,
+    may ? h('button', { class: 'btn sm ghost danger', type: 'button', 'data-act': 'ref-delete', 'data-id': r.name, 'aria-label': `Delete @${r.name}` }, icon('x')) : null);
+  return h('tr', { 'data-kind': r.kind, class: expiring(r) ? 'is-warn' : null },
+    h('td', { class: 'name' }, h('a', { href: refHref(c, r.name) }, cref(r)), h('br'), h('span', { class: 'fine why' }, r.why)),
+    h('td', null, h('span', { class: 'tnum' }, refAt(r.at)), h('br'), h('span', { class: 'fine' }, 'by ', h('b', null, r.by), ' from ', r.from === 'main' ? 'main' : '@' + r.from)),
+    h('td', null, r.kind === 'tag' ? h('span', { class: 'muted' }, 'never') : [expiring(r) ? expiryPill(r) : h('span', { class: 'tnum' }, refAt(r.expires)), h('br'), h('span', { class: 'fine' }, expiring(r) ? refAt(r.expires) : untilWords(r.expires))]),
+    h('td', null, r.kind === 'tag' ? (r.from === 'main' ? h('span', { class: 'muted' }, '—') : (() => { const n = changedPaths(findRef(c, r.from) || r).filter(p => ownCommits(r, p).length).length; return h('span', { class: 'fine' }, n ? `${plural(n, 'table')}, as @${r.from} had them` : `none: @${r.from} had not committed yet`); })())
+      : seen ? h('a', { href: refHref(c, r.name) }, plural(seen, 'table')) : n ? h('span', { class: 'muted' }, 'none you may describe') : h('span', { class: 'muted' }, 'none yet')),
+    h('td', { class: 'acts' }, acts));
+}
+function endedPanel(c) {
+  const rows = [...HELD.filter(() => c === 'lakehouse').map(e => h('tr', { class: 'is-warn' }, h('td', { class: 'name' }, cref({ name: e.name, kind: 'branch' }, { warn: true })),
+      h('td', null, h('span', { class: 'pill warn' }, icon('clock'), 'Expired'), ' ', h('span', { class: 'fine' }, `at ${refAt(e.expiresAt)}`)),
+      h('td', null, h('span', { class: 'fine' }, `Gone from every route. Its name is held until the worker ends it, ${refAt(e.endsAt)}; warned ${refAt(e.warnedAt)}.`)))),
+    ...ENDED.filter(() => c === 'lakehouse').map(e => h('tr', null, h('td', { class: 'name' }, h('span', { class: 'cref gone' }, icon('branch'), h('span', { class: 'at' }, '@'), e.name)),
+      h('td', null, h('span', { class: 'pill' }, e.how === 'expired' ? 'Expired, ended' : 'Deleted'), ' ', h('span', { class: 'fine' }, refAt(e.ended))),
+      h('td', null, h('span', { class: 'fine' }, e.how === 'expired' ? `Ended by the worker; it expired ${refAt(e.expiresAt)}. Its changes were never merged.` : `Deleted by ${e.endBy}. The name is free.`))))];
+  if (!rows.length) return null;
+  return h('div', { class: 'panel' }, h('h2', null, 'Ended lately ', h('span', { class: 'meta' }, 'from the audit feed\'s ref records; the list leaves these out')),
+    tbl('stack-line ended-tbl', ['Ref', 'What happened', ''], rows));
+}
+function refsExplain(c) {
+  return h('div', { class: 'refs-explain' },
+    panel('How engines reach a ref', null, h('p', { class: 'fine' }, 'Each ref is a warehouse of its own. Any Iceberg client reads it as it reads the catalog:'),
+      h('pre', { class: 'raw' }, `warehouse=${c}@dev`), h('p', { class: 'fine' }, 'A tag lists only the read endpoints in its ', h('code', null, '/v1/config'), ', so an engine refuses its own write before it is sent. Creates, drops and renames happen on main only.')),
+    panel('Two kinds of ref', null, h('dl', { class: 'facts one' },
+      h('dt', null, cref({ name: 'dev', kind: 'branch' }), ' ', cref({ name: 'matter-2026-114', kind: 'tag' })), h('dd', null, h('b', null, 'The catalog\'s branches and tags'), ', here: every table at once, read through ', h('code', null, `${c}@name`), '.'),
+      h('dt', null, h('span', { class: 'badge ref-b' }, icon('branch'), 'surveillance-review')), h('dd', null, h('b', null, 'Iceberg\'s own refs'), ', inside one table\'s metadata, made by an engine; on each table\'s page under ', h('i', null, 'Iceberg refs in this table'), '.'))),
+    panel('Limits and expiry', 'nuna.refs.*', h('dl', { class: 'facts one' },
+      h('dt', null, 'A branch expires'), h('dd', null, '30 days after its last commit or renewal, and never later than 180 days after it was made. Seven days before, the catalog warns once on the change stream and marks it here.'),
+      h('dt', null, 'A tag'), h('dd', null, 'never expires; delete it when it is no longer needed.'),
+      h('dt', null, 'Files'), h('dd', null, 'Cleanup keeps every file any ref reaches. Maintenance runs on main only.'))));
+}
+
+/* ------------------------------------------------------------------ the ref line: main as the waterline, tags as flags, branches beneath */
+function refLine(c, list) {
+  const brs = list.filter(r => r.kind === 'branch').sort((a, b) => a.at - b.at), tags = list.filter(r => r.kind === 'tag');
+  const lo = Math.min(...list.map(r => r.cut), NOW - 30 * DAYM) - 2 * DAYM, hi = Math.max(...brs.map(r => r.expires), NOW + 30 * DAYM) + 3 * DAYM;
+  const W = 1100, WL = 80, LANE = 36, H = WL + 30 + brs.length * LANE + 18;
+  const x = (m) => 50 + (m - lo) / (hi - lo) * (W - 280);
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${c}'s refs: ${brs.length} branches running beneath main to their expiry, ${tags.length} tags marking points; now is ${refAt(NOW)}` });
+  // weekly ticks, Mondays
+  for (let m = MIN(2, 0, 0); m < hi; m += 7 * DAYM) if (m > lo) svg.append(s('line', { class: 'tick', x1: x(m), y1: 18, x2: x(m), y2: H - 14 }), s('text', { class: 't', x: x(m) + 3, y: H - 2 }, fullDate(m)));
+  for (let m = MIN(2, 0, 0) - 7 * DAYM; m > lo; m -= 7 * DAYM) svg.append(s('line', { class: 'tick', x1: x(m), y1: 18, x2: x(m), y2: H - 14 }), s('text', { class: 't', x: x(m) + 3, y: H - 2 }, fullDate(m)));
+  svg.append(s('rect', { class: 'sea', x: 0, y: WL, width: W, height: H - WL - 16 }));
+  svg.append(s('line', { class: 'wl', x1: 0, y1: WL, x2: W, y2: WL }), s('text', { class: 'tb', x: 6, y: WL - 6 }, 'main'));
+  const nx = x(nowMin());
+  svg.append(s('line', { class: 'now', x1: nx, y1: 10, x2: nx, y2: H - 14 }), s('text', { class: 'now-t', x: nx + 4, y: 12 }, 'now'));
+  // tags on main as flags; a tag made from a branch stands on that branch's lane
+  const laneOf = (name) => brs.findIndex(b => b.name === name);
+  let lvl = 0;
+  tags.slice().sort((a, b) => a.at - b.at).forEach((t) => {
+    const li = t.from === 'main' ? -1 : laneOf(t.from);
+    const base = li < 0 ? WL : WL + 30 + li * LANE, top = li < 0 ? 22 + (lvl++ % 2) * 18 : base - 22, X = x(t.at);
+    const a = s('a', { href: refHref(c, t.name), class: 'rl-tag' });
+    a.append(s('title', null, `@${t.name}, tag, ${refAt(t.at)}`), s('line', { class: 'pole', x1: X, y1: top, x2: X, y2: base }),
+      s('path', { class: 'flag', d: `M${X} ${top} h10 l-4 5 l4 5 h-10 z` }), s('text', { class: 'flag-t', x: X - 4, y: top + 8, 'text-anchor': 'end' }, '@' + t.name));
+    svg.append(a);
+  });
+  brs.forEach((b, i) => {
+    const y = WL + 30 + i * LANE, x0 = x(b.cut), xl = x(b.commits.length ? b.commits[b.commits.length - 1].m : b.at), xe = x(b.expires), warn = expiring(b);
+    const a = s('a', { href: refHref(c, b.name), class: 'rl-br' + (warn ? ' warn' : '') });
+    a.append(s('title', null, `@${b.name}, branch from ${refAt(b.cut)}, ${plural(seenPaths(b).length, 'table')} changed, expires ${refAt(b.expires)}`));
+    a.append(s('path', { class: 'br', d: `M${x0} ${WL} C ${x0 + 8} ${WL}, ${x0 + 4} ${y}, ${x0 + 14} ${y} H ${Math.max(xl, x0 + 14)}` }));
+    a.append(s('line', { class: 'br-life', x1: Math.max(xl, x0 + 14), y1: y, x2: xe, y2: y }), s('line', { class: 'br-end', x1: xe, y1: y - 6, x2: xe, y2: y + 6 }));
+    for (const cm of b.commits) a.append(s('circle', { class: 'cm', cx: x(cm.m), cy: y, r: 3.5 }));
+    const lab = s('text', { class: 'br-t', x: xe + 8, y: y + 4 }, '@' + b.name);
+    lab.append(s('tspan', { class: 'br-e' }, warn ? `  expires ${untilWords(b.expires)}` : `  expires ${fullDate(b.expires)}`));
+    a.append(lab);
+    svg.append(a);
+  });
+  const box = h('div', { class: 'rl-scroll' }, svg);
+  requestAnimationFrame(() => { box.scrollLeft = Math.max(0, nx / W * box.scrollWidth - box.clientWidth * 0.55); edgeCue(box); });
+  return box;
+}
+
+/* ------------------------------------------------------------------ one ref's page: what it changed, its merge, its record */
+const REF_RESULTS = new Map(); // what this session did to a ref that has since ended: merged or deleted
+function pageRef(c, name, tab) {
+  const main = h('div', { class: 'nc-main ref-page' });
+  const r = findRef(c, name), done = REF_RESULTS.get(c + '|' + String(name).toLowerCase());
+  const crumbs = h('nav', { class: 'crumbs', 'aria-label': 'Path' }, h('a', { href: href({ c, r: null }) }, c), h('span', { class: 'sep' }, '/'), h('a', { href: refsHref(c) }, 'Branches and tags'), h('span', { class: 'sep' }, '/'), h('span', { class: 'cur' }, '@' + name));
+  if (!r) {
+    main.append(h('div', { class: 'ph' }, crumbs, h('div', { class: 'title-row' }, h('h1', { tabindex: '-1' }, '@' + name))));
+    if (done) { main.append(done()); return main; }
+    const held = heldName(c, name);
+    if (held) { main.append(refusalBox('404 NoSuchRefException', `Ref does not exist: ${name}`, uuidOf('noref' + name), [h('b', null, `@${held.name} expired at ${refAt(held.expiresAt)}`), '. It is gone from every route, but holds its name until the worker ends it on its next run, ', refAt(held.endsAt), '. Its changes were never merged.'], { at: sessionAt(), audit: 'not a denial: nothing is audited' })); return main; }
+    const ended = ENDED.find(e => e.name === name);
+    main.append(refusalBox('404 NoSuchRefException', `Ref does not exist: ${name}`, uuidOf('noref' + name), ended ? [h('b', null, `@${name} ${ended.how === 'expired' ? 'expired' : 'was deleted'} on ${refAt(ended.ended)}`), ended.how === 'expired' ? ' and the worker ended it. ' : ` by ${ended.endBy}. `, 'Its record stays in the ', h('a', { href: pageHref('audit', c) }, 'audit feed'), '.'] : 'No branch or tag has this name in ' + c + '.', { at: sessionAt(), audit: 'not a denial: nothing is audited' }));
+    return main;
+  }
+  const n = seenPaths(r).length, may = mayRefs(c);
+  const title = h('div', { class: 'title-row' }, h('h1', { tabindex: '-1', 'aria-label': `${kindWord(r)} @${r.name}` }, cref(r, { big: true })), h('span', { class: 'badge strong' }, kindWord(r)), expiryPill(r));
+  const sub = h('p', { class: 'sub' }, r.why, '. ', ...refFacts(r), '.');
+  const side = h('div', { class: 'side' }, h('a', { class: 'btn sm primary', href: href({ c, r: r.name }) }, icon('catalog'), `Read ${c} on @${r.name}`),
+    copyBtn(`${c}@${r.name}`, 'Copy warehouse'),
+    may && r.kind === 'branch' ? h('button', { class: 'btn sm', type: 'button', 'data-act': 'ref-renew', 'data-id': r.name }, 'Renew') : null,
+    may ? h('button', { class: 'btn sm ghost', type: 'button', 'data-act': 'ref-delete', 'data-id': r.name }, icon('x'), 'Delete') : null);
+  main.append(h('div', { class: 'ph' }, crumbs, title, sub, side));
+  // the facts line: where it stands
+  const facts = h('div', { class: 'kpis ref-kpis' },
+    h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Point'), h('p', { class: 'kpi-v sm' }, refAt(r.cut)), h('p', { class: 'kpi-d' }, r.from === 'main' ? 'main as it was then' : `@${r.from}'s point; its commits to ${refAt(r.at)}`)),
+    r.kind === 'branch' ? h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Changed'), h('p', { class: 'kpi-v' }, String(n)), h('p', { class: 'kpi-d' }, `${plural(r.commits.length, 'commit')} on the branch`))
+      : h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Changes'), h('p', { class: 'kpi-v' }, 'none'), h('p', { class: 'kpi-d' }, 'a tag is read-only')),
+    h('div', { class: 'kpi' + (expiring(r) ? ' is-warn' : '') }, h('p', { class: 'kpi-l' }, 'Expires'), h('p', { class: 'kpi-v sm' }, r.kind === 'tag' ? 'never' : refAt(r.expires)), h('p', { class: 'kpi-d' }, r.kind === 'tag' ? 'until deleted' : `${untilWords(r.expires)} · at most ${fullDate(r.maxExpires)}`)),
+    h('div', { class: 'kpi' }, h('p', { class: 'kpi-l' }, 'Warehouse'), h('p', { class: 'kpi-v sm mono' }, `${c}@${r.name}`), h('p', { class: 'kpi-d' }, r.kind === 'tag' ? 'read endpoints only' : 'reads and commits')));
+  main.append(facts);
+  const tabs = r.kind === 'branch' ? [['', 'Changes', n], ['merge', 'Merge'], ['record', 'Record']] : [['', 'What it keeps'], ['record', 'Record']];
+  main.append(tabsNav('Ref', tabs, tab, (k) => refHref(c, r.name, k || null)));
+  if (tab === 'merge' && r.kind === 'branch') main.append(...[mergeTab(r)].flat().filter(x => x != null));
+  else if (tab === 'record') main.append(refRecord(r));
+  else if (r.kind === 'branch') main.append(...[changesTab(r)].flat().filter(x => x != null));
+  else main.append(tagKeeps(r));
+  return main;
+}
+function changesTab(r) {
+  const plan = mergePlan(r), c = r.cat;
+  const rows = plan.rows.map(x => h('tr', { class: x.state === 'moves' ? null : 'is-warn' },
+    h('td', { class: 'name' }, x.t.gone ? h('span', null, x.path) : h('a', { href: href({ c, k: 'table', ns: x.t.ns, n: x.t.name, r: r.name }) }, x.path)),
+    h('td', { class: 'num' }, fmt(x.cutV)), h('td', { class: 'num' }, h('b', null, fmt(x.branchV))),
+    h('td', null, x.own.map((cm, i) => [i ? h('br') : null, h('span', { class: 'tnum' }, refAt(cm.m)), ' ', h('span', { class: 'fine' }, cm.words)])),
+    h('td', null, x.state === 'moves' ? h('span', { class: 'pill ok' }, icon('check'), 'Main unchanged') : x.state === 'dropped' ? h('span', { class: 'pill bad' }, 'Dropped on main') : h('span', { class: 'pill warn' }, `Main moved ${plural(x.since.length, 'time')}`))));
+  return [h('div', { class: 'panel' }, h('h2', null, 'What the branch changed ', h('span', { class: 'meta' }, `${plural(plan.rows.length, 'table')} with pointers of its own; GET …/refs/${r.name}`)),
+    tbl('stack-line ref-changes', ['Table', ['At the point', 'num'], ['On the branch', 'num'], 'Its commits', 'Main since'], rows),
+    h('p', { class: 'fine' }, 'Versions are the catalog\'s commit journal versions of each table. Every other table reads as main had it at the point. ', h('a', { href: refHref(c, r.name, 'merge') }, 'Preview the merge'), ' to see which tables would move.'))];
+}
+function tagKeeps(r) {
+  const c = r.cat, ts = tablesIn(c).filter(t => refHas(r, t)), gone = [...GONE.values()].filter(t => t.cat === c && refHas(r, t));
+  const after = r.kind === 'tag' ? ts.filter(t => !t.gone && t.lastMin > r.cut).length : 0;
+  return h('div', { class: 'grid-21' },
+    panel('What the tag keeps', null, h('dl', { class: 'facts' },
+      h('dt', null, 'Tables and views'), h('dd', null, `${fmt(ts.length + gone.length)} tables, as at ${refAt(r.cut)}`, r.from !== 'main' ? `, with @${r.from}'s own changes to that time` : ''),
+      h('dt', null, 'Changed on main since'), h('dd', null, `${fmt(after)} of them; the tag still reads each as it was`),
+      h('dt', null, 'Dropped on main since'), h('dd', null, gone.length ? gone.map(g => [h('a', { href: href({ c, k: 'table', ns: g.ns, n: g.name, r: r.name }) }, g.path), ` · dropped ${refAt(g.gone.at)} by ${g.gone.by}`]) : h('span', { class: 'muted' }, 'none')),
+      h('dt', null, 'Files'), h('dd', null, 'every file these tables reach is kept from cleanup while the tag exists')),
+      h('div', { class: 'refusal-acts' }, h('a', { class: 'btn sm primary', href: href({ c, r: r.name }) }, `Read ${c} on @${r.name}`))),
+    panel('Engines', null, h('pre', { class: 'raw' }, `warehouse=${c}@${r.name}`), h('p', { class: 'fine' }, 'Read-only credentials, and read endpoints only. A write through the tag is refused before it reaches a table:'),
+      h('div', { class: 'refusal compact' }, h('p', { class: 'refusal-code' }, '400 BadRequestException'), h('p', { class: 'refusal-msg' }, `commitTable is refused on tag ${r.name} of catalog ${c}: a tag is read-only`))));
+}
+function refRecord(r) {
+  const c = r.cat, recs = [];
+  const add = (m, sec, who, words, type = 'ref') => recs.push({ m, sec, who, words, type });
+  add(r.at, r.sec || 0, r.by, refWords('CREATED', r, { expiresAt: r.kind === 'branch' ? Math.min((r.at) + REF_SET.idle, r.maxExpires) : null }));
+  for (const cm of r.kind === 'branch' ? r.commits : []) add(cm.m, cm.sec, r.by, [cm.words, ' · ', h('code', null, cm.path)], 'commit');
+  if (r.warned) add(r.warned, 0, 'nuna-maintenance', refWords('EXPIRING', r, { expiresAt: r.expires }));
+  for (const x of LIVE) if (x.refEv && x.refEv.name === r.name && x.cat === c) recs.push({ m: x.m, sec: x.sec, who: x.who, words: x.words, type: 'ref', live: true });
+  recs.sort((a, b) => b.m - a.m || b.sec - a.sec);
+  return h('div', { class: 'grid-21' }, h('div', { class: 'panel' }, h('h2', null, `What happened to @${r.name} `, h('span', { class: 'meta' }, 'newest first')),
+    h('div', { class: 'feed' }, recs.map(x => h('div', { class: 'feed-row' + (x.live ? ' is-live' : '') }, h('span', { class: 't' }, `${refAt(x.m)}:${p2(x.sec)}`), h('span', { class: 'w' }, h('b', null, x.who)),
+      h('div', null, h('span', { class: 'badge' }, 'nuna.catalog.' + x.type), x.live ? [' ', h('span', { class: 'pill accent' }, 'this session')] : null, h('p', { class: 'what' }, wordsOf(x.words))), h('span', null))))),
+  panel('Where these records are', null, h('p', { class: 'fine' }, 'A change to a ref is one ', h('code', null, 'nuna.catalog.ref'), ' record whose subject is the ref\'s id, ', h('code', null, r.id.slice(0, 8) + '…'), ', so a deleted ref\'s name used again never shares its history. Commits and reads through the ref name it in their ', h('code', null, 'branch'), ' field.'),
+    h('div', { class: 'refusal-acts' }, h('a', { class: 'btn sm', href: href({ page: 'audit', c, q: '@' + r.name, kind: 'all' }) }, `Every record through @${r.name} in the last day`))));
+}
+
+/* ------------------------------------------------------------------ the merge: its dry run first, then the one transaction */
+function mergeMap(x, r) {
+  // one table's two lines since the point: main above, the branch below; a mark for every commit on each
+  const W = 520, H = 56, y0 = 16, y1 = 42;
+  const ms = [...new Set([...x.own.map(c => c.m), ...x.since.slice(0, 60).map(e => e.m), ...(x.state === 'dropped' ? [x.t.gone.at] : [])])].sort((a, b) => a - b);
+  const X = (m) => 54 + (ms.indexOf(m) + 0.5) / Math.max(1, ms.length) * (W - 120);
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'mm', role: 'img', 'aria-label': `${x.path}: ${plural(x.own.length, 'commit')} on the branch; ${x.state === 'dropped' ? 'dropped on main' : x.since.length ? plural(x.since.length, 'commit') + ' on main since the point' : 'no commit on main since the point'}` });
+  svg.append(s('line', { class: 'mm-main' + (x.state === 'dropped' ? ' gone' : ''), x1: 0, y1: y0, x2: x.state === 'dropped' ? X(x.t.gone.at) : W - 30, y2: y0 }));
+  svg.append(s('path', { class: 'mm-br', d: `M24 ${y0} C 34 ${y0}, 30 ${y1}, 44 ${y1} H ${W - 52}` }));
+  svg.append(s('circle', { class: 'mm-cut', cx: 24, cy: y0, r: 4.5 }));
+  const shown = x.since.slice(0, 60);
+  for (const e of shown) svg.append(s('line', { class: 'mm-mc', x1: X(e.m), y1: y0 - 6, x2: X(e.m), y2: y0 + 6 }));
+  for (const cm of x.own) svg.append(s('circle', { class: 'mm-bc', cx: X(cm.m), cy: y1, r: 4 }));
+  if (x.state === 'moves') svg.append(s('path', { class: 'mm-arrow', d: `M${W - 52} ${y1} C ${W - 36} ${y1}, ${W - 40} ${y0}, ${W - 26} ${y0}` }), s('path', { class: 'mm-head', d: `M${W - 30} ${y0 - 4} l6 4 l-6 4` }));
+  else if (x.state === 'dropped') { const dx = X(x.t.gone.at); svg.append(s('path', { class: 'mm-x', d: `M${dx - 5} ${y0 - 5} l10 10 M${dx + 5} ${y0 - 5} l-10 10` })); }
+  else svg.append(s('path', { class: 'mm-x', d: `M${W - 31} ${y0 - 5} l10 10 M${W - 21} ${y0 - 5} l-10 10` }));
+  return svg;
+}
+function dryRunAnswer(r, plan) {
+  const item = (x) => ({ namespace: x.t.ns, name: x.t.name, kind: 'table', 'cut-version': x.cutV, 'main-version': x.state === 'dropped' ? 'dropped' : x.mainV, 'branch-version': x.branchV });
+  if (plan.conflicts.length) return { error: { code: 409, type: 'RefMergeConflictException', message: `Merging ${r.name} into main conflicts on ${plural(plan.conflicts.length, 'table')}; nothing moved`, conflicts: plan.conflicts.map(item) } };
+  return { ref: r.name, 'dry-run': true, moves: plan.moves.map(item), conflicts: [] };
+}
+function mergeTab(r) {
+  const c = r.cat, plan = mergePlan(r), may = mayRefs(c), at = sessionAt(); tick();
+  const rid = uuidOf('dry' + r.name + clockTicks);
+  const blocked = plan.conflicts.length > 0;
+  const rightsMissing = plan.moves.filter(x => !mayDo(c, 'write', x.path)).map(x => x.path);
+  const verdict = blocked
+    ? h('div', { class: 'refusal merge-verdict', role: 'status' }, h('p', { class: 'refusal-h' }, icon('x'), `@${r.name} cannot merge: ${plural(plan.conflicts.length, 'table')} changed on main too`),
+      h('p', { class: 'refusal-code' }, `409 RefMergeConflictException · POST …/refs/${r.name}/merge, dry run`),
+      h('p', { class: 'refusal-msg' }, `Merging ${r.name} into main conflicts on ${plural(plan.conflicts.length, 'table')}; nothing moved`),
+      h('p', { class: 'refusal-meta' }, h('span', null, 'X-Request-ID ' + rid), h('span', null, at), h('span', null, 'a dry run: nothing moved, nothing audited')),
+      h('p', { class: 'fine' }, 'Every table moves or none does. While one conflicts, the merge is refused whole.'))
+    : h('div', { class: 'granted merge-verdict', role: 'status' }, h('p', { class: 'refusal-h' }, icon('check'), `Ready: ${plural(plan.moves.length, 'table')} would move to main in one transaction`),
+      h('p', { class: 'fine' }, 'Main has not committed to any of them since the point, so main takes each one as the branch has it.'),
+      h('p', { class: 'refusal-meta' }, h('span', null, `200 OK · POST …/refs/${r.name}/merge, dry run`), h('span', null, 'X-Request-ID ' + rid), h('span', null, at), h('span', null, 'nothing moved, nothing audited')));
+  const why = (x) => x.state === 'moves' ? [h('b', null, 'Moves. '), `Changed only on the branch: main is still at version ${fmt(x.cutV)}, the point's, so it takes version ${fmt(x.branchV)}'s file as its version ${fmt(x.cutV + 1)}.`]
+    : x.state === 'dropped' ? [h('b', null, 'Conflict: dropped on main. '), `${x.t.gone.by} dropped it on ${refAt(x.t.gone.at)}. Main has no table to move, and a merge never makes one.`]
+      : [h('b', null, 'Conflict: changed on both. '), `Main went from version ${fmt(x.cutV)} to ${fmt(x.mainV)} since the point, ${plural(x.mainV - x.cutV, 'commit')}; the latest by ${sinceWords(x)}. The branch's version ${fmt(x.branchV)} was made from ${fmt(x.cutV)}, so taking it would undo main's.`];
+  const rows = plan.rows.map(x => h('div', { class: 'mm-row ' + x.state },
+    h('div', { class: 'mm-name' }, x.t.gone ? h('code', null, x.path) : h('a', { href: href({ c, k: 'table', ns: x.t.ns, n: x.t.name, r: r.name }) }, h('code', null, x.path)),
+      h('p', { class: 'fine' }, why(x))),
+    h('div', { class: 'mm-vis' }, mergeMap(x, r)),
+    h('dl', { class: 'mm-v' }, h('dt', null, 'point'), h('dd', null, fmt(x.cutV)), h('dt', null, 'main'), h('dd', null, x.mainV == null ? 'dropped' : fmt(x.mainV)), h('dt', null, '@' + r.name), h('dd', null, fmt(x.branchV))),
+    x.state === 'moves' ? h('p', { class: 'mm-checks fine' }, icon('check'), ` Judged as a commit on main: `, mayDo(c, 'write', x.path) ? 'your groups hold write' : h('b', null, 'your groups hold no write'), x.t.hold ? ', held (adds and rewrites allowed)' : ', no hold', x.t.frozen ? h('b', null, ', frozen: refused') : ', no freeze', ', main\'s commit rules pass.') : null));
+  const raw = h('div', { hidden: true }, jsonPre(dryRunAnswer(r, plan)));
+  const rawB = h('button', { class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false' }, 'Show the catalog\'s answer');
+  rawB.addEventListener('click', () => { raw.hidden = !raw.hidden; rawB.setAttribute('aria-expanded', String(!raw.hidden)); rawB.textContent = raw.hidden ? 'Show the catalog\'s answer' : 'Hide the catalog\'s answer'; });
+  const steps = blocked ? h('p', { class: 'fine' }, h('b', null, `Nothing moves while ${plural(plan.conflicts.length, 'table')} ${plan.conflicts.length === 1 ? 'conflicts' : 'conflict'}.`),
+    plan.moves.length ? ` The catalog refuses the merge whole; the other ${plural(plan.moves.length, 'table')} ${plan.moves.length === 1 ? 'waits' : 'wait'} with it. Once nothing conflicts, the merge would:` : ' Once nothing conflicts, the merge would:') : null;
+  const steps2 = h('ol', { class: 'tx-steps' },
+    plan.rows.map(x => h('li', null, `Main's pointer for `, h('code', null, x.path), ` ${x.state === 'moves' ? `moves from version ${fmt(x.cutV)} to ${fmt(x.cutV + 1)}, naming the file @${r.name} wrote at its version ${fmt(x.branchV)}.` : x.state === 'dropped' ? 'cannot move: main dropped the table.' : `cannot move: main is at version ${fmt(x.mainV)}, not the point's ${fmt(x.cutV)}.`}`, x.state === 'moves' ? null : [' ', h('span', { class: 'pill bad' }, 'conflicts now')])),
+    h('li', null, cref(r), ' ends: its name is free and ', h('code', null, `${c}@${r.name}`), ' answers 404.', refsOf(c).some(t => t.kind === 'tag' && t.from === r.name) ? [' Tags made from it, ', refsOf(c).filter(t => t.kind === 'tag' && t.from === r.name).map(t => cref(t)), ', stay.'] : ''),
+    h('li', null, `The audit gets one `, h('code', null, 'nuna.catalog.ref'), ` record (merged, ${plural(plan.rows.length, 'table')}) and one commit record per table, on main.`));
+  const btn = h('button', { class: 'btn primary', type: 'button', 'data-act': 'ref-merge', 'data-id': r.name, disabled: blocked || !may || rightsMissing.length ? true : null }, icon('branch'), `Merge @${r.name} into main`);
+  const actBox = h('div', { class: 'panel merge-act' }, h('h2', null, 'In one transaction'), steps, steps2,
+    !blocked && may && rightsMissing.length ? h('p', { class: 'fine warn-ink' }, h('b', null, `Your groups hold no write on ${rightsMissing.join(', ')}.`), ' The catalog would refuse the merge with 403, so the console offers none.') : null,
+    h('p', { class: 'fine' }, `Every table moves or none does; at most ${REF_SET.maxMerge} tables a merge (nuna.refs.max-merge-tables). If main commits to one of them between this preview and the merge, the catalog plans again, and the new conflict refuses the merge with 409. A compaction or a snapshot expiry on main is a commit on main too.`),
+    may ? h('div', { class: 'refusal-acts' }, btn, blocked ? h('span', { class: 'fine' }, 'Refused while a table conflicts.') : h('span', { class: 'fine' }, 'Needs create on ', h('code', null, c), ' and write on each table.'))
+      : h('p', { class: 'fine' }, h('b', null, `Merging needs create on ${c}`), ' and write on every table it moves. Your groups hold none, so the console offers no merge.'));
+  const settle = blocked ? panel('What you can do', null, h('ul', { class: 'fine settle' },
+    plan.conflicts.some(x => x.state === 'moved') ? h('li', null, h('b', null, 'Start again from main: '), `make a branch from main now and redo @${r.name}'s change to ${plan.conflicts.filter(x => x.state === 'moved').map(x => x.t.name).join(', ')} on it. Main's newer commits come with it.`) : null,
+    plan.conflicts.some(x => x.state === 'dropped') ? h('li', null, h('b', null, 'A dropped table cannot come back by merge. '), 'If it should exist, make it on main again first.') : null,
+    h('li', null, h('b', null, 'Keep it as it is: '), `@${r.name} stays readable until it expires${r.kind === 'branch' ? ', ' + refAt(r.expires) : ''}, or tag @${r.name} to keep what it holds readable after it expires.`)),
+    may ? h('div', { class: 'refusal-acts' }, h('button', { class: 'btn sm', type: 'button', 'data-act': 'ref-new', 'data-c': c, 'data-kind': 'branch', 'data-name': r.name + '-2' }, icon('branch'), 'Make a branch from main')) : null) : null;
+  return [h('div', { class: 'grid-21 merge-grid' },
+    h('div', { class: 'stack' }, verdict,
+      h('div', { class: 'panel' }, h('div', { class: 'panel-h' }, h('h2', null, 'Table by table ', h('span', { class: 'meta' }, `${plural(plan.moves.length, 'move')} · ${plural(plan.conflicts.length, 'conflict')}`)), rawB),
+        h('p', { class: 'mm-key fine' }, h('i', { class: 'k-cut' }), 'the point (the cut: main as it was when the branch was made) ', h('i', { class: 'k-bc' }), `a commit on @${r.name} `, h('i', { class: 'k-mc' }), 'a commit on main since ', h('i', { class: 'k-mv' }), 'moves to main ', h('i', { class: 'k-x' }), 'conflict'),
+        h('div', { class: 'mm-rows' }, rows), raw)),
+    h('div', { class: 'stack' }, actBox, settle))];
+}
+function sinceWords(x) {
+  const by = {};
+  for (const e of x.since) { const w = e.kind === 'expire' ? 'nuna-maintenance (expiry)' : e.sn && e.sn.op === 'replace' ? 'nuna-maintenance (compaction)' : e.who; by[w] = (by[w] || 0) + 1; }
+  return Object.keys(by).join(', ');
+}
+
+/* ------------------------------------------------------------------ the four actions, each as the routes answer it */
+function actRefNew(c, preset = {}) {
+  let kind = preset.kind || 'branch';
+  const seg = h('span', { class: 'seg', role: 'group', 'aria-label': 'Kind' }, ['branch', 'tag'].map(k => h('button', { type: 'button', 'aria-pressed': String(k === kind), 'data-k': k }, icon(k), k === 'branch' ? 'Branch' : 'Tag')));
+  const name = h('input', { name: 'name', type: 'text', placeholder: 'a name, such as release-2026-11', autocomplete: 'off', spellcheck: 'false', value: preset.name || null });
+  const from = sel('from', [['main', 'main, as it is now'], ...refsOf(c).map(r => [r.name, `@${r.name} (${r.kind})`])], 'main');
+  const hint = h('div', { class: 'ref-hint' });
+  const draw = () => {
+    for (const b of $$('button', seg)) b.setAttribute('aria-pressed', String(b.dataset.k === kind));
+    const nm = name.value.trim() || '<name>', br = refsOf(c).filter(r => r.kind === 'branch').length, tg = refsOf(c).filter(r => r.kind === 'tag').length;
+    const full = kind === 'branch' ? br >= REF_SET.maxBranches : tg >= REF_SET.maxTags;
+    hint.classList.toggle('full', full);
+    hint.replaceChildren(full ? h('p', { class: 'fine warn-ink' }, h('b', null, kind === 'branch' ? `${c} holds ${br} of ${REF_SET.maxBranches} branches.` : `${c} holds ${fmt(tg)} of ${fmt(REF_SET.maxTags)} tags.`), kind === 'branch' ? ' The catalog refuses another until one is merged, deleted or expires.' : ' The catalog refuses another until one is deleted.') : null,
+      h('p', { class: 'fine' }, kind === 'branch'
+      ? `A branch keeps every table in ${c} as it is now and takes commits of its own. It expires 30 days after its last commit or renewal, never later than 180 days from now. ${br} of ${REF_SET.maxBranches} branches are open.`
+      : `A tag keeps every table in ${c} as it is now, read-only. It never expires. ${tg} of ${fmt(REF_SET.maxTags)} tags are used.`),
+    h('p', { class: 'fine' }, 'Engines reach it as ', h('code', null, `warehouse=${c}@${nm}`), '.'));
+  };
+  seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) { kind = b.dataset.k; draw(); } });
+  name.addEventListener('input', draw);
+  draw();
+  const body = h('div', null, dlgForm([field('Kind', seg), field('Name', h('span', { class: 'field mono' }, name), 'Letters, digits, dot, dash, underscore; no @ and no /. Names compare without case.'), field('From', from, 'A ref made from a branch takes that branch as it is now.'), hint], 'Make it', (form, out) => {
+    const nm = name.value.trim(), f = form.elements.from.value;
+    if (!nm) { out.replaceChildren(h('p', { class: 'fine grant-hint' }, 'Name the ref.')); return; }
+    const deny = check(c, 'create', c, 'createRef');
+    if (deny) { out.replaceChildren(deny); return; }
+    const rid = uuidOf('mkref' + c + nm + clockTicks);
+    const bad = /[@/]/.test(nm) ? `Invalid ref name: a ref's name holds no @ and no /: ${nm}` : nm.toLowerCase() === 'main' ? 'Invalid ref name: main is the catalog\'s main line, not a ref\'s name' : null;
+    if (bad) { out.replaceChildren(refusalBox('400 BadRequestException', bad, rid, null, { at: sessionAt(), audit: 'not audited: nothing changed' })); tick(); return; }
+    const held = heldName(c, nm);
+    if (held) { out.replaceChildren(refusalBox('409 AlreadyExistsException', `Ref already exists: ${nm} (a branch past its expiry keeps its name until the maintenance worker ends it)`, rid, [h('b', null, `@${held.name} expired at ${refAt(held.expiresAt)}.`), ` The worker ends it on its next run, ${refAt(held.endsAt)}; the name is free then.`], { at: sessionAt(), audit: 'not audited: nothing changed' })); tick(); return; }
+    const count = refsOf(c).filter(r => r.kind === kind).length, max = kind === 'branch' ? REF_SET.maxBranches : REF_SET.maxTags;
+    if (count >= max) { out.replaceChildren(refusalBox('409 RefLimitException', `Catalog ${c} holds ${fmt(max)} ${kind === 'branch' ? 'open branches' : 'tags'}, as many as nuna.refs.max-${kind === 'branch' ? 'branches' : 'tags'} allows`, rid, [h('b', null, kind === 'branch' ? 'Merge or delete a branch first' : 'Delete a tag first'), ', or ask an operator to raise the setting.'], { at: sessionAt(), audit: 'not audited: nothing changed' })); tick(); return; }
+    if (findRef(c, nm)) { out.replaceChildren(refusalBox('409 AlreadyExistsException', `Ref already exists: ${nm}`, rid, [h('b', null, 'Names compare without case.'), ' Pick another, or ', h('a', { href: refHref(c, findRef(c, nm).name) }, `open @${findRef(c, nm).name}`), '.'], { at: sessionAt(), audit: 'not audited: nothing changed' })); tick(); return; }
+    const src = f === 'main' ? null : findRef(c, f), m = nowMin();
+    const r = { name: nm, kind, from: f, by: user.id, eng: 'console', at: m, sec: sessionSec() % 60, why: kind === 'tag' ? `Made in the console at ${hm(m)}` : `Made in the console at ${hm(m)}`, commits: [], cat: c, id: uuidOf('ref' + c + nm + clockTicks) };
+    r.cut = src ? src.cut : m;
+    if (src && src.kind === 'branch' && kind === 'branch') r.commits = src.commits.map(x => Object.assign({}, x)); // a branch from a branch starts with its pointers
+    if (kind === 'branch') { r.maxExpires = m + REF_SET.life; r.expires = m + REF_SET.idle; }
+    REFS[c].push(r);
+    const rec = liveRecord({ path: null, cat: c, type: 'ref', kind: 'change', op: 'createRef', priv: 'create', words: refWords('CREATED', r, { expiresAt: r.expires }), rid, refEv: { action: 'CREATED', name: r.name, kind, from: f, id: r.id, expiresAt: r.expires || null, tables: [] } });
+    out.replaceChildren(grantedBox(`Made the ${kind} @${nm}`, '201 Created', rid, [h('a', { href: refHref(c, nm) }, `Open @${nm}`), ' · ', h('a', { href: href({ c, r: nm }) }, `Read ${c} on @${nm}`)], atOf(rec)));
+    $('button[type=submit]', form).disabled = true;
+    setTimeout(rerender, 0);
+  }));
+  openDialog('Make a branch or tag', body);
+}
+function actRefRenew(c, name) {
+  const r = findRef(c, name);
+  if (!r || r.kind !== 'branch') return;
+  const next = Math.min(nowMin() + REF_SET.idle, r.maxExpires), atCap = next <= r.expires;
+  const body = h('div', null, h('dl', { class: 'facts' }, h('dt', null, 'Now'), h('dd', null, `expires ${refAt(r.expires)}, ${untilWords(r.expires)}`),
+    h('dt', null, 'After'), h('dd', null, atCap ? h('b', null, 'unchanged: it is at the end of its whole life') : [h('b', null, `expires ${refAt(next)}`), ', 30 days from now']),
+    h('dt', null, 'Whole life'), h('dd', null, `never later than ${refAt(r.maxExpires)}, 180 days after it was made`)),
+  dlgForm(null, 'Renew', (form, out) => {
+    const deny = check(c, 'create', c, 'renewRef');
+    if (deny) { out.replaceChildren(deny); return; }
+    const rid = uuidOf('renew' + r.name + clockTicks);
+    if (atCap) { out.replaceChildren(grantedBox(`@${r.name} is unchanged`, '200 OK', rid, 'A renewal never shortens a branch\'s life, and this one is at its end. Merge it, or make a new branch.')); tick(); return; }
+    r.expires = next;
+    const rec = liveRecord({ path: null, cat: c, type: 'ref', kind: 'change', op: 'renewRef', priv: 'create', words: refWords('RENEWED', r, { expiresAt: next }), rid, refEv: { action: 'RENEWED', name: r.name, kind: 'branch', from: r.from, id: r.id, expiresAt: next, tables: [] } });
+    out.replaceChildren(grantedBox(`Renewed @${r.name}: it expires ${refAt(next)}`, '200 OK', rid, null, atOf(rec)));
+    $('button[type=submit]', form).disabled = true;
+    setTimeout(rerender, 0);
+  }));
+  openDialog(`Renew @${r.name}`, body);
+}
+function actRefDelete(c, name) {
+  const r = findRef(c, name);
+  if (!r) return;
+  const n = seenPaths(r).length, kids = refsOf(c).filter(t => t.from === r.name);
+  const body = h('div', null,
+    h('p', null, r.kind === 'tag' ? ['Engines reading ', h('code', null, `${c}@${r.name}`), ' get 404 from then on. The tables themselves are untouched.']
+      : n ? [h('b', null, `Its changes to ${plural(n, 'table')} were never merged and are lost.`), ' Main never took them. Engines reading ', h('code', null, `${c}@${r.name}`), ' get 404.']
+        : ['It has no changes of its own. Engines reading ', h('code', null, `${c}@${r.name}`), ' get 404.']),
+    h('p', { class: 'fine' }, 'Files only this ref reaches become unreferenced; the orphan scan removes them once they are older than its minimum age. The name is free at once.', kids.length ? [' ', kids.map(k => cref(k)), ' was made from it and stays.'] : ''),
+    dlgForm(null, `Delete @${r.name}`, (form, out) => {
+      const deny = check(c, 'create', c, 'deleteRef');
+      if (deny) { out.replaceChildren(deny); return; }
+      const rid = uuidOf('delref' + r.name + clockTicks), when = sessionAt();
+      r.ended = true;
+      const rec = liveRecord({ path: null, cat: c, type: 'ref', kind: 'change', op: 'deleteRef', priv: 'create', words: refWords('DELETED', r), rid, refEv: { action: 'DELETED', name: r.name, kind: r.kind, from: r.from, id: r.id, expiresAt: r.expires || null, tables: [] } });
+      REF_RESULTS.set(c + '|' + r.name.toLowerCase(), () => grantedBox(`Deleted @${r.name} at ${atOf(rec)}`, '204 No Content', rid, ['It is gone from every route; its record stays in the ', h('a', { href: pageHref('audit', c) }, 'audit feed'), '.'], atOf(rec)));
+      out.replaceChildren(grantedBox(`Deleted @${r.name}`, '204 No Content', rid, null, when));
+      $('button[type=submit]', form).disabled = true;
+      setTimeout(() => { if (RN && RN.name === r.name) location.hash = href({ c, r: null }); else rerender(); }, 0);
+    }));
+  $('button[type=submit]', body).classList.add('danger');
+  openDialog(`Delete the ${kindWord(r)} @${r.name}`, body);
+}
+function actRefMerge(c, name) {
+  const r = findRef(c, name);
+  if (!r) return;
+  const plan = mergePlan(r);
+  const body = h('div', null, h('p', null, `${plural(plan.moves.length, 'table')} move to main in one transaction, and `, cref(r), ' ends.'),
+    tbl('', ['Table', ['Main now', 'num'], ['Main after', 'num']], plan.moves.map(x => h('tr', null, h('td', { class: 'name' }, x.path), h('td', { class: 'num' }, fmt(x.mainV)), h('td', { class: 'num' }, h('b', null, fmt(x.mainV + 1)))))),
+    h('p', { class: 'fine' }, 'Main\'s later commits build on these. Nothing on main is lost: every earlier version stays in each table\'s commit journal.'),
+    dlgForm(null, `Merge into main`, (form, out) => {
+      const deny = check(c, 'create', c, 'mergeRef');
+      if (deny) { out.replaceChildren(deny); return; }
+      const now = mergePlan(r), rid = uuidOf('merge' + r.name + clockTicks);
+      if (now.conflicts.length) { out.replaceChildren(refusalBox('409 RefMergeConflictException', `Merging ${r.name} into main conflicts on ${plural(now.conflicts.length, 'table')}; nothing moved`, rid, null, { at: sessionAt(), audit: 'not a denial: the merge record is not written' })); tick(); return; }
+      const moved = [];
+      for (const x of now.moves) {
+        const t = x.t, v = onRef(t, r), ml = metaLogOf(t), m = nowMin(), sec = sessionSec() % 60;
+        // main takes the branch's metadata file as its next version: the branch's snapshots are main's from now
+        const e = { m, sec, kind: 'merge', from: r.name, branchV: x.branchV, who: user.id, eng: 'console', v: ml.total + 1, file: v._mlog.kept[0].file };
+        ml.all.unshift(e); ml.kept.unshift(e); ml.kept.length = Math.min(ml.kept.length, 101); ml.total += 1;
+        t._snaps = v._snaps.map(sn => Object.assign({}, sn)); t._byMin = null; t.snaps = t._snaps.length; t.lastMin = m; t.last = [hm(m), 'just now'];
+        VIEWS.clear();
+        liveRecord({ path: t.path, type: 'commit', kind: 'change', op: 'mergeRef', priv: 'write', branch: 'main', mergedFrom: r.name, words: [`Took @${r.name}'s version ${fmt(x.branchV)} as version ${fmt(e.v)} on main, in the merge`], rid });
+        moved.push([t, x, e.v]);
+      }
+      r.ended = true;
+      const rec = liveRecord({ path: null, cat: c, type: 'ref', kind: 'change', op: 'mergeRef', priv: 'create', words: refWords('MERGED', r, { tables: moved.map(m => m[0].path) }), rid,
+        refEv: { action: 'MERGED', name: r.name, kind: 'branch', from: r.from, id: r.id, expiresAt: null, tables: moved.map(m => m[0].path) } });
+      const result = () => h('div', { class: 'stack' }, grantedBox(`Merged @${r.name} into main at ${atOf(rec)}`, '200 OK', rid, `${plural(moved.length, 'table')} moved in one transaction; the branch ended and ${c}@${r.name} answers 404.`, atOf(rec)),
+        panel('What main has now', null, tbl('', ['Table', ['Main was', 'num'], ['Main is', 'num'], 'Its file'], moved.map(([t, x, v]) => h('tr', null, h('td', { class: 'name' }, h('a', { href: href({ c, k: 'table', ns: t.ns, n: t.name, r: null, tab: 'metadata-log' }) }, t.path)),
+          h('td', { class: 'num' }, fmt(x.mainV)), h('td', { class: 'num' }, h('b', null, fmt(v))), h('td', null, h('span', { class: 'fine' }, `the one @${r.name} wrote at its version ${fmt(x.branchV)}`))))),
+        h('p', { class: 'fine' }, 'The audit feed has the merge and one commit per table, with this request id.')));
+      REF_RESULTS.set(c + '|' + r.name.toLowerCase(), result);
+      form.closest('dialog').close();
+      setTimeout(() => { location.hash = refHref(c, r.name, 'merge'); rerender(); }, 0);
+    }));
+  openDialog(`Merge @${r.name} into main`, body, { wide: true });
+}
+doc.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act^="ref-"]');
+  if (!b) return;
+  const a = b.dataset.act, c = b.dataset.c || cat;
+  if (a === 'ref-new') actRefNew(c, { kind: b.dataset.kind, name: b.dataset.name });
+  else if (a === 'ref-renew') actRefRenew(c, b.dataset.id);
+  else if (a === 'ref-delete') actRefDelete(c, b.dataset.id);
+  else if (a === 'ref-merge') actRefMerge(c, b.dataset.id);
+});
+
+/* ------------------------------------------------------------------ a table's settings (item 141), as the console has them since 22 Nov */
+const SETTINGS = [['write.format.default', 'File format of new data', 'parquet'], ['write.parquet.compression-codec', 'Parquet compression', 'zstd'], ['write.target-file-size-bytes', 'Target data file size', '536870912'],
+  ['write.delete.mode', 'How deletes rewrite rows', 'copy-on-write'], ['write.metadata.previous-versions-max', 'Earlier metadata files listed', '100']];
+const TPROPS = new Map();
+function propsOf(t) { const k = (t.ref ? t.ref.name : '') + '|' + t.path; if (!TPROPS.has(k)) TPROPS.set(k, Object.fromEntries([['write.format.default', 'parquet'], ['write.parquet.compression-codec', 'zstd']])); return TPROPS.get(k); }
+function propertiesTabFor(t) {
+  const p = propsOf(t), r = t.ref || null, tag = r && r.kind === 'tag';
+  const rows = SETTINGS.map(([k, label, def]) => h('tr', null, h('td', null, h('b', null, label), h('br'), h('code', { class: 'fine' }, k)), h('td', { class: 'name' }, p[k] || def), h('td', null, h('span', { class: 'muted' }, p[k] ? 'set on the table' : 'built-in default'))));
+  const acts = tag ? h('div', { class: 'ro-note' }, h('p', { class: 'refusal-h' }, icon('lock'), 'Read-only: a tag never changes. If an engine tries, the catalog answers'),
+    h('p', { class: 'refusal-code' }, '400 BadRequestException'), h('p', { class: 'refusal-msg' }, `commitTable is refused on tag ${r.name} of catalog ${t.cat}: a tag is read-only`), h('p', { class: 'fine' }, 'So the console offers no change here. Read main to change a setting.'))
+    : h('div', { class: 'refusal-acts' }, h('button', { class: 'btn sm', type: 'button', 'data-act': 'set-prop', 'data-path': t.path }, 'Change a setting'), h('span', { class: 'fine' }, 'Needs ', h('code', null, 'modify'), '. It is a commit to the table', r ? [' on ', cref(r)] : '', ', so every commit rule applies.'));
+  return [r ? mainsOnly(r, 'props') : null, h('div', { class: 'grid-21' }, panel('Settings', 'the write settings engines honour', tbl('', ['Setting', 'Value', 'Where'], rows), acts),
+    panel('Every property', 'read-only', h('dl', { class: 'facts one' }, Object.entries(p).map(([k, v]) => [h('dt', null, h('code', null, k)), h('dd', null, v)]))))];
+}
+function actSetProp(t) {
+  const r = RN && t.ref ? RN : null;
+  const body = h('div', null, dlgForm([field('Setting', sel('k', SETTINGS.map(([k, l]) => [k, l]), 'write.parquet.compression-codec')), field('Value', txt('v', 'zstd', 'snappy'))], r ? `Commit on @${r.name}` : 'Commit on main', (form, out) => {
+    const deny = check(t.cat, 'modify', t.path, 'commitTable');
+    if (deny) { out.replaceChildren(deny); return; }
+    const k = form.elements.k.value, v = form.elements.v.value.trim() || 'zstd', rid = uuidOf('prop' + t.path + clockTicks);
+    propsOf(t)[k] = v;
+    if (r && r.kind === 'branch') r.commits.push({ path: t.path, m: nowMin(), sec: sessionSec() % 60, op: 'props', rows: 0, files: 0, words: `Set ${k}=${v}` });
+    const rec = liveRecord({ path: t.path, type: 'commit', kind: 'change', op: 'commitTable', priv: 'modify', branch: r ? r.name : 'main', refName: r ? r.name : null, prop: { [k]: v }, words: ['Set the property ', ['code', `${k}=${v}`], r ? [' on ', ['code', '@' + r.name]] : ' on main'].flat(), rid });
+    out.replaceChildren(grantedBox(`Set ${k}=${v}${r ? ' on @' + r.name : ''}`, '200 OK', rid, null, atOf(rec)));
+    $('button[type=submit]', form).disabled = true;
+    VIEWS.clear();
+    setTimeout(rerender, 0);
+  }));
+  openDialog(`Change a setting of ${t.name}`, body);
+}
+doc.addEventListener('click', (e) => { const b = e.target.closest('[data-act="set-prop"]'); if (b) { const t = tableAny(b.dataset.path); if (t) actSetProp(RN ? onRef(t, RN) : t); } });
 render();
 </script>
 </body>
