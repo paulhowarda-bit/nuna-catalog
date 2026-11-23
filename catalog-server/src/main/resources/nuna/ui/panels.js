@@ -8,6 +8,7 @@ import * as api from './api.js';
 import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
   muted, openDialog, panel, pill, plural, select, tbl, text, when, at, copyButton} from './dom.js';
 import {dotted, objectHref} from './route.js';
+import {liveRefLink, refWords} from './refs.js';
 
 export const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-tags', 'manage-grants'];
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
@@ -472,11 +473,16 @@ export function grantsTab(target) {
 
 // ---- the audit trail ----
 
-export function describe(type, d) {
+/** A record's branch field: main, or the catalog ref it went through, as @name (item 109). */
+const onRef = branch => !branch || branch === 'main' ? 'main' : '@' + branch;
+
+/** A record's words; given its catalog, a ref record also links to its ref while that ref is live (item 109). */
+export function describe(type, d, catalog) {
   switch (type) {
-    case 'commit': return `version ${d.before ? d.before.version : '–'} → ${d.after ? d.after.version : '–'} on ${d.branch}; `
+    case 'commit': return `version ${d.before ? d.before.version : '–'} → ${d.after ? d.after.version : '–'} on ${onRef(d.branch)}; `
       + (Array.isArray(d.updates) ? d.updates.map(u => u.action).join(', ') : '');
-    case 'read': return `loaded version ${d.served ? d.served.version : '–'} of ${d.branch}`;
+    case 'read': return `loaded version ${d.served ? d.served.version : '–'} of ${onRef(d.branch)}`;
+    case 'ref': return catalog ? [refWords(d), liveRefLink(catalog, d)] : refWords(d);
     case 'denial': return `refused ${d.operation}${d.privilege ? ' (needs ' + d.privilege + ')' : ''}: ${d.reason}`;
     case 'grant': return `${String(d.action).toLowerCase()} ${d.privilege} to ${d.group}`;
     case 'governance': return `${String(d.action).toLowerCase()} ${d.attribute}${d.value != null ? ' = ' + d.value : ''}`;
@@ -494,7 +500,7 @@ export function describe(type, d) {
 
 const KIND_OF = type => type === 'denial' ? 'refusal' : type === 'read' || type === 'audit-read' ? 'read'
   : type === 'credential-issue' ? 'cred' : type === 'commit' || type === 'governance' || type === 'hold' || type === 'drop'
-    || type === 'undrop' || type === 'purge' || type === 'rename' || type === 'namespace' ? 'change' : 'other';
+    || type === 'undrop' || type === 'purge' || type === 'rename' || type === 'namespace' || type === 'ref' ? 'change' : 'other';
 
 const KINDS = [['all', 'All'], ['change', 'Changes'], ['read', 'Reads'], ['cred', 'Credentials'], ['refusal', 'Refusals'], ['other', 'Other']];
 

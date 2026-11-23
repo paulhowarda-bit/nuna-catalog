@@ -1,0 +1,16 @@
+Breaks: taking a table out of refs on the SQL stores deletes the branch's own pointer but not the ref's entry, so the tag still names the table and its purge stays refused (backlog 156).
+Module: catalog-store-sql
+Test: PostgresStoreSuiteTest$Refs#takingATableOutOfRefs
+
+diff --git a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+index 185d2a5e..774bd456 100644
+--- a/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
++++ b/catalog-store-sql/src/main/java/nuna/catalog/store/sql/SqlRefs.java
+@@ -250,7 +250,6 @@ final class SqlRefs {
+             update(connection, "DELETE FROM pointer WHERE object_id = ? AND branch = ANY(?)", objectId, branches);
+             update(connection, "DELETE FROM projection_piece WHERE object_id = ? AND branch = ANY(?)", objectId,
+                     branches);
+-            update(connection, "DELETE FROM ref_entry WHERE object_id = ? AND ref_id = ANY(?)", objectId, ids);
+             return WriteResult.APPLIED;
+         });
+     }

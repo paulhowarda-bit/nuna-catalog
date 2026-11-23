@@ -195,6 +195,16 @@ public abstract class MutationSuite extends GroupSuite {
                     return (target, change) -> applied(target.commit(new CommitBatch(change.id(), change.at(),
                             List.of(toMain), List.of(new PointerHold(own.key(), own.next())),
                             Optional.of(new RefLock.End(branch.id())), change.outbox(), change.idempotency())));
+                }),
+                new Mutation("removeFromRefs", () -> {
+                    UUID catalog = newCatalog();
+                    CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+                    Ref branch = Refs.branch(catalog, "b", now());
+                    assertApplied(store.createRef(branch, RefLimits.P11, change()));
+                    PointerSwap own = Commits.advance(branch.key(table.id()), Optional.empty(), "on-b");
+                    applied(store.commit(new CommitBatch(UUID.randomUUID(), now(), List.of(own), List.of(),
+                            Optional.of(new RefLock.Hold(branch.id())), List.of(), Optional.empty())));
+                    return (target, change) -> target.removeFromRefs(table.id(), Set.of(branch.id()), true, change);
                 }));
     }
 

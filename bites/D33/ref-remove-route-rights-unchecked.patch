@@ -1,0 +1,16 @@
+Breaks: taking a table or view out of refs asks no right on it, so a caller who holds create on the catalog, or only describe, erases it from a tag (security finding 6; backlog 156).
+Module: catalog-server
+Test: RefRoutesTest#takingATableOutOfRefsNeedsManageTagsOnIt
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index f294f674..7af807d1 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -843,7 +843,6 @@ class RefRoutes {
+         Request request = management.request(http);
+         CatalogRecord catalog = management.catalog(prefix, request, REMOVE_OP, Privilege.MANAGE_TAGS);
+         Target target = objectTarget(catalog, id);
+-        guard.require(request, target, REMOVE_OP, Privilege.MANAGE_TAGS);
+         return idempotency.run(Optional.ofNullable(key), request.caller(), "REMOVE_FROM_REFS",
+                 catalog.id() + "/" + target.securable().id(), body, ticket -> remove(target, request, body, ticket));
+     }

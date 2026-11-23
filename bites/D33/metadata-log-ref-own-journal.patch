@@ -1,0 +1,16 @@
+Breaks: a branch's metadata log shows main's commits since the cut as the branch's.
+Module: catalog-server
+Test: MetadataLogRefTest#throughABranchItsOwnVersionsComeFromItsJournalAndTheRestFromMainsAtTheCut
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index aa9f088e..917bf081 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -419,7 +419,7 @@ class LifecycleRoutes {
+     private List<Stretch> stretches(RefPointers held, List<RefPointers> holding, Instant now, UUID objectId,
+                                     Function<PageRequest, Page<JournalRecord>> mains) {
+         List<Stretch> stretches = new ArrayList<>();
+-        stretches.add(new Stretch(held.cut().version(), journalOf(held.ref().key(objectId))));
++        stretches.add(new Stretch(held.cut().version(), mains));
+         RefPointers at = held;
+         while (at.ref().fromRef().isPresent()) {
+             UUID from = at.ref().fromRef().get();

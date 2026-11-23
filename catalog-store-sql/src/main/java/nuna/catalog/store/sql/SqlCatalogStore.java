@@ -687,6 +687,11 @@ public final class SqlCatalogStore implements CatalogStore {
     }
 
     @Override
+    public WriteResult removeFromRefs(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
+        return refs.remove(objectId, refIds, every, change);
+    }
+
+    @Override
     public long countOwnPointers(UUID refId) {
         return refs.countOwn(refId);
     }

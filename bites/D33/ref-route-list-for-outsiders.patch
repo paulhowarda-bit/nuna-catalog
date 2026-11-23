@@ -2,12 +2,12 @@ Breaks: one who holds nothing in the catalog lists its refs.
 Module: catalog-server
 Test: RefRoutesTest#listingAndReadingNeedAnyHoldingInTheCatalog
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
-index ff2347e..de15a0f 100644
+index 90105ce7..227123c1 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
-@@ -128,7 +128,7 @@ class RefRoutes {
-                                 @RequestParam(required = false) String pageToken,
-                                 @RequestParam(required = false) Integer pageSize, HttpServletRequest http) {
+@@ -148,7 +148,7 @@ class RefRoutes {
+                                 @RequestParam(required = false) Integer pageSize,
+                                 @RequestParam(defaultValue = "false") boolean expired, HttpServletRequest http) {
          Request request = management.request(http);
 -        CatalogRecord catalog = management.catalog(prefix, request, "listRefs", null);
 +        CatalogRecord catalog = store.findCatalog(Names.normalize(prefix)).orElseThrow();

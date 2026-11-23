@@ -3,6 +3,7 @@ package nuna.catalog.store;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -61,6 +62,29 @@ public interface RefStore {
      * @return {@code Applied} or {@code Missing(REF)}
      */
     WriteResult deleteRef(UUID refId, Change change);
+
+    /**
+     * Takes a table or view out of refs (D33, amended 2026-11-22; backlog 156), so a dropped one's files can be purged
+     * once no ref names it. In one transaction it deletes the object's entry in the cut of each ref of {@code refIds},
+     * and each branch's own pointer for it with that pointer's projection pieces; a branch's journal rows stay, keyed by
+     * its id, as a deletion leaves them. Reads of the object through those refs then find nothing, as for an object
+     * their cut never held, and a commit on such a branch that swaps it is refused ({@link RefLock.Hold}).
+     *
+     * <p>The catalog's refs are locked as a create locks them, so no ref is made meanwhile; each ref of {@code refIds}
+     * is locked as a deletion locks it, so a commit on a branch in flight lands first; and the object is locked as a
+     * purge claim locks it, its holds and freezes read as a claim reads them. The outcomes below are checked in the
+     * order given, once every lock is held.
+     *
+     * @param refIds the refs to take it out of, at least one
+     * @param every  whether {@code refIds} must be every ref whose cut names the object, a branch past its expiry
+     *               included
+     * @return {@code Applied}; {@code Missing(OBJECT)} (no such table or view, or a purged one); {@code Refused(HELD)}
+     *         or {@code Refused(FROZEN)} (a legal hold or a DR freeze on the object, a namespace above it or its
+     *         catalog); {@code Missing(REF)} (a ref of {@code refIds} is not a ref of the object's catalog, or its cut
+     *         does not name the object); or {@code Refused(REFERENCED)} ({@code every}, and a ref outside
+     *         {@code refIds} names it)
+     */
+    WriteResult removeFromRefs(UUID objectId, Set<UUID> refIds, boolean every, Change change);
 
     /**
      * How many tables and views of its cut the ref has its own pointer for: those a branch's commits have changed. A
