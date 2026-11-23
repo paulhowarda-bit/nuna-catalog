@@ -537,19 +537,20 @@ SQL
 # Trino's catalog lakehouse_dev (trino.yaml) reads and writes it. Then tag sample keeps main as it is: the sample
 # data, and on a new lake nothing of the brokerage world, whose bootstrap comes after. Once per lake: the tag, made
 # last, says it is done, and goes with the catalog's PostgreSQL. A dev left without changes by an up that stopped
-# part way gets them now; one a person made or merged is left as it is.
+# part way gets them now; one a person made or merged is left as it is. It returns at its first failure, so the
+# tag is never made after a step that failed, and up goes on without the refs (the next up tries again).
 refs() {
   local m=/management/v1/catalogs/$CATALOG dev
   api ana GET "$m/refs/sample" '' 200 2>/dev/null && return 0
   say "the catalog's branch dev, with the next day's trades and rates committed on it, and its tag sample (as ana)"
   api ana GET "$m/refs/dev" '' 200 2>/dev/null \
-    || api ana POST "$m/refs" '{"name": "dev", "kind": "branch", "from": "main"}' 201
+    || api ana POST "$m/refs" '{"name": "dev", "kind": "branch", "from": "main"}' 201 || return 1
   # The branch's own read lists the tables it changed.
-  dev=$(tls_curl -fs -H "Authorization: Bearer $(token_of ana)" "$URL$m/refs/dev")
+  dev=$(tls_curl -fs -H "Authorization: Bearer $(token_of ana)" "$URL$m/refs/dev") || return 1
   if [[ "$dev" == *'"changed":[]'* ]]; then
-    lake dev
+    lake dev || return 1
   fi
-  api ana POST "$m/refs" '{"name": "sample", "kind": "tag", "from": "main"}' 201
+  api ana POST "$m/refs" '{"name": "sample", "kind": "tag", "from": "main"}' 201 || return 1
 }
 
 # The brokerage world's bootstrap (brokerage-bootstrap.yaml): its catalog namespaces, tables and views, as user
@@ -1016,8 +1017,9 @@ up() {
     cdc_apply
   else
     # Before the brokerage world's bootstrap, so a new lake's tag holds the sample data alone; and, as its lake
-    # writer's Job needs, while Kafka Connect and the generator are stopped.
-    refs
+    # writer's Job needs, while Kafka Connect and the generator are stopped. A failure in it never stops up: the
+    # world and Trino still start.
+    refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
     brokerage_bootstrap
     brokerage_governance
     say "starting Trino ($TRINO_IMAGE)"
