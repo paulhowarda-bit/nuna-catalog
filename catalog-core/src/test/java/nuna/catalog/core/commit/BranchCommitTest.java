@@ -312,6 +312,8 @@ class BranchCommitTest {
                 new CommitEngine.TableChange(name(quotes), update(Map.of("t", "1"))),
                 new CommitEngine.TableChange(name(fills), update(Map.of("t", "1")))), "{}", ALICE, Optional.empty()))
                 .isEqualTo(goneFromMain(fills, "dev"));
+        assertThat(files.metadataFiles(orders.locationRoot())).as("refused before anything is written").hasSize(1);
+        assertThat(files.metadataFiles(fills.locationRoot())).as("refused before anything is written").hasSize(1);
 
         beforeNextCommit.set(() -> objects.put(quotes.id(), retired(quotes, CatalogObject.State.DROPPED)));
         assertThat(on(dev).commitTable(name(quotes), update(Map.of("a", "1")), ALICE, Optional.empty()))
