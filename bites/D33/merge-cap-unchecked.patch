@@ -1,0 +1,17 @@
+Breaks: a branch that changed more tables than nuna.refs.max-merge-tables merges anyway, in a transaction past P10's proven bound (item 26's choice 9).
+Module: catalog-core
+Test: MergeTest#theCap
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+index be01593..6c2c314 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
+@@ -136,7 +136,7 @@ public final class Merge {
+         }
+ 
+         public boolean overCap() {
+-            return changed > maxTables;
++            return false;
+         }
+ 
+         public List<Table> conflicts() {
