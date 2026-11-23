@@ -8,6 +8,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.GRANT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
+import static nuna.catalog.store.mongo.MongoCatalogStore.LIFT;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_JOB;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_REQUEST;
@@ -201,6 +202,22 @@ final class MongoSchema {
                 index(database, MAINTENANCE_REQUEST, "maintenance_request_key", true, null, "objectId", "job");
                 index(database, MAINTENANCE_REQUEST, "maintenance_request_waiting", false, null, "requestedAt",
                         "objectId", "job");
+            }),
+            // D24, D37, D45 (backlog 133): a hold released and a DR freeze lifted are kept, one document per change,
+            // named by its change id and never changed, with the catalog its level lies in, so a catalog's history of
+            // them is complete and outlives a level dropped since; and a catalog's lifts over a window, the most recent
+            // first. The collection is new, made here outside any transaction, since a release inserts into it inside
+            // one; no server of the previous release touches it, so building its index locks nothing it uses. A
+            // release or lift such a server makes during a rolling upgrade is not kept (its audit record is).
+            new Step(13, "governance lifts", database -> {
+                try {
+                    database.createCollection(LIFT);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
+                index(database, LIFT, "governance_lift_by_catalog", false, null, "catalogId", "liftedAt");
             }));
 
     private MongoSchema() {

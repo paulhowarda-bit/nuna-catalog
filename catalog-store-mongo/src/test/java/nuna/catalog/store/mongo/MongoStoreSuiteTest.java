@@ -362,11 +362,11 @@ class MongoStoreSuiteTest extends CommitSuite {
         Securable target = new Securable(Securable.Kind.NAMESPACE, namespace.id());
         GovernanceAttribute owner = new GovernanceAttribute(target, GovernanceAttribute.Kind.OWNER, "team", "manual", "admin", now());
         assertApplied(ahead.putAttribute(owner, event("attribute-1")));
-        assertApplied(ahead.removeAttribute(target, GovernanceAttribute.Kind.OWNER, event("attribute-removed")));
+        assertApplied(ahead.removeAttribute(target, GovernanceAttribute.Kind.OWNER, "steward", event("attribute-removed")));
         assertApplied(behind.putAttribute(owner, event("attribute-2")));
         LegalHold hold = new LegalHold(UUID.randomUUID(), target, "case", "legal", now());
         assertApplied(ahead.placeHold(hold, event("hold-1")));
-        assertApplied(ahead.releaseHold(hold.id(), event("hold-released")));
+        assertApplied(ahead.releaseHold(hold.id(), "counsel", event("hold-released")));
         assertApplied(behind.placeHold(new LegalHold(UUID.randomUUID(), target, "case", "legal", now()), event("hold-2")));
 
         TrustedEngine engine = new TrustedEngine("https://issuer.lamport", "spark", "sub", Set.of("delegated"));
@@ -506,7 +506,7 @@ class MongoStoreSuiteTest extends CommitSuite {
                 assertApplied(store.placeHold(hold, Changes.change()));
                 assertThat(store.dropNamespace(child.id(), Changes.change())).as("hold on %s", securable)
                         .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-                assertApplied(store.releaseHold(hold.id(), Changes.change()));
+                assertApplied(store.releaseHold(hold.id(), "counsel", Changes.change()));
             }
             assertApplied(store.dropNamespace(child.id(), Changes.change()));
         }

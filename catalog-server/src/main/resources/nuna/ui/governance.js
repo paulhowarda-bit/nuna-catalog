@@ -98,27 +98,24 @@ function standingTable(catalog, standing, reload) {
   }));
 }
 
-/** The holds released and freezes lifted, as far as the audit topic reaches. */
+/**
+ * The holds released and freezes lifted in the window, as the store keeps each (item 133), the most recent first; one
+ * on a level dropped since is named by its kind and id, as there is no longer a path to it.
+ */
 function liftedTable(catalog, lifted) {
   return tbl('holds', ['Kind', 'On', 'Reason, as recorded', 'Placed', 'Lifted'], lifted.map(x => h('tr', {'data-kind': x.kind,
     'data-on': (x.on.path || []).join('.')},
   h('td', null, pill('', icon(x.kind === 'hold' ? 'lock' : 'snow'), x.kind === 'hold' ? 'Hold' : 'Freeze')),
-  h('td', {class: 'name'}, onLink(catalog, x.on)),
-  h('td', {class: 'wrap'}, x.reason || muted('not in the window read')),
-  h('td', null, x['placed-at'] ? [h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')] : muted('before the window read')),
-  h('td', null, h('span', {class: 'tnum'}, at(x['lifted-at'])), h('br'), muted(x['lifted-by'] || '')))));
+  h('td', {class: 'name'}, x.on.path === null ? [code(x.on.id), ' ', muted(`· ${x.on.kind}, dropped since`)] : onLink(catalog, x.on)),
+  h('td', {class: 'wrap'}, x.reason),
+  h('td', null, h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'])),
+  h('td', null, h('span', {class: 'tnum'}, at(x['lifted-at'])), h('br'), muted(x['lifted-by'])))));
 }
 
-/** What the read of the audit topic reached, said plainly. */
+/** The window the lifted list covers: every release and lift in it is listed. */
 function historyWords(history) {
-  if (!history || history.available === false) {
-    return h('p', {class: 'notice', id: 'lifted-window'}, icon('info'), h('span', null, h('b', null, 'What was lifted cannot be listed now. '),
-      (history && history.reason) || ''));
-  }
-  return h('p', {class: 'fine', id: 'lifted-window'}, history.complete
-    ? 'The read reached the oldest record the audit topic holds, so every lift it keeps is listed.'
-    : `Read from the newest ${fmt(history['scan-limit'])} records of each audit partition${history.since
-      ? `, back to ${at(history.since)}` : ''}: an older lift is in the SIEM.`);
+  return h('p', {class: 'fine', id: 'lifted-window'},
+    `Every hold released and freeze lifted in the last ${history.days} days, since ${at(history.since)}.`);
 }
 
 // ---- grants ----
@@ -253,7 +250,8 @@ function holdsPage(catalog, tabs) {
       return [h('div', {class: 'panel', id: 'holds-standing'}, h('h2', null, 'Standing ', h('span', {class: 'meta'}, 'newest first')),
         standingTable(catalog, standing, reload)),
       h('div', {class: 'panel', id: 'holds-lifted'}, h('h2', null, 'Lifted and released ', h('span', {class: 'meta'}, 'most recent first')),
-        lifted.length ? liftedTable(catalog, lifted) : h('p', {class: 'muted'}, 'Nothing lifted or released in the window read.'),
+        lifted.length ? liftedTable(catalog, lifted)
+          : h('p', {class: 'muted'}, `Nothing lifted or released in the last ${hf.history.days} days.`),
         historyWords(hf.history))];
     });
     load(own, () => governanceTab(target, reload));

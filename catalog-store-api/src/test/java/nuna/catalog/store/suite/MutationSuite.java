@@ -134,7 +134,7 @@ public abstract class MutationSuite extends GroupSuite {
                 onTable("removeAttribute", table -> {
                     assertApplied(store.putAttribute(new GovernanceAttribute(table.securable(),
                             GovernanceAttribute.Kind.OWNER, "team", "catalog-api", "admin", now()), change()));
-                    return (target, change) -> target.removeAttribute(table.securable(), GovernanceAttribute.Kind.OWNER, change);
+                    return (target, change) -> target.removeAttribute(table.securable(), GovernanceAttribute.Kind.OWNER, "steward", change);
                 }),
                 new Mutation("placeHold", () -> {
                     NamespaceRecord namespace = newNamespace(newCatalog(), "ns");
@@ -146,7 +146,7 @@ public abstract class MutationSuite extends GroupSuite {
                     LegalHold hold = new LegalHold(UUID.randomUUID(), new Securable(Securable.Kind.CATALOG, catalog),
                             "matter", "counsel", now());
                     assertApplied(store.placeHold(hold, change()));
-                    return (target, change) -> target.releaseHold(hold.id(), change);
+                    return (target, change) -> target.releaseHold(hold.id(), "counsel", change);
                 }),
                 new Mutation("putTrustedEngine", () -> (target, change) -> target.putTrustedEngine(
                         new TrustedEngine("https://idp.suite/" + UUID.randomUUID(), "trino", "sub", Set.of("shared")), change)),

@@ -188,7 +188,7 @@ class RulesInTheLoopTest {
                     Optional.empty()), 403, "Writes to ");
             assertThat(h.pointer("Orders").version()).isEqualTo(1);
 
-            h.faults.real.removeAttribute(h.namespace(), GovernanceAttribute.Kind.DR_FREEZE, Harness.change());
+            h.faults.real.removeAttribute(h.namespace(), GovernanceAttribute.Kind.DR_FREEZE, "steward", Harness.change());
             assertThat(commit(update(uuid(), setProperties(Map.of("comment", "x"))))).isInstanceOf(Success.class);
         }
 

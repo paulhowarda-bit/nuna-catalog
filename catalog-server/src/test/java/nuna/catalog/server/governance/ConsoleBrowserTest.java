@@ -434,7 +434,7 @@ class ConsoleBrowserTest {
         assertThat(cell(regulated, 3)).isEqualTo("1");
         browser.await(By.cssSelector("#regulated .closed-list li[data-on='" + top + ".ledger.accounts']"));
 
-        // A hold released is listed as lifted, once the relay has put the release on the audit topic.
+        // A hold released is listed as lifted, from what the store keeps of the release (item 133).
         List<String> archive = List.of(top, "archive_" + Api.suffix());
         expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(archive) + "}"), 200);
         String reason = "console test: matter closed " + Api.suffix();

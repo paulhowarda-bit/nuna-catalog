@@ -219,13 +219,17 @@ final class GovernanceSummary {
         return node;
     }
 
-    /** {@link #on} for what an audit record names. */
-    static ObjectNode on(nuna.catalog.audit.Securable securable) {
-        ObjectNode node = Management.JSON.createObjectNode();
-        node.put("kind", securable.kind().name().toLowerCase(java.util.Locale.ROOT));
-        node.put("id", securable.id().toString());
-        ArrayNode path = node.putArray("path");
-        securable.path().forEach(path::add);
+    /**
+     * {@link #on} for a level the walk found; one no longer in the catalog, such as a namespace dropped after a hold
+     * on it was released, by its kind and id with a null path (item 133).
+     */
+    ObjectNode on(Securable securable) {
+        Level level = levels.get(securable);
+        if (level != null) {
+            return on(level);
+        }
+        ObjectNode node = GovernanceRoutes.securable(securable);
+        node.putNull("path");
         return node;
     }
 

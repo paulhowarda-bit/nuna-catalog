@@ -16,10 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.Denial;
-import nuna.catalog.audit.HoldChange;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
 import nuna.catalog.core.principal.Caller;
@@ -38,7 +36,9 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogObject.Kind;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
+import nuna.catalog.store.Change;
 import nuna.catalog.store.GovernanceAttribute;
+import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.Grant;
 import nuna.catalog.store.GrantRecord;
 import nuna.catalog.store.LegalHold;
@@ -48,7 +48,7 @@ import nuna.catalog.store.Page;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.PageToken;
 import nuna.catalog.store.Securable;
-import org.apache.kafka.common.errors.TimeoutException;
+import nuna.catalog.store.WriteResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -58,10 +58,10 @@ import tools.jackson.databind.JsonNode;
  * A catalog's governance summary and its holds and freezes (D45, item 128), and the retention classes a maintenance
  * policy names for the console to offer (item 140): the counts the console's governance page
  * shows, with a table closed until classified exactly when the authorizer closes it (D27); the holds and freezes
- * standing now, from the store, and those lifted, from the audit topic; and who may read them, describe on the
- * catalog, refusals audited and names hidden as on every management route (D18). The routes, guard and authorizer
- * are the real ones over a store double that keeps attributes and holds, and the audit topic is Kafka's
- * {@code MockConsumer} ({@link HoldHistoryTest}), so this needs only Java.
+ * standing now, and those lifted in the last 30 days, both from the store (item 133); and who may read them,
+ * describe on the catalog, refusals audited and names hidden as on every management route (D18). The routes, guard
+ * and authorizer are the real ones over a store double that keeps attributes, holds and their lifts as the store
+ * contract says, so this needs only Java.
  */
 class GovernanceSummaryTest {
 
@@ -85,6 +85,8 @@ class GovernanceSummaryTest {
     private final List<GrantRecord> grants = new ArrayList<>();
     private final List<GovernanceAttribute> attributes = new ArrayList<>();
     private final List<LegalHold> holds = new ArrayList<>();
+    /** The releases and lifts the store keeps, the most recent first. */
+    private final List<GovernanceLift> lifts = new ArrayList<>();
     private final List<CatalogEvent> audit = new ArrayList<>();
 
     private final NamespaceRecord finance = namespace(null, "finance");
@@ -109,7 +111,6 @@ class GovernanceSummaryTest {
     private final LegalHold euHold = hold(namespaceOf(eu), "Matter 2026-114: trade surveillance review", 2);
     private final LegalHold viewHold = hold(daily.securable(), "Matter 2026-120: daily report", 0);
 
-    private final HoldHistoryTest topic = new HoldHistoryTest();
     private final Authorizer authorizer;
     private final Management management;
     private final ManagementGuard guard;
@@ -145,7 +146,7 @@ class GovernanceSummaryTest {
 
     @Test
     void theSummaryCountsTheCatalogsTablesAndNamesItsRegulatedAreasAndClosedTables() {
-        JsonNode summary = json(routes(topic::history).summary("gate", http));
+        JsonNode summary = json(routes().summary("gate", http));
 
         assertThat(summary.get("catalog").asString()).isEqualTo("gate");
         JsonNode tables = summary.get("tables");
@@ -182,7 +183,7 @@ class GovernanceSummaryTest {
             }
         }
 
-        JsonNode closed = json(routes(topic::history).summary("gate", http)).get("closed");
+        JsonNode closed = json(routes().summary("gate", http)).get("closed");
 
         assertThat(closed.valueStream().map(on -> on.get("id").asString()).toList())
                 .containsExactlyInAnyOrderElementsOf(refused).hasSize(2);
@@ -195,7 +196,7 @@ class GovernanceSummaryTest {
         attributes.clear();
         holds.clear();
 
-        JsonNode summary = json(routes(topic::history).summary("gate", http));
+        JsonNode summary = json(routes().summary("gate", http));
 
         assertThat(summary.get("tables").get("total").asInt()).isZero();
         assertThat(summary.get("holds").asInt()).isZero();
@@ -206,16 +207,17 @@ class GovernanceSummaryTest {
     // ---- the holds and freezes ----
 
     @Test
-    void theHoldsAndFreezesStandingAreListedNewestFirstAndTheLiftedOnesFromTheAuditTopic() {
+    void theHoldsAndFreezesStandingAreListedNewestFirstAndTheLiftedOnesFromTheStore() {
         UUID released = UUID.randomUUID();
-        nuna.catalog.audit.Securable lineage = new nuna.catalog.audit.Securable(
-                nuna.catalog.audit.Securable.Kind.TABLE, UUID.randomUUID(), "gate", List.of("m8", "t_lineage"));
-        topic.send(0, NOW.minus(Duration.ofDays(9)), new HoldChange(HoldChange.Action.PLACED, released, lineage,
-                "M8 sign-off evidence", HoldHistoryTest.actor("stella")));
-        topic.send(0, NOW.minus(Duration.ofDays(4)), new HoldChange(HoldChange.Action.RELEASED, released, lineage,
-                "M8 sign-off evidence", HoldHistoryTest.actor("sam")));
+        Securable dropped = new Securable(Securable.Kind.NAMESPACE, UUID.randomUUID());
+        lifts.add(new GovernanceLift(GovernanceLift.Kind.DR_FREEZE, Optional.empty(), dropped, "DR drill 2026-11-02",
+                "oscar", NOW.minus(Duration.ofDays(3)), "olga", NOW.minus(Duration.ofDays(2))));
+        lifts.add(new GovernanceLift(GovernanceLift.Kind.HOLD, Optional.of(released), journal.securable(),
+                "M8 sign-off evidence", "stella", NOW.minus(Duration.ofDays(9)), "sam", NOW.minus(Duration.ofDays(4))));
+        lifts.add(new GovernanceLift(GovernanceLift.Kind.HOLD, Optional.of(UUID.randomUUID()), journal.securable(),
+                "Matter 2026-031", "stella", NOW.minus(Duration.ofDays(60)), "sam", NOW.minus(Duration.ofDays(31))));
 
-        JsonNode body = json(routes(topic::history).holdsAndFreezes("gate", http));
+        JsonNode body = json(routes().holdsAndFreezes("gate", http));
 
         assertThat(body.get("catalog").asString()).isEqualTo("gate");
         JsonNode standing = body.get("standing");
@@ -237,50 +239,64 @@ class GovernanceSummaryTest {
         assertThat(freeze.get("placed-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(1)).toString());
         assertThat(paths(List.of(standing.get(0).get("on")))).containsExactly("Markets.eu.daily");
 
-        assertThat(body.get("lifted")).hasSize(1);
-        JsonNode lifted = body.get("lifted").get(0);
-        assertThat(lifted.get("kind").asString()).isEqualTo("hold");
-        assertThat(lifted.get("id").asString()).isEqualTo(released.toString());
-        assertThat(lifted.get("on").get("id").asString()).isEqualTo(lineage.id().toString());
-        assertThat(paths(List.of(lifted.get("on")))).containsExactly("m8.t_lineage");
-        assertThat(lifted.get("reason").asString()).isEqualTo("M8 sign-off evidence");
-        assertThat(lifted.get("placed-by").asString()).isEqualTo("stella");
-        assertThat(lifted.get("placed-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(9)).toString());
-        assertThat(lifted.get("lifted-by").asString()).isEqualTo("sam");
-        assertThat(lifted.get("lifted-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(4)).toString());
+        JsonNode lifted = body.get("lifted");
+        assertThat(lifted).as("the last 30 days, the most recent first").hasSize(2);
+        JsonNode thawed = lifted.get(0);
+        assertThat(thawed.get("kind").asString()).isEqualTo("freeze");
+        assertThat(thawed.has("id")).isFalse();
+        assertThat(thawed.get("on").get("kind").asString()).isEqualTo("namespace");
+        assertThat(thawed.get("on").get("id").asString()).isEqualTo(dropped.id().toString());
+        assertThat(thawed.get("on").get("path").isNull()).as("a level dropped since").isTrue();
+        assertThat(thawed.get("lifted-by").asString()).isEqualTo("olga");
+        JsonNode releasedNode = lifted.get(1);
+        assertThat(releasedNode.get("kind").asString()).isEqualTo("hold");
+        assertThat(releasedNode.get("id").asString()).isEqualTo(released.toString());
+        assertThat(releasedNode.get("on").get("id").asString()).isEqualTo(journal.id().toString());
+        assertThat(paths(List.of(releasedNode.get("on")))).containsExactly("finance.ledger.journal");
+        assertThat(releasedNode.get("reason").asString()).isEqualTo("M8 sign-off evidence");
+        assertThat(releasedNode.get("placed-by").asString()).isEqualTo("stella");
+        assertThat(releasedNode.get("placed-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(9)).toString());
+        assertThat(releasedNode.get("lifted-by").asString()).isEqualTo("sam");
+        assertThat(releasedNode.get("lifted-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(4)).toString());
         JsonNode history = body.get("history");
-        assertThat(history.get("available").asBoolean()).isTrue();
-        assertThat(history.get("complete").asBoolean()).isTrue();
-        assertThat(history.get("since").isNull()).isTrue();
-        assertThat(history.get("scan-limit").asInt()).isEqualTo(HoldHistory.SCAN_LIMIT);
-        assertThat(history.get("partitions")).hasSize(2);
-        assertThat(history.get("partitions").get(0).get("to-offset").asLong()).isEqualTo(2);
+        assertThat(history.get("days").asInt()).isEqualTo(30);
+        assertThat(history.get("since").asString()).isEqualTo(NOW.minus(Duration.ofDays(30)).toString());
     }
 
+    /** A hold released and a freeze lifted through the routes are kept with who lifted them and when (item 133). */
     @Test
-    void withoutTheAuditTopicTheStandingOnesAreStillListed() {
-        GovernanceRoutes unconfigured = new GovernanceRoutes(store, management, guard, null,
-                new HoldHistory(HoldHistoryTest.settings(null), () -> {
-                    throw new AssertionError("no consumer without the audit topic");
-                }), Clock.fixed(NOW, ZoneOffset.UTC));
+    void aHoldReleasedAndAFreezeLiftedThroughTheRoutesAreListedWithWhoLiftedThem() {
+        grant(root, "counsel", Privilege.MANAGE_TAGS);
+        GovernanceRoutes routes = routes();
+        caller = person("cora", "counsel");
+        assertThat(answer(() -> routes.releaseHold("gate", "finance\u001fledger", "journal", null,
+                journalHold.id().toString(), http))).isEqualTo(204);
+        caller = OLGA;
+        assertThat(answer(() -> routes.thaw("gate", "markets", null, null, http))).isEqualTo(204);
 
-        JsonNode body = json(unconfigured.holdsAndFreezes("gate", http));
+        caller = ANN;
+        JsonNode body = json(routes.holdsAndFreezes("gate", http));
 
-        assertThat(body.get("standing")).hasSize(4);
-        assertThat(body.get("lifted")).isEmpty();
-        assertThat(body.get("history").get("available").asBoolean()).isFalse();
-        assertThat(body.get("history").get("reason").asString()).contains("not configured");
-    }
-
-    @Test
-    void whenTheAuditTopicCannotBeReadTheStandingOnesAreStillListed() {
-        JsonNode body = json(routes(() -> new HoldHistory(HoldHistoryTest.settings("localhost:9092"), () -> {
-            throw new TimeoutException("Kafka did not answer");
-        })).holdsAndFreezes("gate", http));
-
-        assertThat(body.get("standing")).hasSize(4);
-        assertThat(body.get("history").get("available").asBoolean()).isFalse();
-        assertThat(body.get("history").get("reason").asString()).contains("cannot be read");
+        assertThat(body.get("standing").valueStream().map(each -> each.get("reason").asString()).toList())
+                .containsExactly(viewHold.reason(), euHold.reason());
+        JsonNode lifted = body.get("lifted");
+        assertThat(lifted).hasSize(2);
+        JsonNode thawed = lifted.get(0);
+        assertThat(thawed.get("kind").asString()).isEqualTo("freeze");
+        assertThat(paths(List.of(thawed.get("on")))).containsExactly("Markets");
+        assertThat(thawed.get("reason").asString()).isEqualTo("DR drill 2026-11-21");
+        assertThat(thawed.get("placed-by").asString()).isEqualTo("oscar");
+        assertThat(thawed.get("lifted-by").asString()).isEqualTo("olga");
+        assertThat(thawed.get("lifted-at").asString()).isEqualTo(NOW.toString());
+        JsonNode released = lifted.get(1);
+        assertThat(released.get("kind").asString()).isEqualTo("hold");
+        assertThat(released.get("id").asString()).isEqualTo(journalHold.id().toString());
+        assertThat(paths(List.of(released.get("on")))).containsExactly("finance.ledger.journal");
+        assertThat(released.get("reason").asString()).isEqualTo(journalHold.reason());
+        assertThat(released.get("placed-by").asString()).isEqualTo("stella");
+        assertThat(released.get("placed-at").asString()).isEqualTo(journalHold.placedAt().toString());
+        assertThat(released.get("lifted-by").asString()).isEqualTo("cora");
+        assertThat(released.get("lifted-at").asString()).isEqualTo(NOW.toString());
     }
 
     // ---- the retention classes to choose from ----
@@ -296,7 +312,7 @@ class GovernanceSummaryTest {
                 "audit-evidence", new GovernanceSettings.RetentionClass(Duration.ofDays(400)),
                 "scratch", new GovernanceSettings.RetentionClass(null)),
                 Duration.ofDays(7), Duration.ofHours(1), Map.of());
-        GovernanceRoutes routes = new GovernanceRoutes(store, management, guard, settings, topic.history(),
+        GovernanceRoutes routes = new GovernanceRoutes(store, management, guard, settings, history(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         for (JsonNode policy : List.of(json(routes.policy("gate", null, null, null, http)),
@@ -314,7 +330,7 @@ class GovernanceSummaryTest {
     void withNoRetentionClassConfiguredThereIsNoneToChoose() {
         GovernanceSettings settings = new GovernanceSettings(10, 60, Map.of(), Duration.ofDays(7), Duration.ofHours(1),
                 Map.of());
-        GovernanceRoutes routes = new GovernanceRoutes(store, management, guard, settings, topic.history(),
+        GovernanceRoutes routes = new GovernanceRoutes(store, management, guard, settings, history(),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         assertThat(json(routes.policy("gate", "sandbox", null, null, http)).get("retention-classes")).isEmpty();
@@ -324,7 +340,7 @@ class GovernanceSummaryTest {
 
     @Test
     void describeOnTheCatalogReadsThemAsDoTheStewardAndAGrantAdmin() {
-        GovernanceRoutes routes = routes(topic::history);
+        GovernanceRoutes routes = routes();
         for (Caller reader : List.of(ANN, STELLA, GINA)) {
             caller = reader;
             assertThat(answer(() -> routes.summary("gate", http))).as("summary for %s", reader.principal().id())
@@ -337,7 +353,7 @@ class GovernanceSummaryTest {
 
     @Test
     void aCallerWithoutDescribeOnTheCatalogIsRefusedAndTheRefusalAudited() {
-        GovernanceRoutes routes = routes(topic::history);
+        GovernanceRoutes routes = routes();
         for (Caller refused : List.of(TOM, OLGA)) {
             caller = refused;
             assertThat(answer(() -> routes.summary("gate", http))).as("summary for %s", refused.principal().id())
@@ -359,7 +375,7 @@ class GovernanceSummaryTest {
     @Test
     void aCallerThatHoldsNothingInTheCatalogIsAnsweredAsForOneThatDoesNotExist() {
         caller = NED;
-        GovernanceRoutes routes = routes(topic::history);
+        GovernanceRoutes routes = routes();
 
         assertThat(error(() -> routes.summary("gate", http)).type()).isEqualTo("NoSuchWarehouseException");
         assertThat(error(() -> routes.holdsAndFreezes("gate", http)).type()).isEqualTo("NoSuchWarehouseException");
@@ -370,8 +386,12 @@ class GovernanceSummaryTest {
 
     // ---- helpers ----
 
-    private GovernanceRoutes routes(Supplier<HoldHistory> history) {
-        return new GovernanceRoutes(store, management, guard, null, history.get(), Clock.fixed(NOW, ZoneOffset.UTC));
+    private GovernanceRoutes routes() {
+        return new GovernanceRoutes(store, management, guard, null, history(), Clock.fixed(NOW, ZoneOffset.UTC));
+    }
+
+    private HoldHistory history() {
+        return new HoldHistory(store, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static JsonNode json(ResponseEntity<String> response) {
@@ -506,6 +526,26 @@ class GovernanceSummaryTest {
                             .filter(a -> ((Set<Securable>) args[0]).contains(a.target())).toList();
                     case "holdsOn" -> holds.stream()
                             .filter(h -> ((Set<Securable>) args[0]).contains(h.target())).toList();
+                    case "releaseHold" -> holds.stream().filter(h -> h.id().equals(args[0])).findFirst()
+                            .map(hold -> {
+                                holds.remove(hold);
+                                lifts.addFirst(GovernanceLift.released(hold, (String) args[1], ((Change) args[2]).at()));
+                                return WriteResult.APPLIED;
+                            })
+                            .orElseGet(() -> new WriteResult.Missing(WriteResult.Subject.HOLD));
+                    case "removeAttribute" -> attributes.stream()
+                            .filter(a -> a.target().equals(args[0]) && a.kind() == args[1]).findFirst()
+                            .map(removed -> {
+                                attributes.remove(removed);
+                                if (removed.kind() == GovernanceAttribute.Kind.DR_FREEZE) {
+                                    lifts.addFirst(GovernanceLift.lifted(removed, (String) args[2],
+                                            ((Change) args[3]).at()));
+                                }
+                                return WriteResult.APPLIED;
+                            })
+                            .orElseGet(() -> new WriteResult.Missing(WriteResult.Subject.ATTRIBUTE));
+                    case "liftedIn" -> catalog.id().equals(args[0]) ? lifts.stream()
+                            .filter(lift -> !lift.liftedAt().isBefore((Instant) args[1])).toList() : List.of();
                     case "toString" -> "the test's store";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });

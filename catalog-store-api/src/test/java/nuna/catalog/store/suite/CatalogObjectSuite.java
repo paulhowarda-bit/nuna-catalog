@@ -344,12 +344,12 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         Pointer current = Commits.next(moved);
         LegalHold hold = holdOn(namespace);
         assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-        assertApplied(store.releaseHold(hold.id(), change()));
+        assertApplied(store.releaseHold(hold.id(), "counsel", change()));
         Securable top = new Securable(Securable.Kind.CATALOG, catalog);
         assertApplied(store.putAttribute(new GovernanceAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "drill",
                 "suite", "admin", now()), change()));
         assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FROZEN));
-        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, change()));
+        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "steward", change()));
         Securable area = new Securable(Securable.Kind.NAMESPACE, namespace.id());
         assertApplied(store.putAttribute(new GovernanceAttribute(area, GovernanceAttribute.Kind.REGULATED, "true",
                 "suite", "steward", now()), change()));
@@ -359,7 +359,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertApplied(store.putAttribute(new GovernanceAttribute(table.securable(),
                 GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "true", "suite", "steward", now()), change()));
         assertThat(store.unregisterObject(table.id(), current, refused)).isEqualTo(new WriteResult.Refused(WriteResult.Reason.FLAGGED));
-        assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, change()));
+        assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "steward", change()));
         assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
 
         assertApplied(store.dropObject(table.id(), now().plus(WINDOW), change()));
@@ -654,13 +654,13 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         Change late = new Change(refused.id(), drop.at().plusSeconds(61), refused.outbox(), refused.idempotency());
         assertThat(store.claimPurge(table.id(), "worker-a", late)).as("a hold on the namespace holds its objects")
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-        assertThat(store.releaseHold(hold.id(), change())).isEqualTo(WriteResult.APPLIED);
+        assertThat(store.releaseHold(hold.id(), "counsel", change())).isEqualTo(WriteResult.APPLIED);
         Securable top = new Securable(Securable.Kind.CATALOG, catalog);
         assertApplied(store.putAttribute(new GovernanceAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "drill",
                 "suite", "admin", now()), change()));
         assertThat(store.claimPurge(table.id(), "worker-a", late)).as("a DR freeze on the catalog freezes its objects")
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.FROZEN));
-        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, change()));
+        assertApplied(store.removeAttribute(top, GovernanceAttribute.Kind.DR_FREEZE, "steward", change()));
         assertThat(store.completePurge(table.id(), "worker-a", late)).as("an unclaimed object")
                 .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
         assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
@@ -718,7 +718,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
                     .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
 
             assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
-            assertThat(store.releaseHold(hold.id(), change())).isEqualTo(WriteResult.APPLIED);
+            assertThat(store.releaseHold(hold.id(), "counsel", change())).isEqualTo(WriteResult.APPLIED);
         }
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).isEqualTo(WriteResult.APPLIED);
     }
@@ -739,13 +739,13 @@ public abstract class CatalogObjectSuite extends GroupSuite {
 
             assertThat(purgeEligible(due)).as("held by %s", target).doesNotContain(table.id());
 
-            assertApplied(store.releaseHold(hold.id(), change()));
+            assertApplied(store.releaseHold(hold.id(), "counsel", change()));
             assertApplied(store.putAttribute(new GovernanceAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, "drill",
                     "suite", "admin", now()), change()));
 
             assertThat(purgeEligible(due)).as("frozen by %s", target).doesNotContain(table.id());
 
-            assertApplied(store.removeAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, change()));
+            assertApplied(store.removeAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, "steward", change()));
         }
         assertThat(purgeEligible(due)).contains(table.id());
     }
@@ -764,7 +764,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         LegalHold onNew = holdOn(newParent);
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("held above its new namespace")
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-        assertApplied(store.releaseHold(onNew.id(), change()));
+        assertApplied(store.releaseHold(onNew.id(), "counsel", change()));
         LegalHold onOld = holdOn(oldParent);
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("no longer under its old namespace")
                 .isEqualTo(WriteResult.APPLIED);
@@ -772,7 +772,7 @@ public abstract class CatalogObjectSuite extends GroupSuite {
         assertApplied(store.undropObject(table.id(), oldHome.id(), name("t"), change()));
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("held above the namespace it was undropped into")
                 .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HELD));
-        assertApplied(store.releaseHold(onOld.id(), change()));
+        assertApplied(store.releaseHold(onOld.id(), "counsel", change()));
         holdOn(newParent);
         assertThat(store.dropObject(table.id(), now().plus(WINDOW), change())).as("no longer under the namespace it was renamed into")
                 .isEqualTo(WriteResult.APPLIED);
@@ -865,13 +865,13 @@ public abstract class CatalogObjectSuite extends GroupSuite {
 
             assertThat(ours(dueDeletions(due), namespace)).as("held by %s", target).isEmpty();
 
-            assertApplied(store.releaseHold(hold.id(), change()));
+            assertApplied(store.releaseHold(hold.id(), "counsel", change()));
             assertApplied(store.putAttribute(new GovernanceAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, "drill",
                     "suite", "admin", now()), change()));
 
             assertThat(ours(dueDeletions(due), namespace)).as("frozen by %s", target).isEmpty();
 
-            assertApplied(store.removeAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, change()));
+            assertApplied(store.removeAttribute(target, GovernanceAttribute.Kind.DR_FREEZE, "steward", change()));
         }
         assertThat(ours(dueDeletions(due), namespace)).hasSize(1);
     }
