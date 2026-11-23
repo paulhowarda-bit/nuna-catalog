@@ -1875,7 +1875,10 @@ Paul's look at the console found three faults, fixed on `worktree-agent-a0c6fea4
   overnight run runs them.
 - Item 107's merge (`catalog-core` `Merge`) compares main's version with the ref's cut version (`moved`, `since`).
   For a branch made from main that is right; for one made from another branch the cut is the source's own version,
-  of another sequence. Not changed here; reported.
+  of another sequence. Not changed here; reported. Fixed the same day under item 107 (d179f353): the merge judges
+  main against main's own pointer at the cut, walked down the refs a branch was made from, and moved by file, not
+  by version number; `MergeTest`'s branch-of-a-branch cases and the bites `merge-base-by-version` and
+  `merge-base-unwalked` hold it.
 - Checked in a browser at 390 px against canned answers (the console's own code): counts, the log's lines, both
   failure headings, the band, the tabs. Not checked against a running catalog.
 
