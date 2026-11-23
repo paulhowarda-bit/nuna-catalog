@@ -55,14 +55,20 @@ const mayRefs = list => !!(list.may && list.may.create);
 
 /** What this session did to a ref that has since ended, shown on its page: merged or deleted. */
 const RESULTS = new Map();
+/** Results not yet shown: the page focuses each once, so focus does not fall to the body after a merge or delete. */
+const FRESH = new Set();
 const resultKey = (c, name) => c + '|' + String(name).toLowerCase();
 
-/** The time a ref's cut was taken: its own making, or that of the branch or tag it was made from, back to main. */
+/**
+ * The time a ref's cut was taken: its own making, or that of the branch or tag it was made from, back to main. The
+ * list names a ref's source by name only, so a ref found by that name but made after this one is a later ref that
+ * took the name again: the walk stops there.
+ */
 function cutOf(r, list) {
   let at = r;
   for (let i = 0; i < 20 && !isMain(at.from); i++) {
     const from = list.refs.find(x => x.name.toLowerCase() === at.from.toLowerCase());
-    if (!from) return null;
+    if (!from || ms(from['created-at']) > ms(at['created-at'])) return null;
     at = from;
   }
   return at['created-at'];
@@ -83,23 +89,29 @@ function madeFrom(r, list) {
   return ['Made from ', from, r['created-by'] ? [' by ', h('b', null, r['created-by'])] : null, ` on ${refAt(r['created-at'])}`];
 }
 
-/** "Reading main ▾" beside a browse page's title: the catalog's refs, each a link to this page through it. */
+/**
+ * "Reading main ▾" beside a browse page's title: a disclosure of the catalog's refs, each a link to this page through
+ * it, the one read marked current. A link naming a ref that is not live reads it struck through, with none current.
+ */
 function refPick(where, list) {
   const cur = where.r ? findRef(list, where.r) : null;
+  const dead = !!where.r && !cur;
   const btn = h('button', {class: 'ref-pick' + (cur ? ' on ' + (cur.kind === 'tag' ? 't' : 'b') : ''), type: 'button',
-    'aria-haspopup': 'menu', 'aria-expanded': 'false', 'data-ref-pick': '',
-    'aria-label': `Reading ${cur ? kindWord(cur) + ' ' + cur.name : 'main'}. Choose a branch or tag`},
-  h('span', {class: 'lbl'}, 'Reading'), cur ? cref(cur) : cref('main'), icon('chev'));
+    'aria-expanded': 'false', 'aria-controls': 'ref-menu', 'data-ref-pick': '',
+    'aria-label': dead ? `Reading ${where.r}, which is not live. Choose a branch or tag`
+      : `Reading ${cur ? kindWord(cur) + ' ' + cur.name : 'main'}. Choose a branch or tag`},
+  h('span', {class: 'lbl'}, 'Reading'), dead ? h('span', {class: 'cref gone'}, icon('branch'), h('span', {class: 'at'}, '@'), where.r)
+    : cur ? cref(cur) : cref('main'), icon('chev'));
   const item = r => {
-    const on = (cur ? cur.name : null) === (r ? r.name : null);
+    const on = !dead && (cur ? cur.name : null) === (r ? r.name : null);
     const sub = !r ? 'the catalog as it is now' : r.kind === 'tag' ? `tag · ${refAt(r['created-at'])} · read-only`
       : `branch · ${plural(r['changed-count'] || 0, 'table')} changed · expires ${expiring(r) ? untilWords(r['expires-at']) : dayMon(r['expires-at'])}`;
-    return h('a', {role: 'menuitemradio', 'aria-checked': String(on), href: href(Object.assign({}, where, {r: r ? r.name : null})),
+    return h('a', {'aria-current': on ? 'true' : null, href: href(Object.assign({}, where, {r: r ? r.name : null})),
       class: r && expiring(r) ? 'is-warn' : null}, h('b', null, r ? cref(r) : cref('main')), h('span', null, sub));
   };
   const branches = live(list).filter(r => r.kind === 'branch');
   const tags = live(list).filter(r => r.kind === 'tag');
-  const menu = h('div', {class: 'menu ref-menu', role: 'menu', 'aria-label': 'Branches and tags', hidden: true},
+  const menu = h('div', {class: 'menu ref-menu', id: 'ref-menu', hidden: true},
     item(null),
     branches.length ? [h('p', {class: 'mh'}, 'Branches'), branches.map(item)] : null,
     tags.length ? [h('p', {class: 'mh'}, 'Tags'), tags.map(item)] : null,
@@ -108,18 +120,23 @@ function refPick(where, list) {
   const set = open => {
     menu.hidden = !open;
     btn.setAttribute('aria-expanded', String(open));
-    if (open) ($('[aria-checked="true"]', menu) || $('a', menu)).focus();
+    if (open) ($('[aria-current="true"]', menu) || $('a', menu)).focus();
   };
   btn.addEventListener('click', e => { e.stopPropagation(); set(menu.hidden); });
+  // The arrows, Home and End move between the links; Escape, or focus leaving it, closes it.
   menu.addEventListener('keydown', e => {
     const items = $$('a', menu);
     const i = items.indexOf(document.activeElement);
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    const to = {ArrowDown: (i + 1) % items.length, ArrowUp: (i + items.length - 1) % items.length, Home: 0, End: items.length - 1}[e.key];
+    if (to !== undefined) {
       e.preventDefault();
-      items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+      items[to].focus();
     }
-    if (e.key === 'Escape') { e.stopPropagation(); set(false); btn.focus(); }
   });
+  wrap.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !menu.hidden) { e.stopPropagation(); set(false); btn.focus(); }
+  });
+  wrap.addEventListener('focusout', e => { if (!menu.hidden && !wrap.contains(e.relatedTarget)) set(false); });
   const away = e => {
     if (!wrap.isConnected) { document.removeEventListener('click', away); return; }
     if (!wrap.contains(e.target)) set(false);
@@ -204,7 +221,7 @@ export function refNote(r, what) {
     props: tag ? [h('b', null, 'Read-only through a tag.'), ' These are the properties in the metadata file the tag keeps.']
       : [h('b', null, 'A change here commits on ', chip, '.'), ' Main keeps its own properties until a merge takes this file.'],
     nsprops: [h('b', null, 'Namespace properties are live.'), ' They are main\'s, read now, whichever ref you read; they change on main only.'],
-    snapshots: [h('b', null, 'Inside a catalog branch.'), ` These are the snapshots @${name} reaches. Inside the table, its own Iceberg `
+    snapshots: [h('b', null, `Inside a catalog ${tag ? 'tag' : 'branch'}.`), ` These are the snapshots @${name} reaches. Inside the table, its own Iceberg `
       + 'branch is still called main: the catalog\'s ref chooses which metadata file is read, and that file\'s refs are Iceberg\'s.'],
   }[what];
   return h('div', {class: 'notice ref-note', 'data-ref-note': what}, icon('info'), h('span', null, words));
@@ -249,6 +266,20 @@ export function refWords(d) {
     case 'EXPIRED': return `Ended the branch ${name}, which expired ${until}`;
     default: return `${String(d.action || '').toLowerCase()} ${name}`;
   }
+}
+
+/**
+ * A link to the ref a `nuna.catalog.ref` record names, added once the list shows that ref live and the same one (the
+ * record's `ref` is its id), so a record of a deleted ref never links to a later ref that took its name.
+ */
+export function liveRefLink(c, d) {
+  const slot = h('span', {class: 'ref-link'});
+  if (!c || !d.ref) return slot;
+  refsOf(c).then(list => {
+    const r = live(list).find(x => x.id === d.ref);
+    if (r) fill(slot, ' · ', h('a', {href: refHref(c, r.name)}, cref(r)));
+  }, () => {});
+  return slot;
 }
 
 /** The last day's ref records of a catalog from the audit feed; none when the caller may not read it. */
@@ -382,9 +413,11 @@ async function endedPanel(c, list) {
       const d = x.data;
       const who = (d.actor || {}).principal || '–';
       const label = d.action === 'EXPIRED' ? 'Expired, ended' : d.action === 'MERGED' ? 'Merged' : 'Deleted';
+      const taken = findRef(list, d.name);
+      const free = taken ? [' The name is taken again, by ', h('a', {href: refHref(c, taken.name)}, cref(taken)), '.'] : ' The name is free.';
       const words = d.action === 'EXPIRED' ? `Ended by the worker; it expired ${refAt(d.expiresAt || x.time)}. Its changes were never merged.`
-        : d.action === 'MERGED' ? `Merged into main by ${who}: ${plural((d.tables || []).length, 'table')} moved. The name is free.`
-          : `Deleted by ${who}. The name is free.`;
+        : d.action === 'MERGED' ? [`Merged into main by ${who}: ${plural((d.tables || []).length, 'table')} moved.`, free]
+          : [`Deleted by ${who}.`, free];
       return h('tr', {'data-ended': d.name}, h('td', {class: 'name'}, h('span', {class: 'cref gone'},
         icon(String(d.kind).toLowerCase() === 'tag' ? 'tag' : 'branch'), h('span', {class: 'at'}, '@'), d.name)),
       h('td', null, pill(null, label), ' ', h('span', {class: 'fine'}, refAt(x.time))), h('td', null, h('span', {class: 'fine'}, words)));
@@ -470,10 +503,15 @@ function refLine(c, refs, list) {
     svg.append(a);
   });
   const box = h('div', {class: 'rl-scroll'}, svg);
-  requestAnimationFrame(() => {
+  // Opens at today, once the box has a width: the tab is drawn before it is in the page.
+  const place = () => {
+    if (!box.clientWidth) return false;
     box.scrollLeft = Math.max(0, nx / W * box.scrollWidth - box.clientWidth * 0.55);
     edgeCue(box);
-  });
+    return true;
+  };
+  const watch = new ResizeObserver(() => { if (place()) watch.disconnect(); });
+  watch.observe(box);
   return box;
 }
 
@@ -483,7 +521,7 @@ export function refPage(c, name, tab) {
   const main = h('div', {class: 'nc-main ref-page', id: 'ref-page'});
   const crumbs = h('nav', {class: 'crumbs', 'aria-label': 'Path'}, h('a', {href: href({c})}, c), h('span', {class: 'sep'}, '/'),
     h('a', {href: refsHref(c)}, 'Branches and tags'), h('span', {class: 'sep'}, '/'), h('span', {class: 'cur'}, '@' + name));
-  load(main, async () => {
+  const shown = load(main, async () => {
     let r;
     let list;
     try {
@@ -502,6 +540,7 @@ export function refPage(c, name, tab) {
     }
     const may = !!(r.may && r.may.create);
     const changed = r.changed || [];
+    const total = Math.max(changed.length, (findRef(list, r.name) || {})['changed-count'] || 0);
     const commits = changed.reduce((a, t) => a + Math.max(0, t.version - t['cut-version']), 0);
     const cut = cutOf(r, list);
     const title = h('div', {class: 'title-row'}, h('h1', {tabindex: '-1', 'aria-label': `${kindWord(r)} @${r.name}`}, cref(r, {big: true})),
@@ -514,22 +553,27 @@ export function refPage(c, name, tab) {
     const kpis = h('div', {class: 'kpis ref-kpis'},
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Point'), h('p', {class: 'kpi-v sm'}, cut ? refAt(cut) : '–'),
         h('p', {class: 'kpi-d'}, isMain(r.from) ? 'main as it was then' : `@${r.from}'s point; its commits to ${refAt(r['created-at'])}`)),
-      r.kind === 'branch' ? h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changed'), h('p', {class: 'kpi-v'}, fmt(changed.length)),
-        h('p', {class: 'kpi-d'}, `${plural(commits, 'commit')} on the branch`))
+      r.kind === 'branch' ? h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changed'), h('p', {class: 'kpi-v'}, fmt(total)),
+        h('p', {class: 'kpi-d'}, total > changed.length ? `${plural(commits, 'commit')} on the ${fmt(changed.length)} you may describe`
+          : `${plural(commits, 'commit')} on the branch`))
         : h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changes'), h('p', {class: 'kpi-v'}, 'none'), h('p', {class: 'kpi-d'}, 'a tag is read-only')),
       h('div', {class: 'kpi' + (expiring(r) ? ' is-warn' : '')}, h('p', {class: 'kpi-l'}, 'Expires'),
         h('p', {class: 'kpi-v sm'}, r.kind === 'tag' ? 'never' : refAt(r['expires-at'])),
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'until deleted' : `${untilWords(r['expires-at'])} · at most ${dayMon(r['max-expires-at'])}`)),
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Warehouse'), h('p', {class: 'kpi-v sm mono'}, `${c}@${r.name}`),
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'read endpoints only' : 'reads and commits')));
-    const tabs = r.kind === 'branch' ? [['', 'Changes', changed.length], ['merge', 'Merge'], ['record', 'Record']] : [['', 'What it keeps'], ['record', 'Record']];
+    const tabs = r.kind === 'branch' ? [['', 'Changes', total], ['merge', 'Merge'], ['record', 'Record']] : [['', 'What it keeps'], ['record', 'Record']];
     const key = tabs.some(([k]) => k === (tab || '')) ? tab || '' : '';
     const body = h('div', {class: 'tab-body'});
     if (key === 'merge') load(body, () => mergeTab(c, r, list));
     else if (key === 'record') load(body, () => recordTab(c, r));
-    else if (r.kind === 'branch') load(body, () => changesTab(c, r));
+    else if (r.kind === 'branch') load(body, () => changesTab(c, r, total));
     else fill(body, tagKeeps(c, r, cut));
     return [h('div', {class: 'ph'}, crumbs, title, sub, side), kpis, tabsNav('Ref', tabs, key, k => refHref(c, r.name, k || null)), body];
+  });
+  shown.then(() => {
+    const box = $('[data-result]', main);
+    if (box && FRESH.delete(resultKey(c, name))) box.focus();
   });
   return main;
 }
@@ -546,15 +590,18 @@ async function dryRun(c, name) {
   }
 }
 
-async function changesTab(c, r) {
+async function changesTab(c, r, total) {
   const [read, plan] = await Promise.all([api.ref(c, r.name), dryRun(c, r.name)]);
   const changed = read.changed || [];
   const planned = new Map(((plan.body || {}).tables || []).map(t => [pathOfItem(t), t]));
   const rows = changed.map(t => {
     const p = planned.get(pathOfItem(t));
     const since = p ? (p['main-commits'] || {}).count : null;
+    const times = p ? plural(since || p['main-version'] - p['cut-version'], 'time') : '';
+    // A table main only maintained since the point still moves (rebased; Paul, 2026-11-22), so it is no warning.
     const state = !p ? muted('–') : p['dropped-at'] || p['main-version'] === undefined ? pill('bad', 'Dropped on main')
-      : p['main-version'] === p['cut-version'] ? pill('ok', icon('check'), 'Main unchanged') : pill('warn', `Main moved ${plural(since || p['main-version'] - p['cut-version'], 'time')}`);
+      : p['main-version'] === p['cut-version'] ? pill('ok', icon('check'), 'Main unchanged')
+        : p.moves ? pill(null, `Main maintained ${times}`) : pill('warn', `Main moved ${times}`);
     return h('tr', {class: p && p.moves ? null : p ? 'is-warn' : null, 'data-path': pathOfItem(t)},
       h('td', {class: 'name'}, h('a', {href: tableHref(c, t, r.name)}, pathOfItem(t))),
       h('td', {class: 'num'}, fmt(t['cut-version'])), h('td', {class: 'num'}, h('b', null, fmt(t.version))),
@@ -562,9 +609,11 @@ async function changesTab(c, r) {
       h('td', null, state));
   });
   return [h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
-    h('span', {class: 'meta'}, `${plural(changed.length, 'table')} with pointers of its own; GET …/refs/${r.name}`)),
+    h('span', {class: 'meta'}, `${plural(total, 'table')} with pointers of its own; GET …/refs/${r.name}`)),
   rows.length ? tbl('stack-line ref-changes', ['Table', ['At the point', 'num'], ['On the branch', 'num'], 'Its commits', 'Main since'], rows)
-    : h('p', {class: 'muted'}, (r['changed-count'] || 0) ? 'None you may describe.' : 'None yet: the branch has not committed.'),
+    : h('p', {class: 'muted'}, total ? 'None you may describe.' : 'None yet: the branch has not committed.'),
+  rows.length && total > changed.length ? h('p', {class: 'muted', 'data-hidden-count': total - changed.length},
+    `And ${fmt(total - changed.length)} more you may not describe.`) : null,
   h('p', {class: 'fine'}, 'Versions are the catalog\'s commit journal versions of each table. Every other table reads as main had it at the point. ',
     h('a', {href: refHref(c, r.name, 'merge')}, 'Preview the merge'), ' to see which tables would move.'),
   plan.error ? failure(plan.error, {compact: true}) : null)];
@@ -604,7 +653,10 @@ async function recordTab(c, r) {
   records.length ? h('div', {class: 'feed'}, records.map(x => h('div', {class: 'feed-row'}, h('span', {class: 't'}, when(x.time)),
     h('span', {class: 'w'}, h('b', null, ((x.data || {}).actor || {}).principal || '–')),
     h('div', null, badge(x.type), h('p', {class: 'what'}, refWords(x.data || {}))), h('span', null))))
-    : h('p', {class: 'muted'}, 'No record of it in the audit tables yet: they are about a minute behind.')), where);
+    : h('p', {class: 'muted'}, pageToken ? ['Not in the newest ref records; see the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.']
+      : 'No record of it in the audit tables yet: they are about a minute behind.'),
+  records.length && pageToken ? h('p', {class: 'fine'}, 'Older records are not in the newest ref records read here; see the ',
+    h('a', {href: pageHref('audit', c)}, 'audit feed'), '.') : null), where);
 }
 
 // ---- the merge ----
@@ -653,6 +705,14 @@ function mergeMap(x, r) {
   return svg;
 }
 
+/** A moving table's checks as a commit on main: the caller's right, then main's commit rules; the icon is a cross if either fails. */
+function mergeChecks(x) {
+  const refused = (x.right && !x.right.allowed) || (x.verdict && !x.verdict.allowed);
+  const right = x.right ? (x.right.allowed ? `your groups hold ${x.right.needs}` : h('b', null, `your groups hold no ${x.right.needs}`)) : null;
+  const rules = x.verdict && !x.verdict.allowed ? h('b', null, `refused: ${x.verdict.message}`) : 'main\'s commit rules pass';
+  return h('p', {class: 'mm-checks fine'}, icon(refused ? 'x' : 'check'), ' Judged as a commit on main: ', right, right ? ', ' : null, rules, '.');
+}
+
 async function mergeTab(c, r, list) {
   const done = RESULTS.get(resultKey(c, r.name));
   let answer;
@@ -696,9 +756,7 @@ async function mergeTab(c, r, list) {
   h('div', {class: 'mm-vis'}, mergeMap(x, r)),
   h('dl', {class: 'mm-v'}, h('dt', null, 'point'), h('dd', null, fmt(x['cut-version'])), h('dt', null, 'main'),
     h('dd', null, x['main-version'] === undefined ? 'dropped' : fmt(x['main-version'])), h('dt', null, '@' + r.name), h('dd', null, fmt(x['branch-version']))),
-  x.moves ? h('p', {class: 'mm-checks fine'}, icon(x.verdict && !x.verdict.allowed ? 'x' : 'check'), ' Judged as a commit on main: ',
-    x.right ? (x.right.allowed ? `your groups hold ${x.right.needs}` : h('b', null, `your groups hold no ${x.right.needs}`)) : '',
-    x.verdict && !x.verdict.allowed ? [', ', h('b', null, `refused: ${x.verdict.message}`)] : ', main\'s commit rules pass.') : null));
+  x.moves ? mergeChecks(x) : null));
   const raw = h('div', {hidden: true}, jsonPre(plan));
   const rawB = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false', onclick: () => {
     raw.hidden = !raw.hidden;
@@ -758,16 +816,20 @@ function mergeDialog(c, r, plan) {
       try {
         answer = await api.mergeRef(c, r.name, false);
       } catch (error) {
+        // The refusal stays in the dialog; the preview behind it reads again once the dialog closes.
         fill(out, failure(error, {note: error.status === 409 && error.type === 'RefMergeConflictException'
-          ? 'Not a denial: the merge record is not written. Main moved since the preview, which now reads again.' : null}));
-        if (error.status === 409) setTimeout(() => window.dispatchEvent(new HashChangeEvent('hashchange')), 0);
+          ? 'Not a denial: the merge record is not written. Main moved since the preview, which reads again when you close this.' : null}));
+        if (error.status === 409) {
+          $('button[type=submit]', form).hidden = true;
+          form.closest('dialog').addEventListener('close', () => window.dispatchEvent(new HashChangeEvent('hashchange')), {once: true});
+        }
         return;
       }
       forgetRefs(c);
       const moved = (answer.body || {}).tables || [];
       const was = new Map(moves.map(x => [pathOfItem(x), x]));
       const time = at(Date.now(), true);
-      const result = () => h('div', {class: 'stack', 'data-merged': r.name},
+      const result = () => h('div', {class: 'stack', 'data-merged': r.name, 'data-result': '', tabindex: '-1'},
         granted(`Merged @${r.name} into main at ${time}`, answer, `${plural(moved.length, 'table')} moved in one transaction; the branch ended and ${c}@${r.name} answers 404.`),
         panel('What main has now', null, tbl('', ['Table', ['Main was', 'num'], ['Main is', 'num'], 'Its file'], moved.map(t => h('tr', null,
           h('td', {class: 'name'}, h('a', {href: tableHref(c, t, null, 'metadata-log')}, pathOfItem(t))),
@@ -775,12 +837,14 @@ function mergeDialog(c, r, plan) {
           h('td', null, h('span', {class: 'fine'}, `the one @${r.name} wrote at its version ${fmt(t['branch-version'])}`))))),
         h('p', {class: 'fine'}, 'The audit feed has the merge and one commit per table, with this request id.')));
       RESULTS.set(resultKey(c, r.name), result);
+      FRESH.add(resultKey(c, r.name));
       form.closest('dialog').close();
       const target = refHref(c, r.name, 'merge');
       if (location.hash === target) window.dispatchEvent(new HashChangeEvent('hashchange'));
       else location.hash = target;
     }));
-  openDialog(`Merge @${r.name} into main`, body, {wide: true});
+  // Focus starts on Cancel, so one Enter never merges.
+  $('.dlg-acts .btn.ghost', openDialog(`Merge @${r.name} into main`, body, {wide: true})).focus();
 }
 
 // ---- make, renew and delete ----
@@ -790,7 +854,7 @@ export function makeDialog(c, list, preset = {}) {
   const lim = list.limits || {};
   const idle = daysOf(lim['branch-idle-expiry'], 30);
   const life = daysOf(lim['branch-max-life'], 180);
-  const seg = h('span', {class: 'seg', role: 'group', 'aria-label': 'Kind'}, ['branch', 'tag'].map(k =>
+  const seg = h('span', {class: 'seg', role: 'group', 'aria-labelledby': 'make-kind'}, ['branch', 'tag'].map(k =>
     h('button', {type: 'button', 'aria-pressed': String(k === kind), 'data-k': k}, icon(k), k === 'branch' ? 'Branch' : 'Tag')));
   const name = h('input', {name: 'name', type: 'text', placeholder: 'a name, such as release-2026-11', autocomplete: 'off', spellcheck: 'false',
     value: preset.name || null});
@@ -818,7 +882,9 @@ export function makeDialog(c, list, preset = {}) {
   });
   name.addEventListener('input', draw);
   draw();
-  const body = h('div', null, dialogForm([field('Kind', seg), field('Name', h('span', {class: 'field mono'}, name),
+  // Not field(): a label around the buttons would name the first of them, so the group names itself.
+  const kindField = h('div', {class: 'dlg-f'}, h('span', {id: 'make-kind'}, 'Kind'), seg);
+  const body = h('div', null, dialogForm([kindField, field('Name', h('span', {class: 'field mono'}, name),
     'Letters, digits, dot, dash, underscore; no @ and no /. Names compare without case.'),
   field('From', from, 'A ref made from a branch takes that branch as it is now.'), hint], 'Make it', async (form, out) => {
     const nm = name.value.trim();
@@ -886,14 +952,16 @@ export function deleteDialog(c, r, list) {
       const answer = await api.deleteRef(c, r.name);
       forgetRefs(c);
       const time = at(Date.now(), true);
-      RESULTS.set(resultKey(c, r.name), () => granted(`Deleted @${r.name} at ${time}`, answer,
-        h('span', null, 'It is gone from every route; its record stays in the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.')));
+      RESULTS.set(resultKey(c, r.name), () => h('div', {'data-result': '', tabindex: '-1'}, granted(`Deleted @${r.name} at ${time}`, answer,
+        h('span', null, 'It is gone from every route; its record stays in the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.'))));
+      FRESH.add(resultKey(c, r.name));
       fill(out, granted(`Deleted @${r.name}`, answer));
       $('button[type=submit]', form).hidden = true;
       refreshSoon(r.name);
     }));
   $('button[type=submit]', body).classList.add('danger');
-  openDialog(`Delete the ${kindWord(r)} @${r.name}`, body);
+  // Focus starts on Cancel, so one Enter never deletes.
+  $('.dlg-acts .btn.ghost', openDialog(`Delete the ${kindWord(r)} @${r.name}`, body)).focus();
 }
 
 /** Draws the page again once a dialog's answer has been read; a page read through a deleted ref goes to main. */
