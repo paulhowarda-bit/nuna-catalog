@@ -1,0 +1,16 @@
+Breaks: the listing names every table in the namespace, those the caller may not describe too.
+Module: catalog-server
+Test: NamespaceTablesRoutesTest#aTableTheCallerMayNotDescribeIsLeftOut+aPageLooksAtAThousandTablesAtMost
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+index 9cf77dc..b015344 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NamespaceTablesRoutes.java
+@@ -103,7 +103,7 @@ class NamespaceTablesRoutes {
+                     .stream().map(table -> new Authorizer.Request(new Authorizer.Target.TableOrView(table), DESCRIBE))
+                     .toList());
+             for (int i = 0; i < tables.size(); i++) {
+-                if (decisions.get(i).allowed()) {
++                if (decisions.get(i) != null) {
+                     rows.add(row(tables.get(i)));
+                 }
+             }
