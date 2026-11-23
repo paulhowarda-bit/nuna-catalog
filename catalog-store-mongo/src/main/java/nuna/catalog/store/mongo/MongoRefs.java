@@ -79,34 +79,61 @@ final class MongoRefs {
         return transactions.database().getCollection(name, BsonDocument.class);
     }
 
-    /** What the snapshot read found: an outcome that ends the create, or the cut. */
-    private record Read(Optional<WriteResult> outcome, List<BsonDocument> entries) {
+    /**
+     * What the snapshot read found: an outcome that ends the create, or the cut, with the catalog's {@code trimmed} as
+     * the snapshot read it.
+     */
+    private record Read(Optional<WriteResult> outcome, List<BsonDocument> entries, long trimmed) {
+
+        Read(Optional<WriteResult> outcome, List<BsonDocument> entries) {
+            this(outcome, entries, 0);
+        }
     }
 
+    /**
+     * Reads the cut, writes it, then inserts the ref. A removal from refs (backlog 156) committed after the snapshot
+     * read the cut sets the catalog's {@code trimmed}, so the insert sees it and the create cuts again: a cut read
+     * before a removal could still name the object it took out of the ref the cut was copied from, or out of every ref.
+     */
     WriteResult create(Ref ref, RefLimits limits, Change change) {
-        Read read = transactions.snapshot("ref cut", session -> cut(session, ref, change.at()));
-        if (read.outcome().isPresent()) {
-            return read.outcome().get();
-        }
-        WriteResult result;
-        try {
-            outsideTransaction("ref cut write", () -> {
-                discard(ref.id());
-                write(read.entries());
-            });
-            result = transactions.change(change, "ref create", tx -> insert(tx, ref, limits, change.at()));
-        } catch (StoreException e) {
-            try {
-                discard(ref.id());
-            } catch (MongoException cleanup) {
-                e.addSuppressed(cleanup);
+        while (true) {
+            Read read = transactions.snapshot("ref cut", session -> cut(session, ref, change.at()));
+            if (read.outcome().isPresent()) {
+                return read.outcome().get();
             }
-            throw e;
+            boolean[] trimmedSince = new boolean[1];
+            WriteResult result;
+            try {
+                outsideTransaction("ref cut write", () -> {
+                    discard(ref.id());
+                    write(read.entries());
+                });
+                result = transactions.change(change, "ref create", tx -> {
+                    trimmedSince[0] = tx.find(CATALOG, byId(uuid(ref.catalogId())))
+                            .map(catalog -> trimmed(catalog) != read.trimmed()).orElse(false);
+                    return trimmedSince[0] ? MISSING : insert(tx, ref, limits, change.at());
+                });
+            } catch (StoreException e) {
+                try {
+                    discard(ref.id());
+                } catch (MongoException cleanup) {
+                    e.addSuppressed(cleanup);
+                }
+                throw e;
+            }
+            if (!result.equals(WriteResult.APPLIED)) {
+                outsideTransaction("ref cut discard", () -> discard(ref.id()));
+            }
+            if (!trimmedSince[0]) {
+                return result;
+            }
         }
-        if (!result.equals(WriteResult.APPLIED)) {
-            outsideTransaction("ref cut discard", () -> discard(ref.id()));
-        }
-        return result;
+    }
+
+    /** The stamp of the last removal from a catalog's refs, on its document; 0 when none was made. */
+    private static long trimmed(BsonDocument catalog) {
+        BsonValue trimmed = catalog.get("trimmed");
+        return trimmed == null ? 0 : trimmed.asNumber().longValue();
     }
 
     /** Writes that need no transaction: nothing reads a cut before its ref exists. */
@@ -123,7 +150,8 @@ final class MongoRefs {
      * them, then the cut, all read at one cluster time.
      */
     private Read cut(ClientSession session, Ref ref, Instant now) {
-        if (collection(CATALOG).find(session, byId(uuid(ref.catalogId()))).first() == null) {
+        BsonDocument catalog = collection(CATALOG).find(session, byId(uuid(ref.catalogId()))).first();
+        if (catalog == null) {
             return new Read(Optional.of(new WriteResult.Missing(WriteResult.Subject.CATALOG)), List.of());
         }
         BsonDocument holder = collection(REF).find(session, nameFilter(ref)).first();
@@ -136,9 +164,9 @@ final class MongoRefs {
             if (from == null || expired(from, now)) {
                 return new Read(Optional.of(MISSING), List.of());
             }
-            return new Read(Optional.empty(), cutOfRef(session, ref.id(), ref.fromRef().get()));
+            return new Read(Optional.empty(), cutOfRef(session, ref.id(), ref.fromRef().get()), trimmed(catalog));
         }
-        return new Read(Optional.empty(), cutOfMain(session, ref.id(), ref.catalogId()));
+        return new Read(Optional.empty(), cutOfMain(session, ref.id(), ref.catalogId()), trimmed(catalog));
     }
 
     /** Every namespace, and every active table and view with its main pointer, of one catalog. */
@@ -417,6 +445,70 @@ final class MongoRefs {
         }
         tx.collection(REF_ENTRY).deleteMany(tx.session, new BsonDocument("refId", uuid(refId)));
         tx.collection(REF).deleteOne(tx.session, byId(uuid(refId)));
+    }
+
+    /**
+     * Takes an object out of refs (backlog 156). MongoDB has no locks, so the transaction writes what the SQL stores
+     * lock: it marks the object, as a hold placed on it or a drop writes it; marks each ref, as a commit on the branch,
+     * a merge, a renewal and a deletion write it; and sets the catalog's {@code trimmed} to its stamp, which conflicts
+     * with a create's transaction (it marks the catalog) and tells a create whose cut was read before this one to cut
+     * again ({@link #create}). Then it deletes each branch's own pointer for the object with its pieces, and the
+     * object's entry in each ref's cut. An entry counts only while its ref exists, so a ref outside {@code refIds} is
+     * one whose document exists.
+     */
+    WriteResult remove(UUID objectId, Set<UUID> refIds, boolean every, Change change) {
+        return transactions.change(change, "ref removal", tx -> {
+            Optional<BsonDocument> object = tx.find(OBJECT, byId(uuid(objectId)).append("state",
+                    new BsonDocument("$ne", new BsonString(CatalogObject.State.PURGED.name()))));
+            if (object.isEmpty()) {
+                return new WriteResult.Missing(WriteResult.Subject.OBJECT);
+            }
+            UUID catalogId = uuid(object.get().get("catalogId"));
+            List<UUID> path = Docs.uuidList(object.get().get("namespacePath"));
+            if (Guards.held(tx, objectId, catalogId, path)) {
+                return new WriteResult.Refused(WriteResult.Reason.HELD);
+            }
+            if (Guards.frozen(tx, objectId, catalogId, path)) {
+                return new WriteResult.Refused(WriteResult.Reason.FROZEN);
+            }
+            List<BsonValue> ids = refIds.stream().sorted().<BsonValue>map(Docs::uuid).toList();
+            List<BsonDocument> refs = new ArrayList<>();
+            for (BsonValue refId : ids) {
+                Optional<BsonDocument> ref = tx.find(REF, byId(refId).append("catalogId", uuid(catalogId)));
+                if (ref.isEmpty() || !tx.exists(REF_ENTRY, new BsonDocument("refId", refId)
+                        .append("objectId", uuid(objectId))
+                        .append("kind", new BsonDocument("$ne", new BsonString(NAMESPACE_KIND))))) {
+                    return MISSING;
+                }
+                refs.add(ref.get());
+            }
+            if (every) {
+                List<BsonValue> others = tx.collection(REF_ENTRY).find(tx.session, new BsonDocument("objectId",
+                                uuid(objectId)).append("refId", new BsonDocument("$nin", new BsonArray(ids))))
+                        .projection(new BsonDocument("refId", new BsonInt32(1))).map(entry -> entry.get("refId"))
+                        .into(new ArrayList<>());
+                if (!others.isEmpty() && tx.exists(REF, new BsonDocument("_id", Docs.in(others)))) {
+                    return new WriteResult.Refused(WriteResult.Reason.REFERENCED);
+                }
+            }
+            BsonDocument catalog = tx.find(CATALOG, byId(uuid(catalogId))).orElseThrow();
+            BsonDocument own = new BsonDocument("objectId", uuid(objectId)).append("branch", Docs.in(ids.stream()
+                    .<BsonValue>map(id -> new BsonString(uuid(id).toString())).toList()));
+            tx.see(object.get());
+            tx.see(catalog);
+            refs.forEach(tx::see);
+            tx.collection(POINTER).find(tx.session, own).projection(new BsonDocument("clock", new BsonInt32(1)))
+                    .forEach(tx::see);
+            tx.mark(OBJECT, object.get());
+            refs.forEach(ref -> tx.mark(REF, ref));
+            tx.collection(CATALOG).updateOne(tx.session, byId(uuid(catalogId)), new BsonDocument("$set",
+                    new BsonDocument("clock", tx.clock()).append("trimmed", tx.clock())));
+            tx.collection(POINTER).deleteMany(tx.session, own);
+            tx.collection(PROJECTION_PIECE).deleteMany(tx.session, own);
+            tx.collection(REF_ENTRY).deleteMany(tx.session, new BsonDocument("objectId", uuid(objectId))
+                    .append("refId", Docs.in(ids)));
+            return WriteResult.APPLIED;
+        });
     }
 
     /**

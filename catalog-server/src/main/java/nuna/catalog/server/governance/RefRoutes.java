@@ -4,10 +4,12 @@ import static nuna.catalog.server.governance.Management.CATALOG;
 import static nuna.catalog.server.governance.Management.ROOT;
 
 import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.EventData;
 import nuna.catalog.audit.RefChange;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
 import nuna.catalog.core.commit.CommitReply;
+import nuna.catalog.core.commit.GovernanceChain;
 import nuna.catalog.core.commit.Merge;
 import nuna.catalog.iceberg.Wire;
 import nuna.catalog.security.Authorizer;
@@ -29,6 +31,7 @@ import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
@@ -42,10 +45,15 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -83,6 +91,7 @@ class RefRoutes {
     static final String MERGE = REF + "/merge";
     static final String WARN = ROOT + "/maintenance/refs/{id}/warn";
     static final String END = ROOT + "/maintenance/refs/{id}/end";
+    static final String REMOVE = CATALOG + "/objects/{id}/refs/remove";
 
     /** The principal of the warning markers in the idempotency store, which no caller's id can be. */
     static final String WARNINGS = "nuna.refs";
@@ -95,6 +104,12 @@ class RefRoutes {
     private static final Duration WARNING_LEASE = Duration.ofMinutes(1);
     /** What a merge is authorized and audited as. */
     private static final String MERGE_OP = "mergeRef";
+    /** What taking a table or view out of refs is authorized and audited as (backlog 156). */
+    private static final String REMOVE_OP = "removeFromRefs";
+    /** How many times a removal reads the refs again when they changed under it. */
+    private static final int REMOVE_ATTEMPTS = 3;
+    /** The most refs one removal names. */
+    private static final int MAX_REMOVE_REFS = 1000;
 
     /**
      * Where a record goes that changes nothing in the store and so cannot ride the outbox: the audit topic and the
@@ -800,6 +815,175 @@ class RefRoutes {
             }
             page = page.after(listed);
         }
+    }
+
+    // ---- taking a table or view out of refs (backlog 156) ----
+
+    /**
+     * Takes a table or view out of the catalog's refs (D33, amended 2026-11-22; backlog 156, security finding 6), so a
+     * dropped one's data can leave tags: its entry leaves each ref's cut, and a branch's own pointer for it goes with
+     * it, in one transaction ({@link nuna.catalog.store.RefStore#removeFromRefs}). Reads of it through those refs then
+     * answer 404, as for a name the cut never held, and once no ref names a dropped one its purge claim goes through.
+     * The object is named by id, so a dropped or unregistered one is reached. Body: {@code {"refs": [name, ...]}} for
+     * the live refs it names, or {@code {"all-refs": true}} for every ref whose cut names it, a branch past its expiry
+     * included.
+     *
+     * <p>It needs {@code manage-tags} on the object, the tag steward's duty, which D18 keeps apart from data, so a data
+     * writer cannot erase history with it; and it is refused under a legal hold (D24) or a DR freeze (D37) on the
+     * object, a namespace above it or the catalog. Each refusal is audited as a denial. Answers 200 with the object and
+     * the refs it left, each with its {@code ref} record (object-removed) naming the object, written with the change; 404
+     * for an object the catalog does not hold or the caller holds nothing on, and for a named ref that is gone or does
+     * not hold the object; 403 when the right, a hold or a freeze refuses it. With every ref asked and none naming the
+     * object, it answers 200 with no refs and writes nothing.
+     */
+    @PostMapping(path = REMOVE, produces = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<String> remove(@PathVariable("catalog") String prefix, @PathVariable String id,
+                                  @RequestHeader(name = ManagementIdempotency.HEADER, required = false) String key,
+                                  @RequestBody(required = false) String body, HttpServletRequest http) {
+        Request request = management.request(http);
+        CatalogRecord catalog = management.catalog(prefix, request, REMOVE_OP, Privilege.MANAGE_TAGS);
+        Target target = objectTarget(catalog, id);
+        guard.require(request, target, REMOVE_OP, Privilege.MANAGE_TAGS);
+        return idempotency.run(Optional.ofNullable(key), request.caller(), "REMOVE_FROM_REFS",
+                catalog.id() + "/" + target.securable().id(), body, ticket -> remove(target, request, body, ticket));
+    }
+
+    private Reply remove(Target target, Request request, String body, ManagementIdempotency.Ticket ticket) {
+        Optional<List<String>> named = refNames(Management.body(body));
+        CatalogObject object = target.object().orElseThrow();
+        String what = String.join(".", target.audit().path());
+        if (target.chain().held()) {
+            throw guard.held(request, target.audit(), REMOVE_OP, what + " is under a legal hold, so its refs keep it");
+        }
+        guard.requireUnfrozen(request, target.chain(), target.audit(), REMOVE_OP, what);
+        for (int attempt = 1; ; attempt++) {
+            Instant now = now();
+            List<Ref> refs = leaving(target.catalog(), object, named, now);
+            String answer = Management.JSON.writeValueAsString(removed(target, refs, now));
+            if (refs.isEmpty()) {
+                return Reply.of(200, answer);
+            }
+            Set<UUID> ids = refs.stream().map(Ref::id).collect(Collectors.toCollection(LinkedHashSet::new));
+            nuna.catalog.audit.Securable catalog = new nuna.catalog.audit.Securable(
+                    nuna.catalog.audit.Securable.Kind.CATALOG, target.catalog().id(), target.catalog().name(), List.of());
+            List<EventData> events = refs.stream().<EventData>map(ref -> event(RefChange.Action.OBJECT_REMOVED, ref,
+                    ref.expiresAt(), catalog, request, List.of(target.audit()))).toList();
+            WriteResult result = Management.write("Taking " + what + " out of refs", () -> store.removeFromRefs(
+                            object.id(), ids, named.isEmpty(), ticket.change(management.change(now, events), 200, answer)),
+                    () -> store.listRefPointers(object.id()).stream().noneMatch(held -> ids.contains(held.ref().id())));
+            switch (result) {
+                case WriteResult.Applied applied -> {
+                    return new Reply(200, answer, true);
+                }
+                case WriteResult.Missing missing when missing.subject() == WriteResult.Subject.OBJECT ->
+                        throw target.missing();
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
+                        throw guard.held(request, target.audit(), REMOVE_OP, what + " is under a legal hold, so its refs"
+                                + " keep it");
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN ->
+                        throw guard.frozen(request, target.audit(), REMOVE_OP, what + " is frozen for DR reconcile");
+                // A ref read above was deleted, or another came to name the object: read the refs again.
+                case WriteResult.Missing missing -> {
+                }
+                case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.REFERENCED -> {
+                }
+                default -> throw new IllegalStateException("removeFromRefs answered " + result);
+            }
+            if (attempt >= REMOVE_ATTEMPTS) {
+                throw refsChanged(what);
+            }
+        }
+    }
+
+    /** The table or view {@code id} names in the catalog, dropped or not, until it is purged, as a target. */
+    private Target objectTarget(CatalogRecord catalog, String id) {
+        UUID objectId;
+        try {
+            objectId = UUID.fromString(id);
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Not an object id: " + id);
+        }
+        CatalogError missing = CatalogError.of(404, "NoSuchObjectException", "No table or view " + id + " in "
+                + catalog.name());
+        CatalogObject object = store.readObject(objectId).filter(o -> o.catalogId().equals(catalog.id())
+                && o.state() != CatalogObject.State.PURGED).orElseThrow(() -> missing);
+        List<String> levels = management.levels(catalog.id(), object.namespaceId()).orElse(List.of());
+        return new Target(catalog, object.securable(), Management.audit(catalog, levels, object.name().display(),
+                object), Optional.of(object), GovernanceChain.of(store, object), missing);
+    }
+
+    /**
+     * The refs a removal names: {@code {"refs": [name, ...]}}; empty for {@code {"all-refs": true}}, every ref. One of
+     * the two, never both, so a body that names nothing never means every ref.
+     */
+    private static Optional<List<String>> refNames(JsonNode body) {
+        JsonNode all = body.get("all-refs");
+        JsonNode refs = body.get("refs");
+        if (all != null && !all.isBoolean()) {
+            throw CatalogError.badRequest("Field all-refs must be true or absent");
+        }
+        boolean every = all != null && all.asBoolean();
+        if (every == (refs != null)) {
+            throw CatalogError.badRequest("Name the refs to take the table or view out of, {\"refs\": [name, ...]},"
+                    + " or ask for every ref that names it, {\"all-refs\": true}");
+        }
+        if (every) {
+            return Optional.empty();
+        }
+        if (!refs.isArray() || refs.isEmpty() || refs.size() > MAX_REMOVE_REFS) {
+            throw CatalogError.badRequest("Field refs must be an array of 1 to " + MAX_REMOVE_REFS + " ref names");
+        }
+        List<String> names = new ArrayList<>();
+        for (JsonNode name : refs) {
+            if (!name.isString() || name.asString().isBlank() || name.asString().length() > MAX_NAME) {
+                throw CatalogError.badRequest("Field refs must hold ref names, each a non-empty string of at most "
+                        + MAX_NAME + " characters");
+            }
+            names.add(name.asString());
+        }
+        return Optional.of(names);
+    }
+
+    /**
+     * The refs a removal leaves, by name: each one named, a live ref of the catalog whose cut names the object; or,
+     * with none named, every ref whose cut names it.
+     */
+    private List<Ref> leaving(CatalogRecord catalog, CatalogObject object, Optional<List<String>> named, Instant now) {
+        List<Ref> naming = store.listRefPointers(object.id()).stream().map(RefPointers::ref).toList();
+        if (named.isEmpty()) {
+            return naming;
+        }
+        Map<UUID, Ref> refs = new LinkedHashMap<>();
+        for (String name : named.get()) {
+            Ref ref = live(catalog, name, now);
+            if (naming.stream().noneMatch(holder -> holder.id().equals(ref.id()))) {
+                throw CatalogError.of(404, "NoSuchObjectException", "No table or view " + object.id() + " on ref "
+                        + ref.name().display() + " of " + catalog.name());
+            }
+            refs.putIfAbsent(ref.id(), ref);
+        }
+        return List.copyOf(refs.values());
+    }
+
+    /** A removal's answer: the object, and the refs it left, as the list shows them to a caller without create. */
+    private ObjectNode removed(Target target, List<Ref> refs, Instant now) {
+        CatalogObject object = target.object().orElseThrow();
+        List<String> path = target.audit().path();
+        ObjectNode body = Management.JSON.createObjectNode();
+        ObjectNode node = body.putObject("object");
+        node.put("id", object.id().toString());
+        path.subList(0, path.size() - 1).forEach(node.putArray("namespace")::add);
+        node.put("name", object.name().display());
+        node.put("kind", object.kind().name().toLowerCase(Locale.ROOT));
+        node.put("state", object.state().name().toLowerCase(Locale.ROOT));
+        ArrayNode left = body.putArray("refs");
+        refs.forEach(ref -> left.add(ref(ref, now, false)));
+        return body;
+    }
+
+    private static CatalogError refsChanged(String what) {
+        return CatalogError.of(409, "RefsChangedException", "The refs naming " + what + " kept changing while it was"
+                + " being taken out of them; ask again");
     }
 
     // ---- helpers ----
