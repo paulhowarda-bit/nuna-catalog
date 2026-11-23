@@ -1,7 +1,8 @@
 // A table's and a view's pages, each tab on its own route. The table's metadata comes from loadTable (with every
 // snapshot, and no storage credentials), asked once a minute at most: every load is audited. Its metadata log is the
 // catalog's commit journal, with who made each change (item 130). "Compact now", for a caller who may modify the table,
-// and a request while it waits (item 114). Its Properties tab changes the listed write settings (item 141).
+// and a request while it waits (item 114). Its Properties tab changes the listed write settings (item 141). A view's
+// Governance tab is the table's, in words for a view and without the labels that do nothing to one (item 146).
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
@@ -636,7 +637,7 @@ function metadataLogTab(target, t) {
 
 // ---- the view page ----
 
-const VIEW_TABS = [['', 'Overview'], ['versions', 'Versions'], ['grants', 'Grants'], ['audit', 'Audit']];
+const VIEW_TABS = [['', 'Overview'], ['versions', 'Versions'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit']];
 
 export function viewPage(target, tab) {
   const main = h('div', {class: 'nc-main', id: 'view-page'});
@@ -651,20 +652,24 @@ export function viewPage(target, tab) {
     title.append(badge('view', 'strong'));
     addCount(tabs, 'versions', (v.metadata.versions || []).length);
   }, () => {});
-  if (key === null) fill(body, h('div', {class: 'empty'}, h('h3', null, 'A view has no such tab')));
-  else if (key === 'grants') fill(body, grantsTab(target));
-  else if (key === 'audit') fill(body, auditTab(target));
-  else {
-    load(body, async () => {
-      let v;
-      try {
-        v = await loaded;
-      } catch (error) {
-        return refusedLoad(error, 'Grants and Audit');
-      }
-      return key === 'versions' ? versionsTab(v) : viewOverview(target, v);
-    });
-  }
+  const show = () => {
+    if (key === null) fill(body, h('div', {class: 'empty'}, h('h3', null, 'A view has no such tab')));
+    else if (key === 'governance') load(body, () => governanceTab(target, show));
+    else if (key === 'grants') fill(body, grantsTab(target));
+    else if (key === 'audit') fill(body, auditTab(target));
+    else {
+      load(body, async () => {
+        let v;
+        try {
+          v = await loaded;
+        } catch (error) {
+          return refusedLoad(error, 'Governance, Grants and Audit');
+        }
+        return key === 'versions' ? versionsTab(v) : viewOverview(target, v);
+      });
+    }
+  };
+  show();
   return main;
 }
 

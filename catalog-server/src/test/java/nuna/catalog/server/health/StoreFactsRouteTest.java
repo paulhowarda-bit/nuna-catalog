@@ -45,8 +45,9 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * The {@code store} field of {@code GET /management/v1/health/server?store=true} (backlog 139): the catalog's
  * database as this server finds it, each backend told by what it answers on its own connection, and the self-check
- * the server ran at start. Only platform operators read it, and a refusal comes before the database is asked. The
- * database is a double that answers as each backend does, so this needs only Java.
+ * the server ran at start, and beside them the point-in-time recovery window the deployment declares (backlog 145).
+ * Only platform operators read it, and a refusal comes before the database is asked. The database is a double that
+ * answers as each backend does, so this needs only Java.
  */
 class StoreFactsRouteTest {
 
@@ -62,6 +63,7 @@ class StoreFactsRouteTest {
     private final List<String> asked = new ArrayList<>();
     private final MockHttpServletRequest http = new MockHttpServletRequest();
     private Caller caller = OLGA;
+    private Duration pitrWindow = Duration.ofDays(7);
 
     StoreFactsRouteTest() {
         http.setAttribute(RequestIds.class.getName(), "request-1");
@@ -144,6 +146,24 @@ class StoreFactsRouteTest {
     }
 
     @Test
+    void thePitrWindowIsTheOneDeclaredNeverReadFromTheDatabase() {
+        pitrWindow = Duration.ofHours(36);
+        JsonNode store = store(DatabaseSettings.Backend.POSTGRESQL, jdbc("PostgreSQL 17.2", null), null, PASSED);
+        assertThat(store.get("pitr-window-seconds").asLong()).isEqualTo(Duration.ofHours(36).toSeconds());
+        assertThat(asked).as("the database is asked only its version").containsExactly("SELECT version()");
+
+        DataSource down = (DataSource) Proxy.newProxyInstance(DataSource.class.getClassLoader(),
+                new Class<?>[] {DataSource.class}, (proxy, method, args) -> {
+                    throw new SQLTransientConnectionException("Connection refused");
+                });
+        pitrWindow = Duration.ofDays(7);
+        JsonNode unreachable = store(DatabaseSettings.Backend.POSTGRESQL, down, null, PASSED);
+        assertThat(unreachable.has("unreadable")).isTrue();
+        assertThat(unreachable.get("pitr-window-seconds").asLong())
+                .as("declared, so shown when the database does not answer").isEqualTo(Duration.ofDays(7).toSeconds());
+    }
+
+    @Test
     void onlyAskedForDoesTheServerReadItsDatabase() {
         JsonNode body = json(routes(DatabaseSettings.Backend.POSTGRESQL, jdbc("PostgreSQL 16.4", null), null, PASSED)
                 .server(false, http));
@@ -180,7 +200,7 @@ class StoreFactsRouteTest {
         RestSettings settings = new RestSettings(100, 1000, 1_048_576, 1000, 268_435_456, Duration.ofDays(30),
                 Duration.ofMinutes(5), "the identity provider", URI.create("urn:nuna:test"), 100, null);
         Separation separation = new Separation(Set.of("grant-admins"), Set.of("platform-ops"));
-        StoreFacts facts = new StoreFacts(backend, () -> dataSource, () -> mongo, check);
+        StoreFacts facts = new StoreFacts(backend, () -> dataSource, () -> mongo, check, pitrWindow);
         return new CatalogHealthRoutes(new HealthWindow(new SimpleMeterRegistry(), clock),
                 new Peers(new HealthSettings(List.of(), Duration.ofSeconds(1))), separation, request -> caller,
                 DenialsForTests.denials(audit::add, settings, clock), facts);

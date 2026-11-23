@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.Locale;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
@@ -27,8 +28,9 @@ import tools.jackson.databind.node.ObjectNode;
  * tells the two apart); on Oracle the JDBC driver's product version; on MongoDB {@code buildInfo}. A database that
  * cannot be asked is said so, with its error, beside the backend {@code nuna.database.backend} names.
  *
- * <p>Point-in-time recovery is not here: it is the database's own backup setting, which the catalog's role cannot
- * read on most backends and nothing in the server records (backlog 139).
+ * <p>Beside them, the point-in-time recovery window the deployment declares, {@code nuna.governance.pitr-window}
+ * (backlog 145): orphan removal and dropped tables' retention rely on it. It is never read from the database, whose
+ * backup setting the catalog's role cannot read on most backends, so it is there when the database does not answer.
  */
 final class StoreFacts {
 
@@ -44,16 +46,21 @@ final class StoreFacts {
     private final Supplier<DataSource> dataSource;
     private final Supplier<MongoClient> mongoClient;
     private final StoreSelfCheck selfCheck;
+    private final Duration pitrWindow;
 
     StoreFacts(DatabaseSettings.Backend configured, Supplier<DataSource> dataSource,
-               Supplier<MongoClient> mongoClient, StoreSelfCheck selfCheck) {
+               Supplier<MongoClient> mongoClient, StoreSelfCheck selfCheck, Duration pitrWindow) {
         this.configured = configured;
         this.dataSource = dataSource;
         this.mongoClient = mongoClient;
         this.selfCheck = selfCheck;
+        this.pitrWindow = pitrWindow;
     }
 
-    /** {@code configured}, the backend and version found or why they could not be, and the self-check at start. */
+    /**
+     * {@code configured}, the backend and version found or why they could not be, the point-in-time recovery window
+     * declared, and the self-check at start.
+     */
     ObjectNode read() {
         ObjectNode store = JsonNodeFactory.instance.objectNode();
         store.put("configured", configured.name().toLowerCase(Locale.ROOT));
@@ -64,6 +71,7 @@ final class StoreFacts {
         } catch (SQLException | RuntimeException e) {
             store.put("unreadable", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
         }
+        store.put("pitr-window-seconds", pitrWindow.toSeconds());
         ObjectNode check = store.putObject("self-check");
         check.put("at", selfCheck.at().toString());
         ArrayNode allowed = check.putArray("allowed");
