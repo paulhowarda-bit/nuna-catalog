@@ -118,6 +118,9 @@ their slots, orphan scans in a lane of their own. Round-the-clock work counts in
 - **A month is kept.** Each report deletes the jobs of nights more than 31 days before today, by the catalog's clock in
   UTC. That keeps at least 30 whole nights in any zone.
 - **Bookkeeping, not changes.** A report writes no audit record. A refused report is audited.
+- **A job run on request** (backlog 114) carries `requested-at` too, the time the request it runs was asked, to the
+  millisecond. The first such report of a `compaction` or `orphan-scan` marks that request started (table-health.md,
+  "Maintenance on request"). It counts to the night the window last opened, as the night's jobs do.
 
 What the worker reports:
 

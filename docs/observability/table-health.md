@@ -128,11 +128,19 @@ assessed it, `assessment` is absent; before any Job has run for it, `last-compac
     "started-at": "2027-03-27T23:00:01Z",
     "ended-at": "2027-03-28T01:00:00Z",
     "outcome": "cut-off"
-  }
+  },
+  "requests": [
+    {
+      "job": "compaction",
+      "requested-by": "ana",
+      "requested-at": "2027-03-28T09:14:02.511Z",
+      "state": "waiting"
+    }
+  ]
 }
 ```
 
-The same object is each item of the neediest list.
+The same object, without `requests`, is each item of the neediest list.
 
 | Field | Meaning |
 |---|---|
@@ -148,6 +156,44 @@ The same object is each item of the neediest list.
 | `equality-delete-files` | Equality-delete files, which every reader must join against. |
 | `last-compaction.outcome` | `running`, `succeeded`, `failed`, or `cut-off` when the cleanup window's end stopped it. |
 | `last-compaction.started-at`, `ended-at` | When the worker started the Job, or found tonight's already there after a restart; when it saw it end. No `ended-at` while it runs. |
+| `requests` | The table's maintenance on request, by job, at most one each ("Maintenance on request"): `job`, `requested-by`, `requested-at`, `state` (`waiting`, or `started` once the worker reports it) and, once started, `started-at`. Empty when nothing was asked. |
+
+### Maintenance on request
+
+D30, amended 2026-11-20; backlog 114. A caller with `modify` on a table asks for its compaction or its orphan scan to
+run now, inside the nightly cleanup window or outside it:
+
+```
+POST /management/v1/catalogs/{catalog}/namespaces/{namespace}/tables/{table}/maintenance/requests
+{"job": "compaction"}
+```
+
+`job` is `compaction` or `orphan-scan`; expiry and manifest rewrite need no request, since they run at every scan
+their policy makes them due. The answer is 202 with the request as the table's health shows it, `state` `waiting`.
+
+- **One waits per table and job.** Asking again while one waits writes nothing and answers 202 with the one waiting,
+  who asked it and when. A request the worker has started is replaced by the next one asked.
+- **Who may ask:** `modify` on the table, as for its maintenance policy. Without it the answer is 403, audited as a
+  denial; a caller who holds nothing on the table is told it does not exist (404), as everywhere (D18).
+- **The catalog's guards stay.** A DR freeze over the table refuses either job (403, as every freeze refusal is).
+  A job the table's resolved policy does not run is refused with 409 `MaintenanceNotAllowedException`: turned off at
+  some level, or, for an orphan scan, by a legal hold's guardrail. Each refusal is audited as a denial, its reason
+  `dr_freeze`, `legal_hold` or `maintenance_policy`. A requested compaction runs whether or not the assessment says
+  the table needs one: that is the point of asking.
+- **Audited.** Each request taken is a governance change of the table in the audit trail, attribute
+  `maintenance-request`, the job as its value, provenance `management-api`, with who asked.
+- **The worker still polls.** The work list (`GET /management/v1/maintenance/work`) carries the waiting requests in a
+  section of their own, `requests`, after the deletions, by the time asked, each with its table as the `tables`
+  section shows it and `job`, `requested-at` and `requested-by`. A request whose job the table's policy no longer runs,
+  a hold or freeze placed since included, is left off and keeps waiting. The worker takes each at its next scan, so a
+  request starts within one `scan-interval`.
+- **Cleared when started.** The worker reports a requested job as it reports the night's
+  (`PUT /management/v1/maintenance/jobs/{id}`, maintenance-nights.md), with `requested-at` naming the request; the
+  first such report marks it started. A report naming a request no longer waiting, or another time, changes nothing.
+- **Deadline.** A requested compaction Job stops at `nuna.maintenance.request-deadline` (two hours by default) after
+  it starts, in place of the window's end; a requested orphan scan stops then too and records nothing
+  (catalog-maintenance/README.md, "Maintenance on request").
+- A purged table's requests go with it.
 
 ### The scans
 
@@ -189,6 +235,7 @@ other management calls; anyone else gets 403. Each answers 204.
 | `PUT /management/v1/maintenance/scans/{scan id}` | `started-at`; once it has ended, `ended-at`, `outcome`, `failures` and for a failed scan `error` |
 | `PUT /management/v1/maintenance/tables/{table id}/assessment` | The table's `catalog`, `namespace` and `name`, then `assessed-at`, `data-files`, `small-files`, `position-delete-files`, `deletion-vectors`, `equality-delete-files`, `reasons` and `score` |
 | `PUT /management/v1/maintenance/tables/{table id}/compaction` | The table's `catalog`, `namespace` and `name`, then `started-at`, `outcome` and once it has ended `ended-at` |
+| `PUT /management/v1/maintenance/jobs/{job id}` | A job of the night (maintenance-nights.md); for a job run on request, `requested-at` too, which marks the request started |
 
 - **The table must still be the one the worker read.** A report names the table by id and by the name the work list
   gave it. It is refused with 404 `NoSuchTableException` when the table has been dropped, or the name now names
@@ -213,6 +260,17 @@ keep serving while the first new one migrates, and the rolling upgrade stays saf
 | Oracle | `V9__table_health.sql` | `table_health`, `maintenance_scan` |
 | MongoDB | step 7 (`MongoSchema`) | indexes on `table_health` (the neediest order, needy tables only) and `maintenance_scan` |
 
+The requests of "Maintenance on request" are kept the same way, one more add-only step on each store: a table
+`maintenance_request` keyed by table and job, with who asked, when, and when the worker started it, and an index over
+the waiting ones in the order the work list reads them.
+
+| Store | Step | What it adds |
+|---|---|---|
+| PostgreSQL | `V13__maintenance_requests.sql` | `maintenance_request`, and a partial index over the waiting |
+| CockroachDB | `V12__maintenance_requests.sql` | `maintenance_request`, and a partial index over the waiting |
+| Oracle | `V14__maintenance_requests.sql` | `maintenance_request`, and an index over the time asked |
+| MongoDB | step 12 (`MongoSchema`) | the `maintenance_request` collection, unique by table and job, and an index over the time asked |
+
 ## Tests and bites
 
 | Test | Shows |
@@ -222,6 +280,10 @@ keep serving while the first new one migrates, and the rolling upgrade stays saf
 | `catalog-maintenance` `NightlyCleanupTest`, `ScanMetricsTest` | Through a real night, the catalog keeps each assessment, how each Job stands and ended, and each scan, as the worker reports them. |
 | `catalog-server` `MaintenanceEstateTest` (fast) | Every table: a row for each table the caller may select and none for another; its assessment; a hold or freeze from any level above; a closed table counted only for a caller whose grants give select; fixed last night only by a compaction that succeeded; paging, the 500-row page and the 2,000 tables a page looks at. |
 | `catalog-server` `MaintenanceEstateRoutesTest` (heavy) | Every table through the server, with real reports, holds, freezes, grants and classifications; a caller who may select nothing gets no row. |
+| `HealthSuite` requests (catalog-store-api, run on each store) | A request kept; asking again while it waits changes nothing; the worker's start report clears it, a report naming another time changes nothing, and a later request replaces it; only an active table may be asked for; the waiting listed by the time asked, then table and job, a page at a time, without the started and the dropped; a purge's completion deletes the requests. |
+| `catalog-server` `MaintenanceRequestsTest` (fast) | Who may ask and every refusal, each audited: `modify` asks and asking again keeps the one waiting; `select` alone is refused; a caller who holds nothing gets 404; another job is a bad request; a DR freeze refuses either job; a legal hold refuses the orphan scan, not the compaction; a policy that turns the job off refuses it. |
+| `catalog-server` `MaintenanceRequestRoutesTest` (heavy) | Through the server: a request waits in the table's health, the work list carries it with the table's policy, the worker's job report naming it marks it started and takes it off the work list; a reader is refused, and so is a request under a DR freeze. |
+| `catalog-maintenance` `RequestedWorkTest` (fast) | The worker runs a request in the day, outside the window: a compaction whatever its assessment, its Job named after the time asked and stopping at the request's deadline, sharing the night's slots, one Job per table at once; with compaction off it waits; an orphan scan stops at the deadline and records nothing. Each report names the request. |
 
 The bites are in `bites/D38/`: a report taken from someone other than the worker, and the neediest list unfiltered by
 grants. The estate's bites are in `bites/D45/`, each against `MaintenanceEstateTest`:
@@ -231,3 +293,11 @@ grants. The estate's bites are in `bites/D45/`, each against `MaintenanceEstateT
 - `estate-examines-without-bound`: a page looks at every table until it is full.
 - `estate-fixed-by-any-compaction`: a compaction cut off or failed counts as fixing its table.
 - `estate-page-unbounded`: a page holds as many rows as it is asked for.
+
+Maintenance on request has four bites in `bites/D30/`:
+
+- `request-taken-without-modify` (`MaintenanceRequestsTest`): a request needs only `select`.
+- `request-taken-under-hold` (`MaintenanceRequestsTest`): a requested orphan scan is taken under a legal hold.
+- `requested-job-window-deadline` (`RequestedWorkTest`): a requested Job stops at the window's end, not the request's
+  deadline.
+- `requested-job-waits-for-window` (`RequestedWorkTest`): a requested job waits for the cleanup window.
