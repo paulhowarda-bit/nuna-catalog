@@ -19,6 +19,7 @@ import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
 import java.time.Instant;
@@ -281,6 +282,60 @@ public abstract class RefSuite extends GroupSuite {
                 .isEmpty();
         assertThat(store.deleteRef(dev.id(), change())).isEqualTo(MISSING_REF);
         assertApplied(store.createRef(branch(catalog, "dev", now()), RefLimits.P11, change()));
+    }
+
+    @Test
+    @DisplayName("Refs: a branch counts the tables and views it has its own pointer for, once each, and nothing of"
+            + " main's or another ref's (backlog 105)")
+    void aBranchCountsItsOwnPointers() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject a = newTable(namespace, "a");
+        CatalogObject b = newTable(namespace, "b");
+        CatalogObject view = newObject(namespace, "v", CatalogObject.Kind.VIEW);
+        Ref dev = created(branch(catalog, "dev", now()));
+        Ref other = created(branch(catalog, "other", now()));
+        Ref eod = created(tag(catalog, "eod", now()));
+        assertThat(store.countOwnPointers(dev.id())).isZero();
+
+        Pointer aOnDev = commit(dev.key(a.id()), Optional.empty(), "a-on-dev");
+        commit(dev.key(a.id()), Optional.of(aOnDev), "a-on-dev-2");
+        commit(dev.key(view.id()), Optional.empty(), "v-on-dev");
+        commit(other.key(b.id()), Optional.empty(), "b-on-other");
+        commit(b.mainKey(), store.readPointer(b.mainKey()), "b-on-main");
+
+        assertThat(store.countOwnPointers(dev.id())).isEqualTo(2);
+        assertThat(store.countOwnPointers(other.id())).isEqualTo(1);
+        assertThat(store.countOwnPointers(eod.id())).isZero();
+        assertThat(store.countOwnPointers(UUID.randomUUID())).as("no such ref").isZero();
+        assertApplied(store.deleteRef(dev.id(), change()));
+        assertThat(store.countOwnPointers(dev.id())).isZero();
+    }
+
+    @Test
+    @DisplayName("Refs: every ref whose cut names a table lists the pointer its cut took, and a branch its own")
+    void everyRefNamingATableListsItsPointers() {
+        UUID catalog = newCatalog();
+        NamespaceRecord namespace = newNamespace(catalog, "ns");
+        CatalogObject table = newTable(namespace, "t");
+        Pointer first = store.readPointer(table.mainKey()).orElseThrow();
+        Ref eod = created(tag(catalog, "eod", now()));
+        Ref dev = created(branch(catalog, "Dev", now()));
+        Pointer second = commit(table.mainKey(), Optional.of(first), "t-on-main");
+        Ref audit = created(branch(catalog, "audit", now()));
+        Pointer onDev = commit(dev.key(table.id()), Optional.empty(), "t-on-dev");
+        Ref fix = created(Refs.from(dev, "fix", Ref.Kind.BRANCH, now()));
+        CatalogObject later = newTable(namespace, "later");
+
+        assertThat(store.listRefPointers(table.id())).as("by normalized name").containsExactly(
+                new RefPointers(audit, at(second), Optional.empty()),
+                new RefPointers(dev, at(first), Optional.of(at(onDev))),
+                new RefPointers(eod, at(first), Optional.empty()),
+                new RefPointers(fix, at(onDev), Optional.empty()));
+        assertThat(store.listRefPointers(later.id())).as("made after every ref").isEmpty();
+
+        assertApplied(store.deleteRef(dev.id(), change()));
+        assertThat(store.listRefPointers(table.id())).extracting(RefPointers::ref).containsExactly(audit, eod, fix);
     }
 
     @Test
