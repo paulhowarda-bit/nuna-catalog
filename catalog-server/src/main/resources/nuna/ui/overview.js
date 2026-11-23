@@ -4,7 +4,7 @@
 // 125); and the governance figures for those who may describe the catalog (item 128).
 
 import * as api from './api.js';
-import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, sized} from './dom.js';
+import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {pageHref} from './route.js';
 import {estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable, shapeWords} from './queue.js';
@@ -14,8 +14,8 @@ import {governanceFigures} from './governance.js';
 export function overviewPage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'overview'});
   load(main, async () => {
-    const [rows, tables] = await Promise.all([queue(true).then(all => queueOf(all, catalog)),
-      estate(true).then(all => all.filter(t => t.catalog === catalog))]);
+    const [rows, everywhere] = await Promise.all([queue(true).then(all => queueOf(all, catalog)), estate(true)]);
+    const tables = everywhere.filter(t => t.catalog === catalog);
     const assessed = lastAssessed(rows);
     const c = estateCounts(tables);
     // Before the worker reports, no table is assessed: none is in shape or queued, and the page says so.
@@ -25,7 +25,7 @@ export function overviewPage(catalog) {
       hero: true,
       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
-      title: !c.total ? `No table in ${catalog} is yours to select.`
+      title: !c.total ? nothingToRead(catalog, everywhere, 'overview')
         : none ? shapeWords(c)
           : [shapeWords(c) + ' ', c.queued
             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
@@ -64,6 +64,18 @@ export function overviewPage(catalog) {
     return out;
   });
   return main;
+}
+
+/**
+ * The headline of a catalog with no table the caller may read: it says so, and names the catalog with the most
+ * tables the caller may read, linked to the same page there (Atelier's review, F2).
+ */
+export function nothingToRead(catalog, everywhere, page) {
+  const counts = new Map();
+  for (const t of everywhere) if (t.catalog !== catalog) counts.set(t.catalog, (counts.get(t.catalog) || 0) + 1);
+  const [other, n] = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0] || [];
+  return [`Nothing in ${catalog} you may read.`, other ? [' ', h('a', {href: pageHref(page, other), 'data-other-catalog': other},
+    `${other} has ${plural(n, 'table')}`, ' →')] : null];
 }
 
 /** The catalog's governance in figures: for those who may describe the catalog; anyone else sees nothing here. */

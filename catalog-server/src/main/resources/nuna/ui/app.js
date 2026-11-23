@@ -6,7 +6,7 @@ import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, sta
 import * as api from './api.js';
 import {$, $$, failure, fill, h, icon, pill} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP} from './route.js';
-import {keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
+import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
 import {maintenancePage} from './maintenance.js';
 import {healthPage} from './health.js';
@@ -54,6 +54,41 @@ function pickTheme(value) {
     // the choice then lasts this page only
   }
   applyTheme();
+}
+
+// ---- the catalog a sign-in opens: the one used last in this browser, else the one with the most tables the caller
+// may read, else the first (Atelier's review, F2). Kept per viewer as a convenience: it may come back empty. ----
+
+const LAST = 'nuna.catalog';
+
+function lastCatalog() {
+  try {
+    return localStorage.getItem(LAST);
+  } catch {
+    return null;
+  }
+}
+
+function keepCatalog(c) {
+  try {
+    if (c && c !== lastCatalog()) localStorage.setItem(LAST, c);
+  } catch {
+    // remembered for this page only
+  }
+}
+
+async function landingCatalog(names) {
+  const last = lastCatalog();
+  if (last && names.includes(last)) return last;
+  let rows = [];
+  try {
+    rows = await estate();
+  } catch {
+    // the estate only ranks the catalogs; without it the first is taken
+  }
+  const counts = new Map(names.map(n => [n, 0]));
+  for (const t of rows) if (counts.has(t.catalog)) counts.set(t.catalog, counts.get(t.catalog) + 1);
+  return names.reduce((best, n) => counts.get(n) > counts.get(best) ? n : best, names[0]);
 }
 
 // ---- the menu: a rail on a wide screen, a drawer on a phone ----
@@ -395,8 +430,12 @@ function render() {
   const names = catalogs.map(c => c.name);
   const fallback = cat && names.includes(cat) ? cat : names[0] || null;
   if (!r.page && !r.c) {
-    if (names.length) location.replace(pageHref('overview', fallback));
-    else location.replace(pageHref('health'));
+    if (!names.length) location.replace(pageHref('health'));
+    else if (cat && names.includes(cat)) location.replace(pageHref('overview', cat));
+    else {
+      slot.replaceChildren(h('p', {class: 'loading-line'}, 'Loading…'));
+      landingCatalog(names).then(c => { if (!parse().page && !parse().c) location.replace(pageHref('overview', c)); });
+    }
     return;
   }
   // Health is the whole deployment's: platform operators see it though they may hold nothing in any catalog.
@@ -417,6 +456,7 @@ function render() {
     return;
   }
   cat = r.c || fallback;
+  if (r.page !== 'health') keepCatalog(cat);
   const tabOnly = same(prev, r);
   let content;
   let navKey;

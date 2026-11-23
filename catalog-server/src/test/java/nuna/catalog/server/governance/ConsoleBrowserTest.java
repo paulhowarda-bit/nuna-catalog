@@ -176,6 +176,27 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * Sign-in opens the catalog this browser used last, else the one with the most tables the caller may read
+     * (Atelier's review, F2; backlog 183); a catalog with nothing the caller may read says so in plain words. This
+     * server has one catalog, so the landing is the catalog with tables and the empty headline names no other.
+     */
+    @Test
+    void signInOpensTheCatalogWithTablesAndAnEmptyOneSaysSo() {
+        signIn(tester());
+        browser.open("/ui/");
+        browser.await("sign-in did not open the overview of trading",
+                d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
+        browser.await(By.cssSelector("#overview-kpis"));
+        assertThat(driver.executeScript("return localStorage.getItem('nuna.catalog')")).isEqualTo("trading");
+
+        // Grant administrators read no table (D18).
+        signIn(api.grantAdmin());
+        browser.open("/ui/#p=overview&c=trading");
+        browser.awaitText(By.cssSelector("#overview h1"), "Nothing in trading you may read.");
+        assertThat(driver.findElements(By.cssSelector("#overview h1 a[data-other-catalog]"))).isEmpty();
+    }
+
+    /**
      * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
      * them answers (backlog 137): the last commit is the newest entry of the table's metadata log. Each child
      * namespace gets its totals over the tables beneath it (backlog 147).
