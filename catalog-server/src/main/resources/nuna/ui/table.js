@@ -77,7 +77,9 @@ export function tablePage(target, tab, route) {
   main.append(head, tabs);
   const body = tabBody(main);
   refChrome(route, acts, head);
-  const noted = (what, content) => target.ref ? [refNote(target.ref, what), content] : content;
+  // A note names the ref as the list has it, so a tag shows as a tag; a ref that is not live keeps its name.
+  const noted = async (what, content) => target.ref
+    ? [refNote(await readingRef(target.catalog, target.ref) || target.ref, what), content] : content;
   let metadata = loadTable(target);
   metadata.then(t => {
     const m = t.metadata;
@@ -106,9 +108,9 @@ export function tablePage(target, tab, route) {
     } else if (key === 'governance') {
       load(body, async () => noted('governance', await governanceTab(target, reload)));
     } else if (key === 'grants') {
-      fill(body, noted('grants', grantsTab(target)));
+      load(body, () => noted('grants', grantsTab(target)));
     } else if (key === 'audit') {
-      fill(body, noted('audit', auditTab(target)));
+      load(body, () => noted('audit', auditTab(target)));
     } else {
       load(body, async () => {
         let t;
@@ -245,7 +247,8 @@ async function healthSummary(target) {
   if (a && a['needs-compaction']) words.push((a.reasons || []).map(r => (REASONS[r] || [null, null, r])[2]).join(' '));
   words.push(c ? `Last compaction ${at(c['ended-at'] || c['started-at'])}, ${c.outcome}.` : 'No compaction has run for this table.');
   return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'health')}, 'Health'), ' ',
-    a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
+    target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
+  target.ref ? h('p', {class: 'fine'}, 'Health is assessed and maintained on main only. Main\'s health of this table.') : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)
     : pill('ok', icon('check'), 'No compaction needed'),
@@ -577,7 +580,7 @@ function partitionTab(target, t) {
 
 /** What one commit changed, in a few words: its update actions, each once, in order. */
 function changeWords(updates) {
-  const merge = (updates || []).find(u => u.action === 'merge-branch');
+  const merge = Array.isArray(updates) ? updates.find(u => u.action === 'merge-branch') : null;
   if (merge) return `Took @${merge.branch}'s version ${fmt(merge['branch-version'])} as main's next version, in the merge of @${merge.branch}`;
   const actions = [...new Set((updates || []).map(u => u.action))];
   return actions.length ? actions.join(', ') : muted('no update');

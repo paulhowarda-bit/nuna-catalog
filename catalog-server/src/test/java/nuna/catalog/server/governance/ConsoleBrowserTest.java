@@ -39,9 +39,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * The web console in a real browser, on the server the M7 tests share: the screens UI v1 checked by hand against
  * the demo on 2026-11-10 (build-plan.md), in the redesigned console (D45, backlog 124). The tree down to tables and
  * views; a namespace's Contents with each table's format, snapshots and last commit (backlog 137); a table's
- * overview, schemas compared, partition specs and sort orders, snapshots with their refs, and metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
+ * overview, schemas compared, partition specs and sort orders, snapshots with their Iceberg refs, and metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
  * revoked; every refusal shown as the catalog answered it, with its request id; an object's audit trail; the theme
- * picked and kept; and the phone layout, its menu a drawer and no page wider than the screen.
+ * picked and kept; the phone layout, its menu a drawer and no page wider than the screen; and the catalog's branches
+ * and tags (backlog 109): a branch made, committed on, previewed and merged, and a table read as of a tag.
  *
  * <p>The fixtures are made through the API before the browser looks: a namespace three levels deep with a v2 table
  * whose schema, partitioning and sort order evolved and which has three snapshots, a tag and a branch, a v3 table and
