@@ -37,8 +37,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 /**
  * The web console in a real browser, on the server the M7 tests share: the screens UI v1 checked by hand against
  * the demo on 2026-11-10 (build-plan.md), in the redesigned console (D45, backlog 124). The tree down to tables and
- * views; a table's overview, schemas compared, partition specs and sort orders, snapshots with their refs, and
- * metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
+ * views; a namespace's Contents with each table's format, snapshots and last commit (backlog 137); a table's
+ * overview, schemas compared, partition specs and sort orders, snapshots with their refs, and metadata log; a view's versions with their SQL; governance with the level each value comes from; grants made and
  * revoked; every refusal shown as the catalog answered it, with its request id; an object's audit trail; the theme
  * picked and kept; and the phone layout, its menu a drawer and no page wider than the screen.
  *
@@ -171,6 +171,43 @@ class ConsoleBrowserTest {
         browser.open("/ui/#" + at("namespace", List.of(top), null, null));
         browser.awaitText(contentsGovernance("equities"), "Held");
         browser.awaitText(contentsGovernance("ledger"), "regulated");
+    }
+
+    /**
+     * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
+     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log.
+     */
+    @Test
+    void contentsShowEachTablesFormatSnapshotsAndLastCommit() {
+        HttpResponse<String> listed = expect(api.manage("GET", "/namespaces/" + ns(eu) + "/tables", null), 200);
+        assertThat(JsonPath.<List<String>>read(listed.body(), "$.tables[*].name")).containsExactly("positions", "trades");
+        String id = api.id(String.join("\u001f", eu), "tables", "trades");
+        HttpResponse<String> log = expect(api.manage("GET", "/objects/" + id + "/metadata-log", null), 200);
+        String committer = JsonPath.read(log.body(), "$.journal[0].principal");
+        assertThat(JsonPath.<Integer>read(listed.body(), "$.tables[1].last-commit.version"))
+                .isEqualTo(JsonPath.<Integer>read(log.body(), "$.journal[0].new-version"));
+
+        signIn(tester());
+        browser.open("/ui/#" + at("namespace", eu, null, null));
+        browser.await(By.cssSelector("#namespace-page table.contents tr[data-name='trades']"));
+        assertThat(driver.findElements(By.cssSelector("#namespace-page table.contents thead th")))
+                .extracting(ConsoleBrowser::textContent).containsExactly("Name", "Kind", "Format", "Tonight's queue",
+                        "Governance", "Snapshots", "Last commit");
+        WebElement trades = contentsRow("trades");
+        assertThat(contentsCell(trades, 3)).isEqualTo("v2");
+        assertThat(contentsCell(trades, 6)).isEqualTo("3");
+        assertThat(textContent(trades.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
+        assertThat(textContent(trades.findElement(By.cssSelector("td.last")))).endsWith("· " + committer);
+        WebElement positions = contentsRow("positions");
+        assertThat(contentsCell(positions, 3)).isEqualTo("v3");
+        assertThat(contentsCell(positions, 6)).as("created, never appended to").isEqualTo("0");
+
+        // A namespace or a view has no format, snapshots or commit of its own.
+        browser.open("/ui/#" + at("namespace", equities, null, null));
+        for (String name : List.of("eu", "daily")) {
+            WebElement row = contentsRow(name);
+            assertThat(List.of(contentsCell(row, 3), contentsCell(row, 6), contentsCell(row, 7))).containsOnly("–");
+        }
     }
 
     @Test
@@ -741,6 +778,16 @@ class ConsoleBrowserTest {
     /** The governance cell of a namespace's row in the Contents shown. */
     private static By contentsGovernance(String name) {
         return By.cssSelector(".nc-main table.contents tr[data-name='" + name + "'] td.gov");
+    }
+
+    /** A row of the Contents shown, by name, once it is there. */
+    private WebElement contentsRow(String name) {
+        return browser.await(By.cssSelector(".nc-main table.contents tr[data-name='" + name + "']"));
+    }
+
+    /** A Contents row's {@code n}th cell's text, counting from 1, whether or not this width shows that column. */
+    private static String contentsCell(WebElement row, int n) {
+        return textContent(row.findElement(By.xpath("./td[" + n + "]"))).trim();
     }
 
     /** The groups beside {@code label} in the grants tab's "Who may". */
