@@ -164,8 +164,11 @@ cmd_claim() {
         done
         verb=widened
     fi
+    # Claims this session holds itself never block it: one agent working several items in one worktree, one at a
+    # time, keeps two agents out of the same code all the same.
     for c in $(refs claims); do
         [ "$c" = "$n" ] && continue
+        holds "$c" && continue
         case $(diagnose "$c") in finished*|abandoned*) continue ;; esac
         other=$(field "refs/backlog/claims/$c" touches)
         overlap "$areas" "$other" && die "item $n would change $areas, and item $c ($(title "$c")) changes $other: $(field "refs/backlog/claims/$c" session) holds it on $(field "refs/backlog/claims/$c" branch). Take another item, or wait until it lands."

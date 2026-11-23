@@ -74,5 +74,31 @@ else
     ok "another session cannot widen a claim it does not hold"
 fi
 
+# One session may hold two items whose areas overlap (it works them one at a time); another session may not.
+printf '# 4. Four
+
+Status: open
+Added: 2026-11-23 by test
+Touches: a/
+' > backlog/4.md
+if out=$("$here/backlog.sh" claim 4 2>&1) && [[ $out == claimed* ]]; then
+    ok "the holder of item 2 claims item 4 in the same area"
+else
+    bad "the holder of item 2 could not claim item 4: $out"
+fi
+printf '# 5. Five
+
+Status: open
+Added: 2026-11-23 by test
+Touches: a/
+' > backlog/5.md
+git checkout -q -b third || exit 2
+if out=$(CLAUDE_CODE_HOST_SESSION_ID=third "$here/backlog.sh" claim 5 2>&1); then
+    bad "another session claimed item 5 in the holder's area: $out"
+else
+    ok "another session cannot claim into the holder's area"
+fi
+git checkout -q "$branch" || exit 2
+
 [ $fails -eq 0 ] && echo "all checks pass" || echo "$fails check(s) failed"
 [ $fails -eq 0 ]
