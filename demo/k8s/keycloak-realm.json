@@ -13,14 +13,20 @@
   "certificate": "${NUNA_REALM_CERTIFICATE}",
   "roles": {
     "client": {
-      "cloudbeaver": [{"name": "admin", "description": "CloudBeaver's team admin: its administrator"}]
+      "cloudbeaver": [{"name": "admin", "description": "CloudBeaver's team admin: its administrator"}],
+      "silo": [{"name": "diagnostics", "description": "Silo's built-in policy diagnostics: the server's health, metrics, logs and traces, and no bucket or object"}]
     }
   },
   "groups": [
     {"name": "demo-analysts"},
     {"name": "demo-grant-admins"},
     {"name": "demo-stewards"},
-    {"name": "demo-operators", "clientRoles": {"cloudbeaver": ["admin"]}},
+    {"name": "demo-operators", "clientRoles": {
+      "cloudbeaver": ["admin"],
+      "silo": ["diagnostics"],
+      "realm-management": ["view-realm", "view-users", "view-clients", "view-events", "view-identity-providers",
+                           "view-authorization"]
+    }},
     {"name": "demo-auditors"},
     {"name": "demo-audit-writers"}
   ],
@@ -297,6 +303,36 @@
         "saml_name_id_format": "username",
         "saml_assertion_consumer_url_post": "https://${DEMO_HOST}:8183/api/saml-assert"
       }
+    },
+    {
+      "clientId": "silo",
+      "name": "Silo's console",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${NUNA_SILO_CLIENT_SECRET}",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "redirectUris": ["https://${DEMO_HOST}:8184/oauth_callback"],
+      "webOrigins": ["https://${DEMO_HOST}:8184"],
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "silo-policy",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "silo",
+            "multivalued": "true",
+            "access.token.claim": "false",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "policy",
+            "jsonType.label": "String"
+          }
+        }
+      ]
     }
   ]
 }

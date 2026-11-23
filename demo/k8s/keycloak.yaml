@@ -34,7 +34,10 @@ spec:
           image: ${KEYCLOAK_IMAGE}
           imagePullPolicy: Never
           args: ["start-dev", "--import-realm", "--http-port=8080", "--health-enabled=true",
-                 "--hostname=https://${DEMO_HOST}:8180", "--proxy-headers=xforwarded"]
+                 "--hostname=https://${DEMO_HOST}:8180", "--proxy-headers=xforwarded",
+                 # Asked inside the cluster (http://keycloak:8080), the discovery document gives that address for
+                 # the token and key endpoints, and the browser's for sign-in: Silo reads it (silo-signin.yaml).
+                 "--hostname-backchannel-dynamic=true"]
           env:
             - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: admin}
             - {name: KC_BOOTSTRAP_ADMIN_PASSWORD, value: nuna-test}
@@ -47,6 +50,8 @@ spec:
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: cloudbeaver-client-secret}}
             - name: NUNA_AUDIT_TABLES_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: audit-tables-client-secret}}
+            - name: NUNA_SILO_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: silo-client-secret}}
           ports:
             - containerPort: 8080
             - containerPort: 9000

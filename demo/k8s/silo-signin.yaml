@@ -1,0 +1,38 @@
+# Silo's console sign-in through Keycloak, for the demo only: demo.sh patches Deployment s3 (store-silo.yaml) with
+# this after applying it, so the engine matrix, which has no Keycloak, keeps Silo as it was. A patch, not a
+# manifest: applying store-silo.yaml again leaves these settings alone, so a later up does not replace Silo's pod
+# (its data lives only as long as the pod).
+#
+# The console offers "Keycloak" beside its access-key form (realm nuna, client silo). The browser goes to Keycloak
+# through the front door, on https://<host>:8180; Silo reads the discovery document inside the cluster from
+# keycloak:8080, which gives that address for tokens and keys (keycloak.yaml, --hostname-backchannel-dynamic).
+# What a person may do comes from the ID token's claim "policy": the client roles of client silo, named after
+# Silo's policies. Group demo-operators holds "diagnostics", Silo's built-in policy for the server's health,
+# metrics, logs and traces, and no bucket or object, so the platform operators see no data here either (D18).
+# Someone with no role there, ana, gary and stella among them, has no policy claim and Silo refuses them. The
+# store's root, nunatest, still signs in with its access key and secret.
+#
+# Silo reads the discovery document only as it starts, and offers no Keycloak button if it cannot, so it waits up
+# to 5 minutes for Keycloak first, as when every pod starts at once after Docker Desktop restarts; after that it
+# starts anyway, with its access-key form alone.
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: wait-for-keycloak
+          image: ${SILO_IMAGE}
+          imagePullPolicy: Never
+          command: ["bash", "-c", "timeout 300 bash -c 'until curl -sf -o /dev/null
+                    http://keycloak:8080/realms/nuna/.well-known/openid-configuration; do sleep 3; done' || true"]
+      containers:
+        - name: silo
+          env:
+            - {name: MINIO_IDENTITY_OPENID_CONFIG_URL, value: "http://keycloak:8080/realms/nuna/.well-known/openid-configuration"}
+            - {name: MINIO_IDENTITY_OPENID_CLIENT_ID, value: silo}
+            - name: MINIO_IDENTITY_OPENID_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: silo-client-secret}}
+            - {name: MINIO_IDENTITY_OPENID_CLAIM_NAME, value: policy}
+            - {name: MINIO_IDENTITY_OPENID_SCOPES, value: openid}
+            - {name: MINIO_IDENTITY_OPENID_DISPLAY_NAME, value: Keycloak}
+            # The console's address in the browser: Keycloak sends people back to <this>/oauth_callback.
+            - {name: MINIO_BROWSER_REDIRECT_URL, value: "https://${DEMO_HOST}:8184"}

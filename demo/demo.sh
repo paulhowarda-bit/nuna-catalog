@@ -229,9 +229,10 @@ publish_tokens() {
   k create secret generic demo-cdc-token --from-literal=token="$(token_of cdc)" --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
-# Keycloak's realm signing key and certificate, CloudBeaver's client and cookie secrets and the audit table
-# writer's client secret, made once per machine in $RUN/keycloak and kept, and published as Secret keycloak-keys
-# (keycloak.yaml, cloudbeaver.yaml, singlestore.yaml; audit_writer passes the writer its secret). The key is fixed
+# Keycloak's realm signing key and certificate, CloudBeaver's client and cookie secrets and the client secrets of
+# the audit table writer and Silo's console, made once per machine in $RUN/keycloak and kept, and published as
+# Secret keycloak-keys (keycloak.yaml, cloudbeaver.yaml, singlestore.yaml, silo-signin.yaml; audit_writer passes
+# the writer its secret). The key is fixed
 # rather than Keycloak's own, made at each start, because SingleStore checks Studio's SAML sign-ins against its
 # certificate, which it reads only as it starts.
 publish_keycloak_keys() {
@@ -248,6 +249,7 @@ publish_keycloak_keys() {
   fi
   # Made apart from the rest: the folder predates it on machines that ran the demo before.
   [[ -f "$dir/audit-tables-client-secret" ]] || openssl rand -hex 24 > "$dir/audit-tables-client-secret"
+  [[ -f "$dir/silo-client-secret" ]] || openssl rand -hex 24 > "$dir/silo-client-secret"
   # The realm file takes the key and certificate without their PEM lines.
   pem_body() { sed '/^-----/d' "$1" | tr -d '\r\n'; }
   k create secret generic keycloak-keys \
@@ -257,6 +259,7 @@ publish_keycloak_keys() {
     --from-literal=cloudbeaver-client-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-client-secret")" \
     --from-literal=cloudbeaver-cookie-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-cookie-secret")" \
     --from-literal=audit-tables-client-secret="$(tr -d '\r\n' < "$dir/audit-tables-client-secret")" \
+    --from-literal=silo-client-secret="$(tr -d '\r\n' < "$dir/silo-client-secret")" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
@@ -670,9 +673,11 @@ SingleStore:  Studio on $web:8183, or demo/demo.sh sql   (as root, password $S2_
               Studio takes no passwords, so not root)
 Trino:        CloudBeaver on $web:8185: each person's connections sign in as them, to nuna through
               Trino with their own token, and to the CDC leg's databases
-Keycloak:     $web:8180/admin   (user admin, password nuna-test; realm nuna)
-Silo:         its console on $web:8184   (user nunatest, password nunatest-secret-key: the S3
-              store's root, which sees every bucket)
+Keycloak:     $web:8180/admin/nuna/console/ for oscar, who reads realm nuna's users, groups, sessions and events
+              there without a second sign-in; $web:8180/admin to change it   (user admin, password nuna-test)
+Silo:         its console on $web:8184: "Keycloak" signs oscar in, to the server's health, metrics, logs and
+              traces, no data; the S3 store's root, which sees every bucket, signs in with access key nunatest,
+              secret nunatest-secret-key
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
               and pauses the brokerage world while it runs)
@@ -964,6 +969,7 @@ up() {
   apply stack.yaml
   k patch deployment kafka-ui --type strategic --patch "$(fill kafka-ui-signin.yaml)" >/dev/null
   apply store-silo.yaml
+  k patch deployment s3 --type strategic --patch "$(fill silo-signin.yaml)" >/dev/null
   fill keycloak-realm.json > "$RUN/keycloak-realm.json"
   k create configmap keycloak-realm --from-file=nuna.json="$RUN/keycloak-realm.json" --dry-run=client -o yaml \
     | k apply -f - >/dev/null

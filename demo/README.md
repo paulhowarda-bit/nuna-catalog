@@ -27,7 +27,8 @@ demo/demo.sh up
     (`demo/Mint.java`). The demo patches kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak;
     the engine matrix on its own leaves kafbat open.
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, with its console on the pod's 9001, and the job
-    that makes the warehouse bucket.
+    that makes the warehouse bucket. The demo patches Silo with `silo-signin.yaml`, its console's sign-in
+    through Keycloak; the engine matrix on its own leaves it out.
   - The catalog: the Helm chart `deploy/helm/nuna-catalog`, release `nuna-catalog`, one server, image
     `nuna-catalog:demo` (`deploy/image/Dockerfile`), values `catalog-values.yaml` (both catalogs:
     `lakehouse` for the demo's data, `engines` for the matrix's) and `demo-values.yaml` (the demo's two
@@ -176,6 +177,9 @@ Trino connection sends their own token, so the catalog lets them do there what i
 | kafbat, <https://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and Kafka Connect's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <https://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
 | CloudBeaver, <https://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
+| Silo's console, <https://localhost:8184> | through Keycloak (client `silo`): choose "Keycloak" | refused: direct access to the store would go round the catalog's grants | the server's health, metrics, logs and traces (Silo's policy `diagnostics`), and no bucket or object |
+| Keycloak's admin console for realm `nuna`, <https://localhost:8180/admin/nuna/console/> | through Keycloak, its own client | refused ("forbidden") | reads the realm: its users, groups, sessions, clients and events; changes nothing |
+| Keycloak's account page, <https://localhost:8180/realms/nuna/account> | through Keycloak | their own account and sessions | the same |
 
 kafbat's roles go by Keycloak group: `demo-operators` administers Kafka, and `demo-analysts`,
 `demo-grant-admins` and `demo-stewards` administer topics, except the ones the demo runs on, which they only
@@ -187,7 +191,7 @@ only `demo-operators` read in kafbat, and in its log (`kubectl -n nuna-demo logs
 audit`). Unlike the console's, kafbat's sign-out leaves Keycloak's session.
 
 How CloudBeaver and Studio sign in through Keycloak, neither of which CloudBeaver Community or Studio does on
-its own terms:
+its own terms, and how Silo's and Keycloak's own consoles do:
 
 - **CloudBeaver**: oauth2-proxy (`quay.io/oauth2-proxy/oauth2-proxy:v7.15.6`) runs beside it in its pod and
   takes every request on 8185. It signs the person in with Keycloak (OIDC with PKCE, a confidential client)
@@ -211,22 +215,36 @@ its own terms:
   password sign-in, so `root` uses `demo/demo.sh sql`. The response travels over HTTPS to Studio, and
   SingleStore accepts it again for an hour (the assertion's lifetime, as long as a console token), so whoever
   gets hold of one can sign in as that person meanwhile. That is accepted: the demo holds only test data.
+- **Silo's console**: Silo, a MinIO fork, signs people in through Keycloak itself (OpenID Connect, a
+  confidential client), set by `k8s/silo-signin.yaml`. What it lets them do comes from the ID token's claim
+  `policy`, the person's roles of Keycloak client `silo`, each named after a Silo policy: group
+  `demo-operators` holds `diagnostics`, Silo's built-in policy without bucket or object rights, so the platform
+  operators see no data in the store, as in the catalog (D18). Anyone else has no `policy` claim, and Silo
+  refuses them: an analyst who read the store directly would go round the catalog's grants, governance and
+  audit. Silo reads Keycloak's discovery document inside the cluster, where Keycloak names its own
+  `http://keycloak:8080` for tokens and keys (`--hostname-backchannel-dynamic`), and only as it starts, so its
+  pod waits up to 5 minutes for Keycloak first. The store's root, `nunatest`, keeps its access-key sign-in.
+- **Keycloak's admin console**: `demo-operators` hold realm `nuna`'s view roles (`view-realm`, `view-users`,
+  `view-clients`, `view-events`, `view-identity-providers`, `view-authorization`), so `oscar` and `presenter`
+  read the realm's admin console without a second sign-in, and change nothing. Changing the realm stays with
+  Keycloak's `admin` (below), in the master realm: whoever could change it could put themselves in any group,
+  which separation of duties rules out for the people in the demo.
 - **Keys**: the realm signs with a fixed key, not one Keycloak makes at each start, because SingleStore reads
   its certificate only as it starts. `up` makes the key, its certificate and CloudBeaver's client and cookie
   secrets once, with `openssl`, in `~/.nuna-demo/keycloak`, and loads them as Secret `keycloak-keys`. To
   change them, delete that folder and run `up`: Keycloak, CloudBeaver and SingleStore restart with the new
   ones.
-- **At work**: this Keycloak and its keys are stand-ins. CloudBeaver's sign-in proxy, Studio's SAML setting
-  and SingleStore's certificate get pointed at work's identity provider, with TLS from work's certificate
+- **At work**: this Keycloak and its keys are stand-ins. CloudBeaver's sign-in proxy, Studio's SAML setting,
+  SingleStore's certificate and Silo's console sign-in get pointed at work's identity provider, with TLS from work's certificate
   authority, and that can only be done on site.
 
 Accounts that run the demo rather than people in it:
 
 | Account | Password | For |
 |---|---|---|
-| Keycloak `admin` | `nuna-test` | Keycloak's admin console, <https://localhost:8180/admin> |
+| Keycloak `admin` | `nuna-test` | Keycloak's admin console, <https://localhost:8180/admin>, in the master realm: the only account that changes realm `nuna` |
 | SingleStore `root` | `nuna-test` | `demo/demo.sh sql` and the demo's setup; Studio takes no passwords |
-| Silo `nunatest` | `nunatest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>: every bucket, its objects, users, policies and settings |
+| Silo `nunatest` | `nunatest-secret-key` | the S3 store's root, and Silo's console, MinIO's, on <https://localhost:8184>, by its access-key form: every bucket, its objects, users, policies and settings |
 | PostgreSQL `catalog` | `catalog` | the catalog's database; not published outside the cluster |
 | PostgreSQL `backoffice` | `nuna-test` | the CDC leg's PostgreSQL, its owner; `demo/demo.sh psql` |
 | Oracle `treasury` | `nuna-test` | the CDC leg's Oracle schema; `demo/demo.sh sqlplus` |
