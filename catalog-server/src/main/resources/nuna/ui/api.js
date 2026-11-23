@@ -235,8 +235,15 @@ export async function queue() {
   return all('/management/v1/maintenance/tables?pageSize=200', 'tables', 10);
 }
 
-/** A table's health: its latest assessment and last compaction, with select on it. */
+/** A table's health: its latest assessment, last compaction and requests (item 114), with select on it. */
 export const tableHealth = target => call(managed(target) + '/health');
+
+/** Asks for a table's compaction or orphan scan now (item 114): `job` is `compaction` or `orphan-scan`. */
+export const requestMaintenance = (target, job) => send(managed(target) + '/maintenance/requests',
+  {method: 'POST', body: {job}});
+
+/** Every table the caller may select, one row each, in every catalog (item 127): every page, while there is a token. */
+export const estate = () => all('/management/v1/maintenance/estate?pageSize=500', 'tables', Infinity);
 
 /** The maintenance nights, newest first: `days` of totals, the newest `jobs` of them with their jobs (item 126). */
 export const nights = (days, jobs) => call(`/management/v1/maintenance/nights?days=${days}&jobs=${jobs}`);

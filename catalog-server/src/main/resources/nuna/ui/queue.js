@@ -1,7 +1,7 @@
 // Tonight's queue: the tables the maintenance worker last assessed as needing compaction, neediest first, of
-// those the caller may read (GET /management/v1/maintenance/tables). The ice line's lower half draws it: each
-// table a mark hanging below the water, as deep as its score. The upper half, every table in shape standing
-// above the line, waits on backlog 127, which gives one row per table.
+// those the caller may read (GET /management/v1/maintenance/tables). The ice line draws every table the caller may
+// select, one row each (GET /management/v1/maintenance/estate, item 127): each table in shape a mark standing above
+// the water, as tall as its data files on a log scale, and each queued one hanging below it, as deep as its score.
 
 import {$$, bar, h, ordinal, pill, plural, s} from './dom.js';
 import {objectHref} from './route.js';
@@ -41,6 +41,127 @@ export async function queue(fresh) {
 }
 
 export const queueOf = (rows, catalog) => rows.filter(r => r.catalog === catalog);
+
+let estateKept = null;
+
+/** Every table the caller may select, one row each, in every catalog, every page; asked once a minute at most. */
+export async function estate(fresh) {
+  if (!fresh && estateKept && Date.now() - estateKept.at < 60_000) return estateKept.rows;
+  const rows = await api.estate();
+  estateKept = {at: Date.now(), rows};
+  return rows;
+}
+
+const needs = row => !!(row.assessment && row.assessment['needs-compaction']);
+
+/**
+ * The estate's counts: every table, those in shape (assessed, and needing no compaction), those queued, by why,
+ * those not yet assessed, those whose compaction last night succeeded, and those held or frozen.
+ */
+export function estateCounts(rows) {
+  const queued = rows.filter(needs);
+  return {
+    total: rows.length,
+    inShape: rows.filter(r => r.assessment && !needs(r)).length,
+    queued: queued.length,
+    eq: queued.filter(isEq).length,
+    unassessed: rows.filter(r => !r.assessment).length,
+    fixed: rows.filter(r => r['fixed-last-night'] && !needs(r)).length,
+    held: rows.filter(r => r.held).length,
+    frozen: rows.filter(r => r.frozen).length,
+  };
+}
+
+/**
+ * The ice line over the whole estate: one mark per table, grouped by top-level namespace and labelled under the
+ * line. Above it, each table in shape, as tall as its data files on a log scale, with a dashed reference at 1,000
+ * files; one not yet assessed is a stub. Below it, each queued table, as deep as its score, a link to its Health tab.
+ * A table whose compaction succeeded last night has a dashed outline where it was queued. Held and frozen tables have
+ * their own colours.
+ */
+export function iceEstate(host, W, rows) {
+  const groups = [];
+  for (const row of [...rows].sort((a, b) => keyOfRow(a).localeCompare(keyOfRow(b)))) {
+    const top = row.namespace[0];
+    let g = groups.find(x => x.name === top);
+    if (!g) groups.push(g = {name: top, rows: []});
+    g.rows.push(row);
+  }
+  const MAXH = 90;
+  const Y = MAXH + 22;
+  const H = Y + 6 + 46 + 26;
+  const GAP = 14;
+  const L = 8;
+  const R = 84;
+  const logMax = Math.max(4, ...rows.map(r => Math.log10(1 + (Number((r.assessment || {})['data-files']) || 0))));
+  const tall = files => 3 + (MAXH - 3) * Math.log10(1 + files) / logMax;
+  const deepest = Math.max(10, ...rows.filter(needs).map(r => Number(r.assessment.score) || 0));
+  const step = Math.min(28, (W - L - R - GAP * Math.max(0, groups.length - 1)) / Math.max(1, rows.length));
+  const c = estateCounts(rows);
+  const svg = s('svg', {viewBox: `0 0 ${W} ${H}`, role: 'group', 'aria-label': 'Every table you may select as one mark. '
+    + `Above the line, ${plural(c.inShape, 'table')} in shape, each as tall as its data-file count on a log scale. `
+    + `Below it, ${c.queued} queued for tonight, each as deep as its score.`});
+  const ghosts = s('g', {class: 'ghosts'});
+  const sky = s('g', {class: 'rise'});
+  const sink = s('g', {class: 'sink'});
+  const labels = s('g', {class: 'labs'});
+  let x = L;
+  groups.forEach((g, gi) => {
+    const x0 = x;
+    const group = s('a', {href: objectHref({catalog: g.rows[0].catalog, kind: 'namespace', namespace: [g.name]}),
+      class: 'ga g' + (gi % 6), 'aria-label': `${g.name}, ${plural(g.rows.length, 'table')}, ${g.rows.filter(needs).length} queued`});
+    group.append(s('rect', {class: 'hit', x: x0 - 2, y: Y - MAXH - 4, width: g.rows.length * step + 4, height: MAXH + 2}));
+    for (const row of g.rows) {
+      const a = row.assessment;
+      const width = Math.max(1, step * 0.74);
+      if (needs(row)) {
+        const depth = 6 + 46 * (Number(a.score) || 0) / deepest;
+        const mx = x + step / 2 - 2;
+        const link = s('a', {href: objectHref(targetOfRow(row), 'health'), class: 'qa g' + (gi % 6),
+          'aria-label': `${row.namespace.join('.')}.${row.name}, score ${a.score}`});
+        link.append(s('title', null, `${row.catalog}.${row.namespace.join('.')}.${row.name} · score ${a.score} · `
+          + (a.reasons || []).map(r => (REASONS[r] || [null, r])[1].toLowerCase()).join(', ')));
+        link.append(s('rect', {class: 'hit', x: mx - 6, y: Y - 5, width: 16, height: depth + 9}),
+          s('rect', {class: 'q' + (isEq(row) ? ' eq' : ''), x: mx, y: Y + 1, width: 4, height: depth, rx: 1}));
+        if (row.held) link.append(s('circle', {class: 'sky held', cx: mx + 2, cy: Y, r: 4}));
+        sink.append(link);
+      } else {
+        const height = a ? tall(Number(a['data-files']) || 0) : 2;
+        group.append(s('rect', {class: 'sky' + (row.frozen ? ' frozen' : row.held ? ' held' : ''), x, y: Y - height, width, height}));
+        if (row['fixed-last-night']) ghosts.append(s('rect', {class: 'ghost', x, y: Y + 2, width, height: 12}));
+      }
+      x += step;
+    }
+    sky.append(group);
+    labels.append(s('text', {class: 'lab-strong', x: x0, y: H - 6}, g.name),
+      s('text', {class: 'lab', x: x0 + g.name.length * 7.9 + 8, y: H - 6}, g.rows.length.toLocaleString('en-GB')));
+    if (gi < groups.length - 1) labels.append(s('line', {class: 'grp', x1: x + GAP / 2, y1: Y - 6, x2: x + GAP / 2, y2: Y + 6}));
+    x += GAP;
+  });
+  if (logMax >= 3) {
+    const ry = Y - tall(1000);
+    ghosts.append(s('line', {class: 'ref', x1: L, y1: ry, x2: W - R + 12, y2: ry}));
+    labels.append(s('text', {class: 'lab', x: W - 2, y: ry + 4, 'text-anchor': 'end'}, '1,000 files'));
+  }
+  svg.append(ghosts, sky, sink, s('line', {class: 'water', x1: 0, y1: Y, x2: W, y2: Y}), labels);
+  host.append(svg);
+  host.append(h('p', {class: 'ice-cap'}, 'Above the line: in shape, height is data files, log scale. Below: queued, '
+    + 'depth is score. Each namespace opens its page; each queued table its Health tab.'));
+}
+
+/** The legend under the estate's ice line, with each count. */
+export function estateLegend(rows) {
+  const c = estateCounts(rows);
+  const item = (sw, n, words) => h('span', null, h('i', {class: sw}), h('b', null, n.toLocaleString('en-GB')), ' ', words);
+  return h('div', {class: 'ice-legend', id: 'estate-legend'},
+    item('sw-sky', c.inShape, 'in shape'),
+    item('sw-q', c.queued - c.eq, 'small files or deletes'),
+    item('sw-eq', c.eq, 'equality deletes, compacted first'),
+    c.fixed ? item('sw-ghost', c.fixed, 'fixed last night') : null,
+    c.held ? item('sw-held', c.held, 'held') : null,
+    c.frozen ? item('sw-frozen', c.frozen, 'frozen') : null,
+    c.unassessed ? h('span', null, h('b', null, c.unassessed.toLocaleString('en-GB')), ' not yet assessed') : null);
+}
 
 /** The score bar's scale: the neediest table's score, at least 10. */
 export const scaleOf = rows => Math.max(10, ...rows.map(r => Number((r.assessment || {}).score) || 0));
@@ -102,17 +223,8 @@ export function iceQueue(host, W, rows, {me, label} = {}) {
       ? `Tonight's queue, neediest first: this table is ${ordinal(i + 1)} of ${rows.length}`
       : `Tonight's queue holds ${plural(rows.length, 'table')}; this one is not among them`));
   } else {
-    host.append(h('p', {class: 'ice-cap'}, 'Below the line: queued, depth is score. The tables in shape above it '
-      + 'come with one row per table (backlog 127).'));
+    host.append(h('p', {class: 'ice-cap'}, 'Below the line: queued, depth is score.'));
   }
-}
-
-/** The legend under the ice line. */
-export function iceLegend(rows) {
-  const eq = rows.filter(isEq).length;
-  return h('div', {class: 'ice-legend'},
-    h('span', null, h('i', {class: 'sw-q'}), h('b', null, String(rows.length - eq)), ' small files or deletes'),
-    h('span', null, h('i', {class: 'sw-eq'}), h('b', null, String(eq)), ' equality deletes, compacted first'));
 }
 
 /** The queue's table on Maintenance: #, table, why, score, small files, deletes / data, last compaction. */

@@ -2,7 +2,7 @@
 // The catalog has Contents and Properties (item 131); its Governance, Grants and Audit are the Governance and Audit
 // pages. A namespace has Contents, Properties (Iceberg REST), Governance, Grants and Audit. Contents marks what is
 // held, frozen, regulated or closed until classified (item 128). Waiting on another item, and left out until it
-// lands: each row's snapshots and last commit in Contents (127).
+// lands: each row's snapshots and last commit in Contents (backlog 137).
 
 import * as api from './api.js';
 import {$, badge, code, copyButton, copyText, dialogForm, facts, field, fill, granted, h, icon, load, muted, openDialog,

@@ -35,7 +35,7 @@ class ConsoleTest {
 
     static final List<String> FILES = List.of("index.html", "app.js", "api.js", "audit.js", "auth.js", "browse.js",
             "dom.js", "governance.js", "health.js", "maintenance.js", "nights.js", "overview.js", "panels.js", "queue.js",
-            "route.js", "table.js", "tree.js", "style.css", "favicon.svg");
+            "requests.js", "route.js", "table.js", "tree.js", "style.css", "favicon.svg");
 
     private final HttpClient http = HttpClient.newHttpClient();
 

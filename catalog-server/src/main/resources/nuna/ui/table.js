@@ -1,7 +1,7 @@
 // A table's and a view's pages, each tab on its own route. The table's metadata comes from loadTable (with every
 // snapshot, and no storage credentials), asked once a minute at most: every load is audited. Its metadata log is the
-// catalog's commit journal, with who made each change (item 130). Waiting on another item, and left out until it
-// lands: "Compact now" with its requested state (114).
+// catalog's commit journal, with who made each change (item 130). "Compact now", for a caller who may modify the table,
+// and a request while it waits (item 114).
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
@@ -11,6 +11,7 @@ import {keyOfRow, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
 import {auditTab, exportDialog, governanceSummary, governanceTab, grantsTab} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
+import {askDialog, mayModify, requestPills} from './requests.js';
 
 const pathOf = target => [...target.namespace, target.name].join('.');
 
@@ -59,10 +60,9 @@ export function tablePage(target, tab) {
   const key = TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
   const tabs = tabsNav('Table', TABLE_TABS, key, k => objectHref(target, k || null));
-  main.append(h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name), title,
-    h('div', {class: 'side tbl-acts'}, copyLinkButton(),
-      h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'))),
-  tabs);
+  const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(),
+    h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
+  main.append(h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name), title, acts), tabs);
   const body = tabBody(main);
   const metadata = loadTable(target);
   metadata.then(t => {
@@ -72,13 +72,17 @@ export function tablePage(target, tab) {
     addCount(tabs, 'snapshots', (m.snapshots || []).length);
     addCount(tabs, 'partitioning', (m['partition-specs'] || []).length);
   }, () => {});
-  headMarks(target, title);
   const reload = () => show();
+  headMarks(target, title);
+  mayModify(target).then(may => {
+    if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
+      onclick: () => askDialog(target, 'compaction', key === 'health' ? reload : null)}, icon('play'), 'Compact now'));
+  });
   const show = () => {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
     } else if (key === 'health') {
-      load(body, () => tableHealthTab(target));
+      load(body, () => tableHealthTab(target, reload));
     } else if (key === 'governance') {
       load(body, () => governanceTab(target, reload));
     } else if (key === 'grants') {
@@ -110,6 +114,7 @@ function headMarks(target, title) {
       title.append(h('a', {href: objectHref(target, 'health'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
     }
   }, () => {});
+  api.tableHealth(target).then(health => title.append(...requestPills(health.requests)), () => {});
   api.governance(target).then(g => {
     if ((g.holds || []).length) title.append(heldPill());
     const e = g.effective || {};
