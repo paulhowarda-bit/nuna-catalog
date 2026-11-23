@@ -1,6 +1,7 @@
 package nuna.catalog.store.suite;
 
 import static nuna.catalog.store.suite.Changes.change;
+import static nuna.catalog.store.suite.Changes.fullChange;
 import static nuna.catalog.store.suite.Changes.name;
 import static nuna.catalog.store.suite.Changes.now;
 import static nuna.catalog.store.suite.Refs.branch;
@@ -9,8 +10,10 @@ import static nuna.catalog.store.suite.Refs.tag;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import nuna.catalog.store.CatalogObject;
+import nuna.catalog.store.Change;
 import nuna.catalog.store.CommitBatch;
 import nuna.catalog.store.CommitResult;
+import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.PageRequest;
 import nuna.catalog.store.Pointer;
@@ -20,6 +23,7 @@ import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
 import nuna.catalog.store.RefPointers;
+import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import java.time.Duration;
 import java.time.Instant;
@@ -29,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -41,12 +46,14 @@ import org.junit.jupiter.api.Test;
 /**
  * A catalog's branches and tags (D33, backlog 102): a ref's cut is the catalog as it was, names included, read whole;
  * a ref made from a branch takes that branch's own pointers; names compare as every name does; P11's limits hold under
- * concurrent creates; renewal; a deletion leaves no cut, no pointer of the ref and no piece; paging.
+ * concurrent creates; renewal; a deletion leaves no cut, no pointer of the ref and no piece; a namespace stays while a
+ * ref names a table or view of it (backlog 157); paging.
  */
 public abstract class RefSuite extends GroupSuite {
 
     private static final WriteResult MISSING_REF = new WriteResult.Missing(WriteResult.Subject.REF);
     private static final WriteResult LIMIT = new WriteResult.Refused(WriteResult.Reason.REF_LIMIT);
+    private static final WriteResult REFERENCED = new WriteResult.Refused(WriteResult.Reason.REFERENCED);
 
     private final Random random = new Random(11);
 
@@ -385,7 +392,8 @@ public abstract class RefSuite extends GroupSuite {
                 CatalogObject table = newTable(namespace, "t");
                 tableOfNamespace.put(namespace.id(), table.id());
                 assertApplied(store.dropObject(table.id(), now().plus(Duration.ofDays(30)), change()));
-                assertApplied(store.dropNamespace(namespace.id(), change()));
+                assertThat(store.dropNamespace(namespace.id(), change())).as("refused while a cut names its table")
+                        .isIn(WriteResult.APPLIED, REFERENCED);
             }
             return null;
         });
@@ -406,6 +414,46 @@ public abstract class RefSuite extends GroupSuite {
         }
         writer.get(1, TimeUnit.MINUTES);
         assertThat(tableOfNamespace).as("the writer made namespaces while cutting").isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("Refs: a namespace stays, with its governance, while a ref's cut names a table or view of it, dropped"
+            + " or not, until the ref is deleted: a tag, an expired branch and a cut copied from a branch alike")
+    void aRefKeepsItsObjectsNamespace() {
+        UUID catalog = newCatalog();
+        NamespaceRecord tables = newNamespace(catalog, "tables");
+        NamespaceRecord views = newNamespace(catalog, "views");
+        NamespaceRecord later = newNamespace(catalog, "later");
+        CatalogObject table = newTable(tables, "t");
+        CatalogObject view = newObject(views, "v", CatalogObject.Kind.VIEW);
+        Securable regulated = new Securable(Securable.Kind.NAMESPACE, tables.id());
+        assertApplied(store.putAttribute(new GovernanceAttribute(regulated, GovernanceAttribute.Kind.REGULATED, "true",
+                "api", "steward", now()), change()));
+        Ref v1 = created(tag(catalog, "v1", now()));
+        Ref dev = created(branch(catalog, "dev", now()));
+        CatalogObject made = newTable(later, "t");
+        for (CatalogObject object : List.of(table, view, made)) {
+            assertApplied(store.dropObject(object.id(), now().plus(Duration.ofDays(30)), change()));
+        }
+        Change refused = fullChange();
+
+        assertThat(store.dropNamespace(tables.id(), refused)).as("a dropped table").isEqualTo(REFERENCED);
+        assertThat(underTest().changeRows(refused)).isEqualTo(WrittenRows.NONE);
+        assertThat(store.attributesOf(Set.of(regulated))).extracting(GovernanceAttribute::kind)
+                .containsExactly(GovernanceAttribute.Kind.REGULATED);
+        assertThat(store.dropNamespace(views.id(), change())).as("a dropped view").isEqualTo(REFERENCED);
+        assertApplied(store.dropNamespace(later.id(), change()));
+        assertApplied(store.deleteRef(v1.id(), change()));
+        assertThat(store.dropNamespace(tables.id(), changeAt(dev.expiresAt().orElseThrow())))
+                .as("a branch past its expiry, until it is deleted").isEqualTo(REFERENCED);
+        Ref fix = created(Refs.from(dev, "fix", Ref.Kind.TAG, now()));
+        assertApplied(store.deleteRef(dev.id(), change()));
+        assertThat(store.dropNamespace(tables.id(), change())).as("a ref made from the branch").isEqualTo(REFERENCED);
+        assertApplied(store.deleteRef(fix.id(), change()));
+
+        assertApplied(store.dropNamespace(tables.id(), change()));
+        assertApplied(store.dropNamespace(views.id(), change()));
+        assertThat(store.attributesOf(Set.of(regulated))).isEmpty();
     }
 
     @Test
