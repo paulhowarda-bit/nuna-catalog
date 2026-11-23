@@ -1,52 +1,45 @@
 package nuna.datagen.live;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import nuna.datagen.world.World;
 
 /**
- * Holds each event back until its business time comes round on a compressed clock: a business day's 08:00 to 17:00 in
- * {@code dayLength} of wall time. Days before {@code pacedFrom} (the catch-up) and the gap between one day's close and
- * the next day's first event are not paced. Each day is anchored at its first paced event, so a restart mid-day carries
- * on at the same rate.
+ * Holds each event back until its business time comes round on the real clock, as a live firm's events would arrive
+ * (Paul, 2026-11-23, D48): an order placed at 10:14 New York time is sent at 10:14 New York time. An event whose time
+ * has passed (the catch-up days, or today's earlier hours after a start or restart) goes at once. Between one day's
+ * close and the next day's first event, overnight and over weekends and holidays, the world sends nothing.
  */
 public final class Pacer {
 
-    private static final Duration BUSINESS_DAY = Duration.between(LocalTime.of(8, 0), LocalTime.of(17, 0));
+    /** A wait longer than this is logged, so a quiet generator says when it next sends. */
+    static final Duration ANNOUNCED = Duration.ofMinutes(5);
 
-    private final LocalDate pacedFrom;
-    private final double speed;
-    private LocalDate anchorDay;
-    private Instant anchorBusiness;
-    private long anchorWall;
-
-    public Pacer(LocalDate pacedFrom, Duration dayLength) {
-        this.pacedFrom = pacedFrom;
-        this.speed = (double) BUSINESS_DAY.toNanos() / dayLength.toNanos();
+    /** Sleeps for a duration; a test passes one that records instead. */
+    interface Sleeper {
+        void sleep(Duration d) throws InterruptedException;
     }
 
-    /** Business seconds per wall second. */
-    public double speed() {
-        return speed;
+    private final Clock clock;
+    private final Sleeper sleeper;
+
+    public Pacer() {
+        this(Clock.systemUTC(), Thread::sleep);
+    }
+
+    Pacer(Clock clock, Sleeper sleeper) {
+        this.clock = clock;
+        this.sleeper = sleeper;
     }
 
     public void await(Instant at) throws InterruptedException {
-        LocalDate day = at.atZone(World.NEW_YORK).toLocalDate();
-        if (day.isBefore(pacedFrom)) {
+        Duration wait = Duration.between(clock.instant(), at);
+        if (wait.isNegative() || wait.isZero()) {
             return;
         }
-        if (!day.equals(anchorDay)) {
-            anchorDay = day;
-            anchorBusiness = at;
-            anchorWall = System.nanoTime();
-            return;
+        if (wait.compareTo(ANNOUNCED) > 0) {
+            System.out.println("quiet until " + at + " (" + wait.toMinutes() + " minutes)");
         }
-        long due = anchorWall + (long) (Duration.between(anchorBusiness, at).toNanos() / speed);
-        long wait = due - System.nanoTime();
-        if (wait > 0) {
-            Thread.sleep(Duration.ofNanos(wait));
-        }
+        sleeper.sleep(wait);
     }
 }

@@ -135,7 +135,11 @@ class PublisherTest {
         row.put("amount", new BigDecimal("1250.10"));
         row.put("business_date", LocalDate.of(2026, 11, 20));
         row.put("event_time", Instant.parse("2026-11-20T14:30:00.123Z"));
-        row.put("lots", List.of(Map.of("lot", 7L, "shares", new BigDecimal("1.50000"))));
+        // In order: Map.of's iteration order changes from one JVM run to the next.
+        Map<String, Object> lot = new LinkedHashMap<>();
+        lot.put("lot", 7L);
+        lot.put("shares", new BigDecimal("1.50000"));
+        row.put("lots", List.of(lot));
         row.put("security_id", null);
         assertThat(Encoding.json(new Event(Instant.EPOCH, Feed.FINANCIAL_TRANSACTIONS, row))).isEqualTo(
             "{\"amount\":\"1250.10\",\"business_date\":\"2026-11-20\",\"event_time\":"

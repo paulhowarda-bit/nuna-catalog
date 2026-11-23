@@ -30,7 +30,6 @@ spec:
             - {name: SINGLESTORE_USER, value: root}
             - {name: SINGLESTORE_PASSWORD, value: "${SINGLESTORE_ROOT_PASSWORD}"}
             - {name: BROKERAGE_ACCOUNTS, value: "1000"}
-            - {name: BROKERAGE_DAY_MINUTES, value: "10"}
             - {name: BROKERAGE_CATCH_UP_DAYS, value: "3"}
             - {name: BROKERAGE_SEED, value: "20261122"}
             - {name: BROKERAGE_COMMIT_INTERVAL_MS, value: "15000"}

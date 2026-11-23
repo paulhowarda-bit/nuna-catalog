@@ -306,7 +306,12 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   `lakehouse` as user `brokerage`, and its Kafka topics. Then `up` sets their governance as `stella` (below),
   registers the sink, and starts the generator, Deployment `brokerage`, last (`demo/demo.sh brokerage logs`
   follows it). Its settings are environment variables in `k8s/brokerage.yaml` and `k8s/brokerage-bootstrap.yaml`:
-  `BROKERAGE_ACCOUNTS=1000`, `BROKERAGE_DAY_MINUTES=10`, `BROKERAGE_CATCH_UP_DAYS=3`, `BROKERAGE_SEED=20261122`.
+  `BROKERAGE_ACCOUNTS=1000`, `BROKERAGE_CATCH_UP_DAYS=3`, `BROKERAGE_SEED=20261122`.
+- The real clock: the world's events arrive at their own time of day in New York, as a live firm's would. The
+  three catch-up days and today's earlier hours go at once when the generator starts; then each event waits for its
+  time. A trading day's events fall between 07:00 and 17:00, so the world is quiet overnight, over weekends and on
+  market holidays (the log says `quiet until <time>`). Every minute the generator also asks Kafka Connect whether
+  the sink's task has failed, as it does when the catalog restarts, and restarts it if so.
 - Kafka: the generator writes plain JSON to eleven topics, and Kafka Connect's Iceberg sink `brokerage-lake`
   (`demo/brokerage/connector.json`, as user `cdc`) routes each record to the table its `lake_table` field names,
   committing every 15 seconds. The tables must exist: the sink neither makes nor changes them.

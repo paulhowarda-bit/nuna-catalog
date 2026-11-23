@@ -189,8 +189,10 @@ a sanctions match that raise alerts.
 - **Deterministic.** Seed, anchor date and scale give the same events. The bootstrap fixes them in the `brokerage`
   namespace's properties; the anchor is three business days before the day the demo was stood up.
 - **Live (D48 as amended).** `bootstrap`, a Job in `demo.sh up`, makes the topics, namespaces, tables and views (only
-  what is missing). `run`, a Deployment, plays the world for ever: the three catch-up days as fast as the sink takes
-  them, then each business day's 08:00 to 17:00 in 10 minutes of wall time (`BROKERAGE_DAY_MINUTES`). Kafka feeds go
+  what is missing). `run`, a Deployment, plays the world for ever on the real clock (Paul, 2026-11-23): the three
+  catch-up days and today's earlier hours as fast as the sink takes them, then each event at its own time of day in
+  New York, quiet overnight, over weekends and on holidays. It restarts the sink's task whenever Kafka Connect
+  reports it failed. Kafka feeds go
   out as schemaless JSON (decimals as strings, dates as ISO strings, times as epoch milliseconds) on one-partition
   topics; the sink commits every 15 seconds. Orders are upserted into SingleStore as they change, and the change feed
   commits them on the same interval. At 17:00 the clock holds until each table that changed that day holds every row

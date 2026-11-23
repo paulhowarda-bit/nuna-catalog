@@ -1,5 +1,6 @@
 # The brokerage world's generator (D48, demo-datagen, image brokerage.Dockerfile), live in every demo.sh up: it
-# plays the firm's trading days on a compressed clock (BROKERAGE_DAY_MINUTES a day), books every financial
+# plays the firm's trading days on the real clock (each event at its own time of day in New York, quiet overnight,
+# over weekends and on holidays; D48, Paul, 2026-11-23), books every financial
 # transaction through the demo kit's posting engine, and sends the world's events to two places, from where the
 # demo's pipelines bring them into Iceberg:
 #   Kafka        topics brokerage.*, which Kafka Connect's sink brokerage-lake (demo/brokerage/connector.json)
@@ -41,11 +42,12 @@ spec:
               valueFrom:
                 secretKeyRef: {name: demo-brokerage-token, key: token}
             - {name: KAFKA_BOOTSTRAP, value: "kafka:9092"}
+            # Kafka Connect's REST API: the generator restarts the sink's task when it has failed.
+            - {name: CONNECT_URL, value: "http://connect:8083"}
             - {name: SINGLESTORE_URL, value: "jdbc:mariadb://singlestore:3306/brokerage"}
             - {name: SINGLESTORE_USER, value: root}
             - {name: SINGLESTORE_PASSWORD, value: "${SINGLESTORE_ROOT_PASSWORD}"}
             - {name: BROKERAGE_ACCOUNTS, value: "1000"}
-            - {name: BROKERAGE_DAY_MINUTES, value: "10"}
             - {name: BROKERAGE_CATCH_UP_DAYS, value: "3"}
             - {name: BROKERAGE_SEED, value: "20261122"}
             - {name: BROKERAGE_COMMIT_INTERVAL_MS, value: "15000"}
