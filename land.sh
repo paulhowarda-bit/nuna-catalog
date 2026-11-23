@@ -3,8 +3,11 @@
 #
 # The branch must already hold main: merge main into it, settle anything that conflicts there (in the branch, by the
 # agent that did the work), and run the build. This merges it into main only if main has not moved since, so the
-# merge is clean by construction. Two landings take turns through the ref refs/backlog/landing, so neither can move
-# main under the other between that check and the merge.
+# merge is clean by construction, or has moved only in Markdown files (backlog 176): nothing the build compiles,
+# tests or applies is Markdown, so the branch's green build still holds for the merged tree. Such a merge can still
+# conflict (two edits to one item file); then main is left as it was and the branch must merge main itself. Two
+# landings take turns through the ref refs/backlog/landing, so neither can move main under the other between that
+# check and the merge.
 #
 # BACKLOG.md, the whole backlog in one log, is made from the item files as they stand after the merge
 # (./backlog.sh log) and goes into the same merge commit, so it is always as current as main.
@@ -34,8 +37,13 @@ done
 trap 'git update-ref -d "$ref" "$turn"' EXIT
 
 [ -z "$(git -C "$checkout" status --porcelain)" ] || die "the main checkout has changes, so another session is working there: report $br as ready instead"
-git merge-base --is-ancestor main "$br" ||
-    die "main has moved since $br last merged it: merge main into $br again, run the build, then land"
+if ! git merge-base --is-ancestor main "$br"; then
+    base=$(git merge-base main "$br") || die "$br shares no history with main"
+    moved=$(git diff --name-only "$base" main | grep -v '\.md$')
+    [ -z "$moved" ] ||
+        die "main has moved since $br last merged it, in files other than Markdown ($(printf '%s' "$moved" | head -3 | tr '\n' ' ')): merge main into $br again, run the build, then land"
+    echo "land.sh: main has moved since $br last merged it, only in Markdown: landing without another build"
+fi
 [ -n "$(git rev-list -1 main.."$br")" ] || die "$br holds nothing main lacks: there is nothing to land"
 # Merge without committing, put in BACKLOG.md made from the merged item files, and commit both as one merge.
 merge_with_log() {
