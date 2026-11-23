@@ -334,9 +334,11 @@ final class SqlRefs {
     private static RefPointers pointers(ResultSet row) throws SQLException {
         RefEntry.At cut = new RefEntry.At(row.getLong("version"), row.getString("metadata_location"),
                 row.getString("sha256"));
-        long head = row.getLong("head_version");
-        return new RefPointers(ref(row), cut, row.wasNull() ? Optional.empty()
-                : Optional.of(new RefEntry.At(head, row.getString("head_location"), row.getString("head_sha256"))));
+        // wasNull answers for the column read last, so it is asked before ref(row) reads the ref's columns.
+        long version = row.getLong("head_version");
+        Optional<RefEntry.At> head = row.wasNull() ? Optional.empty()
+                : Optional.of(new RefEntry.At(version, row.getString("head_location"), row.getString("head_sha256")));
+        return new RefPointers(ref(row), cut, head);
     }
 
     private static RefEntry entry(ResultSet row) throws SQLException {

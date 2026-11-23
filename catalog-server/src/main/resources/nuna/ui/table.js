@@ -559,8 +559,12 @@ function partitionTab(target, t) {
 
 // ---- metadata log ----
 
-/** What one commit changed, in a few words: its update actions, each once, in order. */
+/**
+ * What one commit changed, in a few words: its update actions, each once, in order. A table's first entry holds the
+ * request that made it, a create or a registration, rather than a list of updates.
+ */
 function changeWords(updates) {
+  if (updates && !Array.isArray(updates)) return updates['metadata-location'] ? 'register' : 'create';
   const actions = [...new Set((updates || []).map(u => u.action))];
   return actions.length ? actions.join(', ') : muted('no update');
 }

@@ -97,7 +97,9 @@ class ConsoleSettingsBrowserTest {
         new Select(browser.await(By.cssSelector("dialog.dlg select[name='value']"))).selectByValue("gzip");
         String requestId = submit("write.parquet.compression-codec is gzip");
         assertThat(tableProperties(ns, "orders")).containsEntry("write.parquet.compression-codec", "gzip");
-        CatalogEvent commit = api.awaitRequest(requestId);
+        // The commit also vends credentials under the same request id, and that record comes first.
+        CatalogEvent commit = api.awaitRecord(json -> json.contains("\"" + requestId + "\"")
+                && json.contains("\"type\":\"" + EventType.COMMIT.typeName() + "\""));
         assertThat(commit.data().type()).isEqualTo(EventType.COMMIT);
         awaitValue("write.parquet.compression-codec", "gzip · set");
 

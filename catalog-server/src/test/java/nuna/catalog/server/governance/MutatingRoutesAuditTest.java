@@ -464,8 +464,10 @@ class MutatingRoutesAuditTest {
             return EventType.REF;
         });
         cases.put("POST " + M + "/namespaces/{namespace}/tables/{table}/maintenance/requests", id -> {
-            expect(api.manage("POST", target("table") + "/maintenance/requests", "{\"job\":\"compaction\"}",
-                    rid(id)), 202);
+            // Compaction is off by default, and a job the policy does not run is refused (409).
+            String table = target("table");
+            expect(api.manage("PUT", table + "/maintenance-policy", "{\"compaction.enabled\":\"true\"}"), 200);
+            expect(api.manage("POST", table + "/maintenance/requests", "{\"job\":\"compaction\"}", rid(id)), 202);
             return EventType.GOVERNANCE_CHANGE;
         });
         cases.put("POST /management/v1/maintenance/refs/{id}/warn", id -> {
