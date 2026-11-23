@@ -193,9 +193,16 @@ public final class EventsReader {
     /**
      * The table as {@code metadataLocation}, a metadata file the catalog wrote, describes it, read through {@code s3}.
      * Every other file it reads must lie under the table's location.
+     *
+     * <p>{@code S3FileIO} is handed an asynchronous client's supplier too, one that refuses: given none, Iceberg 1.12
+     * builds one from its AWS client factory as the first file is opened, and that factory's class needs the KMS SDK,
+     * which the catalog server leaves out (D26; backlog 148). The reader never uses it: only Iceberg's analytics
+     * accelerator, off unless set, reads asynchronously.
      */
     public static EventsReader open(String name, String metadataLocation, S3Client s3) {
-        S3FileIO io = new S3FileIO(() -> s3);
+        S3FileIO io = new S3FileIO(() -> s3, () -> {
+            throw new UnsupportedOperationException("the audit feed reads with its synchronous S3 client only");
+        });
         TableMetadata metadata = TableMetadataParser.read(io, metadataLocation);
         return of(new BaseTable(new StaticTableOperations(metadata, new Confined(io, metadata.location())), name),
                 DEFAULT_SCAN_BUDGET);

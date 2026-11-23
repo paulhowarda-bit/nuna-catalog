@@ -29,7 +29,9 @@ dependencies {
     api(project(":catalog-security"))
     // The console's audit feed reads the audit table events through the writer's own reader (EventsReader; D23,
     // amended 2026-11-22: "Yes, link them"). No server code imports Iceberg. The writer's KMS client stays out: the
-    // server never calls KMS (D26; NoKmsBoundaryTest), and the reader is handed its S3 client, so builds no other.
+    // server never calls KMS (D26; NoKmsBoundaryTest). The reader is handed its S3 client and a refusing asynchronous
+    // one, so Iceberg never builds a client from its AWS client factory, whose class needs the KMS SDK (backlog 148;
+    // EventsReaderOnTheServerTest reads a table on this classpath).
     implementation(project(":catalog-audit-tables")) {
         exclude(group = "software.amazon.awssdk", module = "kms")
     }
