@@ -20,6 +20,27 @@
 # run's numbers. Record each run in status/ (status/README.md).
 
 cd "$(dirname "$0")" || exit 2
+
+# The build lock (CLAUDE.md, Builds): while .overnight/running exists in the main checkout, Docker belongs to the run
+# that wrote it and other sessions start no build. Like overnight.sh, this writes its pid there when no live run
+# holds it, and removes it at the end if it is still its own. A live run's lock it leaves alone: overnight.sh runs
+# nightly.sh in its clone, <home>/clone, beside its lock, <home>/running.
+main_checkout=$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")
+home=${NUNA_OVERNIGHT_HOME:-$main_checkout/.overnight}
+[ "${main_checkout##*/}" = clone ] && [ -d "$main_checkout/../runs" ] && home=${main_checkout%/*}
+lock=$home/running
+holder=$(sed -n 's/^pid: //p' "$lock" 2>/dev/null)
+if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    echo "${0##*/}: pid $holder holds $lock; leaving it to that run"
+else
+    mkdir -p "$home"
+    printf 'pid: %s\nstarted: %s\nby: %s in %s\n' "$$" "$(date '+%F %T')" "${0##*/}" "$PWD" >"$lock"
+    echo "${0##*/}: holding $lock until it ends"
+    unlock() { [ "$(sed -n 's/^pid: //p' "$lock" 2>/dev/null)" != "$$" ] || rm -f "$lock"; }
+    trap unlock EXIT
+    trap 'exit 130' INT TERM
+fi
+
 start=$SECONDS
 mkdir -p build
 marker=build/nightly.started
