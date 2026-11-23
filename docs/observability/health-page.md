@@ -125,8 +125,13 @@ Past that the counts say "at least 1,000", and the most and the longest are of t
 - **Self-check at start**: when this server ran the store's self-check (D8.2), and whether it passed or started
   despite findings `nuna.database.allow-unsafe` names, each with its code and detail. A server refuses to start on any
   other finding.
-- Point-in-time recovery is not shown, and the panel says so: it is the database's own backup setting, which the
-  catalog's role cannot read on most backends and nothing in the server records.
+- **Point-in-time recovery window**: the window the deployment declares, `nuna.governance.pitr-window` (default 7
+  days), shown in days or hours and marked declared (item 145). It is not read from the database, whose backup
+  setting the catalog's role cannot read on most backends, so it shows when the database does not answer too. The
+  panel says what relies on it: orphan removal deletes only files older than it (`MaintenancePolicy`), and a dropped
+  table is kept longer than it (`nuna.rest.drop-retention`, `GovernanceWiring`), so a database restored to any point
+  within it never names a deleted file. The database's own backups must keep at least that long; the catalog cannot
+  check that they do.
 
 `store=true` is asked for: the servers gathering each other's figures leave it off, so they never wait on a database
 that does not answer.
@@ -134,12 +139,12 @@ that does not answer.
 ```json
 GET /management/v1/health/server?store=true
 {"server": {…}, "from": "…", "to": "…", "figures": {…},
- "store": {"configured": "postgresql", "backend": "PostgreSQL", "version": "17.2",
+ "store": {"configured": "postgresql", "backend": "PostgreSQL", "version": "17.2", "pitr-window-seconds": 604800,
            "self-check": {"at": "…", "allowed": [{"code": "pg.no-sync-standby", "detail": "…"}]}}}
 ```
 
 `configured` is `nuna.database.backend`; when the database cannot be asked, `unreadable` holds why in place of
-`backend` and `version`.
+`backend` and `version`. `pitr-window-seconds` is `nuna.governance.pitr-window`, always present.
 
 ## Tables that need compaction, and a table's health
 
@@ -184,9 +189,9 @@ queued, with equality deletes, not yet assessed, held and frozen; the **In shape
 | `ConsoleTest` | `health.js` and `requests.js` are served under the console's Content-Security-Policy and write no markup. |
 | `ConsoleHealthTest#anOwnerAsksForACompactionNowAndARefusalShowsTheCatalogsAnswer` (Selenium) | A table's owner asks for a compaction now: the catalog answers 202 with a request id, and the request shows waiting, with who asked, its button turned off; an orphan scan the policy turns off is refused with the catalog's code, words and request id. The reader test checks that a reader sees no buttons. |
 
-| `StoreFactsRouteTest` | `/health/server?store=true` names PostgreSQL, CockroachDB, Oracle and MongoDB with their versions from what each answers; a database that does not answer is said so, with the self-check still shown; the self-check's time and each finding allowed; without `store=true` the database is not asked; a non-operator is refused, audited, before it is. |
+| `StoreFactsRouteTest` | `/health/server?store=true` names PostgreSQL, CockroachDB, Oracle and MongoDB with their versions from what each answers; a database that does not answer is said so, with the self-check still shown; the self-check's time and each finding allowed; the point-in-time recovery window is the one declared, the database never asked for it, and shown when the database does not answer; without `store=true` the database is not asked; a non-operator is refused, audited, before it is. |
 | `StoreWiringTest` | The self-check's findings allowed at start are what the Store panel is given. |
-| `ConsoleHealthBrowserTest` (Selenium) | DR replication with every table at its watermark (none behind), with one table never verified (no verifier has reported, no count), then two behind and one never verified, the most behind linking to its table, and the lag; the Store panel's backend and version as the database answers, and its self-check as the route answers; a non-operator sees neither panel and both routes refuse them. |
+| `ConsoleHealthBrowserTest` (Selenium) | DR replication with every table at its watermark (none behind), with one table never verified (no verifier has reported, no count), then two behind and one never verified, the most behind linking to its table, and the lag; the Store panel's backend and version as the database answers, its self-check as the route answers, and the point-in-time recovery window as `nuna.governance.pitr-window` declares it, with what relies on it; a non-operator sees neither panel and both routes refuse them. |
 
 The bites are in `bites/D38/`: `catalog-health-for-anyone`, `server-health-for-anyone`, `one-server-only`,
 `window-never-moves`, `histograms-roll-over` and `table-health-for-anyone`; in `bites/OBS-71/`,

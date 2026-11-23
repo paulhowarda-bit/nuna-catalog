@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.Clock;
 import javax.sql.DataSource;
 import nuna.catalog.server.DatabaseSettings;
 import nuna.catalog.server.StoreSelfCheck;
+import nuna.catalog.server.governance.GovernanceSettings;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -37,10 +38,15 @@ class HealthWiring {
         return new Peers(settings);
     }
 
-    /** The backend's own connection: a DataSource, or on MongoDB, which has none, the client. */
+    /**
+     * The backend's own connection: a DataSource, or on MongoDB, which has none, the client; and the point-in-time
+     * recovery window the deployment declares.
+     */
     @Bean
     StoreFacts storeFacts(DatabaseSettings settings, ObjectProvider<DataSource> dataSource,
-                          ObjectProvider<MongoClient> mongoClient, StoreSelfCheck selfCheck) {
-        return new StoreFacts(settings.backend(), dataSource::getObject, mongoClient::getObject, selfCheck);
+                          ObjectProvider<MongoClient> mongoClient, StoreSelfCheck selfCheck,
+                          GovernanceSettings governance) {
+        return new StoreFacts(settings.backend(), dataSource::getObject, mongoClient::getObject, selfCheck,
+                governance.pitrWindow());
     }
 }
