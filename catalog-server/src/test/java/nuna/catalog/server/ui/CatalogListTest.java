@@ -17,6 +17,7 @@ import nuna.catalog.core.Names;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.security.Separation;
+import nuna.catalog.server.security.AuditCatalogSettings;
 import nuna.catalog.server.security.Holdings;
 import nuna.catalog.server.storage.StorageSettings;
 import nuna.catalog.store.CatalogRecord;
@@ -32,8 +33,9 @@ import org.springframework.http.ResponseEntity;
 /**
  * {@code GET /management/v1/catalogs} against a store double: it lists only the declared catalogs the caller holds
  * something on, a grant to one of its groups on the catalog or on anything in it (D18, amended 2026-11-19, item 20).
- * Grant admins and platform operators see every catalog. Needs only Java; {@code ManagementAuthorizationTest} checks
- * the same against the running server.
+ * Grant admins and platform operators see every catalog. Each catalog says what the caller's groups may do somewhere
+ * in it, and the answer whether the caller operates the deployment, so the console draws only what they can use
+ * (backlog 184). Needs only Java; {@code ManagementAuthorizationTest} checks the list against the running server.
  */
 class CatalogListTest {
 
@@ -110,6 +112,27 @@ class CatalogListTest {
     }
 
     @Test
+    void eachCatalogSaysWhatTheCallersGroupsMaySomewhereInIt() {
+        // Select on one table, manage-tags on one namespace: both count for the catalog; nothing implies the others.
+        assertThat(may(caller("tim", "traders", "stewards"), "trading")).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "select", true, "modify", false, "manage-grants", false, "manage-tags", true));
+        // Describe implies none of them.
+        assertThat(may(caller("rita", "risk-readers"), "Risk")).containsEntry("select", false)
+                .containsEntry("manage-tags", false);
+        // A grant admin holds manage-grants on every catalog, and no data access.
+        assertThat(may(caller("gina", GRANT_ADMINS), "archive")).containsEntry("manage-grants", true)
+                .containsEntry("select", false);
+    }
+
+    @Test
+    void theAnswerSaysWhetherTheCallerOperatesTheDeploymentOrReadsTheAuditFeed() {
+        assertThat(JsonPath.<Boolean>read(answer(caller("ops", PLATFORM_OPS)), "$.may.operate")).isTrue();
+        assertThat(JsonPath.<Boolean>read(answer(caller("tia", "traders")), "$.may.operate")).isFalse();
+        // No audit tables are configured here, so nobody reads their feed.
+        assertThat(JsonPath.<Boolean>read(answer(caller("ops", PLATFORM_OPS)), "$.may['read-audit-feed']")).isFalse();
+    }
+
+    @Test
     void aCallerInNoGroupListsNoCatalogWithoutAskingTheStore() {
         assertThat(list(caller("solo"))).isEmpty();
         assertThat(asked).isEmpty();
@@ -118,14 +141,26 @@ class CatalogListTest {
     // ---- helpers ----
 
     private List<String> list(Caller caller) {
+        return JsonPath.read(answer(caller), "$.catalogs[*].name");
+    }
+
+    private Map<String, Boolean> may(Caller caller, String catalog) {
+        List<Map<String, Boolean>> found = JsonPath.read(answer(caller), "$.catalogs[?(@.name == '" + catalog + "')].may");
+        assertThat(found).hasSize(1);
+        return found.getFirst();
+    }
+
+    private String answer(Caller caller) {
         CatalogStore store = store();
-        // Only the catalog rule is asked here, which needs the store and the separation of duties.
-        Holdings holdings = new Holdings(null, store, null, new Separation(Set.of(GRANT_ADMINS), Set.of(PLATFORM_OPS)),
-                null);
-        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store, holdings);
+        // Only the catalog rule is asked here, which needs the store and the separation of duties; no audit tables
+        // are configured, so the authorizer is never asked.
+        Separation separation = new Separation(Set.of(GRANT_ADMINS), Set.of(PLATFORM_OPS));
+        Holdings holdings = new Holdings(null, store, null, separation, null);
+        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store, holdings, null,
+                separation, new AuditCatalogSettings(null, null, null));
         ResponseEntity<String> response = routes.catalogs(null);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
-        return JsonPath.read(response.getBody(), "$.catalogs[*].name");
+        return response.getBody();
     }
 
     private static Caller caller(String id, String... groups) {

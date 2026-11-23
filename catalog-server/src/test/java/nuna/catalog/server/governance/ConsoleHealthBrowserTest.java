@@ -179,8 +179,10 @@ class ConsoleHealthBrowserTest {
         String reader = token("rita", "dr-health-readers");
         browser.signIn(reader);
         browser.open("/ui/#p=health");
-        assertThat(browser.await(By.cssSelector("#catalog-health .health-refused")).getText())
-                .startsWith("Catalog health is shown to platform operators only.");
+        // The page is not offered, and a link to it says so without asking the catalog (backlog 184).
+        assertThat(browser.await(By.cssSelector("#closed-page [data-closed] h3")).getText())
+                .isEqualTo("Service health is open to platform operators.");
+        assertThat(driver.findElement(By.cssSelector("#nav a[data-k='health']")).getDomAttribute("hidden")).isNotNull();
         assertThat(driver.findElements(By.id("health-dr"))).isEmpty();
         assertThat(driver.findElements(By.id("health-store"))).isEmpty();
 

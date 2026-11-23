@@ -167,18 +167,22 @@ class ConsoleLabelsBrowserTest {
         assertThat(own("/namespaces/" + Api.ns(ns))).doesNotContainKey("owner");
     }
 
+    /**
+     * A caller whose groups hold no manage-tags in the catalog is offered no label and no hold (backlog 184), which
+     * the catalog would refuse them.
+     */
     @Test
-    void aCallerWithoutManageTagsIsShownTheCatalogsRefusal() {
+    void aCallerWithoutManageTagsIsOfferedNoLabelOrHold() {
         String ns = api.namespace();
         browser.signIn(tester());
         browser.open("/ui/#" + at("namespace", ns, null));
-
-        dialog("owner");
-        driver.findElement(By.cssSelector("dialog.dlg input[name='owner']")).sendKeys("desk-b");
-        driver.findElement(By.cssSelector("dialog.dlg button[type='submit']")).click();
-
-        WebElement refusal = browser.await(By.cssSelector("dialog.dlg .refusal"));
-        assertThat(refusal.getText()).contains("Refused by the catalog", "403", "manage-tags");
+        browser.await(By.cssSelector("#governance .status-row"));
+        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels']"))).isEmpty();
+        assertThat(driver.findElements(By.xpath("//div[@id='governance']//button[starts-with(normalize-space(),"
+                + "'Place a hold')]"))).isEmpty();
+        HttpResponse<String> refused = api.send("PUT", "/management/v1/catalogs/trading/namespaces/" + Api.ns(ns)
+                + "/attributes/owner", "{\"value\":\"desk-b\",\"provenance\":\"console\"}", "Authorization", tester());
+        assertThat(refused.statusCode()).as(refused.body()).isEqualTo(403);
         assertThat(own("/namespaces/" + Api.ns(ns))).doesNotContainKey("owner");
     }
 

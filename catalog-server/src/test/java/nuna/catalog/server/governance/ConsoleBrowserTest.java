@@ -197,6 +197,47 @@ class ConsoleBrowserTest {
     }
 
     /**
+     * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
+     * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Health; a grant admin
+     * on Audit, with no Overview or Maintenance; a platform operator on Health.
+     */
+    @Test
+    void eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs() {
+        signIn(tester());
+        browser.open("/ui/");
+        browser.await("the tester did not land on the overview", d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
+        assertThat(rail()).containsExactly("overview", "catalog", "maintenance", "governance");
+        browser.open("/ui/#" + at("table", eu, "trades", "governance"));
+        browser.await(By.cssSelector("#governance .status-row"));
+        assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab]")))
+                .extracting(a -> a.getDomAttribute("data-tab")).doesNotContain("audit").contains("grants");
+        assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels']"))).isEmpty();
+        tab("grants");
+        browser.await(By.cssSelector("[data-grants='own']"));
+        assertThat(driver.findElements(By.cssSelector(".nc-main form.grant-form"))).isEmpty();
+        browser.open("/ui/#p=audit&c=trading");
+        assertThat(textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                .isEqualTo("Audit is open to auditors and to those who manage trading's grants.");
+
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        assertThat(rail()).containsExactly("catalog", "governance", "audit");
+
+        signIn(api.operator());
+        browser.open("/ui/");
+        browser.await("the operator did not land on Health", d -> d.getCurrentUrl().endsWith("#p=health"));
+        assertThat(rail()).containsExactly("catalog", "governance", "health");
+    }
+
+    /** The rail's items drawn for the caller, by key. */
+    private List<String> rail() {
+        browser.await(By.cssSelector("#nav a[data-k][aria-current='page'], #nav a[data-k]:not([hidden])"));
+        return driver.findElements(By.cssSelector("#nav a[data-k]")).stream()
+                .filter(a -> a.getDomAttribute("hidden") == null).map(a -> a.getDomAttribute("data-k")).toList();
+    }
+
+    /**
      * Go to a path opens a full dotted path the console has not listed yet, looking up each level as a deep link
      * does, from a page with no tree; a path that is not there says so, and a word with no match says what was
      * searched (Atelier's review, F1; backlog 185).
@@ -434,10 +475,13 @@ class ConsoleBrowserTest {
         assertShownVerbatim(refusal("#table-page .tab-body"), api.send("GET", "/v1/trading/namespaces/" + ns(ledger)
                 + "/tables/accounts?snapshots=all", null, AUTH, tester(), "X-Iceberg-Access-Delegation", "none"));
 
-        // Reading an object's audit trail needs manage-grants.
+        // Reading an object's audit trail needs manage-grants: the tab is not offered, and a link to it says so
+        // without asking the catalog (backlog 184), which would refuse it.
         browser.open("/ui/#" + at("table", eu, "trades", "audit"));
-        assertShownVerbatim(refusal("#audit"), api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null,
-                AUTH, tester()));
+        assertThat(textContent(browser.await(By.cssSelector("#table-page [data-closed] h3"))))
+                .isEqualTo("An object's audit trail is open to those who manage trading's grants.");
+        assertThat(driver.findElements(By.cssSelector("#table-page nav.tabs a[data-tab='audit']"))).isEmpty();
+        expect(api.manage("GET", tablePath(eu, "trades") + "/audit?limit=50", null, AUTH, tester()), 403);
 
         // Grant administrators are kept away from the data itself (D18).
         signIn(api.grantAdmin());

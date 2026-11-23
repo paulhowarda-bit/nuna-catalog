@@ -92,10 +92,11 @@ async function rest(catalog) {
   return '/v1/' + encodeURIComponent(await prefix(catalog));
 }
 
-/** The catalogs the caller holds something on: [{name, ...}]. */
-export async function catalogs() {
-  return (await call('/management/v1/catalogs')).catalogs;
-}
+/**
+ * The catalogs the caller holds something on, with what its groups may do in each and in the deployment (item 184):
+ * {catalogs: [{name, may}], may}.
+ */
+export const catalogs = () => call('/management/v1/catalogs');
 
 export async function namespaces(catalog, parent) {
   const query = parent.length ? '?parent=' + ns(parent) : '';

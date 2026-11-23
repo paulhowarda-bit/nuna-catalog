@@ -7,6 +7,7 @@ import {at, code, failure, fill, fmt, frozenPill, granted, h, heldPill, icon, lo
   pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
 import {drFreeze, governanceTab, PRIVILEGES, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
+import {closedNote, may, operates} from './access.js';
 
 const DUTY = {describe: 'read', select: 'read', write: 'data', modify: 'data', create: 'data', 'manage-grants': 'grants', 'manage-tags': 'tags'};
 const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write, modify, create'], ['grants', 'Grants', 'manage-grants'],
@@ -14,9 +15,14 @@ const DUTIES = [['read', 'Reading', 'describe, select'], ['data', 'Data', 'write
 
 export function governancePage(catalog, tab, group) {
   const key = tab === 'holds' || tab === 'grants' ? tab : '';
-  const tabs = tabsNav('Governance', [['', 'Summary'], ['grants', 'Grants'], ['holds', 'Holds and freezes']], key,
-    k => pageHref('governance', catalog, k || null));
+  const grants = may(catalog, 'manage-grants');
+  const tabs = tabsNav('Governance', [['', 'Summary'], ['grants', 'Grants'], ['holds', 'Holds and freezes']]
+    .filter(([k]) => k !== 'grants' || grants), key, k => pageHref('governance', catalog, k || null));
   if (key === 'holds') return holdsPage(catalog, tabs);
+  if (key === 'grants' && !grants) {
+    return h('div', {class: 'nc-main', id: 'governance-page'}, pageHead({eyebrow: `${catalog} · governance`, title: 'Grants'}), tabs,
+      closedNote(`Grants in ${catalog} are open to those who manage its grants.`));
+  }
   if (key === 'grants') return grantsPage(catalog, tabs, group);
   return summaryPage(catalog, tabs);
 }
@@ -95,8 +101,8 @@ function standingTable(catalog, standing, reload) {
       h('td', {class: 'wrap'}, x.reason || muted('–')),
       h('td', null, h('span', {class: 'tnum'}, at(x['placed-at'])), h('br'), muted(x['placed-by'] || '')),
       h('td', null, x.kind === 'hold'
-        ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => releaseHold(level, x, reload)}, 'Release')
-        : h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift')));
+        ? may(catalog, 'manage-tags') ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => releaseHold(level, x, reload)}, 'Release') : null
+        : operates() ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () => drFreeze(level, true, reload)}, 'Lift') : null));
   }));
 }
 
@@ -264,7 +270,8 @@ function holdsPage(catalog, tabs) {
     title: `Holds and freezes in ${catalog}`,
     sub: 'A hold stops snapshot expiry, orphan removal, drops and purges on what it covers. A freeze stops every cleanup and write '
       + 'in its namespace until it is lifted.',
-    side: h('button', {class: 'btn sm', type: 'button', onclick: () => holdOnPath(catalog)}, icon('lock'), 'Place a hold on a path'),
+    side: may(catalog, 'manage-tags')
+      ? h('button', {class: 'btn sm', type: 'button', onclick: () => holdOnPath(catalog)}, icon('lock'), 'Place a hold on a path') : null,
   }), tabs, lists, h('h2', {class: 'section-h'}, `${catalog} itself`), own);
   return main;
 }

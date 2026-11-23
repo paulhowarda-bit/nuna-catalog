@@ -4,6 +4,7 @@
 // 125); and the governance figures for those who may describe the catalog (item 128).
 
 import * as api from './api.js';
+import {auditOpen, operates} from './access.js';
 import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {pageHref} from './route.js';
@@ -49,7 +50,7 @@ export function overviewPage(catalog) {
     out.push(kpis);
     const nights = thirtyNights();
     Promise.all([nights.then(list => lastNightKpi(catalog, list), error => h('div', {class: 'kpi'}, failure(error, {compact: true}))),
-      latencyKpi(), auditKpi(catalog), governanceKpi(catalog)]).then(list => {
+      operates() ? latencyKpi() : null, auditOpen(catalog) ? auditKpi(catalog) : null, governanceKpi(catalog)]).then(list => {
       kpis.append(...list.flat().filter(Boolean));
     });
     const lastNight = h('div');

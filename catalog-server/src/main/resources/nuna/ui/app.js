@@ -4,6 +4,7 @@
 import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
+import {auditOpen, groupWords, keepAccess, operates, readsData} from './access.js';
 import {$, $$, failure, fill, fmt, h, icon, pill} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
@@ -91,6 +92,21 @@ async function landingCatalog(names) {
   return names.reduce((best, n) => counts.get(n) > counts.get(best) ? n : best, names[0]);
 }
 
+/** Where a caller's work is (item 184): Overview for those who read data, Audit for auditors, Health for operators. */
+function homeHref(c) {
+  if (readsData()) return pageHref('overview', c);
+  if (auditOpen(c)) return pageHref('audit', c);
+  if (operates()) return pageHref('health');
+  return href({c});
+}
+
+/** A page the caller's groups cannot use, reached by a link: said in plain words, and the catalog is never asked. */
+function closedPage(title, words) {
+  return h('div', {class: 'nc-main', id: 'closed-page'}, h('div', {class: 'ph'}, h('h1', {tabindex: '-1'}, title)),
+    h('div', {class: 'empty', 'data-closed': ''}, h('h3', null, words), h('p', null, `Your groups: ${groupWords()}. Ask a grant `
+      + 'admin if your work needs it.')));
+}
+
 // ---- the menu: a rail on a wide screen, a drawer on a phone ----
 
 let railPick = null;
@@ -143,14 +159,19 @@ function setChrome(navKey, rail, ref) {
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
   const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat, r: ref}), maintenance: pageHref('maintenance', cat),
     governance: pageHref('governance', cat), audit: pageHref('audit', cat), health: pageHref('health')};
+  // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
+  // read, Audit is for audit readers and those who manage the catalog's grants, Health for platform operators.
+  const open = {overview: readsData(), catalog: true, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
+    health: operates()};
   for (const a of $$('a[data-k]', navEl)) {
     const k = a.dataset.k;
+    a.hidden = !open[k];
     a.href = hrefs[k];
     a.setAttribute('aria-label', $('.nl', a).textContent);
     if (k === navKey) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
-  $('[data-brand]').href = pageHref('overview', cat);
+  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('health');
   const count = $('.count', navEl);
   queue().then(rows => {
     const n = queueOf(rows, cat).length;
@@ -510,12 +531,12 @@ function render() {
   const r = parse();
   const names = catalogs.map(c => c.name);
   const fallback = cat && names.includes(cat) ? cat : names[0] || null;
-  if (!r.page && !r.c) {
+  if (!r.page && !r.c && (names.length || operates())) {
     if (!names.length) location.replace(pageHref('health'));
-    else if (cat && names.includes(cat)) location.replace(pageHref('overview', cat));
+    else if (cat && names.includes(cat)) location.replace(homeHref(cat));
     else {
       slot.replaceChildren(h('p', {class: 'loading-line'}, 'Loading…'));
-      landingCatalog(names).then(c => { if (!parse().page && !parse().c) location.replace(pageHref('overview', c)); });
+      landingCatalog(names).then(c => { if (!parse().page && !parse().c) location.replace(homeHref(c)); });
     }
     return;
   }
@@ -558,11 +579,11 @@ function render() {
   } else if (r.page === 'audit') {
     navKey = 'audit';
     title = 'Audit';
-    content = auditPage(cat);
+    content = auditOpen(cat) ? auditPage(cat) : closedPage('Audit', `Audit is open to auditors and to those who manage ${cat}'s grants.`);
   } else if (r.page === 'health') {
     navKey = 'health';
     title = 'Health';
-    content = healthPage();
+    content = operates() ? healthPage() : closedPage('Health', 'Service health is open to platform operators.');
   } else if (!r.page && r.c) {
     navKey = 'catalog';
     rail = true;
@@ -596,7 +617,9 @@ async function start() {
   showWho();
   fill(slot, h('p', {class: 'loading-line'}, 'Loading…'));
   try {
-    catalogs = await api.catalogs();
+    const listed = await api.catalogs();
+    keepAccess(listed);
+    catalogs = listed.catalogs;
   } catch (error) {
     fill(slot, h('div', {class: 'nc-main'}, failure(error, {big: true})));
     return;

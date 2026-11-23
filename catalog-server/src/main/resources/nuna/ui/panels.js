@@ -5,6 +5,7 @@
 // page (audit.js, item 125).
 
 import * as api from './api.js';
+import {may, operates} from './access.js';
 import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
   muted, openDialog, panel, pill, plural, select, tbl, text, when, at, copyButton} from './dom.js';
 import {dotted, objectHref} from './route.js';
@@ -135,10 +136,13 @@ export async function governanceTab(target, reload) {
     holds.length ? h('p', {class: 'status-held'}, heldPill(plural(holds.length, 'legal hold')), ' ',
       h('span', {class: 'fine'}, view ? 'It cannot be dropped or purged.' : 'Snapshots cannot be removed; it cannot be dropped or purged.'))
       : h('p', null, pill('', 'No legal hold')));
+  // Changing labels and holds needs manage-tags, a DR freeze a platform operator: drawn only for those (item 184).
+  const tags = may(target.catalog, 'manage-tags');
+  const freezes = target.kind === 'namespace' && operates();
   const left = h('div', {class: 'panel', id: 'governance'}, h('h2', null, 'Governance ', h('span', {class: 'meta'}, 'each value with where it was set')),
     status,
     facts(ATTRIBUTES.map(name => [name, valueWithSource(name)]), 'effective'),
-    h('div', {class: 'refusal-acts', 'data-acts': 'labels'},
+    !tags ? null : h('div', {class: 'refusal-acts', 'data-acts': 'labels'},
       h('button', {class: 'btn sm', type: 'button', 'data-label': 'classification', onclick: () => classify(target, effective.classification, reload)},
         effective.classification ? 'Change the classification' : 'Set a classification'),
       h('button', {class: 'btn sm', type: 'button', 'data-label': 'owner', onclick: () => setOwner(target, effective.owner, reload)},
@@ -150,18 +154,17 @@ export async function governanceTab(target, reload) {
       target.kind === 'catalog' || target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', 'data-label': 'regulated',
         onclick: () => setRegulated(target, ownRegulated, effective.regulated === 'true', reload)},
       ownRegulated ? 'Clear the regulated mark' : 'Mark as a regulated area') : null),
-    h('div', {class: 'refusal-acts'},
-      h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
-        target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold'),
-      target.kind === 'namespace' ? h('button', {class: 'btn sm', type: 'button', onclick: () => drFreeze(target, !!freeze, reload)},
-        icon('snow'), freeze ? 'Lift the DR freeze' : 'Freeze for DR') : null,
-      h('span', {class: 'fine'}, 'Needs ', code('manage-tags'), target.kind === 'namespace' ? '; a DR freeze, a platform operator.' : '.')));
+    !tags && !freezes ? null : h('div', {class: 'refusal-acts'},
+      tags ? h('button', {class: 'btn sm', type: 'button', onclick: () => placeHold(target, reload)}, icon('lock'),
+        target.kind === 'namespace' ? 'Place a hold here' : 'Place a hold') : null,
+      freezes ? h('button', {class: 'btn sm', type: 'button', onclick: () => drFreeze(target, !!freeze, reload)},
+        icon('snow'), freeze ? 'Lift the DR freeze' : 'Freeze for DR') : null));
   const holdsPanel = panel('Legal holds', holds.length ? 'nearest level first' : null, holds.length
     ? tbl('holds', ['Reason, as recorded', 'Level', 'Placed', ''], holds.map(hold => h('tr', {'data-hold': hold.id},
       h('td', null, hold.reason), h('td', null, levelLabel(hold.level, here, levels)),
       h('td', null, h('span', {class: 'tnum'}, at(hold['placed-at'])), ' ', muted(hold['placed-by'])),
-      h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () =>
-        releaseHold(levels.get(String(hold.level).split(':')[1]) || target, hold, reload)}, 'Release')))))
+      h('td', null, tags ? h('button', {class: 'btn sm ghost', type: 'button', onclick: () =>
+        releaseHold(levels.get(String(hold.level).split(':')[1]) || target, hold, reload)}, 'Release') : null))))
     : h('p', {class: 'muted'}, 'None, here or above.'));
   const attributes = panel('Attributes', 'nearest level first', attrs.length
     ? tbl('attributes stack-line', ['Attribute', 'Value', 'Level', 'Provenance', 'Set'], attrs.map(a => h('tr', null,
@@ -401,6 +404,22 @@ export function grantsTab(target) {
   const reach = h('div');
   const who = h('div');
   const mine = h('div');
+  // Who holds what here, and granting, are for those who manage the catalog's grants (item 184); anyone else sees
+  // their own groups' grants, which the catalog shows them, and is never refused for browsing.
+  const manages = may(target.catalog, 'manage-grants');
+  const ownGrants = () => load(mine, async () => {
+    const list = await api.grantsOfGroups(target.catalog, []);
+    return list.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted'], list.map(g => h('tr', null,
+      h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, onWords(g.securable)),
+      h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])))))
+      : h('p', {class: 'muted'}, 'Your groups hold no grant in this catalog.');
+  });
+  if (!manages) {
+    ownGrants();
+    return h('div', {class: 'stack grants-here', 'data-grants': 'own'}, panel('Your groups\' grants', `in ${target.catalog}`, mine,
+      h('p', {class: 'fine'}, `Who else holds what on this ${target.kind}, and granting, are open to those who manage `
+        + `${target.catalog}'s grants.`)));
+  }
   const refresh = () => {
     const effective = api.effectiveGrants(target);
     load(reach, async () => {
@@ -431,13 +450,7 @@ export function grantsTab(target) {
         ['Manage grants', manage || muted('no group')],
       ], 'who-may'));
     });
-    load(mine, async () => {
-      const list = await api.grantsOfGroups(target.catalog, []);
-      return list.length ? tbl('stack-line', ['Group', 'Privilege', 'On', 'Granted'], list.map(g => h('tr', null,
-        h('td', {class: 'name'}, g.group), h('td', {class: 'name'}, g.privilege), h('td', null, onWords(g.securable)),
-        h('td', null, h('span', {class: 'tnum'}, at(g['granted-at'])), ' ', muted(g['granted-by'])))))
-        : h('p', {class: 'muted'}, 'Your groups hold no grant in this catalog.');
-    });
+    ownGrants();
   };
   refresh();
   const group = h('input', {name: 'g', type: 'text', placeholder: 'A group, such as demo-analysts', 'aria-label': 'Group',
