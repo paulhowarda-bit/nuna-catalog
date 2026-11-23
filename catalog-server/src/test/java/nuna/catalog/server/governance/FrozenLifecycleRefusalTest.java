@@ -48,7 +48,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
  * An undrop or purge claim a DR freeze refuses (D37) is audited as a denial, as every refusal is (D18; backlog
  * 132): the Denial names the operation and the dropped table, its reason is {@code dr_freeze} with the freeze's own
  * reason, and the answer is the 403 it always was, whether the route saw the freeze or the store's own guard found
- * one placed since. The routes, guard and authorizer are the real ones over a store double, so this needs only Java.
+ * one placed since. So is a purge claim the store finds under a legal hold, with reason {@code legal_hold} (backlog
+ * 134). The routes, guard and authorizer are the real ones over a store double, so this needs only Java.
  */
 class FrozenLifecycleRefusalTest {
 
@@ -71,6 +72,8 @@ class FrozenLifecycleRefusalTest {
             grant("hr-owners", Privilege.CREATE), grant("maintenance", Privilege.DESCRIBE));
     private final List<CatalogEvent> audit = new ArrayList<>();
     private boolean frozen = true;
+    /** Why the store refuses a purge claim. */
+    private WriteResult.Reason claimRefused = WriteResult.Reason.FROZEN;
 
     private final LifecycleRoutes lifecycle;
     private final MockHttpServletRequest http = new MockHttpServletRequest();
@@ -149,6 +152,25 @@ class FrozenLifecycleRefusalTest {
         });
     }
 
+    @Test
+    void aPurgeClaimTheStoreFindsHeldIsAuditedAsADenial() {
+        caller = WORKER;
+        frozen = false;
+        claimRefused = WriteResult.Reason.HELD;
+
+        assertThatThrownBy(() -> lifecycle.claimPurge("gate", staffId.toString(), http))
+                .isInstanceOf(AccessDenied.class)
+                .hasMessage(staffId + " is under a legal hold and cannot be purged");
+
+        assertThat(denials()).singleElement().satisfies(denial -> {
+            assertThat(denial.operation()).isEqualTo("claimPurge");
+            assertThat(denial.securable().id()).isEqualTo(staffId);
+            assertThat(denial.reason())
+                    .isEqualTo("legal_hold: " + staffId + " is under a legal hold and cannot be purged");
+            assertThat(denial.actor().principal()).isEqualTo("nuna-maintenance");
+        });
+    }
+
     // ---- helpers ----
 
     private List<Denial> denials() {
@@ -170,8 +192,8 @@ class FrozenLifecycleRefusalTest {
     }
 
     /**
-     * The catalog gate, its namespace hr, the dropped table staff and the grants on hr; a purge claim answers that a
-     * freeze refused it. Any other call fails the test, writes included.
+     * The catalog gate, its namespace hr, the dropped table staff and the grants on hr; a purge claim answers that
+     * {@link #claimRefused} refused it. Any other call fails the test, writes included.
      */
     @SuppressWarnings("unchecked")
     private CatalogStore store() {
@@ -189,7 +211,7 @@ class FrozenLifecycleRefusalTest {
                     case "listGrantsOfGroups" -> new Page<>(grants.stream()
                             .filter(g -> ((Set<String>) args[1]).contains(g.grant().group())).toList(),
                             Optional.empty());
-                    case "claimPurge" -> new WriteResult.Refused(WriteResult.Reason.FROZEN);
+                    case "claimPurge" -> new WriteResult.Refused(claimRefused);
                     case "toString" -> "the test's store";
                     default -> throw new UnsupportedOperationException(method.getName());
                 });

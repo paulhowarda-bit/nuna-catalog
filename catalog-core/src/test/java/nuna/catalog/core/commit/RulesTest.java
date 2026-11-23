@@ -101,7 +101,8 @@ class RulesTest {
         void aFrozenObjectTakesNoCommit() {
             set(GovernanceAttribute.Kind.DR_FREEZE, "reconcile INC-7");
             assertThat(Rules.drFreeze(change(table(Map.of()), table(props("a", "b")))))
-                    .contains(Rejection.forbidden("Writes to " + ID + " are frozen for DR reconcile: reconcile INC-7"));
+                    .contains(Rejection.refused("dr_freeze",
+                            "Writes to " + ID + " are frozen for DR reconcile: reconcile INC-7"));
             assertThat(Rules.drFreeze(change(null, table(Map.of())))).as("nor a create").isPresent();
         }
 
@@ -271,7 +272,8 @@ class RulesTest {
         @Test
         void removalUnderHoldIsForbidden() {
             assertThat(Rules.retentionHold(change(table(ROOT, Map.of(), two), table(ROOT, Map.of(), Map.of(2L, 2L)), true)))
-                    .contains(Rejection.forbidden("Table " + ID + " is under legal hold: its snapshots cannot be removed"));
+                    .contains(Rejection.refused("legal_hold",
+                            "Table " + ID + " is under legal hold: its snapshots cannot be removed"));
         }
 
         @Test

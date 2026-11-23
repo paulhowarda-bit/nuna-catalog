@@ -11,6 +11,7 @@ import nuna.catalog.iceberg.MetadataViews;
 import nuna.catalog.iceberg.Outcome;
 import nuna.catalog.iceberg.RestRequest;
 import nuna.catalog.iceberg.RestResponse;
+import nuna.catalog.security.Authorizer.Operation;
 import nuna.catalog.server.governance.ReadAudit;
 import nuna.catalog.server.metrics.CatalogMetrics;
 import nuna.catalog.server.rest.CredentialVending.Vended;
@@ -128,6 +129,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table.name()), request)
                 .createTable(name, json, request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.CREATE_TABLE, reply);
+        guard.refused(request, catalog, Guard.CREATE_TABLE, object -> AuditEvents.path(levels, table.name()), reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -195,17 +197,19 @@ class TableRoutes {
         String qualified = Http.qualified(levels, table);
         NamespaceRecord record = lookup.namespace(catalog, levels).orElseThrow(() -> Http.noSuchTable(qualified));
         Optional<CatalogObject> existing = lookup.object(record, table, Kind.TABLE);
+        List<String> path = AuditEvents.path(levels, table);
+        Operation operation = existing.isPresent() ? guard.commit(request, body) : Guard.CREATE_TABLE;
         if (existing.isPresent()) {
-            guard.onObject(request, catalog, existing.get(), AuditEvents.path(levels, table), guard.commit(request, body),
-                    Http.noSuchTable(qualified));
+            guard.onObject(request, catalog, existing.get(), path, operation, Http.noSuchTable(qualified));
         } else {
-            guard.onNewObject(request, catalog, record, levels, Guard.CREATE_TABLE, Http.noSuchTable(qualified));
+            guard.onNewObject(request, catalog, record, levels, operation, Http.noSuchTable(qualified));
         }
         Target target = new Target(catalog, prefix, namespace, table, request, Optional.ofNullable(delegation));
-        CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
+        CommitReply reply = engines.forRequest(catalog, path, request)
                 .commitTable(ObjectRoutes.name(catalog, record, levels, table), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.UPDATE_TABLE, reply);
+        guard.refused(request, catalog, operation, object -> path, reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -257,6 +261,8 @@ class TableRoutes {
                 .registerTable(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
         meters.commit(catalog.name(), Operations.REGISTER_TABLE, reply);
+        guard.refused(request, catalog, Guard.REGISTER_TABLE, object -> AuditEvents.path(levels, registration.name()),
+                reply);
         return ObjectRoutes.reply(reply, done -> loaded(target, done));
     }
 
@@ -308,6 +314,7 @@ class TableRoutes {
         CommitReply reply = engines.forRequest(catalog, AuditEvents.path(levels, table), request)
                 .unregisterTable(name, authorized, request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.UNREGISTER_TABLE, reply);
+        guard.refused(request, catalog, Guard.UNREGISTER_TABLE, object -> AuditEvents.path(levels, table), reply);
         return ObjectRoutes.reply(reply, done -> Http.json(200,
                 RestResponse.unregistered(done.metadataLocation(), done.metadataJson())));
     }

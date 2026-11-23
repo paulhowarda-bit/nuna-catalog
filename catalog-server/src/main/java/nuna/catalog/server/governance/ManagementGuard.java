@@ -90,6 +90,11 @@ class ManagementGuard {
         }
     }
 
+    /** A refusal under a legal hold, audited as a denial with reason {@code legal_hold} (D18, D24). */
+    AccessDenied held(Request request, nuna.catalog.audit.Securable target, String operation, String message) {
+        return denials.refuse(request.actor(), operation, target, null, "legal_hold", message);
+    }
+
     /**
      * Refuses {@code operation} on {@code target} when a DR freeze covers the chain (D37), whatever the caller holds:
      * audited as a denial with reason {@code dr_freeze} (D18), and answered 403 with the freeze's reason.

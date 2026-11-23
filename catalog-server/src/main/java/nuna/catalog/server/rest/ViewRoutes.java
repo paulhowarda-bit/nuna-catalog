@@ -87,6 +87,7 @@ class ViewRoutes {
                 .createView(ObjectRoutes.name(catalog, record, levels, name), json, request.caller(),
                         Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.CREATE_VIEW, reply);
+        guard.refused(request, catalog, Guard.CREATE_VIEW, object -> AuditEvents.path(levels, name), reply);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
@@ -136,6 +137,7 @@ class ViewRoutes {
                 .commitView(ObjectRoutes.name(catalog, record, levels, view), body == null ? "" : body,
                         request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.REPLACE_VIEW, reply);
+        guard.refused(request, catalog, Guard.REPLACE_VIEW, object -> AuditEvents.path(levels, view), reply);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
@@ -160,6 +162,8 @@ class ViewRoutes {
                 .registerView(ObjectRoutes.name(catalog, record, levels, registration.name()), json,
                         request.caller(), Optional.ofNullable(key), objects.undrop(catalog, request));
         meters.commit(catalog.name(), Operations.REGISTER_VIEW, reply);
+        guard.refused(request, catalog, Guard.REGISTER_VIEW, object -> AuditEvents.path(levels, registration.name()),
+                reply);
         return ObjectRoutes.reply(reply, this::loaded);
     }
 
