@@ -67,7 +67,8 @@ class HealthRoutesTest {
         Instant at = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         String health = "/namespaces/" + ns + "/tables/orders/health";
         assertThat(JsonPath.<Map<String, Object>>read(expect(api.manage("GET", health, null), 200).body(), "$"))
-                .as("nothing reported yet").containsOnlyKeys("id", "catalog", "namespace", "name");
+                .as("nothing reported yet").containsOnlyKeys("id", "catalog", "namespace", "name", "requests")
+                .containsEntry("requests", List.of());
 
         expect(report(id, "assessment", ns, "orders", assessment(at, 40, 10, 2, 1, 0, List.of("small-files",
                 "deletes"), 2.5)), 204);
