@@ -14,7 +14,8 @@
   "roles": {
     "client": {
       "cloudbeaver": [{"name": "admin", "description": "CloudBeaver's team admin: its administrator"}],
-      "silo": [{"name": "diagnostics", "description": "Silo's built-in policy diagnostics: the server's health, metrics, logs and traces, and no bucket or object"}]
+      "silo": [{"name": "diagnostics", "description": "Silo's built-in policy diagnostics: the server's health, metrics, logs and traces, and no bucket or object"},
+               {"name": "warehouse-read", "description": "Silo policy warehouse-read (silo-warehouse-read.json): lists the buckets and reads the warehouse bucket's objects, writes nothing"}]
     }
   },
   "groups": [
@@ -40,6 +41,7 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "ana-demo", "temporary": false}],
+      "clientRoles": {"silo": ["warehouse-read"]},
       "groups": ["/demo-analysts"]
     },
     {
@@ -84,6 +86,7 @@
       "emailVerified": true,
       "realmRoles": ["default-roles-nuna"],
       "credentials": [{"type": "password", "value": "presenter-demo", "temporary": false}],
+      "clientRoles": {"silo": ["warehouse-read"]},
       "groups": ["/demo-analysts", "/demo-grant-admins", "/demo-stewards", "/demo-operators", "/demo-auditors"]
     },
     {

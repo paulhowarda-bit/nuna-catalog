@@ -3014,3 +3014,4 @@ checked with `git apply --check`, not run).
 | [175](backlog/175.md) | Brokerage world: the bootstrap fixes the world's settings on a brokerage namespace the change feed made | done | 2026-11-23 |
 | [176](backlog/176.md) | The fast build re-checks every bite each time, and agents run it again and again before landing | done | 2026-11-23 |
 | [179](backlog/179.md) | The demo catalog is OOMKilled under the brokerage world's load: 768Mi with a 75% heap leaves too little outside the heap | done | 2026-11-23 |
+| [180](backlog/180.md) | Demo: ana and presenter browse Silo's console, read-only | done | 2026-11-23 |
