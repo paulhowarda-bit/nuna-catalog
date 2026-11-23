@@ -18,6 +18,20 @@ The prototype's free-form "Set a property", on a catalog and on namespaces, is s
 2026-11-22: the console shows every property read-only and edits only listed keys that do something, and a catalog's
 settings stay read-only (item 141).
 
+Built on 2026-11-22 (item 141, `settings.js`): a table has a Properties tab and a namespace's Properties tab is
+rebuilt the same way. Each shows the settings the console may change, each with its label, what it does, its value or
+its default, and Change and Reset; then every property read-only, with a note on any the console does not list (set
+by an engine or tool; or a known key that is the catalog's or the maintenance policy's to decide). Values are checked
+in the dialog before anything is sent. A table's change is a commit with `set-properties` or `remove-properties`,
+asserted against the table's UUID; a namespace's goes through its properties route. Tables offer
+`write.format.default`, `write.parquet.compression-codec` and `-level`, `write.target-file-size-bytes`,
+`write.distribution-mode`, `write.delete.mode`, `write.update.mode`, `write.merge.mode`,
+`write.metadata.metrics.default` and `write.metadata.previous-versions-max`; namespaces offer `comment`. Left out:
+`write.metadata.delete-after-commit.enabled` (nothing in nuna deletes metadata files on commit: the catalog writes
+them, an engine's REST client deletes none, and the orphan scan removes the files that fall off the log) and a
+namespace's `location` (the catalog assigns every table's location from the table's id, never from its namespace,
+D28). The catalog's Properties tab links to its maintenance policy, and the namespace page names its governance owner.
+
 ## Signing in to the prototype
 
 - **Sign in** signs in as `presenter`, who sees everything.
