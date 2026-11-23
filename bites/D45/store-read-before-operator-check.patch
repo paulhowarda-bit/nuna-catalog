@@ -1,0 +1,25 @@
+Breaks: The server reads its database for /health/server?store=true before it refuses a caller who is not a platform operator.
+Module: catalog-server
+Test: StoreFactsRouteTest#aCallerWhoIsNotAPlatformOperatorIsRefusedBeforeTheDatabaseIsAsked
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java
+index 0579747..acf7574 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/health/CatalogHealthRoutes.java
+@@ -65,6 +65,7 @@ class CatalogHealthRoutes {
+      */
+     @GetMapping(path = SERVER, produces = MediaType.APPLICATION_JSON_VALUE)
+     ResponseEntity<String> server(@RequestParam(defaultValue = "false") boolean store, HttpServletRequest http) {
++        ObjectNode found = store ? storeFacts.read() : null;
+         operator(http, "readServerHealth");
+         HealthWindow.Window own = window.lastDay();
+         ObjectNode body = JSON.createObjectNode();
+@@ -77,7 +78,7 @@ class CatalogHealthRoutes {
+         ObjectNode figures = body.putObject("figures");
+         own.figures().forEach(figures::put);
+         if (store) {
+-            body.set("store", storeFacts.read());
++            body.set("store", found);
+         }
+         return json(body);
+     }
