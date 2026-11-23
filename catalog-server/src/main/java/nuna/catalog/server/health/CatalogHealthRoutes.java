@@ -15,6 +15,7 @@ import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 import tools.jackson.databind.node.ArrayNode;
@@ -26,7 +27,8 @@ import tools.jackson.databind.node.ObjectNode;
  * on a management route, before anything is gathered.
  *
  * <ul>
- *   <li>{@code GET /management/v1/health/server}: this server's own figures over the last day.</li>
+ *   <li>{@code GET /management/v1/health/server}: this server's own figures over the last day; with
+ *       {@code store=true}, also the catalog's database as this server finds it.</li>
  *   <li>{@code GET /management/v1/health/catalog}: the whole deployment's, this server's added to those of every other
  *       server that answers ({@link Peers}), with each server and whether it answered.</li>
  * </ul>
@@ -44,18 +46,25 @@ class CatalogHealthRoutes {
     private final Separation separation;
     private final Callers callers;
     private final Denials denials;
+    private final StoreFacts storeFacts;
 
-    CatalogHealthRoutes(HealthWindow window, Peers peers, Separation separation, Callers callers, Denials denials) {
+    CatalogHealthRoutes(HealthWindow window, Peers peers, Separation separation, Callers callers, Denials denials,
+                        StoreFacts storeFacts) {
         this.window = window;
         this.peers = peers;
         this.separation = separation;
         this.callers = callers;
         this.denials = denials;
+        this.storeFacts = storeFacts;
     }
 
-    /** This server's figures over the last day, for the server gathering them; platform operators only. */
+    /**
+     * This server's figures over the last day, for the server gathering them; platform operators only. With
+     * {@code store=true}, also the catalog's database as this server finds it ({@link StoreFacts}, backlog 139). It is
+     * asked for, so the other servers gathering figures never wait on a database that does not answer.
+     */
     @GetMapping(path = SERVER, produces = MediaType.APPLICATION_JSON_VALUE)
-    ResponseEntity<String> server(HttpServletRequest http) {
+    ResponseEntity<String> server(@RequestParam(defaultValue = "false") boolean store, HttpServletRequest http) {
         operator(http, "readServerHealth");
         HealthWindow.Window own = window.lastDay();
         ObjectNode body = JSON.createObjectNode();
@@ -67,6 +76,9 @@ class CatalogHealthRoutes {
         body.put("to", own.to().toString());
         ObjectNode figures = body.putObject("figures");
         own.figures().forEach(figures::put);
+        if (store) {
+            body.set("store", storeFacts.read());
+        }
         return json(body);
     }
 

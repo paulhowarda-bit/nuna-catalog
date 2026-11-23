@@ -1,0 +1,17 @@
+Breaks: Health counts every table the DR readout lists as behind its watermark, those with none too, so with no verifier report it shows a count instead of saying no verifier has reported.
+Module: catalog-server
+Test: ConsoleHealthBrowserTest#anOperatorSeesDrReplicationAndTheStore
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index 7f1cd57..64890be 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -171,7 +171,7 @@ const DR_PAGES = 5;
+  * counts as behind by every version they have; the most versions behind and the longest lag are of the first.
+  */
+ export function drFigures(tables) {
+-  const behind = tables.filter(t => t['watermark-version'] !== null && t['watermark-version'] !== undefined);
++  const behind = tables;
+   const never = tables.filter(t => !behind.includes(t));
+   const most = behind.reduce((a, t) => !a || t['versions-behind'] > a['versions-behind'] ? t : a, null);
+   const longest = behind.filter(t => t['lag-seconds'] !== undefined)
