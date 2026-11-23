@@ -519,8 +519,9 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
      -H "Authorization: Bearer $(cat ~/.nuna-demo/tokens/ana.jwt)" "https://localhost:8181/v1/lakehouse@sample/namespaces"
    ```
 
-   On a new lake it lists `markets` and `reference`. The same call to `/v1/lakehouse/namespaces`, main, lists
-   `brokerage` too. Nothing commits through a tag: the catalog answers 400.
+   Namespaces are read live through any ref, so it lists `brokerage` too: SingleStore's change feed makes it
+   before `up` makes the tag. The tag holds the sample data's tables and none of `brokerage`'s. Nothing commits
+   through a tag: the catalog answers 400.
 
 2. **Change two tables on dev.** In CloudBeaver, compare main and the branch. Main has trades 1 to 8 (3 was
    deleted) and the rates of 2026-11-09 and 2026-11-10; `dev` also has 2026-11-11 in both tables:
@@ -543,7 +544,8 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
    Run the four queries again: `dev` has the new rows, and main still has none of 2026-11-11. In the console,
    `@dev`'s page (its name on the Branches and tags tab) lists the two tables under **Changes**. A branch takes
    commits to the tables it has; creating, dropping or renaming a table or namespace happens on main only, and
-   `lakehouse_dev` answers such a statement with the catalog's 400 (`docs/refs.md`, "What a tag and a branch
+   through `lakehouse_dev` Trino's own client refuses a CREATE before it reaches the catalog ("Server does not
+   support endpoint: POST /v1/{prefix}/namespaces/{namespace}/tables"; `docs/refs.md`, "What a tag and a branch
    allow").
 
 3. **Preview and merge in the console.** On the Branches and tags tab, choose **Merge…** on `@dev`'s line. The
@@ -556,8 +558,8 @@ her connection "nuna (Trino, as ana)" runs the SQL below.
    Choose **Merge @dev into main**. The dialog shows each table's version on main now and after; choose **Merge
    into main**. The result, "Merged @dev into main", lists main's new version of each table. Main now has the day:
    the first and third queries of step 2 show trades 9 to 11 and the three rates of 2026-11-11. The branch has
-   ended, so its name is free, and every query on `lakehouse_dev` fails with the catalog's 404 until a branch named
-   `dev` exists again. Read `@sample` again as in step 1: the tag still has none of 2026-11-11.
+   ended, so its name is free, and every query on `lakehouse_dev` fails ("Schema 'markets.fx' does not exist")
+   until a branch named `dev` exists again. Read `@sample` again as in step 1: the tag still has none of 2026-11-11.
 
    A script can do the same through the API, the preview first:
 
