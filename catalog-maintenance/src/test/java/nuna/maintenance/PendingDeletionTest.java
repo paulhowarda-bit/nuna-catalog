@@ -34,7 +34,7 @@ class PendingDeletionTest {
             List<String> files = List.of(table.location() + "/data/x.parquet", table.location() + "/metadata/y.avro");
             files.forEach(file -> catalog.put(file, "unreferenced"));
             catalog.management().recordDeletions(TestCatalog.CATALOG, java.util.UUID.fromString(table.uuid().toString()),
-                    files);
+                    files, List.of());
 
             worker.runOnce();
             assertThat(files).as("just recorded").allMatch(catalog::exists);

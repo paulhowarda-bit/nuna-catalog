@@ -52,11 +52,17 @@ class WorkerMetricsTest {
             entry("nuna.maintenance.files.deleted", 31.0),
             entry("nuna.maintenance.tables.assessed", 37.0),
             entry("nuna.maintenance.compactions.cut.off", 41.0),
-            entry("nuna.maintenance.tables.left.over", 43.0));
+            entry("nuna.maintenance.tables.left.over", 43.0),
+            entry("nuna.maintenance.refs.warned", 61.0),
+            entry("nuna.maintenance.refs.ended", 67.0));
 
     /** What {@link #counted} puts in a report as tables needing compaction, by reason. */
     private static final Map<CompactionNeed.Reason, Double> NEEDS = Map.of(CompactionNeed.Reason.SMALL_FILES, 47.0,
             CompactionNeed.Reason.DELETES, 53.0, CompactionNeed.Reason.EQUALITY_DELETES, 59.0);
+
+    /** What {@link #counted} puts in a report as files kept for a catalog ref, by its kind (D33). */
+    private static final Map<Management.RefKind, Double> KEPT = Map.of(Management.RefKind.BRANCH, 71.0,
+            Management.RefKind.TAG, 73.0);
 
     private final MeterRegistry meters = new SimpleMeterRegistry();
     private final SetClock clock = new SetClock();
@@ -73,6 +79,9 @@ class WorkerMetricsTest {
         }
         for (CompactionNeed.Reason reason : CompactionNeed.Reason.values()) {
             assertThat(needing(meters, reason)).as(reason.label).isZero();
+        }
+        for (Management.RefKind kind : Management.RefKind.values()) {
+            assertThat(kept(meters, kind)).as(kind.label).isZero();
         }
         assertThat(scans(meters, WorkerMetrics.SUCCESS)).isZero();
         assertThat(scans(meters, WorkerMetrics.FAILURE)).isZero();
@@ -100,6 +109,7 @@ class WorkerMetricsTest {
         });
         COUNTED.forEach((name, value) -> assertThat(counter(meters, name)).as(name).isEqualTo(value));
         NEEDS.forEach((reason, value) -> assertThat(needing(meters, reason)).as(reason.label).isEqualTo(value));
+        KEPT.forEach((kind, value) -> assertThat(kept(meters, kind)).as(kind.label).isEqualTo(value));
         for (ScanReport.Failure kind : ScanReport.Failure.values()) {
             assertThat(failures(meters, kind)).as(kind.label).isEqualTo(switch (kind) {
                 case WORK_LIST -> 0;
@@ -113,6 +123,7 @@ class WorkerMetricsTest {
         metrics.scan(again, () -> counted(again));
         COUNTED.forEach((name, value) -> assertThat(counter(meters, name)).as(name).isEqualTo(2 * value));
         NEEDS.forEach((reason, value) -> assertThat(needing(meters, reason)).as(reason.label).isEqualTo(2 * value));
+        KEPT.forEach((kind, value) -> assertThat(kept(meters, kind)).as(kind.label).isEqualTo(2 * value));
         assertThat(failures(meters, ScanReport.Failure.DELETION)).isEqualTo(2);
     }
 
@@ -212,8 +223,8 @@ class WorkerMetricsTest {
     }
 
     /**
-     * Every nuna.maintenance meter has no label but {@code kind} (a failure's), {@code outcome} (a scan's) and
-     * {@code reason} (a need for compaction), save {@value WorkerMetrics#TABLE_NEED}, which has exactly
+     * Every nuna.maintenance meter has no label but {@code kind} (a failure's), {@code outcome} (a scan's),
+     * {@code reason} (a need for compaction) and {@code ref.kind} (a catalog ref's, never its name), save {@value WorkerMetrics#TABLE_NEED}, which has exactly
      * {@code catalog}, {@code namespace} and {@code table}.
      */
     static void assertBoundedLabels(MeterRegistry meters) {
@@ -222,7 +233,8 @@ class WorkerMetricsTest {
                         .collect(Collectors.toSet()),
                 WorkerMetrics.OUTCOME, Set.of(WorkerMetrics.SUCCESS, WorkerMetrics.FAILURE),
                 WorkerMetrics.REASON, Arrays.stream(CompactionNeed.Reason.values()).map(reason -> reason.label)
-                        .collect(Collectors.toSet()));
+                        .collect(Collectors.toSet()),
+                WorkerMetrics.REF_KIND, Set.of("branch", "tag"));
         for (Meter meter : meters.getMeters()) {
             Meter.Id id = meter.getId();
             if (!id.getName().startsWith(WorkerMetrics.PREFIX)) {
@@ -252,8 +264,9 @@ class WorkerMetricsTest {
         Set<String> names = meters.getMeters().stream().map(meter -> meter.getId().getName())
                 .filter(name -> name.startsWith(WorkerMetrics.PREFIX)).collect(Collectors.toSet());
         assertThat(names).allSatisfy(name -> assertThat(docs).as(name).contains("`" + name + "`"));
-        // The counts, the scan timer, the last success, failures, tables needing compaction and the table gauge.
-        assertThat(names).hasSize(COUNTED.size() + 5);
+        // The counts, the scan timer, the last success, failures, tables needing compaction, the table gauge and the
+        // files kept for refs.
+        assertThat(names).hasSize(COUNTED.size() + 6);
     }
 
     /** Puts {@link #COUNTED}'s and {@link #NEEDS}' numbers in a report, as a scan's jobs would. */
@@ -272,6 +285,9 @@ class WorkerMetricsTest {
         report.tablesAssessed += 37;
         report.compactionsCutOff += 41;
         report.tablesLeftOver += 43;
+        report.refsWarned += 61;
+        report.refsEnded += 67;
+        report.kept(Map.of(Management.RefKind.BRANCH, 71, Management.RefKind.TAG, 73));
         NEEDS.forEach((reason, tables) -> report.needs.merge(reason, tables.intValue(), Integer::sum));
     }
 
@@ -282,6 +298,10 @@ class WorkerMetricsTest {
 
     static double needing(MeterRegistry meters, CompactionNeed.Reason reason) {
         return meters.get(WorkerMetrics.NEEDING).tag(WorkerMetrics.REASON, reason.label).counter().count();
+    }
+
+    static double kept(MeterRegistry meters, Management.RefKind kind) {
+        return meters.get(WorkerMetrics.KEPT).tag(WorkerMetrics.REF_KIND, kind.label).counter().count();
     }
 
     static double tableNeed(MeterRegistry meters, String table) {

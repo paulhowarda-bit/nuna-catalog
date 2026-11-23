@@ -1,0 +1,16 @@
+Breaks: the worker ends a branch before its expiry, and a tag.
+Module: catalog-server
+Test: RefRoutesTest#theWorkerEndsOnlyABranchPastItsExpiry
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index ff2347e..b1f5f7a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -359,7 +359,7 @@ class RefRoutes {
+         guard.requireMaintenance(request, found.map(this::catalogOf).orElse(null), "endExpiredRef");
+         Ref ref = found.orElseThrow(() -> noSuchRef(id));
+         Instant now = now();
+-        if (!ref.expiredAt(now)) {
++        if (false) {
+             throw CatalogError.of(409, "RefNotExpiredException", "Ref " + ref.name().display()
+                     + (ref.kind() == Ref.Kind.TAG ? " is a tag, which never expires" : " expires at "
+                     + ref.expiresAt().orElseThrow()));

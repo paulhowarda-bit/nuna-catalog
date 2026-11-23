@@ -153,8 +153,10 @@ class MaintenanceRoutesTest {
                 "/data//f.parquet", "/data/f.parquet/", "/")) {
             expectError(record(id, root + "/data/a.parquet", root + path), 400, "BadRequestException");
         }
-        expectError(api.manage("POST", "/objects/" + id + "/pending-deletions", "{\"locations\":[]}",
+        expectError(api.manage("POST", "/objects/" + id + "/pending-deletions", "{\"locations\":[],\"refs\":[]}",
                 GovernanceServer.PRINCIPAL, "maintenance"), 400, "BadRequestException");
+        expectError(api.manage("POST", "/objects/" + id + "/pending-deletions", "{\"locations\":[\"" + root
+                + "/data/a.parquet\"]}", GovernanceServer.PRINCIPAL, "maintenance"), 400, "BadRequestException");
         expect(api.rest("POST", "/namespaces/" + ns + "/tables/t/unregister", null), 200);
         expectError(record(id, root + "/data/a.parquet"), 409, "NotDeletableException");
         expectError(api.manage("GET", "/maintenance/work?section=nothing", null, AUTH, api.maintenance()), 400,
@@ -201,7 +203,8 @@ class MaintenanceRoutesTest {
 
     private HttpResponse<String> record(String id, String... locations) {
         return api.manage("POST", "/objects/" + id + "/pending-deletions",
-                "{\"locations\":[\"" + String.join("\",\"", locations) + "\"]}", GovernanceServer.PRINCIPAL, "maintenance");
+                "{\"locations\":[\"" + String.join("\",\"", locations) + "\"],\"refs\":[]}", GovernanceServer.PRINCIPAL,
+                "maintenance");
     }
 
     private HttpResponse<String> complete(String id, String body) {

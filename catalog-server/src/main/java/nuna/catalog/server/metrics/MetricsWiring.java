@@ -4,6 +4,11 @@ import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.binder.MeterBinder;
 import nuna.catalog.core.commit.MetadataCache;
+import nuna.catalog.server.governance.RefSettings;
+import nuna.catalog.server.storage.StorageSettings;
+import nuna.catalog.store.CatalogStore;
+import java.time.Clock;
+import java.util.List;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,5 +46,11 @@ class MetricsWiring {
                     .tag(CatalogMetrics.OUTCOME, "miss")
                     .register(registry);
         };
+    }
+
+    /** Each declared catalog's open branches, tags and branches near their expiry (D33). */
+    @Bean
+    MeterBinder refMeters(CatalogStore store, StorageSettings storage, RefSettings refs, Clock clock) {
+        return new RefGauges(store, List.copyOf(storage.catalogs().keySet()), refs, clock);
     }
 }

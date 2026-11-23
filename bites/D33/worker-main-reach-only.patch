@@ -1,0 +1,16 @@
+Breaks: the worker records for deletion every file a job left unreferenced on main, though a catalog branch or tag still reaches it.
+Module: catalog-maintenance
+Test: WorkerRefsTest#aRecordTheCatalogRefusesIsCheckedAgainstTheRefsItHandsBack
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+index cab9f2a..319f2d4 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+@@ -451,7 +451,7 @@ final class Worker implements AutoCloseable {
+         table.snapshots().forEach(snapshot -> onMain.add(snapshot.snapshotId()));
+         List<Management.RefWork> refs = work.refs();
+         for (int read = 1; ; read++) {
+-            RefReach.Split split = RefReach.split(beneath, refs, table.io(), onMain);
++            RefReach.Split split = RefReach.split(beneath, List.of(), table.io(), onMain);
+             try {
+                 management.recordDeletions(work.catalog(), work.id(), split.unreached(),
+                         refs.stream().map(Management.RefWork::id).toList());

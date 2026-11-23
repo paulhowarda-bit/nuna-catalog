@@ -123,10 +123,10 @@ class ScanMetricsTest {
             reports.add(worker.runOnce());
 
             assertThat(reports.getLast().failuresByKind).as("nor could it report its start and end")
-                    .isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 3, ScanReport.Failure.REPORT, 2));
+                    .isEqualTo(Map.of(ScanReport.Failure.WORK_LIST, 5, ScanReport.Failure.REPORT, 2));
             assertThat(catalog.scan(reports.getLast().id).isMissingNode()).isTrue();
             assertCounted(meters, reports);
-            assertThat(failures(meters, ScanReport.Failure.WORK_LIST)).isEqualTo(3);
+            assertThat(failures(meters, ScanReport.Failure.WORK_LIST)).isEqualTo(5);
             assertThat(scans(meters, WorkerMetrics.FAILURE)).isEqualTo(1);
             assertThat(scans(meters, WorkerMetrics.SUCCESS)).isEqualTo(1);
             assertThat(lastSuccess(meters)).as("no scan succeeded since").isEqualTo(succeeded);

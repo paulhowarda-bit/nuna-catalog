@@ -32,10 +32,12 @@ import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLimits;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.StoreException;
 import nuna.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -275,6 +277,50 @@ final class MongoRefs {
                 .map(MongoRefs::ref));
     }
 
+    /** The own pointers of the tables and views of a ref's cut, counted in batches as {@link #end} deletes them. */
+    long countOwn(UUID refId) {
+        return transactions.snapshot("ref own pointer count", session -> {
+            List<BsonValue> objectIds = collection(REF_ENTRY).find(session, new BsonDocument("refId", uuid(refId))
+                            .append("kind", new BsonDocument("$ne", new BsonString(NAMESPACE_KIND))))
+                    .projection(new BsonDocument("objectId", new BsonInt32(1)))
+                    .map(entry -> entry.get("objectId")).into(new ArrayList<>());
+            long own = 0;
+            for (int from = 0; from < objectIds.size(); from += BATCH) {
+                own += collection(POINTER).countDocuments(session, new BsonDocument("objectId",
+                        Docs.in(objectIds.subList(from, Math.min(objectIds.size(), from + BATCH))))
+                        .append("branch", new BsonString(refId.toString())));
+            }
+            return own;
+        });
+    }
+
+    /** The object's entries, their refs in batches (an entry whose ref is gone counts for none), then its pointers on
+     *  branches, matched by the branch's id. */
+    List<RefPointers> listPointers(UUID objectId) {
+        return transactions.snapshot("ref pointers of an object", session -> {
+            List<BsonDocument> entries = collection(REF_ENTRY).find(session, new BsonDocument("objectId",
+                    uuid(objectId))).into(new ArrayList<>());
+            List<BsonValue> refIds = entries.stream().map(entry -> entry.get("refId")).toList();
+            Map<BsonValue, Ref> refs = new HashMap<>();
+            for (int from = 0; from < refIds.size(); from += BATCH) {
+                collection(REF).find(session, new BsonDocument("_id",
+                                Docs.in(refIds.subList(from, Math.min(refIds.size(), from + BATCH)))))
+                        .forEach(ref -> refs.put(ref.get("_id"), ref(ref)));
+            }
+            Map<String, RefEntry.At> heads = new HashMap<>();
+            collection(POINTER).find(session, new BsonDocument("objectId", uuid(objectId))
+                    .append("branch", new BsonDocument("$ne", new BsonString(PointerKey.MAIN))))
+                    .forEach(pointer -> heads.put(pointer.getString("branch").getValue(), at(pointer)));
+            return entries.stream().filter(entry -> refs.containsKey(entry.get("refId")))
+                    .map(entry -> {
+                        Ref ref = refs.get(entry.get("refId"));
+                        return new RefPointers(ref, at(entry), Optional.ofNullable(heads.get(ref.id().toString())));
+                    })
+                    .sorted(Comparator.comparing(pointers -> pointers.ref().name().normalized()))
+                    .toList();
+        });
+    }
+
     Page<Ref> list(UUID catalogId, PageRequest page) {
         Optional<String> after = after(page, 1, List::getFirst);
         return transactions.read("ref listing", () -> {
@@ -501,6 +547,12 @@ final class MongoRefs {
                 doc.getString("createdBy").getValue(),
                 fromRef == null || fromRef.isNull() ? Optional.empty() : Optional.of(uuid(fromRef)),
                 doc.getString("fromName").getValue(), optionalInstant(doc, "expiresAt"));
+    }
+
+    /** The version, metadata file and SHA-256 of a pointer, or of a table's or view's cut entry. */
+    private static RefEntry.At at(BsonDocument doc) {
+        return new RefEntry.At(doc.get("version").asNumber().longValue(), doc.getString("metadataLocation").getValue(),
+                doc.getString("sha256").getValue());
     }
 
     private static RefEntry entry(BsonDocument doc) {

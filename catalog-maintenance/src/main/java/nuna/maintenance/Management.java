@@ -25,8 +25,8 @@ import java.util.regex.Pattern;
 
 /**
  * The catalog's management routes the worker uses (D30), as a maintenance principal acting as itself: the work list,
- * the purge claim and its completion, the pending deletions it records and completes, its reports of its own work
- * (D38), and the DR verifier's work list and watermark reports (D37).
+ * the purge claim and its completion, the pending deletions it records and completes, the branches it warns of and
+ * ends (D33), its reports of its own work (D38), and the DR verifier's work list and watermark reports (D37).
  */
 final class Management {
 
@@ -41,11 +41,39 @@ final class Management {
             Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     /** One section of the work list, as the catalog names it. */
-    enum Section { TABLES, PURGES, DELETIONS, REQUESTS }
+    enum Section { TABLES, PURGES, DELETIONS, REQUESTS, REFS }
 
-    /** An active table whose resolved maintenance policy runs a job, with that policy (guardrails applied). */
+    /** A catalog ref's kind (D33), the label {@code ref.kind} of the files kept for one. */
+    enum RefKind {
+        BRANCH("branch"),
+        TAG("tag");
+
+        final String label;
+
+        RefKind(String label) {
+            this.label = label;
+        }
+    }
+
+    /**
+     * A catalog ref whose cut names a table (D33, item 26's choice 14): its id, its kind, and the metadata files it
+     * reaches for the table, a tag's cut, a branch's cut and its own head.
+     */
+    record RefWork(UUID id, RefKind kind, List<String> metadata) {
+    }
+
+    /**
+     * An active table whose resolved maintenance policy runs a job, with that policy (guardrails applied), and the
+     * catalog's refs whose cut names it, whose files cleanup keeps (D33).
+     */
     record TableWork(String catalog, UUID id, List<String> namespace, String name, String location,
-                     Map<String, String> policy) {
+                     Map<String, String> policy, List<RefWork> refs) {
+
+        /** A table no ref names. */
+        TableWork(String catalog, UUID id, List<String> namespace, String name, String location,
+                  Map<String, String> policy) {
+            this(catalog, id, namespace, name, location, policy, List.of());
+        }
 
         boolean runs(String job) {
             return "true".equals(policy.get(job));
@@ -75,8 +103,37 @@ final class Management {
                      Optional<String> claimant) {
     }
 
-    /** A file that may now be deleted. */
-    record DeletionWork(String catalog, UUID id, UUID objectId, String location, Instant notBefore) {
+    /**
+     * A file that may now be deleted, with the refs made since it was recorded whose cut names its table (D33), which
+     * it is checked against first, and then, when its table is active, the table's namespace and name to load it by.
+     */
+    record DeletionWork(String catalog, UUID id, UUID objectId, String location, Instant notBefore,
+                        List<RefWork> refs, Optional<Named> table) {
+    }
+
+    /** A table's namespace and name, as main names it now. */
+    record Named(List<String> namespace, String name) {
+    }
+
+    /** A branch to warn of, its expiry near, or to end, past it (D33, choice 11; the work list's refs section). */
+    record RefExpiry(String catalog, UUID id, String name, Instant expiresAt, String action) {
+
+        static final String WARN = "warn";
+        static final String END = "end";
+    }
+
+    /**
+     * The catalog refused a record of deletions (409): a ref whose cut names the table was made since the worker read
+     * its refs. {@code refs} are the table's refs now.
+     */
+    static final class RefsChanged extends RuntimeException {
+
+        final transient List<RefWork> refs;
+
+        RefsChanged(UUID objectId, List<RefWork> refs) {
+            super("a ref naming table " + objectId + " was made since the worker read its refs");
+            this.refs = refs;
+        }
     }
 
     /** One page of one section. */
@@ -130,7 +187,16 @@ final class Management {
     private static TableWork table(JsonNode node) {
         return new TableWork(node.path("catalog").asText(), UUID.fromString(node.path("id").asText()),
                 strings(node.path("namespace")), node.path("name").asText(), node.path("location").asText(),
-                policy(node.path("policy")));
+                policy(node.path("policy")), refs(node.path("refs")));
+    }
+
+    /** The refs a table entry, a deletion or a refused record names, each with the metadata it reaches. */
+    private static List<RefWork> refs(JsonNode array) {
+        List<RefWork> refs = new ArrayList<>();
+        array.forEach(ref -> refs.add(new RefWork(UUID.fromString(ref.path("id").asText()),
+                RefKind.valueOf(ref.path("kind").asText().toUpperCase(java.util.Locale.ROOT)),
+                strings(ref.path("metadata-locations")))));
+        return List.copyOf(refs);
     }
 
     Page<PurgeWork> purges(Optional<String> token) {
@@ -143,7 +209,42 @@ final class Management {
     Page<DeletionWork> deletions(Optional<String> token) {
         return page(Section.DELETIONS, token, node -> new DeletionWork(node.path("catalog").asText(),
                 UUID.fromString(node.path("id").asText()), UUID.fromString(node.path("object-id").asText()),
-                node.path("location").asText(), Instant.parse(node.path("not-before").asText())));
+                node.path("location").asText(), Instant.parse(node.path("not-before").asText()),
+                refs(node.path("refs")), node.has("name")
+                        ? Optional.of(new Named(strings(node.path("namespace")), node.path("name").asText()))
+                        : Optional.empty()));
+    }
+
+    Page<RefExpiry> refs(Optional<String> token) {
+        return page(Section.REFS, token, node -> new RefExpiry(node.path("catalog").asText(),
+                UUID.fromString(node.path("id").asText()), node.path("name").asText(),
+                Instant.parse(node.path("expires-at").asText()), node.path("action").asText()));
+    }
+
+    /**
+     * Sends the warning of a branch whose expiry is near (D33, choice 11): true when this call sent it; false when it
+     * had been sent, or the branch is gone or no longer near its expiry (404, 409), renewed or ended since the work
+     * list was read.
+     */
+    boolean warnRef(UUID id) {
+        HttpResponse<String> response = send("POST", "management/v1/maintenance/refs/" + id + "/warn", null);
+        if (response.statusCode() == 404 || response.statusCode() == 409) {
+            return false;
+        }
+        return read(expect("the warning of ref " + id, response, 200).body()).path("sent").asBoolean();
+    }
+
+    /**
+     * Ends a branch past its expiry (D33, choice 11): true when this call ended it; false when it is gone, or not past
+     * its expiry (404, 409).
+     */
+    boolean endRef(UUID id) {
+        HttpResponse<String> response = send("POST", "management/v1/maintenance/refs/" + id + "/end", null);
+        if (response.statusCode() == 404 || response.statusCode() == 409) {
+            return false;
+        }
+        expect("the end of ref " + id, response, 204);
+        return true;
     }
 
     /** Claims the object's purge for the worker, or resumes its own claim. */
@@ -165,16 +266,28 @@ final class Management {
 
     /**
      * Records files of a table for deletion once the database's PITR window has passed, at most {@link #BATCH} at a
-     * time; files already pending keep their time.
+     * time; files already pending keep their time. Each request names {@code refs}, the refs whose metadata the files
+     * were checked against (D33, choice 14).
+     *
+     * @throws RefsChanged when the catalog refused a request because a ref naming the table was made since; earlier
+     *                     requests' files stay recorded
      */
-    void recordDeletions(String catalog, UUID objectId, Collection<String> locations) {
+    void recordDeletions(String catalog, UUID objectId, Collection<String> locations, Collection<UUID> refs) {
         List<String> all = List.copyOf(locations);
         for (int from = 0; from < all.size(); from += BATCH) {
             ObjectNode body = JSON.createObjectNode();
             ArrayNode list = body.putArray("locations");
             all.subList(from, Math.min(all.size(), from + BATCH)).forEach(list::add);
-            expect("recording deletions of " + objectId, send("POST", object(catalog, objectId)
-                    + "/pending-deletions", body), 200, 201);
+            ArrayNode checked = body.putArray("refs");
+            refs.forEach(ref -> checked.add(ref.toString()));
+            HttpResponse<String> response = send("POST", object(catalog, objectId) + "/pending-deletions", body);
+            if (response.statusCode() == 409) {
+                JsonNode answer = read(response.body());
+                if (answer.has("refs")) {
+                    throw new RefsChanged(objectId, refs(answer.path("refs")));
+                }
+            }
+            expect("recording deletions of " + objectId, response, 200, 201);
         }
     }
 

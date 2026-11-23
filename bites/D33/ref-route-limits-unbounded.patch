@@ -1,0 +1,16 @@
+Breaks: the create route asks the store with no limits, so P11's are not kept.
+Module: catalog-server
+Test: RefRoutesTest#aCreatePastALimitIsRefusedNamingIt
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+index ff2347e..442e34d 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/RefRoutes.java
+@@ -199,7 +199,7 @@ class RefRoutes {
+                 kind == Ref.Kind.BRANCH ? Optional.of(settings.expiryAfter(now, now)) : Optional.empty());
+         String answer = Management.JSON.writeValueAsString(ref(ref, now));
+         RefChange event = event(RefChange.Action.CREATED, ref, ref.expiresAt(), target.audit(), request);
+-        WriteResult result = Management.write("Creating ref " + given, () -> store.createRef(ref, settings.limits(),
++        WriteResult result = Management.write("Creating ref " + given, () -> store.createRef(ref, new nuna.catalog.store.RefLimits(Integer.MAX_VALUE, Integer.MAX_VALUE),
+                 ticket.change(management.change(now, event), 201, answer)), () -> store.readRef(ref.id()).isPresent());
+         return switch (result) {
+             case WriteResult.Applied applied -> new Reply(201, answer, true);

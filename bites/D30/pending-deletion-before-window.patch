@@ -2,11 +2,11 @@ Breaks: a recorded file is due at once, before the PITR window has passed, so a 
 Module: catalog-server
 Test: MaintenanceRoutesTest#pendingDeletionsWaitOutThePitrWindow
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
-index 2d49910..9dc9896 100644
+index 5135330..1ccf22c 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/MaintenanceRoutes.java
-@@ -170,7 +170,7 @@ class MaintenanceRoutes {
-             locations.add(location.asString());
+@@ -252,7 +252,7 @@ class MaintenanceRoutes {
+             return GovernanceRoutes.json(409, refused);
          }
          Instant now = clock.instant().truncatedTo(ChronoUnit.MILLIS);
 -        Instant notBefore = now.plus(settings.pitrWindow());

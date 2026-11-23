@@ -9,7 +9,9 @@ Names are Micrometer's, with dots. Over OTLP Micrometer sends timers in millisec
 turns the dots into underscores and adds unit and type suffixes, so `nuna.catalog.requests` arrives as a family such
 as `nuna_catalog_requests_milliseconds_bucket`.
 
-Each server holds only its own meters. A deployment's figure is the sum over its servers.
+Each server holds only its own meters. A deployment's figure is the sum over its servers, except for the ref gauges
+(`nuna.catalog.refs` and `nuna.catalog.refs.expiring`), which every server reads from the same store: take any one
+server's figure, or the maximum, never the sum.
 
 ## Labels
 
@@ -27,6 +29,7 @@ line (item 37) and the alert lines on the `nuna.alerts` logger.
 | `requirement.type` | For a commit refused because a requirement failed, that requirement's type in the spec, such as `assert-ref-snapshot-id` or `assert-table-uuid`. It is `none` otherwise. |
 | `report.type` | `scan-report` or `commit-report`. |
 | `operation` | A commit report's snapshot operation: `append`, `replace`, `overwrite` or `delete`. Any other value the client sent is `other`, and a scan report has `none`. |
+| `ref.kind` | A ref's kind, `branch` or `tag` (D33). A ref's name is never a label: names would grow without bound. |
 | `engine.name` | The `engine-name` in the report's `metadata`, as the client sent it, such as `spark` or `trino`. The first 20 distinct names a server sees are kept; later names count as `other`. So does a name that is not 1 to 32 letters, digits, spaces, dots, hyphens or underscores starting with a letter or digit. It is `none` when the report gives no engine name. |
 
 ## Meters
@@ -41,6 +44,8 @@ line (item 37) and the alert lines on the `nuna.alerts` logger.
 | `nuna.catalog.alerts.regulated.schema.change` | Counter | none | Has a commit changed a regulated table's schema or partition spec? |
 | `nuna.catalog.alerts.large.metadata` | Counter | none | Is a loaded table's metadata over the size or snapshot limit (D14)? |
 | `nuna.catalog.report.*` | One timer or distribution summary per report result | `catalog`, `report.type`, `operation`, `engine.name` | What do engines report about their own scans and commits? |
+| `nuna.catalog.refs` | Gauge | `catalog`, `ref.kind` (`branch`, `tag`) | How many open branches and tags does each catalog hold, against P11's limits (`nuna.refs.max-branches`, `nuna.refs.max-tags`)? |
+| `nuna.catalog.refs.expiring` | Gauge | `catalog` | How many branches will expire within `nuna.refs.expiry-warning` (7 days) unless renewed? |
 
 ### `nuna.catalog.requests`
 
@@ -112,6 +117,18 @@ the table and file; the counter does not.
 - Large metadata is alerted once per file a server loads, not on every load.
 
 The rules that do so are in `deploy/grafana/rules/nuna-catalog.rules.yaml` (dashboards-and-alerts.md).
+
+### `nuna.catalog.refs` and `nuna.catalog.refs.expiring`: branches and tags
+
+These gauges count each declared catalog's refs (D33, item 26's choice 13). `nuna.catalog.refs` with
+`ref.kind="branch"` counts the open branches, those not yet past their expiry, which are what
+`nuna.refs.max-branches` limits; with `ref.kind="tag"` it counts the tags, limited by `nuna.refs.max-tags`.
+`nuna.catalog.refs.expiring` counts the open branches within `nuna.refs.expiry-warning` of their expiry: the ones the
+change stream has warned of, or is about to, and the console marks.
+
+They are read from the catalog store, not counted by the server, so every server shows the same figures. A scrape
+reads the store at most once every 30 seconds. A catalog whose refs could not be read shows NaN until a read
+succeeds.
 
 ### `nuna.catalog.report.*`: client reports
 

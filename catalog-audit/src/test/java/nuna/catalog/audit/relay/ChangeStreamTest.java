@@ -12,7 +12,7 @@ import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** The audit feed takes every change; the CloudEvents change stream takes changes to catalog objects only. */
+/** The audit feed takes every change; the CloudEvents change stream takes changes to catalog objects and refs only. */
 class ChangeStreamTest {
 
     @Test
@@ -27,7 +27,7 @@ class ChangeStreamTest {
         assertThat(audit).containsExactlyElementsOf(batch);
         assertThat(changes).extracting(CatalogEvent::type).containsExactly(EventType.COMMIT, EventType.DROP,
                 EventType.NAMESPACE_CHANGE, EventType.RENAME, EventType.UNDROP, EventType.PURGE, EventType.UNREGISTER,
-                EventType.LABEL_CHANGE);
+                EventType.LABEL_CHANGE, EventType.REF);
         assertThat(changes).isSubsetOf(batch);
     }
 

@@ -83,9 +83,9 @@ class TelemetryTest {
                     .service()).isEqualTo("nuna-maintenance");
             assertThat(receiver.awaitLog(l -> l.item().getBody().getStringValue().startsWith("Scan failure: "), ARRIVAL)
                     .service()).isEqualTo("nuna-maintenance");
-            // The worker's own meters, from Boot's registry: its first scan read none of the work list's four sections.
+            // The worker's own meters, from Boot's registry: its first scan read none of the work list's five sections.
             assertThat(receiver.awaitMetric(m -> m.item().getName().equals(WorkerMetrics.FAILURES)
-                    && m.item().getSum().getDataPointsList().stream().anyMatch(point -> point.getAsDouble() == 4
+                    && m.item().getSum().getDataPointsList().stream().anyMatch(point -> point.getAsDouble() == 5
                     && OtlpReceiver.attribute(point.getAttributesList(), WorkerMetrics.KIND).orElse("")
                             .equals(ScanReport.Failure.WORK_LIST.label)), ARRIVAL).service())
                     .isEqualTo("nuna-maintenance");
