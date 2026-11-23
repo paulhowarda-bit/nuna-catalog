@@ -56,7 +56,7 @@ function summaryPage(catalog, tabs) {
           ? h('span', {class: 'q'}, `${plural(f.closed, 'table')} closed until a steward classifies ${f.closed === 1 ? 'it' : 'them'}.`)
           : 'None closed.'],
         sub: 'Classification, owner, retention class and the regulated flag are set here in the console, on the Governance tab '
-          + 'of a catalog, namespace or table, each recorded with who set it and at which level; an outside data catalogue can '
+          + 'of a catalog, namespace, table or view, each recorded with who set it and at which level; an outside data catalogue can '
           + 'push them too, if one is ever connected. The catalog enforces them, with holds and freezes, on every load, commit '
           + 'and maintenance job.',
       }),
