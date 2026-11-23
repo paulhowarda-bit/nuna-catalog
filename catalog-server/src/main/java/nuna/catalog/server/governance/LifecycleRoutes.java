@@ -343,10 +343,12 @@ class LifecycleRoutes {
      * present.
      *
      * <p>With {@code ref}, the log as the catalog's branch or tag of that name reads the object (D33, backlog 109): the
-     * versions a branch committed of its own, from its own journal, above the cut's version; below and at it, the log
-     * of what the ref was made from ({@link #stretches}); {@code pointer} is the one the ref reads, and {@code ref}
-     * names it with the cut's version, and with {@code log-stops-at-cut} when the versions below came from a ref that
-     * has ended. 404 when no live ref has the name, or the ref's cut does not hold the object.
+     * versions a branch committed of its own, from its own journal, which number from 1 whatever the cut's version
+     * (item 105); then the log of what the ref was made from, at and below the cut ({@link #stretches}). Each entry
+     * names the line it is on, {@code branch}: the ref's name, or {@code main}. {@code pointer} is the one the ref
+     * reads, and {@code ref} names it with the cut's version, and with {@code log-stops-at-cut} when the versions below
+     * came from a ref that has ended. Since two lines can hold the same version, a page's token names the line as well
+     * as the version. 404 when no live ref has the name, or the ref's cut does not hold the object.
      */
     @GetMapping(path = METADATA_LOG, produces = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<String> metadataLog(@PathVariable("catalog") String prefix, @PathVariable String id,
@@ -360,7 +362,7 @@ class LifecycleRoutes {
         guard.require(request, Authorizer.Target.of(object),
                 Management.audit(catalog, levels, object.name().display(), object), "readMetadataLog", Privilege.SELECT);
         int size = pageSize == null ? LOG_PAGE : Math.clamp(pageSize, 1, LOG_PAGE_MAX);
-        Optional<Long> before = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty()).map(LifecycleRoutes::before);
+        Optional<String> token = Optional.ofNullable(pageToken).filter(t -> !t.isEmpty());
         ObjectNode body = Management.JSON.createObjectNode();
         Function<PageRequest, Page<JournalRecord>> mains = next -> store.readJournal(object.mainKey(),
                 JournalStore.EARLIEST, JournalStore.LATEST, next);
@@ -383,15 +385,19 @@ class LifecycleRoutes {
             named.put("kind", on.kind().name().toLowerCase(Locale.ROOT));
             named.put("cut-version", held.cut().version());
             List<Stretch> stretches = stretches(held, holding, now, object.id(), mains);
-            if (stretches.getLast().floor() > 0) {
+            if (stretches.isEmpty() || !stretches.getLast().branch().equals(PointerKey.MAIN)) {
                 named.put("log-stops-at-cut", true);
             }
             ArrayNode journal = body.putArray("journal");
-            LogPage page = refLogPage(before.orElse(reads.version() + 1), size, stretches);
-            page.entries().forEach(entry -> journal.add(journal(entry)));
-            page.before().ifPresent(next -> body.put("next-page-token", PageToken.encode(Long.toString(next))));
+            RefLogPage page = refLogPage(token.map(LifecycleRoutes::cursor), size, stretches);
+            page.entries().forEach(entry -> journal.add(journal(entry).put("branch", stretches.stream()
+                    .filter(stretch -> stretch.branch().equals(entry.key().branch())).findFirst().orElseThrow()
+                    .name())));
+            page.next().ifPresent(next -> body.put("next-page-token",
+                    PageToken.encode(next.branch(), Long.toString(next.before()))));
             return GovernanceRoutes.json(200, body);
         }
+        Optional<Long> before = token.map(LifecycleRoutes::before);
         Optional<Pointer> pointer = store.readPointer(object.mainKey());
         pointer.ifPresent(p -> {
             ObjectNode node = body.putObject("pointer");
@@ -410,17 +416,20 @@ class LifecycleRoutes {
     }
 
     /**
-     * The journals a ref's log reads, newest first (backlog 109). The ref's own, above its cut. Then, while the ref it
-     * was made from is live, that ref's own versions down to its cut, which a ref made from a branch took from the
-     * branch's journal; and so on back. Then main's, at and below the last cut, when main's entry at that version
-     * wrote the cut's file: always so for a cut taken from main. Otherwise the log stops at that cut, whose versions
-     * came from a ref that has ended.
+     * The journals a ref's log reads, newest first (backlog 109), each from its own version 1 up: a branch's own
+     * pointer starts at version 1 whatever the cut's version (item 105), so no two journals' versions follow on from
+     * each other. A branch's own, up to its own pointer. Then, while the ref it was made from is live, that ref's own
+     * versions up to the cut, when its journal wrote the cut's file (a ref made from a branch that had a pointer of
+     * its own took that one; otherwise the branch's cut, whose versions are further back); and so on back. Then
+     * main's, up to the last cut, when main's entry at that version wrote the cut's file: always so for a cut taken
+     * from main. Otherwise the log stops at that cut, whose versions came from a ref that has ended.
      */
     private List<Stretch> stretches(RefPointers held, List<RefPointers> holding, Instant now, UUID objectId,
                                     Function<PageRequest, Page<JournalRecord>> mains) {
         List<Stretch> stretches = new ArrayList<>();
-        stretches.add(new Stretch(held.cut().version(), journalOf(held.ref().key(objectId))));
+        held.head().ifPresent(head -> stretches.add(own(held.ref(), head.version(), objectId)));
         RefPointers at = held;
+        RefEntry.At cut = held.cut();
         while (at.ref().fromRef().isPresent()) {
             UUID from = at.ref().fromRef().get();
             Optional<RefPointers> source = holding.stream()
@@ -428,50 +437,79 @@ class LifecycleRoutes {
             if (source.isEmpty()) {
                 break;
             }
-            if (at.cut().version() > source.get().cut().version()) {
-                stretches.add(new Stretch(source.get().cut().version(), journalOf(source.get().ref().key(objectId))));
+            Stretch its = own(source.get().ref(), cut.version(), objectId);
+            if (wrote(its.read(), cut)) {
+                stretches.add(its);
+                cut = source.get().cut();
             }
             at = source.get();
         }
-        RefEntry.At cut = at.cut();
-        boolean mainWroteIt = mains.apply(JournalStore.afterVersion(cut.version() - 1, 1)).items().stream()
-                .anyMatch(entry -> entry.newVersion() == cut.version() && entry.newLocation().equals(cut.metadataLocation()));
-        if (mainWroteIt) {
-            stretches.add(new Stretch(0, mains));
+        if (wrote(mains, cut)) {
+            stretches.add(new Stretch(PointerKey.MAIN, PointerKey.MAIN, cut.version(), mains));
         }
         return stretches;
     }
 
-    private Function<PageRequest, Page<JournalRecord>> journalOf(PointerKey key) {
-        return next -> store.readJournal(key, JournalStore.EARLIEST, JournalStore.LATEST, next);
+    /** A ref's own journal of an object, up to version {@code top}. */
+    private Stretch own(Ref ref, long top, UUID objectId) {
+        PointerKey key = ref.key(objectId);
+        return new Stretch(key.branch(), ref.name().display(), top,
+                next -> store.readJournal(key, JournalStore.EARLIEST, JournalStore.LATEST, next));
     }
 
-    /** One journal's part of a ref's log: its versions above {@code floor}, up to the floor of the part above it. */
-    record Stretch(long floor, Function<PageRequest, Page<JournalRecord>> read) {
+    /** Whether the journal's entry at the cut's version wrote the cut's file. */
+    private static boolean wrote(Function<PageRequest, Page<JournalRecord>> read, RefEntry.At cut) {
+        return read.apply(JournalStore.afterVersion(cut.version() - 1, 1)).items().stream()
+                .anyMatch(entry -> entry.newVersion() == cut.version()
+                        && entry.newLocation().equals(cut.metadataLocation()));
+    }
+
+    /**
+     * One journal's part of a ref's log: its versions 1 to {@code top}. {@code branch} is its key's
+     * ({@link PointerKey#branch}), the ref's id or {@code main}; {@code name} the line's name, the ref's or main.
+     */
+    record Stretch(String branch, String name, long top, Function<PageRequest, Page<JournalRecord>> read) {
+    }
+
+    /** Where a page of a ref's log starts: below version {@code before} of the journal {@code branch}. */
+    record Cursor(String branch, long before) {
+    }
+
+    /** A page of the log as a ref reads it, newest first, and where the page after it starts, if there is one. */
+    record RefLogPage(List<JournalRecord> entries, Optional<Cursor> next) {
     }
 
     /**
      * A page of the log as a ref reads it, newest first, from {@code stretches} ({@link #stretches}), each paged as
-     * {@link #logPage} pages one journal. Each journal's versions go on from the floor below them, one a commit, so two
-     * never share a version; the log ends above the last floor.
+     * {@link #logPage} pages one journal: from {@code from}, or from the top of the first. A page that ends a journal
+     * goes on with the next. A cursor naming no journal of the log (one that has ended since the page before) reads
+     * nothing more.
      */
-    static LogPage refLogPage(long before, int size, List<Stretch> stretches) {
+    static RefLogPage refLogPage(Optional<Cursor> from, int size, List<Stretch> stretches) {
+        int at = from.map(cursor -> stretches.stream().map(Stretch::branch).toList().indexOf(cursor.branch()))
+                .orElse(stretches.isEmpty() ? -1 : 0);
+        if (at < 0) {
+            return new RefLogPage(List.of(), Optional.empty());
+        }
+        long top = stretches.get(at).top() + 1;
+        long before = from.map(cursor -> Math.min(cursor.before(), top)).orElse(top);
         List<JournalRecord> entries = new ArrayList<>();
-        long top = before;
         int left = size;
-        for (Stretch stretch : stretches) {
-            if (left == 0) {
+        while (true) {
+            if (before <= 1 && at + 1 < stretches.size()) {
+                at++;
+                before = stretches.get(at).top() + 1;
+            }
+            if (left == 0 || before <= 1) {
                 break;
             }
-            if (top <= stretch.floor() + 1) {
-                continue;
-            }
-            int take = (int) Math.min(left, top - stretch.floor() - 1);
-            entries.addAll(logPage(top, take, stretch.read()).entries());
-            top -= take;
+            int take = (int) Math.min(left, before - 1);
+            entries.addAll(logPage(before, take, stretches.get(at).read()).entries());
+            before -= take;
             left -= take;
         }
-        return new LogPage(entries, top > stretches.getLast().floor() + 1 ? Optional.of(top) : Optional.empty());
+        return new RefLogPage(entries, before > 1 ? Optional.of(new Cursor(stretches.get(at).branch(), before))
+                : Optional.empty());
     }
 
     /** A page of the metadata log, newest first, and the version the page after it stops before, if there is one. */
@@ -488,6 +526,22 @@ class LifecycleRoutes {
                 .stream().filter(entry -> entry.newVersion() < before).toList());
         Collections.reverse(entries);
         return new LogPage(entries, low > 1 ? Optional.of(low) : Optional.empty());
+    }
+
+    /** A ref log's page token: the journal's key and the version the page stops before. */
+    private static Cursor cursor(String token) {
+        List<String> parts;
+        long version;
+        try {
+            parts = PageToken.decode(token, 2);
+            version = Long.parseLong(parts.get(1));
+        } catch (IllegalArgumentException e) {
+            throw CatalogError.badRequest("Invalid page token: " + token);
+        }
+        if (version < 1) {
+            throw CatalogError.badRequest("Invalid page token: " + token);
+        }
+        return new Cursor(parts.get(0), version);
     }
 
     private static long before(String token) {

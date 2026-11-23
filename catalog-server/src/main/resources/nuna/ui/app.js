@@ -214,7 +214,7 @@ function signInPage(message) {
       try {
         await startSignIn(config.oidc);
       } catch (error) {
-        fill(status, failure(error));
+        fill(status, failure(error, {title: 'Sign-in did not start'}));
       }
     }}, icon('key'), 'Sign in with ' + host), status);
   }
@@ -230,7 +230,7 @@ function signInPage(message) {
         useToken(box.value);
         start();
       } catch (error) {
-        fill(status, failure(error));
+        fill(status, failure(error, {title: 'That token cannot be used'}));
       }
     }}, 'Use this token'), status);
   }
@@ -558,7 +558,7 @@ async function boot() {
   } catch (error) {
     $('#booting').hidden = true;
     signinEl.hidden = false;
-    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true})));
+    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true, title: 'The console could not read its settings, /ui/config.json'})));
     return;
   }
   if (config.oidc) {

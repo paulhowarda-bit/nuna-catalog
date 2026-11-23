@@ -952,6 +952,8 @@ dialog { color: var(--text); }
 .tbl tr.mlog-det td { background: var(--surface-2); padding-top: 10px; padding-bottom: 12px; }
 .tbl tr.mlog-det .raw { margin-top: 6px; white-space: pre; }
 .tbl.mlog td:nth-child(3) { max-width: 46ch; }
+.mlog-line { margin-right: 6px; font: 500 var(--t-12)/1 var(--f-mono); color: var(--text-2); }
+tr[data-line]:not([data-line="main"]) .mlog-line { color: var(--cref-ink); }
 
 @container frame (max-width: 760px) {
   .schema-tl { grid-template-columns: minmax(0, 1fr); }
@@ -1087,6 +1089,10 @@ td.acts { width: 1%; white-space: nowrap; }
 .ref-band.t .rb-ic { color: var(--ctag-ink); }
 .ref-band.warn .rb-ic { color: var(--warn-ink); }
 .ref-band .rb-txt p { margin: 0; font-size: var(--t-13); }
+/* The band is the chip's own wash: without an edge of its own the chip's padding read as a space before the
+   punctuation after it ("@dev ."). On the surface, outlined, with even padding, it reads as one chip. */
+.ref-band .rb-txt .cref { background: var(--surface); box-shadow: inset 0 0 0 1px oklch(from var(--cref-ink) l c h / .35); padding-right: 5px; }
+.ref-band .rb-txt .cref.t { box-shadow: inset 0 0 0 1px oklch(from var(--ctag-ink) l c h / .35); }
 .ref-band .rb-txt p + p { margin-top: 3px; }
 .ref-band .rb-acts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .ref-note { margin-bottom: 14px; }
@@ -1172,6 +1178,7 @@ td.acts { width: 1%; white-space: nowrap; }
 
 @container frame (max-width: 760px) {
   .ref-band { grid-template-columns: auto 1fr; }
+  .tabs { margin-right: -14px; padding-right: 14px; }
   .ref-band .rb-acts { grid-column: 1 / -1; justify-content: flex-start; }
   .ref-menu { right: auto; left: 0; min-width: min(300px, calc(100vw - 48px)); }
   .ph .side .ref-wrap { order: -1; }

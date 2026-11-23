@@ -3,15 +3,15 @@ Module: catalog-core
 Test: MergeTest#conflictsMoveNothing
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
-index be01593..7b77ccb 100644
+index 7475f0bb..c5da18e0 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java
-@@ -301,7 +301,7 @@ public final class Merge {
+@@ -307,7 +307,7 @@ public final class Merge {
          Optional<CatalogObject> object = store.readObject(entry.id());
          Optional<Pointer> main = object.flatMap(o -> store.readPointer(o.mainKey()));
-         Since since = since(entry.id(), cut, main);
+         Since since = base.map(b -> since(entry.id(), b, main)).orElse(new Since(0, List.of()));
 -        if (object.isEmpty() || object.get().state() != CatalogObject.State.ACTIVE) {
 +        if (object.isEmpty()) {
              String gone = object.map(o -> o.state().name().toLowerCase(Locale.ROOT)
                      + o.droppedAt().map(when -> " at " + when).orElse("")).orElse("purged");
-             return conflict(entry, namespace, object, cut, branch, main, since, "main has " + gone + " it");
+             return conflict(entry, namespace, object, cut, base, branch, main, since, "main has " + gone + " it");

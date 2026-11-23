@@ -33,6 +33,7 @@ import nuna.catalog.store.PointerSwap;
 import nuna.catalog.store.Ref;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefLock;
+import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.WriteResult;
 import java.lang.reflect.Proxy;
@@ -341,6 +342,97 @@ class MergeTest {
         assertThat(pointers.get(orders.mainKey()).version()).isEqualTo(1);
     }
 
+    // ---- a branch made from a branch ----
+
+    @Test
+    @DisplayName("a branch made from a branch whose own version happens to equal main's is judged against main's"
+            + " pointer at the first cut, not by the number: main's append since conflicts and nothing moves")
+    void aBranchOfABranchSeesMainMovedWhenTheNumbersCoincide() {
+        CatalogObject orders = withSnapshots(table("orders"));
+        Pointer atCut = pointers.get(orders.mainKey());
+        Ref dev = branch("dev", orders);
+        success(on(dev, orders, properties("a", "1")));
+        success(on(dev, orders, properties("b", "2")));
+        success(on(dev, orders, properties("c", "3")));
+        success(engine().commitTable(name(orders), append(4, 2L, 3, 20), ALICE, Optional.empty()));
+        Ref fix = branchFrom("fix", dev, orders);
+        success(on(fix, orders, properties("d", "4")));
+        Pointer main = pointers.get(orders.mainKey());
+        assertThat(main.version()).as("main's version and the cut's, on dev's own line, coincide")
+                .isEqualTo(cutOf(fix, orders).version()).isEqualTo(3);
+        int written = files.writes.get();
+
+        Merge.Plan plan = refused(merge(fix));
+
+        assertThat(plan.conflicts()).singleElement().satisfies(table -> {
+            assertThat(table.conflict()).contains("main committed snapshot 4 (append)");
+            assertThat(table.cut().metadataLocation()).contains(TableFiles.BRANCH_MARK + dev.id());
+            assertThat(table.base()).map(Pointer::metadataLocation).contains(atCut.metadataLocation());
+            assertThat(table.base()).map(Pointer::version).contains(2L);
+            assertThat(table.since()).isEqualTo(new Merge.Since(1, List.of("alice")));
+        });
+        assertThat(pointers.get(orders.mainKey())).as("main keeps its append").isEqualTo(main);
+        assertThat(files.writes.get()).isEqualTo(written);
+        assertThat(refs).containsKey(fix.id());
+    }
+
+    @Test
+    @DisplayName("a branch made from a branch merges when main has not moved since the first cut, though the cut's"
+            + " version, on the source's own line, differs from main's; its journal names main's version at the cut")
+    void aBranchOfABranchMergesWhenMainIsUnmoved() {
+        CatalogObject orders = withSnapshots(table("orders"));
+        Pointer atCut = pointers.get(orders.mainKey());
+        Ref dev = branch("dev", orders);
+        success(on(dev, orders, append(3, 2L, 3, 20)));
+        Ref fix = branchFrom("fix", dev, orders);
+        success(on(fix, orders, properties("stage", "fix")));
+        assertThat(cutOf(fix, orders).version()).isEqualTo(1).isNotEqualTo(atCut.version());
+
+        Outcome.Merged merged = merged(merge(fix));
+
+        Pointer main = pointers.get(orders.mainKey());
+        assertThat(main.version()).isEqualTo(atCut.version() + 1);
+        TableMetadata onMain = TableMetadataParser.fromJson(files.read(main.metadataLocation(), main.sha256()).json());
+        assertThat(onMain.currentSnapshot().snapshotId()).as("dev's append, carried by fix").isEqualTo(3L);
+        assertThat(onMain.properties()).containsEntry("stage", "fix");
+        assertThat(onMain.previousFiles().getLast().file()).isEqualTo(atCut.metadataLocation());
+        assertThat(merged.moved()).singleElement().satisfies(moved -> {
+            assertThat(moved.table().rebased()).isFalse();
+            assertThat(moved.table().base()).map(Pointer::version).contains(atCut.version());
+            assertThat(moved.table().since()).isEqualTo(new Merge.Since(0, List.of()));
+        });
+        assertThat(landed.getLast().swaps().getFirst().journal().updatesJson())
+                .contains("\"cut-version\":" + atCut.version(), "\"rebased-over\":0");
+    }
+
+    @Test
+    @DisplayName("a branch made from a branch that has ended: a cut of the source's own pointer cannot place main and"
+            + " conflicts; a cut the source took from main is proved by main's journal and merges")
+    void aBranchOfAnEndedBranch() {
+        CatalogObject orders = withSnapshots(table("orders"));
+        CatalogObject returns = withSnapshots(table("returns"));
+        Ref dev = branch("dev", orders, returns);
+        success(on(dev, orders, properties("a", "1")));
+        Ref fix = branchFrom("fix", dev, orders);
+        Ref qa = branchFrom("qa", dev, returns);
+        success(on(fix, orders, properties("b", "2")));
+        success(on(qa, returns, properties("c", "3")));
+        refs.remove(dev.id());
+        end(dev.id());
+
+        Merge.Plan plan = refused(merge(fix));
+        assertThat(plan.conflicts()).singleElement().satisfies(table -> {
+            assertThat(table.conflict()).hasValueSatisfying(why -> assertThat(why)
+                    .startsWith("where main was when the cut was taken cannot be known: the cut took version 1 of"
+                            + " dev's own line"));
+            assertThat(table.base()).isEmpty();
+        });
+        assertThat(pointers.get(orders.mainKey()).version()).isEqualTo(2);
+
+        merged(merge(qa));
+        assertThat(pointers.get(returns.mainKey()).version()).isEqualTo(3);
+    }
+
     // ---- the cap ----
 
     @Test
@@ -519,6 +611,8 @@ class MergeTest {
             assertThat(table.namespace()).containsExactly("Sales");
             assertThat(table.json()).isPresent();
             assertThat(table.since()).isEqualTo(new Merge.Since(0, List.of()));
+            assertThat(table.base()).as("made from main: main's pointer at the cut is the cut's")
+                    .map(Pointer::metadataLocation).contains(table.cut().metadataLocation());
         });
         assertThat(files.writes.get()).isEqualTo(written);
         assertThat(merges()).isEmpty();
@@ -600,6 +694,34 @@ class MergeTest {
         }
         cuts.put(ref.id(), entries);
         return ref;
+    }
+
+    /**
+     * A branch made now from {@code source}, whose cut takes the source's own pointer for each object where it has
+     * one, else the source's cut, as {@code RefStore#createRef} does.
+     */
+    private Ref branchFrom(String display, Ref source, CatalogObject... cut) {
+        Ref ref = new Ref(catalogId, UUID.randomUUID(), name(display), Ref.Kind.BRANCH, START, "alice",
+                Optional.of(source.id()), source.name().display(), Optional.of(START.plus(DAY.multipliedBy(30))));
+        refs.put(ref.id(), ref);
+        List<RefEntry> entries = new ArrayList<>();
+        entries.add(new RefEntry(ref.id(), sales.id(), RefEntry.Kind.NAMESPACE, catalogId, sales.name(),
+                Optional.empty()));
+        for (CatalogObject object : cut) {
+            Optional<RefEntry.At> at = Optional.ofNullable(pointers.get(source.key(object.id())))
+                    .map(own -> new RefEntry.At(own.version(), own.metadataLocation(), own.sha256()))
+                    .or(() -> Optional.of(cutOf(source, object)));
+            entries.add(new RefEntry(ref.id(), object.id(), RefEntry.of(object.kind()), object.namespaceId(),
+                    object.name(), at));
+        }
+        cuts.put(ref.id(), entries);
+        return ref;
+    }
+
+    /** The pointer {@code ref}'s cut took for {@code object}. */
+    private RefEntry.At cutOf(Ref ref, CatalogObject object) {
+        return cuts.get(ref.id()).stream().filter(entry -> entry.id().equals(object.id())).findFirst()
+                .flatMap(RefEntry::pointer).orElseThrow();
     }
 
     private CatalogObject table(String display) {
@@ -699,6 +821,13 @@ class MergeTest {
                     case "readNamespace" -> Optional.of(sales).filter(ns -> ns.id().equals(args[0]));
                     case "readPointer" -> Optional.ofNullable(pointers.get((PointerKey) args[0]));
                     case "readRef" -> Optional.ofNullable(refs.get((UUID) args[0]));
+                    case "listRefPointers" -> cuts.entrySet().stream().filter(cut -> refs.containsKey(cut.getKey()))
+                            .flatMap(cut -> cut.getValue().stream().filter(entry -> entry.id().equals(args[0]))
+                                    .map(entry -> new RefPointers(refs.get(cut.getKey()), entry.pointer().orElseThrow(),
+                                            Optional.ofNullable(pointers.get(refs.get(cut.getKey()).key(entry.id())))
+                                                    .map(own -> new RefEntry.At(own.version(),
+                                                            own.metadataLocation(), own.sha256())))))
+                            .toList();
                     case "countOwnPointers" -> pointers.keySet().stream()
                             .filter(key -> key.branch().equals(args[0].toString())).count();
                     case "listRefNamespaces" -> page(cuts.getOrDefault((UUID) args[0], List.of()).stream()

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 7 S, 15 M, 14 L, 5 XL.
+**42 open:** 8 S, 15 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,6 +53,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [173](backlog/173.md) | S | Console: the tree carries the ref a page reads, listing each level through catalog@ref (item 109's departure 4) | the tree's listings and links take the route's ref, its cache keyed by ref as well as catalog, and a browser case; the REST listings through a ref exist (item 104) | 2026-11-23 |
+| [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 
 ## Open items in full
 
@@ -1463,6 +1464,81 @@ ending, with its `ref` record; the steward, who holds manage-tags but not create
 Left: those two tests still fail until item 114's `POST .../tables/{table}/maintenance/requests` gets its cases too
 (the overnight run of 2026-11-23 found that gap; it is not this item's). The heavy build runs them.
 
+## 2026-11-23: a branch made from a branch is judged against main's own pointer at the cut
+
+Branch `worktree-agent-a23997304de169b82`.
+
+**What was wrong.** A branch's own pointer numbers its versions from 1 (item 105), and a ref made from a branch takes
+that branch's own pointer where it has one (`RefStore#createRef`), so such a cut's version is on the source branch's
+line, not main's. `Merge.table()` judged whether main had moved by `onMain.version() != cut.version()`, and
+`since()` read main's journal after `cut.version`. For a branch made from main that is right; for a branch made from a
+branch it compared numbers from two sequences:
+- Main moved, the numbers coincide: main looked unmoved and the merge would put the branch's metadata over main's
+  commits, silently.
+- Main unmoved, the numbers differ: main looked moved, and the cut's file (the source branch's) was taken as main's,
+  so the merge was refused as a conflict ("main moved ref main …").
+The same cut file also fed `beyondMaintenance`, `definitionChange`, the rebase and `MergeMetadata.merged`, all of
+which need main's metadata at the cut, not the source branch's.
+
+**What was done.** `Merge.base` (`catalog-core/src/main/java/nuna/catalog/core/commit/Merge.java`, line 379) finds main's pointer at the
+cut, and `table()` (line 303) judges everything against it:
+- For a ref made from main it is the cut, as before.
+- For a ref made from another ref it walks down the `fromRef` chain (`listRefPointers` of the object). Each step must
+  be proved: the source's cut is the pointer above, or the source's own journal entry at that version wrote that file
+  (the source's own pointer then). Either way main was where it was at the source's cut, so the walk goes on until a
+  ref made from main, whose cut is main's.
+- Where a step cannot be proved (a source deleted, merged or no longer naming the object), the pointer reached is
+  taken as main's only if main's own journal entry at its version wrote its file. Otherwise the table conflicts, so
+  the merge answers 409 `RefMergeConflictException`: "where main was when the cut was taken cannot be known: the cut
+  took version N of dev's own line, and a ref it came from has ended, …; make a branch from main and commit the
+  change there".
+- Main moved when its pointer's file or version differs from that base pointer's (line 328), never by a version
+  number compared across lines. `beyondMaintenance`, `definitionChange`, the rebase's facts and `merged` read the base
+  pointer's file; `since()` counts and reads main's journal after the base's version.
+- `Merge.Table` gains `base`, main's pointer at the cut, empty when unknown; `cut` stays the pointer the ref's cut
+  took. The merge's journal entry's `cut-version` is the base's version, in main's numbering.
+
+Choice made (Paul may overrule): main's position at the cut is found by walking the ref chain with each step proved,
+falling back to main's journal by file, and a merge that cannot place main refuses the table rather than guess. Why:
+the store keeps every live ref's cut unchanged, and a branch's journal rows by its id, so a live chain proves main's
+position exactly. Once a source branch has ended, its cut is gone; its own file appears in no main journal, and a
+guess (by version, or by the nearest main file) is exactly what let a branch overwrite main. The fallback by file is
+exact, since a main file is written at one version only, and keeps a branch merging whose cut came from main through
+a source that has since ended.
+
+**The dry run's fields, now:** `cut-version` is main's version when the cut was taken, in main's numbering, the same
+line `main-version` is on, so `main-version` minus `cut-version` is main's commits since. For a branch made from main
+it is the cut's version, as before. It is left out when main's position at the cut cannot be known (a conflict, whose
+message says "cut version unknown"). `main-version` is main's version now; `branch-version` is the branch's own
+version, on its own line from 1. `RefRoutes.table` and `.conflict` read `Table.base`.
+
+**Tests** (`MergeTest`, 18, all pass, Java only):
+- `aBranchOfABranchSeesMainMovedWhenTheNumbersCoincide`: `fix` made from `dev` made from main; `dev` committed three
+  times (its own version 3), main appended once (version 3). The merge conflicts on main's append, names main's version
+  2 as the base and one commit since by alice, and main keeps its append.
+- `aBranchOfABranchMergesWhenMainIsUnmoved`: `fix` cut from `dev`'s own version 1, main unmoved at 2. It merges,
+  carrying `dev`'s append and `fix`'s property, not rebased, journaled with `"cut-version":2`.
+- `aBranchOfAnEndedBranch`: `dev` deleted after `fix` and `qa` were made from it. `fix`, cut from `dev`'s own file,
+  conflicts with "cannot be known"; `qa`, whose cut `dev` took from main, merges by main's journal.
+- A branch made from main is unchanged: the fifteen earlier tests pass as they were, and `theDryRun` checks that its
+  base is its cut.
+
+**Bites** in `bites/D33/`, recorded and checked with `git apply --check` (the fast build's `:bitesApply`), not run:
+- New: `merge-base-by-version` (main moved judged by the cut's version; `#aBranchOfABranchSeesMainMovedWhenTheNumbersCoincide`)
+  and `merge-base-unwalked` (the walk skipped, the cut taken as main's; `#aBranchOfABranchMergesWhenMainIsUnmoved`).
+- Recorded again with the same breaks, since this change moved their lines: `merge-both-changed-moves`,
+  `merge-change-as-data-only`, `merge-dropped-on-main-moves` and `merge-hold-skipped`.
+
+Fast build (`./gradlew build`, with `:bitesApply`): "BUILD SUCCESSFUL in 5m 34s".
+
+Left:
+- The bites' run: the overnight run's.
+- `MergeMetadata.journal`'s javadoc still calls its argument "the cut's version"; it is main's version at the cut.
+- The console (item 109) reads `cut-version`; for a table whose base is unknown it is now absent.
+- Status (`status/` is claimed by item 109's fixer, so it is here): fix made on 2026-11-23 in
+  `worktree-agent-a23997304de169b82`; files `Merge.java`, `MergeTest.java`, `RefRoutes.java`, six bite patches and this
+  item; not landed.
+
 ### 108. Cleanup protects every ref, and the worker warns of and ends expired branches (item 26)
 
 - Added: 2026-11-20 by agent on item 26
@@ -1768,6 +1844,41 @@ The coordinator's review of the UI and the metadata log, fixed on this branch:
   browser, at any width.
 - Gaps 8, 9 and 10: items 167, 168 and 169. The 6.4 edge states: item 170. Export through a ref: item 172. The
   tree through a ref: item 173.
+
+### 2026-11-23: a branch's own versions, the log's crash, the phone
+
+Paul's look at the console found three faults, fixed on `worktree-agent-a0c6fea4baca09005`:
+- **A branch's own versions number from 1** (item 105; `CommitEngine` `Base.nextVersion`), but 109's reads took them
+  to go on from the cut's. The ref page counted a branch's commits as its version less the cut's ("0 commits on the
+  branch", "0 commits" on each Changes row); it counts the branch's own version now (`refs.js`), and the merge words
+  say "@dev's version N" and "the point's version C". The log through a ref (`LifecycleRoutes` `stretches`,
+  `refLogPage`) read the branch's journal only above the cut's version, so a branch's commits dropped out and main's
+  below the cut came out short. It reads the branch's own journal from its head down to 1, then each source's at and
+  below its cut, as before for a ref made from a branch or from one that has ended. Each entry names its line
+  (`branch`: the ref's name or `main`), shown on each row of the console's log; the page token names the line and the
+  version (`main` and the version, say), and a token from main's own log is refused (400). `MetadataLogRefTest` and
+  `RefRoutesTest` number a branch's journal from 1; `RefMergeRoutesTest#aBranchsOwnVersionsNumberFromOne` commits on
+  a branch through `CommitEngine` and reads the ref and its log.
+- **The log through @dev crashed** ("(updates || []).map is not a function"): with the old arithmetic it skipped the
+  branch's journal and showed main's version 1, a create, whose updates are an object (main guards that since item
+  161). A branch's first commit is a commit: its journal entry holds the request's updates, read by their actions.
+  The crash was headed "The request did not reach the catalog"; that heading is kept for a request that did not
+  reach it (`api.js` marks it), and any other exception in the console reads "The console failed to show this"
+  (`dom.js` `failure`).
+- **The ref line opened at its oldest end on a phone**: the `ResizeObserver` placed it once and stopped, so a line
+  laid out first at another width (a page loaded wide, then narrowed, or a width that settles late) kept the first
+  place. It places at today on every width until the reader scrolls it.
+- Nits: the ref chip in the band now has its own outline, so no space before the punctuation after it is needed to
+  read it; the tabs row on a phone scrolls with a fade at the edge it clips and keeps the current tab in view.
+- Bites: `metadata-log-ref-own-journal`, `-cut`, `-from-branch`, `-from-ended` and D45's `metadata-log-open`
+  recorded again with the same breaks; new `metadata-log-ref-own-above-cut` (the old numbering) and
+  `metadata-log-ref-page-by-version` (a token's line ignored). Recorded and checked with `git apply --check`; the
+  overnight run runs them.
+- Item 107's merge (`catalog-core` `Merge`) compares main's version with the ref's cut version (`moved`, `since`).
+  For a branch made from main that is right; for one made from another branch the cut is the source's own version,
+  of another sequence. Not changed here; reported.
+- Checked in a browser at 390 px against canned answers (the console's own code): counts, the log's lines, both
+  failure headings, the band, the tabs. Not checked against a running catalog.
 
 ### 110. Demo: a catalog tag, a branch with Trino on it, and a merge (item 26)
 
@@ -2881,6 +2992,26 @@ Done looks like: reading through a ref, the tree lists each level through `catal
 the cut is not there; one dropped on main since is), marks the ref beside the catalog's node, and its links keep `r=`;
 on main it is as today. Its cache is keyed by catalog and ref. A `ConsoleBrowserTest` case (heavy) opens a table
 through a tag and follows the tree to another table without leaving the tag.
+
+### 177. Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low)
+
+- Added: 2026-11-23 by local_d6cc62d1-6c9d-46f4-88db-623c74725e78
+- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-core/src/test/java/nuna/catalog/core/commit/ bites/D33/
+- Effort: S, one check on the metadata location in two CommitEngine operations, a fast test and a bite
+
+Low, from the security review of item 107's merge-base fix (Nuna Security Expert session, 2026-11-23). Not a
+go-to-work condition.
+
+What is wrong: `CommitEngine.register` and `revive` take the client's `metadataLocation` and never check
+`TableFiles.onBranch`. So main's pointer, and main's journal, can be set to a branch's metadata file
+(`<v>-<uuid>.branch-<refid>.metadata.json`). Reconcile skips marked files when it builds main's chain (item 111), so
+after a regional failover a main pointer at a branch file is invisible to recovery. The merge's base walk (item 107)
+also accepts main's journal entry for such a file as main's position at a cut. That is true (main really was at that
+file), so no commit is overwritten, but it is a file main should never hold. Doing it needs create and drop on main.
+
+Done when register and revive refuse a location `TableFiles.onBranch` marks, with 400 `BadRequestException`, on main
+and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
+checked with `git apply --check`, not run).
 
 ## Done and dropped
 

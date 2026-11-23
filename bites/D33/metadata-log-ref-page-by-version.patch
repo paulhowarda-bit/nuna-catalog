@@ -1,0 +1,17 @@
+Breaks: a page of a ref's log starts from its token's version in the first journal, whatever line the token names, so the pages after the branch's own repeat its versions instead of going on with main's.
+Module: catalog-server
+Test: MetadataLogRefTest#throughABranchThePagesCrossTheCutWithoutAGapOrARepeat
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+index 3039358c..8b43cc2a 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
+@@ -486,8 +486,7 @@ class LifecycleRoutes {
+      * nothing more.
+      */
+     static RefLogPage refLogPage(Optional<Cursor> from, int size, List<Stretch> stretches) {
+-        int at = from.map(cursor -> stretches.stream().map(Stretch::branch).toList().indexOf(cursor.branch()))
+-                .orElse(stretches.isEmpty() ? -1 : 0);
++        int at = stretches.isEmpty() ? -1 : 0;
+         if (at < 0) {
+             return new RefLogPage(List.of(), Optional.empty());
+         }

@@ -2,15 +2,15 @@ Breaks: a branch's metadata log takes every version from the branch's own journa
 Module: catalog-server
 Test: MetadataLogRefTest#throughABranchItsOwnVersionsComeFromItsJournalAndTheRestFromMainsAtTheCut
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-index aa9f088e..c6cc5633 100644
+index 3039358c..62f3517a 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java
-@@ -419,7 +419,7 @@ class LifecycleRoutes {
-     private List<Stretch> stretches(RefPointers held, List<RefPointers> holding, Instant now, UUID objectId,
-                                     Function<PageRequest, Page<JournalRecord>> mains) {
-         List<Stretch> stretches = new ArrayList<>();
--        stretches.add(new Stretch(held.cut().version(), journalOf(held.ref().key(objectId))));
-+        stretches.add(new Stretch(0, journalOf(held.ref().key(objectId))));
-         RefPointers at = held;
-         while (at.ref().fromRef().isPresent()) {
-             UUID from = at.ref().fromRef().get();
+@@ -444,7 +444,7 @@ class LifecycleRoutes {
+             }
+             at = source.get();
+         }
+-        if (wrote(mains, cut)) {
++        if (held.head().isEmpty() && wrote(mains, cut)) {
+             stretches.add(new Stretch(PointerKey.MAIN, PointerKey.MAIN, cut.version(), mains));
+         }
+         return stretches;

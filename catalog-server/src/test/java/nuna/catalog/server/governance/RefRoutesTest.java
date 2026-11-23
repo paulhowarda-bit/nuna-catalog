@@ -30,6 +30,7 @@ import nuna.catalog.audit.RefChange;
 import nuna.catalog.audit.publish.AuditUnavailableException;
 import nuna.catalog.core.CatalogError;
 import nuna.catalog.core.Names;
+import nuna.catalog.core.commit.TableFiles;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
 import nuna.catalog.security.Authorizer;
@@ -89,6 +90,8 @@ class RefRoutesTest {
 
     private static final Instant NOW = Instant.parse("2026-11-20T12:00:00Z");
     private static final Duration DAY = Duration.ofDays(1);
+    /** Main's version of every object when a ref is made from main: not 1, so no branch's own version passes for it. */
+    private static final long CUT = 5;
     /** Two open branches and three tags a catalog, so a test reaches each limit. */
     private static final RefSettings SETTINGS = new RefSettings(2, 3, Duration.ofDays(30), Duration.ofDays(180),
             Duration.ofDays(7));
@@ -442,8 +445,8 @@ class RefRoutesTest {
     @Test
     void readingABranchListsWhatItChangedThatTheCallerCanDescribe() {
         UUID dev = id(create("dev", "branch", null, null));
-        pointers.put(new PointerKey(staff.id(), dev.toString()), pointer(staff, 2));
-        pointers.put(new PointerKey(orders.id(), dev.toString()), pointer(orders, 4));
+        pointers.put(new PointerKey(staff.id(), dev.toString()), own(staff, dev, 2));
+        pointers.put(new PointerKey(orders.id(), dev.toString()), own(orders, dev, 1));
         create("v1", "tag", null, null);
 
         JsonNode changed = json(routes.read("gate", "dev", http)).get("changed");
@@ -453,8 +456,8 @@ class RefRoutesTest {
                 .findFirst().orElseThrow();
         assertThat(table.get("namespace").valueStream().map(JsonNode::asString).toList()).containsExactly("hr");
         assertThat(table.get("kind").asString()).isEqualTo("table");
-        assertThat(table.get("cut-version").asLong()).isEqualTo(1);
-        assertThat(table.get("version").asLong()).isEqualTo(2);
+        assertThat(table.get("cut-version").asLong()).as("main's, at the cut").isEqualTo(CUT);
+        assertThat(table.get("version").asLong()).as("the branch's own, from 1: two commits").isEqualTo(2);
         caller = HAL;
         assertThat(json(routes.read("gate", "dev", http)).get("changed").valueStream()
                 .map(item -> item.get("name").asString()).toList()).as("hal describes hr only")
@@ -468,8 +471,8 @@ class RefRoutesTest {
     @Test
     void theListCarriesTheLimitsWhatTheCallerMayDoAndEachBranchsChangedCount() {
         UUID dev = id(create("dev", "branch", null, null));
-        pointers.put(new PointerKey(staff.id(), dev.toString()), pointer(staff, 2));
-        pointers.put(new PointerKey(orders.id(), dev.toString()), pointer(orders, 4));
+        pointers.put(new PointerKey(staff.id(), dev.toString()), own(staff, dev, 2));
+        pointers.put(new PointerKey(orders.id(), dev.toString()), own(orders, dev, 1));
         create("qa", "branch", null, null);
         create("v1", "tag", null, null);
 
@@ -550,8 +553,8 @@ class RefRoutesTest {
         UUID dev = id(create("dev", "branch", null, null));
         UUID qa = id(create("qa", "branch", null, null));
         UUID v1 = id(create("v1", "tag", null, null));
-        pointers.put(new PointerKey(staff.id(), dev.toString()), pointer(staff, 2));
-        pointers.put(new PointerKey(orders.id(), dev.toString()), pointer(orders, 3));
+        pointers.put(new PointerKey(staff.id(), dev.toString()), own(staff, dev, 1));
+        pointers.put(new PointerKey(orders.id(), dev.toString()), own(orders, dev, 1));
         caller = SUE;
 
         JsonNode removed = json(remove(staff, refsBody("dev", "V1", "dev"), null));
@@ -880,6 +883,15 @@ class RefRoutesTest {
                 new byte[0]);
     }
 
+    /**
+     * A branch's own pointer of an object at its own {@code version}, which numbers from 1 whatever the cut's (item
+     * 105), with the branch's mark in the file name as the commit engine writes it.
+     */
+    private static Pointer own(CatalogObject object, UUID branch, long version) {
+        return new Pointer(object.locationRoot() + "/metadata/" + TableFiles.fileName(version, Optional.of(branch)),
+                version, "sha-" + branch + "-" + version, new byte[0]);
+    }
+
     // ---- the store: refs and their cuts as RefSuite has them, keys as IdempotencySuite has them ----
 
     private record Key(String principal, String hash, UUID changeId, Instant leaseUntil, Instant expiresAt,
@@ -929,8 +941,8 @@ class RefRoutesTest {
             namespaces.values().forEach(ns -> cut.add(new RefEntry(ref.id(), ns.id(), RefEntry.Kind.NAMESPACE,
                     ns.parentId(), ns.name(), Optional.empty())));
             objects.values().forEach(o -> cut.add(new RefEntry(ref.id(), o.id(), RefEntry.of(o.kind()),
-                    o.namespaceId(), o.name(), Optional.of(new RefEntry.At(1, pointer(o, 1).metadataLocation(),
-                    "sha-1")))));
+                    o.namespaceId(), o.name(), Optional.of(new RefEntry.At(CUT, pointer(o, CUT).metadataLocation(),
+                    "sha-" + CUT)))));
         }
         refs.put(ref.id(), ref);
         cuts.put(ref.id(), cut);

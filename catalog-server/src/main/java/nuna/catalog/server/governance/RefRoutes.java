@@ -513,13 +513,17 @@ class RefRoutes {
 
     /**
      * A table or view of a merge: its name on main (the cut's, once purged), the cut's, main's and the branch's
-     * versions, and main's new one if it moves; else its conflict, and when main dropped it.
+     * versions, and main's new one if it moves; else its conflict, and when main dropped it. {@code cut-version} is
+     * main's version when the cut was taken, in main's numbering as {@code main-version} is, even for a branch made
+     * from a branch whose cut took that branch's own pointer (item 105 numbers those from 1); it is left out when
+     * main's position at the cut cannot be known, which is a conflict. {@code branch-version} is on the branch's own
+     * line.
      */
     private ObjectNode table(ObjectNode item, Merge.Table table) {
         levels(table).forEach(item.putArray("namespace")::add);
         item.put("name", name(table));
         item.put("kind", table.entry().kind().name().toLowerCase(Locale.ROOT));
-        item.put("cut-version", table.cut().version());
+        table.base().ifPresent(base -> item.put("cut-version", base.version()));
         table.main().ifPresent(main -> item.put("main-version", main.version()));
         item.put("branch-version", table.branch().version());
         item.put("moves", table.moves());
@@ -548,7 +552,8 @@ class RefRoutes {
         List<String> each = new ArrayList<>();
         for (Merge.Table table : named) {
             boolean dropped = table.object().map(object -> object.state() != CatalogObject.State.ACTIVE).orElse(true);
-            each.add(String.join(".", levels(table)) + "." + name(table) + " (cut version " + table.cut().version()
+            each.add(String.join(".", levels(table)) + "." + name(table) + " (cut version "
+                    + table.base().map(base -> Long.toString(base.version())).orElse("unknown")
                     + ", main " + (dropped ? "dropped" : "version " + table.main().orElseThrow().version())
                     + ", branch version " + table.branch().version() + "): " + table.conflict().orElseThrow());
         }
