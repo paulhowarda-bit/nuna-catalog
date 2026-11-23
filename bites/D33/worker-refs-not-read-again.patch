@@ -1,0 +1,15 @@
+Breaks: when the catalog refuses a record because a ref was made since, the worker sends the same files against the same refs again, never the refs the catalog handed back, so the table's files are never recorded.
+Module: catalog-maintenance
+Test: WorkerRefsTest#aRecordTheCatalogRefusesIsCheckedAgainstTheRefsItHandsBack
+diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+index cab9f2a..a2d579f 100644
+--- a/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
++++ b/catalog-maintenance/src/main/java/nuna/maintenance/Worker.java
+@@ -459,7 +459,6 @@ final class Worker implements AutoCloseable {
+                 if (read == REF_READS) {
+                     throw e;
+                 }
+-                refs = e.refs;
+                 continue;
+             }
+             report.filesRecorded += split.unreached().size();
