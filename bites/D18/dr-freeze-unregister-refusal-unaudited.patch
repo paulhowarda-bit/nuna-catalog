@@ -1,0 +1,17 @@
+Breaks: an unregister the store finds frozen for DR reconcile is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GovernanceRefusalTest#anUnregisterTheStoreFindsFrozenIsAuditedAsADenial
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index 198fa4b..06a6745 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -689,7 +689,7 @@ public final class CommitEngine {
+                             + " is under a legal hold and cannot be unregistered");
+                 }
+                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN -> {
+-                    return Failure.refused(object, "dr_freeze", "Table " + display(request)
++                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                             + " is frozen for DR reconcile and cannot be unregistered");
+                 }
+                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FLAGGED -> {

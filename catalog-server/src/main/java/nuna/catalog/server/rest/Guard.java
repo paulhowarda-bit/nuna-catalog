@@ -10,6 +10,7 @@ import nuna.catalog.audit.CatalogEvent;
 import nuna.catalog.audit.MaintenanceExemption;
 import nuna.catalog.audit.Securable;
 import nuna.catalog.core.CatalogError;
+import nuna.catalog.core.commit.CommitReply;
 import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Authorizer.Decision;
 import nuna.catalog.security.Authorizer.Operation;
@@ -26,6 +27,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -251,6 +253,21 @@ class Guard {
                             Operation operation, String reason, String message) {
         return denials.refuse(request.actor(), operation.name(), AuditEvents.securable(object, catalog.name(), path),
                 operation.privilege().wireName(), reason, message);
+    }
+
+    /**
+     * Audits a refusal the commit engine answered for a legal hold or DR freeze (D18): a denial of {@code operation}
+     * on the table or view it refused, which {@code path} names, with its reason and the message the caller gets. The
+     * answer stays the engine's 403. Any other reply is no refusal of that kind, and a replayed one was audited when
+     * it was first answered.
+     */
+    void refused(RequestContext request, CatalogRecord catalog, Operation operation,
+                 Function<CatalogObject, List<String>> path, CommitReply reply) {
+        if (reply instanceof CommitReply.Failure failure && failure.refusal().isPresent()) {
+            CommitReply.Refusal refusal = failure.refusal().get();
+            refuse(request, catalog, refusal.object(), path.apply(refusal.object()), operation, refusal.reason(),
+                    failure.message());
+        }
     }
 
     /** Whether the caller may commit data to the table, decided as a commit would be; not audited. */

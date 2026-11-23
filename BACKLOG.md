@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**30 open:** 4 S, 11 M, 10 L, 5 XL.
+**28 open:** 4 S, 9 M, 10 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -38,10 +38,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [133](backlog/133.md) | L | Keep released holds and lifted DR freezes in the store, so their history is complete | a released and lifted record on all four stores with its suite in the shared test-jar, and the holds route reading it, with tests | 2026-11-22 |
-| [134](backlog/134.md) | M | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
-| [136](backlog/136.md) | S | A nightly or heavy run by hand does not hold other sessions' builds | two scripts take and drop one lock file, and one CLAUDE.md line | 2026-11-22 |
-| [141](backlog/141.md) | M | Console: a settings editor with only the keys that do something; every property shown read-only | a settings editor for tables and namespaces in two console modules over the Iceberg REST routes they already use, the list of keys checked against the Iceberg spec and the commit rules, and a browser test; waited on item 137 (its agent held `browse.js`), which landed on 2026-11-22; waits on item 138 (its agent holds `api.js`) | 2026-11-22 |
+| [142](backlog/142.md) | S | Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged | three refusal sites that item 134's pieces already cover (`Rejection.refused`, `Failure.refused`, `Guard.refuse`), each with a fast test and a bite | 2026-11-22 |
 
 ## Open items in full
 
@@ -1263,34 +1261,6 @@ lifted record, or the row kept with `released_at` and `released_by`), on all fou
 test-jar; the holds route reading its lifted list from the store for a window it names (30 days, say), complete; and
 its tests. The audit topic read goes.
 
-### 134. Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited
-
-- Added: 2026-11-22 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java, catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java, catalog-server/src/test/java/nuna/catalog/server/rest/, catalog-server/src/test/java/nuna/catalog/server/governance/, bites/D18/
-- Effort: M, four refusals in two modules; the two commit-engine ones come back as a reply, not a throw, so the server needs a way to tell them apart from other 403s before it can audit them
-
-Item 132 made a drop, rename, undrop or purge claim refused by a DR freeze publish a `nuna.catalog.denial` record, as
-every refusal must (D18). Working on it found four more refusals that answer 403 and publish nothing:
-
-- A commit refused by a DR freeze: `Rules.java`, line 92, "Writes to ... are frozen for DR reconcile: ...". It returns
-  a `Rejection.forbidden`, which reaches the client as a `CommitReply.Failure` (`ObjectRoutes.reply`). The same rule
-  set refuses a snapshot removal under a legal hold (`Rules.java`, line 83) the same way, also unaudited.
-- An unregister refused by a DR freeze: `CommitEngine.java`, line 693, "... is frozen for DR reconcile and cannot be
-  unregistered". Its legal-hold refusal beside it (line 689) is unaudited too. `TableRoutes.unregister` audits the
-  regulated and flagged-table refusals through `Guard.refuse`, but not these.
-- A drop refused by a legal hold: `ObjectRoutes.java`, line 157, `Http.forbidden(... "is under a legal hold and cannot
-  be dropped")`, a `CatalogError` with no denial.
-- A purge claim refused by a legal hold: `LifecycleRoutes.java`, line 219, `CatalogError.of(403, ...)` with no denial.
-
-Evidence: read from the code on 2026-11-22 (branch of item 132). No test checks for a denial on any of them.
-
-What done looks like:
-- Each refusal above publishes a `nuna.catalog.denial` record through `Denials`, naming the operation and the table
-  or view, with reason `dr_freeze` or `legal_hold` and the message the caller gets. The answer stays the same 403.
-- A fast test per refusal, or per route, that checks the denial, in the form of `FrozenObjectRefusalTest` and
-  `FrozenLifecycleRefusalTest` (item 132).
-- A bite per publish site, in `bites/D18/`, that drops the publish and fails its test.
-
 ### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22
@@ -1344,73 +1314,30 @@ The decision is D46 in `decision-ledger.md`. The item stays open until an overni
 Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
 be taken by hand.
 
-### 136. A nightly or heavy run by hand does not hold other sessions' builds
+### 142. Three more 403s publish no denial: a namespace drop under a legal hold, a snapshot removal younger than the minimum age, an unregister refused as flagged
 
-- Added: 2026-11-22 by nightly by hand 2026-11-22
-- Touches: nightly.sh heavy.sh CLAUDE.md
-- Effort: S, two scripts take and drop one lock file, and one CLAUDE.md line
+- Added: 2026-11-22 by local_c54f9c3c-94cf-4eea-9919-cdad09127ccb
+- Touches: catalog-server/src/main/java/nuna/catalog/server/rest/NamespaceRoutes.java catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java catalog-server/src/test/java/nuna/catalog/server/rest/ bites/D18/
+- Effort: S, three refusal sites that item 134's pieces already cover (`Rejection.refused`, `Failure.refused`, `Guard.refuse`), each with a fast test and a bite
 
-CLAUDE.md tells every agent to start no build while `.overnight/running` exists in the main checkout, and
-`overnight.sh` writes that file for its whole run. A nightly or heavy pass run by hand (`./nightly.sh`, `./heavy.sh`
-in a worktree, at Paul's word) writes nothing, so other sessions' agents keep building beside it.
+Every refusal must publish a `nuna.catalog.denial` record (D18). Item 134 made four more do so. Working on it, its
+agent found three that still answer 403 and publish nothing:
 
-Evidence: the first nightly by hand on 2026-11-22 failed 13 tests on waits that ran out while five agent worktrees ran
-fast builds (test results written from 15:20 to 16:10, four at once at 16:10) and Windows paged in a median 22,700
-pages a second. The second, with those agents asked by message to hold their builds, passed all 233
-(`status/2026-11-22-nightly-2026-11-22.md`). The session running it could not write `.overnight/running` itself: its
-worktree guard refuses writes to the main checkout.
+- A namespace drop refused by a legal hold: `NamespaceRoutes.java`, line 201, `Http.forbidden(... "is under a legal
+  hold and cannot be dropped")`.
+- A snapshot removal refused by the minimum snapshot age: `Rules.snapshotMinimumAge` (`Rules.java`, line 104) returns
+  a plain rejection, which reaches the client as a `CommitReply.Failure` with no refusal.
+- An unregister the store refuses as flagged: `CommitEngine.java`, line 695, `WriteResult.Reason.FLAGGED`.
 
-Done looks like: `nightly.sh` and `heavy.sh` write `.overnight/running` in the main checkout (found with
-`git rev-parse --git-common-dir`) with their pid when it is absent, remove it on exit (a trap) only if it is still
-theirs, and leave a run that already holds it alone; `overnight.sh` keeps working as now (it finds its own lock, or a
-dead pid's, and takes it over); CLAUDE.md says a run by hand holds the lock too. Checked by running `./nightly.sh
---test-dry-run` and seeing the file appear and go.
-
-### 141. Console: a settings editor with only the keys that do something; every property shown read-only
-
-- Decided: 2026-11-22, D45
-- Added: 2026-11-22 by Paul
-- Touches: catalog-server/src/main/resources/nuna/ui/browse.js, catalog-server/src/main/resources/nuna/ui/table.js, catalog-server/src/main/resources/nuna/ui/api.js, catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleSettingsBrowserTest.java, docs/design/console/README.md
-- Effort: M, a settings editor for tables and namespaces in two console modules over the Iceberg REST routes they already use, the list of keys checked against the Iceberg spec and the commit rules, and a browser test; waited on item 137 (its agent held `browse.js`), which landed on 2026-11-22; waits on item 138 (its agent holds `api.js`)
-
-D45, amended 2026-11-22. Paul: "I would like to be able to set properties' in the UI, but properties that mean
-something." The console shows every Iceberg property read-only (tools and SQL may still set any key) and lets people
-edit only keys that do something, chosen from a list, each with a label, a plain explanation and a checked value. A
-catalog's settings stay read-only. Free-form key entry leaves the console.
-
-Evidence:
-- A namespace's Properties tab (`browse.js`, `propertiesTab`, `setProperty`, `removeProperty`) takes any key and
-  any value, and removes any key.
-- The redesign's prototype (`docs/design/console/prototype.html`, the `ns-prop` action) offers "Set a property"
-  with any key on a catalog and on namespaces. A catalog keeps no free-form properties: `CatalogProperties.java`
-  answers only its declared settings, which change only through item 22 (deferred, D41).
-- A table's properties are shown only as a line of `key=value` (`table.js`, `propsDd`), with no editor.
-- The namespace page's subtitle reads `owner` from the namespace's Iceberg properties (`browse.js`,
-  `namespaceTab`), while the owner the catalog enforces is the governance label (D27, item 140).
+Evidence: read from the code on 2026-11-22 (item 134's branch, worktree-agent-a9ea90116af38b255). No test checks for a
+denial on any of them. Item 134's report also notes that the view routes and the table register route call
+`Guard.refused` but have no test of their own.
 
 What done looks like:
-- Tables: every property listed read-only; an editor for the write settings engines honour, each with its label,
-  explanation, allowed values or range, and its default when unset. Candidates, to settle against the Iceberg table
-  spec's write properties and the commit rules (`Rules.java`, D11): `write.format.default` (parquet, avro, orc),
-  `write.parquet.compression-codec` (zstd, gzip, snappy, lz4, brotli, uncompressed) and
-  `write.parquet.compression-level`, `write.target-file-size-bytes`, `write.distribution-mode` (none, hash, range),
-  `write.delete.mode`, `write.update.mode`, `write.merge.mode` (copy-on-write, merge-on-read),
-  `write.metadata.delete-after-commit.enabled`, `write.metadata.previous-versions-max`,
-  `write.metadata.metrics.default`. Left out: the path properties `Rules.PATH_PROPERTIES` police (the catalog assigns
-  locations, D28), `encryption.key-id` (fixed at create, D26), `format-version` (an upgrade, not a setting), and the
-  snapshot-expiry keys (`history.expire.*`), which the maintenance policy governs (D30): the editor links to the
-  policy instead. A change goes through the table's normal commit (`set-properties` / `remove-properties`), so
-  every commit rule, `modify` and the audit trail apply as for any engine.
-- Namespaces: every property listed read-only; an editor for `comment` and `location`. Before building `location`,
-  check what it does in nuna: under D28 the catalog assigns every table's location, never from the namespace, so a
-  namespace's `location` may change nothing. If so, ask Paul whether to leave it out (his decision named it).
-- The catalog's Properties tab stays read-only and links to its maintenance policy; no "Set a property" there.
-- No free-form key entry anywhere in the console.
-- The namespace subtitle's owner is the governance owner, not an Iceberg property.
-- `docs/design/console/README.md` notes what was built.
-- A browser test (`heavy`): a listed setting changed and removed through its editor and read back from the table's
-  metadata; an unlisted property shown and not editable; a value outside the allowed ones refused in the dialog.
-  Bites for any new guarded check.
+- Each refusal above publishes a denial through `Denials`, naming the operation and the object, with a reason
+  (`legal_hold`, `snapshot_min_age` or `flagged`) and the message the caller gets. The answer stays the same 403.
+- A fast test per refusal, in the form of `GovernanceRefusalTest` (item 134).
+- A bite per publish site in `bites/D18/` that drops the publish and fails its test.
 
 ## Done and dropped
 
@@ -1523,7 +1450,10 @@ What done looks like:
 | [130](backlog/130.md) | A table's metadata log, a page at a time (D45) | done | 2026-11-22 |
 | [131](backlog/131.md) | Catalog and namespace properties for the console (D45) | done | 2026-11-22 |
 | [132](backlog/132.md) | A refusal under a DR freeze is not audited | done | 2026-11-22 |
+| [134](backlog/134.md) | Refusals by a commit's DR freeze, an unregister's DR freeze and a legal hold are not audited | done | 2026-11-22 |
+| [136](backlog/136.md) | A nightly or heavy run by hand does not hold other sessions' builds | done | 2026-11-22 |
 | [137](backlog/137.md) | Console: each table's snapshots and last commit in a namespace's Contents | done | 2026-11-22 |
 | [138](backlog/138.md) | Console Health: the DR replication panel, from the DR readout, for platform operators | done | 2026-11-22 |
 | [139](backlog/139.md) | Console Health: the Store panel, the catalog database's backend, version and self-check | done | 2026-11-22 |
 | [140](backlog/140.md) | Console: set owner, retention class and regulated, as it sets classification | done | 2026-11-22 |
+| [141](backlog/141.md) | Console: a settings editor with only the keys that do something; every property shown read-only | done | 2026-11-22 |

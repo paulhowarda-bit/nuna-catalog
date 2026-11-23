@@ -216,7 +216,7 @@ class LifecycleRoutes {
                     object(catalog, store.readObject(object.id()).orElseThrow()));
             case WriteResult.Missing missing -> throw notDropped(id);
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD ->
-                    throw CatalogError.of(403, "ForbiddenException", id + " is under a legal hold and cannot be purged");
+                    throw guard.held(request, audit, "claimPurge", id + " is under a legal hold and cannot be purged");
             case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN ->
                     throw guard.frozen(request, audit, "claimPurge", "The namespace of " + id
                             + " is frozen for DR reconcile");

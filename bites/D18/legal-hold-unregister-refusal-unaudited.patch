@@ -1,0 +1,17 @@
+Breaks: an unregister the store finds under a legal hold is answered 403 but not audited, so the audit trail loses what was refused.
+Module: catalog-server
+Test: GovernanceRefusalTest#anUnregisterTheStoreFindsHeldIsAuditedAsADenial
+
+diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+index 198fa4b..3054e6a 100644
+--- a/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
++++ b/catalog-core/src/main/java/nuna/catalog/core/commit/CommitEngine.java
+@@ -685,7 +685,7 @@ public final class CommitEngine {
+                     return noSuch(request);
+                 }
+                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HELD -> {
+-                    return Failure.refused(object, "legal_hold", "Table " + display(request)
++                    return new Failure(403, "ForbiddenException", "Table " + display(request)
+                             + " is under a legal hold and cannot be unregistered");
+                 }
+                 case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.FROZEN -> {

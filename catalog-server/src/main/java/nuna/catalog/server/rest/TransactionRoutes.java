@@ -87,6 +87,7 @@ class TransactionRoutes {
         CommitReply reply = engines.forTransaction(catalog, object -> paths.get(Named.of(object)), request)
                 .commitTransaction(changes, json, request.caller(), Optional.ofNullable(key));
         meters.commit(catalog.name(), Operations.COMMIT_TRANSACTION, reply);
+        guard.refused(request, catalog, Guard.COMMIT_TRANSACTION, object -> paths.get(Named.of(object)), reply);
         return ObjectRoutes.reply(reply, done -> {
             throw new IllegalStateException("a transaction answers without metadata");
         });

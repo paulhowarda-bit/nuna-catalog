@@ -3,7 +3,7 @@ Module: catalog-core
 Test: RulesTest$DrFreeze#aFrozenObjectTakesNoCommit
 
 diff --git a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
-index e3680e9..5d86653 100644
+index f00a1f4..e985ad8 100644
 --- a/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
 +++ b/catalog-core/src/main/java/nuna/catalog/core/commit/Rules.java
 @@ -87,7 +87,7 @@ public final class Rules {
@@ -12,6 +12,6 @@ index e3680e9..5d86653 100644
      static Optional<Rejection> drFreeze(CommitRule.Change change) {
 -        return change.governance().nearest(GovernanceAttribute.Kind.DR_FREEZE)
 +        return Optional.<GovernanceAttribute>empty()
-                 .map(freeze -> Rejection.forbidden("Writes to " + change.object().id()
+                 .map(freeze -> Rejection.refused("dr_freeze", "Writes to " + change.object().id()
                          + " are frozen for DR reconcile: " + freeze.value()));
      }
