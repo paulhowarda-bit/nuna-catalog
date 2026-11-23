@@ -41,6 +41,7 @@ import org.apache.iceberg.io.OutputFile;
 import org.apache.iceberg.parquet.Parquet;
 import org.apache.iceberg.types.Conversions;
 import org.apache.iceberg.types.Types;
+import software.amazon.awssdk.services.s3.DelegatingS3Client;
 import software.amazon.awssdk.services.s3.S3Client;
 
 /**
@@ -60,8 +61,10 @@ import software.amazon.awssdk.services.s3.S3Client;
  * only for the rows a page gives, from the row groups that hold them. Every file read lies under the table's
  * location: a manifest that names a file elsewhere is refused, so the table's writer cannot make the catalog read
  * another table's files.
+ *
+ * <p>A reader opened over S3 holds an Iceberg {@code S3FileIO}: close the reader once it is replaced (backlog 149).
  */
-public final class EventsReader {
+public final class EventsReader implements AutoCloseable {
 
     /** About how many rows one page reads before it returns what it has found. */
     public static final long DEFAULT_SCAN_BUDGET = 500_000;
@@ -183,6 +186,7 @@ public final class EventsReader {
     private final Table table;
     private final long scanBudget;
     private final int timeField;
+    private volatile boolean closed;
 
     private EventsReader(Table table, long scanBudget) {
         this.table = table;
@@ -198,9 +202,13 @@ public final class EventsReader {
      * builds one from its AWS client factory as the first file is opened, and that factory's class needs the KMS SDK,
      * which the catalog server leaves out (D26; backlog 148). The reader never uses it: only Iceberg's analytics
      * accelerator, off unless set, reads asynchronously.
+     *
+     * <p>{@code s3} is borrowed, not owned: {@code S3FileIO} closes the client it holds when it is closed, and when it
+     * is collected unclosed, so it is handed one whose {@code close} leaves {@code s3} open (backlog 149).
      */
     public static EventsReader open(String name, String metadataLocation, S3Client s3) {
-        S3FileIO io = new S3FileIO(() -> s3, () -> {
+        S3Client borrowed = new Borrowed(s3);
+        S3FileIO io = new S3FileIO(() -> borrowed, () -> {
             throw new UnsupportedOperationException("the audit feed reads with its synchronous S3 client only");
         });
         TableMetadata metadata = TableMetadataParser.read(io, metadataLocation);
@@ -211,6 +219,22 @@ public final class EventsReader {
     /** For tests: a table at hand, and a budget of {@code scanBudget} rows a page. */
     static EventsReader of(Table table, long scanBudget) {
         return new EventsReader(table, scanBudget);
+    }
+
+    /**
+     * Closes the table's files: for a reader opened over S3, its {@code S3FileIO}, which Iceberg otherwise warns of,
+     * with a stack trace, when it is collected. The S3 client it was opened with stays open. A page still being read
+     * finishes: a closed {@code S3FileIO} takes its client from its supplier again.
+     */
+    @Override
+    public void close() {
+        table.io().close();
+        closed = true;
+    }
+
+    /** Whether {@link #close} has closed it. */
+    public boolean closed() {
+        return closed;
     }
 
     /** The table's name, as it was opened. */
@@ -542,6 +566,18 @@ public final class EventsReader {
 
     private static Instant instant(long micros) {
         return Instant.EPOCH.plus(micros, ChronoUnit.MICROS);
+    }
+
+    /** An S3 client lent to {@code S3FileIO}: every call reaches the lender's, but closing it leaves that open. */
+    static final class Borrowed extends DelegatingS3Client {
+
+        Borrowed(S3Client lender) {
+            super(lender);
+        }
+
+        @Override
+        public void close() {
+        }
     }
 
     /** The table's files, read only, and only under its location. */

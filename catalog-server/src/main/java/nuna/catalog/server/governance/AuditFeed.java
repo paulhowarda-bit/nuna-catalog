@@ -119,6 +119,8 @@ class AuditFeed {
 
     /**
      * The reader of the table as this catalog last committed it, opened again when the writer has committed since.
+     * The reader it replaces is closed, which leaves the S3 client every reader shares open (backlog 149); a page
+     * another caller is still reading from it finishes.
      *
      * @throws NotReady when the audit catalog, its namespace or the table is not there yet
      */
@@ -136,13 +138,18 @@ class AuditFeed {
                 .orElseThrow(() -> new NotReady("the audit table has no metadata yet"));
         String name = catalog.name() + "." + namespace + "." + TABLE;
         if (reader == null || !pointer.metadataLocation().equals(location)) {
+            EventsReader replaced = reader;
             reader = EventsReader.open(name, pointer.metadataLocation(), s3(catalog));
             location = pointer.metadataLocation();
+            if (replaced != null) {
+                replaced.close();
+            }
         }
         return reader;
     }
 
-    private S3Client s3(CatalogRecord catalog) {
+    /** The audit catalog's S3 client, made once and shared by every reader. */
+    S3Client s3(CatalogRecord catalog) {
         if (s3 == null) {
             String profile = storage.forCatalog(catalog.id()).name();
             s3 = client(profile, storageSettings.profiles().get(profile));

@@ -1,0 +1,16 @@
+Breaks: the audit feed reader hands Iceberg's S3FileIO the server's own S3 client, so closing a replaced reader closes the client every later reader shares, and the feed fails.
+Module: catalog-server
+Test: AuditFeedReaderTest#aReplacedReaderIsClosedAndTheSharedClientStaysOpen
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+index 6355089..27565ac 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/EventsReader.java
+@@ -207,7 +207,7 @@ public final class EventsReader implements AutoCloseable {
+      * is collected unclosed, so it is handed one whose {@code close} leaves {@code s3} open (backlog 149).
+      */
+     public static EventsReader open(String name, String metadataLocation, S3Client s3) {
+-        S3Client borrowed = new Borrowed(s3);
++        S3Client borrowed = s3;
+         S3FileIO io = new S3FileIO(() -> borrowed, () -> {
+             throw new UnsupportedOperationException("the audit feed reads with its synchronous S3 client only");
+         });

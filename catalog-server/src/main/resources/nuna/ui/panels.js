@@ -130,7 +130,7 @@ export async function governanceTab(target, reload) {
   };
   const status = h('div', {class: 'status-row'},
     freeze ? h('p', {class: 'status-frozen'}, frozenPill('DR freeze in force'), ' ', h('span', {class: 'fine'}, String(freeze)))
-      : h('p', {class: 'status-free'}, pill('ok', 'No DR freeze'), ' ', muted('Commits are allowed.')),
+      : h('p', {class: 'status-free'}, pill('ok', 'No DR freeze'), ' ', muted(view ? 'Its definition may be replaced.' : 'Commits are allowed.')),
     holds.length ? h('p', {class: 'status-held'}, heldPill(plural(holds.length, 'legal hold')), ' ',
       h('span', {class: 'fine'}, view ? 'It cannot be dropped or purged.' : 'Snapshots cannot be removed; it cannot be dropped or purged.'))
       : h('p', null, pill('', 'No legal hold')));
