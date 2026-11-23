@@ -177,7 +177,7 @@ Trino connection sends their own token, so the catalog lets them do there what i
 | kafbat, <https://localhost:8182> | through Keycloak, like the console (client `kafbat`) | administer topics: create them, change their settings, produce and clear messages, delete them; only read the topics the demo runs on (below); read consumer groups, settings and Kafka Connect's connectors | administers Kafka: topics, messages, consumer offsets, ACLs, and the connectors: configs, restart, pause, create and delete |
 | SingleStore Studio, <https://localhost:8183> | through Keycloak with SAML (client `singlestore-studio`): type the username and choose "Sign in with SAML". As SingleStore users (`demo/singlestore/users.sql`) | `ana`: read, insert, update, delete, create, alter and drop in every database; `gary`: all privileges, with grant option; `stella`: `SELECT` on every database. `ana` and `stella` also hold `SHOW METADATA` | all privileges, with grant option |
 | CloudBeaver, <https://localhost:8185> | through Keycloak (client `cloudbeaver`), straight from the page. As CloudBeaver users (`demo/CloudBeaverUsers.java`) | four connections of their own, which sign in as them: to the catalog through Trino, and to the CDC leg's databases | CloudBeaver's administrator, with four connections of their own and everyone else's |
-| Silo's console, <https://localhost:8184> | through Keycloak (client `silo`): choose "Keycloak" | refused: direct access to the store would go round the catalog's grants | the server's health, metrics, logs and traces (Silo's policy `diagnostics`), and no bucket or object |
+| Silo's console, <https://localhost:8184> | through Keycloak (client `silo`): choose "Keycloak" | `ana` browses and downloads the `warehouse` bucket's files, read-only (Silo's policy `warehouse-read`); `gary` and `stella` refused | the server's health, metrics, logs and traces (Silo's policy `diagnostics`), and no bucket or object |
 | Keycloak's admin console for realm `nuna`, <https://localhost:8180/admin/nuna/console/> | through Keycloak, its own client | refused ("forbidden") | reads the realm: its users, groups, sessions, clients and events; changes nothing |
 | Keycloak's account page, <https://localhost:8180/realms/nuna/account> | through Keycloak | their own account and sessions | the same |
 
@@ -219,9 +219,12 @@ its own terms, and how Silo's and Keycloak's own consoles do:
   confidential client), set by `k8s/silo-signin.yaml`. What it lets them do comes from the ID token's claim
   `policy`, the person's roles of Keycloak client `silo`, each named after a Silo policy: group
   `demo-operators` holds `diagnostics`, Silo's built-in policy without bucket or object rights, so the platform
-  operators see no data in the store, as in the catalog (D18). Anyone else has no `policy` claim, and Silo
-  refuses them: an analyst who read the store directly would go round the catalog's grants, governance and
-  audit. Silo reads Keycloak's discovery document inside the cluster, where Keycloak names its own
+  operators see no data in the store, as in the catalog (D18). `ana` and `presenter` hold `warehouse-read`
+  (Paul, 2026-11-23: "i need ana and presenter to access silo"), the demo's own policy
+  (`k8s/silo-warehouse-read.json`, made by `up` after the seed job): list the buckets, browse and download the
+  `warehouse` bucket's objects, write nothing. What they read there goes round the catalog's grants,
+  governance and audit, as reading the store directly does; nothing they do there can change a table. `presenter`
+  holds both policies. Anyone else has no `policy` claim, and Silo refuses them. Silo reads Keycloak's discovery document inside the cluster, where Keycloak names its own
   `http://keycloak:8080` for tokens and keys (`--hostname-backchannel-dynamic`), and only as it starts, so its
   pod waits up to 5 minutes for Keycloak first. The store's root, `nunatest`, keeps its access-key sign-in.
 - **Keycloak's admin console**: `demo-operators` hold realm `nuna`'s view roles (`view-realm`, `view-users`,

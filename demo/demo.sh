@@ -675,8 +675,9 @@ Trino:        CloudBeaver on $web:8185: each person's connections sign in as the
               Trino with their own token, and to the CDC leg's databases
 Keycloak:     $web:8180/admin/nuna/console/ for oscar, who reads realm nuna's users, groups, sessions and events
               there without a second sign-in; $web:8180/admin to change it   (user admin, password nuna-test)
-Silo:         its console on $web:8184: "Keycloak" signs oscar in, to the server's health, metrics, logs and
-              traces, no data; the S3 store's root, which sees every bucket, signs in with access key nunatest,
+Silo:         its console on $web:8184: "Keycloak" signs ana and presenter in to browse and download the
+              warehouse bucket's files, read-only, and oscar to the server's health, metrics, logs and traces,
+              no data; the S3 store's root, which sees every bucket, signs in with access key nunatest,
               secret nunatest-secret-key
 Engines:      demo/demo.sh engines   (Spark, Kafka Connect, PyIceberg and SingleStore into catalog engines)
 CDC:          demo/demo.sh cdc   (PostgreSQL, Oracle and CockroachDB into Iceberg history tables; stops Trino
@@ -983,6 +984,11 @@ up() {
   k delete job seed --ignore-not-found >/dev/null
   apply seed.yaml
   k wait --for=condition=complete --timeout=3m job/seed >/dev/null
+  # Silo's policy warehouse-read, which Keycloak's client role of that name gives ana and presenter in Silo's
+  # console (silo-signin.yaml): Silo keeps it only for the pod's life, as it keeps the bucket.
+  k exec -i deployment/s3 -c silo -- sh -c 'cat > /tmp/warehouse-read.json &&
+    mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    mc admin policy create l warehouse-read /tmp/warehouse-read.json >/dev/null' < "$STACK/silo-warehouse-read.json"
 
   say "installing the catalog (chart deploy/helm/nuna-catalog) and publishing it on $URL"
   # The image's id as a pod annotation: a rebuilt image under the same tag rolls the server, an unchanged
