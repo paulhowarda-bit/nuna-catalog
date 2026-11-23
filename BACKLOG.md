@@ -1554,6 +1554,7 @@ What done looks like:
 ### 135. Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how)
 
 - Added: 2026-11-22 by nightly by hand 2026-11-22
+- Decided: 2026-11-22, D46
 - Touches: none
 - Effort: S, once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul
 
@@ -1599,9 +1600,9 @@ Paul, 2026-11-22: "Lets do 1 and 2 and 3". Done that day (worktree-host-memory-1
    overnight run hours for its bites before 06:30. `./nightly.sh --test-dry-run` passes. CLAUDE.md (Builds) says so,
    and says to check Windows' memory when a container-backed test loses a wait.
 
-The decision goes into `decision-ledger.md` with this item's `Decided:` line in one branch once item 114, which
-holds the ledger, lands. The item stays open until an overnight run's nightly passes with Windows above 1.5 GB
-available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to be taken by hand.
+The decision is D46 in `decision-ledger.md`. The item stays open until an overnight run's nightly passes with
+Windows above 1.5 GB available throughout; overnight.sh does not sample Windows yet, so that run's numbers have to
+be taken by hand.
 
 ### 136. A nightly or heavy run by hand does not hold other sessions' builds
 
