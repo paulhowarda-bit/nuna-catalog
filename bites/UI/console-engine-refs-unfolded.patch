@@ -1,0 +1,17 @@
+Breaks: A table's own Iceberg refs stay open while a catalog ref is read, leading with the table's main.
+Module: catalog-server
+Test: ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 2be2bc39..c0f38b62 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -254,7 +254,7 @@ function engineRefs(target, rows) {
+   const title = 'Engine-level refs in this table\'s metadata';
+   const body = [h('p', {class: 'fine'}, 'Iceberg\'s own branches and tags, set by engines inside this table, not the catalog\'s.'),
+     facts(rows)];
+-  if (!target.ref) return h('div', {class: 'panel', id: 'engine-refs'}, h('h2', null, title), body);
++  if (target) return h('div', {class: 'panel', id: 'engine-refs'}, h('h2', null, title), body);
+   return h('details', {class: 'panel fold', id: 'engine-refs'}, h('summary', null, h('h2', null, title, ' ',
+     h('span', {class: 'meta'}, 'Iceberg\'s own, not the catalog\'s'))), body);
+ }
