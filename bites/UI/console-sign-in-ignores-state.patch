@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleSignInTest#aSignInAnswerThisTabDidNotStartIsRefused
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/auth.js b/catalog-server/src/main/resources/nuna/ui/auth.js
-index f1bf7b05..12aac5ee 100644
+index 04aacc59..b2052c0c 100644
 --- a/catalog-server/src/main/resources/nuna/ui/auth.js
 +++ b/catalog-server/src/main/resources/nuna/ui/auth.js
 @@ -128,7 +128,7 @@ export async function finishSignIn(oidc) {
    if (params.has('error')) {
-     throw new Error(`The IdP refused the sign-in: ${params.get('error')} ${params.get('error_description') || ''}`);
+     throw new Error(`Your organisation's sign-in refused: ${params.get('error_description') || params.get('error')}.`);
    }
 -  if (!pending || pending.state !== params.get('state')) {
 +  if (!pending) {
-     throw new Error('The sign-in answer does not match a sign-in this tab started; start again.');
+     throw new Error('This sign-in was not started in this tab, or has expired. Start again.');
    }
    const response = await idp(pending.tokenEndpoint, {

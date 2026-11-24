@@ -41,8 +41,8 @@ export const TABLE_SETTINGS = [
     closed: ctx => LEVELS[ctx.codec] ? null : `${ctx.codec} takes no level.`},
   {key: 'write.target-file-size-bytes', label: 'Target data file size', kind: 'size', min: 16 * MB, max: 4 * GB,
     def: String(512 * MB), explain: 'The size engines aim for when they write a data file. Larger files mean fewer to plan '
-      + 'and open; smaller ones suit tables written a little at a time. Compaction aims for its own target, the maintenance '
-      + 'policy\'s compaction.target-file-size-bytes.', policy: true},
+      + 'and open; smaller ones suit tables written a little at a time. Compaction aims for its own target, set in the '
+      + 'maintenance policy.', policy: true},
   {key: 'write.distribution-mode', label: 'How rows are spread before writing', kind: 'enum',
     choices: ['none', 'hash', 'range'], def: null, defWords: 'the engine\'s choice',
     explain: 'How Spark and Flink shuffle rows before writing. hash sends each partition\'s rows to one writer, so a '
@@ -89,8 +89,8 @@ function tableNote(key, target) {
 function namespaceNote(key, target) {
   if (key === 'location') return 'Changes nothing: the catalog assigns every table\'s location itself, never from its namespace.';
   if (key === 'owner') {
-    return ['Not the owner the catalog enforces: that is the ', h('a', {href: objectHref(target, 'access')},
-      'governance owner'), '.'];
+    return ['Not the owner the catalog enforces: that one is on the ', h('a', {href: objectHref(target, 'access')},
+      'Access tab'), '.'];
   }
   return null;
 }
@@ -178,8 +178,8 @@ export function settingsTab({target, settings, props, ctx, write, reload, needs}
   return [
     h('div', {class: 'panel', id: 'settings'}, h('h2', null, 'Settings ', h('span', {class: 'meta'}, `what the console may change on ${where}`)),
       tbl('settings stack-line', ['Setting', 'Value', ''], rows),
-      h('p', {class: 'fine'}, 'A change is ', needs, ', and is audited like any other. Needs ', code('modify'), ' here.')),
-    h('div', {class: 'panel', id: 'all-properties'}, h('h2', null, 'Every property ', h('span', {class: 'meta'}, `Iceberg REST, on ${where}`)),
+      h('p', {class: 'fine'}, needs, ' Needs ', code('modify'), '.')),
+    h('div', {class: 'panel', id: 'all-properties'}, h('h2', null, 'Every property ', h('span', {class: 'meta'}, `on ${where}, as engines read them`)),
       keys.length ? tbl('props-tbl stack-line', ['Key', 'Value', ''], all) : h('p', {class: 'muted'}, 'No property is set.'),
       h('p', {class: 'fine'}, 'Engines and tools may set any key; the console changes only the settings above.')),
     target.kind === 'table' ? h('div', {class: 'notice'}, icon('maint'), h('span', null, h('b', null, 'Snapshot expiry, compaction and orphan removal'),
@@ -213,7 +213,7 @@ function change(s, props, ctx, target, write, reload) {
         return;
       }
       const answer = await write({[s.key]: checked.value}, []);
-      fill(out, granted(`${s.key} is ${checked.value}`, answer));
+      fill(out, granted(`${s.label} is now ${checked.value}`, answer));
       reload();
     })));
 }
@@ -223,7 +223,7 @@ function reset(s, target, write, reload) {
     + `again: ${defaultWords(s)}.`),
   'Reset it', async (form, out) => {
     const answer = await write({}, [s.key]);
-    fill(out, granted(`${s.key} is reset`, answer));
+    fill(out, granted(`${s.label} is back to its default`, answer));
     reload();
   }));
 }

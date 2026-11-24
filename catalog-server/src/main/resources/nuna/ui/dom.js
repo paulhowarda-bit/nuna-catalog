@@ -236,11 +236,13 @@ export function failure(error, opts = {}) {
         rid ? h('div', {class: 'refusal-acts'}, copyButton(rid, 'Copy request id')) : null));
   }
   // No status: the network failed (api.js marks it), or the console's own code did, after the catalog answered or
-  // before it asked. A caller that knows what was going on (signing in) names it in `opts.title`.
+  // before it asked. A caller that knows what was going on (signing in) names it in `opts.title`, and the request it
+  // made in `opts.tech`, for Technical details.
   const title = opts.title || (error && error.unreached ? 'The request did not reach the catalog' : 'The console failed to show this');
   return h('div', {class: 'refusal' + (opts.compact ? ' compact' : ''), role: 'alert'},
     h('p', {class: 'refusal-h'}, icon('alert'), title),
-    h('p', {class: 'refusal-msg'}, String(error && error.message || error)));
+    h('p', {class: 'refusal-msg'}, String(error && error.message || error)),
+    opts.tech ? techDetails(h('p', {class: 'refusal-code'}, opts.tech)) : null);
 }
 
 /** A change the catalog accepted, with its status and request id. */

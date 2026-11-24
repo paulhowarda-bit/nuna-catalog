@@ -92,7 +92,7 @@ class ConsoleLabelsBrowserTest {
         WebElement owner = driver.findElement(By.cssSelector("dialog.dlg input[name='owner']"));
         owner.sendKeys("desk-a");
         submit("is owned by desk-a");
-        awaitFact("owner", "desk-a · this namespace · console");
+        awaitFact("Owner", "desk-a · this namespace · console");
 
         // A retention class, chosen from the one the server is configured with.
         assertThat(dialog("retention-class")).contains("no commit and no maintenance job may remove a snapshot");
@@ -100,13 +100,13 @@ class ConsoleLabelsBrowserTest {
         assertThat(classes.getOptions()).extracting(WebElement::getText)
                 .containsExactly("trade-records · snapshots kept at least 30 days");
         submit("is in retention class trade-records");
-        awaitFact("retention-class", "trade-records · this namespace · console");
+        awaitFact("Retention class", "trade-records · this namespace · console");
 
         // The regulated mark closes the unclassified table beneath it.
         assertThat(button("regulated").getText()).isEqualTo("Mark as a regulated area");
         assertThat(dialog("regulated")).contains("closes every table beneath this namespace");
         submit("is a regulated area");
-        awaitFact("regulated", "true · this namespace · console");
+        awaitFact("Regulated area", "true · this namespace · console");
         browser.awaitText(labelButton("regulated"), "Clear the regulated mark");
         expect(api.rest("GET", "/namespaces/" + Api.ns(ns) + "/tables/trades", null), 403);
 
@@ -121,13 +121,13 @@ class ConsoleLabelsBrowserTest {
 
         // The table inherits them, offers no regulated mark, and opens once it is classified.
         browser.open("/ui/#" + at("table", ns, "trades"));
-        awaitFact("owner", "desk-a · inherited from namespace " + ns + " · console");
+        awaitFact("Owner", "desk-a · inherited from namespace " + ns + " · console");
         assertThat(button("retention-class").getText()).isEqualTo("Change the retention class");
         assertThat(driver.findElements(labelButton("regulated"))).isEmpty();
         dialog("classification");
         new Select(browser.await(By.cssSelector("dialog.dlg select[name='cls']"))).selectByValue("internal");
         submit("is internal");
-        awaitFact("classification", "internal · this table · console");
+        awaitFact("Classification", "internal · this table · console");
         expect(api.rest("GET", "/namespaces/" + Api.ns(ns) + "/tables/trades", null), 200);
         assertThat(own("/namespaces/" + Api.ns(ns) + "/tables/trades").get("classification"))
                 .containsEntry("value", "internal").containsEntry("provenance", "console");
@@ -136,7 +136,7 @@ class ConsoleLabelsBrowserTest {
         browser.open("/ui/#" + at("namespace", ns, null));
         assertThat(dialog("regulated")).contains("Clearing the mark opens the tables beneath this namespace");
         submit("is no longer a regulated area");
-        awaitFact("regulated", "false · this namespace · console");
+        awaitFact("Regulated area", "false · this namespace · console");
         browser.awaitText(labelButton("regulated"), "Mark as a regulated area");
         assertThat(own("/namespaces/" + Api.ns(ns)).get("regulated")).containsEntry("value", "false")
                 .containsEntry("provenance", "console");

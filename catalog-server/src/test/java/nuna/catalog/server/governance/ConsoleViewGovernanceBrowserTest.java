@@ -84,7 +84,7 @@ class ConsoleViewGovernanceBrowserTest {
         browser.signIn(steward);
 
         browser.open("/ui/#" + at(ns, "daily"));
-        awaitFact("classification", "confidential · inherited from namespace " + ns + " · api-test");
+        awaitFact("Classification", "confidential · inherited from namespace " + ns + " · api-test");
         assertThat(driver.findElements(By.cssSelector("#governance [data-acts='labels'] button")))
                 .extracting(b -> b.getDomAttribute("data-label"))
                 .containsExactly("classification", "owner");
@@ -96,12 +96,12 @@ class ConsoleViewGovernanceBrowserTest {
                 .doesNotContain("regulated", "Everything beneath");
         new Select(browser.await(By.cssSelector("dialog.dlg select[name='cls']"))).selectByValue("internal");
         submit("is internal");
-        awaitFact("classification", "internal · this view · console");
+        awaitFact("Classification", "internal · this view · console");
 
         assertThat(dialog("owner")).contains("answerable for this view").doesNotContain("Everything beneath");
         driver.findElement(By.cssSelector("dialog.dlg input[name='owner']")).sendKeys("desk-v");
         submit("is owned by desk-v");
-        awaitFact("owner", "desk-v · this view · console");
+        awaitFact("Owner", "desk-v · this view · console");
 
         Map<String, Map<String, String>> recorded = own(view);
         for (String label : List.of("classification", "owner")) {

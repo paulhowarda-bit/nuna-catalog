@@ -92,7 +92,7 @@ function random(n) {
 async function discovery(oidc) {
   const issuer = oidc.issuer.replace(/\/+$/, '');
   const response = await idp(issuer + '/.well-known/openid-configuration', {});
-  if (!response.ok) throw new Error(`The IdP's discovery document answered ${response.status}`);
+  if (!response.ok) throw new Error(`Your organisation's sign-in service did not answer as expected (${response.status}).`);
   return response.json();
 }
 
@@ -126,10 +126,10 @@ export async function finishSignIn(oidc) {
   const pending = JSON.parse(sessionStorage.getItem(PENDING) || 'null');
   sessionStorage.removeItem(PENDING);
   if (params.has('error')) {
-    throw new Error(`The IdP refused the sign-in: ${params.get('error')} ${params.get('error_description') || ''}`);
+    throw new Error(`Your organisation's sign-in refused: ${params.get('error_description') || params.get('error')}.`);
   }
   if (!pending || pending.state !== params.get('state')) {
-    throw new Error('The sign-in answer does not match a sign-in this tab started; start again.');
+    throw new Error('This sign-in was not started in this tab, or has expired. Start again.');
   }
   const response = await idp(pending.tokenEndpoint, {
     method: 'POST',
@@ -141,7 +141,7 @@ export async function finishSignIn(oidc) {
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok || !body.access_token) {
-    throw new Error(`The IdP's token endpoint answered ${response.status} ${body.error || ''}`);
+    throw new Error(`Signing in did not finish: your organisation's sign-in answered ${response.status} ${body.error || ''}`.trim());
   }
   sessionStorage.setItem(TOKEN, body.access_token);
   // Kept only to name the session when signing out, so the IdP ends it without asking (backlog 193).
@@ -181,12 +181,12 @@ export async function signOut(oidc) {
   try {
     url = endSessionUrl(await discovery(oidc), oidc, idToken);
   } catch (error) {
-    return `Signed out here, but your session at ${host} was not ended: ${error.message}. `
+    return `Signed out of nuna, but ${host} did not end your session there (${error.message}). `
       + 'Signing in again may not ask for a password.';
   }
   if (!url) {
-    return `Signed out here, but your session at ${host} was not ended: its discovery document names no `
-      + 'end_session_endpoint. Signing in again may not ask for a password.';
+    return `Signed out of nuna. ${host} offers no way to end your session there, so signing in again may not ask `
+      + 'for a password.';
   }
   sessionStorage.setItem(SIGNING_OUT, 'true');
   location.assign(url);
