@@ -1,0 +1,17 @@
+Breaks: Service links the table most versions behind for an operator who may not read it.
+Module: catalog-server
+Test: ConsoleHealthBrowserTest#anOperatorSeesDrReplicationAndTheStore
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index d2e7c16d..c4a79d5b 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -227,7 +227,7 @@ async function drPanel() {
+   const target = t => ({catalog: t.catalog, kind: t.kind, namespace: t.namespace || [], name: t.name});
+   const path = [most.catalog, ...(most.namespace || []), most.name].filter(Boolean).join('.');
+   // Linked only for one who may read it: an operator holds no data grant, and its page would refuse them (backlog 225).
+-  const readable = most.catalog && (await estate().catch(() => [])).some(t => t.id === most.id);
++  const readable = most.catalog;
+   return h('div', {class: 'panel hide-sm', id: 'health-dr'}, head, kpis([
+     ['behind', 'Tables behind their watermark', count(behind.length)],
+     never.length ? ['never', 'Never verified', count(never.length)] : null,

@@ -14,7 +14,7 @@ import {healthPage} from './health.js';
 import {governancePage} from './governance.js';
 import {auditPage} from './audit.js';
 import {browse, notFound} from './browse.js';
-import {clearReading, readingControl} from './refs.js';
+import {clearReading, readingControl, refsHref} from './refs.js';
 
 const root = document.documentElement;
 const consoleEl = $('#console');
@@ -119,7 +119,7 @@ function homeKey(c) {
   return 'catalog';
 }
 
-const RAIL = ['overview', 'catalog', 'maintenance', 'governance', 'audit', 'service'];
+const RAIL = ['overview', 'catalog', 'refs', 'maintenance', 'governance', 'audit', 'service'];
 
 /** A page the caller's groups cannot use, reached by a link: said in plain words, and the catalog is never asked. */
 function closedPage(title, words) {
@@ -181,12 +181,13 @@ function setChrome(navKey, ref) {
   for (const b of $$('[data-cat]')) fill(b, cat || '–');
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
   // The ref read goes along to the pages that show main only, which say so beside it (Atelier, 2026-11-23).
-  const hrefs = {overview: href({page: 'overview', c: cat, r: ref}), catalog: href({c: cat, r: ref}),
+  const hrefs = {overview: href({page: 'overview', c: cat, r: ref}), catalog: href({c: cat, r: ref}), refs: refsHref(cat),
     maintenance: href({page: 'maintenance', c: cat, r: ref}), governance: href({page: 'governance', c: cat, r: ref}),
     audit: href({page: 'audit', c: cat, r: ref}), service: pageHref('service')};
   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
   // read, Audit is for audit readers and those who manage the catalog's grants, Service for platform operators.
-  const open = {overview: readsData(), catalog: true, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
+  // Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
+  const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
     service: operates()};
   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
   const home = cat ? homeKey(cat) : 'service';
@@ -215,6 +216,7 @@ function switchHref(c) {
   const r = parse();
   if (r.page === 'service') return pageHref('overview', c);
   if (r.page) return pageHref(r.page, c, r.page === 'governance' ? r.tab : null);
+  if (r.k === 'ref' || (r.k === 'catalog' && r.tab === 'refs')) return refsHref(c);
   return href({c});
 }
 
@@ -714,9 +716,11 @@ function render() {
     title = 'Service';
     content = operates() ? healthPage() : closedPage('Service', 'Service health is open to platform operators.');
   } else if (!r.page && r.c) {
-    navKey = 'catalog';
+    // Branches and tags, and a ref's own page, are the rail's Branches and tags (Atelier, 2026-11-24; backlog 221).
+    const refs = r.k === 'ref' || (r.k === 'catalog' && r.tab === 'refs');
+    navKey = refs ? 'refs' : 'catalog';
     content = browse(slot, r);
-    title = r.k === 'ref' && r.n ? '@' + r.n : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
+    title = r.k === 'ref' && r.n ? '@' + r.n : refs ? 'Branches and tags' : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
   } else {
     navKey = null;
     title = 'Not found';
@@ -729,7 +733,7 @@ function render() {
   setChrome(navKey, reading || carried);
   // A browse page that reads through a ref draws the Reading control itself (refChrome); every other page with a
   // catalog gets one whose refs open the catalog through them (Atelier's review, S4; backlog 201).
-  const pageReads = navKey === 'catalog' && r.k !== 'ref' && !(!r.k && r.tab === 'refs');
+  const pageReads = navKey === 'catalog';
   if (cat && r.page !== 'service' && !pageReads) readingControl({c: cat, r: carried}, !!carried);
   if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
   document.title = `${title} · ${r.page === 'service' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;

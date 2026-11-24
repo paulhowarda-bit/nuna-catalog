@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -479,6 +480,45 @@ class ConsoleHealthTest {
                 .isEqualTo("409 MaintenanceNotAllowedException");
         assertThat(refused.getText()).contains("does not run orphan-scan");
         assertThat(refused.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
+    }
+
+    /**
+     * Compact a table now offers, without typing, every table in the catalog the caller's groups may compact: tonight's
+     * queue first with its reasons, then the others by path, and none they may only read (Paul, 2026-11-23; backlog
+     * 222). Next waits for a choice; a path not listed can still be written. One who may modify nothing sees no button.
+     */
+    @Test
+    void compactATableNowOffersEveryTableTheCallerMayCompactQueueFirst() {
+        browser.signIn(token("olive", owners, newcomers));
+        browser.open("/ui/#p=maintenance&c=trading");
+        browser.await(By.cssSelector("[data-act='compact-pick']")).click();
+        WebElement dialog = browser.await(By.cssSelector("dialog.dlg"));
+        assertThat(dialog.findElements(By.cssSelector("select[name='table'] optgroup")))
+                .extracting(g -> g.getDomAttribute("label")).containsExactly("Queued for tonight", "Other tables you may compact");
+        assertThat(dialog.findElements(By.cssSelector("optgroup[label='Queued for tonight'] option")))
+                .extracting(ConsoleBrowser::textContent)
+                .containsExactly(readable + ".events · equality deletes", readable + ".orders · small files");
+        assertThat(dialog.findElements(By.cssSelector("optgroup[label='Other tables you may compact'] option")))
+                .as("fresh's table is the newcomers' to read, not to compact").extracting(o -> o.getDomAttribute("value"))
+                .containsExactly(readable + ".fine", readable + ".unseen");
+        WebElement next = dialog.findElement(By.cssSelector("button[type='submit']"));
+        assertThat(next.isEnabled()).as("Next waits for a table").isFalse();
+        Select pick = new Select(dialog.findElement(By.cssSelector("select[name='table']")));
+        pick.selectByVisibleText("Another table, by its path…");
+        WebElement path = dialog.findElement(By.cssSelector("input[name='path']"));
+        assertThat(path.isDisplayed()).isTrue();
+        assertThat(next.isEnabled()).isFalse();
+        pick.selectByValue(readable + ".fine");
+        assertThat(path.isDisplayed()).isFalse();
+        next.click();
+        browser.awaitText(By.cssSelector("dialog.dlg #dlg-h"), "Compact fine now");
+        driver.findElement(By.cssSelector("dialog.dlg button.dlg-x")).click();
+
+        driver = browser.session();
+        browser.signIn(token("rita", readers));
+        browser.open("/ui/#p=maintenance&c=trading");
+        browser.await(By.cssSelector("#maintenance h1"));
+        assertThat(driver.findElements(By.cssSelector("[data-act='compact-pick']"))).isEmpty();
     }
 
     // ---- helpers ----

@@ -1,15 +1,15 @@
 // The catalog's branches and tags (item 26, D33; item 109), as Atelier's design draws them: chapter 6 of
 // docs/design/console/wireframes.html and the prototype v14. A catalog ref is a rounded @name chip in its own hue;
-// a table's own Iceberg ref keeps its square badge (table.js). Here: the catalog's Branches and tags tab, a ref's own
+// a table's own Iceberg ref keeps its square badge (table.js). Here: the catalog's Branches and tags page, a ref's own
 // page (Changes, Merge, Record; a tag's What it keeps), the selector and the band every page read through a ref
 // carries, the notes on tabs that are main's, and the make, renew, delete and merge dialogs, each answer word for word
 // as the catalog sent it. Where the design and the server differ, the server's answer wins (backlog/109.md).
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, edgeCue, facts, failure, fill, fmt, granted, h, icon, jsonPre, load, muted,
-  openDialog, dialogForm, field, opensRow, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
+  openDialog, dialogForm, field, opensRow, pageHead, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
-import {auditOpen} from './access.js';
+import {auditOpen, groupWords} from './access.js';
 
 const DAY = 86_400_000;
 const ms = iso => new Date(iso).getTime();
@@ -122,6 +122,11 @@ function refPick(where, list) {
     item(null),
     branches.length ? [h('p', {class: 'mh'}, 'Branches'), branches.map(item)] : null,
     tags.length ? [h('p', {class: 'mh'}, 'Tags'), tags.map(item)] : null,
+    // Made from the ref read, for those who may (Atelier, 2026-11-24; backlog 221).
+    mayRefs(list) ? h('button', {class: 'mmake', type: 'button', 'data-act': 'ref-new-menu', onclick: () => {
+      set(false);
+      makeDialog(where.c, list, {from: cur ? cur.name : 'main'});
+    }}, icon('branch'), 'Make a branch or tag') : null,
     h('a', {class: 'mfoot', href: refsHref(where.c)}, `Branches and tags of ${where.c}`, icon('right')));
   const wrap = h('div', {class: 'ref-wrap'}, btn, menu);
   const set = open => {
@@ -132,7 +137,7 @@ function refPick(where, list) {
   btn.addEventListener('click', e => { e.stopPropagation(); set(menu.hidden); });
   // The arrows, Home and End move between the links; Escape, or focus leaving it, closes it.
   menu.addEventListener('keydown', e => {
-    const items = $$('a', menu);
+    const items = $$('a, button', menu);
     const i = items.indexOf(document.activeElement);
     const to = {ArrowDown: (i + 1) % items.length, ArrowUp: (i + items.length - 1) % items.length, Home: 0, End: items.length - 1}[e.key];
     if (to !== undefined) {
@@ -353,15 +358,35 @@ async function endedWords(c, name) {
   return null;
 }
 
-// ---- the catalog's Branches and tags tab ----
+// ---- the catalog's Branches and tags page ----
 
-/** Branches and tags {n}: the tab's label and count, once the list is read. */
-export function refsCount(c) {
-  return refsOf(c).then(list => live(list).length, () => null);
+/**
+ * Branches and tags, the rail's page for the catalog's refs (Atelier, 2026-11-24; backlog 221): "Make a branch or
+ * tag" in its head for a caller whose groups hold create on the catalog, and in plain words why not for the rest.
+ */
+export function refsPage(c) {
+  const main = h('div', {class: 'nc-main', id: 'refs-page'});
+  load(main, async () => {
+    const list = await refsOf(c);
+    const may = mayRefs(list);
+    return [pageHead({
+      eyebrow: `${c} · branches and tags`,
+      title: `Branches and tags in ${c}`,
+      sub: 'A branch is the whole catalog at a point, taking commits of its own until you merge it into main. A tag keeps '
+        + 'the catalog as it was, read-only.',
+      // With none yet, the empty state below holds the button.
+      side: may && live(list).length ? h('button', {class: 'btn primary', type: 'button', 'data-act': 'ref-new',
+        onclick: () => makeDialog(c, list)}, icon('branch'), 'Make a branch or tag') : null,
+    }),
+    may ? null : h('p', {class: 'notice', 'data-no-create': ''}, icon('info'), h('span', null,
+      `You can read every branch and tag here. Making, renewing, merging or deleting one needs create on ${c}; your `
+      + `groups (${groupWords()}) don't hold it. Ask a grant admin.`)),
+    ...await refsTab(c, list)];
+  });
+  return main;
 }
 
-export async function refsTab(c) {
-  const list = await refsOf(c);
+async function refsTab(c, list) {
   const refs = live(list);
   const br = refs.filter(r => r.kind === 'branch');
   const tg = refs.filter(r => r.kind === 'tag');
@@ -411,12 +436,8 @@ export async function refsTab(c) {
         for (const tr of $$('tr', tbody)) tr.hidden = !(f === 'all' || tr.dataset.kind === f);
       }}, l, ' ', h('span', {class: 'n'}, fmt(n)))));
   out.push(h('div', {class: 'panel', id: 'refs'}, h('div', {class: 'panel-h'}, h('h2', null, 'Branches and tags ',
-    h('span', {class: 'meta'}, `in ${c}`)), chipsBox,
-  may ? h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'ref-new', onclick: () => makeDialog(c, list)}, icon('branch'), 'Make a branch or tag') : null),
-  tbl('refs-tbl stack-line', ['Ref', 'Made', 'Expires', 'Changed tables', ''], tbody),
-  may ? null : h('p', {class: 'fine', 'data-no-create': ''},
-    h('b', null, `Making, renewing, deleting and merging need create on ${c}, which your groups don't hold.`),
-    ' You can still read any branch or tag.')));
+    h('span', {class: 'meta'}, `in ${c}`)), chipsBox),
+  tbl('refs-tbl stack-line', ['Ref', 'Made', 'Expires', 'Changed tables', ''], tbody)));
   out.push(await endedPanel(c, list), refsExplain(c, lim));
   return out;
 }
@@ -942,7 +963,8 @@ export function makeDialog(c, list, preset = {}) {
     h('button', {type: 'button', 'aria-pressed': String(k === kind), 'data-k': k}, icon(k), k === 'branch' ? 'Branch' : 'Tag')));
   const name = h('input', {name: 'name', type: 'text', placeholder: 'a name, such as release-2026-11', autocomplete: 'off', spellcheck: 'false',
     value: preset.name || null});
-  const from = select('from', [['main', 'main, as it is now'], ...live(list).map(r => [r.name, `@${r.name} (${r.kind})`])], 'main');
+  const from = select('from', [['main', 'main, as it is now'], ...live(list).map(r => [r.name, `@${r.name} (${r.kind})`])],
+    preset.from || 'main');
   const hint = h('div', {class: 'ref-hint'});
   const draw = () => {
     for (const b of $$('button', seg)) b.setAttribute('aria-pressed', String(b.dataset.k === kind));

@@ -1,0 +1,17 @@
+Breaks: Holds and freezes offers an operator no way to freeze a namespace.
+Module: catalog-server
+Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/governance.js b/catalog-server/src/main/resources/nuna/ui/governance.js
+index 96796218..813da8a6 100644
+--- a/catalog-server/src/main/resources/nuna/ui/governance.js
++++ b/catalog-server/src/main/resources/nuna/ui/governance.js
+@@ -278,7 +278,7 @@ function holdsPage(catalog, tabs) {
+   // (Atelier, 2026-11-24; backlog 221).
+   const acts = [may(catalog, 'manage-tags')
+     ? h('button', {class: 'btn sm', type: 'button', onclick: () => holdOnPath(catalog)}, icon('lock'), 'Place a hold on a path') : null,
+-    operates() ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, reload)},
++    false ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, reload)},
+       icon('snow'), 'Freeze a namespace for DR') : null].filter(Boolean);
+   main.append(pageHead({
+     eyebrow: `${catalog} · governance`,

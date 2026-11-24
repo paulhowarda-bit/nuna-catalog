@@ -34,8 +34,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
  * <ul>
  *   <li>DR replication, from the DR readout: with every table at its watermark, none is behind; with only a table
  *       the verifier never reported on, the panel says no verifier has reported on it rather than count it; then the
- *       tables behind their watermark, the one never verified counted apart, the most versions behind linking to
- *       its table, and the longest lag.</li>
+ *       tables behind their watermark, the one never verified counted apart, the most versions behind (linking to
+ *       its table only for one who may read it), and the longest lag.</li>
  *   <li>Store: the backend and version this server finds on its database, and its self-check at start with each
  *       finding {@code nuna.database.allow-unsafe} let through, as {@code /health/server?store=true} answers; and the
  *       point-in-time recovery window the deployment declares, {@code nuna.governance.pitr-window} (backlog 145),
@@ -143,9 +143,23 @@ class ConsoleHealthBrowserTest {
                 .mapToLong(row -> ((Number) row.get("lag-seconds")).longValue()).max().orElseThrow();
         assertThat(fact("health-dr", "lag")).as("the longest of %s s, read a moment later", lag).matches("\\d+ s");
         assertThat(driver.findElements(By.id("health-dr-more"))).as("all of them were read").isEmpty();
-        driver.findElement(By.cssSelector("#health-dr [data-fact='most'] a")).click();
+        // An operator holds no data grant, so the table's page would refuse them: its name, with its path, and no link
+        // (Paul, 2026-11-23: "the service tab has a bad link"; backlog 225).
+        assertThat(driver.findElements(By.cssSelector("#health-dr [data-fact='most'] a"))).isEmpty();
+        assertThat(driver.findElement(By.cssSelector("#health-dr [data-fact='most'] b span")).getDomAttribute("title"))
+                .isEqualTo(Api.CATALOG + "." + namespace + ".fresh");
+        // An operator whose groups may also read it follows the name to the table.
+        String readers = "dr-readers-" + Api.suffix();
+        expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + namespace
+                + "\"]},\"group\":\"" + readers + "\",\"privilege\":\"select\"}", AUTH, api.grantAdmin()), 204);
+        driver = browser.session();
+        browser.signIn(token("orla", GovernanceServer.PLATFORM_OPS, readers));
+        browser.open("/ui/#p=health");
+        browser.await(By.cssSelector("#health-dr [data-fact='most'] a")).click();
         browser.await("the table's page has not opened", d -> d.getCurrentUrl().contains("n=fresh") ? true : null);
         assertThat(driver.getCurrentUrl()).contains("c=" + Api.CATALOG, "k=table", "ns=" + namespace);
+        driver = browser.session();
+        browser.signIn(operator);
 
         // The store, as this server finds it.
         String own = expect(api.send("GET", "/management/v1/health/server?store=true", null, AUTH, operator), 200)
