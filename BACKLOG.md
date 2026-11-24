@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**48 open:** 9 S, 18 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**47 open:** 9 S, 17 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -55,7 +55,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 | [198](backlog/198.md) | L | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | a new server route (L: it lists names across a whole catalog or every catalog, and must list only what the caller may describe, by the same rule as the catalog list's `inCatalog` and each level's describe check, with a cap and paging), and M in the console (the Go to a path box asks it, shows recent items first, then matches with path and kind) | 2026-11-23 |
 | [199](backlog/199.md) | ? | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | the table page's tabs regrouped (Overview, Schema, History, Access, Maintenance, Audit) from today's ten panels, with redirects from the old tab keys, and the namespace and catalog pages given the same names for the same things | 2026-11-23 |
-| [200](backlog/200.md) | M | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | the rail's items renamed and re-ordered (Home, Catalog, Governance, Audit, Maintenance, Service), each shown only where the role may use it, never folded to icons, and Home routed per role | 2026-11-23 |
 | [202](backlog/202.md) | M | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers | 2026-11-23 |
 | [203](backlog/203.md) | S | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test | 2026-11-23 |
 | [204](backlog/204.md) | M | Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot | the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string | 2026-11-23 |
@@ -2934,22 +2933,6 @@ for roles that may read it); Properties folds into Overview and Maintenance; old
 them; namespaces and catalogs use the same tab names for the same things. Atelier settles any design question first
 (her review is the brief). Heavy browser tests updated, a bite for the old-tab redirects.
 
-### 200. Console: the rail by role, with distinct words and a Home per role (Atelier's review S3)
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/index.html catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/access.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: M, the rail's items renamed and re-ordered (Home, Catalog, Governance, Audit, Maintenance, Service), each shown only where the role may use it, never folded to icons, and Home routed per role
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F4 and F5, section 4, S3): the rail offered pages a role may not open and folded to bare icons
-on the Catalog page; "Overview" in the rail is a catalog dashboard while each page also has an Overview tab. Items
-184 (the rail follows the catalog list's `may`, each role lands where its work is) and 192 (Health became Service,
-the rail keeps its labels on the Catalog page) did the quick half. `20-audit-ana.png`, `02-catalog-engines.png`.
-
-Done looks like: the rail reads Home, Catalog, Governance, Audit, Maintenance, Service, in that order, each shown only
-where the role may use it; Home is the catalog overview for analysts, the feed for auditors, Service for operators;
-the rail is labelled on every page at desktop widths and is a drawer on a phone; old `p=overview` links open Home;
-heavy browser tests per role, a bite for Home's routing. Builds on 184 and 192 rather than redoing them.
-
 ### 202. Console: a copy pass across every page, by the words-table method (Atelier's review S5)
 
 - Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
@@ -3178,4 +3161,5 @@ that changed the server's health answer (195) is read first, so the console says
 | [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |
 | [195](backlog/195.md) | Audit goes to logs: the catalog serves and vends without Kafka, and the audit table writer takes the audit records over OTLP (D23) | done | 2026-11-23 |
 | [196](backlog/196.md) | Demo switches: demo.sh gen and ss turn the brokerage generator and SingleStore on and off, as cdc does its leg; Kafka runs only while cdc or gen is on | done | 2026-11-23 |
+| [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
 | [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |
