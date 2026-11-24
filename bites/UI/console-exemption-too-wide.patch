@@ -11,7 +11,7 @@ index b16fa9cb..caeff298 100644
          // OPA's calls from Trino carry no token of their own: OpaRoutes verifies the user's, which Trino forwards in
          // the body, and answers from it alone (D20, backlog 115).
 -        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path) || path.startsWith("/opa/");
-+        return path.equals("/v1/oauth/tokens") || path.startsWith("C:/Program Files/Git/ui") || path.startsWith("/opa/");
++        return path.equals("/v1/oauth/tokens") || path.startsWith("/ui") || path.startsWith("/opa/");
      }
  
      @Override
