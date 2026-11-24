@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**49 open:** 12 S, 17 M, 15 L, 5 XL.
+**48 open:** 12 S, 17 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -33,7 +33,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [111](backlog/111.md) | M | After a regional failover, report every ref that names a file the DR store lacks (item 26, question 3) | one more pass of the reconcile over the refs' metadata files, with a route test and a runbook step; waits on items 102 and 105, and on item 100, which holds `Reconcile.java` | 2026-11-20 |
 | [112](backlog/112.md) | M | Branches, tags and merge: engines on refs, the docs and the gate (item 26) | engine matrix cases and one page of docs over code already built; the heavy and overnight runs are the overnight run's; waits on items 102 to 111 | 2026-11-20 |
 | [113](backlog/113.md) | L | Grants that name a branch (later, D33) | a grant gains an optional branch on four stores, and every authorization check on a ref asks for it, with tests and bites | 2026-11-20 |
-| [115](backlog/115.md) | L | Row filters and column masks stored in the catalog, served to Trino (D20) | a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites | 2026-11-20 |
 | [118](backlog/118.md) | XL | Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20) | the spec's three scan-planning routes, a fleet of filtering jobs with its own identity, temporary copies with their own credentials, lifetime and audit, a cache of copies, and a demo leg, with tests and bites on four stores; waits on item 115 | 2026-11-21 |
 | [123](backlog/123.md) | M | Heavy build: Docker-backed services stall 30 s while two heavy modules share Docker | finding what stalls first (Docker Desktop's port forwarding, or CPU starved by two stacks), then either a schedule that keeps the heaviest modules apart or waits that outlast the stall; shown only by overnight runs | 2026-11-22 |
 | [135](backlog/135.md) | S | Windows pages the Docker VM out during the nightly: free the host's memory (Paul decides how) | once Paul picks a remedy: applying it and reading one overnight run's numbers; waits on Paul | 2026-11-22 |
@@ -2168,73 +2167,6 @@ main's files with them. A grant that names a branch needs credentials scoped to 
 whole prefix; the catalog marks only a branch's metadata files (`<version>-<uuid>.branch-<ref id>.metadata.json`), so
 the engines' data and manifest files would need a place of the branch's own too.
 
-### 115. Row filters and column masks stored in the catalog, served to Trino (D20)
-
-- Decided: 2026-11-20, D20
-- Added: 2026-11-20 by Paul
-- Touches: catalog-store-api/ catalog-store-sql/ catalog-store-oracle/ catalog-store-mongo/ catalog-security/ catalog-server/ demo/
-- Effort: L, a new kind of policy on four stores with a schema step, management routes and audit, a route Trino's access control calls, Trino reaching nuna as a trusted engine for its users, and a demo leg, with tests and bites
-
-Paul chose row-level security through trusted engines on 2026-11-20 (D20, amended): nuna holds the row filters and
-column masks, and Trino applies them. Today nuna has only half of it. A table flagged with a row/column policy gives
-storage access only to registered trusted engines (`Authorizer`, rule D20, in `catalog-security`), but the rules
-themselves are nowhere in nuna, and the demo's Trino sets none (`demo/k8s/trino.yaml` configures no access control).
-
-What is missing:
-
-1. **The rules, in nuna.** A row filter (an SQL predicate) and column masks (an SQL expression per column) on a table,
-   for a group, stored on all four stores beside the grants, set, listed and removed through the management API, and
-   audited as grants are (D23). Who may set them under D18's separation of duties (the grant admin, the tag steward,
-   or a duty of its own) is Paul's to decide; ask before building the routes.
-2. **A route Trino asks.** Trino's OPA access control asks an outside service for each table's row filters and column
-   masks (`opa.policy.row-filters-uri`, `opa.policy.column-masking-uri`; check both against the demo's Trino version).
-   nuna answers that request itself, or feeds an OPA server that does; the work picks one and says why.
-3. **Trino reaching nuna as a trusted engine.** The demo's Trino sends each user's own token
-   (`iceberg.rest-catalog.session=USER`, `demo/k8s/trino.yaml`), so nuna sees the user, not the engine, and a flagged
-   table refuses storage access through Trino. Trino must come as itself and name the end user (`X-Nuna-End-User`,
-   `catalog-server/.../security/Authentication.java`), or nuna must accept another form Trino can send, such as a
-   token exchange with Trino as the actor. Not checked by running.
-
-Out of scope: SingleStore. Its pipelines read as their own principal (`demo/singlestore/load.sql`), copy whole tables
-into SingleStore, and have no hook to fetch rules from nuna, so registering it as a trusted engine would hand every
-row of a flagged table to SingleStore's own access control.
-
-Done when a group's row filter and column masks on a table are stored on all four stores and managed and audited
-through the management API; in the demo, two users in different groups run the same Trino query on a flagged table
-and get different rows and masked columns; a client that is no trusted engine still gets 403 on that table's storage
-access; and a bite that drops the filter from nuna's answer to Trino makes a test fail.
-
-## Design (2026-11-24, catalog-security)
-
-Decided: 2026-11-24, D20 (amended). Paul chose the grant admin: setting or removing a table's row filters and column
-masks needs `manage-grants` on the table or above, under D18's separation of duties as grants are (nobody sets a rule
-for their own group), and is audited as grants are.
-
-1. **Rules.** One rule per (table, group): an optional row filter (an SQL predicate) and column masks (column name to
-   SQL expression). Stored on all four stores beside the grants (`row_column_rule`; a Mongo collection), deleted with
-   the table when it is purged. A rule needs the table's row/column-policy flag; the store checks the flag under the
-   table's lock, and the flag cannot be removed or set false while the table has rules, so a rule never sits on a
-   table whose files an untrusted client can read.
-2. **How a user's rules combine.** Grants add up and there is no DENY (D18), so rules add up too: a user sees the rows
-   any of their groups' filters admit (the filters joined with OR; a rule with no filter admits every row); a column
-   is unmasked if any of their groups' rules leaves it unmasked, masked with the one expression if all their rules
-   mask it the same way, and NULL if their masks differ. A table that has rules but none for the user's groups gives
-   them no rows (`false`): fail closed.
-3. **What Trino asks.** nuna answers Trino's OPA access control itself (`/opa/v1/...`), with no OPA server between:
-   the rules are nuna's own data and a second copy would need syncing and could go stale. The allow route answers
-   true for everything, as Trino's default access control does today, since nuna's REST routes still authorize every
-   table; the row-filter and batch column-mask routes answer from the rules. Trino forwards the end user's own token
-   (`opa.identity.extra-credentials-keys=token`), so nuna takes the user and groups from a token the IdP signed, never
-   from Trino's word. A Trino catalog maps to a nuna warehouse (`nuna.opa.catalogs`, `lakehouse_dev` to
-   `lakehouse@dev`); a name in a mapped catalog that nuna cannot resolve for that user, or a missing or invalid token,
-   gets the filter `false`. Catalogs not mapped (Trino's `system`) get no rules.
-4. **Trino as a trusted engine.** Trino keeps sending each user's own token (session USER) and adds its own token on
-   every request in a static header, `X-Nuna-Engine-Authorization: Bearer <Trino's token>`
-   (`iceberg.rest-catalog.http-headers`). nuna verifies both: the engine's must be a registered trusted engine acting
-   as itself, and the caller becomes that engine acting for the user the other token names, with the groups that token
-   carries. A client with only a user's token, and no engine's, is no trusted engine and still gets 403 on a flagged
-   table's storage access. D13's "never /v1/oauth/tokens" stands: no token exchange.
-
 ### 118. Untrusted engines read flagged tables through filtered copies made by a fleet, delivered by scan planning (D20)
 
 - Decided: 2026-11-21, D20
@@ -3215,6 +3147,7 @@ Done looks like:
 | [103](backlog/103.md) | Branch commits and the merge transaction in the store (item 26) | done | 2026-11-22 |
 | [110](backlog/110.md) | Demo: a catalog tag, a branch with Trino on it, and a merge (item 26) | done | 2026-11-23 |
 | [114](backlog/114.md) | Run a table's maintenance now, from the console, outside the cleanup window too | done | 2026-11-22 |
+| [115](backlog/115.md) | Row filters and column masks stored in the catalog, served to Trino (D20) | done | 2026-11-24 |
 | [116](backlog/116.md) | AuditTablesTest's server refuses to start: its test PostgreSQL fails the startup self-check | done | 2026-11-21 |
 | [117](backlog/117.md) | RollingUpgradeTest: the new release refuses catalog m8, bound to another storage profile id by the old one | done | 2026-11-22 |
 | [119](backlog/119.md) | Atelier, a UX expert agent (agent-forge home) | done | 2026-11-21 |
