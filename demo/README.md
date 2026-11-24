@@ -1,12 +1,19 @@
 # Local demo: the catalog, its console, SingleStore both ways, Trino, CDC, and the engine matrix, on Kubernetes
 
-One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Kafka, kafbat, Silo, the
-catalog server (with the console) and SingleStore, plus Keycloak for signing in by username and password, and
-Trino with CloudBeaver as its UI. `up` writes sample Iceberg tables, makes a branch and a tag of the catalog,
-syncs SingleStore and Iceberg in both directions, starts the brokerage world, a live generator whose data
-reaches Iceberg through Kafka and SingleStore, and prints how to sign in; `cdc` captures changes in PostgreSQL, Oracle and
-CockroachDB into Iceberg through Debezium and Kafka Connect; `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's
-ingest against the same stack. Everything is local and uses test keys; nothing here is fit for production.
+One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Silo, the catalog server
+(with the console), Keycloak for signing in by username and password, and Trino with CloudBeaver as its UI. `up`
+starts that core, writes sample Iceberg tables, makes a branch and a tag of the catalog, and prints how to sign in.
+Three switches add the rest, each on with `demo/demo.sh <switch>` and off with `demo/demo.sh <switch> stop` (D50):
+
+- `gen`: the brokerage world, a live generator whose data reaches Iceberg through Kafka and SingleStore, with
+  Kafka, Kafka Connect and kafbat. It turns `ss` on too.
+- `ss`: SingleStore, synced with Iceberg in both directions. `ss stop` turns `gen` off too.
+- `cdc`: changes in PostgreSQL, Oracle and CockroachDB, captured into Iceberg through Debezium and Kafka Connect.
+
+Kafka runs only while `gen` or `cdc` is on: the catalog audits to its log, not to Kafka (D23, amended 2026-11-23).
+`up` turns `gen` and `ss` back on if they were on (`~/.nuna-demo/switches`; all off on a new machine), and keeps a
+running CDC leg. `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's ingest against the same stack,
+with `gen` on. Everything is local and uses test keys; nothing here is fit for production.
 
 ## Start
 
@@ -23,9 +30,10 @@ demo/demo.sh up
 - Everything runs in namespace `nuna-demo` (`NUNA_DEMO_NAMESPACE`) of context `docker-desktop`
   (`NUNA_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
-  - `stack.yaml`: PostgreSQL, Kafka, kafbat, and `idp`, which serves the demo issuer's keys
-    (`demo/Mint.java`). The demo patches kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak;
-    the engine matrix on its own leaves kafbat open.
+  - `stack.yaml`: PostgreSQL and `idp`, which serves the demo issuer's keys (`demo/Mint.java`).
+  - `kafka.yaml`: Kafka and kafbat, which the demo applies only while `gen` or `cdc` is on. The demo patches
+    kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak; the engine matrix on its own leaves kafbat
+    open.
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, with its console on the pod's 9001, and the job
     that makes the warehouse bucket. The demo patches Silo with `silo-signin.yaml`, its console's sign-in
     through Keycloak; the engine matrix on its own leaves it out.
@@ -66,7 +74,8 @@ demo/demo.sh up
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
   `s3.endpoint` to `https://<host>:8187`: the catalog vends one address per profile (D21, amended 2026-11-20).
-- Memory: about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
+- Memory, with every switch on (the core alone leaves out SingleStore, Kafka, kafbat, Kafka Connect and the
+  generator, about 3 GB of requests and up to 5.8 GB of limits): about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus the audit
@@ -298,13 +307,14 @@ Written live by the brokerage world (below): everything under `brokerage`.
 
 ### The brokerage world
 
-A simulated US broker-dealer (D48, `docs/design/brokerage-world.md`, module `demo-datagen`), running in every
-`up`: its generator books every financial transaction through the demo kit's posting engine and sends the world's
+A simulated US broker-dealer (D48, `docs/design/brokerage-world.md`, module `demo-datagen`), running while the
+switch `gen` is on (D50): its generator books every financial transaction through the demo kit's posting engine and sends the world's
 events to Kafka and SingleStore, and the demo's pipelines bring them into Iceberg as they happen.
 
-- `brokerage-bootstrap`, a job that `up` runs first: it makes the world's namespaces, tables and views in
-  `lakehouse` as user `brokerage`, and its Kafka topics. Then `up` sets their governance as `stella` (below),
-  registers the sink, and starts the generator, Deployment `brokerage`, last (`demo/demo.sh brokerage logs`
+- `gen` turns `ss` on if it is off, starts Kafka, and runs `brokerage-bootstrap`, a job: it makes the world's
+  namespaces, tables and views in `lakehouse` as user `brokerage`, and its Kafka topics. Then `gen` sets their
+  governance as `stella` (below),
+  starts Kafka Connect, registers the sink, and starts the generator, Deployment `brokerage`, last (`demo/demo.sh brokerage logs`
   follows it). Its settings are environment variables in `k8s/brokerage.yaml` and `k8s/brokerage-bootstrap.yaml`:
   `BROKERAGE_ACCOUNTS=1000`, `BROKERAGE_CATCH_UP_DAYS=3`, `BROKERAGE_SEED=20261122`.
 - The real clock: the world's events arrive at their own time of day in New York, as a live firm's would. The
@@ -331,6 +341,9 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
   `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. The grants on all of
   `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino.
+- `gen stop` stops the generator, waits 20 seconds for the sink's last commit, then stops Kafka Connect, Kafka
+  and kafbat unless the CDC leg runs. Kafka keeps no volume, so the topics go with it; the next `gen` makes them
+  again, and the generator catches up on the days it missed.
 - Memory: the generator asks for 256 MB, Kafka Connect 512 MB, the bootstrap job 384 MB while it runs. `cdc`
   pauses the generator; `up`, `rate` and `engines` stop it and Kafka Connect while they run.
 

@@ -33,6 +33,10 @@ config:
         catalog: nuna_audit
         readers: demo-auditors
         writers: demo-audit-writers
+      # No Kafka: the demo's catalog audits to its log (D23, amended 2026-11-23), and Kafka runs only while the
+      # brokerage world's generator or the CDC leg does (D50). catalog-values.yaml, which the engine matrix shares,
+      # keeps its Kafka.
+      kafka-bootstrap-servers: ""
     security:
       issuers:
         - issuer: https://idp.demo/nuna
