@@ -1,0 +1,17 @@
+Breaks: The audit's own reads are always in the feed, burying the rest.
+Module: catalog-server
+Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index e4ae6acf..4e229ba2 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -211,7 +211,7 @@ function feedPanel(catalog, summary, own) {
+   upTo.value = st.upTo;
+   reads.checked = st.auditReads;
+   // The audit's own reads are each reader's look at the feed: hidden unless asked for, or they bury the rest.
+-  const typesOf = kind => (KINDS.find(([k]) => k === kind)[2] || TYPES).filter(t => st.auditReads || t !== 'audit-read');
++  const typesOf = kind => (KINDS.find(([k]) => k === kind)[2] || TYPES).filter(t => st.auditReads || t);
+   const status = h('p', {class: 'fine feed-status', role: 'status'});
+   const feed = h('div', {class: 'feed', 'data-feed': ''});
+   const more = h('p', {class: 'fine feed-more'});
