@@ -38,6 +38,7 @@ public final class AuditRows {
             case StorageSetup e -> on(e.actor(), e.action() == StorageSetup.Action.CATALOG_CREATED
                     ? new Securable(Securable.Kind.CATALOG, e.id(), e.name(), List.of()) : null);
             case GovernanceChange e -> on(e.actor(), e.target());
+            case RowColumnRuleChange e -> on(e.actor(), e.table());
             case HoldChange e -> new Parts(e.actor(), e.actor().requestId(), e.target(), null, null, e.reason());
             case Undrop e -> on(e.actor(), e.object());
             case Purge e -> on(e.actor(), e.object());
