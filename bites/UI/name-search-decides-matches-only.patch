@@ -1,0 +1,17 @@
+Breaks: The name search decides only the objects whose name matches, so a hidden match costs more than none.
+Module: catalog-server
+Test: NameSearchRoutesTest#aHiddenMatchCostsWhatNoMatchCosts
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+index b54f2682..6c442765 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+@@ -157,7 +157,7 @@ class NameSearchRoutes {
+             // Every object of a catalog the caller holds something in is decided, whatever its name, so what a look
+             // costs says nothing of the names the caller may not see.
+             List<CatalogObject> held = items.subList(Math.min(skip, items.size()), items.size()).stream()
+-                    .filter(object -> catalogs.containsKey(object.catalogId())).toList();
++                    .filter(object -> catalogs.containsKey(object.catalogId()) && holds(object.name().display(), fragment)).toList();
+             List<Decision> decisions = held.isEmpty() ? List.of() : authorizer.decide(request.caller(), held.stream()
+                     .map(object -> new Authorizer.Request(new Target.TableOrView(object), DESCRIBE)).toList());
+             Set<UUID> described = new HashSet<>();
