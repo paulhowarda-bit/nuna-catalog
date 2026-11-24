@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
-index 86eee6f0..958f3ae5 100644
+index f14f9e10..f5981755 100644
 --- a/catalog-server/src/main/resources/nuna/ui/audit.js
 +++ b/catalog-server/src/main/resources/nuna/ui/audit.js
-@@ -352,7 +352,7 @@ const kindLabel = kind => {
- function recordDetail(catalog, r) {
-   const rid = r['request-id'];
-   // Without an archive there is no link to check, so none is offered (Atelier's re-walk, backlog 216).
+@@ -355,7 +355,7 @@ function recordDetail(catalog, r) {
+   const fromKafka = Number(r.partition) >= 0;
+   // Without an archive (backlog 216), or for a record read from the log (backlog 205), there is no link to check, so
+   // none is offered.
 -  const archived = !(r.chain && r.chain.status === 'no-archive');
 +  const archived = true;
-   const link = archived ? h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button', onclick: () => load(link, () => chainLink(r))},
-     'Check its link')) : null;
+   const link = archived && fromKafka ? h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button',
+     onclick: () => load(link, () => chainLink(r))}, 'Check its link')) : null;
    const o = r.object;
