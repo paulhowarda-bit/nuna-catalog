@@ -5,13 +5,19 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
+import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
+import org.springframework.util.DigestUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -32,6 +38,9 @@ public class UiWiring implements WebMvcConfigurer {
     /** The console's own paths: its page and its flat set of files. Nothing else skips authentication. */
     private static final Pattern PUBLIC = Pattern.compile("/ui/?|/ui/[a-z0-9-]+\\.(html|js|css|json|svg|woff2|txt)");
 
+    /** Each console file's ETag, by the file's description; the jar's files never change while the server runs. */
+    private static final Map<String, String> ETAGS = new ConcurrentHashMap<>();
+
     /** Whether {@code path} (without the context path) is one of the console's files, which need no token. */
     public static boolean isConsoleFile(String path) {
         return PUBLIC.matcher(path).matches();
@@ -44,9 +53,26 @@ public class UiWiring implements WebMvcConfigurer {
                 + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
     }
 
+    /**
+     * The console's files, revalidated on every use and answered by an ETag of their bytes (backlog 203). Not by
+     * Last-Modified: Gradle's reproducible jars give every entry the same 1980 date, so a browser that loaded the
+     * console before an upgrade got 304 for every file after it and went on running the old console.
+     */
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        registry.addResourceHandler("/ui/*").addResourceLocations(FILES).setCacheControl(CacheControl.noCache());
+        registry.addResourceHandler("/ui/*").addResourceLocations(FILES).setCacheControl(CacheControl.noCache())
+                .setUseLastModified(false).setEtagGenerator(UiWiring::etag);
+    }
+
+    /** A strong ETag of a file's bytes; the files are read from the jar, so each is hashed once. */
+    static String etag(Resource file) {
+        return ETAGS.computeIfAbsent(file.getDescription(), d -> {
+            try (InputStream in = file.getInputStream()) {
+                return "\"" + DigestUtils.md5DigestAsHex(in) + "\"";
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
     }
 
     @Bean
