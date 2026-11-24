@@ -3247,3 +3247,4 @@ the pods and the catalog stops exporting to them, and `up` puts the switch back 
 | [229](backlog/229.md) | The console header lists every group by name and runs off the screen | done | 2026-11-24 |
 | [230](backlog/230.md) | The demo runs no maintenance worker, so Overview and Maintenance are empty | done | 2026-11-24 |
 | [234](backlog/234.md) | Demo SingleStore refuses order writes once its pipelines' extractors fill the table-memory cap | done | 2026-11-24 |
+| [236](backlog/236.md) | Presenter, who holds every duty, lands on Overview | done | 2026-11-24 |

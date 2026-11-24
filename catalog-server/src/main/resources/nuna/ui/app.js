@@ -105,7 +105,9 @@ async function landingCatalog(all) {
 }
 
 /** Where a caller's work is (items 184 and 200): Audit for auditors and grant admins, Service for operators, Overview
- * for those who read data, in that order (Atelier, 2026-11-23), else the catalog. */
+ * for those who read data, in that order (Atelier, 2026-11-23), else the catalog. One who holds every duty, which only
+ * a showcase sign-in like the demo's presenter does (D18 gives each group one), opens on Overview (Atelier, 2026-11-24;
+ * backlog 236). */
 function homeHref(c) {
   const home = homeKey(c);
   return home === 'service' ? pageHref('service') : home === 'catalog' ? href({c}) : pageHref(home, c);
@@ -113,6 +115,7 @@ function homeHref(c) {
 
 /** The rail item of the caller's home, as homeHref chooses it. */
 function homeKey(c) {
+  if (auditOpen(c) && operates() && readsData()) return 'overview';
   if (auditOpen(c)) return 'audit';
   if (operates()) return 'service';
   if (readsData()) return 'overview';
