@@ -1,0 +1,16 @@
+Breaks: Access no longer leads with what the viewer may do there.
+Module: catalog-server
+Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 0da73900..7214ae43 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -432,7 +432,6 @@ async function youMay(target) {
+ export function accessTab(target, reload) {
+   const you = h('div');
+   const gov = h('div');
+-  load(you, () => youMay(target));
+   load(gov, () => governanceTab(target, reload));
+   return h('div', {class: 'stack', id: 'access-tab'}, you, gov, grantsTab(target));
+ }
