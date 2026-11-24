@@ -15,3 +15,22 @@ through `demo-cdp-swap.mjs` (the worktree's `ui/` served to the demo page): 183,
 checked: the new and changed `ConsoleBrowserTest`, `ConsoleLabelsBrowserTest` and `ConsoleHealthBrowserTest` cases
 are heavy and run overnight (Docker is shared with the demo, and Windows had 0.5 GB free); 184 live needs the demo
 rebuilt with this server.
+
+## Batch 2 (items 192, 186, 187, 190)
+
+- 192: the rail's Health is Service and a table's Health tab Maintenance; old `p=health` and `tab=health` links
+  still open them; the rail keeps its labels on the Catalog page.
+- 186: a table's Overview says who made its current snapshot, Snapshots has a By column (each paired with its commit
+  through the metadata log's `add-snapshot` updates, no server change), and Contents reads "12:49 by lake" and
+  "12:49 in rates".
+- 187: Audit filters by kind (Grants, Holds and freezes, Branches and tags, Commits, Other changes, Reads,
+  Credentials, Refusals), each By kind row applies its kind, every filter is in the link, the audit's own reads are
+  hidden unless asked for, and the range names both days.
+- 190: when every maintenance job is off in the policy, Overview, Maintenance and a table's tab say so first, read
+  through the caller's own table so asking writes no denial.
+
+Checked: the fast build at landing. Live in the demo through the swap: 192, 186 and 190 as `ana`; 187 as `gary` on
+`lakehouse`'s real audit tables (the access the old server does not send yet was set in the page). Not checked: the
+heavy browser cases (overnight); the rail's Service item and each role's rail need the demo rebuilt (`index.html` and
+the catalog list's `may` come from the server). Bites recorded for each guarded check, and D18's catalog-list bite and
+184's rail bite recorded again where these changes moved them.

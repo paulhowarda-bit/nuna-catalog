@@ -10,7 +10,7 @@ import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
   load, muted, panel, pill, plural, s, sizeWords, tabsNav, tbl, when} from './dom.js';
 import {objectHref, warehouseOf} from './route.js';
-import {keyOfRow, queue, queueOf, REASONS} from './queue.js';
+import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
 import {auditTab, exportDialog, governanceSummary, governanceTab, grantsTab} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
@@ -82,7 +82,7 @@ function addCount(tabs, key, n) {
 // ---- the table page ----
 
 const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['snapshots', 'Snapshots'], ['partitioning', 'Partitioning'],
-  ['properties', 'Properties'], ['health', 'Health'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
+  ['properties', 'Properties'], ['maintenance', 'Maintenance'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
   ['metadata-log', 'Metadata log']];
 
 export function tablePage(target, tab, route) {
@@ -116,12 +116,12 @@ export function tablePage(target, tab, route) {
   // Compact now is main's: the worker compacts main only.
   if (!target.ref) mayModify(target).then(may => {
     if (may) acts.append(h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact',
-      onclick: () => askDialog(target, 'compaction', key === 'health' ? reload : null)}, icon('play'), 'Compact now'));
+      onclick: () => askDialog(target, 'compaction', key === 'maintenance' ? reload : null)}, icon('play'), 'Compact now'));
   });
   const show = () => {
     if (key === null) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
-    } else if (key === 'health') {
+    } else if (key === 'maintenance') {
       load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
     } else if (key === 'governance') {
       load(body, () => throughRef(target, () => metadata, 'governance', () => governanceTab(target, reload)));
@@ -137,7 +137,7 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return refusedLoad(error, 'Health, Governance, Grants and Audit', target.ref);
+          return refusedLoad(error, 'Maintenance, Governance, Grants and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
         const shown = {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
@@ -156,7 +156,7 @@ function headMarks(target, title) {
     const row = queueOf(rows, target.catalog).find(r => keyOfRow(r) === [target.catalog, pathOf(target)].join('.'));
     if (row) {
       const eq = (row.assessment.reasons || []).includes('equality-deletes');
-      title.append(h('a', {href: objectHref(target, 'health'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
+      title.append(h('a', {href: objectHref(target, 'maintenance'), class: 'pill ' + (eq ? 'bad' : 'warn')}, 'Needs compaction'));
     }
   }, () => {});
   api.tableHealth(target).then(health => title.append(...requestPills(health.requests)), () => {});
@@ -209,6 +209,13 @@ function overviewTab(target, t) {
   load(gov, async () => h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'governance')}, 'Governance')),
     await governanceSummary(target)));
   const refs = Object.entries(m.refs || {});
+  const by = h('span', {class: 'fine', id: 'current-by'});
+  if (sn) {
+    snapshotCommits(target, [sn['snapshot-id']]).then(found => {
+      const e = found.get(String(sn['snapshot-id']));
+      if (e) fill(by, h('br'), 'by ', byWords(e));
+    }, () => {});
+  }
   return h('div', {class: 'grid-21', id: 'overview-tab'},
     h('div', {class: 'stack'},
       h('div', {class: 'kpis'},
@@ -221,7 +228,7 @@ function overviewTab(target, t) {
           schemas.length > 1 ? plural(schemas.length - 1, 'change') : 'as created')),
       h('div', {class: 'panel'}, h('h2', null, 'Current state'), facts([
         ['Current snapshot', sn ? [code(String(sn['snapshot-id'])), ` · ${sum.operation || '–'} · ${when(sn['timestamp-ms'])}`,
-          sum['engine-name'] ? [h('br'), h('span', {class: 'fine'}, `${sum['engine-name']} ${sum['engine-version'] || ''}`.trim())] : null]
+          sum['engine-name'] ? [h('br'), h('span', {class: 'fine'}, `${sum['engine-name']} ${sum['engine-version'] || ''}`.trim())] : null, by]
           : muted('none: the table has no data yet')],
         ['Table UUID', code(m['table-uuid'] || '')],
         ['Location', code(m.location || '')],
@@ -259,7 +266,9 @@ function propertiesTab(target, t, reload, ref) {
 const refBadge = (name, type) => badge([icon(type === 'tag' ? 'tag' : 'branch'), name], type === 'tag' ? 'ref-t' : 'ref-b');
 
 async function healthSummary(target) {
-  const [health, rows] = await Promise.all([api.tableHealth(target), queue().catch(() => [])]);
+  const [health, rows, policy] = await Promise.all([api.tableHealth(target), queue().catch(() => []),
+    api.policy(target).catch(() => null)]);
+  const off = maintenanceOff(target.catalog, policy, objectHref(target, 'maintenance'));
   const a = health.assessment;
   const c = health['last-compaction'];
   const inCatalog = queueOf(rows, target.catalog);
@@ -267,9 +276,10 @@ async function healthSummary(target) {
   const words = [];
   if (a && a['needs-compaction']) words.push((a.reasons || []).map(r => (REASONS[r] || [null, null, r])[2]).join(' '));
   words.push(c ? `Last compaction ${at(c['ended-at'] || c['started-at'])}, ${c.outcome}.` : 'No compaction has run for this table.');
-  return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'health')}, 'Health'), ' ',
+  return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'maintenance')}, 'Maintenance'), ' ',
     target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
-  target.ref ? h('p', {class: 'fine'}, 'Health is assessed and maintained on main only. Main\'s health of this table.') : null,
+  target.ref ? h('p', {class: 'fine'}, 'Maintenance is assessed and run on main only. Main\'s, for this table.') : null,
+  off ? h('p', {class: 'fine', id: 'summary-maintenance-off'}, off) : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)
     : pill('ok', icon('check'), 'No compaction needed'),
@@ -467,6 +477,7 @@ function snapshotsTab(target, t) {
     return h('div', {class: 'empty'}, h('h3', null, 'No snapshot yet'), h('p', null, 'The table was created and has had no commit.'));
   }
   const refs = refsBySnapshot(m);
+  let commits = new Map();
   let shown = Math.min(10, list.length);
   let current = currentOf(m) || list[0];
   let whole = false;
@@ -517,6 +528,7 @@ function snapshotsTab(target, t) {
       h('td', {class: 'num'}, signed(sum['added-records'], sum['deleted-records'])),
       h('td', {class: 'num'}, opOf(sn) === 'replace' ? `${fmt(Number(sum['deleted-data-files']) || 0)} → ${fmt(Number(sum['added-data-files']) || 0)}`
         : Number(sum['added-delete-files']) ? `+${fmt(Number(sum['added-delete-files']))} delete` : signed(sum['added-data-files'], sum['deleted-data-files'])),
+      h('td', {class: 'by'}, commits.has(String(id)) ? byWords(commits.get(String(id))) : null),
       h('td', null, (refs.get(id) || []).flatMap(([name, type], i) => [i ? ' ' : '', refBadge(name, type)])));
     tr.addEventListener('click', () => select(sn));
     return tr;
@@ -545,13 +557,20 @@ function snapshotsTab(target, t) {
       h('p', {class: 'fine'}, 'A tagged snapshot stays as long as its tag keeps it.'));
   });
   fillRows();
+  snapshotCommits(target, list.map(sn => sn['snapshot-id'])).then(found => {
+    commits = found;
+    for (const tr of $$('tr', tbody)) {
+      const e = commits.get(tr.dataset.id);
+      if (e) fill($('td.by', tr), byWords(e));
+    }
+  }, () => {});
   const first = list[list.length - 1]['timestamp-ms'];
   const last = list[0]['timestamp-ms'];
   const box = h('div', {class: 'stack'},
     panel('History and Iceberg refs', `${plural(list.length, 'snapshot')} · ${dayOf(first) === dayOf(last) ? dayOf(last) : `${dayOf(first)} to ${dayOf(last)}`}`,
       lanes(target, list, m, select), h('p', {class: 'fine only-sm'}, 'Opens at the newest snapshot; older ones are to the left.')),
     h('div', {class: 'grid-21'},
-      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'Iceberg refs'], tbody), more),
+      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'By', 'Iceberg refs'], tbody), more),
       h('div', {class: 'stack'}, h('div', {class: 'panel', id: 'selected-snapshot'}, h('h2', null, 'Selected snapshot ', meta), raw,
         h('div', {class: 'refusal-acts'}, sql, wholeB)), expiry)));
   select(current);
@@ -616,6 +635,30 @@ function changeWords(updates, version) {
 }
 
 /** Who made a commit: the principal, the person an engine acted for, and the engine. */
+/**
+ * The journal's commit that added each snapshot asked for (backlog 186), by snapshot id: the metadata log is read a page
+ * at a time, newest first, until every one is found or 200 commits are read. A snapshot whose commit the journal no longer
+ * holds, or lies further back, is left out, and its By is blank.
+ */
+async function snapshotCommits(target, ids) {
+  const want = new Set(ids.map(String));
+  const found = new Map();
+  const id = (await api.governance(target)).target.id;
+  let token = null;
+  for (let read = 0; read < 8 && want.size; read++) {
+    const answer = await api.metadataLog(target.catalog, id, token, target.ref);
+    for (const e of answer.journal || []) {
+      for (const u of Array.isArray(e.updates) ? e.updates : []) {
+        const added = u.action === 'add-snapshot' && u.snapshot ? String(u.snapshot['snapshot-id']) : null;
+        if (added && want.delete(added)) found.set(added, e);
+      }
+    }
+    token = answer['next-page-token'];
+    if (!token) break;
+  }
+  return found;
+}
+
 function byWords(e) {
   return [h('b', null, e.principal || '–'), e['end-user'] ? [' for ', h('b', null, e['end-user'])] : null,
     e.engine ? [' ', muted('via ' + e.engine)] : null];

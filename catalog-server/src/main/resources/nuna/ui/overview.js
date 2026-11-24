@@ -8,7 +8,7 @@ import {auditOpen, operates} from './access.js';
 import {at, failure, fmt, h, icon, load, muted, pageHead, panel, pill, plural, sized} from './dom.js';
 import {lastNightKpi, lastNightPanel, thirtyNights} from './nights.js';
 import {pageHref} from './route.js';
-import {estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable, shapeWords} from './queue.js';
+import {catalogOff, estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable, shapeWords} from './queue.js';
 import {sloFigures} from './health.js';
 import {governanceFigures} from './governance.js';
 
@@ -21,12 +21,16 @@ export function overviewPage(catalog) {
     const c = estateCounts(tables);
     // Before the worker reports, no table is assessed: none is in shape or queued, and the page says so.
     const none = c.total > 0 && c.unassessed === c.total;
+    // The worker assesses only where compaction is on, so the catalog's policy is said to have it off only while none
+    // is assessed (backlog 190).
+    const off = none ? await catalogOff(catalog, tables, pageHref('maintenance', catalog)) : null;
     const now = new Date();
     const out = [pageHead({
       hero: true,
       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
       title: !c.total ? nothingToRead(catalog, everywhere, 'overview')
+        : off ? [off, h('br'), h('span', {class: 'q'}, shapeWords(c))]
         : none ? shapeWords(c)
           : [shapeWords(c) + ' ', c.queued
             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
@@ -44,7 +48,8 @@ export function overviewPage(catalog) {
       h('p', {class: 'kpi-l'}, icon('check'), 'In shape'),
       none ? h('p', {class: 'kpi-v'}, '–', h('small', null, 'none assessed yet'))
         : h('p', {class: 'kpi-v'}, `${fmt(c.inShape)} of ${fmt(c.total - c.unassessed)}`, c.unassessed ? h('small', null, 'assessed') : null),
-      h('p', {class: 'kpi-d'}, none ? `${fmt(c.unassessed)} not assessed yet: the maintenance worker has not reported`
+      h('p', {class: 'kpi-d'}, none ? `${fmt(c.unassessed)} not assessed yet: ` + (off ? 'maintenance is off in the catalog\'s policy'
+        : 'the maintenance worker has not reported')
         : [c.queued ? `${fmt(c.queued)} queued for tonight` : 'none queued for tonight',
           c.unassessed ? `, ${fmt(c.unassessed)} not assessed yet` : ''])));
     out.push(kpis);
@@ -59,7 +64,8 @@ export function overviewPage(catalog) {
       rows.length ? [queueTable(rows.slice(0, 8), {numbered: false, cls: 'stack-sm'}),
         h('p', {class: 'fine'}, rows.length > 8 ? `${rows.length - 8} more in the queue. ` : '',
           h('a', {href: pageHref('maintenance', catalog)}, 'Open the maintenance queue'))]
-        : h('p', {class: 'muted'}, none ? 'Nothing queued: the maintenance worker has not assessed any table you may read yet.'
+        : h('p', {class: 'muted'}, off ? `Nothing queued: maintenance is off in ${catalog}'s policy.`
+          : none ? 'Nothing queued: the maintenance worker has not assessed any table you may read yet.'
           : c.unassessed ? `No assessed table you may read needs compaction; ${fmt(c.unassessed)} not assessed yet.`
             : 'No table you may read needs compaction.')), lastNight));
     return out;
@@ -134,11 +140,11 @@ async function latencyKpi() {
   const met = slos.filter(x => x.met === true).length;
   const judged = slos.filter(x => x.met !== undefined).length;
   return [h('div', {class: 'kpi'},
-    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('health')}, icon('health'), 'Latency objectives, last day')),
+    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('service')}, icon('health'), 'Latency objectives, last day')),
     h('p', {class: 'kpi-v'}, judged ? `${met} of ${judged}` : '–', h('small', null, judged ? 'met' : 'none in the window')),
     h('div', {class: 'kpi-list'}, slos.map(x => h('div', null, h('span', null, x.short), h('b', null, x.share || muted('–')))))),
   h('div', {class: 'kpi'},
-    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('health')}, icon('server'), 'Servers')),
+    h('p', {class: 'kpi-l'}, h('a', {href: pageHref('service')}, icon('server'), 'Servers')),
     h('p', {class: 'kpi-v'}, `${health.answered}`, h('small', null, 'answered')),
     h('div', {class: 'kpi-list'}, h('div', null, h('span', null, 'Did not answer'), h('b', null, String(health.silent || 0)))))];
 }

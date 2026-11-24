@@ -7,6 +7,48 @@ import {$$, bar, fmt, h, ordinal, pill, plural, s} from './dom.js';
 import {objectHref} from './route.js';
 import * as api from './api.js';
 
+/** The job types a maintenance policy turns on and off. */
+const JOBS = ['compaction.enabled', 'snapshot-expiry.enabled', 'orphan-removal.enabled', 'manifest-rewrite.enabled'];
+
+/** Whether a resolved policy's job keys each come from the catalog or the built-in policy it keeps. */
+const catalogWide = r => JOBS.every(k => ['built-in', 'default', undefined].includes(r[k].source)
+  || String(r[k].source).startsWith('catalog'));
+
+/**
+ * When a resolved maintenance policy has every job type off (Atelier's review, F9; backlog 190), the words that say so,
+ * whose policy it is linked to where it is shown: the catalog's when each key comes from it or the built-in policy it
+ * keeps, else the table's own. Null when any job is on.
+ */
+export function maintenanceOff(catalog, p, href) {
+  const r = (p && p.resolved) || {};
+  if (!JOBS.every(k => r[k] && String(r[k].value) === 'false')) return null;
+  const catalogs = catalogWide(r);
+  return h('span', {'data-maintenance-off': ''}, 'Maintenance is off in ', h('a', {href, onclick: e => {
+    const shown = document.querySelector('[data-policy]');
+    if (shown) {
+      e.preventDefault();
+      shown.scrollIntoView({block: 'start'});
+    }
+  }}, catalogs ? `${catalog}'s policy` : 'this table\'s policy'), ': nothing will be compacted or expired.');
+}
+
+/**
+ * Whether the catalog's policy has every job off, read through one of the caller's own tables there (`tables`, estate
+ * rows), whose policy they may read, so asking writes no denial: when that table's job keys each come from the catalog
+ * or the built-in policy, they are the catalog's. The words, or null when any job is on, a level nearer the table sets
+ * one, or the policy cannot be read.
+ */
+export async function catalogOff(catalog, tables, href) {
+  const t = tables[0];
+  if (!t) return null;
+  try {
+    const p = await api.policy({catalog, kind: 'table', namespace: t.namespace, name: t.name});
+    return catalogWide((p && p.resolved) || {}) ? maintenanceOff(catalog, p, href) : null;
+  } catch {
+    return null;
+  }
+}
+
 export const REASONS = {
   'equality-deletes': ['bad', 'Equality deletes',
     'Equality deletes: every reader must join against them; such a table is compacted first.'],
@@ -85,7 +127,7 @@ export function shapeWords(c) {
 /**
  * The ice line over the whole estate: one mark per table, grouped by top-level namespace and labelled under the
  * line. Above it, each table in shape, as tall as its data files on a log scale, with a dashed reference at 1,000
- * files; one not yet assessed is a stub. Below it, each queued table, as deep as its score, a link to its Health tab.
+ * files; one not yet assessed is a stub. Below it, each queued table, as deep as its score, a link to its Maintenance tab.
  * A table whose compaction succeeded last night has a dashed outline where it was queued. Held and frozen tables have
  * their own colours.
  */
@@ -127,7 +169,7 @@ export function iceEstate(host, W, rows) {
       if (needs(row)) {
         const depth = 6 + 46 * (Number(a.score) || 0) / deepest;
         const mx = x + step / 2 - 2;
-        const link = s('a', {href: objectHref(targetOfRow(row), 'health'), class: 'qa g' + (gi % 6),
+        const link = s('a', {href: objectHref(targetOfRow(row), 'maintenance'), class: 'qa g' + (gi % 6),
           'aria-label': `${row.namespace.join('.')}.${row.name}, score ${a.score}`});
         link.append(s('title', null, `${row.catalog}.${row.namespace.join('.')}.${row.name} · score ${a.score} · `
           + (a.reasons || []).map(r => (REASONS[r] || [null, r])[1].toLowerCase()).join(', ')));
@@ -156,7 +198,7 @@ export function iceEstate(host, W, rows) {
   svg.append(ghosts, sky, sink, s('line', {class: 'water', x1: 0, y1: Y, x2: W, y2: Y}), labels);
   host.append(svg);
   host.append(h('p', {class: 'ice-cap'}, 'Above the line: in shape, height is data files, log scale. Below: queued, '
-    + 'depth is score. Each namespace opens its page; each queued table its Health tab.'));
+    + 'depth is score. Each namespace opens its page; each queued table its Maintenance tab.'));
 }
 
 /** The legend under the estate's ice line, with each count. */
@@ -210,7 +252,7 @@ export function iceQueue(host, W, rows, {me, label} = {}) {
       const depth = 6 + 46 * (Number(a.score) || 0) / deepest;
       const mine = me && keyOfRow(row) === me;
       const mx = x + step / 2 - 2;
-      const link = s('a', {href: objectHref(targetOfRow(row), 'health'), class: 'qa g' + (gi % 6) + (mine ? ' is-me' : ''),
+      const link = s('a', {href: objectHref(targetOfRow(row), 'maintenance'), class: 'qa g' + (gi % 6) + (mine ? ' is-me' : ''),
         'aria-label': `${row.namespace.join('.')}.${row.name}, score ${a.score}`});
       link.append(s('title', null, `${row.catalog}.${row.namespace.join('.')}.${row.name} · score ${a.score} · `
         + (a.reasons || []).map(r => (REASONS[r] || [null, r])[1].toLowerCase()).join(', ')));
@@ -245,7 +287,7 @@ export function queueTable(rows, {numbered = true, cls = 'queue stack-line', id}
     const c = row['last-compaction'];
     return h('tr', {'data-table': keyOfRow(row), 'data-reasons': (a.reasons || []).join(' ')},
       numbered ? h('td', {class: 'num'}, String(i + 1)) : null,
-      h('td', {class: 'name'}, h('a', {href: objectHref(targetOfRow(row), 'health')}, pathName(row.namespace, row.name))),
+      h('td', {class: 'name'}, h('a', {href: objectHref(targetOfRow(row), 'maintenance')}, pathName(row.namespace, row.name))),
       h('td', {class: 'why'}, (a.reasons || []).flatMap((r, k) => k ? [' ', reasonPill(r)] : [reasonPill(r)])),
       h('td', {class: 'score'}, bar(a.score, scale, isEq(row)), ' ', h('span', {class: 'tnum'}, String(a.score ?? ''))),
       numbered ? h('td', {class: 'num'}, String(a['small-files'] ?? '')) : null,

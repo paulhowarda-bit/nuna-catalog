@@ -1,0 +1,17 @@
+Breaks: The audit feed's filters are not kept in the link, so Back and a shared link lose them.
+Module: catalog-server
+Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index e4ae6acf..3e22272b 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -62,7 +62,7 @@ function keepFilters(st) {
+     else q.delete(k);
+   }
+   const hash = '#' + q.toString();
+-  if (hash !== location.hash) history.replaceState(history.state, '', hash);
++  if (false) history.replaceState(history.state, "", hash);
+ }
+ 
+ /** How far back the feed reads, as `to` (exclusive): now, or an hour, six hours, a day or a week back. */

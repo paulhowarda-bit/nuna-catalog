@@ -1,0 +1,17 @@
+Breaks: A snapshot is never paired with the commit that added it, so Overview and Snapshots name no author.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 0156eb44..ebfa0155 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -647,7 +647,7 @@ async function snapshotCommits(target, ids) {
+     for (const e of answer.journal || []) {
+       for (const u of Array.isArray(e.updates) ? e.updates : []) {
+         const added = u.action === 'add-snapshot' && u.snapshot ? String(u.snapshot['snapshot-id']) : null;
+-        if (added && want.delete(added)) found.set(added, e);
++        if (added && want.delete(added)) found.set(added + 'x', e);
+       }
+     }
+     token = answer['next-page-token'];

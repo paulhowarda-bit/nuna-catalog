@@ -92,11 +92,11 @@ async function landingCatalog(names) {
   return names.reduce((best, n) => counts.get(n) > counts.get(best) ? n : best, names[0]);
 }
 
-/** Where a caller's work is (item 184): Overview for those who read data, Audit for auditors, Health for operators. */
+/** Where a caller's work is (item 184): Overview for those who read data, Audit for auditors, Service for operators. */
 function homeHref(c) {
   if (readsData()) return pageHref('overview', c);
   if (auditOpen(c)) return pageHref('audit', c);
-  if (operates()) return pageHref('health');
+  if (operates()) return pageHref('service');
   return href({c});
 }
 
@@ -151,18 +151,18 @@ function closeMenus() {
   if (consoleEl.classList.contains('menu-open')) menu(false);
 }
 
-function setChrome(navKey, rail, ref) {
-  consoleEl.classList.toggle('rail', railPick ?? !!rail);
+function setChrome(navKey, ref) {
+  consoleEl.classList.toggle('rail', !!railPick);
   syncMenuButton();
   // The top chip names the ref a browse page reads (item 109): lakehouse @dev.
   for (const b of $$('[data-cat]')) fill(b, cat || '–', ref ? h('span', {class: 'pick-ref'}, '@' + ref) : null);
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
   const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat, r: ref}), maintenance: pageHref('maintenance', cat),
-    governance: pageHref('governance', cat), audit: pageHref('audit', cat), health: pageHref('health')};
+    governance: pageHref('governance', cat), audit: pageHref('audit', cat), service: pageHref('service')};
   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
-  // read, Audit is for audit readers and those who manage the catalog's grants, Health for platform operators.
+  // read, Audit is for audit readers and those who manage the catalog's grants, Service for platform operators.
   const open = {overview: readsData(), catalog: true, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
-    health: operates()};
+    service: operates()};
   for (const a of $$('a[data-k]', navEl)) {
     const k = a.dataset.k;
     a.hidden = !open[k];
@@ -171,7 +171,7 @@ function setChrome(navKey, rail, ref) {
     if (k === navKey) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
   }
-  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('health');
+  $('[data-brand]').href = cat ? homeHref(cat) : pageHref('service');
   const count = $('.count', navEl);
   queue().then(rows => {
     const n = queueOf(rows, cat).length;
@@ -184,7 +184,7 @@ function setChrome(navKey, rail, ref) {
 /** Where switching to another catalog goes: the same page there; a table's or namespace's page goes to the catalog's. */
 function switchHref(c) {
   const r = parse();
-  if (r.page === 'health') return pageHref('overview', c);
+  if (r.page === 'service') return pageHref('overview', c);
   if (r.page) return pageHref(r.page, c, r.page === 'governance' ? r.tab : null);
   return href({c});
 }
@@ -532,7 +532,7 @@ function render() {
   const names = catalogs.map(c => c.name);
   const fallback = cat && names.includes(cat) ? cat : names[0] || null;
   if (!r.page && !r.c && (names.length || operates())) {
-    if (!names.length) location.replace(pageHref('health'));
+    if (!names.length) location.replace(pageHref('service'));
     else if (cat && names.includes(cat)) location.replace(homeHref(cat));
     else {
       slot.replaceChildren(h('p', {class: 'loading-line'}, 'Loading…'));
@@ -540,10 +540,10 @@ function render() {
     }
     return;
   }
-  // Health is the whole deployment's: platform operators see it though they may hold nothing in any catalog.
-  if (r.page !== 'health' && !names.length) {
+  // Service is the whole deployment's: platform operators see it though they may hold nothing in any catalog.
+  if (r.page !== 'service' && !names.length) {
     cat = null;
-    setChrome(null, false);
+    setChrome(null);
     slot.replaceChildren(noCatalog());
     document.title = 'No catalog · nuna';
     prev = r;
@@ -551,18 +551,17 @@ function render() {
   }
   if (r.c && !names.includes(r.c)) {
     cat = fallback;
-    setChrome(null, false);
+    setChrome(null);
     slot.replaceChildren(notFound(`No catalog named ${r.c} that your groups may see`));
     document.title = 'Not found · nuna';
     prev = r;
     return;
   }
   cat = r.c || fallback;
-  if (r.page !== 'health') keepCatalog(cat);
+  if (r.page !== 'service') keepCatalog(cat);
   const tabOnly = same(prev, r);
   let content;
   let navKey;
-  let rail = false;
   let title;
   if (r.page === 'overview') {
     navKey = 'overview';
@@ -580,13 +579,12 @@ function render() {
     navKey = 'audit';
     title = 'Audit';
     content = auditOpen(cat) ? auditPage(cat) : closedPage('Audit', `Audit is open to auditors and to those who manage ${cat}'s grants.`);
-  } else if (r.page === 'health') {
-    navKey = 'health';
-    title = 'Health';
-    content = operates() ? healthPage() : closedPage('Health', 'Service health is open to platform operators.');
+  } else if (r.page === 'service') {
+    navKey = 'service';
+    title = 'Service';
+    content = operates() ? healthPage() : closedPage('Service', 'Service health is open to platform operators.');
   } else if (!r.page && r.c) {
     navKey = 'catalog';
-    rail = true;
     content = browse(slot, r);
     title = r.k === 'ref' && r.n ? '@' + r.n : r.n || (r.ns.length ? r.ns[r.ns.length - 1] : cat);
   } else {
@@ -595,9 +593,9 @@ function render() {
     content = notFound();
   }
   const reading = !r.page && r.k !== 'ref' ? r.r : null;
-  setChrome(navKey, rail, reading);
+  setChrome(navKey, reading);
   if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
-  document.title = `${title} · ${r.page === 'health' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;
+  document.title = `${title} · ${r.page === 'service' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;
   if (tabOnly && prev.tab !== r.tab) {
     const t = $('.nc-main .tabs a[aria-current="page"]', slot);
     if (t) t.focus({preventScroll: true});
@@ -639,7 +637,7 @@ document.addEventListener('click', e => {
   if (t.dataset.catPick) {
     catMenu(false);
     const c = t.dataset.catPick;
-    if (c !== cat || parse().page === 'health') location.hash = switchHref(c);
+    if (c !== cat || parse().page === 'service') location.hash = switchHref(c);
     $('#catalog-pick').focus();
     return;
   }

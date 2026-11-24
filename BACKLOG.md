@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**49 open:** 16 S, 14 M, 14 L, 5 XL.
+**45 open:** 12 S, 14 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -52,13 +52,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
-| [186](backlog/186.md) | S | Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5) | the console reads the actor of the commit that made the current snapshot, as the Metadata log tab does (`LifecycleRoutes` answers each entry's actor and engine), for Overview and a By column on Snapshots, and the Contents cell's wording; M if a snapshot cannot be paired with its commit from the log's answer and the server needs a field | 2026-11-23 |
-| [187](backlog/187.md) | S | Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6) | kind chips over the feed's existing type filter, the By kind rows as links, every filter in the hash, audit reads hidden by default, and the range's wording; a browser case as gary | 2026-11-23 |
 | [188](backlog/188.md) | S | Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7) | one Technical details disclosure in `dom.js`'s result and failure boxes for status, route and request ID, and plain captions in place of config keys and routes; the browser tests that read those texts change with them | 2026-11-23 |
 | [189](backlog/189.md) | S | Console: one link style, and rows that open something look it (Atelier's review Q8) | one link style in `style.css` (link colour, underline on hover and focus) and a hover background with a chevron on rows that open something | 2026-11-23 |
-| [190](backlog/190.md) | S | Console: the maintenance headline says when the catalog's policy has maintenance off (Atelier's review Q9) | the headline reads the catalog's maintenance policy, already on the Maintenance page, and says when every job type is off, with the worker's silence as a second line | 2026-11-23 |
 | [191](backlog/191.md) | S | Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10) | the panel's name and one line of explanation, the panel folded while a catalog ref is read, and one icon per kind of ref across the console | 2026-11-23 |
-| [192](backlog/192.md) | S | Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11) | two renames carried through the rail, tabs, headings, links and the browser tests that name them, and the rail's labels kept on the Catalog page | 2026-11-23 |
 | [193](backlog/193.md) | S | Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12) | timeouts on the IdP's discovery and token calls with a Start again that clears a pending sign-in, `id_token_hint` on sign-out, one date format, empty columns dropped and phone cards labelled, and the keyboard hint hidden on touch | 2026-11-23 |
 | [194](backlog/194.md) | S | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | an off-scale marker with its value for a share below the chart's scale | 2026-11-23 |
 
@@ -2871,41 +2867,6 @@ Done when register and revive refuse a location `TableFiles.onBranch` marks, wit
 and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
 checked with `git apply --check`, not run).
 
-### 186. Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/java/nuna/catalog/server/governance/LifecycleRoutes.java catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, the console reads the actor of the commit that made the current snapshot, as the Metadata log tab does (`LifecycleRoutes` answers each entry's actor and engine), for Overview and a By column on Snapshots, and the Contents cell's wording; M if a snapshot cannot be paired with its commit from the log's answer and the server needs a field
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F6): who last changed `markets.fx.rates` is only on the tenth tab, Metadata log
-("lake via lake-writer-demo"). Overview's Current state shows the snapshot id, operation and time with no author;
-Snapshots has no By column. In Contents the word after the time changes meaning by level: "12:49 · lake" on a table
-row is the author, "12:49 · rates" on a namespace row is the table. Atelier's prototype had the author on Overview
-("svc-fx-ingest via spark", `61-proto-table.png`). Screenshots `09-table-rates.png`, `10-rates-snapshots.png`,
-`10-rates-metadata-log.png`, `08-ns-fx.png`.
-
-Done looks like: Overview's current snapshot says "by lake via lake-writer-demo"; Snapshots has a By column (blank
-where the journal no longer holds the commit); Contents reads "12:49 by lake" for a table and "12:49 in rates" for a
-namespace. A browser case checks the author on Overview.
-
-### 187. Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, kind chips over the feed's existing type filter, the By kind rows as links, every filter in the hash, audit reads hidden by default, and the range's wording; a browser case as gary
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F7), as `gary` looking for a grant's record in `lakehouse`: the chips are All,
-Changes, Reads, Credentials, Refusals; Changes holds 1,557 records, almost all CDC commits. The By kind panel lists
-`nuna.catalog.grant 2` but its rows are not links. The grants were found only by guessing the granter into Who. The
-link stayed `#p=audit&c=lakehouse` with filters applied, so Back and a shared link lose them. The range read "From 22
-Nov 16:33 to 16:33". On `engines` five of seven records were the audit's own reads. Screenshots
-`42-gary-audit-engines.png`, `44-gary-audit-changes.png`, `45-gary-audit-who-gary.png`, `46-gary-audit-record.png`.
-
-Done looks like: a Kind filter (Grants, Holds and freezes, Branches and tags, Commits, Reads, Credentials, Refusals);
-each By kind row applies it; every filter is in the hash, so Back and a link keep them; the audit's own reads are
-hidden unless "Show audit reads" is on; the range reads "22 Nov 16:33 to 23 Nov 16:33". A browser case as `gary`
-reaches a grant record in three steps.
-
 ### 188. Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7)
 
 - Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
@@ -2937,23 +2898,6 @@ underline until hover, while "1 commit" and "markets" elsewhere are underlined. 
 Done looks like: every link has one look (link colour, underline on hover and focus), and a row that opens something
 shows a hover background and a chevron. The console's dark theme keeps the contrast.
 
-### 190. Console: the maintenance headline says when the catalog's policy has maintenance off (Atelier's review Q9)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/queue.js catalog-server/src/main/resources/nuna/ui/table.js
-- Effort: S, the headline reads the catalog's maintenance policy, already on the Maintenance page, and says when every job type is off, with the worker's silence as a second line
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F9): in the demo, Overview and Maintenance lead with "17 tables not assessed yet:
-the maintenance worker has not reported", and a table's Health tab with "Not assessed yet". The policy table on the
-same Maintenance page shows `snapshot-expiry.enabled`, `orphan-removal.enabled`, `compaction.enabled` and
-`manifest-rewrite.enabled` all false, which is the real reason, and nothing says so. Screenshots
-`20-overview-ana.png`, `20-maintenance-ana.png`, `52-oscar-health.png`. Whether the demo should run the maintenance
-worker is a question about the demo, for Paul.
-
-Done looks like: when every job type is off in a catalog's policy, the headline says "Maintenance is off in
-lakehouse's policy: nothing will be compacted or expired" with a link to the policy, and "no worker has reported" is
-the second line; a table's tab says the same for its catalog. With any job on, the pages are as today.
-
 ### 191. Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10)
 
 - Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
@@ -2968,20 +2912,6 @@ the right column's "Iceberg refs in this table" shows `main · current snapshot`
 Done looks like: the panel reads "Engine-level refs in this table's metadata", with one line saying these are
 Iceberg's own branches and tags, set by engines, not the catalog's; it is folded while a catalog ref is read; each
 kind of ref (catalog branch, catalog tag, a table's Iceberg ref) has one icon everywhere.
-
-### 192. Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: S, two renames carried through the rail, tabs, headings, links and the browser tests that name them, and the rail's labels kept on the Catalog page
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F5): the rail's Health is server latency, Kafka and DR for operators, while a
-table's Health tab is its compaction need; the rail folds to six bare icons on the Catalog page (in the prototype too),
-the page people browse most. Screenshots `02-catalog-engines.png`, `04-catalog-lakehouse.png`, `09-table-rates.png`.
-Cutting a table's ten tabs to six is Atelier's structural change S2, not filed yet.
-
-Done looks like: the rail's Health is named Service, and a table's Health tab Maintenance; old links (`p=health`,
-`tab=health`) still open the right page; the rail shows its labels on every page at desktop widths.
 
 ### 193. Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12)
 
@@ -3167,3 +3097,7 @@ Done looks like: a share below the scale is drawn as an off-scale marker at its 
 | [183](backlog/183.md) | Console: sign-in opens the catalog used last, or the one with the most tables the user may read; an empty catalog names the other (Atelier's review Q1) | done | 2026-11-23 |
 | [184](backlog/184.md) | Console: rail items, tabs and buttons a user's groups can never use are hidden, and each role lands where its work is (Atelier's review Q3) | done | 2026-11-23 |
 | [185](backlog/185.md) | Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4) | done | 2026-11-23 |
+| [186](backlog/186.md) | Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5) | done | 2026-11-23 |
+| [187](backlog/187.md) | Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6) | done | 2026-11-23 |
+| [190](backlog/190.md) | Console: the maintenance headline says when the catalog's policy has maintenance off (Atelier's review Q9) | done | 2026-11-23 |
+| [192](backlog/192.md) | Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11) | done | 2026-11-23 |

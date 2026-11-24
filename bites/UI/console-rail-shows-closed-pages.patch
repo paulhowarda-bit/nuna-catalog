@@ -3,11 +3,11 @@ Module: catalog-server
 Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index 1b04bc7c..051dea41 100644
+index 144a9bda..b62a9885 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -165,7 +165,7 @@ function setChrome(navKey, rail, ref) {
-     health: operates()};
+@@ -165,7 +165,7 @@ function setChrome(navKey, ref) {
+     service: operates()};
    for (const a of $$('a[data-k]', navEl)) {
      const k = a.dataset.k;
 -    a.hidden = !open[k];

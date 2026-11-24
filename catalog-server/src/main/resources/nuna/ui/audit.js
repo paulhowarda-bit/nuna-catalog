@@ -10,18 +10,60 @@ import {at, badge, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load
 import {objectHref, SEP} from './route.js';
 import {auditTab, describe} from './panels.js';
 
-/** The kinds the feed filters by, each a set of record types. */
+/** Every record type that changes something, for the Changes figure. */
+const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
+  'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass'];
+
+/**
+ * The kinds the feed filters by, each a set of record types (Atelier's review, F7; backlog 187): grants, holds and DR
+ * freezes (a freeze is a governance record, D37, as is a maintenance policy), branches and tags, and commits each on
+ * their own, the other changes together, then reads, credentials and refusals.
+ */
 const KINDS = [
   ['all', 'All', null],
-  ['change', 'Changes', ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
-    'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass']],
+  ['grant', 'Grants', ['grant']],
+  ['hold', 'Holds and freezes', ['hold', 'governance']],
+  ['ref', 'Branches and tags', ['ref']],
+  ['commit', 'Commits', ['commit']],
+  ['change', 'Other changes', CHANGES.filter(t => !['grant', 'hold', 'governance', 'ref', 'commit'].includes(t))],
   ['read', 'Reads', ['read', 'audit-read']],
   ['cred', 'Credentials', ['credential-issue']],
   ['refusal', 'Refusals', ['denial', 'auth-failure']],
 ];
+/** Every type a kind names: All, less the audit's own reads, is these. */
+const TYPES = KINDS.flatMap(([, , types]) => types || []);
 const PREFIX = 'nuna.catalog.';
 const short = type => String(type || '').replace(/^nuna\.catalog\./, '');
-const kindOf = type => (KINDS.find(([k, , types]) => k !== 'all' && types.includes(short(type))) || ['other'])[0];
+const kindOf = type => (KINDS.find(([k, , types]) => k !== 'all' && types.includes(short(type))) || ['all'])[0];
+
+/** The day and time, today's too: "22 Nov 16:33". */
+function onDay(value) {
+  const d = new Date(value);
+  const p2 = n => String(n).padStart(2, '0');
+  return Number.isNaN(d.getTime()) ? String(value || '')
+    : `${d.getDate()} ${d.toLocaleString('en-GB', {month: 'short'})} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+// ---- the feed's filters, kept in the link so Back and a shared link keep them (backlog 187) ----
+
+function readFilters() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  const kind = q.get('kind');
+  const to = q.get('to');
+  return {kind: KINDS.some(([k]) => k === kind) ? kind : 'all', who: q.get('who') || '', path: q.get('path') || '',
+    upTo: UP_TO.some(([v]) => v === to) ? to : '', auditReads: q.get('reads') === 'all'};
+}
+
+function keepFilters(st) {
+  const q = new URLSearchParams(location.hash.slice(1));
+  for (const [k, v] of [['kind', st.kind === 'all' ? '' : st.kind], ['who', st.who], ['path', st.path], ['to', st.upTo],
+    ['reads', st.auditReads ? 'all' : '']]) {
+    if (v) q.set(k, v);
+    else q.delete(k);
+  }
+  const hash = '#' + q.toString();
+  if (hash !== location.hash) history.replaceState(history.state, '', hash);
+}
 
 /** How far back the feed reads, as `to` (exclusive): now, or an hour, six hours, a day or a week back. */
 const UP_TO = [['', 'Up to now'], ['1', 'Before an hour ago'], ['6', 'Before six hours ago'], ['24', 'Before a day ago'],
@@ -61,13 +103,14 @@ export function auditPage(catalog) {
   });
   const feedBox = h('div', {class: 'panel', id: 'audit-feed'});
   const own = h('div');
-  feedBox.append(h('h2', null, 'Every record ', h('span', {class: 'meta'}, 'newest first')), feedPanel(catalog, summary, own));
+  const feed = feedPanel(catalog, summary, own);
+  feedBox.append(h('h2', null, 'Every record ', h('span', {class: 'meta'}, 'newest first')), feed.el);
   // A refusal of the counts or the archive is the feed's refusal again, shown there in full; these stay quiet.
   const quiet = error => error.status === 403 || error.status === 503 ? null : failure(error);
   const archivePanel = h('div');
   load(archivePanel, () => archive.then(chainPanel, quiet));
   const counts = h('div');
-  load(counts, () => summary.then(sum => countPanels(catalog, sum), quiet));
+  load(counts, () => summary.then(sum => countPanels(catalog, sum, feed.choose), quiet));
   side.append(archivePanel, counts);
   main.append(head, kpis, h('div', {class: 'grid-21'}, feedBox, side), own);
   return main;
@@ -85,7 +128,7 @@ function summaryKpis(catalog, sum) {
     h('div', {class: 'kpi', 'data-kpi': 'refusals'}, h('p', {class: 'kpi-l'}, 'Refusals'),
       h('p', {class: 'kpi-v'}, fmt(kindTotal(sum['by-type'], ['denial', 'auth-failure']))), h('p', {class: 'kpi-d'}, 'each one a record in the feed')),
     h('div', {class: 'kpi', 'data-kpi': 'changes'}, h('p', {class: 'kpi-l'}, 'Changes'),
-      h('p', {class: 'kpi-v'}, fmt(kindTotal(sum['by-type'], KINDS[1][2]))), h('p', {class: 'kpi-d'}, 'commits, governance, grants and deletions')),
+      h('p', {class: 'kpi-v'}, fmt(kindTotal(sum['by-type'], CHANGES))), h('p', {class: 'kpi-d'}, 'commits, governance, grants and deletions')),
   ];
 }
 
@@ -118,17 +161,21 @@ function chainPanel(a) {
       h('td', {class: 'name'}, c.chain), h('td', {class: 'wrap'}, c.broken || c.failed)))) : null);
 }
 
-function countPanels(catalog, sum) {
+/** The last day's counts by type, each row choosing its kind in the feed; and the objects with the most records. */
+function countPanels(catalog, sum, choose) {
   const byType = sum['by-type'] || {};
   const types = Object.keys(byType).sort((a, b) => byType[b] - byType[a]);
   const all = total(byType);
   return [
     h('div', {class: 'panel', id: 'audit-kinds'}, h('h2', null, 'By kind ', h('span', {class: 'meta'}, 'last day')),
-      tbl('kinds', ['Type', ['Records', 'num']], [...types.map(t => h('tr', {'data-type': t}, h('td', null, code(t)),
+      tbl('kinds', ['Type', ['Records', 'num']], [...types.map(t => h('tr', {'data-type': t}, h('td', null,
+        h('button', {class: 'linkish', type: 'button', 'data-choose': kindOf(t), 'aria-label': `Show ${short(t)} records in the feed`,
+          onclick: () => choose(t)}, code(t))),
         h('td', {class: 'num'}, fmt(byType[t])))), h('tr', {class: 'is-cur'}, h('td', null, h('b', null, 'All')),
         h('td', {class: 'num'}, h('b', null, fmt(all))))]),
-      h('p', {class: 'fine'}, `From ${at(sum.from)} to ${at(sum.to)}, as the audit tables hold them. The server's own counters on `
-        + 'Health differ: the writer leaves its own records out, and a record sent to the fallback log reaches neither.')),
+      h('p', {class: 'fine'}, `${onDay(sum.from)} to ${onDay(sum.to)}, as the audit tables hold them. Each type shows its kind in `
+        + 'the feed. The server\'s own counters on Service differ: the writer leaves its own records out, and a record sent '
+        + 'to the fallback log reaches neither.')),
     h('div', {class: 'panel', id: 'audit-busiest'}, h('h2', null, 'Most recorded ', h('span', {class: 'meta'}, 'last day')),
       (sum.busiest || []).length ? tbl('stack-line', ['Object', ['Records', 'num'], ['Reads', 'num'], 'Written most by'],
         sum.busiest.map(b => h('tr', {'data-path': (b.path || []).join('.')},
@@ -150,30 +197,42 @@ function objectLink(catalog, kind, path, tab) {
 
 // ---- the feed ----
 
+/** The feed and its filters: {el, choose(type)}, where choose shows the kind a record type belongs to. */
 function feedPanel(catalog, summary, own) {
-  const st = {kind: 'all', who: '', path: '', upTo: ''};
+  const st = readFilters();
   const chipBox = h('div', {class: 'chips', role: 'group', 'aria-label': 'Filter by kind'});
   const who = h('input', {type: 'search', name: 'who', 'aria-label': 'Who', placeholder: 'Anyone', autocomplete: 'off', spellcheck: 'false'});
   const path = h('input', {type: 'search', name: 'path', 'aria-label': 'Table or namespace', placeholder: 'a.b.table',
     autocomplete: 'off', spellcheck: 'false'});
   const upTo = h('select', {name: 'to', 'aria-label': 'Up to'}, UP_TO.map(([v, l]) => h('option', {value: v}, l)));
+  const reads = h('input', {type: 'checkbox', name: 'audit-reads'});
+  who.value = st.who;
+  path.value = st.path;
+  upTo.value = st.upTo;
+  reads.checked = st.auditReads;
+  // The audit's own reads are each reader's look at the feed: hidden unless asked for, or they bury the rest.
+  const typesOf = kind => (KINDS.find(([k]) => k === kind)[2] || TYPES).filter(t => st.auditReads || t !== 'audit-read');
   const status = h('p', {class: 'fine feed-status', role: 'status'});
   const feed = h('div', {class: 'feed', 'data-feed': ''});
   const more = h('p', {class: 'fine feed-more'});
   let gen = 0;
   let shown = 0;
-  const drawChips = byType => chipBox.replaceChildren(...KINDS.map(([k, label, types]) => {
-    const n = byType ? kindTotal(byType, types) : null;
+  let counted = null;
+  const drawChips = () => chipBox.replaceChildren(...KINDS.map(([k, label]) => {
+    const n = counted ? kindTotal(counted, typesOf(k)) : null;
     return h('button', {class: 'chip', type: 'button', 'data-f': k, 'aria-pressed': String(k === st.kind), onclick: () => {
       st.kind = k;
       for (const c of chipBox.children) c.setAttribute('aria-pressed', String(c.dataset.f === k));
       restart();
     }}, label, n !== null ? [' ', h('span', {class: 'n'}, fmt(n))] : null);
   }));
-  drawChips(null);
-  summary.then(sum => drawChips(sum['by-type'] || {}), () => {});
+  drawChips();
+  summary.then(sum => {
+    counted = sum['by-type'] || {};
+    drawChips();
+  }, () => {});
   const query = token => {
-    const types = KINDS.find(([k]) => k === st.kind)[2];
+    const types = st.kind === 'all' && st.auditReads ? null : typesOf(st.kind);
     return {
       type: types ? types.map(t => PREFIX + t).join(',') : null,
       principal: st.who || null,
@@ -204,6 +263,7 @@ function feedPanel(catalog, summary, own) {
   });
   let refusedOnce = false;
   function restart() {
+    keepFilters(st);
     const my = ++gen;
     shown = 0;
     feed.replaceChildren(h('div', {'data-loading': ''}, h('span', {class: 'sk w60'})));
@@ -238,13 +298,28 @@ function feedPanel(catalog, summary, own) {
     st.upTo = upTo.value;
     restart();
   });
+  reads.addEventListener('change', () => {
+    st.auditReads = reads.checked;
+    drawChips();
+    restart();
+  });
   restart();
-  return h('div', {class: 'feed-box'},
+  const el = h('div', {class: 'feed-box'},
     h('div', {class: 'feed-filters'},
       h('label', {class: 'ff'}, h('span', null, 'Table or namespace'), h('span', {class: 'field mono'}, icon('search'), path)),
       h('label', {class: 'ff'}, h('span', null, 'Who'), h('span', {class: 'field mono'}, who)),
       h('label', {class: 'ff'}, h('span', null, 'Up to'), h('span', {class: 'field mono select'}, upTo))),
-    chipBox, status, feed, more);
+    chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads'), status, feed, more);
+  const choose = type => {
+    st.kind = kindOf(type);
+    if (short(type) === 'audit-read' && !st.auditReads) {
+      st.auditReads = reads.checked = true;
+    }
+    drawChips();
+    restart();
+    el.scrollIntoView({block: 'start'});
+  };
+  return {el, choose};
 }
 
 function feedRow(catalog, r) {

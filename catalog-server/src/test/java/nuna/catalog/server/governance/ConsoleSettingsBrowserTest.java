@@ -182,7 +182,7 @@ class ConsoleSettingsBrowserTest {
         assertThat(driver.findElements(By.cssSelector("#settings tr[data-setting='made-by']"))).isEmpty();
         assertThat(property("write.metadata.delete-after-commit.enabled").getText()).contains("Changes nothing here");
         assertThat(property("history.expire.max-snapshot-age-ms").findElement(By.tagName("a")).getDomAttribute("href"))
-                .contains("tab=health");
+                .contains("tab=maintenance");
         assertThat(driver.findElements(By.cssSelector("#all-properties button"))).isEmpty();
 
         // A listed key a tool set is a setting like any other.

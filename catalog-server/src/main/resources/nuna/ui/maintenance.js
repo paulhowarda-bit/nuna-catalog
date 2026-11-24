@@ -7,10 +7,11 @@ import * as api from './api.js';
 import {lastNightPanel, nightKpis, thirtyNights} from './nights.js';
 import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialog, pageHead, panel, pill, plural, tbl, text}
   from './dom.js';
-import {emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
+import {catalogOff, emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
 import {sourceWords, workerPanel} from './health.js';
 import {mayModifyAny, pickDialog} from './requests.js';
 import {nothingToRead} from './overview.js';
+import {pageHref} from './route.js';
 
 /** The policy keys, in the order the prototype lists them; a key under an .enabled key is indented. */
 const KEYS = ['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'snapshot-expiry.min-snapshots-to-keep',
@@ -24,6 +25,10 @@ export function maintenancePage(catalog) {
       mayModifyAny(catalog)]);
     const tables = everywhere.filter(t => t.catalog === catalog);
     const assessed = lastAssessed(rows);
+    // The worker assesses only where compaction is on, so an assessed table means a policy nearer it turns maintenance
+    // on: the catalog's policy is said to have it off only while none is assessed.
+    const off = tables.length && estateCounts(tables).unassessed === tables.length
+      ? await catalogOff(catalog, tables, pageHref('maintenance', catalog)) : null;
     // The queue lists only assessed tables that need compaction; the estate says which tables are not assessed yet.
     const c = estateCounts(tables);
     const policy = h('div');
@@ -45,12 +50,13 @@ export function maintenancePage(catalog) {
     return [
       pageHead({
         eyebrow: `${catalog} · maintenance`,
-        title: rows.length
-          ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
-          : !c.total ? nothingToRead(catalog, everywhere, 'maintenance')
-            : c.unassessed ? shapeWords(c) : `Every table you may read in ${catalog} is in shape.`,
+        title: !c.total ? nothingToRead(catalog, everywhere, 'maintenance')
+          : off ? [off, h('br'), h('span', {class: 'q'}, shapeWords(c))]
+            : rows.length
+              ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
+              : c.unassessed ? shapeWords(c) : `Every table you may read in ${catalog} is in shape.`,
         sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
-          + 'each one\'s assessment is on its Health tab.',
+          + 'each one\'s assessment is on its Maintenance tab.',
         side: [assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
           may ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact-pick', onclick: () => pickDialog(catalog, rows)},
             icon('play'), 'Compact a table now') : null],
@@ -71,7 +77,7 @@ async function policyPanel(catalog, host) {
   const p = await api.policy(target);
   const resolved = p.resolved || {};
   const keys = [...KEYS.filter(k => resolved[k]), ...Object.keys(resolved).filter(k => !KEYS.includes(k)).sort()];
-  return h('div', {class: 'panel', id: 'policy'}, h('h2', null, `Policy for ${catalog} `, h('span', {class: 'meta'}, 'each key with where it was set')),
+  return h('div', {class: 'panel', id: 'policy', 'data-policy': ''}, h('h2', null, `Policy for ${catalog} `, h('span', {class: 'meta'}, 'each key with where it was set')),
     tbl('policy stack-line', ['Key', 'Value', 'Set by'], keys.map(key => h('tr', {'data-key': key},
       h('td', {class: 'name' + (isChild(key) ? ' indent-1' : '')}, isChild(key) ? key.slice(key.indexOf('.') + 1) : key),
       h('td', {class: 'name'}, resolved[key].value),

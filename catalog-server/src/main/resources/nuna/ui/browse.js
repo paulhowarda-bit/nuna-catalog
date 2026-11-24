@@ -128,18 +128,18 @@ function onRefCell(x, path, isNamespace) {
     : h('span', {class: 'on-ref muted'}, 'as at the point');
 }
 
-/** A table's last commit: when, then who; an engine acting for someone names them both. */
+/** A table's last commit: when, then by whom; an engine acting for someone names them both (12:49 by lake). */
 function lastCommit(c) {
   if (!c) return muted('–');
   const who = c['end-user'] ? `${c['end-user']} via ${c.principal}` : c.principal;
-  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ', muted('· ' + who)];
+  return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ', muted('by ' + who)];
 }
 
-/** A namespace's newest commit beneath it: when, then the table, by its path below the namespace. */
+/** A namespace's newest commit beneath it: when, then in which table, by its path below the namespace (12:49 in rates). */
 function newestCommit(c) {
   if (!c) return muted('–');
   return [h('span', {class: 'tnum', title: when(c['committed-at'])}, at(c['committed-at'])), ' ',
-    muted('· ' + c.table.join('.'))];
+    muted('in ' + c.table.join('.'))];
 }
 
 /** A namespace's totals, its cells: a count after its name, its snapshots, its newest commit. A cut-short walk adds +. */
@@ -169,7 +169,7 @@ function contentsTable(catalog, levels, x) {
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref})}, name)),
         h('td', null, badge([icon('table'), 'table'])),
         h('td', {class: 'fmt'}, kept['format-version'] ? badge('v' + kept['format-version'], 'strong') : muted('–')),
-        h('td', null, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'health')}, queuePill(mine))
+        h('td', null, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'maintenance')}, queuePill(mine))
           : muted('–')),
         h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, kept.snapshots === undefined ? muted('–') : fmt(kept.snapshots)),
@@ -188,7 +188,7 @@ function contentsTable(catalog, levels, x) {
     ['Snapshots', 'num'], x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean), rows),
     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. ', x.ref
       ? `The catalog keeps format, snapshots and last commit for main's metadata only, so through @${x.ref} they are left out: `
-        + 'open a table to read it as the ref has it. Health and governance are main\'s, and bind the ref too.'
+        + 'open a table to read it as the ref has it. Maintenance and governance are main\'s, and bind the ref too.'
       : 'Format, snapshots and last commit are what the catalog keeps of each table\'s current metadata; its health, governance '
         + 'and history are on its own page. A namespace counts the tables beneath it that you may describe.'));
 }

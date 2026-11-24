@@ -80,7 +80,7 @@ function tableNote(key, target) {
       + 'that fall off the log. The orphan scan removes them.';
   }
   if (key.startsWith('history.expire.')) {
-    return ['Snapshot expiry follows the ', h('a', {href: objectHref(target, 'health')}, 'maintenance policy'),
+    return ['Snapshot expiry follows the ', h('a', {href: objectHref(target, 'maintenance')}, 'maintenance policy'),
       ', not this property.'];
   }
   return null;
@@ -160,7 +160,7 @@ export function settingsTab({target, settings, props, ctx, write, reload, needs}
     const closed = s.closed ? s.closed(ctx) : null;
     return h('tr', {'data-setting': s.key},
       h('td', {class: 'setting'}, h('b', null, s.label), h('br'), code(s.key),
-        h('p', {class: 'fine'}, s.explain, s.policy ? [' ', h('a', {href: objectHref(target, 'health')}, 'See the policy'), '.'] : null)),
+        h('p', {class: 'fine'}, s.explain, s.policy ? [' ', h('a', {href: objectHref(target, 'maintenance')}, 'See the policy'), '.'] : null)),
       h('td', {class: 'setting-v'}, set ? [shown(s, props[s.key]), ' ', muted('· set')] : muted(`${defaultWords(s)} · default`)),
       h('td', {class: 'setting-acts'}, closed ? h('span', {class: 'fine'}, closed)
         : h('button', {class: 'btn sm', type: 'button', 'data-act': 'change', onclick: () => change(s, props, ctx, target, write, reload)},
@@ -183,7 +183,7 @@ export function settingsTab({target, settings, props, ctx, write, reload, needs}
       keys.length ? tbl('props-tbl stack-line', ['Key', 'Value', ''], all) : h('p', {class: 'muted'}, 'No property is set.'),
       h('p', {class: 'fine'}, 'Engines and tools may set any key; the console changes only the settings above.')),
     target.kind === 'table' ? h('div', {class: 'notice'}, icon('maint'), h('span', null, h('b', null, 'Snapshot expiry, compaction and orphan removal'),
-      ' are set in the maintenance policy, not in properties: ', h('a', {href: objectHref(target, 'health')}, 'this table\'s policy'), ', and ',
+      ' are set in the maintenance policy, not in properties: ', h('a', {href: objectHref(target, 'maintenance')}, 'this table\'s policy'), ', and ',
       h('a', {href: pageHref('maintenance', target.catalog)}, 'the catalog\'s'), '.')) : null,
   ];
 }

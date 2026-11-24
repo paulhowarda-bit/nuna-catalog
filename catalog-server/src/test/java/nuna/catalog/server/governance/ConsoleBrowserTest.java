@@ -198,7 +198,7 @@ class ConsoleBrowserTest {
 
     /**
      * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
-     * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Health; a grant admin
+     * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Service; a grant admin
      * on Audit, with no Overview or Maintenance; a platform operator on Health.
      */
     @Test
@@ -226,8 +226,21 @@ class ConsoleBrowserTest {
 
         signIn(api.operator());
         browser.open("/ui/");
-        browser.await("the operator did not land on Health", d -> d.getCurrentUrl().endsWith("#p=health"));
-        assertThat(rail()).containsExactly("catalog", "governance", "health");
+        browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
+        assertThat(rail()).containsExactly("catalog", "governance", "service");
+    }
+
+    /**
+     * The rail keeps its labels on the Catalog page, the page people browse most (Atelier's review, F5; backlog 192);
+     * only its fold button folds it to icons.
+     */
+    @Test
+    void theRailKeepsItsLabelsOnTheCatalogPage() {
+        signIn(tester());
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#nav a[data-k='catalog'][aria-current='page']"));
+        assertThat(driver.findElement(By.cssSelector("#nav a[data-k='catalog'] .nl")).isDisplayed()).isTrue();
+        assertThat(driver.findElement(By.cssSelector(".nc-app")).getDomAttribute("class")).doesNotContain("rail");
     }
 
     /** The rail's items drawn for the caller, by key. */
@@ -272,8 +285,9 @@ class ConsoleBrowserTest {
 
     /**
      * A namespace's Contents gives each table its format, snapshot count and last commit, as the catalog's listing of
-     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log. Each child
-     * namespace gets its totals over the tables beneath it (backlog 147).
+     * them answers (backlog 137): the last commit is the newest entry of the table's metadata log, "12:49 by lake".
+     * Each child namespace gets its totals over the tables beneath it (backlog 147), its newest commit "12:49 in
+     * rates" (backlog 186).
      */
     @Test
     void contentsShowEachTablesFormatSnapshotsAndLastCommit() {
@@ -295,7 +309,7 @@ class ConsoleBrowserTest {
         assertThat(contentsCell(trades, 3)).isEqualTo("v2");
         assertThat(contentsCell(trades, 6)).isEqualTo("3");
         assertThat(textContent(trades.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
-        assertThat(textContent(trades.findElement(By.cssSelector("td.last")))).endsWith("· " + committer);
+        assertThat(textContent(trades.findElement(By.cssSelector("td.last")))).endsWith(" by " + committer);
         WebElement positions = contentsRow("positions");
         assertThat(contentsCell(positions, 3)).isEqualTo("v3");
         assertThat(contentsCell(positions, 6)).as("created, never appended to").isEqualTo("0");
@@ -318,7 +332,7 @@ class ConsoleBrowserTest {
         assertThat(contentsCell(euRow, 3)).isEqualTo("–");
         assertThat(contentsCell(euRow, 6)).isEqualTo("3");
         assertThat(textContent(euRow.findElement(By.cssSelector("td.last .tnum")))).isNotBlank();
-        assertThat(textContent(euRow.findElement(By.cssSelector("td.last")))).endsWith("· " + newest.getFirst());
+        assertThat(textContent(euRow.findElement(By.cssSelector("td.last")))).endsWith(" in " + newest.getFirst());
         WebElement daily = contentsRow("daily");
         assertThat(List.of(contentsCell(daily, 3), contentsCell(daily, 6), contentsCell(daily, 7))).containsOnly("–");
 
@@ -328,7 +342,19 @@ class ConsoleBrowserTest {
         WebElement topRow = contentsRow(top);
         assertThat(contentsCell(topRow, 1)).isEqualTo(top + " · 3 tables");
         assertThat(textContent(topRow.findElement(By.cssSelector("td.last"))))
-                .matches(".+ · (equities\\.eu\\.trades|equities\\.eu\\.positions|ledger\\.accounts)");
+                .matches(".+ in (equities\\.eu\\.trades|equities\\.eu\\.positions|ledger\\.accounts)");
+
+        // Who made the current snapshot is on the table's Overview, and each snapshot's author on Snapshots, paired
+        // with its commit in the metadata log (Atelier's review, F6; backlog 186).
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        assertThat(textContent(browser.await(By.cssSelector("#overview-tab #current-by b")))).isEqualTo(committer);
+        assertThat(textContent(driver.findElement(By.id("current-by")))).startsWith("by " + committer);
+        browser.open("/ui/#" + at("table", eu, "trades", "snapshots"));
+        browser.await(By.cssSelector("table.snaps td.by b"));
+        assertThat(driver.findElements(By.cssSelector("table.snaps thead th"))).extracting(ConsoleBrowser::textContent)
+                .contains("By");
+        assertThat(driver.findElements(By.cssSelector("table.snaps tbody td.by b"))).hasSize(3)
+                .extracting(ConsoleBrowser::textContent).containsOnly(committer);
     }
 
     @Test
@@ -380,9 +406,9 @@ class ConsoleBrowserTest {
                 .containsExactly(String.valueOf(S3), String.valueOf(S2), String.valueOf(S1));
         assertThat(snapshots.get(0).getDomAttribute("class")).contains("is-cur");
         assertThat(cell(snapshots.get(0), 3)).startsWith("append");
-        assertThat(cell(snapshots.get(0), 6)).isEqualTo("main");
-        assertThat(cell(snapshots.get(1), 6)).isEqualTo("review");
-        assertThat(cell(snapshots.get(2), 6)).isEqualTo("close-day-1");
+        assertThat(cell(snapshots.get(0), 7)).isEqualTo("main");
+        assertThat(cell(snapshots.get(1), 7)).isEqualTo("review");
+        assertThat(cell(snapshots.get(2), 7)).isEqualTo("close-day-1");
         assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]"))).hasSize(3);
         snapshots.get(2).findElement(By.cssSelector("button.row-pick")).click();
         browser.await("the oldest snapshot is not selected", d -> d.findElement(
@@ -605,7 +631,7 @@ class ConsoleBrowserTest {
         browser.open("/ui/#p=maintenance&c=trading");
         WebElement lastNight = browser.await(By.cssSelector("#last-night[data-night='" + night + "']"));
         WebElement job = browser.await(By.cssSelector("#last-night a.gj[data-job='" + compaction + "']"));
-        assertThat(job.getDomAttribute("href")).contains("k=table", "n=trades", "tab=health");
+        assertThat(job.getDomAttribute("href")).contains("k=table", "n=trades", "tab=maintenance");
         assertThat(job.getDomAttribute("aria-label")).startsWith("Compaction of " + top + ".equities.eu.trades: ")
                 .endsWith("succeeded, 40 files into 3");
         browser.await(By.cssSelector("#last-night a.gj[data-job='" + scan + "'] rect.scan"));
@@ -619,6 +645,90 @@ class ConsoleBrowserTest {
         assertThat(browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='maintenance']")).getText())
                 .contains("Maintenance, last night", "tables compacted", "Snapshots expired");
         browser.await(By.cssSelector("#overview #last-night a.gj[data-job='" + compaction + "']"));
+    }
+
+    /**
+     * The audit feed in the page's own answers: this server has no audit tables, so its feed and counts are answered in
+     * the page, and the case checks what the console asks for and draws (Atelier's review, F7; backlog 187).
+     */
+    private static final String AUDIT_TABLES_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.asked = [];
+            const now = Date.now();
+            const rec = (i, type, who, path) => ({time: new Date(now - i * 60000).toISOString(), type: 'nuna.catalog.' + type,
+              principal: who, 'event-id': 'e' + i, partition: 0, offset: i, 'request-id': 'r' + i,
+              object: path ? {kind: 'TABLE', path} : null, event: {data: {}}, chain: {status: 'no-archive'}});
+            const records = [rec(1, 'audit-read', 'gina', null), rec(2, 'grant', 'gina', ['equities', 'eu', 'trades']),
+              rec(3, 'commit', 'tester', ['equities', 'eu', 'trades']), rec(4, 'audit-read', 'gina', null)];
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.audit-read': 2, 'nuna.catalog.grant': 1, 'nuna.catalog.commit': 1},
+                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({chains: [], configured: false});
+              if (u.pathname.endsWith('/audit/feed')) {
+                window.asked.push(u.searchParams.get('type'));
+                const types = (u.searchParams.get('type') || '').split(',').filter(Boolean);
+                return json({records: records.filter(r => !types.length || types.includes(r.type))});
+              }
+              return real(url, init);
+            };
+            location.hash = '#p=audit&c=trading&kind=all';
+            """;
+
+    /**
+     * Audit filters by kind, and each By kind row applies its kind (Atelier's review, F7; backlog 187): a grant admin
+     * reaches a grant's record in three steps, Audit (where they land), the grant row, its record. Every filter is in
+     * the link, so Back keeps it; the audit's own reads are hidden unless asked for; the range names both days.
+     */
+    @Test
+    void auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
+        browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
+        assertThat(feedTypes()).containsExactly("grant", "commit");
+        assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
+        assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
+                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d, .*");
+
+        browser.await(By.cssSelector("#audit-kinds tr[data-type='nuna.catalog.grant'] button")).click();
+        browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
+        assertThat(lastAsked()).isEqualTo("nuna.catalog.grant");
+        assertThat(driver.getCurrentUrl()).contains("p=audit", "kind=grant");
+        assertThat(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='grant']")).getDomAttribute("aria-pressed"))
+                .isEqualTo("true");
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
+        assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-row .rec")))).contains("r2");
+
+        // Back from the record's table keeps the kind.
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .what a")).click();
+        browser.await("the table did not open", d -> d.getCurrentUrl().contains("n=trades"));
+        driver.navigate().back();
+        browser.await(By.cssSelector("#audit-feed .chip[data-f='grant'][aria-pressed='true']"));
+        browser.await("the feed did not keep its kind", d -> feedTypes().equals(List.of("grant")));
+
+        // The audit's own reads, when asked for.
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']")).click();
+        browser.await("the feed did not show every kind", d -> feedTypes().equals(List.of("grant", "commit")));
+        driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
+        browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
+        assertThat(lastAsked()).isNull();
+        assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
+    }
+
+    /** The types of the feed's rows, as drawn. */
+    private List<String> feedTypes() {
+        return driver.findElements(By.cssSelector("#audit-feed .feed-row")).stream()
+                .map(row -> row.getDomAttribute("data-type")).toList();
+    }
+
+    /** The type filter of the feed's last request, null for none. */
+    private String lastAsked() {
+        return (String) driver.executeScript("return window.asked[window.asked.length - 1];");
     }
 
     @Test

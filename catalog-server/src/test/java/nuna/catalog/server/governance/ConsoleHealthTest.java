@@ -255,7 +255,7 @@ class ConsoleHealthTest {
         orders.findElement(By.cssSelector("td.name a")).click();
         assertThat(browser.awaitText(By.id("table-health-verdict"), "Needs compaction").getText())
                 .contains("Score 3");
-        assertThat(driver.getCurrentUrl()).contains("k=table", "n=orders", "tab=health");
+        assertThat(driver.getCurrentUrl()).contains("k=table", "n=orders", "tab=maintenance");
         assertThat(driver.findElements(By.cssSelector("#table-health-reasons li"))).extracting(li -> li.getDomAttribute(
                 "data-reason")).containsExactly("small-files");
         assertThat(fact("Small files")).isEqualTo("12 (30.0% of data files)");
@@ -267,8 +267,11 @@ class ConsoleHealthTest {
         assertThat(driver.findElements(By.id("table-health-acts"))).as("a reader may not ask for maintenance").isEmpty();
         assertThat(driver.findElements(By.cssSelector("#table-page [data-act='compact']"))).isEmpty();
 
+        // A link from before the tab was named Maintenance (backlog 192) still opens it.
         browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=fine&tab=health");
         assertThat(browser.awaitText(By.id("table-health-verdict"), "No compaction needed")).isNotNull();
+        assertThat(driver.findElement(By.cssSelector("#table-page nav.tabs a[aria-current='page']")).getText())
+                .isEqualTo("Maintenance");
         assertThat(browser.await(By.id("table-health-compaction")).getText())
                 .contains("No compaction has run for this table.");
 
@@ -300,21 +303,26 @@ class ConsoleHealthTest {
         assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
                 .isEqualTo("2 tables queued for tonight. 1 not assessed yet.");
 
-        // None assessed: before the worker reports, nothing is called in shape (backlog 143).
+        // None assessed: before the worker reports, nothing is called in shape (backlog 143). The catalog's policy is
+        // the built-in one, every job off, and nothing nearer first turns one on, so that is said first (backlog 190);
+        // with a job on, as for rita's orders above, the pages lead as before.
         driver = browser.session();
         browser.signIn(token("nell", newcomers));
         browser.open("/ui/#p=overview&c=trading");
+        String off = "Maintenance is off in trading's policy: nothing will be compacted or expired.";
         assertThat(browser.await(By.cssSelector("#overview .ph h1")).getText())
-                .isEqualTo("1 table not assessed yet: the maintenance worker has not reported.");
+                .isEqualTo(off + "\n1 table not assessed yet: the maintenance worker has not reported.");
         shape = browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='shape']"));
         assertThat(shape.findElement(By.cssSelector(".kpi-d")).getText())
-                .isEqualTo("1 not assessed yet: the maintenance worker has not reported");
+                .isEqualTo("1 not assessed yet: maintenance is off in the catalog's policy");
         assertThat(shape.getText()).doesNotContain(" of ");
         assertThat(browser.awaitText(By.cssSelector("#overview .grid-21 p.muted"), "Nothing queued").getText())
-                .isEqualTo("Nothing queued: the maintenance worker has not assessed any table you may read yet.");
+                .isEqualTo("Nothing queued: maintenance is off in trading's policy.");
         browser.open("/ui/#p=maintenance&c=trading");
         assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
-                .isEqualTo("1 table not assessed yet: the maintenance worker has not reported.");
+                .isEqualTo(off + "\n1 table not assessed yet: the maintenance worker has not reported.");
+        browser.open("/ui/#c=trading&k=table&ns=" + fresh + "&n=first&tab=maintenance");
+        assertThat(browser.await(By.id("table-health-off")).getText()).isEqualTo(off);
         assertThat(browser.await(By.id("neediest-none")).getText()).contains("The maintenance worker has not assessed "
                 + "any table you may read in trading yet, so it has queued none.").doesNotContain("in shape");
     }
