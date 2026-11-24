@@ -1,10 +1,13 @@
 # catalog-audit-tables: the audit table writer (D23)
 
-A separate service that writes every record of the catalog's audit topic to one Iceberg table, `events`, in an
-audit catalog of the deployment's own, about a minute behind, so access reviewers can ask across objects, people and
+A separate service that writes every audit record of the catalog to one Iceberg table, `events`, in an audit catalog of
+the deployment's own, about a minute behind, so access reviewers can ask across objects, people and
 months in SQL from any engine: every table a principal read last quarter, every denial in a namespace. It is an
 Iceberg Java client of the catalog over REST, like the maintenance worker (D2 as amended), and signs in as a
-principal of its own. The decisions are D23's amendment of 2026-11-20 and `backlog/27.md`.
+principal of its own. The decisions are D23's amendment of 2026-11-20 and `backlog/27.md`. It takes the records from
+one of two sources, `nuna.audit-tables.source`: the audit topic (`kafka`, the default), or the catalog's log
+`nuna.audit`, which the catalog's OTLP log exporter sends to the writer's logs receiver (`otlp`; D23, amended
+2026-11-23, backlog 195), so the console's Audit page needs no Kafka.
 
 ## The table
 
@@ -21,16 +24,19 @@ name with other columns.
 | `catalog`, `object_kind`, `object_id`, `object_path` | string, string, string, list of string | what it is about: a table, view, namespace or catalog, by name as it was then and by stable id |
 | `operation`, `privilege`, `reason` | string | where the type has them: a denial's operation, missing privilege and reason, a grant's privilege, a hold's reason |
 | `data` | string | the whole payload as the topic carries it, JSON, so a new payload version needs no new column |
-| `topic_partition`, `topic_offset` | int, long | the record's place in the topic, which ties a row to its archive chain |
+| `topic_partition`, `topic_offset` | int, long | the record's place in the topic, which ties a row to its archive chain; for a row from the log, `-1` and the writer's number for it ("From the log", below) |
 
 The mapping from each event type lives in `catalog-audit` (`AuditRows`), without Iceberg. The relay is at least once
 (D23), so an `event_id` can repeat, at another offset; an offset is never written twice.
 
-Not in it: history older than the topic's retention, records that went to the fallback log in a Kafka outage (not in
-the topic), and the records of the writer's own requests (below). Rows are never deleted by the writer: the archive is
+Not in it: from the topic, history older than its retention and records Kafka did not take in an outage (they are in
+the catalog's log only); from the log, what was lost before it reached the writer (docs/observability/audit-log.md);
+and the records of the writer's own requests (below). Rows are never deleted by the writer: the archive is
 the five-year record (D24).
 
 ## How it writes
+
+### From the topic
 
 The writer reads the topic in its own consumer group. Rows wait in memory and are committed every
 `commit-interval` (1 minute by default) after the first of them arrived, or once `max-rows` wait. Each commit adds
@@ -53,6 +59,38 @@ again. The consumer group's own offsets are committed after each commit only so 
   longer than the audit catalog's `max-snapshot-age`, and only newer snapshots kept), the writer refuses to start
   rather than guess. Keep the audit catalog's snapshots longer than the writer may be down.
 
+### From the log
+
+With `source: otlp` the writer listens for OTLP/HTTP log exports, `POST /v1/logs` on `otlp.port` (4318), the body an
+`ExportLogsServiceRequest` as protobuf (`application/x-protobuf`) or OTLP's JSON (`application/json`), gzipped or not
+(`OtlpLogsReceiver`). The catalog's `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` names it, directly or through a collector.
+
+- **What it keeps.** Only the log records whose instrumentation scope is `nuna.audit`, the catalog's audit logger;
+  OpenTelemetry's logback appender names the scope after the logger. Each one's body is a CloudEvent. Every other
+  record is ignored, so the catalog's whole log may be sent.
+- **The token.** Every request must carry `otlp.token` in the header `X-Nuna-Audit-Token`, or it is refused with 401
+  and nothing in it is read: the table is the console's Audit page, and nothing but the catalog may add rows to it.
+  The token is at least 32 letters, digits, `-`, `_`, `.` or `~`, so it travels in `OTEL_EXPORTER_OTLP_LOGS_HEADERS`
+  unencoded; the writer refuses to start without one.
+- **Answers**, as OTLP/HTTP has them: 200 once the records are taken, with a partial success counting those rejected
+  (a body that is no CloudEvent, or of a type the writer cannot map: logged as an error, not written, still in the
+  catalog's log); 400 for a body that is no OTLP request, 413 past 16 MiB, 415 for another content type, and 503 with
+  `Retry-After` while twice `max-rows` wait, which the exporter retries.
+- **Each record once.** The log has no offsets, and a record can arrive twice: the exporter retries a batch whose
+  answer it lost, and the catalog's relay is at least once. Rows are deduplicated by CloudEvent id: an id seen in the
+  last `otlp.dedup-window` (15 minutes) is left out. On start and after a failed commit the writer reads the ids of the
+  table's rows of that window back, so a commit whose answer was lost, or a restart, writes nothing twice.
+- **Partition and offset.** A row from the log is in no topic: its `topic_partition` is `-1`, and its `topic_offset` a
+  number the writer gives it, the current time in microseconds or one more than the last it gave, whichever is higher.
+  The numbers rise, never repeat while the writer's clock does not go back, and keep rows apart where the feed's reader
+  orders and finds them by partition and offset. Each commit records the next one in its snapshot summary, under
+  `nuna.audit-tables.offsets.otlp:nuna.audit`, which a restart starts above. Such a row has no archive chain: its
+  `chain.status` in the feed is `unverified` where an archive is configured.
+- **Waiting rows.** Records wait in memory and are committed as from the topic, every `commit-interval` or at
+  `max-rows`. A commit that fails keeps them for the next. A writer that dies before its commit loses them (they are
+  still on the catalog's stdout); a shutdown stops the receiver and commits them first.
+- A table the topic filled before can be written from the log: the two sources' offsets are kept apart.
+
 ## Running it
 
 ```
@@ -61,7 +99,8 @@ java -jar catalog-audit-tables/build/libs/catalog-audit-tables-<version>-exec.ja
     --spring.config.additional-location=file:audit-tables.yaml
 ```
 
-It has no HTTP port. It logs a line per commit, as JSON on stdout.
+With the source `kafka` it has no HTTP port; with `otlp`, only the logs receiver's. It logs a line per commit, as JSON
+on stdout.
 
 ### Settings (`nuna.audit-tables.*`)
 
@@ -75,10 +114,14 @@ It has no HTTP port. It logs a line per commit, as JSON on stdout.
 | `max-rows` | `100000` | rows that make a commit before the interval has passed |
 | `token.endpoint`, `token.client-id`, `token.client-secret` | required | the client-credentials grant against the identity provider; Iceberg's client renews it |
 | `token.scope`, `token.audience` | none | a scope or audience to ask for |
-| `kafka.bootstrap-servers` | required | the cluster holding the audit topic |
+| `source` | `kafka` | where the records come from: `kafka`, the audit topic, or `otlp`, the catalog's log over OTLP/HTTP |
+| `kafka.bootstrap-servers` | required for `kafka` | the cluster holding the audit topic |
 | `kafka.topic` | `nuna.catalog.audit` | the catalog's `nuna.audit.audit-topic` |
 | `kafka.group` | `nuna-audit-tables` | the writer's consumer group |
 | `kafka.properties.*` | none | further Kafka client settings (TLS, SASL); the writer owns `bootstrap.servers`, `group.id`, `enable.auto.commit`, `auto.offset.reset`, `isolation.level` and the deserializers |
+| `otlp.port` | `4318` | the logs receiver's port, for `otlp` |
+| `otlp.token` | required for `otlp` | the token every request carries in `X-Nuna-Audit-Token`; at least 32 letters, digits, `-`, `_`, `.` or `~` |
+| `otlp.dedup-window` | `15m` | how long a record's id is remembered, to leave out a second copy |
 | `client-properties.*` | none | further Iceberg client properties, e.g. `s3.endpoint` |
 
 ## Deploying it
@@ -100,9 +143,12 @@ It has no HTTP port. It logs a line per commit, as JSON on stdout.
 4. Give the maintenance worker's group `write` on the audit catalog too, so its expiry and compaction keep the table
    tidy (D30), within the expiry caveat above.
 5. Build the image, `deploy/image/audit-tables.Dockerfile`, and install the chart `deploy/helm/nuna-audit-tables`:
-   one replica, its settings under `config`, the client secret (and any Kafka secret) under `secrets`, each key a
-   property name such as `nuna.audit-tables.token.client-secret`. The chart refuses to render without `catalog-uri`,
-   `principal`, `token.endpoint`, `token.client-id` and `kafka.bootstrap-servers`.
+   one replica, its settings under `config`, the client secret (and any Kafka secret, or the OTLP token) under
+   `secrets`, each key a property name such as `nuna.audit-tables.token.client-secret`. The chart refuses to render
+   without `catalog-uri`, `principal`, `token.endpoint`, `token.client-id`, and `kafka.bootstrap-servers` for the
+   source `kafka`. For the source `otlp` it adds the container port and a Service port, both named `otlp-http`, and
+   the catalog's chart sends its logs there with `telemetry.logsEndpoint` and `telemetry.logsTokenSecret`
+   (deploy/README.md, "Audit").
 
 ## The console's audit feed (D45, item 125)
 
@@ -138,7 +184,7 @@ only"). That rules out grant admins, platform operators and holders of `select` 
 - Each record: `{"event-id", "time", "type", "principal", "end-user", "engine", "request-id", "object": {"kind",
   "id", "catalog", "path"} | null, "operation", "privilege", "reason", "partition", "offset", "chain": {"status",
   "checked-at"}, "event"}`.
-  - `event` is the record as the topic carries it.
+  - `event` is the record as the topic and the log carry it.
   - `chain.status` is `verified` when the archive check has verified the record's chain past its offset,
     `unverified` when it has not (yet, or the chain is broken there: see the archive status), and `no-archive` where
     no archive is configured.
@@ -158,8 +204,8 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   - `deployment-by-type` counts every catalog's records and those about none.
 - The counts are read once a minute at most and shared by every caller.
 - They count the records in the table. These differ from the server's own counters in two ways. The writer leaves
-  its own records out. A record that went to the fallback log while Kafka was down reaches neither the topic nor the
-  table.
+  its own records out. A record that never reached the writer is not in the table: from the topic, one Kafka did not
+  take; from the log, one lost on the way (docs/observability/audit-log.md).
 
 `GET /management/v1/audit/archive`
 
@@ -194,6 +240,11 @@ only"). That rules out grant admins, platform operators and holders of `select` 
   commit or its answer: every record written once with its place in the topic, resuming after the last committed
   offset, no gap and no repeat after a lost commit, a second writer, a revoked partition or a record it cannot map,
   its own records left out. `AuditTablesSettingsTest` checks the settings and the clients made of them.
+- `LogWriterTest` runs the source `otlp`'s writer against the same catalog: each record once across repeats, a commit
+  whose answer was lost and a restart; rows in partition -1 with rising numbers; a failed commit keeps its rows; its
+  own records left out; a table the topic filled before. `OtlpLogsReceiverTest` posts OTLP requests: protobuf and
+  JSON, gzip, only the `nuna.audit` scope kept, a request without the token refused and unread, rejected records
+  counted. `catalog-server`'s `AuditLogToWriterTest` sends a record from the server's own log wiring to the receiver.
 - `AuditTablesTest` (tagged `heavy`: PostgreSQL, Kafka and the run's S3 store) runs it against a real catalog server:
   a row for each kind of request about two intervals behind, no gap and no repeat after a writer dies mid-batch, and
   the table found only by the auditors. The server grants the auditors and the writer's group from

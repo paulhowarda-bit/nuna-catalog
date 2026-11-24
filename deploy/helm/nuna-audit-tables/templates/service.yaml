@@ -1,0 +1,19 @@
+{{- if eq (include "nuna-audit-tables.source" .) "otlp" -}}
+# The OTLP/HTTP logs receiver, for the source otlp: the catalog's telemetry.logsEndpoint names
+# http://{{ include "nuna-audit-tables.fullname" . }}:{{ .Values.service.otlpPort }}/v1/logs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nuna-audit-tables.fullname" . }}
+  labels:
+    {{- include "nuna-audit-tables.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "nuna-audit-tables.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: otlp-http
+      port: {{ .Values.service.otlpPort }}
+      targetPort: otlp-http
+      protocol: TCP
+{{- end }}

@@ -1,0 +1,16 @@
+Breaks: The writer from the log writes the records of its own requests.
+Module: catalog-audit-tables
+Test: LogWriterTest#leavesOutTheRecordsOfItsOwnRequests
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+index f15ea540..3df26100 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+@@ -132,7 +132,7 @@ final class LogWriter {
+                 continue;
+             }
+             seen.put(id, now);
+-            if (principal.equals(row.principal())) {
++            if (false) {
+                 own++;
+                 continue;
+             }

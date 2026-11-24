@@ -2,29 +2,33 @@ package nuna.catalog.server.governance;
 
 import nuna.catalog.audit.archive.ArchiveConsumer;
 import nuna.catalog.audit.archive.ObjectLockArchive;
-import nuna.catalog.audit.publish.AuditUnavailableException;
+import nuna.catalog.audit.publish.EventPublisher;
 import nuna.catalog.audit.publish.KafkaEventPublisher;
 import nuna.catalog.audit.publish.PublisherSettings;
 import nuna.catalog.audit.publish.RelayTarget;
 import nuna.catalog.audit.relay.ChangeStream;
 import nuna.catalog.audit.relay.OutboxRelay;
 import nuna.catalog.store.OutboxStore;
+import java.net.URI;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.UnaryOperator;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.SmartLifecycle;
 
 /**
- * Audit delivery while the server runs (D23): the audit and change-stream publishers, the outbox
- * relay, and the archive consumer where an archive is configured. Every server runs a relay; the
- * outbox lease lets one drain at a time. A record that changes nothing in the store, and so has no
- * transaction to go out with, is delivered at once the way the relay delivers a batch ({@link #notices}). Archive consumers share a consumer group, so each audit
- * partition, and so each hash chain, has one writer.
+ * Audit delivery while the server runs (D23, amended 2026-11-23): the audit trail, the outbox relay, and, where Kafka is
+ * configured, the audit and change-stream publishers and the archive consumer where an archive is configured. Every
+ * server runs a relay, with or without Kafka; the outbox lease lets one drain at a time. It writes each change to the
+ * log {@value AuditTrail#LOGGER} and, where Kafka is configured, to the audit topic and the change stream, best effort
+ * ({@link AuditTrail#deliver}), so no change waits in the outbox for Kafka. A record that changes nothing in the store,
+ * and so has no transaction to go out with, is delivered at once the way the relay delivers a batch ({@link #notices}).
+ * Archive consumers share a consumer group, so each audit partition, and so each hash chain, has one writer.
  */
 public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
 
@@ -35,35 +39,42 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
     private final AuditSettings settings;
     private final Optional<KafkaEventPublisher> audit;
     private final Optional<KafkaEventPublisher> changes;
+    private final AuditTrail trail;
     private final OutboxRelay relay;
-    private final Optional<RelayTarget> notices;
     private final Optional<ObjectLockArchive> archive;
     private final Clock clock;
     private final AtomicBoolean running = new AtomicBoolean();
     private Thread relayThread;
     private Thread archiveThread;
 
-    AuditRuntime(AuditSettings settings, OutboxStore outbox, Optional<ObjectLockArchive> archive, Clock clock) {
+    /**
+     * @param observe wraps the audit topic's publisher for the synchronous records, so each publish is observed
+     * @throws IllegalStateException if the audit log is switched off, or an archive is configured without Kafka
+     */
+    AuditRuntime(AuditSettings settings, OutboxStore outbox, Optional<ObjectLockArchive> archive, URI source,
+                 UnaryOperator<EventPublisher> observe, Clock clock) {
+        AuditTrail.requireLogged();
+        if (archive.isPresent() && !settings.kafkaConfigured()) {
+            throw new IllegalStateException("nuna.audit.archive.bucket is set but nuna.audit.kafka-bootstrap-servers "
+                    + "is not: the archive reads the audit topic");
+        }
         this.settings = settings;
         this.clock = clock;
         this.archive = archive;
         if (settings.kafkaConfigured()) {
             audit = Optional.of(publisher(settings.auditTopic()));
             changes = Optional.of(publisher(settings.changeTopic()));
-            notices = Optional.of(ChangeStream.fanOut(audit.get(), changes.get()));
-            relay = new OutboxRelay(outbox, notices.get(), clock, settings.relayLease(), settings.relayBatch());
+            trail = new AuditTrail(Optional.of(observe.apply(audit.get())),
+                    Optional.of(ChangeStream.fanOut(audit.get(), changes.get())), source, clock,
+                    settings.probeInterval());
         } else {
-            LOG.warn("nuna.audit.kafka-bootstrap-servers is not set: audit is unavailable. Changes wait in the "
-                    + "outbox, reads and denials go to the fallback log, and no credential is handed out");
+            LOG.info("nuna.audit.kafka-bootstrap-servers is not set: audit records go to the log {} only, with no "
+                    + "audit topic, change stream or archive", AuditTrail.LOGGER);
             audit = Optional.empty();
             changes = Optional.empty();
-            notices = Optional.empty();
-            relay = null;
+            trail = new AuditTrail(Optional.empty(), Optional.empty(), source, clock, settings.probeInterval());
         }
-        if (archive.isPresent() && !settings.kafkaConfigured()) {
-            throw new IllegalStateException("nuna.audit.archive.bucket is set but nuna.audit.kafka-bootstrap-servers "
-                    + "is not: the archive reads the audit topic");
-        }
+        relay = new OutboxRelay(outbox, trail::deliver, clock, settings.relayLease(), settings.relayBatch());
     }
 
     private KafkaEventPublisher publisher(String topic) {
@@ -71,18 +82,18 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
                 settings.deliveryTimeout(), settings.requestTimeout(), Map.of()));
     }
 
-    /** The audit topic's publisher, for synchronous records; empty when Kafka is not configured. */
-    Optional<KafkaEventPublisher> auditPublisher() {
-        return audit;
+    /** The audit trail every synchronous record and every relayed batch goes through. */
+    AuditTrail trail() {
+        return trail;
     }
 
     /**
-     * Where a record goes that changes nothing in the store, a branch's expiry warning (D33, choice 11): to the audit
-     * topic and, for the change stream's types, to the change stream, as the relay sends an outbox batch, before the
-     * route answers. Empty when Kafka is not configured.
+     * Where a record goes that changes nothing in the store, a branch's expiry warning (D33, choice 11): to the log
+     * and, where Kafka is configured, to the audit topic and, for the change stream's types, to the change stream, as
+     * the relay sends an outbox batch, before the route answers. Never throws for Kafka.
      */
-    Optional<RelayTarget> notices() {
-        return notices;
+    RelayTarget notices() {
+        return trail::deliver;
     }
 
     /** The archive, where one is configured; the DR reconcile reads it (D37). */
@@ -95,9 +106,7 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
         if (!running.compareAndSet(false, true)) {
             return;
         }
-        if (relay != null) {
-            relayThread = Thread.ofVirtual().name("outbox-relay").start(this::relayLoop);
-        }
+        relayThread = Thread.ofVirtual().name("outbox-relay").start(this::relayLoop);
         if (archive.isPresent()) {
             archiveThread = Thread.ofVirtual().name("audit-archive").start(this::archiveLoop);
         }
@@ -108,9 +117,6 @@ public final class AuditRuntime implements SmartLifecycle, AutoCloseable {
             try {
                 relay.drain();
                 sleep(settings.relayInterval());
-            } catch (AuditUnavailableException e) {
-                LOG.warn("outbox relay: audit unavailable; the batch stays in the outbox and is retried", e);
-                sleep(FAILURE_BACKOFF);
             } catch (RuntimeException e) {
                 LOG.error("outbox relay failed; retrying", e);
                 sleep(FAILURE_BACKOFF);

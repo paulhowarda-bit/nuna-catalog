@@ -5,8 +5,8 @@ import java.util.Objects;
 
 /**
  * Storage credentials handed to a caller (D21). The credentials themselves are never recorded.
- * This event is published before the response is sent; if it cannot be published the
- * credentials are not handed out (D23).
+ * This event is written to the audit log before the response is sent, and to the audit topic where
+ * Kafka is configured, best effort (D23, amended 2026-11-23).
  *
  * @param object         the table whose prefix the credentials cover
  * @param storageProfile the storage profile they came from

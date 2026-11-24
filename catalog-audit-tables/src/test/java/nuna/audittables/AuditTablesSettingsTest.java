@@ -50,6 +50,42 @@ class AuditTablesSettingsTest {
         assertThat(settings.maxRows()).isEqualTo(100_000);
         assertThat(settings.kafka().topic()).isEqualTo("nuna.catalog.audit");
         assertThat(settings.kafka().group()).isEqualTo("nuna-audit-tables");
+        assertThat(settings.source()).isEqualTo(AuditTablesSettings.Source.KAFKA);
+    }
+
+    @Test
+    void theSourceKafkaNeedsAKafkaCluster() {
+        Map<String, String> properties = required();
+        properties.remove("nuna.audit-tables.kafka.bootstrap-servers");
+
+        assertThat(rootCause(properties)).hasMessageContaining("nuna.audit-tables.kafka.bootstrap-servers");
+    }
+
+    @Test
+    void theSourceOtlpListensOn4318AndNeedsNoKafka() {
+        Map<String, String> properties = required();
+        properties.remove("nuna.audit-tables.kafka.bootstrap-servers");
+        properties.put("nuna.audit-tables.source", "otlp");
+        properties.put("nuna.audit-tables.otlp.token", "a".repeat(32));
+
+        AuditTablesSettings settings = bind(properties);
+
+        assertThat(settings.source()).isEqualTo(AuditTablesSettings.Source.OTLP);
+        assertThat(settings.otlp().port()).isEqualTo(4318);
+        assertThat(settings.otlp().dedupWindow()).isEqualTo(Duration.ofMinutes(15));
+        assertThat(settings.otlp().toString()).doesNotContain("a".repeat(32));
+    }
+
+    @Test
+    void theSourceOtlpNeedsALongToken() {
+        Map<String, String> properties = required();
+        properties.put("nuna.audit-tables.source", "otlp");
+
+        assertThat(rootCause(properties)).hasMessageContaining("nuna.audit-tables.otlp.token");
+        properties.put("nuna.audit-tables.otlp.token", "too-short");
+        assertThat(rootCause(properties)).hasMessageContaining("nuna.audit-tables.otlp.token");
+        properties.put("nuna.audit-tables.otlp.token", "a".repeat(31) + " ");
+        assertThat(rootCause(properties)).hasMessageContaining("nuna.audit-tables.otlp.token");
     }
 
     @Test

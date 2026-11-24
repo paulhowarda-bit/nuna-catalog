@@ -6,7 +6,8 @@ plugins {
 }
 
 description = "The queryable audit tables' writer (D23): a separate service with its own principal, an Iceberg client" +
-    " of the catalog that writes every record of the audit topic to the table events in the audit catalog."
+    " of the catalog that writes every audit record, from the audit topic or the catalog's log over OTLP, to the table" +
+    " events in the audit catalog."
 
 // Iceberg 1.12, Parquet, Hadoop and Kafka ask for different compression libraries; Iceberg's own choices win, as in
 // singlestore-change-feed, and Parquet 1.17's zstd-jni over the older one Kafka's client asks for.
@@ -25,6 +26,9 @@ val hadoopVersion = "3.4.3"
 dependencies {
     // The event codec and the row mapping (AuditRows); its Kafka client reads the topic.
     implementation(project(":catalog-audit"))
+    // The OTLP logs receiver's request and response messages (OtlpLogsReceiver): the version the catalog server's
+    // OTLP meter registry already brings, so the server, which links this module, gets no second one.
+    implementation("io.opentelemetry.proto:opentelemetry-proto:${property("opentelemetry-proto.version")}")
     implementation("org.springframework.boot:spring-boot-starter")
     implementation("org.apache.iceberg:iceberg-core")
     implementation("org.apache.iceberg:iceberg-data:$icebergVersion")

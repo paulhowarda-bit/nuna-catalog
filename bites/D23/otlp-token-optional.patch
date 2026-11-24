@@ -1,0 +1,16 @@
+Breaks: The writer starts with the source otlp and no token, or a short one.
+Module: catalog-audit-tables
+Test: AuditTablesSettingsTest#theSourceOtlpNeedsALongToken
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java b/catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java
+index 5ab30cd4..e5df08e4 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/AuditTablesSettings.java
+@@ -143,7 +143,7 @@ public record AuditTablesSettings(
+         }
+ 
+         void requireToken() {
+-            if (token == null || !TOKEN.matcher(token).matches()) {
++            if (false) {
+                 throw new IllegalArgumentException("nuna.audit-tables.otlp.token must be set, at least 32 letters,"
+                         + " digits, '-', '_', '.' or '~': the source otlp takes audit records only from requests that"
+                         + " carry it in X-Nuna-Audit-Token");

@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**40 open:** 7 S, 14 M, 14 L, 5 XL.
+**41 open:** 7 S, 15 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -52,6 +52,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
+| [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 
 ## Open items in full
 
@@ -2862,6 +2863,31 @@ Done when register and revive refuse a location `TableFiles.onBranch` marks, wit
 and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
 checked with `git apply --check`, not run).
 
+### 197. After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's
+
+- Added: 2026-11-23 by Paul
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/RecentAudit.java, catalog-server/src/main/resources/nuna/ui/audit.js, catalog-server/src/main/resources/nuna/ui/app.js, catalog-server/src/main/resources/nuna/ui/health.js, catalog-server/src/test/java/nuna/catalog/server/governance/RecentAudit, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java, docs/observability/
+- Effort: M, one route's source and three console pages' words, with their tests; waits on nothing
+
+What is wrong: item 195 (D23, amended 2026-11-23) made the log `nuna.audit` the record of audit and Kafka optional,
+and the demo runs without Kafka unless `gen` or `cdc` is on (D50). Item 195's agent left the console alone, since its
+files were claimed, and reported:
+- `RecentAudit` (`GET .../audit`, a table's or namespace's Audit tab) reads the audit topic, so without Kafka it
+  answers 503 ("needs Kafka"). In the demo, with `gen` and `cdc` off, every object's Audit tab fails.
+- Rows the audit table writer takes over OTLP have `topic_partition` -1 and no hash chain; with an archive configured
+  the console shows them as "unverified", and a chain lookup for partition -1 answers 400.
+- `audit.js` says "event as Kafka holds it", and `app.js` describes the archive as Kafka's.
+- The Health page's "Publishes failed" and the acknowledgement p99 (`ObservedPublisher`'s timer) now measure only
+  the best-effort Kafka copy, and are empty without Kafka.
+
+Done looks like:
+- A table's or namespace's Audit tab answers from the audit table (`nuna_audit.audit.events`, as the catalog-wide feed
+  does, D45) when there is no Kafka, under the same rules as today (audit readers, D45), with a test without Kafka.
+- Log rows show "from the log, no hash chain" rather than "unverified", and no chain lookup is offered for them.
+- The console's words say what is true without Kafka; Health labels the publish figures as the Kafka copy's and hides
+  or explains them when Kafka is not configured.
+- The console checked in the demo with every switch off, signed in as gary.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3018,3 +3044,5 @@ checked with `git apply --check`, not run).
 | [192](backlog/192.md) | Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11) | done | 2026-11-23 |
 | [193](backlog/193.md) | Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12) | done | 2026-11-23 |
 | [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |
+| [195](backlog/195.md) | Audit goes to logs: the catalog serves and vends without Kafka, and the audit table writer takes the audit records over OTLP (D23) | done | 2026-11-23 |
+| [196](backlog/196.md) | Demo switches: demo.sh gen and ss turn the brokerage generator and SingleStore on and off, as cdc does its leg; Kafka runs only while cdc or gen is on | done | 2026-11-23 |
