@@ -1,6 +1,7 @@
 Breaks: a compaction Job for a table on a store with a CA bundle does not mount the bundle's ConfigMap (backlog 88).
 Module: catalog-maintenance
 Test: KubernetesJobsTest#aStorageCaBundleIsMountedIntoTheJobAndSparkTrustsIt
+
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 index d54182ab..13b3b9cf 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
