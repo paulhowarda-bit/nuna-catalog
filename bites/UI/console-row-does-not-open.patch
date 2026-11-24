@@ -1,0 +1,17 @@
+Breaks: A row that looks as if it opens something does nothing when clicked off its name.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/dom.js b/catalog-server/src/main/resources/nuna/ui/dom.js
+index 8b4ae678..f713548b 100644
+--- a/catalog-server/src/main/resources/nuna/ui/dom.js
++++ b/catalog-server/src/main/resources/nuna/ui/dom.js
+@@ -145,7 +145,7 @@ export function panel(title, meta, ...kids) {
+ export function opensRow(e) {
+   if (e.target.closest('a, button, input, select, summary, label')) return;
+   const a = e.currentTarget.querySelector('td.name a');
+-  if (a) a.click();
++  if (a) a.focus();
+ }
+ 
+ /** A table in its scrolling wrapper. Heads are text or [text, class]; rows are <tr>s or a tbody. */

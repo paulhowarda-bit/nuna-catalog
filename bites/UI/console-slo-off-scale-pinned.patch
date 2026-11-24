@@ -1,0 +1,17 @@
+Breaks: A latency share below the chart's scale is a dot pinned to its left edge, alike for 78% and 1%.
+Module: catalog-server
+Test: ConsoleHealthTest#anOperatorSeesTheWholeDeploymentsHealth
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index 2ba3a7bc..f01bb955 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -55,7 +55,7 @@ function sloScale(ratio, W) {
+   }
+   if (ratio === null) return svg;
+   const pct = 100 * ratio;
+-  if (pct < 97) {
++  if (false) {
+     svg.append(s('path', {class: 'off', d: `M${x0 - 8} 12 L${x0 + 3} 5.5 L${x0 + 3} 18.5 Z`}),
+       s('text', {class: 'offv', x: x0 + 9, y: 16.5}, Math.floor(pct * 10) / 10 + '%'));
+   } else {

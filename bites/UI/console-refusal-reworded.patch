@@ -3,14 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#refusalsAreShownExactlyAsTheCatalogAnswered+grantsAreMadeAndRevokedAndASeparationOfDutiesRefusalIsShownVerbatim
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/dom.js b/catalog-server/src/main/resources/nuna/ui/dom.js
+index 4fce3604..94c9e29d 100644
 --- a/catalog-server/src/main/resources/nuna/ui/dom.js
 +++ b/catalog-server/src/main/resources/nuna/ui/dom.js
-@@ -187,7 +187,7 @@
+@@ -206,7 +206,7 @@ export function failure(error, opts = {}) {
+     return h('div', {class: 'refusal' + (opts.big ? ' big' : '') + (opts.compact ? ' compact' : ''), role: 'alert'},
        h('p', {class: 'refusal-h'}, icon(refused ? 'x' : 'alert'),
          refused ? 'Refused by the catalog' : 'The catalog answered with an error'),
-       h('p', {class: 'refusal-code'}, `${error.status} ${error.type || ''}`.trim()),
 -      h('p', {class: 'refusal-msg'}, error.message || ''),
 +      h('p', {class: 'refusal-msg'}, refused ? 'You are not allowed to do that.' : error.message || ''),
-       h('p', {class: 'refusal-meta'},
-         h('span', {'data-rid': rid || ''}, rid ? 'X-Request-ID ' + rid : 'No request id came back'),
-         h('span', null, at(error.at || Date.now(), true)),
+       opts.note ? h('p', {class: 'fine'}, opts.note) : null,
+       refused ? h('p', {class: 'fine'}, 'The refusal is recorded in the audit.') : null,
+       opts.big ? h('div', {class: 'refusal-acts'}, h('button', {class: 'btn sm', type: 'button',

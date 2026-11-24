@@ -147,7 +147,9 @@ code, kbd, .mono { font-family: var(--f-mono); font-size: 0.93em; font-variant-n
 .num, td.num, .kpi-v, .tnum { font-variant-numeric: tabular-nums; }
 button, input, select { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
-a { color: var(--accent); text-underline-offset: 3px; }
+a { color: var(--accent); text-decoration: none; text-underline-offset: 3px; }
+a:hover, a:focus-visible { text-decoration: underline; }
+a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { text-decoration: none; }
 .ic { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -274,8 +276,10 @@ a { color: var(--accent); text-underline-offset: 3px; }
 .tbl tr.is-cur td { background: var(--ok-wash); }
 .tbl tr.is-refused td { background: var(--bad-wash); }
 .tbl .name { font-family: var(--f-mono); font-size: var(--t-13); color: var(--text); }
-.tbl .name a { color: inherit; text-decoration: none; }
-.tbl .name a:hover { color: var(--accent); text-decoration: underline; }
+/* A row that opens something (backlog 189): its hover background is the table's own; the chevron says it opens. */
+.tbl tr.opens { cursor: pointer; }
+.tbl tr.opens td.name a::after { content: "\203A"; display: inline-block; margin-left: 6px; color: var(--text-2); opacity: 0; transition: opacity .12s; }
+.tbl tr.opens:hover td.name a::after, .tbl tr.opens td.name a:focus-visible::after { opacity: 1; }
 .tbl .path { color: var(--text-2); }
 .tbl .muted, .muted { color: var(--text-2); }
 .tbl.compact td { padding: 7px 10px; }
@@ -599,6 +603,8 @@ pre.raw { overflow: visible; }
 .slo .tk { stroke: var(--line-strong); stroke-width: 1.5; }
 .slo .obj { stroke: var(--text); stroke-width: 2; }
 .slo .dot { fill: var(--ok-mark); stroke: var(--surface); stroke-width: 2; }
+.slo .off { fill: var(--bad-mark); stroke: var(--surface); stroke-width: 1.5; }
+.slo .offv { font: 600 12px var(--f-mono); fill: var(--bad-ink); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 /* v10: drawings keep their size on a phone, scrolling sideways rather than shrinking their text */
 .iceline .ref { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 5; }
 .ice-cap { font: 500 12px/1.4 var(--f-mono); color: var(--text-2); margin-top: 10px; }
@@ -658,7 +664,8 @@ code, kbd, .mono { font-size: max(12px, 0.93em); }
   .tbl.stack-line td:first-child, .tbl.stack-line td.name { flex-basis: 100%; }
   .tbl.stack-line td.score .bar { width: 56px; }
   .tbl.queue td:nth-child(1), .tbl.queue td:nth-child(5), .tbl.queue td:nth-child(6), .tbl.queue td:nth-child(8), .tbl.queue td.g-none { display: none; }
-  .tbl.contents td:nth-child(3), .tbl.contents td:nth-child(6) { display: none; }
+  .tbl.contents td.fmt, .tbl.contents td.snaps { display: none; }
+  .tbl.contents td[data-label]:not(.name):not([data-label="Kind"])::before { content: attr(data-label) " "; color: var(--text-2); font-size: 12px; }
   .tbl.scans th:nth-child(4), .tbl.scans td:nth-child(4) { display: none; }
   .tbl.policy td:first-child { white-space: nowrap; }
   .tbl.policy td:nth-child(2) { flex-basis: auto; }
@@ -716,14 +723,12 @@ button.nc-pick, button.nc-go { cursor: pointer; text-align: left; transition: bo
 /* links that the wireframe drew as text */
 .kpi-l a, .h-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
 .kpi-l a:hover, .h-link:hover { color: var(--accent); text-decoration: underline; }
-.linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.linkish { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-underline-offset: 3px; }
+.linkish:hover, .linkish:focus-visible { text-decoration: underline; }
 a.pill { text-decoration: none; }
 a.pill.held:hover { box-shadow: inset 0 0 0 1px var(--held-ink); }
-.mlist .nm a { color: inherit; text-decoration: none; }
-.mlist .nm a:hover { color: var(--accent); text-decoration: underline; }
 .tbl td.name a .path { color: var(--text-2); }
 .crumbs .ell { display: none; }
-.feed-row .what a { color: var(--text); }
 .feed-more { margin-top: 10px; }
 .tbl.snaps tbody tr { cursor: pointer; }
 .row-pick { border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
@@ -831,8 +836,7 @@ dialog { color: var(--text); }
 @media (prefers-reduced-motion: reduce) {
   .iceline .rise > *, .iceline .sink > .qa { transition: none; }
 }
-.gov-link { color: inherit; text-decoration: none; }
-.gov-link:hover { color: var(--accent); text-decoration: underline; }
+
 /* the dialogs live outside the frame, so they answer to the viewport */
 @media (max-width: 760px) {
   .goto-list li { grid-template-columns: 18px minmax(0, 1fr); row-gap: 6px; }
@@ -1195,3 +1199,18 @@ td.acts { width: 1%; white-space: nowrap; }
   .refs-explain { grid-template-columns: minmax(0, 1fr); }
   .kpi-v.sm { font-size: var(--t-14); }
 }
+
+/* A panel folded behind its heading (backlog 191): the heading is the summary. */
+details.panel.fold > summary { cursor: pointer; list-style: none; }
+details.panel.fold > summary::-webkit-details-marker { display: none; }
+details.panel.fold > summary h2 { display: inline; }
+details.panel.fold > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--text-2); }
+details.panel.fold[open] > summary::before { content: '\25BE'; }
+
+/* An answer box's status, route and request id, folded (backlog 188). */
+details.tech { margin-top: 6px; }
+details.tech > summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
+details.tech[open] > summary { margin-bottom: 4px; }
+
+/* A touch screen has no keys to press (backlog 193). */
+@media (hover: none) and (pointer: coarse) { .nc-nav .foot { display: none; } }

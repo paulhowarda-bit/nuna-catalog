@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**45 open:** 12 S, 14 M, 14 L, 5 XL.
+**40 open:** 7 S, 14 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -52,11 +52,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [171](backlog/171.md) | S | A hold placed above an object while a purge claim or a removal from refs runs: lock the held levels before reading holds (item 156's review, low) | one lock taken earlier in two operations on four stores, with a suite case that holds a hold's write open; the case waits for the overnight heavy build | 2026-11-23 |
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
-| [188](backlog/188.md) | S | Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7) | one Technical details disclosure in `dom.js`'s result and failure boxes for status, route and request ID, and plain captions in place of config keys and routes; the browser tests that read those texts change with them | 2026-11-23 |
-| [189](backlog/189.md) | S | Console: one link style, and rows that open something look it (Atelier's review Q8) | one link style in `style.css` (link colour, underline on hover and focus) and a hover background with a chevron on rows that open something | 2026-11-23 |
-| [191](backlog/191.md) | S | Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10) | the panel's name and one line of explanation, the panel folded while a catalog ref is read, and one icon per kind of ref across the console | 2026-11-23 |
-| [193](backlog/193.md) | S | Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12) | timeouts on the IdP's discovery and token calls with a Start again that clears a pending sign-in, `id_token_hint` on sign-out, one date format, empty columns dropped and phone cards labelled, and the keyboard hint hidden on touch | 2026-11-23 |
-| [194](backlog/194.md) | S | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | an off-scale marker with its value for a share below the chart's scale | 2026-11-23 |
 
 ## Open items in full
 
@@ -2867,89 +2862,6 @@ Done when register and revive refuse a location `TableFiles.onBranch` marks, wit
 and through a branch alike; a fast `CommitEngine` test for each; a bite recorded (`git diff` of the check removed,
 checked with `git apply --check`, not run).
 
-### 188. Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/style.css
-- Effort: S, one Technical details disclosure in `dom.js`'s result and failure boxes for status, route and request ID, and plain captions in place of config keys and routes; the browser tests that read those texts change with them
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F10): screens carry the plumbing. Examples: "of lakehouse, as GET …/refs lists
-them"; "2 tables with pointers of its own; GET …/refs/dev"; "200 OK · POST …/refs/dev/merge, dry run X-Request-ID …
-nothing moved, nothing audited"; `nuna.refs.max-branches` as a stat caption; "403 ForbiddenException"; a footnote
-paragraph under almost every table. Screenshots `14-branches-tags.png`, `15-ref-dev.png`, `16-ref-dev-merge.png`,
-`20-audit-ana.png`.
-
-Done looks like: each answer box leads with what happened in plain words, with the status, route and request ID
-behind one "Technical details" disclosure; stat captions read in words ("1 of 50 branches allowed"), the setting's key
-in its title; footnotes are cut to one sentence or moved behind "About this page". Monospace stays for names, paths
-and numbers. The whole copy pass is Atelier's structural change S5, not filed yet.
-
-### 189. Console: one link style, and rows that open something look it (Atelier's review Q8)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/refs.js
-- Effort: S, one link style in `style.css` (link colour, underline on hover and focus) and a hover background with a chevron on rows that open something
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F11): in Contents tables (`markets`, `fx`, `rates`), the Governance page's object
-names and the merge preview's table names, the name is a link styled as plain monospace text, with no colour or
-underline until hover, while "1 commit" and "markets" elsewhere are underlined. Screenshots `04-catalog-lakehouse.png`,
-`07-ns-markets.png`, `20-governance-ana.png`.
-
-Done looks like: every link has one look (link colour, underline on hover and focus), and a row that opens something
-shows a hover background and a chevron. The console's dark theme keeps the contrast.
-
-### 191. Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/index.html
-- Effort: S, the panel's name and one line of explanation, the panel folded while a catalog ref is read, and one icon per kind of ref across the console
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F8): reading `rates` through `@sample`, the header says "Reading @sample", while
-the right column's "Iceberg refs in this table" shows `main · current snapshot` with another icon, and the ref menu's
-`main` a third. A reader sees "main" while told they are not on main. Screenshots `12-rates-at-sample.png`,
-`11-ref-selector.png`.
-
-Done looks like: the panel reads "Engine-level refs in this table's metadata", with one line saying these are
-Iceberg's own branches and tags, set by engines, not the catalog's; it is folded while a catalog ref is read; each
-kind of ref (catalog branch, catalog tag, a table's Iceberg ref) has one icon everywhere.
-
-### 193. Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/auth.js catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/dom.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/ConsoleTest.java
-- Effort: S, timeouts on the IdP's discovery and token calls with a Start again that clears a pending sign-in, `id_token_hint` on sign-out, one date format, empty columns dropped and phone cards labelled, and the keyboard hint hidden on touch
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F13, F14 and F16):
-- Sign-in and sign-out with a slow Keycloak: sign-out stops at Keycloak's "Do you want to log out?" page; when that
-  failed, Sign in brought the previous user back without a password; sign-in sat on "Loading…" for over a minute, and
-  once the tab held a half-finished sign-in (`nuna.oidc.pending`) every reload stuck until its storage was cleared.
-  `auth.js`'s discovery and token fetches have no timeout. `40-signout-confirm.png`, `50-oscar-health.png`,
-  `53-signin-stuck-loading.png`.
-- On first load the console once said "could not read its settings, /ui/config.json · Failed to fetch" with no retry.
-- The menu gives the session's end as "until 11/23/2026, 5:24:52 PM" where every other date reads "23 Nov"; on a phone
-  it says "Press / to go to a path, ? for keys". `32-phone-menu.png`.
-- A namespace header repeats its name ("markets markets"); Contents shows Format and Tonight's queue as "–" on every
-  namespace row, and through `@dev` Snapshots and Last commit too; phone cards drop the headers ("– – 16:31").
-  `07-ns-markets.png`, `17-reading-dev-catalog.png`, `33-phone-catalog.png`.
-
-Done looks like: the IdP calls time out (15 s) with "localhost:8180 is not answering" and Start again, which clears a
-pending sign-in; the settings fetch offers Try again; sign-out passes `id_token_hint` so the IdP asks nothing (keeping
-the ID token for it); dates read one way; the keyboard hint is not shown on touch; a dotted path shows only where it
-differs from the name; a column empty on every row is dropped; phone cards label each value.
-
-### 194. Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13)
-
-- Added: 2026-11-23 by local_6686d222-bf16-416b-a4cb-e82501941da2
-- Touches: catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/style.css
-- Effort: S, an off-scale marker with its value for a share below the chart's scale
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F15, her own design): as `oscar`, all three latency rows on Health sit far below
-their objectives (78.00%, 1.44%, 88.91% within), but the dots are drawn on a 97–100% scale, so all three are pinned to
-the left edge and look alike. `52-oscar-health.png`.
-
-Done looks like: a share below the scale is drawn as an off-scale marker at its left edge with the value beside it
-("◀ 78%"); shares on the scale are as today.
-
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3099,5 +3011,10 @@ Done looks like: a share below the scale is drawn as an off-scale marker at its 
 | [185](backlog/185.md) | Console: Go to a path opens an exact dotted path, and its empty answer says what it searched (Atelier's review Q4) | done | 2026-11-23 |
 | [186](backlog/186.md) | Console: who made a table's last change on its Overview, and a By column on Snapshots (Atelier's review Q5) | done | 2026-11-23 |
 | [187](backlog/187.md) | Console: Audit filters by kind, its By kind rows apply that filter, its filters live in the link, and its own reads are hidden (Atelier's review Q6) | done | 2026-11-23 |
+| [188](backlog/188.md) | Console: plain-words captions, with routes, statuses and request IDs behind Technical details (Atelier's review Q7) | done | 2026-11-23 |
+| [189](backlog/189.md) | Console: one link style, and rows that open something look it (Atelier's review Q8) | done | 2026-11-23 |
 | [190](backlog/190.md) | Console: the maintenance headline says when the catalog's policy has maintenance off (Atelier's review Q9) | done | 2026-11-23 |
+| [191](backlog/191.md) | Console: a table's Iceberg refs named as engine-level refs, apart from the catalog's branches and tags, one icon per kind (Atelier's review Q10) | done | 2026-11-23 |
 | [192](backlog/192.md) | Console: the rail's Health becomes Service and a table's Health tab Maintenance; the rail keeps its labels on Catalog (Atelier's review Q11) | done | 2026-11-23 |
+| [193](backlog/193.md) | Console: sign-in survives a slow IdP, sign-out ends the IdP session in one step, one date format, no empty columns, no keyboard hints on touch (Atelier's review Q12) | done | 2026-11-23 |
+| [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |

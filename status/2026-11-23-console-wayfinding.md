@@ -34,3 +34,22 @@ Checked: the fast build at landing. Live in the demo through the swap: 192, 186 
 heavy browser cases (overnight); the rail's Service item and each role's rail need the demo rebuilt (`index.html` and
 the catalog list's `may` come from the server). Bites recorded for each guarded check, and D18's catalog-list bite and
 184's rail bite recorded again where these changes moved them.
+
+## Batch 3 (items 191, 188, 189, 193, 194)
+
+- 191: a table's own Iceberg refs are "engine-level refs in this table's metadata", apart from the catalog's branches
+  and tags, folded while a catalog ref is read, with one icon per kind of ref.
+- 188: answer boxes lead with what happened in plain words; status, route and request id sit behind Technical
+  details; the refs page's captions read in words, with the setting's key in their title.
+- 189: one link style (the link colour, underlined on hover and focus); a row that opens something shows a chevron
+  and opens on a click anywhere on it.
+- 193: the IdP's calls give up after 15 s and name the host, with Start again; sign-out sends `id_token_hint`, so
+  Keycloak ends its session without asking; the settings fetch offers Try again; dates read one way; no keyboard
+  hint on touch; a namespace's path only where it differs from its name; empty Contents columns dropped and phone
+  cards labelled.
+- 194: a latency share below the Health chart's scale points off its left edge with its value.
+
+Checked: the fast build at landing. Live in the demo through the swap: 191, 188, 189 and 193's header, columns and
+dates as `ana`; 194 as `oscar`. Not checked live: 193's sign-out and slow-IdP paths (`ConsoleSignInTest`, heavy).
+The heavy browser cases run overnight. Bites recorded for each guarded check;
+`console-sign-in-ignores-state` recorded again where 193 moved it.

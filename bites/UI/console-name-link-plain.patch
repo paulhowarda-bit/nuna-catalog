@@ -1,0 +1,16 @@
+Breaks: A name in a table is plain text in the text's colour, not the link colour.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/style.css b/catalog-server/src/main/resources/nuna/ui/style.css
+index c8449372..a7a22bf0 100644
+--- a/catalog-server/src/main/resources/nuna/ui/style.css
++++ b/catalog-server/src/main/resources/nuna/ui/style.css
+@@ -276,6 +276,7 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
+ .tbl tr.is-cur td { background: var(--ok-wash); }
+ .tbl tr.is-refused td { background: var(--bad-wash); }
+ .tbl .name { font-family: var(--f-mono); font-size: var(--t-13); color: var(--text); }
++.tbl .name a { color: inherit; }
+ /* A row that opens something (backlog 189): its hover background is the table's own; the chevron says it opens. */
+ .tbl tr.opens { cursor: pointer; }
+ .tbl tr.opens td.name a::after { content: "\203A"; display: inline-block; margin-left: 6px; color: var(--text-2); opacity: 0; transition: opacity .12s; }

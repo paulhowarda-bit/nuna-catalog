@@ -10,7 +10,7 @@
 
 import * as api from './api.js';
 import {$, at, badge, code, copyButton, copyText, facts, fill, fmt, h, icon, load, muted, panel, pill, plural, tabsNav, tbl,
-  when} from './dom.js';
+  when, opensRow} from './dom.js';
 import {catalogHref, objectHref, pageHref, warehouseOf} from './route.js';
 import {queue, queueOf} from './queue.js';
 import {reveal, treeOf} from './tree.js';
@@ -155,37 +155,42 @@ function contentsTable(catalog, levels, x) {
   const rows = [
     ...x.ns.map(n => {
       const t = totalsCells(x.totals.get(n[n.length - 1]));
-      return h('tr', {'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
+      return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n, ref: x.ref})}, n[n.length - 1]), t.count),
         h('td', null, badge([icon('ns'), 'namespace'])), h('td', {class: 'fmt'}, muted('–')),
-        h('td', null, queuePill(queuedUnder(x.q, n))),
+        h('td', {class: 'queue'}, queuePill(queuedUnder(x.q, n))),
         h('td', {class: 'gov'}, markPills(x.gov.get('namespace:' + n.join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, t.snaps), h('td', {class: 'last'}, t.last), x.ref ? h('td', null, onRefCell(x, n, true)) : null);
     }),
     ...x.tables.map(name => {
       const mine = x.q.filter(r => r.name === name && r.namespace.join('.') === levels.join('.'));
       const kept = x.kept.get(name) || {};
-      return h('tr', {'data-kind': 'table', 'data-name': name},
+      return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'table', 'data-name': name},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref})}, name)),
         h('td', null, badge([icon('table'), 'table'])),
         h('td', {class: 'fmt'}, kept['format-version'] ? badge('v' + kept['format-version'], 'strong') : muted('–')),
-        h('td', null, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'maintenance')}, queuePill(mine))
+        h('td', {class: 'queue'}, mine.length ? h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref}, 'maintenance')}, queuePill(mine))
           : muted('–')),
         h('td', {class: 'gov'}, markPills(x.gov.get('table:' + [...levels, name].join('.'))) || muted('–')),
         h('td', {class: 'num snaps'}, kept.snapshots === undefined ? muted('–') : fmt(kept.snapshots)),
         h('td', {class: 'last'}, lastCommit(kept['last-commit'])), x.ref ? h('td', null, onRefCell(x, [...levels, name], false)) : null);
     }),
-    ...x.views.map(name => h('tr', {'data-kind': 'view', 'data-name': name},
+    ...x.views.map(name => h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'view', 'data-name': name},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'view', namespace: levels, name, ref: x.ref})}, name)),
-      h('td', null, badge([icon('view'), 'view'])), h('td', {class: 'fmt'}, muted('–')), h('td', null, muted('–')),
+      h('td', null, badge([icon('view'), 'view'])), h('td', {class: 'fmt'}, muted('–')), h('td', {class: 'queue'}, muted('–')),
       h('td', {class: 'gov'}, markPills(x.gov.get('view:' + [...levels, name].join('.'))) || muted('–')),
       h('td', {class: 'num snaps'}, muted('–')), h('td', {class: 'last'}, muted('–')),
       x.ref ? h('td', null, onRefCell(x, [...levels, name], false)) : null)),
   ];
   if (!rows.length) return h('div', {class: 'empty'}, h('h3', null, levels.length ? 'Nothing in this namespace' : 'No namespace in this catalog'),
     h('p', null, 'Or nothing you may describe: the catalog lists only what your groups may see.'));
-  return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', ['Name', 'Kind', 'Format', 'Tonight\'s queue', 'Governance',
-    ['Snapshots', 'num'], x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean), rows),
+  const heads = ['Name', 'Kind', 'Format', 'Tonight\'s queue', 'Governance', ['Snapshots', 'num'],
+    x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean);
+  // A column with nothing on any row says nothing, so it goes (Atelier's review, F16; backlog 193).
+  const blank = td => ['', '–', '—'].includes(td.textContent.trim());
+  const empty = heads.map((_, i) => i > 1 && rows.every(r => blank(r.children[i])));
+  for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
+  return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. ', x.ref
       ? `The catalog keeps format, snapshots and last commit for main's metadata only, so through @${x.ref} they are left out: `
         + 'open a table to read it as the ref has it. Maintenance and governance are main\'s, and bind the ref too.'
@@ -277,7 +282,7 @@ function namespacePage(target, tab, route) {
   const side = h('div', {class: 'side'}, copyButton(dotted, 'Copy path'), copyLinkButton());
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, levels.slice(0, -1), levels[levels.length - 1], target.ref),
     h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('ns')), h('h1', {tabindex: '-1'}, levels[levels.length - 1]),
-      h('code', {class: 'muted'}, dotted)),
+      levels.length > 1 ? h('code', {class: 'muted'}, dotted) : null),
     h('p', {class: 'sub', 'data-sub': ''}, ''),
     side);
   const key = NS_TABS.includes(tab || '') ? tab || '' : null;
