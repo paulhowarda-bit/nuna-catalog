@@ -50,7 +50,7 @@ public final class KafkaTopics implements Publisher.Topics, AutoCloseable {
     @Override
     public void send(Event event) {
         check();
-        producer.send(new ProducerRecord<>(event.feed().source, Encoding.json(event)), (metadata, e) -> {
+        producer.send(new ProducerRecord<>(event.feed().topic, Encoding.json(event)), (metadata, e) -> {
             if (e != null) {
                 failure = e;
             }
@@ -79,14 +79,12 @@ public final class KafkaTopics implements Publisher.Topics, AutoCloseable {
             AdminClientConfig.CLIENT_ID_CONFIG, "brokerage-world-admin"));
     }
 
-    /** Creates each Kafka feed's topic and the sink's control topic, where they are missing. */
+    /** Creates each feed's topic (the orders' too, for when SingleStore is off) and the sink's control topic, where missing. */
     public static void create(String bootstrap, String controlTopic) throws InterruptedException, ExecutionException {
         try (Admin admin = admin(bootstrap)) {
             List<NewTopic> topics = new ArrayList<>();
             for (Feed f : Feed.values()) {
-                if (f.path == Feed.Path.KAFKA) {
-                    topics.add(new NewTopic(f.source, 1, (short) 1).configs(Map.of("retention.ms", RETENTION_MS)));
-                }
+                topics.add(new NewTopic(f.topic, 1, (short) 1).configs(Map.of("retention.ms", RETENTION_MS)));
             }
             topics.add(new NewTopic(controlTopic, 1, (short) 1));
             for (var created : admin.createTopics(topics).values().entrySet()) {
@@ -102,17 +100,15 @@ public final class KafkaTopics implements Publisher.Topics, AutoCloseable {
         }
     }
 
-    /** The records each Kafka feed's topic holds. */
+    /** The records each feed's topic holds. */
     public static Map<Feed, Long> endOffsets(String bootstrap) throws InterruptedException, ExecutionException {
         try (Admin admin = admin(bootstrap)) {
             Map<TopicPartition, OffsetSpec> latest = new HashMap<>();
             Map<TopicPartition, Feed> feeds = new HashMap<>();
             for (Feed f : Feed.values()) {
-                if (f.path == Feed.Path.KAFKA) {
-                    TopicPartition tp = new TopicPartition(f.source, 0);
-                    latest.put(tp, OffsetSpec.latest());
-                    feeds.put(tp, f);
-                }
+                TopicPartition tp = new TopicPartition(f.topic, 0);
+                latest.put(tp, OffsetSpec.latest());
+                feeds.put(tp, f);
             }
             Map<Feed, Long> offsets = new EnumMap<>(Feed.class);
             admin.listOffsets(latest).all().get().forEach((tp, info) -> offsets.put(feeds.get(tp), info.offset()));

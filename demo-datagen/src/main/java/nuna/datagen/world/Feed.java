@@ -1,9 +1,10 @@
 package nuna.datagen.world;
 
 /**
- * Where each kind of row the world produces goes, and the Iceberg table it lands in. Kafka feeds go out on their topic
- * and the demo's Iceberg sink routes each record to its table by {@link #ROUTE_FIELD}; the orders go into SingleStore,
- * whose change feed brings them into the lake.
+ * Each kind of row the world produces, and the two ways it can reach the lake (D50, amended 2026-11-24). Through Kafka,
+ * it goes out on its topic and the demo's Iceberg sink routes each record to its table by {@link #ROUTE_FIELD}; through
+ * SingleStore, it is written to a table in database {@code brokerage} whose change feed copies it into the lake. Each
+ * feed has a home path, the one it takes while both are up: the orders SingleStore, every other feed Kafka.
  */
 public enum Feed {
     CALENDAR(Path.KAFKA, "brokerage.reference.calendar", "brokerage.reference", "calendar"),
@@ -17,29 +18,41 @@ public enum Feed {
     JOURNAL_LINES(Path.KAFKA, "brokerage.ledger.journal-lines", "brokerage.ledger", "journal_lines"),
     POSTING_REJECTIONS(Path.KAFKA, "brokerage.ledger.posting-rejections", "brokerage.ledger", "posting_rejections"),
     BALANCES_EOD(Path.KAFKA, "brokerage.ledger.balances-eod", "brokerage.ledger", "balances_eod"),
-    ORDERS(Path.SINGLESTORE, "orders", "brokerage.trading", "orders");
+    ORDERS(Path.SINGLESTORE, "brokerage.trading.order-events", "brokerage.trading", "orders");
 
     public enum Path { KAFKA, SINGLESTORE }
 
     /** The field of a Kafka record that names its table (the sink's iceberg.tables.route-field). */
     public static final String ROUTE_FIELD = "lake_table";
 
+    /** Where the change feeds of the Kafka feeds' SingleStore tables make their copies. */
+    public static final String SINGLESTORE_COPIES = "brokerage.singlestore";
+
+    /** The path the feed takes while both are up. */
     public final Path path;
-    /** The Kafka topic, or the SingleStore table in database {@code brokerage}. */
-    public final String source;
+    /** The Kafka topic the feed goes out on when it goes through Kafka. */
+    public final String topic;
     public final String namespace;
+    /** The feed's table in SingleStore's database {@code brokerage}, and in the lake under {@link #namespace}. */
     public final String table;
 
-    Feed(Path path, String source, String namespace, String table) {
+    Feed(Path path, String topic, String namespace, String table) {
         this.path = path;
-        this.source = source;
+        this.topic = topic;
         this.namespace = namespace;
         this.table = table;
     }
 
-    /** The table's name in the lake, as the sink routes to it. */
-    public String lakeTable() {
-        return namespace + "." + table;
+    /**
+     * The lake table the feed lands in through a path: through its home path, {@code namespace.table}; the orders
+     * through Kafka, {@code brokerage.trading.order_events}, every change appended (the sink cannot update a row); any
+     * other feed through SingleStore, its change feed's copy under {@link #SINGLESTORE_COPIES}.
+     */
+    public String lakeTable(Path via) {
+        if (via == path) {
+            return namespace + "." + table;
+        }
+        return this == ORDERS ? namespace + ".order_events" : SINGLESTORE_COPIES + "." + table;
     }
 
     /** Whether the feed carries the world's days (and is tagged at each end of day), not reference data sent once. */

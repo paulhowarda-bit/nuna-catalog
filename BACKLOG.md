@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**48 open:** 12 S, 17 M, 14 L, 5 XL.
+**49 open:** 12 S, 17 M, 15 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,6 +60,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
+| [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
 
 ## Open items in full
 
@@ -3059,6 +3060,32 @@ three dashboards shows live series from the demo's catalog and maintenance worke
 because a series name differs from what the dashboards assume is fixed in `deploy/grafana/` (and
 `docs/observability/dashboards-and-alerts.md`) or listed as not produced in the demo. `demo.sh metrics stop` removes
 the pods and the catalog stops exporting to them, and `up` puts the switch back as it was.
+
+### 238. The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off
+
+- Added: 2026-11-24 by local_0484717c-9adc-4b18-af93-2db236201f4a
+- Touches: demo-datagen/, demo/demo.sh, demo/k8s/brokerage.yaml, demo/k8s/brokerage-bootstrap.yaml, demo/k8s/kafka.yaml, demo/k8s/singlestore.yaml, demo/singlestore/, demo/brokerage/, demo/README.md, docs/design/brokerage-world.md, decision-ledger.md
+- Effort: L, a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory
+- Decided: 2026-11-24, D50 (amended: routes)
+
+Paul, 2026-11-24: "we need an option to divert the singlestore load through kafka. when singlestore is down and
+through singlestore when cdc/kafka is down. on the data generator application". He chose the demo switches as the
+trigger, and a change feed per table to bring the Kafka feeds into the lake while Kafka is off (D50, amended).
+
+Today `gen` needs both: its eleven feeds go only to Kafka and its orders only to SingleStore, `gen` turns `ss` on and
+`ss stop` turns `gen` off.
+
+Done looks like:
+- A `kafka` switch beside `cdc`, `gen` and `ss`; `gen` runs with either `ss` or `kafka` on. Paul, 2026-11-24 (relayed
+  by the Demo Expert session): "gen no longer depends on singlestore or cdc. It just needs kafka, or singlestore or
+  cdc running." So `gen` never turns `ss` on, and `ss stop` never turns `gen` off.
+- `ss` off, `kafka` on: each order change goes to topic `brokerage.trading.order-events`, which the sink appends to
+  `brokerage.trading.order_events`.
+- `kafka` off, `ss` on: each feed's rows go to SingleStore `brokerage.<table>` (key `seq`, the feed's record number),
+  and a change feed per table copies it into `brokerage.singlestore.<table>`.
+- A restart, and a change of route, resumes where the world stopped: each feed's records sent are those on its live
+  path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
+- The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
 
 ## Done and dropped
 

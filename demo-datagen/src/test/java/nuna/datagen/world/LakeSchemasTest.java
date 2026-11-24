@@ -25,11 +25,10 @@ class LakeSchemasTest {
     void everyRowTheWorldSendsFitsItsTableAndEveryColumnIsUsed() {
         Map<Feed, Schema> schemas = new EnumMap<>(Feed.class);
         Map<Feed, Set<String>> used = new EnumMap<>(Feed.class);
+        // Every feed's table through Kafka, the orders' order_events among them.
         for (Feed f : Feed.values()) {
-            if (f.path == Feed.Path.KAFKA) {
-                schemas.put(f, LakeSchemas.schema(f, KIT));
-                used.put(f, new HashSet<>());
-            }
+            schemas.put(f, LakeSchemas.schema(f, KIT));
+            used.put(f, new HashSet<>());
         }
         Schema withLocate = new Schema(Types.NestedField.optional(1000, LakeSchemas.LOCATE_ID, Types.StringType.get()));
         // A month, so margin debits have built up and interest is booked at its end, at enough accounts that every
@@ -38,9 +37,6 @@ class LakeSchemasTest {
         Sink check = new Sink() {
             @Override
             public void accept(Event e) {
-                if (e.feed().path != Feed.Path.KAFKA) {
-                    return;
-                }
                 e.row().forEach((column, value) -> {
                     Types.NestedField field = schemas.get(e.feed()).findField(column);
                     if (field == null && e.feed() == Feed.FINANCIAL_TRANSACTIONS) {
@@ -63,7 +59,7 @@ class LakeSchemasTest {
             schema.columns().forEach(c -> unused.add(c.name()));
             unused.removeAll(used.get(f));
             // A rejection's id columns are null only when the posting is not one of the world's; none is.
-            assertThat(unused).as("columns of " + f.lakeTable() + " no row filled").isEmpty();
+            assertThat(unused).as("columns of " + f.lakeTable(Feed.Path.KAFKA) + " no row filled").isEmpty();
         });
     }
 

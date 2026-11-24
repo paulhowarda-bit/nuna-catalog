@@ -1,21 +1,26 @@
 package nuna.datagen;
 
 import java.time.Duration;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.EnumMap;
 import java.util.Map;
 import nuna.datagen.kit.Kit;
 import nuna.datagen.live.IcebergLake;
 import nuna.datagen.live.KafkaTopics;
 import nuna.datagen.live.Pacer;
 import nuna.datagen.live.Publisher;
+import nuna.datagen.live.Route;
+import nuna.datagen.live.SingleStore;
+import nuna.datagen.live.SingleStoreTables;
 import nuna.datagen.live.SinkWatch;
-import nuna.datagen.live.SingleStoreOrders;
 import nuna.datagen.world.Feed;
 import nuna.datagen.world.MarketCalendar;
 import nuna.datagen.world.World;
 
 /**
- * The brokerage world's two commands, configured from the environment (demo/k8s/brokerage.yaml).
+ * The brokerage world's commands, configured from the environment (demo/k8s/brokerage.yaml).
  *
  * <ul>
  *   <li>{@code bootstrap}: makes the topics, namespaces, tables and views, and fixes the world's settings in the
@@ -24,7 +29,14 @@ import nuna.datagen.world.World;
  *       already happened (the catch-up days, today's earlier hours) as fast as the sink takes it, then each event at
  *       its own time of day in New York, quiet overnight, over weekends and on holidays. A restart resumes where the
  *       last run stopped. A watch restarts the sink's task whenever it has failed ({@link SinkWatch}).</li>
+ *   <li>{@code drain kafka|singlestore}: waits until what went that way is all in the lake ({@link #drain}).</li>
+ *   <li>{@code sql <dir>}: writes brokerage-feeds.sql and brokerage-feeds-pipelines.sql into {@code dir}
+ *       ({@link SingleStoreTables}).</li>
  * </ul>
+ *
+ * <p>{@code BROKERAGE_ROUTE} says which of Kafka and SingleStore are on ({@link Route}; D50, amended 2026-11-24): the
+ * bootstrap makes the topics only when Kafka is, and the run writes only to those that are, counting what earlier runs
+ * sent the other way from the lake.
  */
 public final class Main {
 
@@ -41,16 +53,27 @@ public final class Main {
         switch (args.length == 0 ? "" : args[0]) {
             case "bootstrap" -> bootstrap();
             case "run" -> run();
+            case "sql" -> sql(Path.of(args.length > 1 ? args[1] : "."));
+            case "drain" -> drain(args.length > 1 ? args[1] : "");
             default -> {
-                System.err.println("usage: Main bootstrap | run");
+                System.err.println("usage: Main bootstrap | run | sql <dir> | drain kafka|singlestore");
                 System.exit(2);
             }
         }
     }
 
+    static void sql(Path dir) throws Exception {
+        Kit kit = Kit.load();
+        Files.writeString(dir.resolve("brokerage-feeds.sql"), SingleStoreTables.tables(kit));
+        Files.writeString(dir.resolve("brokerage-feeds-pipelines.sql"), SingleStoreTables.pipelines());
+    }
+
     static void bootstrap() throws Exception {
-        String bootstrap = env("KAFKA_BOOTSTRAP", null);
-        KafkaTopics.create(bootstrap, CONTROL_TOPIC);
+        Route route = Route.of(env("BROKERAGE_ROUTE", "both"));
+        String bootstrap = route.kafka() ? env("KAFKA_BOOTSTRAP", null) : null;
+        if (route.kafka()) {
+            KafkaTopics.create(bootstrap, CONTROL_TOPIC);
+        }
         MarketCalendar calendar = new MarketCalendar();
         LocalDate today = LocalDate.now(World.NEW_YORK);
         LocalDate start = today;
@@ -60,36 +83,58 @@ public final class Main {
         World.Settings settings = World.Settings.of(Long.parseLong(env("BROKERAGE_SEED", "20261122")), start,
             Integer.parseInt(env("BROKERAGE_ACCOUNTS", "1000")));
         try (IcebergLake lake = lake()) {
-            lake.bootstrap(Kit.load(), settings, today, KafkaTopics.endOffsets(bootstrap));
+            lake.bootstrap(Kit.load(), settings, today, route.kafka() ? KafkaTopics.endOffsets(bootstrap) : Map.of());
             System.out.println("the world: " + lake.settings() + ", live from " + lake.pacedFrom());
         }
     }
 
     static void run() throws Exception {
-        String bootstrap = env("KAFKA_BOOTSTRAP", null);
+        Route route = Route.of(env("BROKERAGE_ROUTE", "both"));
+        String bootstrap = route.kafka() ? env("KAFKA_BOOTSTRAP", null) : null;
         Kit kit = Kit.load();
         try (IcebergLake lake = lake();
-             KafkaTopics topics = new KafkaTopics(bootstrap);
-             SingleStoreOrders orders = new SingleStoreOrders(env("SINGLESTORE_URL", null),
-                 env("SINGLESTORE_USER", "root"), env("SINGLESTORE_PASSWORD", null))) {
-            Runtime.getRuntime().addShutdownHook(new Thread(topics::close));
+             KafkaTopics topics = route.kafka() ? new KafkaTopics(bootstrap) : null;
+             SingleStore store = route.singlestore() ? new SingleStore(env("SINGLESTORE_URL", null),
+                 env("SINGLESTORE_USER", "root"), env("SINGLESTORE_PASSWORD", null), kit) : null) {
             World.Settings settings = lake.settings();
             Pacer pacer = new Pacer();
-            SinkWatch.start(env("CONNECT_URL", "http://connect:8083"), SINK);
-            // What this world has sent: each topic's records since the world began.
-            Map<Feed, Long> offsets = KafkaTopics.endOffsets(bootstrap);
-            Map<Feed, Long> start = lake.startOffsets();
-            offsets.replaceAll((feed, end) -> {
-                long sent = end - start.getOrDefault(feed, 0L);
-                if (sent < 0) {
-                    throw new IllegalStateException("topic " + feed.source + " holds fewer records than when the world"
-                        + " began: Kafka lost them, so the world cannot resume; demo/demo.sh wipe and up start a new one");
+            // What this world has sent each way: through Kafka, each topic's records since the world began; through
+            // SingleStore, each table's rows. The way that is off drained into the lake before it went off (demo.sh),
+            // so the lake's tables count it.
+            Map<Feed, Long> viaKafka = new EnumMap<>(Feed.class);
+            Map<Feed, Long> viaSingleStore = new EnumMap<>(Feed.class);
+            if (route.kafka()) {
+                Runtime.getRuntime().addShutdownHook(new Thread(topics::close));
+                KafkaTopics.create(bootstrap, CONTROL_TOPIC);
+                SinkWatch.start(env("CONNECT_URL", "http://connect:8083"), SINK);
+                Map<Feed, Long> ends = KafkaTopics.endOffsets(bootstrap);
+                Map<Feed, Long> start = lake.startOffsets(ends);
+                ends.forEach((feed, end) -> {
+                    long sent = end - start.get(feed);
+                    if (sent < 0) {
+                        throw new IllegalStateException("topic " + feed.topic + " holds fewer records than when the world"
+                            + " began: Kafka lost them, so the world cannot resume; demo/demo.sh wipe and up start a new one");
+                    }
+                    viaKafka.put(feed, sent);
+                });
+            } else {
+                for (Feed f : Feed.values()) {
+                    viaKafka.put(f, lake.records(f.lakeTable(Feed.Path.KAFKA)));
                 }
-                return sent;
-            });
-            System.out.println("the world: " + settings + ", live from " + lake.pacedFrom() + " on the real clock;"
-                + " already sent " + offsets);
-            Publisher publisher = new Publisher(topics, orders, lake, pacer::await, offsets);
+            }
+            if (route.singlestore()) {
+                viaSingleStore.putAll(store.counts());
+            } else {
+                for (Feed f : Feed.values()) {
+                    if (f != Feed.ORDERS) {
+                        viaSingleStore.put(f, lake.records(f.lakeTable(Feed.Path.SINGLESTORE)));
+                    }
+                }
+            }
+            System.out.println("the world: " + settings + ", live from " + lake.pacedFrom() + " on the real clock, route "
+                + route + "; already sent through Kafka " + viaKafka + ", through SingleStore " + viaSingleStore);
+            Publisher publisher = new Publisher(route, topics, store, store, lake, pacer::await, viaKafka,
+                viaSingleStore);
             World world = new World(settings, kit);
             while (true) {
                 long before = publisher.sent();
@@ -98,6 +143,54 @@ public final class Main {
                     ? (publisher.sent() - before) + " events sent" : "replayed (sent before a restart)")
                     + (world.unexpectedRejections() > 0 ? "; WARN " + world.unexpectedRejections()
                     + " unexpected rejections so far" : ""));
+            }
+        }
+    }
+
+    /**
+     * Waits until what the world sent one way has all reached the lake, with the generator stopped: through Kafka, each
+     * topic's records since the world began against its sink table's; through SingleStore, each feed table's rows
+     * against its change feed's copy. demo.sh runs it before it turns that way off, since the next run counts what
+     * went that way from the lake. Exits 1 if the lake has not caught up within {@code BROKERAGE_DRAIN_SECONDS}.
+     */
+    static void drain(String way) throws Exception {
+        Feed.Path path = switch (way) {
+            case "kafka" -> Feed.Path.KAFKA;
+            case "singlestore" -> Feed.Path.SINGLESTORE;
+            default -> throw new IllegalArgumentException("drain takes kafka or singlestore, not " + way);
+        };
+        Map<Feed, Long> sent = new EnumMap<>(Feed.class);
+        try (IcebergLake lake = lake()) {
+            if (path == Feed.Path.KAFKA) {
+                String bootstrap = env("KAFKA_BOOTSTRAP", null);
+                Map<Feed, Long> ends = KafkaTopics.endOffsets(bootstrap);
+                Map<Feed, Long> start = lake.startOffsets(ends);
+                ends.forEach((feed, end) -> sent.put(feed, end - start.get(feed)));
+            } else {
+                try (SingleStore store = new SingleStore(env("SINGLESTORE_URL", null), env("SINGLESTORE_USER", "root"),
+                         env("SINGLESTORE_PASSWORD", null), Kit.load())) {
+                    sent.putAll(store.counts());
+                }
+            }
+            long deadline = System.nanoTime() + Duration.ofSeconds(Long.parseLong(env("BROKERAGE_DRAIN_SECONDS",
+                "180"))).toNanos();
+            while (true) {
+                Map<String, String> behind = new java.util.TreeMap<>();
+                sent.forEach((feed, n) -> {
+                    long landed = lake.records(feed.lakeTable(path));
+                    if (landed < n) {
+                        behind.put(feed.lakeTable(path), landed + " of " + n);
+                    }
+                });
+                if (behind.isEmpty()) {
+                    System.out.println("everything sent through " + way + " is in the lake: " + sent);
+                    return;
+                }
+                if (System.nanoTime() > deadline) {
+                    System.out.println("the lake has not caught up with what went through " + way + ": " + behind);
+                    System.exit(1);
+                }
+                Thread.sleep(3000);
             }
         }
     }

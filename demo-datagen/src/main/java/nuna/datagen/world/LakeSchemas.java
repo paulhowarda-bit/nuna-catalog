@@ -43,7 +43,7 @@ public final class LakeSchemas {
     private LakeSchemas() {
     }
 
-    /** The table's schema as the bootstrap creates it. */
+    /** The table's schema as the bootstrap creates it: the Kafka path's table, order_events for the orders. */
     public static Schema schema(Feed feed, Kit kit) {
         Columns c = new Columns();
         switch (feed) {
@@ -91,7 +91,14 @@ public final class LakeSchemas {
                 .add("ledger_account_id", LONG).add("sub_ledger", TEXT).add("definition_id", INT)
                 .add("definition_name", TEXT).add("security_id", LONG).add("lot", LONG).add("measure", TEXT)
                 .add("normal_side", TEXT).add("balance", AMOUNT);
-            case ORDERS -> throw new IllegalArgumentException("orders reach the lake through SingleStore's change feed");
+            // brokerage.trading.order_events, for when SingleStore is off: SingleStore's orders table, every change of
+            // every order a row (SingleStore's own copy, brokerage.trading.orders, is its change feed's).
+            case ORDERS -> c.add("order_id", LONG).add("order_ref", TEXT).add("brokerage_account", LONG)
+                .add("security_id", LONG).add("symbol", TEXT).add("side", TEXT).add("order_type", TEXT)
+                .add("limit_price", PRICE).add("quantity", LONG).add("filled_quantity", LONG)
+                .add("average_price", PRICE).add("status", TEXT).add(LOCATE_ID, TEXT)
+                .add("accepted_financial_transaction_id", LONG).add("trade_date", DATE).add("accepted_at", TIME)
+                .add("updated_at", TIME);
         }
         return new Schema(c.fields);
     }
@@ -101,6 +108,7 @@ public final class LakeSchemas {
         return switch (feed) {
             case BARS_5M, FINANCIAL_TRANSACTIONS, JOURNAL_LINES, BALANCES_EOD ->
                 PartitionSpec.builderFor(schema).day("business_date").build();
+            case ORDERS -> PartitionSpec.builderFor(schema).day("trade_date").build();
             case PRICES_EOD -> PartitionSpec.builderFor(schema).month("business_date").build();
             default -> PartitionSpec.unpartitioned();
         };
