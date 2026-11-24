@@ -3154,3 +3154,4 @@ typed; a heavy browser test and a bite.
 | [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
 | [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |
 | [202](backlog/202.md) | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | done | 2026-11-23 |
+| [209](backlog/209.md) | Console browser tests: one Chrome per server, faster polling, and none beside the demo | done | 2026-11-23 |
