@@ -131,6 +131,15 @@ final class Api implements AutoCloseable {
         return token("ops", "server-tests", GovernanceServer.PLATFORM_OPS);
     }
 
+    /**
+     * The {@code Authorization} header of a caller in the test group, the grant admins and the platform operators at
+     * once, as the demo's presenter is: every duty in one sign-in (backlog 236).
+     */
+    String everyDuty() {
+        return token("pat", "server-tests", IssuerForTests.GROUP, GovernanceServer.GRANT_ADMINS,
+                GovernanceServer.PLATFORM_OPS);
+    }
+
     /** A tag steward's {@code Authorization} header: {@code manage-tags} on the catalog. */
     String steward() {
         return token("stella", "server-tests", GovernanceServer.STEWARDS);

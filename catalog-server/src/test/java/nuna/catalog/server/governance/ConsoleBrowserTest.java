@@ -247,6 +247,14 @@ class ConsoleBrowserTest {
         named.findElement(By.cssSelector("button[type='submit']")).click();
         browser.awaitText(By.cssSelector("dialog.dlg #dlg-h"), "Freeze eu for DR");
         driver.findElement(By.cssSelector("dialog.dlg button.dlg-x")).click();
+
+        // One who holds every duty, as the demo's presenter does, opens on the overview and walks the rail in its
+        // usual order (Atelier, 2026-11-24; backlog 236).
+        signIn(api.everyDuty());
+        browser.open("/ui/");
+        browser.await("the caller with every duty did not land on the overview",
+                d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
+        assertThat(rail()).containsExactly("overview", "catalog", "refs", "maintenance", "governance", "audit", "service");
     }
 
     /**
