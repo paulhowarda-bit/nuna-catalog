@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Configuration;
 
 /** Authentication on every request, and the authorizer the routes ask (M5). */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(SecuritySettings.class)
+@EnableConfigurationProperties({SecuritySettings.class, OpaSettings.class})
 class SecurityWiring {
 
     @Bean
