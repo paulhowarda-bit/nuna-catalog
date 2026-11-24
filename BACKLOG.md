@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**45 open:** 10 S, 16 M, 14 L, 5 XL.
+**47 open:** 12 S, 16 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -57,6 +57,8 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [226](backlog/226.md) | S | Bite metadata-log-ref-page-by-version runs the server out of heap instead of failing its test, and run.sh calls it NO BITE | re-record one bite against a test that ends on an assertion, and make the judge call an executor crash SETUP, not NO BITE | 2026-11-24 |
 | [227](backlog/227.md) | M | Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot | the race is a drop landing between two reads; the suite needs a way to land it there every time on MongoDB (a hook or a second session), found and then recorded again | 2026-11-24 |
 | [228](backlog/228.md) | S | Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only | finding why the context no longer loads (likely a later PostgreSQL step that assumes journal partitions) and recording the bite again so the server starts; cause not known yet | 2026-11-24 |
+| [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
+| [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 
 ## Open items in full
 
@@ -2984,6 +2986,44 @@ Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\sto
 Done when the server starts with the patch applied and `SchemaAtStartupTest` fails on its assertion:
 `bites/run.sh` on the bite reports BITES, and so does the overnight run.
 
+### 231. Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides)
+
+- Added: 2026-11-24 by Paul
+- Touches: catalog-server/src/main/resources/nuna/ui/style.css, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, a few header rules at two container widths once Atelier says what gives way; a browser test
+
+Found while fixing item 229 (the header naming every group). With the groups counted, the header fits at 1440 px and
+on a phone (390 and 760 px), but the header's parts have fixed widths (brand 180 px, catalog picker 164, Reading
+control 156, theme switch 184, Sign out 90), so the page scrolls sideways at two ranges of window width. Measured on
+the demo on 2026-11-24 as presenter, `document.documentElement.scrollWidth` against `innerWidth`:
+
+| Window | Page | Why |
+|---|---|---|
+| 1,260 px | 1,297 px | the who-text ("presenter · 5 groups · until 09:50", 226 px) shows above 1,240 px |
+| 1,000 px | 1,016 px | the who-text is hidden, but the rest is 1,016 px wide |
+| 800 px | 1,016 px | the same |
+
+Atelier's prototype (`docs/design/console/prototype.html?user=presenter`) does the same with its own parts (1,275 px
+at 1,260; 1,001 px at 1,000 and 800), so what gives way at those widths (the theme switch's words, Go to a path as
+its icon, the brand's width, the who-text's breakpoint) is her design call.
+
+Done when, at every window width from 761 to 1,440 px, the page is no wider than the window, as Atelier decides, and
+a browser test checks it at widths in both ranges.
+
+### 232. Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge)
+
+- Added: 2026-11-24 by Paul
+- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: S, find which head or panel holds the pill and let it wrap; a browser test
+
+Found while testing item 229 (the header). In `ConsoleBrowserTest`, a Chrome window of 1440 px (client width 1,417
+px) on the page of `trades`, a table in a frozen namespace held by a namespace above, scrolls sideways: the page is
+1,473 px wide while the body and the header are 1,417 px. The one element past the edge is a `span.pill.frozen`, its
+right edge at 1,473 px. It shows only once the page's governance has loaded, so a check made too early passes.
+
+Done when a frozen (and held) table's page is no wider than the window at 1440 px, and a browser test checks it after
+the page has loaded its governance.
+
 ## Done and dropped
 
 | # | Item | Status | On |
@@ -3168,3 +3208,5 @@ Done when the server starts with the patch applied and `SchemaAtStartupTest` fai
 | [223](backlog/223.md) | KafkaDownTest still expects a scan to fail while Kafka is down, which 195 changed: a Kafka outage blocks nothing | done | 2026-11-24 |
 | [224](backlog/224.md) | Heavy build 2026-11-24: eight catalog-server tests disagree with items 193, 195, 206, 207 and 214 | done | 2026-11-24 |
 | [225](backlog/225.md) | Console: Service's Most versions behind opens a table the operator may not read (Paul, 2026-11-23) | done | 2026-11-24 |
+| [229](backlog/229.md) | The console header lists every group by name and runs off the screen | done | 2026-11-24 |
+| [230](backlog/230.md) | The demo runs no maintenance worker, so Overview and Maintenance are empty | done | 2026-11-24 |

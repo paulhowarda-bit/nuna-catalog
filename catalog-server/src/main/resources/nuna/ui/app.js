@@ -232,7 +232,13 @@ function showWho() {
   const who = $('#who');
   who.title = (until ? 'Signed in until ' + at(until) + '. ' : '')
     + 'The catalog checks what you may do on every request.';
-  fill($('.who-text', who), h('b', null, h('strong', null, name)), groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null);
+  // As the prototype has it, "presenter · 5 groups · until 18:42": the groups counted, their names on hover and on
+  // focus (backlog 229). Named in full, five groups pushed Sign out off a 1440 px screen.
+  const names = groups.join(', ');
+  fill($('.who-text', who), h('b', null, h('strong', null, name)),
+    groups.length ? [' · ', h('span', {class: 'who-groups', tabindex: '0', title: names, 'data-groups': names},
+      plural(groups.length, 'group'), h('span', {class: 'vh'}, ': ' + names))] : null,
+    until ? ' · until ' + at(until) : null);
   for (const p of $$('p[data-who]', navEl)) {
     p.textContent = `Signed in as ${name}${groups.length ? ' · ' + groups.join(', ') : ''}${until ? ' · until ' + at(until) : ''}`;
   }

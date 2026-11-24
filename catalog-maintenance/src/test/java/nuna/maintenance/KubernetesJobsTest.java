@@ -139,6 +139,7 @@ class KubernetesJobsTest {
         assertThat(container.at("/image").asText()).isEqualTo("nuna/spark:test");
         assertThat(container.at("/imagePullPolicy").asText()).isEqualTo("Never");
         assertThat(container.at("/resources/limits/memory").asText()).isEqualTo("3Gi");
+        assertThat(container.at("/resources/requests/memory").asText()).as("by default the limit").isEqualTo("3Gi");
         assertThat(container.at("/command/2").asText()).as("no storage CA bundle: the command as it always was")
                 .isEqualTo(PLAIN_COMMAND);
         assertThat(container.has("volumeMounts")).isFalse();
@@ -282,6 +283,27 @@ class KubernetesJobsTest {
         }
     }
 
+    /** A Job may ask for less memory than its limit, to schedule on a node mostly asked for (backlog 230). */
+    @Test
+    void aJobMayAskForLessMemoryThanItsLimit() throws Exception {
+        Files.writeString(serviceAccount.resolve("token"), "sa-token\n");
+        WorkerSettings.Compaction base = settings("lakehouse-compaction");
+        WorkerSettings.Compaction settings = new WorkerSettings.Compaction(base.image(), base.imagePullPolicy(),
+                base.namespace(), base.jobServiceAccount(), base.apiServer(), base.serviceAccount(), base.catalogUri(),
+                "1Gi", "128Mi", "512m", 1, 185, Map.of());
+        KubernetesJobs compactor = new KubernetesJobs(settings, URI.create("http://ignored/"), TOKENS, Map.of(),
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        Management.TableWork table = new Management.TableWork("lake", UUID.randomUUID(), List.of("sales"), "orders",
+                "s3://warehouse/tables/orders", Map.of("compaction.enabled", "true"));
+        CleanupWindow.Night night = WINDOW.night(NOW).orElseThrow();
+
+        assertThat(compactor.launch(table, SMALL_FILES, night)).isEqualTo(Compactor.Launch.STARTED);
+        JsonNode container = JSON.readTree(jobs.get(KubernetesJobs.jobName(table, night)))
+                .at("/spec/template/spec/containers/0");
+        assertThat(container.at("/resources/limits/memory").asText()).isEqualTo("1Gi");
+        assertThat(container.at("/resources/requests/memory").asText()).isEqualTo("128Mi");
+    }
+
     @Test
     void theWorkersOwnNamespaceIsRefusedForTheJobs() throws Exception {
         Files.writeString(serviceAccount.resolve("token"), "sa-token\n");
@@ -294,7 +316,7 @@ class KubernetesJobsTest {
     private WorkerSettings.Compaction settings(String namespace) {
         return new WorkerSettings.Compaction("nuna/spark:test", "Never", namespace, "nuna-compaction",
                 URI.create("http://127.0.0.1:" + api.getAddress().getPort()), serviceAccount,
-                URI.create("http://nuna-catalog:8181/"), "3Gi", "2g", 2, 185,
+                URI.create("http://nuna-catalog:8181/"), "3Gi", null, "2g", 2, 185,
                 Map.of("spark.sql.shuffle.partitions", "4"));
     }
 

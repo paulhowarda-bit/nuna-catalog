@@ -254,6 +254,7 @@ as `traceparent`, so the catalog's spans for them join it (`docs/observability/w
 | `compaction.service-account` | `/var/run/secrets/kubernetes.io/serviceaccount` | The folder holding the service account's token, CA and namespace. |
 | `compaction.catalog-uri` | `catalog-uri` | The catalog as the Job's pods reach it. |
 | `compaction.memory`, `driver-memory` | `2Gi`, `1g` | The Job container's memory limit, and Spark's driver memory within it. |
+| `compaction.memory-request` | `compaction.memory` | The memory the Job container asks the node for. Lower than the limit, a Job schedules on a node whose memory is mostly asked for, and is the first pod the node stops when its memory runs short; the demo asks for 64 MiB of a 1,280 MiB limit (backlog 230). |
 | `compaction.max-jobs` | `2` | How many Jobs run at once, the night's and the requested ones together; the requested go first, then the neediest tables. Each night's Job runs to the window's end at the latest. |
 | `request-deadline` | `PT2H` | How long a job asked for on request may run ("Maintenance on request"): a requested compaction Job's Kubernetes deadline, and when a requested orphan scan stops. |
 | `compaction.run-as-user` | `185` | The Spark image's user id. |

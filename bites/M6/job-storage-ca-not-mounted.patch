@@ -3,13 +3,13 @@ Module: catalog-maintenance
 Test: KubernetesJobsTest#aStorageCaBundleIsMountedIntoTheJobAndSparkTrustsIt
 
 diff --git a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
-index 002efc8..0af838c 100644
+index d54182ab..13b3b9cf 100644
 --- a/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
 +++ b/catalog-maintenance/src/main/java/nuna/maintenance/KubernetesJobs.java
-@@ -221,7 +221,7 @@ final class KubernetesJobs implements Compactor {
+@@ -228,7 +228,7 @@ final class KubernetesJobs implements Compactor {
          ObjectNode resources = container.putObject("resources");
          resources.putObject("limits").put("memory", settings.memory());
-         resources.putObject("requests").put("memory", settings.memory());
+         resources.putObject("requests").put("memory", settings.request());
 -        if (storageCa.isPresent()) {
 +        if (false) {
              // The ConfigMap the worker creates after the Job, of the Secret's name; the pod waits for it to appear.

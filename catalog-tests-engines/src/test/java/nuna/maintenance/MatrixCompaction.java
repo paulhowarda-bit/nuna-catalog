@@ -44,7 +44,7 @@ public final class MatrixCompaction {
                                 String catalog, UUID id, List<String> namespace, String name, String location,
                                 String token) {
         WorkerSettings.Compaction settings = new WorkerSettings.Compaction(image, "Never", jobs, "nuna-compaction",
-                apiServer, serviceAccount, catalogUri, "2Gi", "1g", 1, 185, Map.of());
+                apiServer, serviceAccount, catalogUri, "2Gi", null, "1g", 1, 185, Map.of());
         TokenSource tokens = new TokenSource() {
             @Override
             public String token() {

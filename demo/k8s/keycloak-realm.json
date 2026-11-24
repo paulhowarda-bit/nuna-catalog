@@ -29,7 +29,8 @@
                            "view-authorization"]
     }},
     {"name": "demo-auditors"},
-    {"name": "demo-audit-writers"}
+    {"name": "demo-audit-writers"},
+    {"name": "demo-maintenance"}
   ],
   "users": [
     {
@@ -94,6 +95,12 @@
       "enabled": true,
       "serviceAccountClientId": "nuna-audit-tables",
       "groups": ["/demo-audit-writers"]
+    },
+    {
+      "username": "service-account-nuna-maintenance",
+      "enabled": true,
+      "serviceAccountClientId": "nuna-maintenance",
+      "groups": ["/demo-maintenance"]
     }
   ],
   "clients": [
@@ -157,6 +164,56 @@
       "publicClient": false,
       "clientAuthenticatorType": "client-secret",
       "secret": "${NUNA_AUDIT_TABLES_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "fullScopeAllowed": false,
+      "protocolMappers": [
+        {
+          "name": "nuna-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "included.custom.audience": "nuna-catalog"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "claim.name": "groups",
+            "full.path": "false"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false",
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "nuna-maintenance",
+      "name": "Maintenance worker",
+      "enabled": true,
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${NUNA_MAINTENANCE_CLIENT_SECRET}",
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,

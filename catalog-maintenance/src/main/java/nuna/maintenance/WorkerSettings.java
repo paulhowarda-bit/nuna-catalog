@@ -192,6 +192,9 @@ public record WorkerSettings(
      * @param serviceAccount  the folder holding the worker's service account token, CA and namespace
      * @param catalogUri      the catalog as the Job's pods reach it; by default the worker's {@code catalog-uri}
      * @param memory          the Job container's memory limit
+     * @param memoryRequest   the memory the Job container asks the node for; by default {@code memory}. Lower, a Job
+     *                        schedules beside pods that leave less than its limit unasked for, and is the first pod the
+     *                        node stops when its memory runs short: the demo's node is 94% asked for (backlog 230)
      * @param driverMemory    Spark's driver memory, within that limit
      * @param maxJobs         how many Jobs run at once; the neediest tables go first
      * @param runAsUser       the Spark image's user id (185 in the apache/spark images)
@@ -200,12 +203,18 @@ public record WorkerSettings(
     public record Compaction(String image, @DefaultValue("IfNotPresent") String imagePullPolicy, String namespace,
                              String jobServiceAccount, @DefaultValue("https://kubernetes.default.svc") URI apiServer,
                              @DefaultValue("/var/run/secrets/kubernetes.io/serviceaccount") Path serviceAccount,
-                             URI catalogUri, @DefaultValue("2Gi") String memory, @DefaultValue("1g") String driverMemory,
+                             URI catalogUri, @DefaultValue("2Gi") String memory, String memoryRequest,
+                             @DefaultValue("1g") String driverMemory,
                              @DefaultValue("2") int maxJobs, @DefaultValue("185") long runAsUser,
                              @DefaultValue Map<String, String> sparkConf) {
 
         public Compaction {
             sparkConf = Map.copyOf(sparkConf);
+        }
+
+        /** The memory the Job container asks for: {@code memory-request}, else its limit. */
+        public String request() {
+            return memoryRequest == null || memoryRequest.isBlank() ? memory : memoryRequest;
         }
 
         /** Whether compaction runs at all. */

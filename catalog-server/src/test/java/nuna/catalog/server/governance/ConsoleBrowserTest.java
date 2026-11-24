@@ -29,6 +29,7 @@ import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.Select;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -1041,6 +1042,48 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector("[data-theme-pick='auto']")).click();
         assertThat(theme()).isNull();
         assertThat(driver.executeScript("return localStorage.getItem('nuna.theme')")).isNull();
+    }
+
+    /**
+     * The header counts the caller's groups, as the prototype does ("presenter · 4 groups · until 18:42"), and names
+     * them on hover and on focus: named in full, the demo's presenter's five groups made the page 1,687 px wide at
+     * 1440 px, with Sign out off the screen (backlog 229).
+     */
+    @Test
+    void theHeaderCountsTheGroupsAndNamesThemOnHover() {
+        List<String> groups = List.of(IssuerForTests.GROUP, "demo-analysts", "demo-auditors", "demo-grant-admins",
+                "demo-operators", "demo-stewards");
+        Instant now = clock.instant();
+        Instant until = now.plus(Duration.ofHours(1));
+        signIn(IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", groups.toArray(String[]::new))
+                .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(until)).build()));
+        driver.manage().window().setSize(new Dimension(1440, 900));
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
+
+        WebElement count = browser.await(By.cssSelector("#who .who-groups"));
+        String names = String.join(", ", groups);
+        assertThat(driver.executeScript("return arguments[0].firstChild.textContent", count)).isEqualTo("6 groups");
+        assertThat(count.getDomAttribute("title")).isEqualTo(names);
+        assertThat(count.getDomAttribute("tabindex")).isEqualTo("0");
+        assertThat(textContent(driver.findElement(By.cssSelector("#who .who-text")))).startsWith("tester · 6 groups")
+                .contains(" · until ");
+        assertThat(headerFits()).isTrue();
+        assertThat(sideways()).isFalse();
+
+        // The names drop below the count on hover, still within the window.
+        new Actions(driver).moveToElement(count).perform();
+        browser.await("the groups are not named on hover", d -> String.valueOf(driver.executeScript(
+                "return getComputedStyle(arguments[0], '::after').content", count)).contains("demo-stewards"));
+        assertThat(headerFits()).isTrue();
+        assertThat(sideways()).isFalse();
+    }
+
+    /** Whether the header and its last control, Sign out, end within the window. */
+    private boolean headerFits() {
+        return (Boolean) driver.executeScript("const w = document.documentElement.clientWidth;"
+                + " return document.getElementById('top').scrollWidth <= w"
+                + " && document.getElementById('sign-out').getBoundingClientRect().right <= w");
     }
 
     @Test

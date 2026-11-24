@@ -167,6 +167,9 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .nc-spacer { flex: 1; }
 .nc-who { display: flex; align-items: center; gap: 10px; font-size: var(--t-13); color: var(--text-2); white-space: nowrap; }
 .nc-who b { color: var(--text); font-weight: 600; }
+/* The groups, counted; their names drop below on hover and on focus (backlog 229), growing leftward from the count. */
+.who-groups { position: relative; text-decoration: underline dotted; text-underline-offset: 3px; cursor: default; }
+.who-groups:hover::after, .who-groups:focus::after { content: attr(data-groups); position: absolute; top: calc(100% + 8px); right: 0; z-index: 30; width: max-content; max-width: 320px; white-space: normal; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: var(--t-12); box-shadow: 0 4px 12px oklch(20% 0.02 250 / 0.14); }
 .avatar { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-wash); color: var(--accent); font: 600 var(--t-12)/1 var(--f-ui); }
 .seg { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
 .seg button { border: 0; background: transparent; height: 26px; padding: 0 9px; border-radius: 6px; font-size: var(--t-12); color: var(--text-2); cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
