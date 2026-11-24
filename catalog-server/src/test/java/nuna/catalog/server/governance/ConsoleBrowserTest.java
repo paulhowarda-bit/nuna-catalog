@@ -713,8 +713,7 @@ class ConsoleBrowserTest {
         // Why the area is regulated and who marked it, as its flag records them (backlog 213).
         assertThat(cell(regulated, 2)).isEqualTo("console test");
         assertThat(cell(regulated, 3)).endsWith("stella");
-        assertThat(cell(regulated, 4)).isEqualTo("1
-1 closed");
+        assertThat(cell(regulated, 4)).isEqualTo("1\n1 closed");
         browser.await(By.cssSelector("#regulated .closed-list li[data-on='" + top + ".ledger.accounts']"));
 
         // A hold released is listed as lifted, from what the store keeps of the release (item 133).
