@@ -647,6 +647,90 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector("#overview #last-night a.gj[data-job='" + compaction + "']"));
     }
 
+    /**
+     * The audit feed in the page's own answers: this server has no audit tables, so its feed and counts are answered in
+     * the page, and the case checks what the console asks for and draws (Atelier's review, F7; backlog 187).
+     */
+    private static final String AUDIT_TABLES_IN_THE_PAGE = """
+            const real = window.fetch;
+            window.asked = [];
+            const now = Date.now();
+            const rec = (i, type, who, path) => ({time: new Date(now - i * 60000).toISOString(), type: 'nuna.catalog.' + type,
+              principal: who, 'event-id': 'e' + i, partition: 0, offset: i, 'request-id': 'r' + i,
+              object: path ? {kind: 'TABLE', path} : null, event: {data: {}}, chain: {status: 'no-archive'}});
+            const records = [rec(1, 'audit-read', 'gina', null), rec(2, 'grant', 'gina', ['equities', 'eu', 'trades']),
+              rec(3, 'commit', 'tester', ['equities', 'eu', 'trades']), rec(4, 'audit-read', 'gina', null)];
+            const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
+            window.fetch = (url, init) => {
+              const u = new URL(url, location.origin);
+              if (u.pathname.endsWith('/audit/summary')) {
+                return json({'by-type': {'nuna.catalog.audit-read': 2, 'nuna.catalog.grant': 1, 'nuna.catalog.commit': 1},
+                  from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString(), busiest: []});
+              }
+              if (u.pathname.endsWith('/audit/archive')) return json({chains: [], configured: false});
+              if (u.pathname.endsWith('/audit/feed')) {
+                window.asked.push(u.searchParams.get('type'));
+                const types = (u.searchParams.get('type') || '').split(',').filter(Boolean);
+                return json({records: records.filter(r => !types.length || types.includes(r.type))});
+              }
+              return real(url, init);
+            };
+            location.hash = '#p=audit&c=trading&kind=all';
+            """;
+
+    /**
+     * Audit filters by kind, and each By kind row applies its kind (Atelier's review, F7; backlog 187): a grant admin
+     * reaches a grant's record in three steps, Audit (where they land), the grant row, its record. Every filter is in
+     * the link, so Back keeps it; the audit's own reads are hidden unless asked for; the range names both days.
+     */
+    @Test
+    void auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
+        browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant']"));
+        assertThat(feedTypes()).containsExactly("grant", "commit");
+        assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
+        assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
+                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d, .*");
+
+        browser.await(By.cssSelector("#audit-kinds tr[data-type='nuna.catalog.grant'] button")).click();
+        browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
+        assertThat(lastAsked()).isEqualTo("nuna.catalog.grant");
+        assertThat(driver.getCurrentUrl()).contains("p=audit", "kind=grant");
+        assertThat(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='grant']")).getDomAttribute("aria-pressed"))
+                .isEqualTo("true");
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
+        assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-row .rec")))).contains("r2");
+
+        // Back from the record's table keeps the kind.
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .what a")).click();
+        browser.await("the table did not open", d -> d.getCurrentUrl().contains("n=trades"));
+        driver.navigate().back();
+        browser.await(By.cssSelector("#audit-feed .chip[data-f='grant'][aria-pressed='true']"));
+        browser.await("the feed did not keep its kind", d -> feedTypes().equals(List.of("grant")));
+
+        // The audit's own reads, when asked for.
+        driver.findElement(By.cssSelector("#audit-feed .chip[data-f='all']")).click();
+        browser.await("the feed did not show every kind", d -> feedTypes().equals(List.of("grant", "commit")));
+        driver.findElement(By.cssSelector("#audit-feed input[name='audit-reads']")).click();
+        browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
+        assertThat(lastAsked()).isNull();
+        assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
+    }
+
+    /** The types of the feed's rows, as drawn. */
+    private List<String> feedTypes() {
+        return driver.findElements(By.cssSelector("#audit-feed .feed-row")).stream()
+                .map(row -> row.getDomAttribute("data-type")).toList();
+    }
+
+    /** The type filter of the feed's last request, null for none. */
+    private String lastAsked() {
+        return (String) driver.executeScript("return window.asked[window.asked.length - 1];");
+    }
+
     @Test
     void theAuditPageShowsTheFeedsAnswerVerbatimAndTheCatalogsOwnTrail() {
         // This server has no audit tables, so the feed answers 503, and the page says so as it was answered.
