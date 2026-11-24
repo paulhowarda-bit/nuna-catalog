@@ -366,6 +366,26 @@ class ConsoleBrowserTest {
         assertThat(fact("Current snapshot")).startsWith(S3 + " · append · ");
         assertThat(kpi("Snapshots")).isEqualTo("3");
         assertThat(kpi("Schemas")).isEqualTo("3");
+        // The table's own Iceberg refs are named apart from the catalog's branches and tags, with one icon of their
+        // own (Atelier's review, F8; backlog 191); read through a catalog tag, they are folded away.
+        WebElement engineRefs = driver.findElement(By.id("engine-refs"));
+        assertThat(engineRefs.getTagName()).isEqualTo("div");
+        assertThat(textContent(engineRefs.findElement(By.tagName("h2"))))
+                .isEqualTo("Engine-level refs in this table's metadata");
+        assertThat(engineRefs.findElements(By.cssSelector(".badge use"))).isNotEmpty()
+                .allSatisfy(use -> assertThat(use.getDomAttribute("href")).isEqualTo("#i-iref"));
+        String tag = "refs_" + Api.suffix();
+        expect(api.manage("POST", "/refs", "{\"name\":\"" + tag + "\",\"kind\":\"tag\"}"), 201);
+        try {
+            browser.open("/ui/#" + at("table", eu, "trades", null) + "&r=" + tag);
+            browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
+            WebElement folded = browser.await(By.cssSelector("details#engine-refs"));
+            assertThat(folded.getDomAttribute("open")).isNull();
+        } finally {
+            api.manage("DELETE", "/refs/" + tag, null);
+        }
+        browser.open("/ui/#" + at("table", eu, "trades", null));
+        browser.awaitText(By.cssSelector("#table-page .title-row .badge"), "iceberg v2");
         // The console asks for no storage credentials, and the catalog honours that from any caller (D21, amended
         // 2026-11-19): nothing of them reaches the page or the tab's storage.
         assertThat(driver.getPageSource()).doesNotContain("storage-credentials", "secret-access-key",

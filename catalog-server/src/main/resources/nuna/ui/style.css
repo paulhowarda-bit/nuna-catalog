@@ -1195,3 +1195,10 @@ td.acts { width: 1%; white-space: nowrap; }
   .refs-explain { grid-template-columns: minmax(0, 1fr); }
   .kpi-v.sm { font-size: var(--t-14); }
 }
+
+/* A panel folded behind its heading (backlog 191): the heading is the summary. */
+details.panel.fold > summary { cursor: pointer; list-style: none; }
+details.panel.fold > summary::-webkit-details-marker { display: none; }
+details.panel.fold > summary h2 { display: inline; }
+details.panel.fold > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--text-2); }
+details.panel.fold[open] > summary::before { content: '\25BE'; }

@@ -81,7 +81,7 @@ export function cref(r, o = {}) {
   const name = typeof r === 'string' ? r : r.name;
   const kind = typeof r === 'string' ? (isMain(r) ? 'main' : 'branch') : r.kind;
   return h('span', {class: 'cref ' + (kind === 'tag' ? 't' : kind === 'main' ? 'm' : 'b') + (o.big ? ' big' : '') + (o.warn ? ' warn' : '')},
-    icon(kind === 'tag' ? 'tag' : kind === 'main' ? 'catalog' : 'branch'), kind === 'main' ? null : h('span', {class: 'at'}, '@'), name);
+    icon(kind === 'tag' ? 'tag' : 'branch'), kind === 'main' ? null : h('span', {class: 'at'}, '@'), name);
 }
 
 function madeFrom(r, list) {
@@ -439,9 +439,9 @@ function refsExplain(c, lim) {
     panel('Two kinds of ref', null, h('dl', {class: 'facts one'},
       h('dt', null, cref({name: 'dev', kind: 'branch'}), ' ', cref({name: 'matter-2026-114', kind: 'tag'})),
       h('dd', null, h('b', null, 'The catalog\'s branches and tags'), ', here: every table at once, read through ', code(`${c}@name`), '.'),
-      h('dt', null, badge([icon('branch'), 'surveillance-review'], 'ref-b')),
+      h('dt', null, badge([icon('iref'), 'surveillance-review'], 'ref-b')),
       h('dd', null, h('b', null, 'Iceberg\'s own refs'), ', inside one table\'s metadata, made by an engine; on each table\'s page under ',
-        h('i', null, 'Iceberg refs in this table'), '.'))),
+        h('i', null, 'Engine-level refs in this table\'s metadata'), '.'))),
     panel('Limits and expiry', 'nuna.refs.*', h('dl', {class: 'facts one'},
       h('dt', null, 'A branch expires'), h('dd', null, `${idle} days after its last commit or renewal, and never later than ${life} days after it `
         + `was made. ${WORDS[warn] || fmt(warn)} ${warn === 1 ? 'day' : 'days'} before, the catalog warns once on the change stream and marks it here.`),
