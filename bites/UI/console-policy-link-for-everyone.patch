@@ -1,0 +1,17 @@
+Breaks: Edit the catalog's policy is offered on an empty state to a caller who may not modify the catalog.
+Module: catalog-server
+Test: ConsoleHealthTest#aTableNotAssessedYetIsNeitherInShapeNorQueued
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/maintenance.js b/catalog-server/src/main/resources/nuna/ui/maintenance.js
+index 66cadec6..fbac6a94 100644
+--- a/catalog-server/src/main/resources/nuna/ui/maintenance.js
++++ b/catalog-server/src/main/resources/nuna/ui/maintenance.js
+@@ -80,7 +80,7 @@ export function editPolicyLink(catalog, reload) {
+   const target = {catalog, kind: 'catalog', namespace: []};
+   const slot = h('span', {'data-edit-policy': ''});
+   mayModify(target).then(may => {
+-    if (may) fill(slot, ' ', h('button', {class: 'linkish', type: 'button', 'data-act': 'edit-policy', onclick: () =>
++    fill(slot, ' ', h('button', {class: 'linkish', type: 'button', 'data-act': 'edit-policy', onclick: () =>
+       api.policy(target).then(p => editPolicy(catalog, p, reload), error => openDialog(`Policy for ${catalog}`, failure(error)))},
+     'Edit the catalog's policy'));
+   });
