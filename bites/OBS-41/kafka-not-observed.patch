@@ -1,19 +1,16 @@
 Breaks: Publishing a synchronous audit record to Kafka is not observed.
 Module: catalog-server
 Test: SpanTreeTest#aLoadsSpanTree
-
 diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
-index 38e1dfd..001e5cb 100644
+index 9ed81d21..599d4b92 100644
 --- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
 +++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceWiring.java
-@@ -89,8 +89,8 @@ class GovernanceWiring {
-     @Bean
-     AuditTrail auditTrail(AuditRuntime runtime, AuditSettings audit, RestSettings rest, Clock clock,
-                           ObservationRegistry observations) {
--        return new AuditTrail(runtime.auditPublisher().map(publisher -> (EventPublisher) new ObservedPublisher(
--                publisher, audit.auditTopic(), observations)), rest.auditSource(), clock, audit.probeInterval());
-+        return new AuditTrail(runtime.auditPublisher().map(EventPublisher.class::cast), rest.auditSource(), clock,
-+                audit.probeInterval());
+@@ -102,7 +102,7 @@ class GovernanceWiring {
+         MaintenancePolicy.canonical(governance.maintenanceDefaults(), governance);
+         requireDropWindowBeyondPitr(rest.dropRetention(), governance.pitrWindow());
+         return new AuditRuntime(audit, store, archive(audit, storage, clock), rest.auditSource(),
+-                publisher -> new ObservedPublisher(publisher, audit.auditTopic(), observations), clock);
++                publisher -> publisher, clock);
      }
  
-     /**
+     /** Every audit record goes through it: to the log, and to Kafka where it is configured, best effort (D23). */

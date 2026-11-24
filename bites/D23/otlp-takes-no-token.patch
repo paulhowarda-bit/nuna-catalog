@@ -1,0 +1,16 @@
+Breaks: The writer's OTLP receiver takes records from a request without the token.
+Module: catalog-audit-tables
+Test: OtlpLogsReceiverTest#refusesARequestWithoutTheTokenAndTakesNothingFromIt
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+index 1e1aa56d..4ae27b49 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/OtlpLogsReceiver.java
+@@ -103,7 +103,7 @@ final class OtlpLogsReceiver implements AutoCloseable {
+                 return;
+             }
+             String presented = exchange.getRequestHeaders().getFirst(TOKEN_HEADER);
+-            if (presented == null || !MessageDigest.isEqual(token, presented.getBytes(StandardCharsets.UTF_8))) {
++            if (false) {
+                 LOG.warn("Refused an OTLP logs request from {} without the audit token", exchange.getRemoteAddress());
+                 answer(exchange, 401, null);
+                 return;

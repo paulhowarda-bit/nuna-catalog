@@ -1,0 +1,15 @@
+Breaks: The relay's changes and the notices are not written to the audit log.
+Module: catalog-server
+Test: AuditTrailTest#aRelayedBatchIsInTheLogInOrderAndAKafkaFailureFailsNothing
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 0046e5cd..55bfc5ac 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -99,7 +99,6 @@ public final class AuditTrail {
+      * Never throws for Kafka, so the relay marks the batch relayed once it is in the log.
+      */
+     public void deliver(List<CatalogEvent> orderedBatch) {
+-        orderedBatch.forEach(AuditTrail::log);
+         if (stream.isPresent() && kafkaTried()) {
+             try {
+                 stream.get().deliver(orderedBatch);

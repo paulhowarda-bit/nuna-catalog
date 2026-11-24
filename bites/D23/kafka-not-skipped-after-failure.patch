@@ -1,0 +1,15 @@
+Breaks: Every record waits on Kafka again right after it failed.
+Module: catalog-server
+Test: AuditTrailTest#kafkaIsSkippedForTheProbeIntervalAfterItFails
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 0046e5cd..f42be562 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -118,7 +118,6 @@ public final class AuditTrail {
+     }
+ 
+     private void kafkaFailed(int records, RuntimeException cause) {
+-        skipUntil = clock.instant().plus(probeInterval);
+         LOG.warn("Kafka did not take {} audit record(s), which are in the log {} all the same; records go only to the"
+                 + " log for the next {}: {}", records, LOGGER, probeInterval, cause.toString());
+     }

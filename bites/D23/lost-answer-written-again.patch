@@ -1,0 +1,15 @@
+Breaks: Rows a commit wrote whose answer was lost are written again by the next commit.
+Module: catalog-audit-tables
+Test: LogWriterTest#aCommitWhoseAnswerWasLostIsNotWrittenAgain
+diff --git a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+index f15ea540..b86ff629 100644
+--- a/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
++++ b/catalog-audit-tables/src/main/java/nuna/audittables/LogWriter.java
+@@ -218,7 +218,6 @@ final class LogWriter {
+         Set<String> written = table.eventIdsSince(now.minus(dedupWindow));
+         synchronized (this) {
+             int before = rows.size();
+-            rows.removeIf(row -> written.contains(row.eventId()));
+             if (rows.size() < before) {
+                 LOG.info("{} waiting audit records are in the table already; they are not written again",
+                         before - rows.size());
