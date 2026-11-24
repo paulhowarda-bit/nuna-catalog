@@ -468,7 +468,8 @@ audit_writer() {
 
 # The maintenance worker (D30; chart deploy/helm/nuna-maintenance, maintenance-values.yaml), installed or brought up to
 # date, with its compaction Jobs' namespace (maintenance-jobs.yaml) and its own Silo user, which may list and delete
-# beneath the tables (silo-maintenance.json); Silo keeps the user only for the pod's life, so every up makes it. It
+# beneath the tables (silo-maintenance.json); Silo keeps the user on its volume, and every up makes it again with
+# its key and policy, so a changed file or key takes effect. It
 # signs in to Keycloak as client nuna-maintenance, with the secret publish_keycloak_keys made. The image's id as a pod
 # annotation, as for the catalog. One replica: an upgrade also starts it again after cdc stopped it.
 maintenance_worker() {
