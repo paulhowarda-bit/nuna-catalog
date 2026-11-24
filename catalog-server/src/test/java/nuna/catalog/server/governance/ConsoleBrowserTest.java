@@ -786,6 +786,8 @@ class ConsoleBrowserTest {
               object: path ? {kind: 'TABLE', path} : null, event: {data: {}}, chain: {status: 'no-archive'}});
             const records = [rec(1, 'audit-read', 'gina', null), rec(2, 'grant', 'gina', ['equities', 'eu', 'trades']),
               rec(3, 'commit', 'tester', ['equities', 'eu', 'trades']), rec(4, 'audit-read', 'gina', null)];
+            // The commit came to the audit tables from the log, which gives no Kafka partition (backlog 205).
+            Object.assign(records[2], {partition: -1, offset: 1795482234678168});
             const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
             window.fetch = (url, init) => {
               const u = new URL(url, location.origin);
@@ -844,6 +846,26 @@ class ConsoleBrowserTest {
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
         assertThat(lastAsked()).isNull();
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
+    }
+
+    /**
+     * A record says where the audit tables read it from: Kafka, with its partition and offset, or the log
+     * {@code nuna.audit}, with no Kafka place and no link in the archive, whose chains are Kafka's (backlog 205).
+     */
+    @Test
+    void aRecordSaysWhetherItWasReadFromKafkaOrTheLog() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
+        WebElement fromKafka = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .rec"));
+        assertThat(textContent(fromKafka.findElement(By.cssSelector("[data-read-from]"))))
+                .isEqualTo("Kafka, partition 0, offset 2");
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='commit'] button")).click();
+        WebElement fromLog = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='commit'] .rec"));
+        assertThat(textContent(fromLog.findElement(By.cssSelector("[data-read-from]")))).isEqualTo("the log nuna.audit");
+        assertThat(textContent(fromLog)).doesNotContain("Kafka", "partition", "-1", "Check its link");
     }
 
     /** The types of the feed's rows, as drawn. */

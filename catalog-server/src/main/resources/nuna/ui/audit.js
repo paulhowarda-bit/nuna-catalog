@@ -1,8 +1,8 @@
 // Audit in one catalog (item 125): every record in the catalog, newest first, from the audit tables, filtered by
-// kind, person, path and time, each record with its request id, its place in the topic and in its hash chain; the
+// kind, person, path and time, each record with its request id, where it was read from and its hash chain; the
 // last day's counts by kind and the busiest objects; and the archive check. These routes are for audit readers
 // only (D23): anyone else is shown the refusal as the catalog answered it, with the catalog's own records below,
-// read from the audit topic as before, for those who manage its grants.
+// read from Kafka as before, for those who manage its grants.
 
 import * as api from './api.js';
 import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
@@ -144,7 +144,8 @@ function archiveKpi(a) {
 /** The archive and its hash chains: where it is, how long it is kept, how far each chain is verified. */
 function chainPanel(a) {
   if (!a.configured) {
-    return panel('Hash chain', null, h('p', {class: 'muted'}, 'No archive is configured on this server, so no chain is checked.'));
+    return panel('Hash chain', null, h('p', {class: 'muted'}, 'No archive is configured on this server, so no chain is checked. '
+      + 'The archive needs Kafka.'));
   }
   const check = a.check;
   const broken = check ? (check.chains || []).filter(c => c.broken || c.failed) : [];
@@ -152,7 +153,7 @@ function chainPanel(a) {
     h('p', null, !check ? pill('', icon('clock'), 'Not checked yet') : check.intact
       ? pill('ok', icon('check'), 'Whole at ' + at(check['ended-at'])) : pill('bad', icon('x'), 'Broken')),
     facts([
-      ['Chains', h('span', {title: 'One per partition of the audit topic'}, `${fmt((a.verified || []).length)} verified`)],
+      ['Chains', h('span', {title: 'One per Kafka partition'}, `${fmt((a.verified || []).length)} verified`)],
       ['Each record', 'hashes the one before it in its partition, with its sequence'],
       ['Archive', [code(`s3://${a.bucket}/${a.prefix || ''}`), ` · kept ${a.retention}`]],
       ['Last check', check ? `${at(check['started-at'])} to ${at(check['ended-at'])}` : null],
@@ -359,15 +360,18 @@ function recordDetail(catalog, r) {
   const link = h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button', onclick: () => load(link, () => chainLink(r))},
     'Check its link in the archive'));
   const o = r.object;
+  const fromKafka = Number(r.partition) >= 0;
   return h('div', {class: 'rec'},
     h('dl', {class: 'facts rec-facts'},
       h('dt', null, 'Request'), h('dd', null, rid ? [code(rid), ' ', copyButton(rid)] : muted('none recorded')),
-      h('dt', null, 'Kafka'), h('dd', null, `partition ${r.partition}, offset `, code(String(r.offset))),
+      // A record the audit table writer took from the log has no place in Kafka, and no link in the archive (backlog 205).
+      h('dt', null, 'Read from'), h('dd', {'data-read-from': fromKafka ? 'kafka' : 'log'}, fromKafka
+        ? [`Kafka, partition ${r.partition}, offset `, code(String(r.offset))] : ['the log ', code('nuna.audit')]),
       h('dt', null, 'Hash chain'), h('dd', null, r.chain && r.chain.status === 'verified'
         ? ['verified past this record', r.chain['checked-at'] ? ` by the check at ${at(r.chain['checked-at'])}` : '']
         : r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
           : 'not verified yet: the next hourly check will reach it'),
-      h('dt', null, 'Its link'), link,
+      fromKafka ? [h('dt', null, 'Its link'), link] : null,
       o && o.path && o.path.length ? [h('dt', null, String(o.kind || '').toLowerCase() || 'Object'),
         h('dd', null, objectLink(catalog, o.kind, o.path, null))] : null,
       r.reason ? [h('dt', null, 'Reason'), h('dd', null, r.reason)] : null),

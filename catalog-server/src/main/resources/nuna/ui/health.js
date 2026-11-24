@@ -118,8 +118,7 @@ async function catalogHealth() {
         h('p', {class: 'fine hide-sm'}, 'Share within the objective on a 97 to 100% scale. The tall tick is the 99% objective; a share '
           + 'below 97% points off the scale\'s left edge, with its value.')),
       h('div', {class: 'grid-3'},
-        panel('Audit to Kafka', null, audit(health.audit || {}),
-          h('p', {class: 'fine'}, 'If an audit record cannot be published, the request it records is refused.')),
+        panel('Audit', null, audit(health.audit || {})),
         panel('Credential vending', null, vends(health['credential-vends'] || {})),
         panel('Alerts fired', null, alerts(health.alerts || {}),
           h('p', {class: 'fine'}, 'Paging stays in your alerting; these are the last day\'s counts.'))),
@@ -148,13 +147,21 @@ function alerts(counts) {
       h('b', {class: counts[kind] ? 'warn-n' : null, 'data-count': ''}, String(counts[kind] ?? 0)))));
 }
 
+/**
+ * Where audit records go (D23, amended 2026-11-23; backlog 205): every one to the log before the catalog answers, and
+ * a copy to Kafka where it is configured, best effort. The server's figures count only that copy.
+ */
 function audit(a) {
-  return facts([
-    ['Records acknowledged', fmt(a.acknowledged ?? 0)],
-    ['Mean acknowledgement', a['mean-ms'] !== undefined ? a['mean-ms'] + ' ms' : null],
-    ['p99', p99(a.p99)],
-    ['Publishes failed', a.failed ? h('span', {class: 'warn-n'}, String(a.failed)) : '0'],
-  ]);
+  const copied = (a.acknowledged ?? 0) + (a.failed ?? 0) > 0;
+  return h('div', {id: 'health-audit'},
+    h('p', null, 'Each request's audit record is written to the log ', code('nuna.audit'), ' before the catalog answers it.'),
+    copied ? [facts([
+      ['Copied to Kafka', fmt(a.acknowledged ?? 0)],
+      ['Mean time to copy', a['mean-ms'] !== undefined ? a['mean-ms'] + ' ms' : null],
+      ['p99', p99(a.p99)],
+      ['Copies failed', a.failed ? h('span', {class: 'warn-n'}, String(a.failed)) : '0'],
+    ]), h('p', {class: 'fine'}, 'A copy that fails blocks nothing: the log already holds the record.')]
+      : h('p', {class: 'fine'}, 'No record was copied to Kafka in the last day.'));
 }
 
 function vends(v) {

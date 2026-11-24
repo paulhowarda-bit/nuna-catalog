@@ -227,7 +227,13 @@ class ConsoleHealthTest {
         assertThat(cell(notModified, 3)).isEqualTo(String.valueOf(figure(own, "not-modified")));
         assertThat(rows("#health-vend-failures")).contains(List.of("ServiceUnavailableException",
                 String.valueOf(figure(own, "vends.failed.ServiceUnavailableException") + 3)));
-        assertThat(fact("Publishes failed")).startsWith(String.valueOf(figure(own, "audit.failed") + 1));
+        // Every audit record goes to the log; the figures count the copies to Kafka, best effort (backlog 205).
+        assertThat(browser.await(By.cssSelector("#health-audit > p")).getText())
+                .isEqualTo("Each request's audit record is written to the log nuna.audit before the catalog answers it.");
+        assertThat(fact("Copies failed")).startsWith(String.valueOf(figure(own, "audit.failed") + 1));
+        assertThat(driver.findElement(By.id("health-audit")).getText())
+                .contains("A copy that fails blocks nothing: the log already holds the record.")
+                .doesNotContain("acknowledged", "refused");
 
         // The worker, from the catalog's record of its scans.
         assertThat(browser.await(By.id("health-last-success")).getText())
