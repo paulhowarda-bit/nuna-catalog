@@ -74,8 +74,8 @@ demo/demo.sh up
   An engine on another machine reaches the catalog on 8181 and the table files on 8187; the catalog vends
   `s3.endpoint` `http://s3:9000`, which resolves only inside the cluster, so that engine sets its own
   `s3.endpoint` to `https://<host>:8187`: the catalog vends one address per profile (D21, amended 2026-11-20).
-- Memory, with every switch on (the core alone leaves out SingleStore, Kafka, kafbat, Kafka Connect and the
-  generator, about 3 GB of requests and up to 5.8 GB of limits): about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
+- Memory, with `gen` and `ss` on (the core alone asks about 3.8 GB: it leaves out SingleStore's 1.5 GB, Kafka's
+  640 MB, kafbat's 384 MB, Kafka Connect's 512 MB and the generator's 256 MB): about 6 GB of requests (SingleStore 1.5 GB, using about 2.2 GB of up to 3 GB; the catalog and
   Trino 768 MB each, Trino using about 1 GB of up to 1.25 GB; Kafka 640 MB; Keycloak and Silo 512 MB each; the front door 16 MB;
   PostgreSQL, kafbat and CloudBeaver 384 MB each, kafbat and CloudBeaver each using about 350 MB of up to
   768 MB; CloudBeaver's 384 MB is 368 MB for CloudBeaver and 16 MB for its sign-in proxy), plus the audit
