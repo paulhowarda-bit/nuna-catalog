@@ -24,6 +24,10 @@ import org.springframework.stereotype.Component;
  * partition backwards from its end, at most {@link #SCAN_LIMIT} offsets, and keeps the records whose key is
  * the subject.
  *
+ * <p>It needs Kafka: on a server without {@code nuna.audit.kafka-bootstrap-servers} it is not {@link #configured()},
+ * and the route answers 503 saying so. The topic holds what Kafka took, best effort (D23, amended 2026-11-23): a
+ * record made while Kafka was down is in the log {@code nuna.audit}, not here.
+ *
  * <p>It is a bounded look at recent history, not a search: the topic's retention and the window bound what
  * it can see, and the result says which offsets it covered. Searching the whole trail is the SIEM's job and,
  * from v1.x, the queryable audit tables' (D23).
@@ -61,6 +65,7 @@ class RecentAudit {
         this.settings = settings;
     }
 
+    /** Whether this server has Kafka, and so an audit topic to read. */
     boolean configured() {
         return settings.kafkaConfigured();
     }

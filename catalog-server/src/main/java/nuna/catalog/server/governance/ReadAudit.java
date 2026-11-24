@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 /**
  * The read-side audit seam the REST routes call (D23). A load, including a 304, is recorded with
  * {@link #read}, which never fails the request. Credential issues are recorded by M6's vending through
- * the {@code AuditPublisher} bean, which fails closed.
+ * the {@code AuditPublisher} bean, which never fails for want of Kafka either (D23, amended 2026-11-23).
  */
 @Component
 public class ReadAudit {

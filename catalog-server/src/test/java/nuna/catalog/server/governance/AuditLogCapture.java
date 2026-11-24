@@ -1,0 +1,81 @@
+package nuna.catalog.server.governance;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import nuna.catalog.audit.CatalogEvent;
+import nuna.catalog.audit.EventCodec;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import org.slf4j.LoggerFactory;
+
+/** The lines of the audit log {@value AuditTrail#LOGGER} while it is open, decoded; closing restores the logger. */
+final class AuditLogCapture implements AutoCloseable {
+
+    private final Logger logger = (Logger) LoggerFactory.getLogger(AuditTrail.LOGGER);
+    private final Level level = logger.getLevel();
+    private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+
+    AuditLogCapture() {
+        appender.start();
+        logger.addAppender(appender);
+    }
+
+    /** Sets the audit logger's own level until closed. */
+    AuditLogCapture level(Level set) {
+        logger.setLevel(set);
+        return this;
+    }
+
+    /** Every audit line written so far, in order, as written: the record's CloudEvent JSON. */
+    List<String> lines() {
+        synchronized (appender) {
+            return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+        }
+    }
+
+    /**
+     * The first audit line holding {@code text}, waiting up to 30 seconds for it: the relay writes a change shortly
+     * after its commit.
+     */
+    String await(String text) {
+        long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
+        while (true) {
+            for (String line : lines()) {
+                if (line.contains(text)) {
+                    return line;
+                }
+            }
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("no audit line holds " + text);
+            }
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(e);
+            }
+        }
+    }
+
+    /** Every audit record written so far, in order, as the log line's CloudEvent. */
+    List<CatalogEvent> records() {
+        List<ILoggingEvent> lines;
+        synchronized (appender) {
+            lines = List.copyOf(appender.list);
+        }
+        return lines.stream().map(line -> {
+            if (line.getLevel() != Level.INFO) {
+                throw new AssertionError("an audit line at " + line.getLevel() + ": " + line.getFormattedMessage());
+            }
+            return EventCodec.decode(line.getFormattedMessage().getBytes(StandardCharsets.UTF_8));
+        }).toList();
+    }
+
+    @Override
+    public void close() {
+        logger.detachAppender(appender);
+        logger.setLevel(level);
+    }
+}

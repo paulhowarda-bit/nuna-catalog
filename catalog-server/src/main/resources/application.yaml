@@ -14,6 +14,10 @@ server:
 # standard OTEL_* variables, or Boot's management.* properties. Log lines go to stdout as JSON, in Elastic Common
 # Schema; each written while a request runs carries its traceId, spanId and requestId.
 logging:
+  # Every audit record is a line of the log nuna.audit (D23, amended 2026-11-23; docs/observability/audit-log.md). It
+  # stays at INFO when the root level is raised; the server refuses to start with it coarser than INFO.
+  level:
+    nuna.audit: INFO
   structured:
     format:
       console: ecs

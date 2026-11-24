@@ -34,3 +34,13 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- include "nuna-audit-tables.fullname" . -}}
 {{- end -}}
 {{- end -}}
+
+{{/* The writer's source, lower case: kafka or otlp. */}}
+{{- define "nuna-audit-tables.source" -}}
+{{- dig "nuna" "audit-tables" "source" "kafka" .Values.config | toString | lower -}}
+{{- end -}}
+
+{{/* The OTLP logs receiver's port, from the writer's settings. */}}
+{{- define "nuna-audit-tables.otlpPort" -}}
+{{- dig "nuna" "audit-tables" "otlp" "port" 4318 .Values.config | int -}}
+{{- end -}}

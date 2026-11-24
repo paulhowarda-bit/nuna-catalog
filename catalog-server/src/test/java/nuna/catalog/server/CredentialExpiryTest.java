@@ -92,14 +92,14 @@ class CredentialExpiryTest {
     /**
      * What a response said, for an assertion's message. A 401's body never names the reason (the client learns
      * only what it must fix); the reason is in the auth-failure audit record, which this test, with no Kafka,
-     * finds in its output as the {@code nuna.audit.fallback} line (backlog 60).
+     * finds in its output as the {@code nuna.audit} line (backlog 60).
      */
     private static String answer(HttpResponse<String> response) {
         return "answered " + response.statusCode()
                 + ", WWW-Authenticate " + response.headers().firstValue("WWW-Authenticate").orElse("(none)")
                 + ", body " + response.body()
                 + (response.statusCode() == 401
-                        ? "; the reason is in the nuna.audit.fallback line of this test's output" : "");
+                        ? "; the reason is in the nuna.audit line of this test's output" : "");
     }
 
     private HttpResponse<String> send(String method, String path, String body, String ifNoneMatch) throws Exception {

@@ -107,7 +107,7 @@ spec:
             {{- end }}
             - name: tmp
               mountPath: /tmp
-            {{- if and .Values.telemetry.endpoint .Values.telemetry.caConfigMap.name }}
+            {{- if and (or .Values.telemetry.endpoint .Values.telemetry.logsEndpoint) .Values.telemetry.caConfigMap.name }}
             - name: otlp-ca
               mountPath: /etc/nuna/otlp-ca
               readOnly: true
@@ -128,7 +128,7 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
-        {{- if and .Values.telemetry.endpoint .Values.telemetry.caConfigMap.name }}
+        {{- if and (or .Values.telemetry.endpoint .Values.telemetry.logsEndpoint) .Values.telemetry.caConfigMap.name }}
         - name: otlp-ca
           configMap:
             name: {{ .Values.telemetry.caConfigMap.name }}
