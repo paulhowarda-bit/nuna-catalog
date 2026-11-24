@@ -3,15 +3,15 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theRailKeepsItsLabelsOnTheCatalogPage
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
-index d62f7189..002ccb8b 100644
+index 4cae9d5c..8decd9b3 100644
 --- a/catalog-server/src/main/resources/nuna/ui/app.js
 +++ b/catalog-server/src/main/resources/nuna/ui/app.js
-@@ -153,7 +153,7 @@ function closeMenus() {
+@@ -157,7 +157,7 @@ function closeMenus() {
  }
  
  function setChrome(navKey, ref) {
 -  consoleEl.classList.toggle('rail', !!railPick);
 +  consoleEl.classList.toggle('rail', true);
    syncMenuButton();
-   // The catalog chip names the catalog; the Reading control beside it names the ref read (backlog 201).
-   for (const b of $$('[data-cat]')) fill(b, cat || '–');
+   // Service is the whole deployment's, so it offers no catalog to pick (Atelier's re-walk, 2026-11-23).
+   $('.pick-wrap').hidden = navKey === 'service';

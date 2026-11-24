@@ -1,0 +1,17 @@
+Breaks: Service offers the catalog picker though it is the whole deployment's.
+Module: catalog-server
+Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 4cae9d5c..17e73814 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -160,7 +160,7 @@ function setChrome(navKey, ref) {
+   consoleEl.classList.toggle('rail', !!railPick);
+   syncMenuButton();
+   // Service is the whole deployment's, so it offers no catalog to pick (Atelier's re-walk, 2026-11-23).
+-  $('.pick-wrap').hidden = navKey === 'service';
++  $('.pick-wrap').hidden = false;
+   // The catalog chip names the catalog; the Reading control beside it names the ref read (backlog 201).
+   for (const b of $$('[data-cat]')) fill(b, cat || '–');
+   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
