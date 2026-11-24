@@ -1,0 +1,17 @@
+Breaks: The Reading menu offers no way to a ref's own page.
+Module: catalog-server
+Test: ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
+index 9f7f351a..431ad757 100644
+--- a/catalog-server/src/main/resources/nuna/ui/refs.js
++++ b/catalog-server/src/main/resources/nuna/ui/refs.js
+@@ -110,7 +110,7 @@ function refPick(where, list) {
+       : `branch · ${plural(r['changed-count'] || 0, 'table')} changed · expires ${expiring(r) ? untilWords(r['expires-at']) : dayMon(r['expires-at'])}`;
+     const read = h('a', {'aria-current': on ? 'true' : null, href: href(Object.assign({}, where, {r: r ? r.name : null})),
+       class: r && expiring(r) ? 'is-warn' : null}, h('b', null, r ? cref(r) : cref('main')), h('span', null, sub));
+-    if (!r) return read;
++    return read;
+     return h('div', {class: 'ref-item', 'data-ref-item': r.name}, read,
+       h('a', {class: 'ref-go', href: refHref(where.c, r.name), 'aria-label': `${r.kind === 'tag' ? 'The tag' : 'What changed on'} @${r.name}`},
+         r.kind === 'tag' ? 'Its page' : 'What changed', icon('right')));
