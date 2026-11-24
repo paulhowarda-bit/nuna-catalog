@@ -5,7 +5,7 @@ import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, sta
   from './auth.js';
 import * as api from './api.js';
 import {auditOpen, groupWords, keepAccess, landingCatalogs, operates, readsData} from './access.js';
-import {$, $$, at, failure, fill, fmt, h, icon, pill} from './dom.js';
+import {$, $$, at, failure, fill, fmt, h, icon, pill, plural} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
@@ -340,6 +340,64 @@ let gotoItems = [];
 let gotoAt = 0;
 let gotoTab = null;
 let queued = [];
+// The catalog's own search for the words typed (Atelier's review, S1; backlog 198): every name the caller may describe,
+// in every catalog, whether or not the console has listed it. `searched` is the fragment the matches answer.
+let found = [];
+let searched = null;
+let searchFailed = null;
+let searchTimer = null;
+
+const pathOfTarget = t => [...(t.namespace || []), ...(t.name ? [t.name] : [])].join('.');
+const asItem = t => ({target: t, path: pathOfTarget(t)});
+
+// ---- what the person opened lately, for Go to a path: kept per person in this browser, a convenience only ----
+
+const recentKey = () => 'nuna.recent.' + ((claims() || {}).sub || '');
+
+function recentTargets() {
+  try {
+    const list = JSON.parse(localStorage.getItem(recentKey()) || '[]');
+    return Array.isArray(list) ? list.filter(t => t && catalogs && catalogs.some(c => c.name === t.catalog)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function keepRecent(t) {
+  const key = x => [x.catalog, x.kind, pathOfTarget(x)].join(SEP);
+  try {
+    const list = [t, ...recentTargets().filter(x => key(x) !== key(t))].slice(0, 8);
+    localStorage.setItem(recentKey(), JSON.stringify(list));
+  } catch {
+    // remembered for this page only
+  }
+}
+
+/** The last word typed, most often the name itself, which the catalog searches for; every word must then match the whole
+ * path, so `fx rates` finds rates in fx. */
+const fragmentOf = words => words.length ? words[words.length - 1] : '';
+
+function search(words) {
+  clearTimeout(searchTimer);
+  const fragment = fragmentOf(words);
+  if (!fragment || fragment === searched) return;
+  searchTimer = setTimeout(async () => {
+    let rows;
+    let failed = null;
+    try {
+      rows = await api.names(fragment);
+    } catch (error) {
+      rows = [];
+      failed = error;
+    }
+    if (!gotoDlg.open || fragmentOf(gotoIn.value.trim().toLowerCase().split(/[\s./]+/).filter(Boolean)) !== fragment) return;
+    found = rows.map(x => asItem(x.kind === 'namespace' ? {catalog: x.catalog, kind: 'namespace', namespace: [...x.namespace, x.name]}
+      : {catalog: x.catalog, kind: x.kind, namespace: x.namespace, name: x.name}));
+    searched = fragment;
+    searchFailed = failed;
+    gotoDraw();
+  }, 150);
+}
 
 function gotoCandidates() {
   const seen = remembered(cat).map(x => ({target: x, path: [...x.namespace, ...(x.name ? [x.name] : [])].join('.')}));
@@ -366,16 +424,31 @@ function gotoDraw() {
   const words = gotoIn.value.trim().toLowerCase().split(/[\s./]+/).filter(Boolean);
   const typedPath = dottedTyped();
   const all = gotoCandidates();
+  const recents = recentTargets().map(asItem);
   const marks = new Map(queued.map(r => [keyOfRow(r), r]));
+  const fragment = fragmentOf(words);
+  const searching = !!fragment && searched !== fragment;
   if (!words.length) {
+    // What the person opened lately comes first, then tonight's queue (Atelier's review, S1).
     const q = queued.map(r => ({target: targetOfRow(r), path: [...r.namespace, r.name].join('.')}));
-    gotoH.textContent = q.length ? 'Queued for tonight, neediest first' : `Listed so far in ${cat}; type to find a path`;
-    gotoItems = (q.length ? q : all).slice(0, 9);
+    gotoH.textContent = recents.length ? (q.length ? 'Opened lately, then queued for tonight' : 'Opened lately')
+      : q.length ? 'Queued for tonight, neediest first' : 'Type part of a name to search every catalog';
+    gotoItems = [...recents.slice(0, q.length ? 4 : 9), ...q].slice(0, 9);
   } else {
-    gotoItems = all.filter(x => words.every(w => x.path.toLowerCase().includes(w)))
-      .sort((a, b) => (a.target.kind === 'namespace') - (b.target.kind === 'namespace') || a.path.length - b.path.length).slice(0, 9);
-    gotoH.textContent = gotoItems.length ? `${gotoItems.length === 9 ? 'First 9' : gotoItems.length} match${gotoItems.length === 1 ? '' : 'es'}`
-      : 'No path listed so far matches';
+    // Opened lately first, then what this catalog has listed, then the catalog's search across every catalog; each
+    // once, and every word typed in its catalog and path.
+    const hit = x => words.every(w => `${x.target.catalog || cat}.${x.path}`.toLowerCase().includes(w));
+    const listed = all.map(x => ({...x, target: {catalog: cat, ...x.target}})).filter(hit)
+      .sort((a, b) => (a.target.kind === 'namespace') - (b.target.kind === 'namespace') || a.path.length - b.path.length);
+    const keyOf = x => [x.target.catalog || cat, x.target.kind, x.path].join(SEP);
+    const seen = new Set();
+    gotoItems = [...recents.filter(hit), ...listed, ...(searching ? [] : found.filter(hit))]
+      .filter(x => !seen.has(keyOf(x)) && seen.add(keyOf(x))).slice(0, 9);
+    gotoH.textContent = searching ? `${gotoItems.length ? plural(gotoItems.length, 'match', 'matches') + ' so far; s' : 'S'}earching every catalog…`
+      : searchFailed ? 'Matches among the names listed so far; the catalog\'s search did not answer'
+        : gotoItems.length ? `${gotoItems.length === 9 ? 'First 9' : gotoItems.length} match${gotoItems.length === 1 ? '' : 'es'}`
+          : 'No match in any catalog';
+    search(words);
     // A full dotted path opens even when the console has not listed it yet: Enter looks it up, level by level, as a
     // deep link does (Atelier's review, F1).
     if (typedPath && !gotoItems.some(x => x.path === typedPath)) {
@@ -393,11 +466,13 @@ function gotoDraw() {
       li.addEventListener('click', () => gotoOpen(i));
       return li;
     }
-    const row = kind === 'table' ? marks.get([cat, it.path].join('.')) : null;
+    const there = it.target.catalog || cat;
+    const row = kind === 'table' ? marks.get([there, it.path].join('.')) : null;
     const reasons = row ? row.assessment.reasons || [] : [];
-    const extra = kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
-      : row ? [pill(reasons.includes('equality-deletes') ? 'bad' : 'warn', (REASONS[reasons[0]] || [null, 'Queued'])[1])] : [];
-    const li = h('li', {role: 'option', id: 'goto-o' + i, 'aria-selected': String(i === gotoAt)},
+    const extra = [there !== cat ? h('span', {class: 'badge', 'data-goto-catalog': there}, there) : null,
+      ...(kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
+        : row ? [pill(reasons.includes('equality-deletes') ? 'bad' : 'warn', (REASONS[reasons[0]] || [null, 'Queued'])[1])] : [])];
+    const li = h('li', {role: 'option', id: 'goto-o' + i, 'aria-selected': String(i === gotoAt), 'data-goto-target': `${there}:${it.path}`},
       icon(kind === 'namespace' ? 'ns' : kind, 'ic ' + (kind === 'namespace' ? 'ico-n' : kind === 'view' ? 'ico-v' : 'ico-t')),
       h('span', {class: 'gp'}, parts.slice(0, -1).map(x => [x + '.', h('wbr')]), h('b', null, parts[parts.length - 1])), h('span', {class: 'gx'}, extra));
     li.addEventListener('click', () => gotoOpen(i));
@@ -409,10 +484,11 @@ function gotoDraw() {
     });
     return li;
   }));
-  if (!gotoItems.length) {
+  if (!gotoItems.length && words.length && !searching) {
     const example = (all.find(x => x.target.kind === 'table') || {}).path || 'namespace.table';
-    gotoList.append(h('li', {class: 'none'}, `Not found among the names listed so far in ${cat}. `
-      + `Open a namespace, or type the full dotted path, such as ${example}.`));
+    gotoList.append(h('li', {class: 'none'}, searchFailed ? `Not found among the names listed so far in ${cat}. `
+      + `Open a namespace, or type the full dotted path, such as ${example}.`
+      : 'No namespace, table or view you may see has a name like that, in any catalog. Check the spelling, or type fewer letters.'));
   }
   gotoMark();
 }
@@ -436,7 +512,9 @@ function gotoOpen(i) {
     return;
   }
   gotoDlg.close();
-  location.hash = objectHref({...it.target, ref: readingNow()}, gotoTab === 'audit' ? 'audit' : null);
+  // The ref read goes along only within its own catalog.
+  const there = it.target.catalog || cat;
+  location.hash = objectHref({...it.target, catalog: there, ref: there === cat ? readingNow() : null}, gotoTab === 'audit' ? 'audit' : null);
 }
 
 const absent = error => {
@@ -498,6 +576,9 @@ async function openGoto(tab = null) {
   gotoIn.value = '';
   gotoAt = 0;
   queued = [];
+  found = [];
+  searched = null;
+  searchFailed = null;
   gotoDraw();
   if (!gotoDlg.open) gotoDlg.showModal();
   gotoIn.focus();
@@ -610,6 +691,8 @@ function render() {
     title = 'Not found';
     content = notFound();
   }
+  if (!r.page && r.c && (r.k === 'table' || r.k === 'view') && r.n) keepRecent({catalog: r.c, kind: r.k, namespace: r.ns, name: r.n});
+  else if (!r.page && r.c && r.k === 'namespace' && r.ns.length) keepRecent({catalog: r.c, kind: 'namespace', namespace: r.ns});
   const reading = !r.page && r.k !== 'ref' ? r.r : null;
   const carried = r.page && r.page !== 'service' ? r.r : null;
   setChrome(navKey, reading || carried);

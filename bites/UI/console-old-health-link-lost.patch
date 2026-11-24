@@ -3,7 +3,7 @@ Module: catalog-server
 Test: ConsoleHealthBrowserTest#anOperatorSeesDrReplicationAndTheStore
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/route.js b/catalog-server/src/main/resources/nuna/ui/route.js
-index f176a7ae..15fed729 100644
+index a4708f10..bdb7d2ea 100644
 --- a/catalog-server/src/main/resources/nuna/ui/route.js
 +++ b/catalog-server/src/main/resources/nuna/ui/route.js
 @@ -7,7 +7,7 @@ export const SEP = '\u001f';
@@ -13,5 +13,5 @@ index f176a7ae..15fed729 100644
 -const OLD_PAGES = {health: 'service'};
 +const OLD_PAGES = {};
  const OLD_TABS = {health: 'maintenance'};
- 
- /** {page, c, k, ns: [], n, tab, g, r} from the fragment. A catalog with no page is that catalog's browse page. */
+ // A table's ten tabs became six, and a namespace's and a view's Governance and Grants became Access (Atelier's review,
+ // S2; backlog 199): an old link opens the tab that now holds what it showed.

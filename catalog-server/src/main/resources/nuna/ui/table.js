@@ -1,8 +1,9 @@
 // A table's and a view's pages, each tab on its own route. The table's metadata comes from loadTable (with every
 // snapshot, and no storage credentials), asked once a minute at most: every load is audited. Its metadata log is the
-// catalog's commit journal, with who made each change (item 130). "Compact now", for a caller who may modify the table,
-// and a request while it waits (item 114). Its Properties tab changes the listed write settings (item 141). A view's
-// Governance tab is the table's, in words for a view and without the labels that do nothing to one (item 146).
+// catalog's commit journal, with who made each change (item 130), on its History tab. "Compact now", for a caller who
+// may modify the table, and a request while it waits (item 114). Its Settings drawer changes the listed write settings
+// (item 141). A view's Access tab is the table's, in words for a view and without the labels that do nothing to one
+// (item 146).
 // Read through a catalog branch or tag (item 109), a table loads through catalog@ref, its metadata log is the ref's,
 // the tabs that are main's say so, and Compact now is not offered; a table's own refs are its "Iceberg refs".
 
@@ -12,7 +13,7 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
-import {auditTab, exportDialog, governanceSummary, governanceTab, grantsTab} from './panels.js';
+import {accessTab, auditTab, exportDialog, governanceSummary} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
@@ -81,19 +82,22 @@ function addCount(tabs, key, n) {
 
 // ---- the table page ----
 
-const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['snapshots', 'Snapshots'], ['partitioning', 'Partitioning'],
-  ['properties', 'Properties'], ['maintenance', 'Maintenance'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit'],
-  ['metadata-log', 'Metadata log']];
+// Six tabs, from ten (Atelier's review, S2; backlog 199): Schema holds partitioning and sort order, History the
+// snapshots and the metadata log, one row per commit, Access the governance and grants. The properties are on Overview
+// and change in the Settings drawer (tab=settings), which opens over it.
+const TABLE_TABS = [['', 'Overview'], ['schema', 'Schema'], ['history', 'History'], ['access', 'Access'], ['maintenance', 'Maintenance'],
+  ['audit', 'Audit']];
 
 export function tablePage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'table-page'});
-  const key = TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
+  const key = tab === 'settings' ? tab : TABLE_TABS.some(([k]) => k === (tab || '')) ? tab || '' : null;
   const title = h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('table')), h('h1', {tabindex: '-1'}, target.name));
-  const tabs = tabsNav('Table', TABLE_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key,
+  const tabs = tabsNav('Table', TABLE_TABS.filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key === 'settings' ? '' : key,
     k => objectHref(target, k || null));
   // The export is main's metadata and journal, so a page read through a ref offers none (item 109; item 172).
-  const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(), target.ref ? null
-    : h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
+  const acts = h('div', {class: 'side tbl-acts'}, copyLinkButton(),
+    h('a', {class: 'btn sm', href: objectHref(target, 'settings'), 'data-act': 'settings'}, 'Settings'), target.ref ? null
+      : h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-meta', onclick: () => exportDialog(target)}, icon('down'), 'Export metadata'));
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, acts);
   main.append(head, tabs);
   const body = tabBody(main);
@@ -103,8 +107,6 @@ export function tablePage(target, tab, route) {
     const m = t.metadata;
     title.insertBefore(badge(`iceberg v${m['format-version']}`, 'strong'), title.children[2] || null);
     addCount(tabs, 'schema', (m.schemas || []).length);
-    addCount(tabs, 'snapshots', (m.snapshots || []).length);
-    addCount(tabs, 'partitioning', (m['partition-specs'] || []).length);
   }, () => {});
   const reload = () => show();
   const afterChange = () => {
@@ -123,10 +125,8 @@ export function tablePage(target, tab, route) {
       fill(body, h('div', {class: 'empty'}, h('h3', null, 'A table has no such tab')));
     } else if (key === 'maintenance') {
       load(body, () => throughRef(target, () => metadata, 'health', () => tableHealthTab(target, reload)));
-    } else if (key === 'governance') {
-      load(body, () => throughRef(target, () => metadata, 'governance', () => governanceTab(target, reload)));
-    } else if (key === 'grants') {
-      load(body, () => throughRef(target, () => metadata, 'grants', () => grantsTab(target)));
+    } else if (key === 'access') {
+      load(body, () => throughRef(target, () => metadata, 'access', () => accessTab(target, reload)));
     } else if (key === 'audit' && !trailOpen(target.catalog)) {
       fill(body, closedNote(trailWords(target.catalog)));
     } else if (key === 'audit') {
@@ -137,12 +137,13 @@ export function tablePage(target, tab, route) {
         try {
           t = await metadata;
         } catch (error) {
-          return refusedLoad(error, 'Maintenance, Governance, Grants and Audit', target.ref);
+          return refusedLoad(error, 'Access, Maintenance and Audit', target.ref);
         }
         const ref = await readingRef(target.catalog, target.ref);
-        const shown = {'': overviewTab, schema: schemaTab, snapshots: snapshotsTab, partitioning: partitionTab, 'metadata-log': metadataLogTab,
-          properties: (x, y) => propertiesTab(x, y, afterChange, ref)}[key](target, t);
-        return target.ref && key === 'snapshots' ? [refNote(ref || target.ref, 'snapshots'), shown] : shown;
+        const shown = {'': overviewTab, schema: (x, y) => h('div', {class: 'stack'}, schemaTab(x, y), partitionTab(x, y)),
+          history: historyTab,
+          settings: (x, y) => [overviewTab(x, y), settingsDrawer(x, propertiesTab(x, y, afterChange, ref))]}[key](target, t);
+        return target.ref && key === 'history' ? [refNote(ref || target.ref, 'snapshots'), shown] : shown;
       });
     }
   };
@@ -206,7 +207,7 @@ function overviewTab(target, t) {
   const health = h('div');
   const gov = h('div');
   load(health, () => healthSummary(target));
-  load(gov, async () => h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'governance')}, 'Governance')),
+  load(gov, async () => h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'access')}, 'Governance')),
     await governanceSummary(target)));
   const refs = Object.entries(m.refs || {});
   const by = h('span', {class: 'fine', id: 'current-by'});
@@ -222,7 +223,7 @@ function overviewTab(target, t) {
         kpi('Rows', rowsWords(sum['total-records']), sizeWords(sum['total-files-size'])),
         kpi('Data files', sum['total-data-files'] !== undefined ? fmt(sum['total-data-files']) : '–',
           sum['total-delete-files'] !== undefined ? `${fmt(sum['total-delete-files'])} delete files` : null),
-        kpi(h('a', {href: objectHref(target, 'snapshots')}, 'Snapshots'), fmt(snaps.length), target.ref ? `as @${target.ref} has them`
+        kpi(h('a', {href: objectHref(target, 'history')}, 'Snapshots'), fmt(snaps.length), target.ref ? `as @${target.ref} has them`
           : refs.length ? plural(refs.length, 'Iceberg ref') : 'no Iceberg refs'),
         kpi(h('a', {href: objectHref(target, 'schema')}, 'Schemas'), fmt(schemas.length),
           schemas.length > 1 ? plural(schemas.length - 1, 'change') : 'as created')),
@@ -238,7 +239,7 @@ function overviewTab(target, t) {
         ['Last sequence number', code(String(m['last-sequence-number'] ?? ''))],
         m['next-row-id'] !== undefined ? ['Next row id', code(String(m['next-row-id']))] : null,
         ['Last updated', when(m['last-updated-ms'])],
-        ['Properties', [propsDd(m.properties), ' ', h('a', {href: objectHref(target, 'properties')}, 'Settings')]],
+        ['Properties', [propsDd(m.properties), ' ', h('a', {href: objectHref(target, 'settings')}, 'Settings')]],
       ]))),
     h('div', {class: 'stack'}, health, gov,
       refs.length ? engineRefs(target, refs.map(([name, ref]) => [refBadge(name, ref.type),
@@ -274,6 +275,23 @@ function propertiesTab(target, t, reload, ref) {
     write: (updates, removals) => api.tableProperties(warehouseOf(target), target.namespace, target.name, m['table-uuid'],
       updates, removals)});
   return target.ref ? [refNote(ref || target.ref, 'props'), tab] : tab;
+}
+
+/**
+ * The table's settings in a drawer over its Overview (Atelier, 2026-11-23: properties change behind Settings; backlog
+ * 199). It has its own link, tab=settings, which old Properties links open; closing it goes back to the Overview.
+ */
+function settingsDrawer(target, content) {
+  const back = objectHref(target, null);
+  const title = h('h2', {id: 'settings-drawer-h', tabindex: '-1'}, `Settings of ${target.name}`);
+  const drawer = h('aside', {class: 'drawer', id: 'settings-drawer', 'aria-labelledby': 'settings-drawer-h'},
+    h('div', {class: 'drawer-h'}, title, h('a', {class: 'btn sm ghost', href: back, 'data-act': 'close-settings', 'aria-label': 'Close settings'},
+      icon('x'))), content);
+  drawer.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !document.querySelector('dialog[open]')) location.hash = back;
+  });
+  setTimeout(() => title.focus(), 0);
+  return [h('a', {class: 'drawer-scrim', href: back, tabindex: '-1', 'aria-hidden': 'true'}), drawer];
 }
 
 /** A table's own Iceberg ref, set by an engine: one icon for them all, apart from the catalog's branches and tags (backlog 191). */
@@ -485,19 +503,34 @@ function lanes(target, list, m, onPick) {
 const SHORT = ['operation', 'added-data-files', 'deleted-data-files', 'added-records', 'deleted-records', 'added-delete-files',
   'added-position-deletes', 'added-equality-deletes', 'total-records', 'total-data-files', 'total-delete-files', 'engine-name', 'engine-version'];
 
-function snapshotsTab(target, t) {
+// ---- history: one row per commit, with the snapshot it made (Atelier, 2026-11-23; backlog 199) ----
+
+const signed = (add, del) => {
+  const a = Number(add) || 0;
+  const d = Number(del) || 0;
+  if (a && d) return `+${fmt(a)} −${fmt(d)}`;
+  if (d) return '−' + fmt(d);
+  return a ? '+' + fmt(a) : '0';
+};
+
+/**
+ * The table's history: each commit the catalog's journal keeps, newest first, with who made it and the snapshot it
+ * added, if any; the snapshot lanes above, and the selected snapshot's summary and time-travel SQL beside. A commit
+ * that added no snapshot (a schema or spec change, a property) shows none.
+ */
+function historyTab(target, t) {
   const m = t.metadata;
+  const props = m.properties || {};
   const list = snapshotsOf(m);
-  if (!list.length) {
-    return h('div', {class: 'empty'}, h('h3', null, 'No snapshot yet'), h('p', null, 'The table was created and has had no commit.'));
-  }
+  const byId = new Map(list.map(sn => [String(sn['snapshot-id']), sn]));
   const refs = refsBySnapshot(m);
-  let commits = new Map();
-  let shown = Math.min(10, list.length);
-  let current = currentOf(m) || list[0];
+  const kept = (m['metadata-log'] || []).length + 1;
+  let current = currentOf(m) || list[0] || null;
   let whole = false;
+  const box = h('div', {class: 'grid-21', id: 'history-tab'});
   const tbody = h('tbody');
   const more = h('p', {class: 'fine'});
+  const logMeta = h('span', {class: 'meta'}, 'newest first');
   const meta = h('span', {class: 'meta'});
   const raw = h('div');
   const sql = h('button', {class: 'btn sm', type: 'button', onclick: e => copyText(
@@ -505,14 +538,9 @@ function snapshotsTab(target, t) {
   const wholeB = h('button', {class: 'btn sm ghost', type: 'button'}, 'Show the whole summary');
   const select = sn => {
     current = sn;
-    const i = list.indexOf(sn);
-    if (i >= shown) {
-      shown = i + 1;
-      fillRows();
-    }
-    for (const tr of $$('tr', tbody)) tr.classList.toggle('is-sel', tr.dataset.id === String(sn['snapshot-id']));
-    for (const c of $$('.lanes circle[data-id]', box)) c.classList.toggle('is-sel', c.dataset.id === String(sn['snapshot-id']));
     const id = String(sn['snapshot-id']);
+    for (const tr of $$('tr[data-id]', tbody)) tr.classList.toggle('is-sel', tr.dataset.id === id);
+    for (const c of $$('.lanes circle[data-id]', box)) c.classList.toggle('is-sel', c.dataset.id === id);
     meta.textContent = `${id.slice(0, 4)}…${id.slice(-4)} · ${when(sn['timestamp-ms'])} · ${opOf(sn)}`;
     const summary = sn.summary || {};
     const shownSummary = whole ? Object.assign({'snapshot-id': sn['snapshot-id'], 'parent-snapshot-id': sn['parent-snapshot-id'],
@@ -525,45 +553,68 @@ function snapshotsTab(target, t) {
     wholeB.textContent = whole ? 'Show the short summary' : 'Show the whole summary';
     select(current);
   });
-  const signed = (add, del) => {
-    const a = Number(add) || 0;
-    const d = Number(del) || 0;
-    if (a && d) return `+${fmt(a)} −${fmt(d)}`;
-    if (d) return '−' + fmt(d);
-    return a ? '+' + fmt(a) : '0';
+  const row = e => {
+    const added = (Array.isArray(e.updates) ? e.updates : []).find(u => u.action === 'add-snapshot' && u.snapshot);
+    const id = added ? String(added.snapshot['snapshot-id']) : null;
+    const sn = id ? byId.get(id) || added.snapshot : null;
+    const sum = (sn && sn.summary) || {};
+    const btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false',
+      'aria-label': `Version ${e['new-version']}${e.branch ? ` on ${e.branch === 'main' ? 'main' : '@' + e.branch}` : ''}, what it changed`}, 'Show');
+    // Through a ref, each entry names its line: the branch's own versions number from 1, so main's can share them.
+    const line = e.branch ? h('span', {class: 'mlog-line'}, e.branch === 'main' ? 'main' : '@' + e.branch) : null;
+    const tr = h('tr', {class: e['new-location'] === t['metadata-location'] ? 'is-cur' : null, 'data-version': String(e['new-version']),
+      'data-line': e.branch || null, 'data-id': id},
+      h('td', {class: 'num'}, line, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
+      h('td', {class: 'wrap'}, changeWords(e.updates, e['new-version'])),
+      h('td', {class: 'name snap'}, sn ? [h('button', {class: 'row-pick', type: 'button', 'aria-label': `Snapshot ${id}, ${opOf(sn)}`,
+        onclick: () => select(sn)}, id), ' ', muted('· ' + opOf(sn))] : muted('–')),
+      h('td', {class: 'num'}, sn ? signed(sum['added-records'], sum['deleted-records']) : null),
+      h('td', {class: 'by'}, byWords(e)),
+      h('td', null, sn ? (refs.get(sn['snapshot-id']) || []).flatMap(([name, type], i) => [i ? ' ' : '', refBadge(name, type)]) : null),
+      h('td', null, btn));
+    const det = h('tr', {class: 'mlog-det', hidden: true}, h('td', {colspan: '8'},
+      h('p', {class: 'fine'}, code(e['new-location'] || '')), jsonPre({'commit-id': e['commit-id'], updates: e.updates || []})));
+    btn.addEventListener('click', () => {
+      const open = det.hidden;
+      det.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.textContent = open ? 'Hide' : 'Show';
+    });
+    return [tr, det];
   };
-  const row = sn => {
-    const sum = sn.summary || {};
-    const id = sn['snapshot-id'];
-    const tr = h('tr', {class: id === m['current-snapshot-id'] ? 'is-cur' : null, 'data-id': String(id)},
-      h('td', {class: 'name'}, h('button', {class: 'row-pick', type: 'button', 'aria-label': `Snapshot ${id}, ${when(sn['timestamp-ms'])}, ${opOf(sn)}`},
-        String(id))),
-      h('td', {class: 'tnum'}, when(sn['timestamp-ms'])),
-      h('td', null, opOf(sn), sum['engine-name'] ? [' ', muted('· ' + sum['engine-name'])] : null),
-      h('td', {class: 'num'}, signed(sum['added-records'], sum['deleted-records'])),
-      h('td', {class: 'num'}, opOf(sn) === 'replace' ? `${fmt(Number(sum['deleted-data-files']) || 0)} → ${fmt(Number(sum['added-data-files']) || 0)}`
-        : Number(sum['added-delete-files']) ? `+${fmt(Number(sum['added-delete-files']))} delete` : signed(sum['added-data-files'], sum['deleted-data-files'])),
-      h('td', {class: 'by'}, commits.has(String(id)) ? byWords(commits.get(String(id))) : null),
-      h('td', null, (refs.get(id) || []).flatMap(([name, type], i) => [i ? ' ' : '', refBadge(name, type)])));
-    tr.addEventListener('click', () => select(sn));
-    return tr;
-  };
-  const fillRows = () => {
-    tbody.replaceChildren(...list.slice(0, shown).map(row));
-    const left = list.length - shown;
-    more.replaceChildren(left ? `${plural(left, 'older snapshot')}. ` : `All ${fmt(list.length)} shown.`);
-    if (left) {
-      more.append(h('button', {class: 'linkish', type: 'button', onclick: () => {
-        shown = Math.min(list.length, shown + 50);
-        fillRows();
-        select(current);
-      }}, left <= 50 ? `Show the other ${left}` : 'Show the next 50'));
+  let shown = 0;
+  let id = null;
+  const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token, target.ref)).then(answer => {
+    const entries = answer.journal || [];
+    tbody.append(...entries.flatMap(row));
+    shown += entries.length;
+    if (current) select(current);
+    const next = answer['next-page-token'];
+    logMeta.textContent = `${plural(shown, 'commit')} shown · newest first`;
+    const stops = !next && answer.ref && answer.ref['log-stops-at-cut'];
+    more.replaceChildren(next ? `Older commits follow. ` : stops
+      ? `The versions at and below @${answer.ref.name}'s point, ${fmt(answer.ref['cut-version'])}, came from a branch or tag that has ended, `
+        + 'whose own commits the catalog no longer reads. '
+      : `Every commit the journal keeps is shown. `);
+    if (next) {
+      more.append(h('button', {class: 'linkish', type: 'button', onclick: e => {
+        e.currentTarget.disabled = true;
+        page(next).catch(error => more.replaceChildren(failure(error, {compact: true})));
+      }}, 'Show the next 25'));
     }
-  };
+  });
+  const log = h('div', {class: 'panel', id: 'metadata-log'});
+  load(log, async () => {
+    await page(null);
+    return [h('h2', null, 'Commits ', logMeta),
+      tbl('stack-line mlog', [['Version', 'num'], 'Written', 'Change', 'Snapshot', ['Rows', 'num'], 'By', 'Iceberg refs', ''], tbody), more,
+      h('p', {class: 'fine'}, 'Each row is a commit that wrote one metadata file, from the catalog\'s commit journal, with who made it '
+        + 'and the snapshot it added. The journal keeps every commit; the table keeps the files listed under Kept.')];
+  });
   const expiry = h('div');
   load(expiry, async () => {
-    const p = await api.policy(target);
-    const r = p.resolved || {};
+    const pol = await api.policy(target);
+    const r = pol.resolved || {};
     const fact = k => [code(k.replace('snapshot-expiry.', '')), r[k] ? [h('b', null, String(r[k].value)), ' · ', sourceWords(r[k].source),
       r[k].reason ? [h('br'), h('span', {class: 'fine'}, `"${r[k].reason}"`)] : null] : muted('–')];
     const on = r['snapshot-expiry.enabled'] && String(r['snapshot-expiry.enabled'].value) === 'true';
@@ -571,24 +622,29 @@ function snapshotsTab(target, t) {
       facts(['snapshot-expiry.enabled', 'snapshot-expiry.max-snapshot-age', 'snapshot-expiry.min-snapshots-to-keep'].map(fact), 'one'),
       h('p', {class: 'fine'}, 'A tagged snapshot stays as long as its tag keeps it.'));
   });
-  fillRows();
-  snapshotCommits(target, list.map(sn => sn['snapshot-id'])).then(found => {
-    commits = found;
-    for (const tr of $$('tr', tbody)) {
-      const e = commits.get(tr.dataset.id);
-      if (e) fill($('td.by', tr), byWords(e));
-    }
-  }, () => {});
-  const first = list[list.length - 1]['timestamp-ms'];
-  const last = list[0]['timestamp-ms'];
-  const box = h('div', {class: 'stack'},
-    panel('History and Iceberg refs', `${plural(list.length, 'snapshot')} · ${dayOf(first) === dayOf(last) ? dayOf(last) : `${dayOf(first)} to ${dayOf(last)}`}`,
-      lanes(target, list, m, select), h('p', {class: 'fine only-sm'}, 'Opens at the newest snapshot; older ones are to the left.')),
-    h('div', {class: 'grid-21'},
-      panel('Snapshots', 'newest first', tbl('snaps stack-line', ['Snapshot', 'Committed', 'Operation', ['Rows', 'num'], ['Files', 'num'], 'By', 'Iceberg refs'], tbody), more),
-      h('div', {class: 'stack'}, h('div', {class: 'panel', id: 'selected-snapshot'}, h('h2', null, 'Selected snapshot ', meta), raw,
-        h('div', {class: 'refusal-acts'}, sql, wholeB)), expiry)));
-  select(current);
+  const span = list.length ? (() => {
+    const first = dayOf(list[list.length - 1]['timestamp-ms']);
+    const last = dayOf(list[0]['timestamp-ms']);
+    return first === last ? last : `${first} to ${last}`;
+  })() : null;
+  box.append(
+    h('div', {class: 'stack'},
+      list.length ? panel('Snapshots and Iceberg refs', `${plural(list.length, 'snapshot')} · ${span}`, lanes(target, list, m, select),
+        h('p', {class: 'fine only-sm'}, 'Opens at the newest snapshot; older ones are to the left.'))
+        : h('div', {class: 'empty'}, h('h3', null, 'No snapshot yet'), h('p', null, 'No commit has written data to the table.')),
+      log),
+    h('div', {class: 'stack'},
+      current ? h('div', {class: 'panel', id: 'selected-snapshot'}, h('h2', null, 'Selected snapshot ', meta), raw,
+        h('div', {class: 'refusal-acts'}, sql, wholeB)) : null,
+      expiry,
+      panel('Current file', null, facts([['File', code(t['metadata-location'] || '')], ['Written', when(m['last-updated-ms'])],
+        ['Format version', String(m['format-version'])]])),
+      panel('Kept', `${plural(kept, 'file')} in the table's metadata`, facts([
+        [code('write.metadata.previous-versions-max'), props['write.metadata.previous-versions-max']
+          ? [props['write.metadata.previous-versions-max'], ' · table'] : '100 · built-in'],
+      ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the current one and those before it, '
+        + 'up to the limit. A file that falls off the list is removed by the orphan scan.'))));
+  if (current) select(current);
   return box;
 }
 
@@ -679,80 +735,9 @@ function byWords(e) {
     e.engine ? [' ', muted('via ' + e.engine)] : null];
 }
 
-function metadataLogTab(target, t) {
-  const m = t.metadata;
-  const props = m.properties || {};
-  const snapLog = (m['snapshot-log'] || []).slice().sort((a, b) => b['timestamp-ms'] - a['timestamp-ms']);
-  const kept = (m['metadata-log'] || []).length + 1;
-  const tbody = h('tbody');
-  const more = h('p', {class: 'fine'});
-  const meta = h('span', {class: 'meta'}, 'newest first');
-  let shown = 0;
-  const row = e => {
-    const btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false',
-      'aria-label': `Version ${e['new-version']}${e.branch ? ` on ${e.branch === 'main' ? 'main' : '@' + e.branch}` : ''}, what it changed`}, 'Show');
-    // Through a ref, each entry names its line: the branch's own versions number from 1, so main's can share them.
-    const line = e.branch ? h('span', {class: 'mlog-line'}, e.branch === 'main' ? 'main' : '@' + e.branch) : null;
-    const tr = h('tr', {class: e['new-location'] === t['metadata-location'] ? 'is-cur' : null, 'data-version': String(e['new-version']),
-      'data-line': e.branch || null},
-      h('td', {class: 'num'}, line, fmt(e['new-version'])), h('td', {class: 'tnum'}, when(e['committed-at'])),
-      h('td', {class: 'wrap'}, changeWords(e.updates, e['new-version'])), h('td', {class: 'by'}, byWords(e)), h('td', null, btn));
-    const det = h('tr', {class: 'mlog-det', hidden: true}, h('td', {colspan: '5'},
-      h('p', {class: 'fine'}, code(e['new-location'] || '')), jsonPre({'commit-id': e['commit-id'], updates: e.updates || []})));
-    btn.addEventListener('click', () => {
-      const open = det.hidden;
-      det.hidden = !open;
-      btn.setAttribute('aria-expanded', String(open));
-      btn.textContent = open ? 'Hide' : 'Show';
-    });
-    return [tr, det];
-  };
-  let id = null;
-  const page = token => (id || (id = api.governance(target).then(g => g.target.id))).then(x => api.metadataLog(target.catalog, x, token, target.ref)).then(answer => {
-    const entries = answer.journal || [];
-    tbody.append(...entries.flatMap(row));
-    shown += entries.length;
-    const next = answer['next-page-token'];
-    meta.textContent = `${plural(shown, 'commit')} shown · newest first`;
-    const stops = !next && answer.ref && answer.ref['log-stops-at-cut'];
-    more.replaceChildren(next ? `Older commits follow. ` : stops
-      ? `The versions at and below @${answer.ref.name}'s point, ${fmt(answer.ref['cut-version'])}, came from a branch or tag that has ended, `
-        + 'whose own commits the catalog no longer reads. '
-      : `Every commit the journal keeps is shown. `);
-    if (next) {
-      more.append(h('button', {class: 'linkish', type: 'button', onclick: e => {
-        e.currentTarget.disabled = true;
-        page(next).catch(error => more.replaceChildren(failure(error, {compact: true})));
-      }}, 'Show the next 25'));
-    }
-  });
-  const log = h('div', {class: 'panel', id: 'metadata-log'});
-  load(log, async () => {
-    await page(null);
-    return [h('h2', null, 'Metadata files ', meta),
-      tbl('stack-line mlog', [['Version', 'num'], 'Written', 'Change', 'By', ''], tbody), more,
-      h('p', {class: 'fine'}, 'Each row is the commit that wrote one metadata file, from the catalog\'s commit journal, with who made it. '
-        + 'The journal keeps every commit; the table keeps the files listed under Kept.')];
-  });
-  return h('div', {class: 'grid-21'},
-    h('div', {class: 'stack'}, log,
-      h('div', {class: 'panel', id: 'snapshot-log'}, h('h2', null, 'Snapshot log ', h('span', {class: 'meta'}, 'main, newest first')),
-        snapLog.length ? tbl('stack-line', ['When', 'Snapshot'], snapLog.map(e => h('tr', {'data-id': String(e['snapshot-id'])},
-          h('td', {class: 'tnum'}, when(e['timestamp-ms'])), h('td', {class: 'name'}, String(e['snapshot-id'])))))
-          : h('p', {class: 'muted'}, 'Main has pointed at no snapshot yet.'))),
-    h('div', {class: 'stack'},
-      panel('Current file', null, facts([['File', code(t['metadata-location'] || '')], ['Written', when(m['last-updated-ms'])],
-        ['Format version', String(m['format-version'])]])),
-      panel('Kept', `${plural(kept, 'file')} in the table's metadata`, facts([
-        [code('write.metadata.previous-versions-max'), props['write.metadata.previous-versions-max']
-          ? [props['write.metadata.previous-versions-max'], ' · table'] : '100 · built-in'],
-      ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the current one and those before it, '
-        + 'up to the limit. A file that falls off the list is removed by the orphan scan.'))));
-}
-
 // ---- the view page ----
 
-const VIEW_TABS = [['', 'Overview'], ['versions', 'Versions'], ['governance', 'Governance'], ['grants', 'Grants'], ['audit', 'Audit']];
+const VIEW_TABS = [['', 'Overview'], ['versions', 'Versions'], ['access', 'Access'], ['audit', 'Audit']];
 
 export function viewPage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'view-page'});
@@ -772,8 +757,7 @@ export function viewPage(target, tab, route) {
   }, () => {});
   const show = () => {
     if (key === null) fill(body, h('div', {class: 'empty'}, h('h3', null, 'A view has no such tab')));
-    else if (key === 'governance') load(body, () => throughRef(target, () => loaded, null, () => governanceTab(target, show)));
-    else if (key === 'grants') load(body, () => throughRef(target, () => loaded, null, () => grantsTab(target)));
+    else if (key === 'access') load(body, () => throughRef(target, () => loaded, null, () => accessTab(target, show)));
     else if (key === 'audit' && !trailOpen(target.catalog)) fill(body, closedNote(trailWords(target.catalog)));
     else if (key === 'audit') load(body, () => throughRef(target, () => loaded, null, () => auditTab(target)));
     else {
@@ -782,7 +766,7 @@ export function viewPage(target, tab, route) {
         try {
           v = await loaded;
         } catch (error) {
-          return refusedLoad(error, 'Governance, Grants and Audit', target.ref);
+          return refusedLoad(error, 'Access and Audit', target.ref);
         }
         return key === 'versions' ? versionsTab(v) : viewOverview(target, v);
       });

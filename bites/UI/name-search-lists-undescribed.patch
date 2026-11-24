@@ -1,0 +1,17 @@
+Breaks: The name search lists tables and views the caller may not describe.
+Module: catalog-server
+Test: NameSearchRoutesTest#onlyWhatTheCallerMayDescribeIsListed
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+index b54f2682..9e3b18d0 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+@@ -162,7 +162,7 @@ class NameSearchRoutes {
+                     .map(object -> new Authorizer.Request(new Target.TableOrView(object), DESCRIBE)).toList());
+             Set<UUID> described = new HashSet<>();
+             for (int i = 0; i < held.size(); i++) {
+-                if (decisions.get(i).allowed()) {
++                if (true) {
+                     described.add(held.get(i).id());
+                 }
+             }

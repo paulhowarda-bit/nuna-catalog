@@ -1,0 +1,17 @@
+Breaks: The name search lists namespaces the caller holds nothing on or in.
+Module: catalog-server
+Test: NameSearchRoutesTest#onlyWhatTheCallerMayDescribeIsListed
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+index b54f2682..3c6ee330 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+@@ -251,7 +251,7 @@ class NameSearchRoutes {
+                         levels.add(namespace.name().display());
+                         todo.add(new Parent(namespace.id(), List.copyOf(levels), open));
+                         if (holds(namespace.name().display(), fragment)
+-                                && (open || seen.shown().contains(namespace.id()))) {
++                                ) {
+                             if (rows.size() == size) {
+                                 return true;
+                             }

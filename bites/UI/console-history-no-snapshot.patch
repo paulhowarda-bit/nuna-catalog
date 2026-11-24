@@ -1,0 +1,17 @@
+Breaks: History's commits no longer name the snapshot each added.
+Module: catalog-server
+Test: ConsoleBrowserTest#theTableTabsShowSchemasSpecsSnapshotsAndHistory
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/table.js b/catalog-server/src/main/resources/nuna/ui/table.js
+index 7ea2104b..dd35d4f3 100644
+--- a/catalog-server/src/main/resources/nuna/ui/table.js
++++ b/catalog-server/src/main/resources/nuna/ui/table.js
+@@ -555,7 +555,7 @@ function historyTab(target, t) {
+   });
+   const row = e => {
+     const added = (Array.isArray(e.updates) ? e.updates : []).find(u => u.action === 'add-snapshot' && u.snapshot);
+-    const id = added ? String(added.snapshot['snapshot-id']) : null;
++    const id = null;
+     const sn = id ? byId.get(id) || added.snapshot : null;
+     const sum = (sn && sn.summary) || {};
+     const btn = h('button', {class: 'btn sm ghost', type: 'button', 'aria-expanded': 'false',

@@ -14,11 +14,11 @@ import {$, at, badge, code, copyButton, copyText, facts, fill, fmt, h, icon, loa
 import {catalogHref, objectHref, pageHref, warehouseOf} from './route.js';
 import {queue, queueOf} from './queue.js';
 import {reveal, treeOf} from './tree.js';
-import {auditTab, governanceMarks, governanceTab, grantsTab, markPills} from './panels.js';
+import {accessTab, auditTab, governanceMarks, markPills} from './panels.js';
 import {tablePage, viewPage} from './table.js';
 import {NAMESPACE_SETTINGS, settingsTab} from './settings.js';
 import {readingRef, readOnlyNote, refChrome, refNote, refPage, refsCount, refsTab} from './refs.js';
-import {auditOpen, closedNote, may, trailOpen, trailWords} from './access.js';
+import {closedNote, trailOpen, trailWords} from './access.js';
 
 /** The path above a page: the catalog (catalog@ref through a ref), then each namespace; a long one folds its far end on a phone. */
 export function crumbsFor(catalog, levels, last, ref) {
@@ -202,7 +202,9 @@ const countWords = (n, w) => n ? plural(n, w) : `no ${w}s`;
 
 // ---- the catalog ----
 
-const CATALOG_TABS = ['', 'properties', 'refs'];
+// A catalog's tabs are its own: what is in it, its branches and tags, its properties. Governance, Audit and the rest
+// are the rail's catalog-wide pages (Atelier, 2026-11-23; backlog 199).
+const CATALOG_TABS = ['', 'refs', 'properties'];
 
 /** A tab's count, added once it is known. */
 function addCount(tabs, key, n) {
@@ -228,11 +230,8 @@ function catalogPage(catalog, tab, route) {
       x ? h('p', {class: 'sub'}, `${countWords(x.ns.length, 'namespace')} · `,
         x.q.length ? `${plural(x.q.length, 'table')} queued for tonight` : 'nothing you may read is queued for tonight') : null,
       side);
-    const tabs = tabsNav('Catalog', [['', 'Contents', x ? x.ns.length : null], ['properties', 'Properties'], ['governance', 'Governance'],
-      ['grants', 'Grants'], ['audit', 'Audit'], ['refs', 'Branches and tags']]
-      .filter(([k]) => (k !== 'grants' || may(catalog, 'manage-grants')) && (k !== 'audit' || auditOpen(catalog))), key,
-    k => ({governance: pageHref('governance', catalog), grants: pageHref('governance', catalog, 'grants'),
-      audit: pageHref('audit', catalog), refs: catalogHref(catalog, 'refs')})[k] || catalogHref(catalog, k || null, ref));
+    const tabs = tabsNav('Catalog', [['', 'Contents', x ? x.ns.length : null], ['refs', 'Branches and tags'], ['properties', 'Properties']],
+      key, k => k === 'refs' ? catalogHref(catalog, 'refs') : catalogHref(catalog, k || null, ref));
     refsCount(catalog).then(n => addCount(tabs, 'refs', n));
     if (key !== 'refs') refChrome(Object.assign({}, route, {r: ref}), head);
     return [head, tabs,
@@ -273,7 +272,7 @@ async function catalogProperties(catalog) {
 
 // ---- a namespace ----
 
-const NS_TABS = ['', 'properties', 'governance', 'grants', 'audit'];
+const NS_TABS = ['', 'access', 'audit', 'properties'];
 
 function namespacePage(target, tab, route) {
   const main = h('div', {class: 'nc-main', id: 'namespace-page'});
@@ -287,8 +286,8 @@ function namespacePage(target, tab, route) {
     side);
   const key = NS_TABS.includes(tab || '') ? tab || '' : null;
   const body = h('div', {class: 'tab-body'});
-  main.append(head, tabsNav('Namespace', [['', 'Contents'], ['properties', 'Properties'], ['governance', 'Governance'],
-    ['grants', 'Grants'], ['audit', 'Audit']].filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key,
+  main.append(head, tabsNav('Namespace', [['', 'Contents'], ['access', 'Access'], ['audit', 'Audit'], ['properties', 'Properties']]
+    .filter(([k]) => k !== 'audit' || trailOpen(target.catalog)), key,
   k => objectHref(target, k || null)), body);
   const sub = $('[data-sub]', head);
   const reload = () => fill(body, namespaceTab(target, key, sub, reload));
@@ -300,8 +299,7 @@ function namespacePage(target, tab, route) {
 function namespaceTab(target, key, sub, reload) {
   const levels = target.namespace;
   if (key === null) return h('div', {class: 'empty'}, h('h3', null, 'A namespace has no such tab'));
-  if (key === 'governance') return loading(() => governanceTab(target, reload));
-  if (key === 'grants') return grantsTab(target);
+  if (key === 'access') return accessTab(target, reload);
   if (key === 'audit') return trailOpen(target.catalog) ? auditTab(target) : closedNote(trailWords(target.catalog));
   if (key === 'properties') return loading(() => target.ref ? refPropertiesTab(target) : propertiesTab(target, reload));
   return loading(async () => {

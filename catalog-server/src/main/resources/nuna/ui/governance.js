@@ -33,7 +33,7 @@ export function governancePage(catalog, tab, group) {
 function onLink(catalog, on) {
   if (on.kind === 'catalog') return [code(catalog), ' ', muted('· catalog')];
   const t = targetOfOn(catalog, on);
-  return [h('a', {href: objectHref(t, 'governance')}, (on.path || []).join('.')), ' ', muted('· ' + on.kind)];
+  return [h('a', {href: objectHref(t, 'access')}, (on.path || []).join('.')), ' ', muted('· ' + on.kind)];
 }
 
 const pct = (n, of) => of ? Math.floor(100 * n / of) + '%' : '–';

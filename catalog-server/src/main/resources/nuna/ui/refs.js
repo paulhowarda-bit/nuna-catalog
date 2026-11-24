@@ -247,6 +247,8 @@ export function refNote(r, what) {
       + `tables are never compacted or expired, and every file @${name} reaches is kept while it exists.`],
     governance: [h('b', null, 'Governance holds on every ref.'), ' Holds, freezes, classifications and the regulated area are main\'s '
       + 'record of the table, by its id: what you see here binds ', chip, ' too, and a merge is judged by it.'],
+    access: [h('b', null, 'Governance and grants hold on every ref.'), ' They are main\'s record of the object, by its id: '
+      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there; a grant cannot name a branch yet (item 113).'],
     grants: [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', chip,
       ', and no one else: a grant cannot name a branch yet (item 113).'],
     audit: [h('b', null, 'This is the table\'s whole audit trail.'), ' Records of reads and commits through a ref name it, as ',

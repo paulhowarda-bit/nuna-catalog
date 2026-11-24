@@ -1,0 +1,17 @@
+Breaks: An old link to a table's Snapshots tab no longer opens History, the tab that now holds it.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/route.js b/catalog-server/src/main/resources/nuna/ui/route.js
+index a4708f10..86bd22eb 100644
+--- a/catalog-server/src/main/resources/nuna/ui/route.js
++++ b/catalog-server/src/main/resources/nuna/ui/route.js
+@@ -13,7 +13,7 @@ const OLD_TABS = {health: 'maintenance'};
+ // S2; backlog 199): an old link opens the tab that now holds what it showed.
+ const ACCESS = {governance: 'access', grants: 'access'};
+ const OLD_KIND_TABS = {
+-  table: Object.assign({snapshots: 'history', 'metadata-log': 'history', partitioning: 'schema', properties: 'settings'}, ACCESS),
++  table: ACCESS,
+   view: ACCESS,
+   namespace: ACCESS,
+ };

@@ -10,6 +10,7 @@ import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, he
   muted, openDialog, panel, pill, plural, select, tbl, text, when, at, copyButton} from './dom.js';
 import {dotted, objectHref} from './route.js';
 import {liveRefLink, refWords} from './refs.js';
+import {heldHere} from './requests.js';
 
 export const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-tags', 'manage-grants'];
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
@@ -83,7 +84,7 @@ function levelLabel(level, hereId, levels) {
   if (id === hereId) return h('span', {'data-level': 'here'}, 'this ' + kind);
   const t = levels.get(id);
   return h('span', {class: 'muted', title: level}, 'inherited from ' + kind + ' ',
-    t ? h('a', {href: objectHref(t, 'governance')}, what(t)) : code((id || '').slice(0, 8)));
+    t ? h('a', {href: objectHref(t, 'access')}, what(t)) : code((id || '').slice(0, 8)));
 }
 
 /** A table's, view's, namespace's or catalog's governance answer, with the levels it names. */
@@ -399,6 +400,43 @@ const WRITES = ['write', 'modify'];
  * The grants tab of a catalog object: every grant that reaches it from the catalog down, who may read it, change
  * its data and manage its grants, a grant form, and the caller's own groups' grants.
  */
+// ---- access: what the caller may do here first, then the object's governance and its grants (backlog 199) ----
+
+const RUNGS = ['describe', 'select', 'write', 'modify'];
+const RUNG_WORDS = {
+  describe: 'See it, but not read its data',
+  select: 'Read its data',
+  write: 'Read its data and write rows to it',
+  modify: 'Read and write its data, and change it: its schema, properties and maintenance',
+};
+
+/** What the caller's groups' grants allow on the object, in words (Atelier, 2026-11-23: Access leads with it). */
+async function youMay(target) {
+  const held = await heldHere(target);
+  const privileges = new Set(held.map(g => g.privilege));
+  const rung = RUNGS.filter(x => privileges.has(x)).pop();
+  const lines = [];
+  if (rung) lines.push(RUNG_WORDS[rung]);
+  if (privileges.has('create') && target.kind === 'namespace') lines.push('Create tables, views and namespaces in it');
+  if (privileges.has('manage-tags')) lines.push('Set its labels and holds');
+  if (privileges.has('manage-grants') || may(target.catalog, 'manage-grants')) lines.push('Grant on it, and see who holds what');
+  const groups = [...new Set(held.map(g => g.group))].sort();
+  return h('div', {class: 'panel', id: 'you-may'}, h('h2', null, 'What you may do ', h('span', {class: 'meta'}, `on this ${target.kind}`)),
+    lines.length ? h('ul', {class: 'may-list'}, lines.map(l => h('li', null, icon('check'), l + '.')))
+      : h('p', {class: 'muted'}, `Your groups hold no grant that reaches this ${target.kind}.`),
+    h('p', {class: 'fine'}, groups.length ? `Through your groups' grants: ${groups.join(', ')}. ` : '',
+      'The catalog decides each request; this is what your grants allow.'));
+}
+
+/** A table's, view's or namespace's Access tab: what the caller may do, then its governance, then its grants. */
+export function accessTab(target, reload) {
+  const you = h('div');
+  const gov = h('div');
+  load(you, () => youMay(target));
+  load(gov, () => governanceTab(target, reload));
+  return h('div', {class: 'stack', id: 'access-tab'}, you, gov, grantsTab(target));
+}
+
 export function grantsTab(target) {
   const out = h('div', {class: 'dlg-out', 'aria-live': 'polite', id: 'grant-result'});
   const reach = h('div');
