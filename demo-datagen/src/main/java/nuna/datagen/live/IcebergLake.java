@@ -34,7 +34,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
 
     public static final Namespace ROOT = Namespace.of("brokerage");
     static final List<Namespace> NAMESPACES = List.of(ROOT, Namespace.of("brokerage", "reference"),
-        Namespace.of("brokerage", "markets"), Namespace.of("brokerage", "party"), Namespace.of("brokerage", "ledger"));
+        Namespace.of("brokerage", "markets"), Namespace.of("brokerage", "party"), Namespace.of("brokerage", "ledger"),
+        Namespace.of("brokerage", "trading"));
     static final Namespace LEDGER = Namespace.of("brokerage", "ledger");
 
     /**
@@ -82,7 +83,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     /**
      * Makes whatever is missing. The settings are kept from the first bootstrap; a later one leaves them be.
      *
-     * @param offsets the records each Kafka feed's topic holds now, before the world sends any
+     * @param offsets the records each feed's topic holds now, before the world sends any; none while Kafka is off, and
+     *                the first run through Kafka records them ({@link #startOffsets})
      */
     public void bootstrap(Kit kit, World.Settings settings, LocalDate pacedFrom, Map<Feed, Long> offsets) {
         for (Namespace ns : NAMESPACES) {
@@ -100,15 +102,13 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
             properties.put(ACCOUNTS, String.valueOf(settings.accounts()));
             properties.put(SECURITIES, String.valueOf(settings.securities()));
             properties.put(PACED_FROM, pacedFrom.toString());
-            offsets.forEach((feed, n) -> properties.put(OFFSET + feed.source, String.valueOf(n)));
+            offsets.forEach((feed, n) -> properties.put(OFFSET + feed.topic, String.valueOf(n)));
             namespaces.setProperties(ROOT, properties);
             System.out.println("fixed the world's settings on namespace " + ROOT);
         }
+        // The tables the sink writes; SingleStore's change feeds make their own copies.
         for (Feed f : Feed.values()) {
-            if (f.path != Feed.Path.KAFKA) {
-                continue;
-            }
-            TableIdentifier id = id(f);
+            TableIdentifier id = id(f.lakeTable(Feed.Path.KAFKA));
             if (!catalog.tableExists(id)) {
                 Schema schema = LakeSchemas.schema(f, kit);
                 catalog.buildTable(id, schema).withPartitionSpec(LakeSchemas.spec(f, schema))
@@ -151,16 +151,40 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
         return LocalDate.parse(rootProperties().get(PACED_FROM));
     }
 
-    /** The records each Kafka feed's topic held when the world began. */
-    public Map<Feed, Long> startOffsets() {
+    /**
+     * The records each feed's topic held when the world began. A topic this world has not recorded (the world began
+     * while Kafka was off, or before the orders had a topic) has sent it nothing yet, so its records now, {@code ends},
+     * are recorded as its start.
+     */
+    public Map<Feed, Long> startOffsets(Map<Feed, Long> ends) {
         Map<String, String> p = rootProperties();
         Map<Feed, Long> offsets = new EnumMap<>(Feed.class);
+        Map<String, String> missing = new LinkedHashMap<>();
         for (Feed f : Feed.values()) {
-            if (f.path == Feed.Path.KAFKA) {
-                offsets.put(f, Long.parseLong(p.getOrDefault(OFFSET + f.source, "0")));
+            String recorded = p.get(OFFSET + f.topic);
+            if (recorded == null) {
+                long now = ends.getOrDefault(f, 0L);
+                missing.put(OFFSET + f.topic, String.valueOf(now));
+                offsets.put(f, now);
+            } else {
+                offsets.put(f, Long.parseLong(recorded));
             }
         }
+        if (!missing.isEmpty()) {
+            namespaces.setProperties(ROOT, missing);
+            System.out.println("recorded where these topics stood when this world first used them: " + missing);
+        }
         return offsets;
+    }
+
+    /** The records a lake table holds, 0 if it does not exist yet (a change feed makes its copy as it first starts). */
+    public long records(String table) {
+        TableIdentifier id = id(table);
+        if (!catalog.tableExists(id)) {
+            return 0;
+        }
+        Snapshot s = catalog.loadTable(id).currentSnapshot();
+        return s == null ? 0 : Long.parseLong(s.summary().getOrDefault("total-records", "0"));
     }
 
     private Map<String, String> rootProperties() {
@@ -175,7 +199,7 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
 
     @Override
     public void ensureLocateId() {
-        Table t = catalog.loadTable(id(Feed.FINANCIAL_TRANSACTIONS));
+        Table t = catalog.loadTable(id(Feed.FINANCIAL_TRANSACTIONS.lakeTable(Feed.Path.KAFKA)));
         if (t.schema().findField(LakeSchemas.LOCATE_ID) != null) {
             return;
         }
@@ -191,13 +215,16 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
     }
 
     @Override
-    public void endOfDay(LocalDate day, Map<Feed, Long> totals) {
+    public void endOfDay(LocalDate day, Map<String, Long> totals) {
         String tag = "eod-" + day;
         long deadline = System.nanoTime() + patience.toNanos();
-        Map<Feed, Long> waiting = new LinkedHashMap<>(totals);
+        Map<String, Long> waiting = new LinkedHashMap<>(totals);
         while (!waiting.isEmpty()) {
             for (var it = waiting.entrySet().iterator(); it.hasNext(); ) {
                 var e = it.next();
+                if (!catalog.tableExists(id(e.getKey()))) {
+                    continue;
+                }
                 Table t = catalog.loadTable(id(e.getKey()));
                 if (t.refs().containsKey(tag)) {
                     it.remove();
@@ -218,7 +245,8 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
                 break;
             }
             if (System.nanoTime() > deadline) {
-                System.out.println("WARN gave up waiting for the sink; not tagged " + tag + ": " + waiting.keySet());
+                System.out.println("WARN gave up waiting for the sink or a change feed; not tagged " + tag + ": "
+                    + waiting.keySet());
                 break;
             }
             try {
@@ -232,8 +260,10 @@ public final class IcebergLake implements Publisher.Lake, AutoCloseable {
             + " tables " + tag);
     }
 
-    static TableIdentifier id(Feed f) {
-        return TableIdentifier.of(Namespace.of(f.namespace.split("\\.")), f.table);
+    /** A lake table's identifier from its dotted name: the last part is the table, the rest its namespace. */
+    static TableIdentifier id(String table) {
+        int dot = table.lastIndexOf('.');
+        return TableIdentifier.of(Namespace.of(table.substring(0, dot).split("\\.")), table.substring(dot + 1));
     }
 
     @Override

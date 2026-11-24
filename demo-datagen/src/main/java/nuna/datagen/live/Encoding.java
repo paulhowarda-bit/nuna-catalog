@@ -25,8 +25,13 @@ public final class Encoding {
     public static String json(Event event) {
         Map<String, Object> out = new LinkedHashMap<>();
         event.row().forEach((column, value) -> out.put(column, value(value)));
-        out.put(Feed.ROUTE_FIELD, event.feed().lakeTable());
+        out.put(Feed.ROUTE_FIELD, event.feed().lakeTable(Feed.Path.KAFKA));
         return JSON.writeValueAsString(out);
+    }
+
+    /** A SingleStore column's value: a list (financial_transactions' lots) as its JSON, everything else as it is. */
+    static Object column(Object value) {
+        return value instanceof List<?> ? JSON.writeValueAsString(value(value)) : value;
     }
 
     static Object value(Object value) {
