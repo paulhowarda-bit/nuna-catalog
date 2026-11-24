@@ -362,7 +362,7 @@ export async function exportDialog(target) {
   await load(out, async () => {
     const {g} = await governanceOf(target);
     const x = await api.exportObject(target.catalog, g.target.id);
-    const json = JSON.stringify(x, null, 2);
+    const json = api.toJson(x, 2);
     const url = URL.createObjectURL(new Blob([json], {type: 'application/json'}));
     dlg.addEventListener('close', () => URL.revokeObjectURL(url));
     const preview = Object.assign({}, x, {metadata: x.metadata ? '… the table\'s metadata, in the file' : x.metadata,

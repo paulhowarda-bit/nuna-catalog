@@ -1,0 +1,17 @@
+Breaks: The console parses the catalog's answers with plain JSON.parse, so a snapshot id past 2^53 is shown and linked rounded.
+Module: catalog-server
+Test: ConsoleBrowserTest#snapshotIdsPastTwoToTheFiftyThreeAreShownDigitForDigit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/api.js b/catalog-server/src/main/resources/nuna/ui/api.js
+index ddd2c760..3316d545 100644
+--- a/catalog-server/src/main/resources/nuna/ui/api.js
++++ b/catalog-server/src/main/resources/nuna/ui/api.js
+@@ -51,7 +51,7 @@ export async function send(path, {method = 'GET', body, headers = {}} = {}) {
+   const requestId = response.headers.get('X-Request-ID');
+   let json = null;
+   try {
+-    json = text ? parseJson(text) : null;
++    json = text ? JSON.parse(text) : null;
+   } catch {
+     json = null;
+   }

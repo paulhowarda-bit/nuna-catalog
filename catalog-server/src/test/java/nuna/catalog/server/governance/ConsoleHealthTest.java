@@ -227,7 +227,13 @@ class ConsoleHealthTest {
         assertThat(cell(notModified, 3)).isEqualTo(String.valueOf(figure(own, "not-modified")));
         assertThat(rows("#health-vend-failures")).contains(List.of("ServiceUnavailableException",
                 String.valueOf(figure(own, "vends.failed.ServiceUnavailableException") + 3)));
-        assertThat(fact("Publishes failed")).startsWith(String.valueOf(figure(own, "audit.failed") + 1));
+        // Every audit record goes to the log; the figures count the copies to Kafka, best effort (backlog 205).
+        assertThat(browser.await(By.cssSelector("#health-audit > p")).getText())
+                .isEqualTo("Each request's audit record is written to the log nuna.audit before the catalog answers it.");
+        assertThat(fact("Copies failed")).startsWith(String.valueOf(figure(own, "audit.failed") + 1));
+        assertThat(driver.findElement(By.id("health-audit")).getText())
+                .contains("A copy that fails blocks nothing: the log already holds the record.")
+                .doesNotContain("acknowledged", "refused");
 
         // The worker, from the catalog's record of its scans.
         assertThat(browser.await(By.id("health-last-success")).getText())
@@ -339,6 +345,78 @@ class ConsoleHealthTest {
                 + "so the worker assesses no table and queues none.").doesNotContain("in shape");
         browser.open("/ui/#c=trading&k=table&ns=" + fresh + "&n=first&tab=maintenance");
         assertThat(browser.await(By.id("table-health-off")).getText()).isEqualTo(off);
+
+        // Nell may not modify the catalog, so neither empty state offers its policy (backlog 206).
+        browser.open("/ui/#p=maintenance&c=trading");
+        browser.await(By.id("neediest-none"));
+        assertThat(driver.findElements(By.cssSelector("[data-act='edit-policy']"))).isEmpty();
+    }
+
+    /**
+     * The maintenance policy's keys read as words wherever the console shows them, each with its key as its title,
+     * which people type (Atelier's words table, "Not words" 3; backlog 207).
+     */
+    @Test
+    void policyKeysShowTheirLabelsWithTheKeyInTheirTitle() {
+        browser.signIn(token("rita", readers));
+        browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=maintenance");
+        assertLabel(By.cssSelector("[data-policy] dt [data-key='compaction.enabled']"), "Compaction");
+        assertLabel(By.cssSelector("[data-policy] dt [data-key='orphan-removal.older-than']"), "Remove orphans older than");
+        browser.open("/ui/#c=trading&k=table&ns=" + readable + "&n=orders&tab=history");
+        assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.max-snapshot-age']"), "Keep snapshots for");
+        assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.min-snapshots-to-keep']"), "Keep at least");
+
+        browser.open("/ui/#p=maintenance&c=trading");
+        assertLabel(By.cssSelector("#policy tr[data-key='compaction.target-file-size-bytes'] [data-key]"),
+                "Target file size");
+        assertLabel(By.cssSelector("#policy tr[data-key='manifest-rewrite.min-manifests'] [data-key]"), "Fewest manifests");
+        assertThat(driver.findElements(By.cssSelector("#policy td code"))).as("no key shown as a name").isEmpty();
+        driver.findElement(By.xpath("//div[@id='policy']//button[normalize-space()=\"Edit the catalog's policy\"]")).click();
+        browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading");
+        WebElement field = driver.findElement(By.xpath("//dialog//label[.//input[@name='compaction.delete-file-ratio']]"));
+        assertThat(field.findElement(By.cssSelector("[data-key]")).getText()).isEqualTo("Delete-file share");
+        assertThat(field.findElement(By.cssSelector("[data-key]")).getDomAttribute("title"))
+                .isEqualTo("compaction.delete-file-ratio");
+    }
+
+    private void assertLabel(By label, String words) {
+        WebElement shown = browser.await(label);
+        assertThat(shown.getText()).isEqualTo(words);
+        assertThat(shown.getDomAttribute("title")).isEqualTo(shown.getDomAttribute("data-key"));
+    }
+
+    /**
+     * With maintenance off in the catalog's policy, both empty states end with Edit the catalog's policy for someone
+     * who may modify the catalog (backlog 206). Such a grant shows them every table in the catalog, the assessed ones
+     * here among them, so nell's own grants are answered in the page with modify on the catalog; the server still
+     * decides the save.
+     */
+    @Test
+    void maintenanceOffOffersTheCatalogsPolicyToThoseWhoMayModifyIt() {
+        browser.signIn(token("nell", newcomers));
+        browser.open("/ui/#c=trading&k=namespace&ns=" + fresh);
+        browser.await(By.cssSelector("#namespace-page .title-row h1"));
+        driver.executeScript("""
+                const real = window.fetch;
+                window.fetch = (url, init) => new URL(url, location.origin).pathname === '/management/v1/catalogs/trading/grants'
+                  ? Promise.resolve(new Response(JSON.stringify({grants: [{securable: {type: 'catalog'}, group: arguments[0],
+                      privilege: 'modify'}]}), {headers: {'Content-Type': 'application/json'}}))
+                  : real(url, init);
+                location.hash = '#p=maintenance&c=trading';
+                """, newcomers);
+        WebElement edit = browser.await(By.cssSelector("#neediest-none [data-act='edit-policy']"));
+        assertThat(browser.await(By.id("neediest-none")).getText()).contains("Maintenance is off in trading's policy")
+                .endsWith("Edit the catalog's policy");
+        edit.click();
+        assertThat(browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading")).isNotNull();
+        assertThat(driver.findElements(By.cssSelector("dialog.dlg input[name='compaction.enabled']"))).hasSize(1);
+        driver.findElement(By.cssSelector("dialog.dlg .dlg-x")).click();
+
+        driver.executeScript("location.hash = '#p=overview&c=trading';");
+        assertThat(browser.awaitText(By.cssSelector("#overview .grid-21 p.muted"), "Nothing queued").getText())
+                .isEqualTo("Nothing queued: maintenance is off in trading's policy. Edit the catalog's policy");
+        browser.await(By.cssSelector("#overview .grid-21 p.muted [data-act='edit-policy']")).click();
+        assertThat(browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading")).isNotNull();
     }
 
     @Test
@@ -369,7 +447,8 @@ class ConsoleHealthTest {
         assertThat(dialog.findElement(By.tagName("h2")).getText()).isEqualTo("Compact orders now");
         dialog.findElement(By.cssSelector("button[type='submit']")).click();
         WebElement asked = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Compaction of orders requested");
-        assertThat(asked.getText()).contains("202", "asked by olive");
+        // The status is under Technical details (backlog 188), so the box's whole text is read.
+        assertThat(ConsoleBrowser.textContent(asked)).contains("202", "asked by olive");
         assertThat(asked.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
         dialog.findElement(By.cssSelector("button.dlg-x")).click();
 
@@ -391,15 +470,14 @@ class ConsoleHealthTest {
 
     // ---- helpers ----
 
+    /**
+     * Service is a closed page for one who does not run the deployment: said in plain words, and the catalog is never
+     * asked (backlog 184), so no figure, alert, objective or worker panel is drawn.
+     */
     private void assertNoCatalogHealth() {
-        WebElement refused = browser.await(By.cssSelector("#catalog-health .health-refused"));
-        assertThat(refused.getText()).startsWith("Service is shown to platform operators only, and your groups include none.");
-        WebElement refusal = browser.await(By.cssSelector("#catalog-health .refusal"));
-        assertThat(refusal.getDomAttribute("role")).isEqualTo("alert");
-        assertThat(ConsoleBrowser.textContent(refusal.findElement(By.cssSelector(".refusal-code"))))
-                .isEqualTo("403 ForbiddenException");
-        assertThat(refusal.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
-        assertThat(driver.findElements(By.cssSelector("#catalog-health .health-figures"))).isEmpty();
+        assertThat(ConsoleBrowser.textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                .isEqualTo("Service health is open to platform operators.");
+        assertThat(driver.findElements(By.id("catalog-health"))).isEmpty();
         assertThat(driver.findElements(By.id("health-alerts"))).isEmpty();
         assertThat(driver.findElements(By.id("health-slos"))).isEmpty();
         assertThat(driver.findElements(By.id("health-worker"))).isEmpty();

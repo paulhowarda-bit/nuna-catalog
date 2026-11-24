@@ -11,6 +11,7 @@ import {pageHref} from './route.js';
 import {catalogOff, estate, estateCounts, estateLegend, iceEstate, lastAssessed, queue, queueOf, queueTable, shapeWords} from './queue.js';
 import {sloFigures} from './health.js';
 import {governanceFigures} from './governance.js';
+import {editPolicyLink} from './maintenance.js';
 
 export function overviewPage(catalog) {
   const main = h('div', {class: 'nc-main', id: 'overview'});
@@ -66,7 +67,8 @@ export function overviewPage(catalog) {
       rows.length ? [queueTable(rows.slice(0, 8), {numbered: false, cls: 'stack-sm'}),
         h('p', {class: 'fine'}, rows.length > 8 ? `${rows.length - 8} more in the queue. ` : '',
           h('a', {href: pageHref('maintenance', catalog)}, 'Open the maintenance queue'))]
-        : h('p', {class: 'muted'}, off ? `Nothing queued: maintenance is off in ${catalog}'s policy.`
+        : h('p', {class: 'muted'}, off ? [`Nothing queued: maintenance is off in ${catalog}'s policy.`,
+          editPolicyLink(catalog, () => main.replaceWith(overviewPage(catalog)))]
           : none ? 'Nothing queued: the maintenance worker has not assessed any table you may read yet.'
           : c.unassessed ? `No assessed table you may read needs compaction; ${fmt(c.unassessed)} not assessed yet.`
             : 'No table you may read needs compaction.')), lastNight));

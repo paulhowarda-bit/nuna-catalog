@@ -311,6 +311,18 @@ class ConsoleBrowserTest {
         browser.awaitText(By.id("goto-h"), "Opened lately");
         assertThat(browser.await(By.cssSelector("#goto-list li[role='option']")).getDomAttribute("data-goto-target"))
                 .isEqualTo("trading:" + top + ".equities.eu.positions");
+
+        // The tree's filter lists only what is open; when nothing open matches, it hands its words to Go to a path,
+        // which searches every name (Atelier's words table, "Not words" 4; backlog 208).
+        browser.open("/ui/#c=trading");
+        browser.await(node("namespace:" + top));
+        driver.findElement(By.cssSelector(".tree input[aria-label='Filter names in the tree']")).sendKeys("accounts");
+        WebElement none = browser.await(By.cssSelector(".tree li.tree-none"));
+        assertThat(textContent(none)).startsWith("No open namespace in trading holds a matching name.");
+        none.findElement(By.xpath(".//button[normalize-space()='Go to a path']")).click();
+        assertThat(browser.await(By.id("goto-in")).getDomProperty("value")).isEqualTo("accounts");
+        browser.await(By.cssSelector("#goto-list [data-goto-target='trading:" + top + ".ledger.accounts']")).click();
+        browser.awaitText(By.cssSelector("#table-page h1"), "accounts");
     }
 
     /**
@@ -515,6 +527,49 @@ class ConsoleBrowserTest {
         browser.open("/ui/#" + at("table", eu, "positions", null));
         browser.awaitText(By.cssSelector("#table-page .title-row .badge"), "iceberg v3");
         assertThat(fact("Next row id")).isNotBlank();
+    }
+
+    @Test
+    void snapshotIdsPastTwoToTheFiftyThreeAreShownDigitForDigit() {
+        // Iceberg's snapshot ids are 64-bit, and most are past 2^53, where a double cannot hold every integer: read
+        // as numbers, 9007199254740993 would show as ...992 and 8809372496300770237 as ...770000 (backlog 204).
+        long first = 8_809_372_496_300_770_237L;
+        long second = 9_007_199_254_740_993L;
+        List<String> levels = List.of("ids_" + Api.suffix());
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(levels) + "}"), 200);
+        String location = create(levels, "ticks", 2);
+        String root = location.substring(0, location.indexOf("/metadata/"));
+        long now = System.currentTimeMillis();
+        expect(api.rest("POST", tableRest(levels, "ticks"), """
+                {"requirements":[],"updates":[
+                  {"action":"add-snapshot","snapshot":{"snapshot-id":%d,"sequence-number":1,"timestamp-ms":%d,
+                    "manifest-list":"%s/metadata/snap-1.avro","schema-id":0,"summary":{"operation":"append"}}},
+                  {"action":"add-snapshot","snapshot":{"snapshot-id":%d,"parent-snapshot-id":%d,"sequence-number":2,
+                    "timestamp-ms":%d,"manifest-list":"%s/metadata/snap-2.avro","schema-id":0,
+                    "summary":{"operation":"append"}}},
+                  {"action":"set-snapshot-ref","ref-name":"main","snapshot-id":%d,"type":"branch"}]}"""
+                .formatted(first, now - 2_000, root, second, first, now - 1_000, root, second)), 200);
+        String answer = expect(api.rest("GET", tableRest(levels, "ticks"), null), 200).body();
+        java.util.regex.Matcher sent = java.util.regex.Pattern.compile("\"current-snapshot-id\"\\s*:\\s*(\\d+)")
+                .matcher(answer);
+        assertThat(sent.find()).isTrue();
+        assertThat(sent.group(1)).as("the catalog's own text").isEqualTo(String.valueOf(second));
+
+        signIn(tester());
+        browser.open("/ui/#" + at("table", levels, "ticks", null));
+        assertThat(fact("Current snapshot")).startsWith(sent.group(1) + " · append · ");
+        tab("history");
+        List<WebElement> rows = browser.await("the commit that added the snapshots is not shown", d -> {
+            List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-id]"));
+            return found.isEmpty() ? null : found;
+        });
+        assertThat(rows).extracting(row -> row.getDomAttribute("data-id")).containsExactly(String.valueOf(first));
+        assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]")))
+                .extracting(c -> c.getDomAttribute("data-id"))
+                .containsExactly(String.valueOf(first), String.valueOf(second));
+        browser.await(By.xpath("//button[normalize-space()='Show the whole summary']")).click();
+        String whole = textContent(browser.await(By.cssSelector("#selected-snapshot pre.raw")));
+        assertThat(whole).contains("\"snapshot-id\": " + second + ",", "\"parent-snapshot-id\": " + first + ",");
     }
 
     @Test
@@ -738,6 +793,8 @@ class ConsoleBrowserTest {
               object: path ? {kind: 'TABLE', path} : null, event: {data: {}}, chain: {status: 'no-archive'}});
             const records = [rec(1, 'audit-read', 'gina', null), rec(2, 'grant', 'gina', ['equities', 'eu', 'trades']),
               rec(3, 'commit', 'tester', ['equities', 'eu', 'trades']), rec(4, 'audit-read', 'gina', null)];
+            // The commit came to the audit tables from the log, which gives no Kafka partition (backlog 205).
+            Object.assign(records[2], {partition: -1, offset: 1795482234678168});
             const json = body => Promise.resolve(new Response(JSON.stringify(body), {headers: {'Content-Type': 'application/json'}}));
             window.fetch = (url, init) => {
               const u = new URL(url, location.origin);
@@ -771,7 +828,7 @@ class ConsoleBrowserTest {
         assertThat(feedTypes()).containsExactly("grant", "commit");
         assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
         assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
-                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d, .*");
+                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a type to show its records in the feed\\. .*");
 
         // By kind uses the chips' words, so its counts add up to them; each badge is its chip's word, the raw type
         // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
@@ -808,6 +865,26 @@ class ConsoleBrowserTest {
         browser.await("the audit's reads were not shown", d -> feedTypes().contains("audit-read"));
         assertThat(lastAsked()).isNull();
         assertThat(driver.getCurrentUrl()).contains("reads=all").doesNotContain("kind=");
+    }
+
+    /**
+     * A record says where the audit tables read it from: Kafka, with its partition and offset, or the log
+     * {@code nuna.audit}, with no Kafka place and no link in the archive, whose chains are Kafka's (backlog 205).
+     */
+    @Test
+    void aRecordSaysWhetherItWasReadFromKafkaOrTheLog() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/");
+        browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
+        driver.executeScript(AUDIT_TABLES_IN_THE_PAGE);
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
+        WebElement fromKafka = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .rec"));
+        assertThat(textContent(fromKafka.findElement(By.cssSelector("[data-read-from]"))))
+                .isEqualTo("Kafka, partition 0, offset 2");
+        driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='commit'] button")).click();
+        WebElement fromLog = browser.await(By.cssSelector("#audit-feed .feed-row[data-type='commit'] .rec"));
+        assertThat(textContent(fromLog.findElement(By.cssSelector("[data-read-from]")))).isEqualTo("the log nuna.audit");
+        assertThat(textContent(fromLog)).doesNotContain("Kafka", "partition", "-1", "Check its link");
     }
 
     /** The types of the feed's rows, as drawn. */
@@ -1114,6 +1191,10 @@ class ConsoleBrowserTest {
             assertThat(textContent(note.findElement(By.cssSelector(".refusal-msg"))))
                     .isEqualTo(JsonPath.<String>read(refused.body(), "$.error.message"));
             assertThat(properties(ns)).containsEntry("k", "after");
+            // The old properties link opened the Settings drawer over Overview (backlog 199); closing it keeps the tag.
+            driver.findElement(By.cssSelector("#settings-drawer [data-act='close-settings']")).click();
+            browser.await("the drawer did not close", d -> d.findElements(By.id("settings-drawer")).isEmpty());
+            assertThat(driver.getCurrentUrl()).contains("r=" + tag).doesNotContain("tab=");
 
             // The tree reads the tag too: it names it beside the catalog, lists what the tag keeps and not the table
             // made on main since, and a click in it stays on the tag.
@@ -1448,6 +1529,11 @@ class ConsoleBrowserTest {
     }
 
     private static String tablePath(List<String> levels, String table) {
+        return "/namespaces/" + ns(levels) + "/tables/" + table;
+    }
+
+    /** A table's Iceberg REST path below the catalog's prefix. */
+    private static String tableRest(List<String> levels, String table) {
         return "/namespaces/" + ns(levels) + "/tables/" + table;
     }
 
