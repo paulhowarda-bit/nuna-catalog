@@ -764,7 +764,7 @@ class ConsoleBrowserTest {
         assertThat(feedTypes()).containsExactly("grant", "commit");
         assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
         assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
-                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d, .*");
+                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a type to show its records in the feed\\. .*");
 
         browser.await(By.cssSelector("#audit-kinds tr[data-type='nuna.catalog.grant'] button")).click();
         browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
@@ -1085,6 +1085,10 @@ class ConsoleBrowserTest {
             assertThat(textContent(note.findElement(By.cssSelector(".refusal-msg"))))
                     .isEqualTo(JsonPath.<String>read(refused.body(), "$.error.message"));
             assertThat(properties(ns)).containsEntry("k", "after");
+            // The old properties link opened the Settings drawer over Overview (backlog 199); closing it keeps the tag.
+            driver.findElement(By.cssSelector("#settings-drawer [data-act='close-settings']")).click();
+            browser.await("the drawer did not close", d -> d.findElements(By.id("settings-drawer")).isEmpty());
+            assertThat(driver.getCurrentUrl()).contains("r=" + tag).doesNotContain("tab=");
 
             // The tree reads the tag too: it names it beside the catalog, lists what the tag keeps and not the table
             // made on main since, and a click in it stays on the tag.

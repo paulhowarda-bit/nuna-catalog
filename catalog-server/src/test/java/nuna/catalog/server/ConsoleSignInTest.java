@@ -134,7 +134,8 @@ class ConsoleSignInTest {
         browser.awaitText(By.id("who"), "ana");
         assertThat(driver.findElement(By.id("who")).getText()).contains(GROUP);
         browser.awaitText(By.cssSelector("#catalog-pick [data-cat]"), "trading");
-        browser.awaitText(By.cssSelector("#overview .ph .eyebrow"), "trading · ");
+        // Describe alone reads no data, so ana lands on the catalog, not its Overview (backlog 184).
+        browser.awaitText(By.cssSelector("#catalog-page h1"), "trading");
         assertThat(driver.getCurrentUrl()).as("the code and state leave the address bar")
                 .startsWith(browser.origin() + "/ui/").doesNotContain("code=", "state=");
 
