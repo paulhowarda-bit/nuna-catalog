@@ -193,6 +193,12 @@ export async function load(container, loader, title) {
  * An API failure as the server said it: status and type, its message word for word, and the request id the
  * server stamped on the answer, never reworded or hidden. A 403 is a refusal; anything else an error.
  */
+/**
+ * What an answer box keeps for whoever asks support: the status, the route and the request id, folded behind one
+ * "Technical details" so the box leads with what happened in plain words (Atelier's review, F10; backlog 188).
+ */
+export const techDetails = (...kids) => h('details', {class: 'tech'}, h('summary', null, 'Technical details'), kids);
+
 export function failure(error, opts = {}) {
   if (error && error.status) {
     const refused = error.status === 403;
@@ -200,16 +206,17 @@ export function failure(error, opts = {}) {
     return h('div', {class: 'refusal' + (opts.big ? ' big' : '') + (opts.compact ? ' compact' : ''), role: 'alert'},
       h('p', {class: 'refusal-h'}, icon(refused ? 'x' : 'alert'),
         refused ? 'Refused by the catalog' : 'The catalog answered with an error'),
-      h('p', {class: 'refusal-code'}, `${error.status} ${error.type || ''}`.trim()),
       h('p', {class: 'refusal-msg'}, error.message || ''),
-      h('p', {class: 'refusal-meta'},
-        h('span', {'data-rid': rid || ''}, rid ? 'X-Request-ID ' + rid : 'No request id came back'),
-        h('span', null, at(error.at || Date.now(), true)),
-        refused ? h('span', null, 'audited as a denial') : null),
       opts.note ? h('p', {class: 'fine'}, opts.note) : null,
-      h('div', {class: 'refusal-acts'}, rid ? copyButton(rid, 'Copy request id') : null,
-        opts.big ? h('button', {class: 'btn sm', type: 'button', onclick: e => copyText(location.href, e.currentTarget)},
-          icon('link'), 'Copy link to this page') : null));
+      refused ? h('p', {class: 'fine'}, 'The refusal is recorded in the audit.') : null,
+      opts.big ? h('div', {class: 'refusal-acts'}, h('button', {class: 'btn sm', type: 'button',
+        onclick: e => copyText(location.href, e.currentTarget)}, icon('link'), 'Copy link to this page')) : null,
+      techDetails(h('p', {class: 'refusal-code'}, `${error.status} ${error.type || ''}`.trim()),
+        h('p', {class: 'refusal-meta'},
+          h('span', {'data-rid': rid || ''}, rid ? 'X-Request-ID ' + rid : 'No request id came back'),
+          h('span', null, at(error.at || Date.now(), true)),
+          refused ? h('span', null, 'audited as a denial') : null),
+        rid ? h('div', {class: 'refusal-acts'}, copyButton(rid, 'Copy request id')) : null));
   }
   // No status: the network failed (api.js marks it), or the console's own code did, after the catalog answered or
   // before it asked. A caller that knows what was going on (signing in) names it in `opts.title`.
@@ -223,9 +230,9 @@ export function failure(error, opts = {}) {
 export function granted(title, answer, more) {
   return h('div', {class: 'granted', role: 'status'}, h('p', {class: 'refusal-h'}, icon('check'), title),
     more ? h('p', {class: 'fine'}, more) : null,
-    h('p', {class: 'refusal-meta'}, h('span', null, answer.status + (answer.statusText ? ' ' + answer.statusText : '')),
+    techDetails(h('p', {class: 'refusal-meta'}, h('span', null, answer.status + (answer.statusText ? ' ' + answer.statusText : '')),
       h('span', {'data-rid': answer.requestId || ''}, answer.requestId ? 'X-Request-ID ' + answer.requestId : ''),
-      h('span', null, at(Date.now(), true)), h('span', null, 'audited')));
+      h('span', null, at(Date.now(), true)), h('span', null, 'audited'))));
 }
 
 // ---- copying, toasts and dialogs ----

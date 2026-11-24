@@ -7,7 +7,7 @@
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, edgeCue, facts, failure, fill, fmt, granted, h, icon, jsonPre, load, muted,
-  openDialog, dialogForm, field, panel, pill, plural, s, select, tabsNav, tbl, when} from './dom.js';
+  openDialog, dialogForm, field, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
 
 const DAY = 86_400_000;
@@ -234,8 +234,9 @@ export function readOnlyNote(r, catalog, operation, ns) {
     : `${operation} is refused on branch ${r.name} of catalog ${catalog}: creates, drops, renames, registrations and namespace changes happen on main only`;
   return h('div', {class: 'ro-note'}, h('p', {class: 'refusal-h'}, ns ? 'What the catalog answers a change through ' : 'Read-only: a tag never changes. If an engine tries, the catalog answers',
     ns ? cref(r) : null),
-  h('p', {class: 'refusal-code'}, '400 BadRequestException'), h('p', {class: 'refusal-msg'}, message),
-  h('p', {class: 'fine'}, ns ? 'So the console offers no change here. Set it on main.' : 'So the console offers no change here. Read main to change a setting.'));
+  h('p', {class: 'refusal-msg'}, message),
+  h('p', {class: 'fine'}, ns ? 'So the console offers no change here. Set it on main.' : 'So the console offers no change here. Read main to change a setting.'),
+  techDetails(h('p', {class: 'refusal-code'}, '400 BadRequestException')));
 }
 
 /** The ref a page reads, for its tabs: the list's record, or null while reading main or when it is not live. */
@@ -333,9 +334,11 @@ export async function refsTab(c) {
   const warnDays = daysOf(lim['expiry-warning'], 7);
   out.push(h('div', {class: 'kpis refs-kpis'},
     h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, icon('branch'), 'Open branches'),
-      h('p', {class: 'kpi-v'}, fmt(br.length), h('small', null, ` of ${fmt(lim['max-branches'])}`)), h('p', {class: 'kpi-d'}, 'nuna.refs.max-branches')),
+      h('p', {class: 'kpi-v'}, fmt(br.length), h('small', null, ` of ${fmt(lim['max-branches'])}`)),
+      h('p', {class: 'kpi-d', title: 'nuna.refs.max-branches'}, 'branches allowed')),
     h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, icon('tag'), 'Tags'),
-      h('p', {class: 'kpi-v'}, fmt(tg.length), h('small', null, ` of ${fmt(lim['max-tags'])}`)), h('p', {class: 'kpi-d'}, 'nuna.refs.max-tags')),
+      h('p', {class: 'kpi-v'}, fmt(tg.length), h('small', null, ` of ${fmt(lim['max-tags'])}`)),
+      h('p', {class: 'kpi-d', title: 'nuna.refs.max-tags'}, 'tags allowed')),
     h('div', {class: 'kpi' + (br.some(expiring) ? ' is-warn' : '')}, h('p', {class: 'kpi-l'}, icon('clock'), `Expiring within ${plural(warnDays, 'day')}`),
       h('p', {class: 'kpi-v'}, fmt(br.filter(expiring).length)),
       h('p', {class: 'kpi-d'}, br.some(expiring) ? br.filter(expiring).map(r => '@' + r.name).join(', ') : 'none')),
@@ -371,7 +374,7 @@ export async function refsTab(c) {
         for (const tr of $$('tr', tbody)) tr.hidden = !(f === 'all' || tr.dataset.kind === f);
       }}, l, ' ', h('span', {class: 'n'}, fmt(n)))));
   out.push(h('div', {class: 'panel', id: 'refs'}, h('div', {class: 'panel-h'}, h('h2', null, 'Branches and tags ',
-    h('span', {class: 'meta'}, `of ${c}, as GET …/refs lists them`)), chipsBox,
+    h('span', {class: 'meta'}, `in ${c}`)), chipsBox,
   may ? h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'ref-new', onclick: () => makeDialog(c, list)}, icon('branch'), 'Make a branch or tag') : null),
   tbl('refs-tbl stack-line', ['Ref', 'Made', 'Expires', 'Changed tables', ''], tbody),
   may ? null : h('p', {class: 'fine', 'data-no-create': ''}, h('b', null, `Making, renewing, deleting and merging need create on ${c}.`),
@@ -442,7 +445,7 @@ function refsExplain(c, lim) {
       h('dt', null, badge([icon('iref'), 'surveillance-review'], 'ref-b')),
       h('dd', null, h('b', null, 'Iceberg\'s own refs'), ', inside one table\'s metadata, made by an engine; on each table\'s page under ',
         h('i', null, 'Engine-level refs in this table\'s metadata'), '.'))),
-    panel('Limits and expiry', 'nuna.refs.*', h('dl', {class: 'facts one'},
+    panel('Limits and expiry', 'set for this deployment', h('dl', {class: 'facts one'},
       h('dt', null, 'A branch expires'), h('dd', null, `${idle} days after its last commit or renewal, and never later than ${life} days after it `
         + `was made. ${WORDS[warn] || fmt(warn)} ${warn === 1 ? 'day' : 'days'} before, the catalog warns once on the change stream and marks it here.`),
       h('dt', null, 'A tag'), h('dd', null, 'never expires; delete it when it is no longer needed.'),
@@ -611,7 +614,7 @@ async function changesTab(c, r, total) {
       h('td', null, state));
   });
   return [h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
-    h('span', {class: 'meta'}, `${plural(total, 'table')} with pointers of its own; GET …/refs/${r.name}`)),
+    h('span', {class: 'meta'}, `${plural(total, 'table')} with pointers of its own`)),
   rows.length ? tbl('stack-line ref-changes', ['Table', ['At the point', 'num'], ['On the branch', 'num'], 'Its commits', 'Main since'], rows)
     : h('p', {class: 'muted'}, total ? 'None you may describe.' : 'None yet: the branch has not committed.'),
   rows.length && total > changed.length ? h('p', {class: 'muted', 'data-hidden-count': total - changed.length},
@@ -739,20 +742,21 @@ async function mergeTab(c, r, list) {
       h('p', {class: 'refusal-h'}, icon('x'), verdictOf.type === 'RefMergeConflictException'
         ? `@${r.name} cannot merge: ${plural(conflicts.length, 'table')} changed on main too`
         : `@${r.name} cannot merge now`),
-      h('p', {class: 'refusal-code'}, `${verdictOf.code} ${verdictOf.type || ''} · POST …/refs/${r.name}/merge, dry run`),
       h('p', {class: 'refusal-msg'}, verdictOf.message || ''),
-      h('p', {class: 'refusal-meta'}, h('span', null, 'X-Request-ID ' + (answer.requestId || '')), h('span', null, tried),
-        h('span', null, 'a dry run: nothing moved, nothing audited')),
       h('p', {class: 'fine'}, verdictOf.type === 'RefMergeConflictException' ? 'Every table moves or none does. While one conflicts, the merge is refused whole.'
         : verdictOf.type === 'RefLimitException' ? `@${r.name} changed ${plural(plan.changed, 'table')}; a merge moves at most ${fmt(plan['max-tables'])}.`
-          : 'Main\'s rules refuse one table\'s change, so the catalog would refuse the merge whole.'))
+          : 'Main\'s rules refuse one table\'s change, so the catalog would refuse the merge whole.'),
+      h('p', {class: 'fine'}, 'A dry run: nothing moved, nothing audited.'),
+      techDetails(h('p', {class: 'refusal-code'}, `${verdictOf.code} ${verdictOf.type || ''} · POST …/refs/${r.name}/merge, dry run`),
+        h('p', {class: 'refusal-meta'}, h('span', null, 'X-Request-ID ' + (answer.requestId || '')), h('span', null, tried))))
     : h('div', {class: 'granted merge-verdict', role: 'status', 'data-verdict': 'ready'},
       h('p', {class: 'refusal-h'}, icon('check'), `Ready: ${plural(moves.length, 'table')} would move to main in one transaction`),
       h('p', {class: 'fine'}, moves.every(x => x['main-version'] === x['cut-version'])
         ? 'Main has not committed to any of them since the point, so main takes each one as the branch has it.'
         : 'Main has committed only its own maintenance to them since the point, so main takes each one as the branch changed it.'),
-      h('p', {class: 'refusal-meta'}, h('span', null, `200 OK · POST …/refs/${r.name}/merge, dry run`), h('span', null, 'X-Request-ID ' + (answer.requestId || '')),
-        h('span', null, tried), h('span', null, 'nothing moved, nothing audited')));
+      h('p', {class: 'fine'}, 'A dry run: nothing moved, nothing audited.'),
+      techDetails(h('p', {class: 'refusal-meta'}, h('span', null, `200 OK · POST …/refs/${r.name}/merge, dry run`),
+        h('span', null, 'X-Request-ID ' + (answer.requestId || '')), h('span', null, tried))));
   const rows = tables.map(x => h('div', {class: 'mm-row ' + (x.moves ? 'moves' : x['dropped-at'] || x['main-version'] === undefined ? 'dropped' : 'moved'),
     'data-path': pathOfItem(x)},
   h('div', {class: 'mm-name'}, h('a', {href: tableHref(c, x, r.name)}, code(pathOfItem(x))), h('p', {class: 'fine'}, why(x, r))),
@@ -785,7 +789,7 @@ async function mergeTab(c, r, list) {
   const actBox = h('div', {class: 'panel merge-act'}, h('h2', null, 'In one transaction'), steps, steps2,
     !blocked && may && rightsMissing.length ? h('p', {class: 'fine warn-ink'}, h('b', null, `Your groups hold no write on ${rightsMissing.join(', ')}.`),
       ' The catalog would refuse the merge with 403, so the console offers none.') : null,
-    h('p', {class: 'fine'}, `Every table moves or none does; at most ${fmt(plan['max-tables'] || lim['max-merge-tables'])} tables a merge (nuna.refs.max-merge-tables). `
+    h('p', {class: 'fine'}, `Every table moves or none does; at most ${fmt(plan['max-tables'] || lim['max-merge-tables'])} tables a merge. `
       + 'If main commits to one of them between this preview and the merge, the catalog plans again, and the new conflict refuses the merge with 409.'),
     may ? h('div', {class: 'refusal-acts'}, btn, blocked ? h('span', {class: 'fine'}, 'Refused while a table conflicts.')
       : h('span', {class: 'fine'}, 'Needs create on ', code(c), ' and write on each table.'))

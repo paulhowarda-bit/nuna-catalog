@@ -1202,3 +1202,8 @@ details.panel.fold > summary::-webkit-details-marker { display: none; }
 details.panel.fold > summary h2 { display: inline; }
 details.panel.fold > summary::before { content: '\25B8'; display: inline-block; width: 1em; color: var(--text-2); }
 details.panel.fold[open] > summary::before { content: '\25BE'; }
+
+/* An answer box's status, route and request id, folded (backlog 188). */
+details.tech { margin-top: 6px; }
+details.tech > summary { cursor: pointer; font-size: 12px; color: var(--text-2); }
+details.tech[open] > summary { margin-bottom: 4px; }

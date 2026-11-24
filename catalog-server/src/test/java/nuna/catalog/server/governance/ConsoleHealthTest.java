@@ -281,7 +281,8 @@ class ConsoleHealthTest {
                 .isEmpty();
         // Rita holds nothing on the hidden namespace, so the catalog answers as if the table did not exist (D18,
         // backlog 73), and the page shows that answer as it came.
-        assertThat(shown.getText()).contains("The catalog answered with an error", "404 NoSuchTableException",
+        assertThat(ConsoleBrowser.textContent(shown)).contains("The catalog answered with an error",
+                "404 NoSuchTableException",
                 "Table does not exist: " + hidden + ".secret");
     }
 
