@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**48 open:** 12 S, 17 M, 14 L, 5 XL.
+**54 open:** 14 S, 21 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -60,6 +60,12 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
 | [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 | [238](backlog/238.md) | L | The brokerage generator routes by the demo switches: orders through Kafka while SingleStore is off, the Kafka feeds through SingleStore and a change feed per table while Kafka is off | a route per feed in the generator with restarts that count across both paths, eleven SingleStore tables and change feeds, a fourth demo switch and the drains on a route change, checked on the demo's memory | 2026-11-24 |
+| [239](backlog/239.md) | S | Governance flag only on tables: a flag above a table shows but is not enforced | one refusal in the set-flag route with its test and bite, and a note in the console where it shows an inherited flag | 2026-11-24 |
+| [240](backlog/240.md) | M | Column masks fail open when a column is renamed, dropped or misspelled | a schema check when a rule is set, a guard on schema changes against the rules that name a column, tests on the stores and a bite for each | 2026-11-24 |
+| [241](backlog/241.md) | S | Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes | console only: words where the 403 shows, one button with its dialog, and an audit kind with its description | 2026-11-24 |
+| [242](backlog/242.md) | M | Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables | four answers on existing routes or new ones, each decided per caller and audited, with route tests and bites | 2026-11-24 |
+| [243](backlog/243.md) | M | Console: the Row filters and column masks panel and its dialog | a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242 | 2026-11-24 |
+| [244](backlog/244.md) | M | Row and column rules: check expressions when set, and If-Match on set | an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites | 2026-11-24 |
 
 ## Open items in full
 
@@ -3049,6 +3055,189 @@ Done looks like:
 - A restart, and a change of route, resumes where the world stopped: each feed's records sent are those on its live
   path plus those the lake holds from the path that is off; the end of day tags every table each path wrote.
 - The demo's memory holds the eleven change feeds with Kafka off; measured, not assumed.
+
+### 239. Governance flag only on tables: a flag above a table shows but is not enforced
+
+- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/test/, catalog-server/src/main/resources/nuna/ui/, bites/
+- Effort: S, one refusal in the set-flag route with its test and bite, and a note in the console where it shows an inherited flag
+
+## What is wrong
+
+The governance flag (D20: "a flag on tables") can be set on a catalog, a namespace, a table or a view, and the
+console's Governance tab shows a flag set above a table as the table's effective flag. Only a table's own flag is
+enforced, so a flag on a namespace reads as protection that is not there: its tables are read directly, with no rules
+and no 403.
+
+## Evidence
+
+The security expert, 2026-11-24, reading the code for Atelier's design of the rules in the console (backlog 243):
+
+- the set-flag route accepts any securable: `GovernanceRoutes.java:178`;
+- an inherited flag is reported as effective: `GovernanceRoutes.java:167-170`;
+- the read check needs the table's own flag: `Authorizer.java:260-262` (`a.target().equals(self)`), and so does the
+  unregister check at `TableRoutes.java:312-314`;
+- the stores count a flag on a table only (`SqlGovernance.java:134-135`), and Trino's OPA answer reads only rules,
+  which need the table's own flag.
+
+Enforcing inheritance would only make an area that trusted engines alone read, with no rules in it; the expert
+recommends refusing the flag anywhere but on a table.
+
+## Done when
+
+- Setting the flag on a catalog, namespace or view answers 400 with words that say a flag goes on a table; a fast
+  test covers each, and a bite breaks the refusal.
+- A flag already set above a table is found and removed or reported. The demo's data is kept across `up` now
+  (backlog 237), so its own flags are checked too.
+- The console no longer shows a flag from above as the table's own.
+
+### 240. Column masks fail open when a column is renamed, dropped or misspelled
+
+- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-security/, catalog-server/src/test/, bites/
+- Effort: M, a schema check when a rule is set, a guard on schema changes against the rules that name a column, tests on the stores and a bite for each
+
+## What is wrong
+
+A column mask (backlog 115) is stored under the column's name and nothing checks that name against the table's
+schema. If the column is renamed, Trino asks for the new name, finds no mask and returns the column unmasked. A typo
+in the name masks nothing. A dropped column's mask is silently ignored. A row filter that names a dropped or renamed
+column makes every query for that group fail.
+
+## Evidence
+
+The security expert, 2026-11-24:
+
+- masks are matched by name, ignoring case: `OpaAnswers.java:84-87`, `137-140`;
+- setting a rule checks only length and NUL characters, never the schema: `RuleRoutes.java:219-248`;
+- a schema change is committed with no look at the rules that name its columns.
+
+## Done when
+
+- Setting a rule refuses a mask, or a filter, that names a column the table's current schema lacks, in words.
+- A schema change that renames or drops a column a rule names is refused, saying which rule, or the masks follow
+  the column by its Iceberg field id so a rename keeps it masked. Either way, a rename never unmasks a column.
+- Tests cover a rename, a drop and a typo, and a bite breaks each guard.
+
+### 241. Console: a flagged table says why it is read through Trino; the steward's flag button; audit words for rule changes
+
+- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, console only: words where the 403 shows, one button with its dialog, and an audit kind with its description
+
+## What is wrong
+
+Row filters and column masks landed (backlog 115), but the console was not changed for them. Atelier, designing
+their place in the console on 2026-11-24:
+
+- On a flagged table (the demo's `markets.desks.positions`), the console's own table read is refused, since loading
+  a table counts as storage access (`Guard.java`, `LOAD_TABLE`), even with delegation `none`. Overview, Schema and
+  History show a bare 403 to everyone.
+- A steward (manage-tags) has no button to set or remove the flag.
+- The audit page has no kind or description for `row-column-rule`, so rule changes fall under "Other" with no words.
+
+## Done when
+
+- A flagged table's Overview, Schema and History say: "Its data is read through Trino, which applies each group's
+  rules. The console shows no rows." No bare 403.
+- On a table's Access tab, a steward sees "Flag for row and column rules" or "Remove the flag" (tables only:
+  backlog 239). Removing it while rules stand is refused in words: "Rules stand: the grant admin removes them first."
+- Rule changes on the audit page have their own kind and a sentence each: who set or removed which group's rule on
+  which table.
+- The console's browser tests cover each.
+
+### 242. Routes the console's row and column rules need: a flagged table's schema, a reader's own view, rule counts and flagged tables
+
+- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-server/src/main/java/nuna/catalog/server/governance/, catalog-server/src/main/java/nuna/catalog/server/rest/, catalog-server/src/test/, bites/
+- Effort: M, four answers on existing routes or new ones, each decided per caller and audited, with route tests and bites
+
+## What is missing
+
+Atelier's design for the rules in the console (2026-11-24; the panel is backlog 243) needs answers the server does
+not give:
+
+1. **A flagged table's schema.** The console's table read is refused on a flagged table (backlog 241), so a mask
+   editor has no columns to pick from. A describe-only answer, schema and properties with no files and no storage
+   credentials, for anyone who may describe the table.
+2. **A reader's own view.** Whether their rows are filtered and which columns are masked for them, without the
+   expressions. Today the rules list needs manage-grants (`RuleRoutes.java:70`). The security expert says showing the
+   column names leaks nothing: the reader already sees the schema and the masked values. The route is audited and
+   decided per caller.
+3. **Rule counts for stewards.** How many rules a table has and for which groups, in the table's governance answer,
+   without the expressions.
+4. **Flagged tables in the governance summary,** with their rule counts, and an export of every rule for access
+   reviews (manage-grants or audit).
+
+## Done when
+
+Each answer exists, refuses callers who may not have it as the existing routes do, and has route tests and a bite
+per refusal.
+
+### 243. Console: the Row filters and column masks panel and its dialog
+
+- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/resources/nuna/ui/, catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: M, a new panel with a list, an add-and-edit dialog, a remove confirm, a reader's note and a Governance page panel, with browser tests; after backlog 240 and 242
+
+## What is missing
+
+Row filters and column masks (backlog 115) can be set only through the management API. Atelier's design,
+2026-11-24:
+
+- **Where:** a table's Access tab, a panel "Row filters and column masks" between Governance and Grants.
+- **Grant admin (manage-grants):** the list (Group | Rows | Masked columns | Set by, when | Edit, Remove) and
+  "Add a rule for a group". A rule for one of their own groups is read only: "Another grant admin sets this group's
+  rule."
+- **The dialog:** a group; Rows, either "Every row" or "Only rows where" with a predicate; one line per masked
+  column, a column picked from the schema (backlog 242) and NULL, '***' or a custom expression. It checks the
+  fields, the 4,000-character limit and that each column is in the schema before saving ("Save the rule"). Edit
+  opens with the group fixed. The first rule warns: "Groups without a rule will see no rows."
+- **Remove:** the confirm says what follows: "demo-analysts will see no rows" while other rules stand, "Everyone
+  with select will see every row through Trino" for the last.
+- **Flagged with no rules:** "Flagged. No rules yet: Trino shows every row to anyone who may select; other tools get
+  no files." **Not flagged:** "Rules need the flag. A steward sets it, so only trusted engines read the files."
+- **Steward:** the rule count and groups, no expressions (backlog 242).
+- **Reader:** "Your view of this table" under What you may do: "Read through Trino only. Your rows are filtered.
+  Masked for you: trader." Never the expressions.
+- **Governance page:** a "Flagged tables" figure and a panel of flagged tables with their rule counts.
+- **Refusals in words:** not flagged (409), "You belong to {group}", and the rest the routes give.
+
+## Done when
+
+The panel, dialog, reader's note and Governance panel work as above in the demo for the grant admin, the steward
+and a reader of `markets.desks.positions`, with browser tests for each role.
+
+### 244. Row and column rules: check expressions when set, and If-Match on set
+
+- Added: 2026-11-24 by local_6686d222-bf16-416b-a4cb-e82501941da2
+- Touches: catalog-server/src/main/java/nuna/catalog/server/security/, catalog-security/, catalog-server/build.gradle.kts, catalog-server/src/test/, bites/
+- Effort: M, an SQL expression parser wired into setting a rule, a version on each rule with If-Match, tests and bites
+
+## What is wrong
+
+- **Expressions are not checked.** Setting a rule checks only its length and NUL characters
+  (`RuleRoutes.java:219-228`). A predicate or mask that does not parse is stored, and fails only when Trino runs a
+  query, for every user of that group.
+- **A set replaces another admin's edit silently.** The set route takes no If-Match, so two grant admins editing one
+  rule lose the first edit with no warning.
+
+The security expert, 2026-11-24, found no privilege problem in expressions: nuna's OPA answer carries no identity
+(`OpaAnswers.java:72`, `91`), so Trino runs an expression as the querying user and every table it reads goes through
+nuna's authorization for that user.
+
+## Question for Paul
+
+May an expression hold a subquery or read another table? Lookup-table entitlements need it (a filter like
+`desk IN (SELECT desk FROM entitlements WHERE ...)`); forbidding it keeps each rule about its own table. Today
+nothing forbids it.
+
+## Done when
+
+- Setting a rule parses its predicate and masks as Trino SQL expressions (Trino's own parser, or one that matches
+  it) and refuses one that does not parse, saying where. Subqueries are allowed or refused as Paul decides.
+- Each rule carries a version, the list gives it, and a set or remove with a stale If-Match answers 412.
+- Route tests and a bite for each.
 
 ## Done and dropped
 
