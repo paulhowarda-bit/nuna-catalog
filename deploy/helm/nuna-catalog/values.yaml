@@ -47,6 +47,9 @@ config:
       profiles: {}
       catalogs: {}
     audit:
+      # Optional (D23, amended 2026-11-23): every audit record goes to the log nuna.audit, on stdout and to
+      # telemetry's logs endpoint. With Kafka named here, records also go to the audit topic and the change stream,
+      # best effort; the audit archive needs it.
       kafka-bootstrap-servers: ""
 
 # Secret settings, read as a Spring Boot config tree: each key of the Secret is a property name and its value
@@ -87,6 +90,16 @@ telemetry:
   caConfigMap:
     name: ""
     key: ca.crt
+  # The logs alone to another OTLP/HTTP endpoint, the full URL with /v1/logs (OTEL_EXPORTER_OTLP_LOGS_ENDPOINT), e.g.
+  # the audit table writer's receiver, http://nuna-audit-tables:4318/v1/logs, so the console's Audit page needs no
+  # Kafka (deploy/README.md, "Audit"). It takes precedence over endpoint for logs; metrics and traces still go to
+  # endpoint, or nowhere when endpoint is empty.
+  logsEndpoint: ""
+  # A Secret in the release's namespace holding, under `key`, the token the audit table writer's receiver asks for:
+  # sent with every log export as X-Nuna-Audit-Token (OTEL_EXPORTER_OTLP_LOGS_HEADERS). For logsEndpoint only.
+  logsTokenSecret:
+    name: ""
+    key: token
   # The share of new traces recorded and exported, 0 to 1; a request whose caller's trace is sampled is always
   # recorded (parentbased_traceidratio).
   sampling: "0.1"

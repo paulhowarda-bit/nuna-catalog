@@ -3,8 +3,9 @@ package nuna.catalog.audit.publish;
 import nuna.catalog.audit.CatalogEvent;
 
 /**
- * Kafka did not acknowledge an event within the delivery timeout. The caller must not go on as
- * if it had: a credential issue stops here (D23). The event may still arrive later, at most once.
+ * Kafka did not acknowledge an event within the delivery timeout. The event may still arrive later, at most once.
+ * The catalog's audit trail catches it: the record is in the log already, and nothing is refused for want of Kafka
+ * (D23, amended 2026-11-23).
  */
 public final class AuditUnavailableException extends RuntimeException {
 

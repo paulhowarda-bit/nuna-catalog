@@ -6,10 +6,14 @@ import static org.apache.iceberg.types.Types.NestedField.required;
 import nuna.catalog.audit.AuditRow;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -27,11 +31,13 @@ import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.GenericFileWriterFactory;
 import org.apache.iceberg.data.GenericRecord;
+import org.apache.iceberg.data.IcebergGenerics;
 import org.apache.iceberg.data.InternalRecordWrapper;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
 import org.apache.iceberg.expressions.Expressions;
+import org.apache.iceberg.io.CloseableIterable;
 import org.apache.iceberg.io.FanoutDataWriter;
 import org.apache.iceberg.io.OutputFileFactory;
 import org.apache.iceberg.types.Types;
@@ -42,7 +48,10 @@ import org.apache.iceberg.util.PropertyUtil;
  * reader in the matrix reads it, partitioned by the day of each record's time, one row per audit record.
  *
  * <p>Every commit records, in its snapshot summary, the next offset to read in each partition of the audit topic,
- * so rows and offsets land in one atomic catalog commit and the writer resumes from the table itself. Each commit
+ * so rows and offsets land in one atomic catalog commit and the writer resumes from the table itself. Rows the writer
+ * took from the catalog's log over OTLP ({@link LogWriter}) are in no topic: their {@code topic_partition} is
+ * {@value LogWriter#PARTITION} and their {@code topic_offset} a number the writer gives each, unique and rising, and
+ * their commits record, under the source name {@value LogWriter#SOURCE}, the next such number. Each commit
  * also checks that no rows were added since the snapshot it started from: a second writer fails instead of writing
  * the same records again. Compaction's and manifest rewrites' snapshots add no rows, so they never stop it.
  */
@@ -91,7 +100,12 @@ final class EventsTable {
                 TableProperties.WRITE_TARGET_FILE_SIZE_BYTES, TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT);
     }
 
-    /** Loads {@code <namespace>.events}, or creates it and its namespace; refuses a table with other columns. */
+    /**
+     * Loads {@code <namespace>.events}, or creates it and its namespace; refuses a table with other columns.
+     *
+     * @param topic the audit topic the rows come from, or {@value LogWriter#SOURCE} for the log over OTLP: the name
+     *              its commits record their offsets under
+     */
     static <C extends Catalog & SupportsNamespaces> EventsTable open(C catalog, Namespace namespace, String topic) {
         TableIdentifier id = TableIdentifier.of(namespace, NAME);
         Table table;
@@ -127,6 +141,20 @@ final class EventsTable {
      *                               expiry removed them, and the writer will not guess where to start
      */
     Map<Integer, Long> reload() {
+        Optional<Map<Integer, Long>> recorded = reloadRecorded();
+        if (recorded.isEmpty() && table.currentSnapshot() != null) {
+            throw new IllegalStateException(table.name() + " holds rows, but no snapshot left in its history records"
+                    + " the offsets they reached (" + offsetsKey + "): snapshot expiry removed the writer's last"
+                    + " commit. Keep the audit catalog's snapshots longer than the writer may be down.");
+        }
+        return recorded.orElse(Map.of());
+    }
+
+    /**
+     * Reads the table again and returns the offsets the last commit of this source recorded, if any snapshot in its
+     * history holds them. The next commit starts from the snapshot read here.
+     */
+    Optional<Map<Integer, Long>> reloadRecorded() {
         table.refresh();
         Snapshot current = table.currentSnapshot();
         base = current == null ? null : current.snapshotId();
@@ -134,15 +162,23 @@ final class EventsTable {
              snapshot = snapshot.parentId() == null ? null : table.snapshot(snapshot.parentId())) {
             String recorded = snapshot.summary().get(offsetsKey);
             if (recorded != null) {
-                return parse(recorded);
+                return Optional.of(parse(recorded));
             }
         }
-        if (current != null) {
-            throw new IllegalStateException(table.name() + " holds rows, but no snapshot left in its history records"
-                    + " the offsets they reached (" + offsetsKey + "): snapshot expiry removed the writer's last"
-                    + " commit. Keep the audit catalog's snapshots longer than the writer may be down.");
+        return Optional.empty();
+    }
+
+    /** The event ids of the rows whose record time is at or after {@code since}, as the table holds them now. */
+    Set<String> eventIdsSince(Instant since) {
+        Set<String> ids = new HashSet<>();
+        long micros = ChronoUnit.MICROS.between(Instant.EPOCH, since);
+        try (CloseableIterable<Record> rows = IcebergGenerics.read(table).select("event_id", "time")
+                .where(Expressions.greaterThanOrEqual("time", micros)).build()) {
+            rows.forEach(row -> ids.add((String) row.getField("event_id")));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        return Map.of();
+        return ids;
     }
 
     /**

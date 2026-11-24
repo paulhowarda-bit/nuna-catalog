@@ -36,8 +36,9 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      # Rows waiting on stop are not written; the next writer reads them again from the table's offsets. The
-      # writer waits up to a minute for a commit in flight.
+      # Rows waiting on stop: from the topic they are not written, and the next writer reads them again from the
+      # table's offsets; from the log they are committed before the writer exits. The writer waits up to a minute
+      # for a commit in flight.
       terminationGracePeriodSeconds: 70
       containers:
         - name: writer
@@ -53,6 +54,16 @@ spec:
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if eq (include "nuna-audit-tables.source" .) "otlp" }}
+          ports:
+            - name: otlp-http
+              containerPort: {{ include "nuna-audit-tables.otlpPort" . }}
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: otlp-http
+            periodSeconds: 5
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

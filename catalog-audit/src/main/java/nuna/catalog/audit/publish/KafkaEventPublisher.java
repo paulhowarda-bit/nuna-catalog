@@ -23,7 +23,8 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 /**
  * Publishes events to one Kafka topic and waits for every in-sync replica to acknowledge each
  * one ({@code acks=all}). Production is idempotent, so a retried send is written once. A publish
- * that is not acknowledged within the delivery timeout throws: it fails closed (D23).
+ * that is not acknowledged within the delivery timeout throws; the catalog's audit trail then has the record in its
+ * log only (D23, amended 2026-11-23).
  *
  * <p>Each record is a CloudEvents structured-mode message: the encoded event as the value, its
  * subject as the key (so one object's events keep their order), and the CloudEvents media type

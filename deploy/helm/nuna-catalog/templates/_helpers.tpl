@@ -82,9 +82,22 @@ endpoint nothing is exported.
 - name: OTEL_EXPORTER_OTLP_HEADERS
   value: {{ $t.headers | quote }}
 {{- end }}
-{{- if $t.caConfigMap.name }}
+{{- end }}
+{{- if $t.logsEndpoint }}
+- name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+  value: {{ $t.logsEndpoint | quote }}
+{{- if $t.logsTokenSecret.name }}
+- name: NUNA_AUDIT_LOGS_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ $t.logsTokenSecret.name }}
+      key: {{ $t.logsTokenSecret.key }}
+- name: OTEL_EXPORTER_OTLP_LOGS_HEADERS
+  value: "X-Nuna-Audit-Token=$(NUNA_AUDIT_LOGS_TOKEN)"
+{{- end }}
+{{- end }}
+{{- if and (or $t.endpoint $t.logsEndpoint) $t.caConfigMap.name }}
 - name: OTEL_EXPORTER_OTLP_CERTIFICATE
   value: /etc/nuna/otlp-ca/{{ $t.caConfigMap.key }}
-{{- end }}
 {{- end }}
 {{- end }}

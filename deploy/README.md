@@ -6,7 +6,8 @@
 - `image/maintenance.Dockerfile` and `helm/nuna-maintenance/`: the maintenance worker's image and chart
   [D30], one release beside each catalog deployment. See catalog-maintenance/README.md.
 - `image/audit-tables.Dockerfile` and `helm/nuna-audit-tables/`: the audit-tables writer's image and chart [D23],
-  which writes every audit record into the audit catalog's `events` table. See catalog-audit-tables/README.md.
+  which writes every audit record into the audit catalog's `events` table, from the audit topic or from the catalog's
+  log over OTLP ("Audit", below). See catalog-audit-tables/README.md.
 - `local/`: try the chart on Docker Desktop's Kubernetes, with throwaway PostgreSQL, Kafka and Silo.
 
 ## The image
@@ -157,6 +158,47 @@ telemetry:
   empty: the endpoint and headers it injects take effect, beside the service name, resource attributes and sampler
   the chart sets.
 
+### Audit
+
+Every audit record is a line of the catalog's log `nuna.audit` [D23, amended 2026-11-23]: on stdout, which the
+cluster's log collection takes, and over OTLP wherever the logs go. That log is the record of audit, and Kafka is
+optional (docs/observability/audit-log.md says what is written when, and what can be lost).
+
+- **Without Kafka** (`config.nuna.audit.kafka-bootstrap-servers` empty, the default) the servers serve, vend
+  credentials and drain the outbox to the log. There is no audit topic, change stream or archive, and `GET .../audit`
+  (an object's recent records from the topic) answers 503 saying it needs Kafka; the console's catalog-wide Audit page
+  reads the audit table instead.
+- **With Kafka**, every record also goes to the audit topic, and changes to the change stream, best effort: an outage
+  refuses and slows nothing, and what happened during it is in the log only, not in the topic, the SIEM's feed or the
+  Object Lock archive. The archive (`nuna.audit.archive.*`) needs Kafka.
+- **The console's Audit page without Kafka.** Point the catalog's logs at the audit table writer, whose source `otlp`
+  takes them over OTLP/HTTP. One shared token, in a Secret both releases read:
+
+```bash
+kubectl -n <namespace> create secret generic nuna-audit-token --from-literal=token="$(openssl rand -hex 32)"
+```
+
+```yaml
+# nuna-audit-tables values
+config:
+  nuna:
+    audit-tables:
+      source: otlp            # the receiver on otlp.port (4318), behind the Service port otlp-http
+secrets:
+  existingSecret: nuna-audit-tables-secrets   # holds nuna.audit-tables.otlp.token and token.client-secret
+
+# nuna-catalog values
+telemetry:
+  logsEndpoint: http://<audit-tables release>-nuna-audit-tables:4318/v1/logs
+  logsTokenSecret: {name: nuna-audit-token, key: token}
+```
+
+  `telemetry.logsEndpoint` sets `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`, so the logs go to the writer while metrics and
+  traces go to `telemetry.endpoint`, or nowhere. The writer keeps only the `nuna.audit` records and ignores the rest.
+  With a collector in between, send the logs to the collector as usual and have it forward them to the writer with
+  an `otlphttp` exporter whose headers carry `X-Nuna-Audit-Token`. The writer's config tree Secret holds the token as
+  `nuna.audit-tables.otlp.token`; it refuses to start without one of at least 32 characters.
+
 ### Before production
 
 - **Database safety settings.** The server refuses to start while the store's self-check reports a finding
@@ -173,8 +215,8 @@ telemetry:
   to 10 accept 30. To hold the whole deployment to a rate, set it to that rate divided by the replica count.
   A purge claim over the limit answers 429 with `Retry-After: 60`, and the maintenance worker tries again on
   its next scan.
-- **Audit-trail reads (item 19).** Each `GET .../audit` read opens a Kafka consumer, so one caller (the
-  principal its token names, or the end user a trusted engine acts for) may read at most
+- **Audit-trail reads (item 19).** Each `GET .../audit` read opens a Kafka consumer (it needs Kafka; "Audit", above),
+  so one caller (the principal its token names, or the end user a trusted engine acts for) may read at most
   `nuna.governance.audit-reads-per-minute` (default 60) a minute. Like the purge rate it is counted by each
   server on its own: a caller whose reads the balancer spreads over three servers set to 60 gets up to 180 a
   minute. The console reads only when a person opens an object's Audit tab, changes how many to show or
@@ -235,8 +277,8 @@ telemetry:
   `nuna.refs.*`.
   The maintenance worker reads the branches to warn of and to end from
   `GET /management/v1/maintenance/work?section=refs`; it warns of each once, a `ref` event (expiring) on the
-  audit topic and the change stream (`POST /management/v1/maintenance/refs/{id}/warn`, which answers 503 while
-  Kafka is down, so the warning goes out at a later scan), and ends a branch past its expiry (`.../end`). A
+  audit log, and the audit topic and the change stream where Kafka is configured, best effort
+  (`POST /management/v1/maintenance/refs/{id}/warn`), and ends a branch past its expiry (`.../end`). A
   branch past its expiry is gone for every route at once, but keeps its name until the worker ends it, so a new
   branch of that name waits for the worker's next scan. The gauges `nuna.catalog.refs` and
   `nuna.catalog.refs.expiring` show each catalog's count against its limits

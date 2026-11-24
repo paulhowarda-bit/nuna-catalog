@@ -5,8 +5,9 @@ OpenTelemetry collector over OTLP/HTTP, and write their log lines to stdout as J
 endpoint is named, so the tests, the demo and a laptop run need no collector. Backlog 38 laid this foundation; 39, 40
 and 41 add the catalog's own meters and spans, and 49 the worker's spans.
 
-The worker's meters are in worker-metrics.md and its spans in worker-spans.md, the catalog's in catalog-metrics.md and
-its spans in spans.md. What the
+The audit log, every audit record as a log line, and the audit table writer's OTLP logs receiver are in
+audit-log.md (backlog 195). The worker's meters are in worker-metrics.md and its spans in worker-spans.md, the
+catalog's in catalog-metrics.md and its spans in spans.md. What the
 catalog keeps of the worker's own work, each table's assessment and the recent scans, for the console's health pages,
 is in table-health.md (backlog 47), with the read that gives every table the caller may select one row for the
 console's ice line (backlog 127). The console's health page, and how a server gathers catalog health from every
@@ -67,7 +68,8 @@ The standard OpenTelemetry variables are enough; Spring Boot reads them:
 | Variable | Meaning |
 |---|---|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | The collector's OTLP/HTTP base URL, e.g. `http://otel-collector:4318`. Switches on all three signals; `/v1/metrics`, `/v1/traces` and `/v1/logs` are added to it. |
-| `OTEL_EXPORTER_OTLP_{METRICS,TRACES,LOGS}_ENDPOINT` | One signal's full URL instead. |
+| `OTEL_EXPORTER_OTLP_{METRICS,TRACES,LOGS}_ENDPOINT` | One signal's full URL instead; `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` alone sends the logs, and so the audit log, somewhere with no metrics or traces (audit-log.md). |
+| `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | Headers for the log exports only, e.g. the audit table writer's `X-Nuna-Audit-Token=<token>`. |
 | `OTEL_EXPORTER_OTLP_HEADERS` | `name=value` pairs, separated by commas, sent with every export. |
 | `OTEL_EXPORTER_OTLP_CERTIFICATE` | A PEM file with the CA that signed an https collector's certificate. |
 | `OTEL_SERVICE_NAME`, `OTEL_RESOURCE_ATTRIBUTES` | The resource the signals come from. |
@@ -86,11 +88,13 @@ properties do the same: `management.otlp.metrics.export.url`, `management.opente
 - The OTLP exporter sends over the JDK's HTTP client (`opentelemetry-exporter-sender-jdk`); OkHttp is excluded from
   every module (`build.gradle.kts`).
 
-## Audit stays on Kafka
+## Audit is a log
 
-Telemetry never replaces audit [D23]. Audit events still go to Kafka, synchronously, and credential vending fails
-closed without them; the outbox still carries the changes. A trace, a metric or a log record can be sampled, dropped
-or lost; an audit event cannot.
+Every audit record is a line of the log `nuna.audit`, as its CloudEvent JSON (D23, amended 2026-11-23; backlog 195):
+reads, denials and credential issues before the catalog answers, changes as the outbox relay drains them. That log, on stdout and over OTLP like every other line, is the record of audit; Kafka
+is optional, and where it is configured it takes a copy, best effort. Unlike the other signals it is never sampled, and
+the server refuses to start with it switched off. What can be lost, and how the audit table writer takes the records
+over OTLP for the console's Audit page, is in audit-log.md.
 
 ## A failed export never fails or slows a request
 
