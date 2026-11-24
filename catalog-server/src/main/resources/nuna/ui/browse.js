@@ -10,7 +10,7 @@
 
 import * as api from './api.js';
 import {$, at, badge, code, copyButton, copyText, facts, fill, fmt, h, icon, load, muted, panel, pill, plural, tabsNav, tbl,
-  when} from './dom.js';
+  when, opensRow} from './dom.js';
 import {catalogHref, objectHref, pageHref, warehouseOf} from './route.js';
 import {queue, queueOf} from './queue.js';
 import {reveal, treeOf} from './tree.js';
@@ -155,7 +155,7 @@ function contentsTable(catalog, levels, x) {
   const rows = [
     ...x.ns.map(n => {
       const t = totalsCells(x.totals.get(n[n.length - 1]));
-      return h('tr', {'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
+      return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'namespace', 'data-name': n[n.length - 1], title: t.title},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'namespace', namespace: n, ref: x.ref})}, n[n.length - 1]), t.count),
         h('td', null, badge([icon('ns'), 'namespace'])), h('td', {class: 'fmt'}, muted('–')),
         h('td', null, queuePill(queuedUnder(x.q, n))),
@@ -165,7 +165,7 @@ function contentsTable(catalog, levels, x) {
     ...x.tables.map(name => {
       const mine = x.q.filter(r => r.name === name && r.namespace.join('.') === levels.join('.'));
       const kept = x.kept.get(name) || {};
-      return h('tr', {'data-kind': 'table', 'data-name': name},
+      return h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'table', 'data-name': name},
         h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'table', namespace: levels, name, ref: x.ref})}, name)),
         h('td', null, badge([icon('table'), 'table'])),
         h('td', {class: 'fmt'}, kept['format-version'] ? badge('v' + kept['format-version'], 'strong') : muted('–')),
@@ -175,7 +175,7 @@ function contentsTable(catalog, levels, x) {
         h('td', {class: 'num snaps'}, kept.snapshots === undefined ? muted('–') : fmt(kept.snapshots)),
         h('td', {class: 'last'}, lastCommit(kept['last-commit'])), x.ref ? h('td', null, onRefCell(x, [...levels, name], false)) : null);
     }),
-    ...x.views.map(name => h('tr', {'data-kind': 'view', 'data-name': name},
+    ...x.views.map(name => h('tr', {class: 'opens', onclick: opensRow, 'data-kind': 'view', 'data-name': name},
       h('td', {class: 'name'}, h('a', {href: objectHref({catalog, kind: 'view', namespace: levels, name, ref: x.ref})}, name)),
       h('td', null, badge([icon('view'), 'view'])), h('td', {class: 'fmt'}, muted('–')), h('td', null, muted('–')),
       h('td', {class: 'gov'}, markPills(x.gov.get('view:' + [...levels, name].join('.'))) || muted('–')),

@@ -138,6 +138,16 @@ export function panel(title, meta, ...kids) {
   return h('div', {class: 'panel'}, h('h2', null, title, meta ? [' ', h('span', {class: 'meta'}, meta)] : null), kids);
 }
 
+/**
+ * A table row that opens what its name links to (backlog 189): it shows a hover background and a chevron, and a click
+ * anywhere on it but another control follows the name's link.
+ */
+export function opensRow(e) {
+  if (e.target.closest('a, button, input, select, summary, label')) return;
+  const a = e.currentTarget.querySelector('td.name a');
+  if (a) a.click();
+}
+
 /** A table in its scrolling wrapper. Heads are text or [text, class]; rows are <tr>s or a tbody. */
 export function tbl(cls, heads, rows, attrs) {
   return h('div', {class: 'wrap-tbl'}, h('table', Object.assign({class: 'tbl compact' + (cls ? ' ' + cls : '')}, attrs || {}),

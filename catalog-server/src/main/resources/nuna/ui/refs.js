@@ -7,7 +7,7 @@
 
 import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, edgeCue, facts, failure, fill, fmt, granted, h, icon, jsonPre, load, muted,
-  openDialog, dialogForm, field, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
+  openDialog, dialogForm, field, opensRow, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
 
 const DAY = 86_400_000;
@@ -607,7 +607,7 @@ async function changesTab(c, r, total) {
     const state = !p ? muted('–') : p['dropped-at'] || p['main-version'] === undefined ? pill('bad', 'Dropped on main')
       : p['main-version'] === p['cut-version'] ? pill('ok', icon('check'), 'Main unchanged')
         : p.moves ? pill(null, `Main maintained ${times}`) : pill('warn', `Main moved ${times}`);
-    return h('tr', {class: p && p.moves ? null : p ? 'is-warn' : null, 'data-path': pathOfItem(t)},
+    return h('tr', {class: 'opens' + (p && p.moves ? '' : p ? ' is-warn' : ''), onclick: opensRow, 'data-path': pathOfItem(t)},
       h('td', {class: 'name'}, h('a', {href: tableHref(c, t, r.name)}, pathOfItem(t))),
       h('td', {class: 'num'}, fmt(t['cut-version'])), h('td', {class: 'num'}, h('b', null, fmt(t.version))),
       h('td', null, h('a', {href: tableHref(c, t, r.name, 'metadata-log')}, plural(t.version || 0, 'commit'))),

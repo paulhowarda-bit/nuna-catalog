@@ -336,6 +336,16 @@ class ConsoleBrowserTest {
         WebElement daily = contentsRow("daily");
         assertThat(List.of(contentsCell(daily, 3), contentsCell(daily, 6), contentsCell(daily, 7))).containsOnly("–");
 
+        // A name is a link in the link colour, as every link is, and its row opens it: a chevron, and a click
+        // anywhere on the row follows the name (Atelier's review, F11; backlog 189).
+        WebElement euName = euRow.findElement(By.cssSelector("td.name a"));
+        assertThat(euName.getCssValue("color")).as("a name in the link colour, not the text's")
+                .isNotEqualTo(euRow.findElement(By.cssSelector("td.name")).getCssValue("color"));
+        assertThat(driver.executeScript("return getComputedStyle(arguments[0], '::after').content", euName))
+                .isEqualTo("\"›\"");
+        euRow.findElement(By.xpath("./td[2]")).click();
+        browser.await("the eu row did not open eu", d -> d.getCurrentUrl().endsWith("ns=" + top + "%1Fequities%1Feu"));
+
         // The catalog's Contents counts every level beneath each top namespace: trades and positions two levels
         // down, accounts one.
         browser.open("/ui/#c=trading");
