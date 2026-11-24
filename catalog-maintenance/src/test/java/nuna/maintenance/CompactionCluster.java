@@ -80,7 +80,7 @@ final class CompactionCluster implements AutoCloseable {
             URI apiServer = URI.create(kubectl(Duration.ofMinutes(1), null, "config", "view", "--minify", "-o",
                     "jsonpath={.clusters[0].cluster.server}").strip());
             return new CompactionCluster(namespace, jobs, new WorkerSettings.Compaction(IMAGE, "Never", jobs,
-                    "nuna-compaction", apiServer, serviceAccount, catalogForPods, "2Gi", "1g", 2, 185, Map.of()));
+                    "nuna-compaction", apiServer, serviceAccount, catalogForPods, "2Gi", null, "1g", 2, 185, Map.of()));
         } catch (Exception | Error failure) {
             try {
                 delete(namespace, jobs);

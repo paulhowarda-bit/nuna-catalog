@@ -118,6 +118,6 @@ class TokenSourceTest {
     private static WorkerSettings.Compaction compaction(String image, String namespace) {
         return new WorkerSettings.Compaction(image, "IfNotPresent", namespace, "nuna-compaction",
                 URI.create("https://kubernetes.default.svc"), Path.of("/var/run/secrets/kubernetes.io/serviceaccount"),
-                null, "2Gi", "1g", 2, 185, Map.of());
+                null, "2Gi", null, "1g", 2, 185, Map.of());
     }
 }

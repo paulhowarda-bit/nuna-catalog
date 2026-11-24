@@ -227,7 +227,7 @@ final class KubernetesJobs implements Compactor {
                 .put("name", secretName).put("key", "auth");
         ObjectNode resources = container.putObject("resources");
         resources.putObject("limits").put("memory", settings.memory());
-        resources.putObject("requests").put("memory", settings.memory());
+        resources.putObject("requests").put("memory", settings.request());
         if (storageCa.isPresent()) {
             // The ConfigMap the worker creates after the Job, of the Secret's name; the pod waits for it to appear.
             container.putArray("volumeMounts").addObject().put("name", "storage-ca").put("mountPath", STORAGE_CA)
