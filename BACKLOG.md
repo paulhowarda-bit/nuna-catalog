@@ -3246,3 +3246,4 @@ the pods and the catalog stops exporting to them, and `up` puts the switch back 
 | [225](backlog/225.md) | Console: Service's Most versions behind opens a table the operator may not read (Paul, 2026-11-23) | done | 2026-11-24 |
 | [229](backlog/229.md) | The console header lists every group by name and runs off the screen | done | 2026-11-24 |
 | [230](backlog/230.md) | The demo runs no maintenance worker, so Overview and Maintenance are empty | done | 2026-11-24 |
+| [234](backlog/234.md) | Demo SingleStore refuses order writes once its pipelines' extractors fill the table-memory cap | done | 2026-11-24 |
