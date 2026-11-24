@@ -1,0 +1,17 @@
+Breaks: Compact a table now offers tables the caller may only read.
+Module: catalog-server
+Test: ConsoleHealthTest#compactATableNowOffersEveryTableTheCallerMayCompactQueueFirst
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/requests.js b/catalog-server/src/main/resources/nuna/ui/requests.js
+index 77868b2d..7486195d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/requests.js
++++ b/catalog-server/src/main/resources/nuna/ui/requests.js
+@@ -124,7 +124,7 @@ const LISTED = 300;
+ export async function pickDialog(catalog, rows, tables) {
+   const grants = (await ownGrants(catalog)).filter(g => g.privilege === 'modify');
+   const pathOf = t => [...t.namespace, t.name].join('.');
+-  const mine = t => grants.some(g => reaches(g.securable, {namespace: t.namespace, name: t.name}));
++  const mine = () => true;
+   const frozen = new Set(tables.filter(t => t.frozen).map(pathOf));
+   const queued = rows.filter(mine);
+   const inQueue = new Set(queued.map(pathOf));

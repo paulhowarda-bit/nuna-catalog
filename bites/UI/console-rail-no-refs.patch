@@ -1,0 +1,17 @@
+Breaks: The rail draws no Branches and tags item.
+Module: catalog-server
+Test: ConsoleBrowserTest#theRailOpensBranchesAndTagsAndSaysWhyOneMayNotMakeOne
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 9733e8d5..1ff87e43 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -187,7 +187,7 @@ function setChrome(navKey, ref) {
+   // Only what the caller's groups can use is drawn (item 184): Overview and Maintenance are about the tables they may
+   // read, Audit is for audit readers and those who manage the catalog's grants, Service for platform operators.
+   // Branches and tags are listed to anyone who holds anything in the catalog (backlog 221).
+-  const open = {overview: readsData(), catalog: true, refs: !!cat, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
++  const open = {overview: readsData(), catalog: true, refs: false, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
+     service: operates()};
+   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
+   const home = cat ? homeKey(cat) : 'service';
