@@ -17,7 +17,7 @@ import {reveal, treeOf} from './tree.js';
 import {accessTab, auditTab, governanceMarks, markPills} from './panels.js';
 import {tablePage, viewPage} from './table.js';
 import {NAMESPACE_SETTINGS, settingsTab} from './settings.js';
-import {readingRef, readOnlyNote, refChrome, refNote, refPage, refsCount, refsTab} from './refs.js';
+import {readingRef, readOnlyNote, refChrome, refNote, refPage, refsPage} from './refs.js';
 import {closedNote, trailOpen, trailWords} from './access.js';
 
 /** The path above a page: the catalog (catalog@ref through a ref), then each namespace; a long one folds its far end on a phone. */
@@ -68,6 +68,7 @@ export function browse(slot, r) {
   if (r.k === 'table' && r.n) main = tablePage(target, r.tab, r);
   else if (r.k === 'view' && r.n) main = viewPage(target, r.tab, r);
   else if (r.k === 'namespace' && r.ns.length) main = namespacePage(target, r.tab, r);
+  else if (r.k === 'catalog' && r.tab === 'refs') main = refsPage(r.c);
   else if (r.k === 'catalog') main = catalogPage(r.c, r.tab, r);
   else if (r.k === 'ref' && r.n) main = refPage(r.c, r.n, r.tab);
   else main = notFound();
@@ -200,18 +201,12 @@ const countWords = (n, w) => n ? plural(n, w) : `no ${w}s`;
 
 // ---- the catalog ----
 
-// A catalog's tabs are its own: what is in it, its branches and tags, its properties. Governance, Audit and the rest
-// are the rail's catalog-wide pages (Atelier, 2026-11-23; backlog 199).
-const CATALOG_TABS = ['', 'refs', 'properties'];
-
-/** A tab's count, added once it is known. */
-function addCount(tabs, key, n) {
-  const a = $(`a[data-tab="${key}"]`, tabs);
-  if (a && n !== null && !$('.c', a)) a.append(' ', h('span', {class: 'c'}, fmt(n)));
-}
+// A catalog's tabs are its own: what is in it and its properties. Governance, Audit, Branches and tags and the rest
+// are the rail's catalog-wide pages (Atelier, 2026-11-23 and 2026-11-24; backlogs 199 and 221).
+const CATALOG_TABS = ['', 'properties'];
 
 function catalogPage(catalog, tab, route) {
-  const ref = tab === 'refs' ? null : route.r;
+  const ref = route.r;
   const main = h('div', {class: 'nc-main', id: 'catalog-page'});
   const key = CATALOG_TABS.includes(tab || '') ? tab || '' : null;
   load(main, async () => {
@@ -228,15 +223,13 @@ function catalogPage(catalog, tab, route) {
       x ? h('p', {class: 'sub'}, `${countWords(x.ns.length, 'namespace')} · `,
         x.q.length ? `${plural(x.q.length, 'table')} queued for tonight` : 'nothing you may read is queued for tonight') : null,
       side);
-    const tabs = tabsNav('Catalog', [['', 'Contents', x ? x.ns.length : null], ['refs', 'Branches and tags'], ['properties', 'Properties']],
-      key, k => k === 'refs' ? catalogHref(catalog, 'refs') : catalogHref(catalog, k || null, ref));
-    refsCount(catalog).then(n => addCount(tabs, 'refs', n));
-    if (key !== 'refs') refChrome(Object.assign({}, route, {r: ref}), head);
+    const tabs = tabsNav('Catalog', [['', 'Contents', x ? x.ns.length : null], ['properties', 'Properties']],
+      key, k => catalogHref(catalog, k || null, ref));
+    refChrome(Object.assign({}, route, {r: ref}), head);
     return [head, tabs,
       key === null ? h('div', {class: 'empty'}, h('h3', null, 'A catalog has no such tab'))
         : key === 'properties' ? loading(() => catalogProperties(catalog))
-          : key === 'refs' ? loading(() => refsTab(catalog))
-            : x ? contentsTable(catalog, [], x) : null,
+          : x ? contentsTable(catalog, [], x) : null,
     ];
   });
   return main;

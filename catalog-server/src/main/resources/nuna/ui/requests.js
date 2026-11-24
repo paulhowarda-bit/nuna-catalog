@@ -6,6 +6,7 @@
 
 import * as api from './api.js';
 import {at, code, dialogForm, field, fill, granted, h, icon, openDialog, pill} from './dom.js';
+import {REASONS} from './queue.js';
 
 export const JOBS = {
   'compaction': {noun: 'Compaction', button: 'Compact now', verb: 'Compact'},
@@ -107,19 +108,52 @@ export function askDialog(target, job, done) {
   openDialog(`${j.verb} ${target.name} now`, body);
 }
 
+/** Tonight's queue reasons in words, for the dropdown: "equality deletes, small files". */
+const reasonWords = row => ((row.assessment || {}).reasons || []).map(r => (REASONS[r] || [null, r])[1].toLowerCase()).join(', ');
+
+/** More tables than this the caller may compact, and the dropdown offers tonight's queue and a path field only. */
+const LISTED = 300;
+
 /**
- * "Compact a table now" on Maintenance: a table path in the catalog, the queue offered first; then the compaction
- * dialog for it. A path names its namespace's levels and the table, joined by dots.
+ * "Compact a table now" on Maintenance (backlog 222): a dropdown of the tables in the catalog the caller's groups may
+ * compact, a modify grant reaching each, tonight's queue first with its reasons, then the rest by path; a frozen one is
+ * shown and cannot be chosen. "Another table, by its path…" opens a path field, which shows from the start when the
+ * caller may compact more than LISTED tables. Then the compaction dialog for the table chosen. `rows` is tonight's
+ * queue in the catalog, `tables` every table in it the caller may read (the estate).
  */
-export function pickDialog(catalog, rows) {
-  const input = h('input', {name: 'path', type: 'text', list: 'request-tables', autocomplete: 'off', spellcheck: 'false',
-    placeholder: 'A table path, such as ' + (rows[0] ? [...rows[0].namespace, rows[0].name].join('.') : 'sales.orders')});
-  const options = h('datalist', {id: 'request-tables'}, rows.map(r => h('option', {value: [...r.namespace, r.name].join('.')})));
-  const body = h('div', null, h('p', null, 'Choose a table. Tonight\'s queue is offered first; any table in ', code(catalog),
-    ' can be compacted.'),
-  dialogForm([field('Table', h('span', {class: 'field mono'}, input)), options], 'Choose', async (form, out) => {
-    const path = input.value.trim();
-    const row = rows.find(r => [...r.namespace, r.name].join('.') === path);
+export async function pickDialog(catalog, rows, tables) {
+  const grants = (await ownGrants(catalog)).filter(g => g.privilege === 'modify');
+  const pathOf = t => [...t.namespace, t.name].join('.');
+  const mine = t => grants.some(g => reaches(g.securable, {namespace: t.namespace, name: t.name}));
+  const frozen = new Set(tables.filter(t => t.frozen).map(pathOf));
+  const queued = rows.filter(mine);
+  const inQueue = new Set(queued.map(pathOf));
+  const others = tables.filter(t => mine(t) && !inQueue.has(pathOf(t))).sort((a, b) => pathOf(a).localeCompare(pathOf(b)));
+  const listed = others.length <= LISTED;
+  const byPath = '\u0000path';
+  const option = (t, words) => {
+    const path = pathOf(t);
+    const cold = frozen.has(path) || !!t.frozen;
+    return h('option', {value: path, disabled: cold, 'data-frozen': cold ? '' : null},
+      [path, words, cold ? 'frozen' : null].filter(Boolean).join(' · '));
+  };
+  const pick = h('select', {name: 'table'},
+    h('option', {value: '', disabled: true, selected: true}, 'Choose a table'),
+    queued.length ? h('optgroup', {label: 'Queued for tonight'}, queued.map(r => option(r, reasonWords(r)))) : null,
+    listed && others.length ? h('optgroup', {label: 'Other tables you may compact'}, others.map(t => option(t, null))) : null,
+    h('option', {value: byPath}, 'Another table, by its path…'));
+  const input = h('input', {name: 'path', type: 'text', autocomplete: 'off', spellcheck: 'false',
+    placeholder: 'A table path, such as ' + (queued[0] || others[0] ? pathOf(queued[0] || others[0]) : 'sales.orders')});
+  const typing = !listed || (!queued.length && !others.length);
+  const pathField = field('Path', h('span', {class: 'field mono'}, input), 'Its namespace\'s levels and its name, joined by dots.');
+  pathField.hidden = !typing;
+  if (typing) pick.value = byPath;
+  const body = h('div', null, h('p', null, 'Choose a table in ', code(catalog), ' that your groups may compact. Tonight\'s queue '
+    + 'comes first.', listed ? null : ` You may compact ${others.length + queued.length} tables, too many to list: write the path of one `
+    + 'not queued.'),
+  dialogForm([field('Table', h('span', {class: 'field mono select'}, pick)), pathField], 'Next', async (form, out) => {
+    const path = pick.value === byPath ? input.value.trim() : pick.value;
+    const row = [...queued, ...others].find(t => pathOf(t) === path);
     const cut = path.lastIndexOf('.');
     if (!row && cut <= 0) {
       fill(out, h('p', {class: 'fine grant-hint'}, 'Name the table with its namespace, such as sales.orders.'));
@@ -129,5 +163,15 @@ export function pickDialog(catalog, rows) {
       : {catalog, kind: 'table', namespace: path.slice(0, cut).split('.'), name: path.slice(cut + 1)};
     askDialog(target, 'compaction');
   }));
+  // Next waits for a table: chosen in the list, or written in the path field (Atelier, 2026-11-24).
+  const next = body.querySelector('button[type="submit"]');
+  const ready = () => { next.disabled = pick.value === byPath ? !input.value.trim() : !pick.value; };
+  pick.addEventListener('change', () => {
+    pathField.hidden = pick.value !== byPath;
+    if (pick.value === byPath) input.focus();
+    ready();
+  });
+  input.addEventListener('input', ready);
+  ready();
   openDialog('Compact a table now', body);
 }

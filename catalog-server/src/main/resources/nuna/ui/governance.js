@@ -274,15 +274,35 @@ function holdsPage(catalog, tabs) {
     load(own, () => governanceTab(target, reload));
   };
   reload();
+  // A platform operator freezes a namespace here as well as on its Access tab, which was the only way to it
+  // (Atelier, 2026-11-24; backlog 221).
+  const acts = [may(catalog, 'manage-tags')
+    ? h('button', {class: 'btn sm', type: 'button', onclick: () => holdOnPath(catalog)}, icon('lock'), 'Place a hold on a path') : null,
+    operates() ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'freeze-path', onclick: () => freezeOnPath(catalog, reload)},
+      icon('snow'), 'Freeze a namespace for DR') : null].filter(Boolean);
   main.append(pageHead({
     eyebrow: `${catalog} · governance`,
     title: `Holds and freezes in ${catalog}`,
     sub: 'A hold stops snapshot expiry, orphan removal, drops and purges on what it covers. A freeze stops every cleanup and write '
       + 'in its namespace until it is lifted.',
-    side: may(catalog, 'manage-tags')
-      ? h('button', {class: 'btn sm', type: 'button', onclick: () => holdOnPath(catalog)}, icon('lock'), 'Place a hold on a path') : null,
+    side: acts.length ? acts : null,
   }), tabs, lists, h('h2', {class: 'section-h'}, `${catalog} itself`), own);
   return main;
+}
+
+/** A namespace named by its path, then the DR freeze dialog for it: platform operators only. */
+function freezeOnPath(catalog, reload) {
+  openDialog(`Freeze a namespace in ${catalog} for DR`, h('div', null,
+    h('p', null, 'Name the namespace. The freeze stops every commit and cleanup beneath it until it is lifted.'),
+    dialogForm([field('Namespace', text('path', 'such as equities.eu'))], 'Next', async (form, out) => {
+      const parts = form.elements.path.value.trim().split('.').filter(Boolean);
+      if (!parts.length) {
+        fill(out, h('p', {class: 'fine grant-hint'}, 'Write the namespace\'s path.'));
+        return;
+      }
+      form.closest('dialog').close();
+      drFreeze({catalog, kind: 'namespace', namespace: parts}, false, reload);
+    })));
 }
 
 function holdOnPath(catalog) {

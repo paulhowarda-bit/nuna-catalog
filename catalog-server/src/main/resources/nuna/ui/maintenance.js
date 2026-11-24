@@ -58,7 +58,7 @@ export function maintenancePage(catalog) {
         sub: 'The worker compacts the neediest first, in its cleanup window. Only the tables you may read are listed; '
           + 'each one\'s assessment is on its Maintenance tab.',
         side: [assessed ? pill('ok', icon('check'), 'Assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
-          may ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact-pick', onclick: () => pickDialog(catalog, rows)},
+          may ? h('button', {class: 'btn sm', type: 'button', 'data-act': 'compact-pick', onclick: () => pickDialog(catalog, rows, tables)},
             icon('play'), 'Compact a table now') : null],
       }),
       figures,
