@@ -1,0 +1,17 @@
+Breaks: A top namespace's header repeats its name as its path.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
+index c1400621..dc969dee 100644
+--- a/catalog-server/src/main/resources/nuna/ui/browse.js
++++ b/catalog-server/src/main/resources/nuna/ui/browse.js
+@@ -282,7 +282,7 @@ function namespacePage(target, tab, route) {
+   const side = h('div', {class: 'side'}, copyButton(dotted, 'Copy path'), copyLinkButton());
+   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, levels.slice(0, -1), levels[levels.length - 1], target.ref),
+     h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('ns')), h('h1', {tabindex: '-1'}, levels[levels.length - 1]),
+-      levels.length > 1 ? h('code', {class: 'muted'}, dotted) : null),
++      h('code', {class: 'muted'}, dotted)),
+     h('p', {class: 'sub', 'data-sub': ''}, ''),
+     side);
+   const key = NS_TABS.includes(tab || '') ? tab || '' : null;
