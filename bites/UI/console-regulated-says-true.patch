@@ -1,0 +1,17 @@
+Breaks: Access says the regulated area is true, not Yes (backlog 213).
+Module: catalog-server
+Test: ConsoleLabelsBrowserTest#aStewardSetsTheOwnerARetentionClassTheRegulatedMarkAndTheClassificationFromTheConsole
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 58d43f52..a74fce81 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -20,7 +20,7 @@ const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'ret
+   regulated: 'Regulated area', 'row-column-policy': 'Row and column policy'};
+ const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
+ /** An attribute's value in words: the regulated flag is Yes or No, not true or false (backlog 213). */
+-const attributeValue = (name, v) => name === 'regulated' && /^(true|false)$/i.test(String(v))
++const attributeValue = (name, v) => false && /^(true|false)$/i.test(String(v))
+   ? (String(v).toLowerCase() === 'true' ? 'Yes' : 'No') : String(v);
+ 
+ const what = target => target.kind === 'catalog' ? target.catalog : dotted(target);

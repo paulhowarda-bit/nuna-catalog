@@ -1,0 +1,17 @@
+Breaks: Marking a regulated area records no reason, only the console (backlog 213).
+Module: catalog-server
+Test: ConsoleLabelsBrowserTest#aStewardSetsTheOwnerARetentionClassTheRegulatedMarkAndTheClassificationFromTheConsole
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 58d43f52..6dba52dc 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -291,7 +291,7 @@ function setRegulated(target, marked, inherited, reload) {
+           : 'Write the reason: the area carries it for as long as it is marked.'));
+         return;
+       }
+-      const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', reason);
++      const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', 'console');
+       forgetMarks(target.catalog);
+       fill(out, granted(marked ? `${what(target)} is no longer a regulated area` : `${what(target)} is a regulated area`, answer));
+       reload();

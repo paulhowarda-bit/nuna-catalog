@@ -1,0 +1,17 @@
+Breaks: An audit record's badge shows its raw type, not its chip's word (backlog 214).
+Module: catalog-server
+Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/panels.js b/catalog-server/src/main/resources/nuna/ui/panels.js
+index 58d43f52..362c8aad 100644
+--- a/catalog-server/src/main/resources/nuna/ui/panels.js
++++ b/catalog-server/src/main/resources/nuna/ui/panels.js
+@@ -619,7 +619,7 @@ export function auditBadge(type, data) {
+   const kind = AUDIT_KINDS.find(([k]) => k === auditKindOf(type));
+   const refKind = String((data || {}).kind || '').toLowerCase();
+   const word = shortType(type) === 'ref' && (refKind === 'branch' || refKind === 'tag') ? (refKind === 'tag' ? 'Tag' : 'Branch')
+-    : kind ? kind[2] : 'Other';
++    : shortType(type);
+   return h('span', {class: 'badge', title: type || ''}, word);
+ }
+ 

@@ -1,0 +1,16 @@
+Breaks: A regulated area in the governance summary does not say who marked it (backlog 213).
+Module: catalog-server
+Test: GovernanceSummaryTest#theSummaryCountsTheCatalogsTablesAndNamesItsRegulatedAreasAndClosedTables
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
+index 2fe97b76..7d52d9bb 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/GovernanceSummary.java
+@@ -158,7 +158,6 @@ final class GovernanceSummary {
+             // Why the area is regulated and who said so, as its flag records them (Atelier's re-walk, backlog 213).
+             GovernanceAttribute flag = own(on, GovernanceAttribute.Kind.REGULATED).orElseThrow();
+             node.put("provenance", flag.provenance());
+-            node.put("set-by", flag.setBy());
+             node.put("set-at", flag.setAt().toString());
+         });
+         ArrayNode closedNode = body.putArray("closed");
