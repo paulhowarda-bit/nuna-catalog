@@ -334,7 +334,7 @@ export function queueChips(rows, table) {
  * The empty queue: nothing for the worker to do tonight, among the tables the caller may read. `c` is the catalog's
  * estate counts (`estateCounts`): a table not assessed yet is named as such, not counted as needing nothing.
  */
-export function emptyQueue(catalog, c, off = false) {
+export function emptyQueue(catalog, c, off = false, edit = null) {
   // With maintenance off in the policy, that is why nothing is assessed; the worker is not to blame (Atelier's re-walk).
   const why = off ? ['Maintenance is off in ', h('code', null, catalog), '\'s policy, so the worker assesses no table and queues '
     + 'none. ']
@@ -346,5 +346,5 @@ export function emptyQueue(catalog, c, off = false) {
     c.unassessed ? `${plural(c.unassessed, 'table')} ${c.unassessed === 1 ? 'is' : 'are'} not assessed yet. ` : ''];
   return h('div', {class: 'empty', id: 'neediest-none'},
     h('h3', null, 'Nothing queued for tonight'),
-    h('p', null, ...why, 'Tables you may not read are not counted here.'));
+    h('p', null, ...why, 'Tables you may not read are not counted here.', off ? edit : null));
 }

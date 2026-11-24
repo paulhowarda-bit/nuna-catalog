@@ -9,7 +9,7 @@ import {dialogForm, failure, field, fill, fmt, granted, h, icon, load, openDialo
   from './dom.js';
 import {catalogOff, emptyQueue, estate, estateCounts, lastAssessed, queue, queueChips, queueOf, queueTable, shapeWords} from './queue.js';
 import {sourceWords, workerPanel} from './health.js';
-import {mayModifyAny, pickDialog} from './requests.js';
+import {mayModify, mayModifyAny, pickDialog} from './requests.js';
 import {nothingToRead} from './overview.js';
 import {pageHref} from './route.js';
 
@@ -45,7 +45,7 @@ export function maintenancePage(catalog) {
       const table = queueTable(rows, {id: 'neediest'});
       queuePanel = panel('Tonight\'s queue', 'equality deletes first, then the highest score', queueChips(rows, table), table);
     } else {
-      queuePanel = emptyQueue(catalog, c, !!off);
+      queuePanel = emptyQueue(catalog, c, !!off, editPolicyLink(catalog, () => main.replaceWith(maintenancePage(catalog))));
     }
     return [
       pageHead({
@@ -71,6 +71,21 @@ export function maintenancePage(catalog) {
 }
 
 const isChild = key => !key.endsWith('.enabled');
+
+/**
+ * Edit the catalog's policy, after an empty state that says maintenance is off there (backlog 206): drawn only for a
+ * caller whose groups hold modify on the catalog itself, which setting its policy needs; `reload` redraws the page.
+ */
+export function editPolicyLink(catalog, reload) {
+  const target = {catalog, kind: 'catalog', namespace: []};
+  const slot = h('span', {'data-edit-policy': ''});
+  mayModify(target).then(may => {
+    if (may) fill(slot, ' ', h('button', {class: 'linkish', type: 'button', 'data-act': 'edit-policy', onclick: () =>
+      api.policy(target).then(p => editPolicy(catalog, p, reload), error => openDialog(`Policy for ${catalog}`, failure(error)))},
+    'Edit the catalog's policy'));
+  });
+  return slot;
+}
 
 async function policyPanel(catalog, host) {
   const target = {catalog, kind: 'catalog', namespace: []};

@@ -339,6 +339,45 @@ class ConsoleHealthTest {
                 + "so the worker assesses no table and queues none.").doesNotContain("in shape");
         browser.open("/ui/#c=trading&k=table&ns=" + fresh + "&n=first&tab=maintenance");
         assertThat(browser.await(By.id("table-health-off")).getText()).isEqualTo(off);
+
+        // Nell may not modify the catalog, so neither empty state offers its policy (backlog 206).
+        browser.open("/ui/#p=maintenance&c=trading");
+        browser.await(By.id("neediest-none"));
+        assertThat(driver.findElements(By.cssSelector("[data-act='edit-policy']"))).isEmpty();
+    }
+
+    /**
+     * With maintenance off in the catalog's policy, both empty states end with Edit the catalog's policy for someone
+     * who may modify the catalog (backlog 206). Such a grant shows them every table in the catalog, the assessed ones
+     * here among them, so nell's own grants are answered in the page with modify on the catalog; the server still
+     * decides the save.
+     */
+    @Test
+    void maintenanceOffOffersTheCatalogsPolicyToThoseWhoMayModifyIt() {
+        browser.signIn(token("nell", newcomers));
+        browser.open("/ui/#c=trading&k=namespace&ns=" + fresh);
+        browser.await(By.cssSelector("#namespace-page .title-row h1"));
+        driver.executeScript("""
+                const real = window.fetch;
+                window.fetch = (url, init) => new URL(url, location.origin).pathname === '/management/v1/catalogs/trading/grants'
+                  ? Promise.resolve(new Response(JSON.stringify({grants: [{securable: {type: 'catalog'}, group: arguments[0],
+                      privilege: 'modify'}]}), {headers: {'Content-Type': 'application/json'}}))
+                  : real(url, init);
+                location.hash = '#p=maintenance&c=trading';
+                """, newcomers);
+        WebElement edit = browser.await(By.cssSelector("#neediest-none [data-act='edit-policy']"));
+        assertThat(browser.await(By.id("neediest-none")).getText()).contains("Maintenance is off in trading's policy")
+                .endsWith("Edit the catalog's policy");
+        edit.click();
+        assertThat(browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading")).isNotNull();
+        assertThat(driver.findElements(By.cssSelector("dialog.dlg input[name='compaction.enabled']"))).hasSize(1);
+        driver.findElement(By.cssSelector("dialog.dlg .dlg-x")).click();
+
+        driver.executeScript("location.hash = '#p=overview&c=trading';");
+        assertThat(browser.awaitText(By.cssSelector("#overview .grid-21 p.muted"), "Nothing queued").getText())
+                .isEqualTo("Nothing queued: maintenance is off in trading's policy. Edit the catalog's policy");
+        browser.await(By.cssSelector("#overview .grid-21 p.muted [data-act='edit-policy']")).click();
+        assertThat(browser.awaitText(By.cssSelector("dialog.dlg h2"), "Policy for trading")).isNotNull();
     }
 
     @Test
