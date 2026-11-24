@@ -118,7 +118,8 @@ class UiRoutes {
      * {@code modify}, {@code manage-grants} and {@code manage-tags}, each true when one of the subject's groups holds a
      * grant that implies it on the catalog or on anything in it (a grant admin holds {@code manage-grants} on every
      * catalog). The answer's own {@code may} says whether the caller reads the audit feed ({@code read-audit-feed}:
-     * select on the audit tables' catalog) and operates the deployment ({@code operate}: a platform operator). Every
+     * select on the audit tables' catalog) and operates the deployment ({@code operate}: a platform operator). The
+     * audit tables' catalog says so ({@code audit}), so the console lands nobody on it as if it were their data. Every
      * one is read from the caller's own grants and groups, so asking writes no denial; each route still decides for
      * itself, and these say only what the console offers.
      */
@@ -129,7 +130,8 @@ class UiRoutes {
         storage.catalogs().keySet().stream().sorted(String.CASE_INSENSITIVE_ORDER)
                 .forEach(name -> store.findCatalog(Names.normalize(name))
                         .filter(record -> holdings.inCatalog(caller, record.id()))
-                        .ifPresent(record -> catalogs.add(Map.of("name", name, "may", may(caller, record)))));
+                        .ifPresent(record -> catalogs.add(Map.of("name", name, "may", may(caller, record),
+                                "audit", isAuditCatalog(record)))));
         Map<String, Object> may = new TreeMap<>();
         may.put("read-audit-feed", readsAuditFeed(caller));
         may.put("operate", in(caller, separation.platformOperatorGroups()));
@@ -162,6 +164,12 @@ class UiRoutes {
                     || (privilege == Privilege.MANAGE_GRANTS && grantAdmin));
         }
         return may;
+    }
+
+    /** Whether the catalog holds the audit tables, which the console leaves out of a sign-in's landing (backlog 200). */
+    private boolean isAuditCatalog(CatalogRecord catalog) {
+        return auditTables.catalog() != null && !auditTables.catalog().isBlank()
+                && Names.normalize(auditTables.catalog()).equals(catalog.normalizedName());
     }
 
     /** Whether the caller may read the audit feed: select on the audit tables' catalog, as the feed's route asks. */

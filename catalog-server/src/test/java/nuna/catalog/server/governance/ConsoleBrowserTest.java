@@ -199,7 +199,7 @@ class ConsoleBrowserTest {
     /**
      * Each role sees only the pages, tabs and buttons its groups can use, and lands where its work is (Atelier's
      * review, F4 and F12; backlog 184): someone who reads data on the overview, with no Audit or Service; a grant admin
-     * on Audit, with no Overview or Maintenance; a platform operator on Health.
+     * on Audit, with no Overview or Maintenance; a platform operator on Service, with no catalog to pick.
      */
     @Test
     void eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs() {
@@ -228,6 +228,8 @@ class ConsoleBrowserTest {
         browser.open("/ui/");
         browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
         assertThat(rail()).containsExactly("catalog", "governance", "service");
+        // Service is the whole deployment's: it offers no catalog to pick (backlog 200).
+        assertThat(driver.findElement(By.cssSelector(".pick-wrap")).isDisplayed()).isFalse();
     }
 
     /**
@@ -975,6 +977,14 @@ class ConsoleBrowserTest {
         driver.findElement(By.cssSelector("#ref-menu [data-ref-item='" + branch + "'] > a:first-child")).click();
         browser.await("the ref did not open the catalog through it",
                 d -> d.getCurrentUrl().endsWith("#c=trading&r=" + branch));
+        // Going on to a page that shows main only keeps the branch, and says the page shows main (backlog 200).
+        browser.await(By.cssSelector("#nav a[data-k='governance']")).click();
+        browser.await("the branch was not kept on Governance",
+                d -> d.getCurrentUrl().endsWith("#p=governance&c=trading&r=" + branch));
+        assertThat(textContent(browser.await(By.cssSelector("#top #reading-slot [data-main-only]"))))
+                .isEqualTo("This page shows main only");
+        assertThat(browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]")).getDomAttribute("aria-label"))
+                .isEqualTo("Reading branch " + branch + ". Choose a branch or tag");
 
         // The merge tab shows the dry run: the table moves from main's version to the next one.
         HttpResponse<String> plan = expect(api.manage("POST", "/refs/" + branch + "/merge?dry-run=true", null), 200);

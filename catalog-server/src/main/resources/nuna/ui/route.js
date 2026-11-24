@@ -36,7 +36,7 @@ export function href(o) {
   if (o.n) p.set('n', o.n);
   if (o.tab) p.set('tab', o.tab);
   if (o.g) p.set('g', o.g);
-  if (o.r && !o.page) p.set('r', o.r);
+  if (o.r && o.page !== 'service') p.set('r', o.r);
   return '#' + p.toString();
 }
 

@@ -16,6 +16,7 @@ import java.util.UUID;
 import nuna.catalog.core.Names;
 import nuna.catalog.core.principal.Caller;
 import nuna.catalog.core.principal.Principal;
+import nuna.catalog.security.Authorizer;
 import nuna.catalog.security.Separation;
 import nuna.catalog.server.security.AuditCatalogSettings;
 import nuna.catalog.server.security.Holdings;
@@ -132,6 +133,16 @@ class CatalogListTest {
         assertThat(JsonPath.<Boolean>read(answer(caller("ops", PLATFORM_OPS)), "$.may['read-audit-feed']")).isFalse();
     }
 
+    /** The audit tables' catalog says so, so the console lands nobody on it as on their data (backlog 200). */
+    @Test
+    void theAuditTablesCatalogSaysSo() {
+        // Rita holds describe on Risk only; the audit tables' catalog is named here in another case.
+        String answer = answer(caller("rita", "risk-readers"), new AuditCatalogSettings("RISK", null, null));
+        assertThat(JsonPath.<List<Boolean>>read(answer, "$.catalogs[?(@.name == 'Risk')].audit")).containsExactly(true);
+        assertThat(JsonPath.<List<Boolean>>read(answer(caller("tim", "traders")), "$.catalogs[*].audit"))
+                .containsOnly(false);
+    }
+
     @Test
     void aCallerInNoGroupListsNoCatalogWithoutAskingTheStore() {
         assertThat(list(caller("solo"))).isEmpty();
@@ -151,13 +162,18 @@ class CatalogListTest {
     }
 
     private String answer(Caller caller) {
+        return answer(caller, new AuditCatalogSettings(null, null, null));
+    }
+
+    private String answer(Caller caller, AuditCatalogSettings auditTables) {
         CatalogStore store = store();
-        // Only the catalog rule is asked here, which needs the store and the separation of duties; no audit tables
-        // are configured, so the authorizer is never asked.
+        // Only the catalog rule is asked here, which needs the store and the separation of duties; the authorizer is
+        // asked only whether the caller reads the audit feed, where audit tables are configured.
         Separation separation = new Separation(Set.of(GRANT_ADMINS), Set.of(PLATFORM_OPS));
+        Authorizer authorizer = new Authorizer(store, store, store, separation, false, Set.of());
         Holdings holdings = new Holdings(null, store, null, separation, null);
-        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store, holdings, null,
-                separation, new AuditCatalogSettings(null, null, null));
+        UiRoutes routes = new UiRoutes(new UiSettings(false, null), storage(), http -> caller, store, holdings,
+                authorizer, separation, auditTables);
         ResponseEntity<String> response = routes.catalogs(null);
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         return response.getBody();
@@ -198,6 +214,12 @@ class CatalogListTest {
                                 .limit(((PageRequest) args[2]).size())
                                 .toList();
                         yield new Page<>(found, Optional.empty());
+                    }
+                    case "grantsFor" -> {
+                        Set<Securable> securables = (Set<Securable>) args[0];
+                        Set<String> groups = (Set<String>) args[1];
+                        yield grants.stream().filter(g -> securables.contains(g.grant().securable())
+                                && groups.contains(g.grant().group())).toList();
                     }
                     default -> throw new UnsupportedOperationException(method.getName());
                 });
