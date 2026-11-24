@@ -13,6 +13,7 @@ import nuna.catalog.store.CatalogObject;
 import nuna.catalog.store.CatalogRecord;
 import nuna.catalog.store.CatalogStore;
 import nuna.catalog.store.Change;
+import nuna.catalog.server.governance.AuditLogCapture;
 import nuna.catalog.store.GovernanceAttribute;
 import nuna.catalog.store.NamespaceRecord;
 import nuna.catalog.store.OutboxEvent;
@@ -29,6 +30,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -111,6 +113,14 @@ class SecurityGateTest {
 
     @Autowired
     private AuditSinkForTests.Sink audit;
+
+    // The relay writes each change to the audit log and takes it out of the outbox (D23, amended 2026-11-23).
+    private final AuditLogCapture log = new AuditLogCapture();
+
+    @AfterAll
+    void closeTheLog() {
+        log.close();
+    }
 
     @BeforeAll
     void buildTheEstate() throws Exception {
@@ -517,8 +527,7 @@ class SecurityGateTest {
                 400, "BadRequestException");
         assertError(send(OLGA, "DELETE", ENGINES + "?issuer=" + enc(IssuerForTests.ISSUER) + "&client-id=nobody",
                 null), 404, "NotFoundException");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE type = 'nuna.catalog.engine'",
-                Integer.class)).as("registration went through the outbox").isGreaterThanOrEqualTo(1);
+        log.await("\"type\":\"nuna.catalog.engine\"");
     }
 
     @Test
@@ -559,8 +568,7 @@ class SecurityGateTest {
         assertThat(JsonPath.<List<String>>read(export.body(),
                 "$.grants[?(@.group == 'analysts')].securable.namespace[0]")).contains("sales", "finance");
         assertDenied(send(ANN, "GET", GRANTS + "/export", null), "exportGrants", "no_privilege");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE type = 'nuna.catalog.grant'",
-                Integer.class)).as("grants went through the outbox").isGreaterThanOrEqualTo(3);
+        log.await(3, "\"type\":\"nuna.catalog.grant\"");
     }
 
     /**

@@ -91,11 +91,12 @@ class KafkaOutageTest {
                     "{\"value\":\"internal\",\"provenance\":\"collibra\"}", "X-Request-ID", governanceId,
                     "Authorization", api.steward()), 200);
 
-            assertThat(log.await(commitId)).contains("\"type\":\"" + EventType.COMMIT.typeName() + "\"");
-            assertThat(log.await(createId)).contains("\"type\":\"" + EventType.COMMIT.typeName() + "\"");
-            assertThat(log.await(dropId)).contains("\"type\":\"" + EventType.DROP.typeName() + "\"");
-            assertThat(log.await(governanceId))
-                    .contains("\"type\":\"" + EventType.GOVERNANCE_CHANGE.typeName() + "\"");
+            // A commit's or create's answer vends credentials too, so its request id is on a credential issue's
+            // line as well: wait for the line of the type expected.
+            log.await(commitId, "\"type\":\"" + EventType.COMMIT.typeName() + "\"");
+            log.await(createId, "\"type\":\"" + EventType.COMMIT.typeName() + "\"");
+            log.await(dropId, "\"type\":\"" + EventType.DROP.typeName() + "\"");
+            log.await(governanceId, "\"type\":\"" + EventType.GOVERNANCE_CHANGE.typeName() + "\"");
         } finally {
             broker.unpause();
         }
