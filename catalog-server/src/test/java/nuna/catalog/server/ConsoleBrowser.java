@@ -36,7 +36,9 @@ import org.testcontainers.utility.DockerImageName;
  * {@link #session()}, a fresh browser profile with empty storage and no cookies, so no test sees another's sign-in.
  *
  * <p>No browser starts while the nuna-demo stack's pods run, unless {@code -Pnuna.demo-beside} says to: beside it the
- * tests ran past half an hour, Chrome unreachable and their waits running out, for want of memory (backlog 209).
+ * tests ran past half an hour, Chrome unreachable and their waits running out, for want of memory (backlog 209). The
+ * refusal tells the agent to take the demo down and run them, telling every session (D49, backlog 218): a test cannot
+ * tell them, and {@code demo/demo.sh up} from a worktree would put that branch on the shared demo.
  */
 public final class ConsoleBrowser implements AutoCloseable {
 
@@ -114,8 +116,10 @@ public final class ConsoleBrowser implements AutoCloseable {
         if (demo > 0) {
             throw new IllegalStateException("The nuna-demo stack is running (" + demo + " of its containers). Beside "
                     + "it Docker and Windows run short of memory, and the console's browser tests have run past half an "
-                    + "hour with Chrome unreachable and their waits running out (backlog 209). Run them with the demo "
-                    + "down, as the overnight run does, or pass -Pnuna.demo-beside to run them beside it anyway.");
+                    + "hour with Chrome unreachable and their waits running out (backlog 209). Take the demo down and "
+                    + "run them (D49, backlog 218): tell every active session, run demo/demo.sh down, run these tests "
+                    + "again, then run demo/demo.sh up from a checkout of main and tell them again. "
+                    + "-Pnuna.demo-beside runs them beside it anyway.");
         }
     }
 
