@@ -115,8 +115,9 @@ if MODE == "setup":
             main.create_namespace(NAMESPACE[:depth])
         except NamespaceAlreadyExistsError:
             pass
-    a = main.create_table((*NAMESPACE, "a"), ARROW)
-    b = main.create_table((*NAMESPACE, "b"), ARROW)
+    # v2: the catalog makes v3 tables by default, and PyIceberg 0.12 cannot write a v3 manifest.
+    a = main.create_table((*NAMESPACE, "a"), ARROW, properties={"format-version": "2"})
+    b = main.create_table((*NAMESPACE, "b"), ARROW, properties={"format-version": "2"})
     a.append(rows((1, "a"), (2, "b"), (3, "c")))
     b.append(rows((1, "x")))
     tag = call("POST", json={"name": TAG, "kind": "tag"})

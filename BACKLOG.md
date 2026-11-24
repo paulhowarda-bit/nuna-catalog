@@ -2126,6 +2126,18 @@ both new tests; neither runs in it.
 - This item, and item 26 with it, closes the first morning the overnight run's heavy build, Ceph leg, `./nightly.sh`
   and bites are all green with items 102 to 111 landed. Item 110 (the demo) is still being built.
 
+## Overnight run 2026-11-24: the refs case's first run failed in setup
+
+`EngineMatrixTest#refs` failed in its first Job, `refs-setup`, after 11 s: PyIceberg's first `append` to `m8.refs.a`
+raised `ValueError: Cannot write manifest for table version: 3`. The setup made `a` and `b` without a format version,
+so the catalog made them v3 (`Metadata.DEFAULT_TABLE_FORMAT_VERSION = 3`), and PyIceberg 0.12 writes no v3 manifest
+(the matrix's own `pyiceberg v3.write-refused` line shows the same). Nothing after the setup ran, so the store's and
+the client's refusals, the merge and Spark's reads on refs are still unchecked.
+
+Fixed on branch `worktree-overnight-fix-2026-11-24-catalog-tests-engines`: `images/python/refs_matrix.py` makes both
+tables with `format-version` 2, as `pyiceberg_matrix.py` does for the tables PyIceberg writes. Not run: the engine
+matrix is overnight only, so the next overnight run checks it.
+
 ### 113. Grants that name a branch (later, D33)
 
 - Decided: 2026-11-20, D33
