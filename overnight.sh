@@ -298,7 +298,7 @@ The leg's log is $runs/$4. The test result files, each with its test's output, a
 
 You work in your own worktree, $main_checkout/.claude/worktrees/$name, on branch worktree-$name, cut from main. Follow its CLAUDE.md. For now:
 
-1. Run ./backlog.sh list. If an open item already covers these failures, take it: if another agent holds it, or holds an item whose area overlaps, stop there and say so. Otherwise claim it. If none covers them, add one (./backlog.sh add "<title>" "overnight run $day"), written as backlog/README.md asks, and claim it.
+1. Run ./backlog.sh list. If an open item already covers these failures, take it: if another agent holds it, stop there and say so. Otherwise claim it. If none covers them, add one (./backlog.sh add "<title>" "overnight run $day"), written as backlog/README.md asks, and claim it.
 2. Find the cause from the result files, the log and the code, and fix it here. Commit on your branch. If you cannot find it, write what you found in the item and commit that.
 3. Until you are told that the run has ended, run no Gradle command and no test, start no container and do not use Docker: the run holds Docker and the machine's memory, and a build beside it makes its tests fail. Do not land yet.
 
