@@ -58,6 +58,15 @@ config:
         issuer: https://${DEMO_HOST}:8180/realms/nuna
         client-id: nuna-console
 
+# The catalog's logs, the audit log nuna.audit among them, go over OTLP to the audit table writer's receiver, which
+# keeps nuna.audit's records for the Audit page (audit-tables-values.yaml); metrics and traces go nowhere. The
+# token is the one demo.sh makes once in ~/.nuna-demo/keycloak/audit-otlp-token.
+telemetry:
+  logsEndpoint: http://nuna-audit-tables:4318/v1/logs
+  logsTokenSecret:
+    name: keycloak-keys
+    key: audit-otlp-token
+
 secrets:
   values:
     nuna.storage.profiles.s3.secret-access-key: nunatest-secret-key

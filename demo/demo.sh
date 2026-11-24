@@ -290,6 +290,9 @@ publish_keycloak_keys() {
   # Made apart from the rest: the folder predates it on machines that ran the demo before.
   [[ -f "$dir/audit-tables-client-secret" ]] || openssl rand -hex 24 > "$dir/audit-tables-client-secret"
   [[ -f "$dir/silo-client-secret" ]] || openssl rand -hex 24 > "$dir/silo-client-secret"
+  # The token the catalog sends with its audit log to the audit table writer's OTLP receiver (D23, amended
+  # 2026-11-23), which asks for at least 32 characters.
+  [[ -f "$dir/audit-otlp-token" ]] || openssl rand -hex 32 > "$dir/audit-otlp-token"
   # The realm file takes the key and certificate without their PEM lines.
   pem_body() { sed '/^-----/d' "$1" | tr -d '\r\n'; }
   k create secret generic keycloak-keys \
@@ -300,6 +303,7 @@ publish_keycloak_keys() {
     --from-literal=cloudbeaver-cookie-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-cookie-secret")" \
     --from-literal=audit-tables-client-secret="$(tr -d '\r\n' < "$dir/audit-tables-client-secret")" \
     --from-literal=silo-client-secret="$(tr -d '\r\n' < "$dir/silo-client-secret")" \
+    --from-literal=audit-otlp-token="$(tr -d '\r\n' < "$dir/audit-otlp-token")" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
 }
 
@@ -439,6 +443,7 @@ audit_writer() {
   helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-audit-tables "$REPO/deploy/helm/nuna-audit-tables" \
     -f "$STACK/audit-tables-values.yaml" \
     --set-string "secrets.values.nuna\.audit-tables\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/audit-tables-client-secret")" \
+    --set-string "secrets.values.nuna\.audit-tables\.otlp\.token=$(tr -d '\r\n' < "$RUN/keycloak/audit-otlp-token")" \
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
 }
 

@@ -350,7 +350,10 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
 ### The audit tables and the Audit page
 
 Catalog `nuna_audit` holds the queryable audit table `audit.events` (D23, `catalog-audit-tables/README.md`): one row
-per record of the audit topic `nuna.catalog.audit`, every catalog's, since Kafka's pod started. The audit
+per record of the catalog's audit log `nuna.audit`, every catalog's, since the writer's pod started. The catalog
+writes every audit record to that log and sends its logs over OTLP to the writer's receiver
+(`http://nuna-audit-tables:4318/v1/logs`, with the token in `~/.nuna-demo/keycloak/audit-otlp-token`); the writer
+keeps `nuna.audit`'s records (D23, amended 2026-11-23: no Kafka). The audit
 table writer fills it, committing every minute, so it runs about a minute behind; the console's Audit page (the
 feed, its filters and the last day's counts, D45) reads it back and says how far it reaches.
 
@@ -363,8 +366,9 @@ feed, its filters and the last day's counts, D45) reads it back and says how far
   client-credentials grant and a client secret `up` makes once in `~/.nuna-demo/keycloak`. Its own requests are
   left out of the table.
 - The catalog makes both grants as it starts (`nuna.audit.tables.*` in `demo-values.yaml`).
-- While the CDC leg runs, the writer is stopped for its memory and the Audit page shows what it wrote before;
-  `cdc stop` starts it again, and it writes the leg's records then, from where its last commit ended.
+- While the CDC leg runs beside SingleStore (`ss` on), the writer is stopped for its memory: the Audit page misses
+  the records of that time, which the catalog's log (`kubectl -n nuna-demo logs deployment/nuna-catalog`) still
+  holds. `cdc stop` starts it again. With `ss` off it keeps running beside the leg.
 - Nothing prunes the table's snapshots: the demo has no maintenance worker, and its data lasts as long as Silo's
   pod.
 
