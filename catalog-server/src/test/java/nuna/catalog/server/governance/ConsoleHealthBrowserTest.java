@@ -170,9 +170,11 @@ class ConsoleHealthBrowserTest {
         assertThat(pitr % 86_400).as("the test server declares whole days").isZero();
         assertThat(fact("health-store", "pitr")).isEqualTo(pitr / 86_400 + (pitr == 86_400 ? " day" : " days")
                 + " · declared");
-        assertThat(browser.await(By.id("health-store-pitr")).getText())
-                .contains("nuna.governance.pitr-window", "not read from the database",
-                        "The database's own backups must keep at least that long");
+        WebElement pitrNote = browser.await(By.id("health-store-pitr"));
+        assertThat(pitrNote.getText()).contains("not something read from the database",
+                "Keep the database's own backups at least this long").doesNotContain("nuna.governance.pitr-window");
+        assertThat(pitrNote.findElement(By.cssSelector("span[title]")).getDomAttribute("title"))
+                .isEqualTo("nuna.governance.pitr-window");
         assertThat(browser.await(By.id("health-store")).getText()).doesNotContain("is not shown");
         assertThat(driver.findElements(By.id("health-store-unreadable"))).isEmpty();
     }

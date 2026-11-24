@@ -115,3 +115,42 @@ Her design answers for S2 and S3 are in backlog 199 and 200's notes when built:
 - Properties editing: behind a Settings drawer.
 - Access: lead with what the viewer may do.
 - Phone: check six tabs at 390 px.
+
+## Phase 2: Atelier's structural changes S4, S3, S2, S1
+
+- **S4 (backlog 201)**, landed at 67a94d94. The Reading control sits in the header beside the catalog picker, each ref
+  has a page of its own, and a branch's tree marks the tables it changed.
+- **S3 (backlog 200)**, landed at 52c5a44f. The rail is chosen by role:
+  - The catalog list marks the audit tables' catalog, so no sign-in lands there and reading it does not count as
+    reading data.
+  - Home is Audit, then Service, then Overview.
+  - The remembered catalog is kept per person.
+  - Service offers no catalog to pick.
+  - Pages that show main only keep the ref being read, and say so.
+- **S2 (backlog 199)**, landed at daca35a3. A table has six tabs: Overview, Schema, History, Access, Maintenance and
+  Audit.
+  - History has one row per metadata commit, with who made it and the snapshot it added.
+  - Access leads with what you may do.
+  - Properties change in a Settings drawer.
+  - A view, a namespace and a catalog use the same names for the same things, and old tab links open the tab that now
+    holds what they showed.
+  - Checked live as ana with the swap script: an old Snapshots link opens History, Access leads with "What you may
+    do", and an old properties link opens the drawer. The six tabs were also checked at 390 px.
+- **S1 (backlog 198)**, landed at daca35a3. `GET /management/v1/names` lists every namespace, table and view whose
+  name holds a fragment, among those the caller may describe, in every catalog or the one named. Go to a path shows
+  what you opened lately, then what this catalog has listed, then those matches.
+  - The `catalog-security` review asked for five fixes before landing, all made:
+    - namespace visibility read once per catalog;
+    - every object decided before its name is looked at, so a hidden match costs what no match costs;
+    - a named catalog found through `Holdings.catalog`, so its refusal is audited;
+    - nothing walked for a caller who holds nothing;
+    - a route test per role.
+  - Two findings were left as notes in the item: a forged token only moves the start point, and nothing pages past
+    `more-namespaces`.
+  - Four route bites were checked to bite.
+- **Browser tests:** the heavy browser tests for S2 and S1 were updated but not run. Three runs failed in setup:
+  Ryuk unreachable twice, and a Postgres connection timing out with the demo down. Windows had 0.4 to 0.9 GB free
+  and was paging at 2,500 to 4,000 pages a second. Committed memory was 49.5 GB on 16 GB of RAM, with 35 Claude
+  processes. Tonight's heavy run runs them.
+- **S5 (backlog 202):** Atelier wrote the words table (`docs/design/console/words-table-2026-11-23.md`). Her four
+  "not words" items became backlog 206 to 208, and T2 goes in with S5.

@@ -55,7 +55,7 @@ export const REASONS = {
   'small-files': ['warn', 'Small files',
     'Small files: a partition holds enough small data files to rewrite them into fewer, larger ones.'],
   'deletes': ['warn', 'Deletes',
-    'Deletes: more delete files than the policy\'s share of its data files, which every read applies.'],
+    'Deletes: more delete files than its policy allows for its data files; every read has to apply them.'],
 };
 
 export const reasonPill = reason => pill((REASONS[reason] || ['warn'])[0], (REASONS[reason] || [null, reason])[1]);
@@ -197,8 +197,8 @@ export function iceEstate(host, W, rows) {
   }
   svg.append(ghosts, sky, sink, s('line', {class: 'water', x1: 0, y1: Y, x2: W, y2: Y}), labels);
   host.append(svg);
-  host.append(h('p', {class: 'ice-cap'}, 'Above the line: in shape, height is data files, log scale. Below: queued, '
-    + 'depth is score. Each namespace opens its page; each queued table its Maintenance tab.'));
+  host.append(h('p', {class: 'ice-cap'}, 'Above the line: tables in shape. Below: tables queued for tonight. Click a '
+    + 'namespace or a queued table to open it.'));
 }
 
 /** The legend under the estate's ice line, with each count. */
@@ -341,8 +341,8 @@ export function emptyQueue(catalog, c, off = false) {
     : c.total && c.unassessed === c.total
     ? ['The maintenance worker has not assessed any table you may read in ', h('code', null, catalog), ' yet, so it has '
       + 'queued none. ']
-    : ['No table you may read in ', h('code', null, catalog), ' has small files, deletes past its policy\'s share of its '
-      + 'data files, or equality deletes, as the worker last assessed them. ',
+    : ['As the worker last assessed them, no table you may read in ', h('code', null, catalog), ' has small files, too '
+      + 'many deletes or equality deletes. ',
     c.unassessed ? `${plural(c.unassessed, 'table')} ${c.unassessed === 1 ? 'is' : 'are'} not assessed yet. ` : ''];
   return h('div', {class: 'empty', id: 'neediest-none'},
     h('h3', null, 'Nothing queued for tonight'),

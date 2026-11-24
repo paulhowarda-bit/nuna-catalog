@@ -1,11 +1,12 @@
 Breaks: a ref page's Delete counts the branch's changes from changed-count alone, which one ref's answer lacks, so it says the branch has none.
 Module: catalog-server
 Test: ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged
+
 diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
-index 58b820e8..bbb5766b 100644
+index 80d51cbc..18923ca4 100644
 --- a/catalog-server/src/main/resources/nuna/ui/refs.js
 +++ b/catalog-server/src/main/resources/nuna/ui/refs.js
-@@ -944,7 +944,7 @@ export async function renewDialog(c, r) {
+@@ -988,7 +988,7 @@ export async function renewDialog(c, r) {
  
  export function deleteDialog(c, r, list) {
    // The list's refs carry changed-count; one ref's own answer (its page) lists them as changed instead.
@@ -13,4 +14,4 @@ index 58b820e8..bbb5766b 100644
 +  const n = r['changed-count'] || 0;
    const kids = live(list).filter(t => t.from === r.name);
    const body = h('div', null,
-     h('p', null, r.kind === 'tag' ? ['Engines reading ', code(`${c}@${r.name}`), ' get 404 from then on. The tables themselves are untouched.']
+     h('p', null, r.kind === 'tag' ? ['Engines can no longer read ', code(`${c}@${r.name}`), '. The tables themselves are untouched.']

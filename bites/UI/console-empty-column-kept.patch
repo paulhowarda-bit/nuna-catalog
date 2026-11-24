@@ -3,7 +3,7 @@ Module: catalog-server
 Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
-index c1400621..e070c8b5 100644
+index 82fd3f51..65d95129 100644
 --- a/catalog-server/src/main/resources/nuna/ui/browse.js
 +++ b/catalog-server/src/main/resources/nuna/ui/browse.js
 @@ -188,7 +188,7 @@ function contentsTable(catalog, levels, x) {
@@ -14,4 +14,4 @@ index c1400621..e070c8b5 100644
 +  const empty = heads.map((_, i) => false && rows.every(r => blank(r.children[i])));
    for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
    return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
-     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. ', x.ref
+     h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref

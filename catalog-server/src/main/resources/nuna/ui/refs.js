@@ -248,9 +248,9 @@ export function refNote(r, what) {
     governance: [h('b', null, 'Governance holds on every ref.'), ' Holds, freezes, classifications and the regulated area are main\'s '
       + 'record of the table, by its id: what you see here binds ', chip, ' too, and a merge is judged by it.'],
     access: [h('b', null, 'Governance and grants hold on every ref.'), ' They are main\'s record of the object, by its id: '
-      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there; a grant cannot name a branch yet (item 113).'],
+      + 'what you see here binds ', chip, ' too, and whoever may write it on main may write it there. A grant cannot name a branch.'],
     grants: [h('b', null, 'Grants hold on every ref.'), ' Whoever may write this table on main may write it on ', chip,
-      ', and no one else: a grant cannot name a branch yet (item 113).'],
+      ', and no one else: a grant cannot name a branch.'],
     audit: [h('b', null, 'This is the table\'s whole audit trail.'), ' Records of reads and commits through a ref name it, as ',
       code('on @' + name), ' or ', code('through @' + name), '.'],
     props: tag ? [h('b', null, 'Read-only through a tag.'), ' These are the properties in the metadata file the tag keeps.']
@@ -414,8 +414,9 @@ export async function refsTab(c) {
     h('span', {class: 'meta'}, `in ${c}`)), chipsBox,
   may ? h('button', {class: 'btn sm primary', type: 'button', 'data-act': 'ref-new', onclick: () => makeDialog(c, list)}, icon('branch'), 'Make a branch or tag') : null),
   tbl('refs-tbl stack-line', ['Ref', 'Made', 'Expires', 'Changed tables', ''], tbody),
-  may ? null : h('p', {class: 'fine', 'data-no-create': ''}, h('b', null, `Making, renewing, deleting and merging need create on ${c}.`),
-    ' Your groups hold none, so the console offers you none of them; reading through a ref needs only what reading main needs.')));
+  may ? null : h('p', {class: 'fine', 'data-no-create': ''},
+    h('b', null, `Making, renewing, deleting and merging need create on ${c}, which your groups don't hold.`),
+    ' You can still read any branch or tag.')));
   out.push(await endedPanel(c, list), refsExplain(c, lim));
   return out;
 }
@@ -447,7 +448,7 @@ async function endedPanel(c, list) {
   const rows = [
     ...held(list).map(r => h('tr', {class: 'is-warn', 'data-ended': r.name}, h('td', {class: 'name'}, cref(r, {warn: true})),
       h('td', null, pill('warn', icon('clock'), 'Expired'), ' ', h('span', {class: 'fine'}, `at ${refAt(r['expires-at'])}`)),
-      h('td', null, h('span', {class: 'fine'}, 'Gone from every route. Its name is held until the worker ends it on its next run',
+      h('td', null, h('span', {class: 'fine'}, 'No longer readable. Its name is held until the worker ends it on its next run',
         warned.has(r.name.toLowerCase()) ? `; warned ${refAt(warned.get(r.name.toLowerCase()))}` : '', '.')))),
     ...records.filter(x => x.data && ['DELETED', 'EXPIRED', 'MERGED'].includes(x.data.action)).map(x => {
       const d = x.data;
@@ -474,8 +475,8 @@ function refsExplain(c, lim) {
   const warn = daysOf(lim['expiry-warning'], 7);
   return h('div', {class: 'refs-explain'},
     panel('How engines reach a ref', null, h('p', {class: 'fine'}, 'Each ref is a warehouse of its own. Any Iceberg client reads it as it reads the catalog:'),
-      h('pre', {class: 'raw'}, `warehouse=${c}@dev`), h('p', {class: 'fine'}, 'A tag lists only the read endpoints in its ', code('/v1/config'),
-        ', so an engine refuses its own write before it is sent. Creates, drops and renames happen on main only.')),
+      h('pre', {class: 'raw'}, `warehouse=${c}@dev`), h('p', {class: 'fine'}, 'A tag offers engines only its read endpoints, so an engine refuses its own write '
+        + 'before sending it. Creates, drops and renames happen on main only.')),
     panel('Two kinds of ref', null, h('dl', {class: 'facts one'},
       h('dt', null, cref({name: 'dev', kind: 'branch'}), ' ', cref({name: 'matter-2026-114', kind: 'tag'})),
       h('dd', null, h('b', null, 'The catalog\'s branches and tags'), ', here: every table at once, read through ', code(`${c}@name`), '.'),
@@ -575,7 +576,7 @@ export function refPage(c, name, tab) {
       const kept = list || await refsOf(c).catch(() => ({refs: []}));
       const holder = heldRef(kept, name);
       const why = holder ? [h('b', null, `@${holder.name} expired at ${refAt(holder['expires-at'])}.`),
-        ' It is gone from every route, but holds its name until the worker ends it on its next run. Its changes were never merged.']
+        ' It can no longer be read, but holds its name until the worker ends it on its next run. Its changes were never merged.']
         : await endedWords(c, name);
       return [head, failure(error, {note: why || `No branch or tag has this name in ${c}.`})];
     }
@@ -596,7 +597,7 @@ export function refPage(c, name, tab) {
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Point'), h('p', {class: 'kpi-v sm'}, cut ? refAt(cut) : '–'),
         h('p', {class: 'kpi-d'}, isMain(r.from) ? 'main as it was then' : `@${r.from}'s point; its commits to ${refAt(r['created-at'])}`)),
       r.kind === 'branch' ? h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changed'), h('p', {class: 'kpi-v'}, fmt(total)),
-        h('p', {class: 'kpi-d'}, total > changed.length ? `${plural(commits, 'commit')} on the ${fmt(changed.length)} you may describe`
+        h('p', {class: 'kpi-d'}, total > changed.length ? `${plural(commits, 'commit')} on the ${fmt(changed.length)} you may see`
           : `${plural(commits, 'commit')} on the branch`))
         : h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changes'), h('p', {class: 'kpi-v'}, 'none'), h('p', {class: 'kpi-d'}, 'a tag is read-only')),
       h('div', {class: 'kpi' + (expiring(r) ? ' is-warn' : '')}, h('p', {class: 'kpi-l'}, 'Expires'),
@@ -654,9 +655,9 @@ async function changesTab(c, r, total) {
   return [h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
     h('span', {class: 'meta'}, `${plural(total, 'table')} with pointers of its own`)),
   rows.length ? tbl('stack-line ref-changes', ['Table', ['At the point', 'num'], ['On the branch', 'num'], 'Its commits', 'Main since'], rows)
-    : h('p', {class: 'muted'}, total ? 'None you may describe.' : 'None yet: the branch has not committed.'),
+    : h('p', {class: 'muted'}, total ? 'None you may see.' : 'None yet: the branch has not committed.'),
   rows.length && total > changed.length ? h('p', {class: 'muted', 'data-hidden-count': total - changed.length},
-    `And ${fmt(total - changed.length)} more you may not describe.`) : null,
+    `And ${fmt(total - changed.length)} more you may not see.`) : null,
   h('p', {class: 'fine'}, 'At the point is main\'s version of each table then; on the branch, the branch\'s own, which number from 1. '
     + 'Every other table reads as main had it at the point. ',
     h('a', {href: refHref(c, r.name, 'merge')}, 'Preview the merge'), ' to see which tables would move.'),
@@ -677,9 +678,9 @@ function tagKeeps(c, r, cut) {
 }
 
 async function recordTab(c, r) {
-  const where = panel('Where these records are', null, h('p', {class: 'fine'}, 'A change to a ref is one ', code('nuna.catalog.ref'),
-    ' record whose subject is the ref\'s id, ', code(r.id.slice(0, 8) + '…'), ', so a deleted ref\'s name used again never shares its history. '
-    + 'Commits and reads through the ref name it in their ', code('branch'), ' field.'));
+  const where = panel('Where these records are', null, h('p', {class: 'fine'}, `Each change to @${r.name} is one audit record, kept `
+    + 'under the ref\'s own id (', code(r.id.slice(0, 8) + '…'), '), so a later ref with the same name never shares its history. '
+    + `Commits and reads through @${r.name} name it too.`));
   const records = [];
   let pageToken = null;
   try {
@@ -696,7 +697,8 @@ async function recordTab(c, r) {
     h('span', {class: 'meta'}, 'newest first')),
   records.length ? h('div', {class: 'feed'}, records.map(x => h('div', {class: 'feed-row'}, h('span', {class: 't'}, when(x.time)),
     h('span', {class: 'w'}, h('b', null, ((x.data || {}).actor || {}).principal || '–')),
-    h('div', null, badge(x.type), h('p', {class: 'what'}, refWords(x.data || {}))), h('span', null))))
+    h('div', null, h('span', {class: 'badge', title: x.type}, String(x.type || '').replace(/^nuna\.catalog\./, '')),
+      h('p', {class: 'what'}, refWords(x.data || {}))), h('span', null))))
     : h('p', {class: 'muted'}, pageToken ? ['Not in the newest ref records; see the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.']
       : 'No record of it in the audit tables yet: they are about a minute behind.'),
   records.length && pageToken ? h('p', {class: 'fine'}, 'Older records are not in the newest ref records read here; see the ',
@@ -818,17 +820,17 @@ async function mergeTab(c, r, list) {
       : x['main-version'] === undefined || x['dropped-at'] ? ' cannot move: main dropped the table.'
         : ` cannot move: main is at version ${fmt(x['main-version'])}, not the point's ${fmt(x['cut-version'])}.`,
     x.moves ? null : [' ', pill('bad', 'conflicts now')])),
-    plan.hidden ? h('li', null, `${plural(plan.hidden, 'more table')} you may not describe ${plan.hidden === 1 ? 'moves or conflicts' : 'move or conflict'} with them.`) : null,
-    h('li', null, cref(r), ' ends: its name is free and ', code(`${c}@${r.name}`), ' answers 404.',
+    plan.hidden ? h('li', null, `${plural(plan.hidden, 'more table')} you may not see ${plan.hidden === 1 ? 'moves or conflicts' : 'move or conflict'} with them.`) : null,
+    h('li', null, cref(r), ' ends: its name is free and ', code(`${c}@${r.name}`), ' can no longer be read.',
       tagsFrom.length ? [' Tags made from it, ', tagsFrom.map(t => cref(t)), ', stay.'] : ''),
-    h('li', null, 'The audit gets one ', code('nuna.catalog.ref'), ` record (merged, ${plural(tables.length + (plan.hidden || 0), 'table')}) and one commit record per table, on main.`));
+    h('li', null, 'The audit records the merge once, and one commit for each table, on main.'));
   const btn = h('button', {class: 'btn primary', type: 'button', 'data-act': 'ref-merge', disabled: blocked || !plan['may-merge'] ? true : null,
     onclick: () => mergeDialog(c, r, plan)}, icon('branch'), `Merge @${r.name} into main`);
   const actBox = h('div', {class: 'panel merge-act'}, h('h2', null, 'In one transaction'), steps, steps2,
     !blocked && may && rightsMissing.length ? h('p', {class: 'fine warn-ink'}, h('b', null, `Your groups hold no write on ${rightsMissing.join(', ')}.`),
-      ' The catalog would refuse the merge with 403, so the console offers none.') : null,
+      ' The catalog would refuse the merge, so the console doesn\'t offer it.') : null,
     h('p', {class: 'fine'}, `Every table moves or none does; at most ${fmt(plan['max-tables'] || lim['max-merge-tables'])} tables a merge. `
-      + 'If main commits to one of them between this preview and the merge, the catalog plans again, and the new conflict refuses the merge with 409.'),
+      + 'If main commits to one of them between this preview and the merge, the catalog checks again, and a new conflict refuses the merge.'),
     may ? h('div', {class: 'refusal-acts'}, btn, blocked ? h('span', {class: 'fine'}, 'Refused while a table conflicts.')
       : h('span', {class: 'fine'}, 'Needs create on ', code(c), ' and write on each table.'))
       : h('p', {class: 'fine'}, h('b', null, `Merging needs create on ${c}`), ' and write on every table it moves. Your groups hold none, so the console offers no merge.'));
@@ -989,9 +991,9 @@ export function deleteDialog(c, r, list) {
   const n = Math.max(r['changed-count'] || 0, (r.changed || []).length);
   const kids = live(list).filter(t => t.from === r.name);
   const body = h('div', null,
-    h('p', null, r.kind === 'tag' ? ['Engines reading ', code(`${c}@${r.name}`), ' get 404 from then on. The tables themselves are untouched.']
-      : n ? [h('b', null, `Its changes to ${plural(n, 'table')} were never merged and are lost.`), ' Main never took them. Engines reading ', code(`${c}@${r.name}`), ' get 404.']
-        : ['It has no changes of its own. Engines reading ', code(`${c}@${r.name}`), ' get 404.']),
+    h('p', null, r.kind === 'tag' ? ['Engines can no longer read ', code(`${c}@${r.name}`), '. The tables themselves are untouched.']
+      : n ? [h('b', null, `Its changes to ${plural(n, 'table')} were never merged and are lost.`), ' Main never took them. Engines can no longer read ', code(`${c}@${r.name}`), '.']
+        : ['It has no changes of its own. Engines can no longer read ', code(`${c}@${r.name}`), '.']),
     h('p', {class: 'fine'}, 'Files only this ref reaches become unreferenced; the orphan scan removes them once they are older than its minimum age. The name is free at once.',
       kids.length ? [' ', kids.map(k => cref(k)), kids.length === 1 ? ' was made from it and stays.' : ' were made from it and stay.'] : ''),
     dialogForm(null, `Delete @${r.name}`, async (form, out) => {
@@ -999,7 +1001,7 @@ export function deleteDialog(c, r, list) {
       forgetRefs(c);
       const time = at(Date.now(), true);
       RESULTS.set(resultKey(c, r.name), () => h('div', {'data-result': '', tabindex: '-1'}, granted(`Deleted @${r.name} at ${time}`, answer,
-        h('span', null, 'It is gone from every route; its record stays in the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.'))));
+        h('span', null, 'It can no longer be read; its record stays in the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.'))));
       FRESH.add(resultKey(c, r.name));
       fill(out, granted(`Deleted @${r.name}`, answer));
       $('button[type=submit]', form).hidden = true;
