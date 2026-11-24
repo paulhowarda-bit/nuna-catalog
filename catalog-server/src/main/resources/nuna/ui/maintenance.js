@@ -82,7 +82,7 @@ export function editPolicyLink(catalog, reload) {
   mayModify(target).then(may => {
     if (may) fill(slot, ' ', h('button', {class: 'linkish', type: 'button', 'data-act': 'edit-policy', onclick: () =>
       api.policy(target).then(p => editPolicy(catalog, p, reload), error => openDialog(`Policy for ${catalog}`, failure(error)))},
-    'Edit the catalog's policy'));
+    "Edit the catalog's policy"));
   });
   return slot;
 }

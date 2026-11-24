@@ -154,7 +154,7 @@ function alerts(counts) {
 function audit(a) {
   const copied = (a.acknowledged ?? 0) + (a.failed ?? 0) > 0;
   return h('div', {id: 'health-audit'},
-    h('p', null, 'Each request's audit record is written to the log ', code('nuna.audit'), ' before the catalog answers it.'),
+    h('p', null, "Each request's audit record is written to the log ", code('nuna.audit'), ' before the catalog answers it.'),
     copied ? [facts([
       ['Copied to Kafka', fmt(a.acknowledged ?? 0)],
       ['Mean time to copy', a['mean-ms'] !== undefined ? a['mean-ms'] + ' ms' : null],
