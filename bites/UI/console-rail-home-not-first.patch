@@ -1,0 +1,17 @@
+Breaks: The rail keeps its fixed order, the caller's home wherever it falls (backlog 217).
+Module: catalog-server
+Test: ConsoleBrowserTest#eachRoleSeesWhatItsGroupsCanUseAndLandsWhereItsWorkIs
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index bdc7d9c1..12c59421 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -191,7 +191,7 @@ function setChrome(navKey, ref) {
+   // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
+   const home = cat ? homeKey(cat) : 'service';
+   const end = $('.drawer-x', navEl);
+-  for (const k of [home, ...RAIL.filter(x => x !== home)]) end.before($(`a[data-k="${k}"]`, navEl));
++  for (const k of RAIL) end.before($(`a[data-k="${k}"]`, navEl));
+   for (const a of $$('a[data-k]', navEl)) {
+     const k = a.dataset.k;
+     a.hidden = !open[k];

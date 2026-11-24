@@ -1,0 +1,17 @@
+Breaks: A branch's Changes tab does not say whether it merges (backlog 212).
+Module: catalog-server
+Test: ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/refs.js b/catalog-server/src/main/resources/nuna/ui/refs.js
+index 5321b908..b0a2cac1 100644
+--- a/catalog-server/src/main/resources/nuna/ui/refs.js
++++ b/catalog-server/src/main/resources/nuna/ui/refs.js
+@@ -661,7 +661,7 @@ async function changesTab(c, r, total) {
+       h('td', null, h('a', {href: tableHref(c, t, r.name, 'metadata-log')}, plural(t.version || 0, 'commit'))),
+       h('td', null, state));
+   });
+-  return [changesVerdict(c, r, plan), h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
++  return [null, h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
+     h('span', {class: 'meta'}, `${plural(total, 'table')} with pointers of its own`)),
+   rows.length ? tbl('stack-line ref-changes', ['Table', ['At the point', 'num'], ['On the branch', 'num'], 'Its commits', 'Main since'], rows)
+     : h('p', {class: 'muted'}, total ? 'None you may see.' : 'None yet: the branch has not committed.'),

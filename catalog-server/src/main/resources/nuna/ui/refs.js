@@ -243,8 +243,8 @@ export function refNote(r, what) {
   const chip = cref(typeof r === 'string' ? {name, kind: 'branch'} : r);
   const tag = typeof r !== 'string' && r.kind === 'tag';
   const words = {
-    health: [h('b', null, 'Maintenance is main\'s.'), ` The worker compacts and expires main only; a ${tag ? 'tag' : 'branch'}'s `
-      + `tables are never compacted or expired, and every file @${name} reaches is kept while it exists.`],
+    health: [h('b', null, 'Maintenance is main\'s.'), ` A ${tag ? 'tag' : 'branch'}'s tables are never compacted or expired, `
+      + `and every file @${name} reaches is kept while it exists.`],
     governance: [h('b', null, 'Governance holds on every ref.'), ' Holds, freezes, classifications and the regulated area are main\'s '
       + 'record of the table, by its id: what you see here binds ', chip, ' too, and a merge is judged by it.'],
     access: [h('b', null, 'Governance and grants hold on every ref.'), ' They are main\'s record of the object, by its id: '
@@ -590,18 +590,18 @@ export function refPage(c, name, tab) {
       badge(kindWord(r), 'strong'), expiring(r) ? pill('warn', icon('clock'), `Expires ${untilWords(r['expires-at'])}`) : null);
     const sub = h('p', {class: 'sub'}, madeFrom(r, list), '.');
     const side = h('div', {class: 'side'}, h('a', {class: 'btn sm primary', href: href({c, r: r.name})}, icon('catalog'), `Read ${c} on @${r.name}`),
-      copyButton(`${c}@${r.name}`, 'Copy warehouse'),
+      copyWarehouse(`${c}@${r.name}`),
       may && r.kind === 'branch' ? h('button', {class: 'btn sm', type: 'button', onclick: () => renewDialog(c, r)}, 'Renew') : null,
       may ? h('button', {class: 'btn sm ghost', type: 'button', 'data-act': 'ref-delete', onclick: () => deleteDialog(c, r, list)}, icon('x'), 'Delete') : null);
     const kpis = h('div', {class: 'kpis ref-kpis'},
-      h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Point'), h('p', {class: 'kpi-v sm'}, cut ? refAt(cut) : '–'),
+      h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Point'), h('p', {class: 'kpi-v sm date'}, cut ? refAt(cut) : '–'),
         h('p', {class: 'kpi-d'}, isMain(r.from) ? 'main as it was then' : `@${r.from}'s point; its commits to ${refAt(r['created-at'])}`)),
       r.kind === 'branch' ? h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changed'), h('p', {class: 'kpi-v'}, fmt(total)),
         h('p', {class: 'kpi-d'}, total > changed.length ? `${plural(commits, 'commit')} on the ${fmt(changed.length)} you may see`
           : `${plural(commits, 'commit')} on the branch`))
         : h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Changes'), h('p', {class: 'kpi-v'}, 'none'), h('p', {class: 'kpi-d'}, 'a tag is read-only')),
       h('div', {class: 'kpi' + (expiring(r) ? ' is-warn' : '')}, h('p', {class: 'kpi-l'}, 'Expires'),
-        h('p', {class: 'kpi-v sm'}, r.kind === 'tag' ? 'never' : refAt(r['expires-at'])),
+        h('p', {class: 'kpi-v sm date'}, r.kind === 'tag' ? 'never' : refAt(r['expires-at'])),
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'until deleted' : `${untilWords(r['expires-at'])} · at most ${dayMon(r['max-expires-at'])}`)),
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Warehouse'), h('p', {class: 'kpi-v sm mono'}, `${c}@${r.name}`),
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'read endpoints only' : 'reads and commits')));
@@ -623,6 +623,15 @@ export function refPage(c, name, tab) {
 }
 
 const pathOfItem = t => [...(t.namespace || []), t.name].join('.');
+/** A path as code that breaks after each dot, so a long one stays inside a narrow panel (backlog 217). */
+const pathCode = t => code(pathOfItem(t).split('.').flatMap((x, i, all) => i < all.length - 1 ? [x + '.', h('wbr')] : [x]));
+
+/** The button that copies the warehouse name an engine uses for a ref, naming exactly what it copies (backlog 217). */
+function copyWarehouse(name) {
+  const b = copyButton(name, ['Copy ', code(name)]);
+  b.setAttribute('aria-label', 'Copy the warehouse name ' + name);
+  return b;
+}
 const tableHref = (c, t, ref, tab) => objectHref({catalog: c, kind: t.kind === 'view' ? 'view' : 'table', namespace: t.namespace, name: t.name, ref}, tab);
 
 /** The dry run, which needs only a holding in the catalog; null when the catalog will not answer it. */
@@ -652,16 +661,44 @@ async function changesTab(c, r, total) {
       h('td', null, h('a', {href: tableHref(c, t, r.name, 'metadata-log')}, plural(t.version || 0, 'commit'))),
       h('td', null, state));
   });
-  return [h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
+  return [changesVerdict(c, r, plan), h('div', {class: 'panel', id: 'ref-changes'}, h('h2', null, 'What the branch changed ',
     h('span', {class: 'meta'}, `${plural(total, 'table')} with pointers of its own`)),
   rows.length ? tbl('stack-line ref-changes', ['Table', ['At the point', 'num'], ['On the branch', 'num'], 'Its commits', 'Main since'], rows)
     : h('p', {class: 'muted'}, total ? 'None you may see.' : 'None yet: the branch has not committed.'),
   rows.length && total > changed.length ? h('p', {class: 'muted', 'data-hidden-count': total - changed.length},
     `And ${fmt(total - changed.length)} more you may not see.`) : null,
   h('p', {class: 'fine'}, 'At the point is main\'s version of each table then; on the branch, the branch\'s own, which number from 1. '
-    + 'Every other table reads as main had it at the point. ',
-    h('a', {href: refHref(c, r.name, 'merge')}, 'Preview the merge'), ' to see which tables would move.'),
+    + 'Every other table reads as main had it at the point.'),
   plan.error ? failure(plan.error, {compact: true}) : null)];
+}
+
+/**
+ * Whether the branch merges, from the dry run the tab already reads, on one line linked to the Merge tab, so what a
+ * branch changed and whether it merges is one step (Atelier's re-walk after phase 2, backlog 212). None for a branch
+ * with no change the caller may see, or when the catalog would not answer the dry run.
+ */
+function changesVerdict(c, r, plan) {
+  const body = plan.body;
+  const tables = (body && body.tables) || [];
+  const answer = (body && body.answer) || {};
+  // A plan over the limit may name no table; any other names at least one the caller may see, or there is no line.
+  if (!body || (!tables.length && answer.type !== 'RefLimitException')) return null;
+  // Counted as the Merge tab counts them: the tables the caller may see.
+  const moves = tables.filter(x => x.moves).length;
+  const conflicts = tables.filter(x => !x.moves).length;
+  const link = words => h('a', {href: refHref(c, r.name, 'merge')}, words);
+  if (answer.code === 200) {
+    return h('div', {class: 'granted compact merge-verdict', role: 'status', 'data-verdict': 'ready'},
+      h('p', {class: 'refusal-h'}, icon('check'), `Ready to merge: ${plural(moves, 'table')} would move to main in one transaction. `,
+        link('Preview the merge')));
+  }
+  // The Merge tab's own explanations, not the catalog's message, which a one-line box cannot hold (Atelier, 2026-11-23).
+  return h('div', {class: 'refusal compact merge-verdict', role: 'status', 'data-verdict': 'blocked'},
+    h('p', {class: 'refusal-h'}, icon('x'), answer.type === 'RefMergeConflictException'
+      ? [`@${r.name} cannot merge: ${plural(conflicts, 'table')} changed on main too. `, link('See the conflicts')]
+      : answer.type === 'RefLimitException'
+        ? [`@${r.name} cannot merge now: it changed ${plural(body.changed, 'table')}; a merge moves at most ${fmt(body['max-tables'])}. `, link('See why')]
+        : [`@${r.name} cannot merge now: main's rules refuse one table's change. `, link('See why')]));
 }
 
 function tagKeeps(c, r, cut) {
@@ -695,10 +732,10 @@ async function recordTab(c, r) {
   }
   return h('div', {class: 'grid-21'}, h('div', {class: 'panel', id: 'ref-record'}, h('h2', null, `What happened to @${r.name} `,
     h('span', {class: 'meta'}, 'newest first')),
-  records.length ? h('div', {class: 'feed'}, records.map(x => h('div', {class: 'feed-row'}, h('span', {class: 't'}, when(x.time)),
+  // Every row is a record of this ref, so no badge says so; its type is the row's title (Atelier, 2026-11-23; backlog 214).
+  records.length ? h('div', {class: 'feed'}, records.map(x => h('div', {class: 'feed-row', title: x.type || ''}, h('span', {class: 't'}, when(x.time)),
     h('span', {class: 'w'}, h('b', null, ((x.data || {}).actor || {}).principal || '–')),
-    h('div', null, h('span', {class: 'badge', title: x.type}, String(x.type || '').replace(/^nuna\.catalog\./, '')),
-      h('p', {class: 'what'}, refWords(x.data || {}))), h('span', null))))
+    h('div', null, h('p', {class: 'what'}, refWords(x.data || {}))), h('span', null))))
     : h('p', {class: 'muted'}, pageToken ? ['Not in the newest ref records; see the ', h('a', {href: pageHref('audit', c)}, 'audit feed'), '.']
       : 'No record of it in the audit tables yet: they are about a minute behind.'),
   records.length && pageToken ? h('p', {class: 'fine'}, 'Older records are not in the newest ref records read here; see the ',
@@ -815,7 +852,7 @@ async function mergeTab(c, r, list) {
     moves.length ? ` The catalog refuses the merge whole; the other ${plural(moves.length, 'table')} ${moves.length === 1 ? 'waits' : 'wait'} with it. Once nothing conflicts, the merge would:`
       : ' Once nothing conflicts, the merge would:') : null;
   const steps2 = h('ol', {class: 'tx-steps'},
-    tables.map(x => h('li', null, 'Main\'s pointer for ', code(pathOfItem(x)), x.moves
+    tables.map(x => h('li', null, 'Main\'s pointer for ', pathCode(x), x.moves
       ? ` moves from version ${fmt(x['main-version'])} to ${fmt(x.version)}, naming the file @${r.name} wrote at its version ${fmt(x['branch-version'])}.`
       : x['main-version'] === undefined || x['dropped-at'] ? ' cannot move: main dropped the table.'
         : ` cannot move: main is at version ${fmt(x['main-version'])}, not the point's ${fmt(x['cut-version'])}.`,

@@ -104,14 +104,20 @@ class ConsoleLabelsBrowserTest {
 
         // The regulated mark closes the unclassified table beneath it.
         assertThat(button("regulated").getText()).isEqualTo("Mark as a regulated area");
+        // The mark asks why, and keeps the reason as its provenance; Access says Yes, not true (backlog 213).
         assertThat(dialog("regulated")).contains("closes every table beneath this namespace");
+        browser.await(By.cssSelector("dialog.dlg button[type='submit']")).click();
+        browser.awaitText(By.cssSelector("dialog.dlg .grant-hint"), "Write the reason: the area carries it for as long as it is marked.");
+        browser.await(By.cssSelector("dialog.dlg input[name='reason']")).sendKeys("Compliance register: test data");
         submit("is a regulated area");
-        awaitFact("Regulated area", "true · this namespace · console");
+        awaitFact("Regulated area", "Yes · this namespace · Compliance register: test data");
         browser.awaitText(labelButton("regulated"), "Clear the regulated mark");
         expect(api.rest("GET", "/namespaces/" + Api.ns(ns) + "/tables/trades", null), 403);
 
         Map<String, Map<String, String>> recorded = own("/namespaces/" + Api.ns(ns));
-        for (String label : List.of("owner", "retention-class", "regulated")) {
+        assertThat(recorded.get("regulated")).containsEntry("provenance", "Compliance register: test data")
+                .containsEntry("set-by", "stella");
+        for (String label : List.of("owner", "retention-class")) {
             assertThat(recorded.get(label)).as(label).containsEntry("provenance", "console")
                     .containsEntry("set-by", "stella");
         }
@@ -132,14 +138,15 @@ class ConsoleLabelsBrowserTest {
         assertThat(own("/namespaces/" + Api.ns(ns) + "/tables/trades").get("classification"))
                 .containsEntry("value", "internal").containsEntry("provenance", "console");
 
-        // Clearing the mark records it as false, set from the console.
+        // Clearing the mark records it as false, with the reason for clearing it.
         browser.open("/ui/#" + at("namespace", ns, null));
         assertThat(dialog("regulated")).contains("Clearing the mark opens the tables beneath this namespace");
+        browser.await(By.cssSelector("dialog.dlg input[name='reason']")).sendKeys("Compliance review: none left");
         submit("is no longer a regulated area");
-        awaitFact("Regulated area", "false · this namespace · console");
+        awaitFact("Regulated area", "No · this namespace · Compliance review: none left");
         browser.awaitText(labelButton("regulated"), "Mark as a regulated area");
         assertThat(own("/namespaces/" + Api.ns(ns)).get("regulated")).containsEntry("value", "false")
-                .containsEntry("provenance", "console");
+                .containsEntry("provenance", "Compliance review: none left");
     }
 
     @Test

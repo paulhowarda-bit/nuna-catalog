@@ -8,33 +8,13 @@ import * as api from './api.js';
 import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
   tbl} from './dom.js';
 import {objectHref, SEP} from './route.js';
-import {auditTab, describe} from './panels.js';
+import {AUDIT_KINDS as KINDS, CHANGES, auditBadge, auditKindOf, auditTab, describe, shortType as short} from './panels.js';
 
-/** Every record type that changes something, for the Changes figure. */
-const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
-  'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass'];
-
-/**
- * The kinds the feed filters by, each a set of record types (Atelier's review, F7; backlog 187): grants, holds and DR
- * freezes (a freeze is a governance record, D37, as is a maintenance policy), branches and tags, and commits each on
- * their own, the other changes together, then reads, credentials and refusals.
- */
-const KINDS = [
-  ['all', 'All', null],
-  ['grant', 'Grants', ['grant']],
-  ['hold', 'Holds and freezes', ['hold', 'governance']],
-  ['ref', 'Branches and tags', ['ref']],
-  ['commit', 'Commits', ['commit']],
-  ['change', 'Other changes', CHANGES.filter(t => !['grant', 'hold', 'governance', 'ref', 'commit'].includes(t))],
-  ['read', 'Reads', ['read', 'audit-read']],
-  ['cred', 'Credentials', ['credential-issue']],
-  ['refusal', 'Refusals', ['denial', 'auth-failure']],
-];
 /** Every type a kind names: All, less the audit's own reads, is these. */
-const TYPES = KINDS.flatMap(([, , types]) => types || []);
+const TYPES = KINDS.flatMap(([, , , types]) => types || []);
 const PREFIX = 'nuna.catalog.';
-const short = type => String(type || '').replace(/^nuna\.catalog\./, '');
-const kindOf = type => (KINDS.find(([k, , types]) => k !== 'all' && types.includes(short(type))) || ['all'])[0];
+/** A record type's kind in the feed: All for a type no kind names. */
+const kindOf = type => auditKindOf(type) || 'all';
 
 /** The day and time, today's too: "22 Nov 16:33". */
 function onDay(value) {
@@ -110,7 +90,7 @@ export function auditPage(catalog) {
   const archivePanel = h('div');
   load(archivePanel, () => archive.then(chainPanel, quiet));
   const counts = h('div');
-  load(counts, () => summary.then(sum => countPanels(catalog, sum, feed.choose), quiet));
+  load(counts, () => summary.then(sum => countPanels(catalog, sum, feed.kinds), quiet));
   side.append(archivePanel, counts);
   main.append(head, kpis, h('div', {class: 'grid-21'}, feedBox, side), own);
   return main;
@@ -162,20 +142,12 @@ function chainPanel(a) {
       h('td', {class: 'name'}, c.chain), h('td', {class: 'wrap'}, c.broken || c.failed)))) : null);
 }
 
-/** The last day's counts by type, each row choosing its kind in the feed; and the objects with the most records. */
-function countPanels(catalog, sum, choose) {
-  const byType = sum['by-type'] || {};
-  const types = Object.keys(byType).sort((a, b) => byType[b] - byType[a]);
-  const all = total(byType);
+/** The last day's counts by kind, which the feed draws with its chips; and the objects with the most records. */
+function countPanels(catalog, sum, kinds) {
   return [
-    h('div', {class: 'panel', id: 'audit-kinds'}, h('h2', null, 'By kind ', h('span', {class: 'meta'}, 'last day')),
-      tbl('kinds', ['Type', ['Records', 'num']], [...types.map(t => h('tr', {'data-type': t}, h('td', null,
-        h('button', {class: 'linkish', type: 'button', 'data-choose': kindOf(t), 'aria-label': `Show ${short(t)} records in the feed`,
-          onclick: () => choose(t)}, h('code', {title: t}, short(t)))),
-        h('td', {class: 'num'}, fmt(byType[t])))), h('tr', {class: 'is-cur'}, h('td', null, h('b', null, 'All')),
-        h('td', {class: 'num'}, h('b', null, fmt(all))))]),
+    h('div', {class: 'panel', id: 'audit-kinds'}, h('h2', null, 'By kind ', h('span', {class: 'meta'}, 'last day')), kinds,
       h('p', {class: 'fine', title: 'The writer leaves its own records out, and a record sent to the fallback log reaches '
-        + 'neither count.'}, `${onDay(sum.from)} to ${onDay(sum.to)}. Choose a type to show its records in the feed. Service `
+        + 'neither count.'}, `${onDay(sum.from)} to ${onDay(sum.to)}. Choose a kind to show its records in the feed. Service `
         + 'counts differently, so its figures may not match these.')),
     h('div', {class: 'panel', id: 'audit-busiest'}, h('h2', null, 'Most recorded ', h('span', {class: 'meta'}, 'last day')),
       (sum.busiest || []).length ? tbl('stack-line', ['Object', ['Records', 'num'], ['Reads', 'num'], 'Written most by'],
@@ -212,21 +184,41 @@ function feedPanel(catalog, summary, own) {
   upTo.value = st.upTo;
   reads.checked = st.auditReads;
   // The audit's own reads are each reader's look at the feed: hidden unless asked for, or they bury the rest.
-  const typesOf = kind => (KINDS.find(([k]) => k === kind)[2] || TYPES).filter(t => st.auditReads || t !== 'audit-read');
+  const typesOf = kind => (KINDS.find(([k]) => k === kind)[3] || TYPES).filter(t => st.auditReads || t !== 'audit-read');
   const status = h('p', {class: 'fine feed-status', role: 'status'});
   const feed = h('div', {class: 'feed', 'data-feed': ''});
   const more = h('p', {class: 'fine feed-more'});
   let gen = 0;
   let shown = 0;
   let counted = null;
-  const drawChips = () => chipBox.replaceChildren(...KINDS.map(([k, label]) => {
-    const n = counted ? kindTotal(counted, typesOf(k)) : null;
+  // By kind, drawn with the chips from the same counts, so its rows are the chips' words and add up to them (backlog 214).
+  const kinds = h('div', {'data-kinds': ''});
+  const drawKinds = () => {
+    if (!counted) return;
+    // A type no kind names is in the feed's All only while the audit's reads are shown, as the feed then asks for every type.
+    const unknown = st.auditReads ? Object.keys(counted).filter(t => !TYPES.includes(short(t))) : [];
+    const rows = [...KINDS.filter(([k]) => k !== 'all').map(([k, label]) => [k, label, typesOf(k)]),
+      ['all', 'Other', unknown.map(short)]].map(([k, label, types]) => {
+      const parts = Object.entries(counted).filter(([t, n]) => types.includes(short(t)) && Number(n)).sort((a, b) => b[1] - a[1]);
+      return {k, label, n: parts.reduce((s, [, n]) => s + Number(n), 0), title: parts.map(([t, n]) => `${short(t)} ${fmt(n)}`).join(' · ')};
+    }).filter(r => r.n);
+    kinds.replaceChildren(tbl('kinds', ['Kind', ['Records', 'num']], [...rows.map(r => h('tr', {'data-kind': r.k, title: r.title},
+      h('td', null, h('button', {class: 'linkish', type: 'button', 'data-choose': r.k, 'aria-label': `Show ${r.label.toLowerCase()} in the feed`,
+        onclick: () => chooseKind(r.k)}, r.label)), h('td', {class: 'num'}, fmt(r.n)))),
+    h('tr', {class: 'is-cur'}, h('td', null, h('b', null, 'All')), h('td', {class: 'num'}, h('b', null, fmt(rows.reduce((s, r) => s + r.n, 0)))))]));
+  };
+  const drawChips = () => {
+    drawKinds();
+    chipBox.replaceChildren(...KINDS.map(([k, label]) => chip(k, label)));
+  };
+  const chip = (k, label) => {
+    const n = counted ? (k === 'all' && st.auditReads ? total(counted) : kindTotal(counted, typesOf(k))) : null;
     return h('button', {class: 'chip', type: 'button', 'data-f': k, 'aria-pressed': String(k === st.kind), onclick: () => {
       st.kind = k;
       for (const c of chipBox.children) c.setAttribute('aria-pressed', String(c.dataset.f === k));
       restart();
     }}, label, n !== null ? [' ', h('span', {class: 'n'}, fmt(n))] : null);
-  }));
+  };
   drawChips();
   summary.then(sum => {
     counted = sum['by-type'] || {};
@@ -308,19 +300,16 @@ function feedPanel(catalog, summary, own) {
   const el = h('div', {class: 'feed-box'},
     h('div', {class: 'feed-filters'},
       h('label', {class: 'ff'}, h('span', null, 'Table or namespace'), h('span', {class: 'field mono'}, icon('search'), path)),
-      h('label', {class: 'ff'}, h('span', null, 'Who'), h('span', {class: 'field mono'}, who)),
-      h('label', {class: 'ff'}, h('span', null, 'Up to'), h('span', {class: 'field mono select'}, upTo))),
+      h('label', {class: 'ff'}, h('span', null, 'Who'), h('span', {class: 'field'}, who)),
+      h('label', {class: 'ff'}, h('span', null, 'Up to'), h('span', {class: 'field select'}, upTo))),
     chipBox, h('label', {class: 'fine feed-reads'}, reads, ' Show audit reads'), status, feed, more);
-  const choose = type => {
-    st.kind = kindOf(type);
-    if (short(type) === 'audit-read' && !st.auditReads) {
-      st.auditReads = reads.checked = true;
-    }
+  function chooseKind(k) {
+    st.kind = k;
     drawChips();
     restart();
     el.scrollIntoView({block: 'start'});
-  };
-  return {el, choose};
+  }
+  return {el, kinds};
 }
 
 function feedRow(catalog, r) {
@@ -334,7 +323,7 @@ function feedRow(catalog, r) {
   h('span', {class: 't'}, at(r.time, true)),
   h('span', {class: 'w'}, h('b', null, r.principal || '–'), r['end-user'] ? [' for ', h('b', null, r['end-user'])] : null,
     h('br'), h('span', {class: 'via'}, r.engine ? 'via ' + r.engine : '')),
-  h('div', null, h('span', {class: 'badge', title: r.type || type}, type), ' ', chainPill(r.chain),
+  h('div', null, auditBadge(r.type, event.data), ' ', chainPill(r.chain),
     h('p', {class: 'what'}, describe(type, event.data || {}, catalog) || r.operation || '',
       o && o.path && o.path.length ? [' · ', objectLink(catalog, o.kind, o.path, null)] : null)), btn);
   let detail = null;
@@ -355,12 +344,21 @@ function feedRow(catalog, r) {
 const chainPill = chain => !chain || chain.status === 'no-archive' ? null : chain.status === 'verified'
   ? pill('ok', icon('check'), 'Chain verified') : pill('', icon('clock'), 'Not checked yet');
 
+/** An object's kind as a label: "Table", "Namespace". */
+const kindLabel = kind => {
+  const k = String(kind || '').toLowerCase();
+  return k ? k[0].toUpperCase() + k.slice(1) : 'Object';
+};
+
 function recordDetail(catalog, r) {
   const rid = r['request-id'];
-  const link = h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button', onclick: () => load(link, () => chainLink(r))},
-    'Check its link in the archive'));
-  const o = r.object;
   const fromKafka = Number(r.partition) >= 0;
+  // Without an archive (backlog 216), or for a record read from the log (backlog 205), there is no link to check, so
+  // none is offered.
+  const archived = !(r.chain && r.chain.status === 'no-archive');
+  const link = archived && fromKafka ? h('dd', {class: 'chain-link'}, h('button', {class: 'linkish', type: 'button',
+    onclick: () => load(link, () => chainLink(r))}, 'Check its link')) : null;
+  const o = r.object;
   return h('div', {class: 'rec'},
     h('dl', {class: 'facts rec-facts'},
       h('dt', null, 'Request'), h('dd', null, rid ? [code(rid), ' ', copyButton(rid)] : muted('none recorded')),
@@ -371,8 +369,8 @@ function recordDetail(catalog, r) {
         ? ['verified past this record', r.chain['checked-at'] ? ` by the check at ${at(r.chain['checked-at'])}` : '']
         : r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
           : 'not verified yet: the next hourly check will reach it'),
-      fromKafka ? [h('dt', null, 'Its link'), link] : null,
-      o && o.path && o.path.length ? [h('dt', null, String(o.kind || '').toLowerCase() || 'Object'),
+      link ? [h('dt', null, 'Archive'), link] : null,
+      o && o.path && o.path.length ? [h('dt', null, kindLabel(o.kind)),
         h('dd', null, objectLink(catalog, o.kind, o.path, null))] : null,
       r.reason ? [h('dt', null, 'Reason'), h('dd', null, r.reason)] : null),
     r.event ? jsonPre(r.event) : h('p', {class: 'muted'}, 'This server does not know this record\'s type; its columns are above.'));

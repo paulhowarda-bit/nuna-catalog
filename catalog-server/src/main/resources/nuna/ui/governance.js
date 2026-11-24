@@ -36,6 +36,9 @@ function onLink(catalog, on) {
   return [h('a', {href: objectHref(t, 'access')}, (on.path || []).join('.')), ' ', muted('· ' + on.kind)];
 }
 
+/** A regulated mark's reason, its provenance as recorded; a mark the console made before it asked for one has none. */
+const provenanceWords = p => !p || p === 'console' ? muted('No reason recorded') : p;
+
 const pct = (n, of) => of ? Math.floor(100 * n / of) + '%' : '–';
 
 /** The figures of the governance summary, for the summary page and the overview. */
@@ -77,9 +80,12 @@ function summaryPage(catalog, tabs) {
           h('p', {class: 'fine'}, 'A hold stops snapshot expiry, orphan removal, drops and purges. A freeze stops every cleanup and write '
             + 'beneath it until it is lifted. ', h('a', {href: pageHref('governance', catalog, 'holds')}, 'With what was lifted'))),
         h('div', {class: 'panel', id: 'regulated'}, h('h2', null, 'Regulated areas ', h('span', {class: 'meta'}, 'closed until classified')),
-          regulated.length ? tbl('stack-line', ['Area', ['Tables', 'num'], ['Closed', 'num']], regulated.map(r => h('tr', {class: r.on.kind === 'catalog' ? null : 'opens',
+          // Each area with why it is regulated and who said so, as its flag records them (backlog 213).
+          regulated.length ? tbl('stack-line', ['Area', 'Reason, as recorded', 'Marked', ['Tables', 'num'], ['Closed', 'num']], regulated.map(r => h('tr', {class: r.on.kind === 'catalog' ? null : 'opens',
             onclick: opensRow, 'data-on': (r.on.path || []).join('.')},
-            h('td', {class: 'name'}, onLink(catalog, r.on)), h('td', {class: 'num'}, fmt(r.tables || 0)), h('td', {class: 'num'}, fmt(r.closed || 0)))))
+            h('td', {class: 'name'}, onLink(catalog, r.on)), h('td', {class: 'wrap', 'data-why': ''}, provenanceWords(r.provenance)),
+            h('td', null, r['set-at'] ? h('span', {class: 'tnum'}, at(r['set-at'])) : muted('–'), h('br'), muted(r['set-by'] || '')),
+            h('td', {class: 'num'}, fmt(r.tables || 0)), h('td', {class: 'num'}, fmt(r.closed || 0)))))
             : h('p', {class: 'muted'}, 'No regulated area in this catalog: an unclassified table stays open.'),
           closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
             h('li', {'data-on': (on.path || []).join('.')}, onLink(catalog, on))))] : null,

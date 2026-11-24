@@ -1,0 +1,17 @@
+Breaks: By kind names record types, not the chips' words, so its rows do not add up to the chips (backlog 214).
+Module: catalog-server
+Test: ConsoleBrowserTest#auditFiltersByKindKeepsItsFiltersInTheLinkAndHidesItsOwnReads
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/audit.js b/catalog-server/src/main/resources/nuna/ui/audit.js
+index 86eee6f0..3a466660 100644
+--- a/catalog-server/src/main/resources/nuna/ui/audit.js
++++ b/catalog-server/src/main/resources/nuna/ui/audit.js
+@@ -203,7 +203,7 @@ function feedPanel(catalog, summary, own) {
+     }).filter(r => r.n);
+     kinds.replaceChildren(tbl('kinds', ['Kind', ['Records', 'num']], [...rows.map(r => h('tr', {'data-kind': r.k, title: r.title},
+       h('td', null, h('button', {class: 'linkish', type: 'button', 'data-choose': r.k, 'aria-label': `Show ${r.label.toLowerCase()} in the feed`,
+-        onclick: () => chooseKind(r.k)}, r.label)), h('td', {class: 'num'}, fmt(r.n)))),
++        onclick: () => chooseKind(r.k)}, r.title)), h('td', {class: 'num'}, fmt(r.n)))),
+     h('tr', {class: 'is-cur'}, h('td', null, h('b', null, 'All')), h('td', {class: 'num'}, h('b', null, fmt(rows.reduce((s, r) => s + r.n, 0)))))]));
+   };
+   const drawChips = () => {

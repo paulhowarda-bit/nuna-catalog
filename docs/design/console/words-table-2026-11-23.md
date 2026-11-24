@@ -96,7 +96,7 @@ tags page's captions. I leave those alone, apart from two sentences inside answe
 | A5 | `audit.js` `chainPanel`, Chains fact (l. 155) | {n} verified, one per partition of the audit topic | {n} verified | Topic partitions are plumbing; keep that detail as the value's `title` |
 | A6 | `audit.js` `recordDetail`, Hash chain (l. 369) | not verified yet: acknowledged by Kafka, and the next hourly check reaches it | not verified yet: the next hourly check will reach it | Rule 4 |
 | A7 | `audit.js` `chainLink` (l. 380) | Not archived yet · the archive consumer has not written its segment | Not archived yet · the archive has not received it | Rule 4 |
-| A8 | `audit.js` `feedRow` badge (l. 336), By kind Type cell (l. 172-173); `panels.js` `feedRow` badge (l. 569); `refs.js` ref record badge (l. 699) | `nuna.catalog.commit` (the full record type) | `commit` (the type after `nuna.catalog.`, which `short()` already gives), with the full type as the badge's `title` | The prefix repeats on every row; the full type stays one hover away for a SIEM search |
+| A8 | `audit.js` `feedRow` badge and By kind; `panels.js` `feedRow` badge and `auditTab` chips; `refs.js` ref record badge | `nuna.catalog.commit` (the full record type) | Replaced by backlog 214 (Atelier, 2026-11-23): a badge shows its kind's word from `panels.js` `AUDIT_KINDS` (Grant, Governance, Branch or Tag, Commit, Change, Read, Credential, Refusal, Other) in the UI font, the full type as its `title`; By kind has one row per kind in the chips' words, so its counts add up to them; the chip "Holds and freezes" is Governance; a ref's Record tab has no badge | One word per kind everywhere, so Grants 1 is one Grant badge and its counts add up |
 
 ### Service
 

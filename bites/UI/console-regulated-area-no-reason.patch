@@ -1,0 +1,17 @@
+Breaks: Governance does not show why an area is regulated (backlog 213).
+Module: catalog-server
+Test: ConsoleBrowserTest#theGovernanceSummaryCountsAndListsTheHoldTheFreezeAndTheRegulatedNamespace
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/governance.js b/catalog-server/src/main/resources/nuna/ui/governance.js
+index 0167ffb1..fb3adf4b 100644
+--- a/catalog-server/src/main/resources/nuna/ui/governance.js
++++ b/catalog-server/src/main/resources/nuna/ui/governance.js
+@@ -37,7 +37,7 @@ function onLink(catalog, on) {
+ }
+ 
+ /** A regulated mark's reason, its provenance as recorded; a mark the console made before it asked for one has none. */
+-const provenanceWords = p => !p || p === 'console' ? muted('No reason recorded') : p;
++const provenanceWords = p => muted('No reason recorded');
+ 
+ const pct = (n, of) => of ? Math.floor(100 * n / of) + '%' : '–';
+ 

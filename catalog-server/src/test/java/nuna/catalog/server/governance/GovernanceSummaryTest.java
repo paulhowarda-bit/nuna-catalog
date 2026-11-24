@@ -164,6 +164,10 @@ class GovernanceSummaryTest {
         assertThat(paths(List.of(area.get("on")))).containsExactly("finance");
         assertThat(area.get("tables").asInt()).isEqualTo(3);
         assertThat(area.get("closed").asInt()).isEqualTo(2);
+        // Why it is regulated and who set it, as the flag records them (backlog 213).
+        assertThat(area.get("provenance").asString()).isEqualTo("management-api");
+        assertThat(area.get("set-by").asString()).isEqualTo("stella");
+        assertThat(area.get("set-at").asString()).isEqualTo(NOW.minus(Duration.ofDays(9)).toString());
         assertThat(paths(summary.get("closed").valueStream().toList()))
                 .containsExactly("finance.ledger.accounts", "finance.ledger.archive.cash");
         assertThat(summary.get("closed").get(0).get("id").asString()).isEqualTo(accounts.id().toString());

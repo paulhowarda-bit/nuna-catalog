@@ -256,6 +256,8 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 @keyframes spin { to { transform: rotate(360deg); } }
 .field { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface); font-size: var(--t-13); min-width: 0; }
 .field.mono { font-family: var(--f-mono); font-size: var(--t-13); }
+/* A field of words or a date ("Anyone", "Up to now", "latest 50") is in the UI font, its digits tabular (backlog 215). */
+.field:not(.mono) { font-variant-numeric: tabular-nums; }
 .field .ph-text { color: var(--text-2); }
 .field.select::after { content: ""; width: 7px; height: 7px; border-right: 1.6px solid var(--text-2); border-bottom: 1.6px solid var(--text-2); transform: rotate(45deg) translate(-2px, -2px); margin-left: auto; }
 .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
@@ -270,12 +272,16 @@ a.btn:hover, a.btn:focus-visible, .nc-brand:hover, .nc-brand:focus-visible { tex
 .tbl td { padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .tbl tr:last-child td { border-bottom: 0; }
 .tbl td.num, .tbl th.num { text-align: right; font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+/* A number column's header is words ("At the point", "Records"), in the UI font (backlog 215). */
+.tbl th.num { font-family: var(--f-ui); }
 .tbl tbody tr:hover td, .tbl tr.is-hover td { background: var(--surface-2); }
 .tbl tr.is-sel td { background: var(--accent-wash); }
 .tbl tr.is-sel td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 .tbl tr.is-cur td { background: var(--ok-wash); }
 .tbl tr.is-refused td { background: var(--bad-wash); }
 .tbl .name { font-family: var(--f-mono); font-size: var(--t-13); color: var(--text); }
+/* The words beside a name, such as its kind ("· namespace"), are words, not the name (backlog 215). */
+.tbl .name .muted { font-family: var(--f-ui); }
 /* A row that opens something (backlog 189): its hover background is the table's own; the chevron says it opens. */
 .tbl tr.opens { cursor: pointer; }
 .tbl tr.opens td.name a::after { content: "\203A"; display: inline-block; margin-left: 6px; color: var(--text-2); opacity: 0; transition: opacity .12s; }
@@ -609,7 +615,7 @@ pre.raw { overflow: visible; }
 .slo .offv { font: 600 12px var(--f-mono); fill: var(--bad-ink); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 /* v10: drawings keep their size on a phone, scrolling sideways rather than shrinking their text */
 .iceline .ref { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 5; }
-.ice-cap { font: 500 12px/1.4 var(--f-mono); color: var(--text-2); margin-top: 10px; }
+.ice-cap { font: 500 12px/1.4 var(--f-ui); color: var(--text-2); margin-top: 10px; }
 .ph.hero { grid-template-columns: minmax(0, 1fr); }
 .ph.hero .side { grid-column: 1; grid-row: auto; justify-content: flex-start; }
 /* v11: the console between a phone and a wide screen */
@@ -786,6 +792,9 @@ dialog { color: var(--text); }
 .goto-list li[aria-selected="true"] { background: var(--accent-wash); box-shadow: inset 2px 0 0 var(--accent); }
 .goto-list .gp { font: 400 var(--t-13)/1.35 var(--f-mono); color: var(--text-2); overflow-wrap: break-word; }
 .goto-list .gp b { color: var(--text); font-weight: 600; }
+/* "in lakehouse" after each match's path: the words in the UI font, the catalog's name in mono (backlog 217). */
+.goto-list .gin { font-family: var(--f-ui); white-space: nowrap; }
+.goto-list .gin .gc { font-family: var(--f-mono); }
 .goto-list .gx { display: inline-flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .goto-list .ico-t { color: var(--accent); } .goto-list .ico-v { color: var(--held-ink); } .goto-list .ico-n { color: var(--text-2); }
 .goto-list li.none { grid-template-columns: minmax(0, 1fr); color: var(--text-2); cursor: default; }
@@ -1066,6 +1075,8 @@ tr.is-warn > td:first-child { box-shadow: inset 3px 0 0 var(--warn-mark); }
 .kpi.is-warn .kpi-v { color: var(--warn-ink); }
 .kpi-v.sm { font-size: var(--t-16, 16px); letter-spacing: 0; line-height: 1.3; margin-top: 10px; }
 .kpi-v.mono { font-family: var(--f-mono); overflow-wrap: anywhere; }
+/* A figure that is a date (a ref's Point and Expires) reads in the UI font, its digits tabular (backlog 215). */
+.kpi-v.date { font-family: var(--f-ui); font-variant-numeric: tabular-nums; }
 .row-acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: nowrap; align-items: center; }
 .refs-tbl td.name .why { font-family: var(--f-ui); white-space: normal; display: inline-block; max-width: 46ch; margin-top: 3px; }
 .refs-explain { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s5, 20px); margin-top: var(--s5, 20px); align-items: start; }
@@ -1138,6 +1149,8 @@ td.acts { width: 1%; white-space: nowrap; }
 
 /* the merge */
 .merge-verdict { margin: 0; }
+/* The verdict line on a branch's Changes tab (backlog 212): one line above the table. */
+.granted.compact { padding: 10px 12px; margin-bottom: 12px; }
 .mm-key { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; margin: -4px 0 10px; }
 .mm-key i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 50%; }
 .mm-key .k-cut { background: var(--accent); }
@@ -1172,6 +1185,8 @@ td.acts { width: 1%; white-space: nowrap; }
 .mm .mm-head { fill: none; stroke: var(--cref-mark); stroke-width: 2.5; stroke-linejoin: round; }
 .mm .mm-x { stroke: var(--bad-ink, #b3261e); stroke-width: 2.5; stroke-linecap: round; }
 .tx-steps { margin: 0 0 10px; padding-left: 22px; display: grid; gap: 8px; font-size: var(--t-13); }
+/* A long path breaks after a dot, and a long name anywhere, inside the panel (backlog 217). */
+.tx-steps code { overflow-wrap: anywhere; }
 .tx-steps li::marker { font: 600 var(--t-12) var(--f-mono); color: var(--cref-ink); }
 .merge-act .refusal-acts { align-items: center; }
 .settle { margin: 0; padding-left: 18px; display: grid; gap: 8px; }

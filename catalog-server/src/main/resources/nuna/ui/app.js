@@ -107,11 +107,19 @@ async function landingCatalog(all) {
 /** Where a caller's work is (items 184 and 200): Audit for auditors and grant admins, Service for operators, Overview
  * for those who read data, in that order (Atelier, 2026-11-23), else the catalog. */
 function homeHref(c) {
-  if (auditOpen(c)) return pageHref('audit', c);
-  if (operates()) return pageHref('service');
-  if (readsData()) return pageHref('overview', c);
-  return href({c});
+  const home = homeKey(c);
+  return home === 'service' ? pageHref('service') : home === 'catalog' ? href({c}) : pageHref(home, c);
 }
+
+/** The rail item of the caller's home, as homeHref chooses it. */
+function homeKey(c) {
+  if (auditOpen(c)) return 'audit';
+  if (operates()) return 'service';
+  if (readsData()) return 'overview';
+  return 'catalog';
+}
+
+const RAIL = ['overview', 'catalog', 'maintenance', 'governance', 'audit', 'service'];
 
 /** A page the caller's groups cannot use, reached by a link: said in plain words, and the catalog is never asked. */
 function closedPage(title, words) {
@@ -180,6 +188,10 @@ function setChrome(navKey, ref) {
   // read, Audit is for audit readers and those who manage the catalog's grants, Service for platform operators.
   const open = {overview: readsData(), catalog: true, maintenance: readsData(), governance: true, audit: !!cat && auditOpen(cat),
     service: operates()};
+  // The caller's home comes first in the rail, the rest in their usual order (Atelier's re-walk after phase 2, backlog 217).
+  const home = cat ? homeKey(cat) : 'service';
+  const end = $('.drawer-x', navEl);
+  for (const k of [home, ...RAIL.filter(x => x !== home)]) end.before($(`a[data-k="${k}"]`, navEl));
   for (const a of $$('a[data-k]', navEl)) {
     const k = a.dataset.k;
     a.hidden = !open[k];
@@ -482,12 +494,13 @@ function gotoDraw() {
     const there = it.target.catalog || cat;
     const row = kind === 'table' ? marks.get([there, it.path].join('.')) : null;
     const reasons = row ? row.assessment.reasons || [] : [];
-    const extra = [there !== cat ? h('span', {class: 'badge', 'data-goto-catalog': there}, there) : null,
-      ...(kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
+    // Every match names its catalog after its path, the catalog it is in too (Atelier's re-walk after phase 2, backlog 217).
+    const extra = [...(kind === 'namespace' ? [h('span', {class: 'badge'}, 'namespace')] : kind === 'view' ? [h('span', {class: 'badge'}, 'view')]
         : row ? [pill(reasons.includes('equality-deletes') ? 'bad' : 'warn', (REASONS[reasons[0]] || [null, 'Queued'])[1])] : [])];
     const li = h('li', {role: 'option', id: 'goto-o' + i, 'aria-selected': String(i === gotoAt), 'data-goto-target': `${there}:${it.path}`},
       icon(kind === 'namespace' ? 'ns' : kind, 'ic ' + (kind === 'namespace' ? 'ico-n' : kind === 'view' ? 'ico-v' : 'ico-t')),
-      h('span', {class: 'gp'}, parts.slice(0, -1).map(x => [x + '.', h('wbr')]), h('b', null, parts[parts.length - 1])), h('span', {class: 'gx'}, extra));
+      h('span', {class: 'gp'}, parts.slice(0, -1).map(x => [x + '.', h('wbr')]), h('b', null, parts[parts.length - 1]), ' ',
+        h('span', {class: 'gin', 'data-goto-catalog': there}, 'in ', h('span', {class: 'gc'}, there))), h('span', {class: 'gx'}, extra));
     li.addEventListener('click', () => gotoOpen(i));
     li.addEventListener('pointermove', () => {
       if (gotoAt !== i) {
