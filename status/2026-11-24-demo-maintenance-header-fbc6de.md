@@ -35,4 +35,5 @@ running off the screen, and the empty maintenance pages).
     is how the queue above was made. `demo/README.md` says so.
 - Seen, not changed: `GET /management/v1/maintenance/nights?jobs=true` answers 500, not 400, for a parameter that is
   not a number; the brokerage world's generator restarted 5 times in its first 13 minutes on SingleStore's
-  `maximum_memory` ("Memory used by MemSQL (1740.25 Mb) has reached the 'maximum_memory' setting").
+  `maximum_memory` ("Memory used by MemSQL (1740.25 Mb) has reached the 'maximum_memory' setting"), which
+  backlog 234 fixed meanwhile (40a7e9df).
