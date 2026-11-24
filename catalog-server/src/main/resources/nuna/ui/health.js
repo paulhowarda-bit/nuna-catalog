@@ -402,7 +402,10 @@ export const policyKey = key => POLICY_LABELS[key] ? h('span', {title: key, 'dat
 /** The policy in force on a table: each key with where it was set. */
 async function policyFacts(target) {
   const p = await api.policy(target);
-  const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => a.localeCompare(b));
+  // In the policy's own order, as the catalog's panel lists them; a key with no label after, by name.
+  const order = Object.keys(POLICY_LABELS);
+  const rank = key => order.includes(key) ? order.indexOf(key) : order.length;
+  const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b));
   return h('div', {'data-policy': ''}, panel('Policy for this table', 'each setting with where it was set', h('dl', {class: 'facts one'},
     resolved.map(([key, setting]) => [h('dt', null, policyKey(key)),
       h('dd', null, setting.source === 'guardrail' ? [h('b', null, setting.value), ' · guardrail',
