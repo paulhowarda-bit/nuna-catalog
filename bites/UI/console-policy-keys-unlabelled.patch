@@ -1,0 +1,17 @@
+Breaks: Maintenance policy keys show as raw keys, with no label.
+Module: catalog-server
+Test: ConsoleHealthTest#policyKeysShowTheirLabelsWithTheKeyInTheirTitle
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/health.js b/catalog-server/src/main/resources/nuna/ui/health.js
+index 17fc4749..88137c8d 100644
+--- a/catalog-server/src/main/resources/nuna/ui/health.js
++++ b/catalog-server/src/main/resources/nuna/ui/health.js
+@@ -390,7 +390,7 @@ export const POLICY_LABELS = {
+ };
+ 
+ /** A policy key as its label, the key itself in its title; a key the console has no label for stays a name. */
+-export const policyKey = key => POLICY_LABELS[key] ? h('span', {title: key, 'data-key': key}, POLICY_LABELS[key]) : code(key);
++export const policyKey = key => code(key);
+ 
+ /** The policy in force on a table: each key with where it was set. */
+ async function policyFacts(target) {
