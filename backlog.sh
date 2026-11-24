@@ -4,8 +4,8 @@
 #
 #   ./backlog.sh list                   open items on main, and who holds each
 #   ./backlog.sh add "<title>" [<by>]   take the next number and write backlog/<n>.md in this worktree
-#   ./backlog.sh claim <n> [<area>...]  claim an open item for this session; fails if anyone holds it, or holds an
-#                                       item whose area overlaps its area (its Touches: line, or the areas given)
+#   ./backlog.sh claim <n> [<area>...]  claim an open item for this session; fails if anyone holds it, and names
+#                                       any item held elsewhere whose area overlaps (its Touches: line, or the areas given)
 #   ./backlog.sh done <n>               mark the item done in this worktree (you must hold it)
 #   ./backlog.sh release <n> [--force]  give up the claim (--force: someone else's)
 #   ./backlog.sh claims                 every claim and number in flight, and whether its worktree and branch remain
@@ -18,8 +18,9 @@
 # (CLAUDE_CODE_HOST_SESSION_ID), so the session that claimed in its worktree can release from the main checkout.
 #
 # An area is a folder or file, or "none" for an item that changes only its own item file and a status/ entry. Two
-# items whose areas overlap are never held at once, so two agents do not change the same code in parallel. Claims
-# take turns through refs/backlog/claiming while they compare areas, so two overlapping claims cannot both pass.
+# agents may hold items whose areas overlap: each works in its own worktree, and whichever lands second settles the
+# conflicts in its own branch at landing (Paul, 2026-11-23; D51). A claim names the overlapping items held elsewhere,
+# so the agent knows whose landing it may have to merge. Claims take turns through refs/backlog/claiming.
 
 set -u
 die() { echo "backlog.sh: $*" >&2; exit 1; }
@@ -171,7 +172,7 @@ cmd_claim() {
         holds "$c" && continue
         case $(diagnose "$c") in finished*|abandoned*) continue ;; esac
         other=$(field "refs/backlog/claims/$c" touches)
-        overlap "$areas" "$other" && die "item $n would change $areas, and item $c ($(title "$c")) changes $other: $(field "refs/backlog/claims/$c" session) holds it on $(field "refs/backlog/claims/$c" branch). Take another item, or wait until it lands."
+        overlap "$areas" "$other" && echo "backlog.sh: note: item $c ($(title "$c")) also changes $other: $(field "refs/backlog/claims/$c" session) holds it on $(field "refs/backlog/claims/$c" branch). Whichever lands second settles the conflicts in its own branch." >&2
     done
     blob=$(printf 'item: %s\nsession: %s\nbranch: %s\nworktree: %s\nclaimed: %s\ntouches: %s\n' "$n" "$session" "$branch" "$top" "$now" "$areas" \
         | git hash-object -w --stdin)

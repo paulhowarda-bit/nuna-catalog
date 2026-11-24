@@ -63,11 +63,12 @@ its own branch, and it lands with that branch.
 ## Working on an item
 
 1. Start your worktree from the current `main`.
-2. `./backlog.sh claim <n>` in that worktree. The claim fails if the item is already claimed, or if another agent
-   holds an item whose area overlaps this one's; it prints the holder: take another item. An item with no `Touches:`
+2. `./backlog.sh claim <n>` in that worktree. The claim fails only if the item is already claimed. If another agent
+   holds an item whose area overlaps this one's, the claim goes on and names it: whichever of you lands second
+   settles the conflicts in its own branch at landing (Paul, 2026-11-23; D51). An item with no `Touches:`
    line needs its areas named, `./backlog.sh claim <n> demo/ CLAUDE.md`. Never work on an item you have not claimed,
    and claim only what you are about to start. When the work turns out to need more, the holder widens its own claim
-   with `./backlog.sh claim <n> <area>...`: the areas it holds plus the new ones, checked against every other claim
+   with `./backlog.sh claim <n> <area>...`: the areas it holds plus the new ones, compared with every other claim
    as a new claim is. No release in between, so no other agent can take the item meanwhile.
 3. Do the work, changing only the area you claimed, and commit it. Record what you did in `status/`
    (`status/README.md`).
@@ -91,7 +92,8 @@ worktree, and releases it after landing the subagent's branch.
 - A claim also records the item's area. Two areas overlap when one is, holds or lies inside the other (`demo/` and
   `demo/k8s/ports.yaml`), compared without case; `.` overlaps everything and `none` nothing. While claims compare
   areas they take turns through `refs/backlog/claiming`, so of six agents claiming six items that all touch `docs/`
-  at once, exactly one wins (tested 2026-11-15). Claims made before areas existed record none and block nothing.
+  at once, all six claim, each told of those that claimed before it. Until 2026-11-23 an overlap refused the claim; Paul ended that
+  (D51): agents work in their own worktrees and settle conflicts at landing. Claims made before areas existed record none.
 - The holder is the Claude session (`CLAUDE_CODE_HOST_SESSION_ID`, the `local_…` id the app shows); outside Claude
   Code, the branch. Only the holder can mark the item done or release it, unless `release` is given `--force`.
 - Nothing pushes the refs, and a clone on another machine has its own. Claims coordinate the agents on one machine. A

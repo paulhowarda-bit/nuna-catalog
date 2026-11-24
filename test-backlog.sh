@@ -46,7 +46,7 @@ for stub in 'exec cat "$2"' 'exit 1'; do
     fi
 done
 
-# Widening a claim (backlog 125, 129): the holder adds areas; another session cannot; an overlap still refuses.
+# Widening a claim (backlog 125, 129): the holder adds areas; another session cannot; an overlap is named, not refused (D51).
 printf '# 2. Two\n\nStatus: open\nAdded: 2026-11-22 by test\nTouches: a/\n' > backlog/2.md
 printf '# 3. Three\n\nStatus: open\nAdded: 2026-11-22 by test\nTouches: c/\n' > backlog/3.md
 "$here/backlog.sh" claim 2 >/dev/null || exit 2
@@ -59,12 +59,10 @@ if out=$("$here/backlog.sh" claim 2 b/ 2>&1) && [[ $out == widened* ]] && [[ " $
 else
     bad "widening item 2: $out; touches: $(touches 2)"
 fi
-if out=$("$here/backlog.sh" claim 2 c/ 2>&1); then
-    bad "widening into another claim's area went on: $out"
-elif [[ " $(touches 2) " == *" c/ "* ]]; then
-    bad "a refused widening changed the claim: $(touches 2)"
+if out=$("$here/backlog.sh" claim 2 c/ 2>&1) && [[ " $(touches 2) " == *" c/ "* ]] && [[ $out == *"item 3 ("*"also changes c/"* ]]; then
+    ok "widening into another claim's area goes on and names item 3"
 else
-    ok "widening into another claim's area refuses"
+    bad "widening item 2 into c/: $out; touches: $(touches 2)"
 fi
 if out=$(CLAUDE_CODE_HOST_SESSION_ID=third "$here/backlog.sh" claim 3 d/ 2>&1); then
     bad "another session widened item 3: $out"
@@ -74,7 +72,7 @@ else
     ok "another session cannot widen a claim it does not hold"
 fi
 
-# One session may hold two items whose areas overlap (it works them one at a time); another session may not.
+# One session may hold two items whose areas overlap; so may another session, told who else holds the area (D51).
 printf '# 4. Four
 
 Status: open
@@ -93,10 +91,11 @@ Added: 2026-11-23 by test
 Touches: a/
 ' > backlog/5.md
 git checkout -q -b third || exit 2
-if out=$(CLAUDE_CODE_HOST_SESSION_ID=third "$here/backlog.sh" claim 5 2>&1); then
-    bad "another session claimed item 5 in the holder's area: $out"
+if out=$(CLAUDE_CODE_HOST_SESSION_ID=third "$here/backlog.sh" claim 5 2>&1) && [[ $out == *"claimed item 5"* ]] &&
+    [[ $out == *"item 2 ("* ]] && [[ $out == *"item 4 ("* ]]; then
+    ok "another session claims into the holder's area, told of items 2 and 4"
 else
-    ok "another session cannot claim into the holder's area"
+    bad "another session claiming item 5 in a/: $out"
 fi
 git checkout -q "$branch" || exit 2
 
