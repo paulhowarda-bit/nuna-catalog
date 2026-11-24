@@ -3,17 +3,19 @@
 One stack on Docker Desktop's Kubernetes, shared with the engine matrix: PostgreSQL, Silo, the catalog server
 (with the console), Keycloak for signing in by username and password, and Trino with CloudBeaver as its UI. `up`
 starts that core, writes sample Iceberg tables, makes a branch and a tag of the catalog, and prints how to sign in.
-Three switches add the rest, each on with `demo/demo.sh <switch>` and off with `demo/demo.sh <switch> stop` (D50):
+Four switches add the rest, each on with `demo/demo.sh <switch>` and off with `demo/demo.sh <switch> stop` (D50):
 
-- `gen`: the brokerage world, a live generator whose data reaches Iceberg through Kafka and SingleStore, with
-  Kafka, Kafka Connect and kafbat. It turns `ss` on too.
-- `ss`: SingleStore, synced with Iceberg in both directions. `ss stop` turns `gen` off too.
+- `gen`: the brokerage world, a live generator whose data reaches Iceberg through Kafka, SingleStore or both, as
+  `kafka` and `ss` say. It needs one of them, not both (Paul, 2026-11-24): with neither on, it turns `kafka` on.
+- `ss`: SingleStore, synced with Iceberg in both directions. `ss stop` leaves `gen` on, through Kafka.
+- `kafka`: the generator writes through Kafka, Kafka Connect and kafbat. `kafka stop` leaves `gen` on through
+  SingleStore if `ss` is on, and turns it off if not; it is refused while the CDC leg runs.
 - `cdc`: changes in PostgreSQL, Oracle and CockroachDB, captured into Iceberg through Debezium and Kafka Connect.
 
-Kafka runs only while `gen` or `cdc` is on: the catalog audits to its log, not to Kafka (D23, amended 2026-11-23).
-`up` turns `gen` and `ss` back on if they were on (`~/.nuna-demo/switches`; all off on a new machine), and keeps a
-running CDC leg. `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's ingest against the same stack,
-with `gen` on. Everything is local and uses test keys; nothing here is fit for production.
+Kafka runs only while the generator writes through it or `cdc` is on: the catalog audits to its log, not to Kafka
+(D23, amended 2026-11-23). `up` turns `gen`, `ss` and `kafka` back on if they were on (`~/.nuna-demo/switches`;
+all off on a new machine), and keeps a running CDC leg. `engines` runs Spark, Kafka Connect, PyIceberg and SingleStore's ingest against the same stack,
+with `gen`, `kafka` and `ss` on. Everything is local and uses test keys; nothing here is fit for production.
 
 ## Start
 
@@ -31,7 +33,7 @@ demo/demo.sh up
   (`NUNA_DEMO_CONTEXT`); `kubectl` and `helm` never use your current context. The stack is `demo/k8s`, the
   same manifests the engine matrix deploys when it runs on its own:
   - `stack.yaml`: PostgreSQL and `idp`, which serves the demo issuer's keys (`demo/Mint.java`).
-  - `kafka.yaml`: Kafka and kafbat, which the demo applies only while `gen` or `cdc` is on. The demo patches
+  - `kafka.yaml`: Kafka and kafbat, which the demo applies only while the generator writes through it or `cdc` is on. The demo patches
     kafbat with `kafka-ui-signin.yaml`, its sign-in through Keycloak; the engine matrix on its own leaves kafbat
     open.
   - `store-silo.yaml` and `seed.yaml`: Silo as Service `s3`, with its console on the pod's 9001, and the job
@@ -326,11 +328,11 @@ A simulated US broker-dealer (D48, `docs/design/brokerage-world.md`, module `dem
 switch `gen` is on (D50): its generator books every financial transaction through the demo kit's posting engine and sends the world's
 events to Kafka and SingleStore, and the demo's pipelines bring them into Iceberg as they happen.
 
-- `gen` turns `ss` on if it is off, starts Kafka, and runs `brokerage-bootstrap`, a job: it makes the world's
-  namespaces, tables and views in `lakehouse` as user `brokerage`, and its Kafka topics. Then `gen` sets their
-  governance as `stella` (below),
-  starts Kafka Connect, registers the sink, and starts the generator, Deployment `brokerage`, last (`demo/demo.sh brokerage logs`
-  follows it). Its settings are environment variables in `k8s/brokerage.yaml` and `k8s/brokerage-bootstrap.yaml`:
+- `gen` starts SingleStore if `ss` is on and Kafka if `kafka` is, and runs `brokerage-bootstrap`, a job: it makes
+  the world's namespaces, tables and views in `lakehouse` as user `brokerage`, and its Kafka topics while `kafka` is
+  on. Then `gen` sets their governance as `stella` (below), starts Kafka Connect and registers the sink (with
+  `kafka` on) or the change feeds of the world's SingleStore tables (with it off), and starts the generator,
+  Deployment `brokerage`, last (`demo/demo.sh brokerage logs` follows it). Its settings are environment variables in `k8s/brokerage.yaml` and `k8s/brokerage-bootstrap.yaml`:
   `BROKERAGE_ACCOUNTS=1000`, `BROKERAGE_CATCH_UP_DAYS=3`, `BROKERAGE_SEED=20261122`.
 - The real clock: the world's events arrive at their own time of day in New York, as a live firm's would. The
   three catch-up days and today's earlier hours go at once when the generator starts; then each event waits for its
@@ -356,6 +358,22 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   `brokerage.party` and `brokerage.ledger` are regulated, marked after their tables are classified, and
   `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. The grants on all of
   `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino.
+- Routes (D50, amended 2026-11-24; backlog 238): the generator writes through the ways the switches give it, and
+  takes the other way when one goes off.
+
+  | `ss` | `kafka` | The orders | Every other feed |
+  |---|---|---|---|
+  | on | on | SingleStore, to `brokerage.trading.orders` | Kafka, to its table above |
+  | off | on | topic `brokerage.trading.order-events`, through the sink to `brokerage.trading.order_events` | Kafka |
+  | on | off | SingleStore | a SingleStore table of its own in database `brokerage` (`demo/singlestore/brokerage-feeds.sql`), keyed by `seq`, whose change feed `brokerage_<table>_to_lake` copies it to `brokerage.singlestore.<table>` |
+
+  The tables are made from `demo-datagen` (`Main sql demo/singlestore`; a test checks the committed files match).
+  Before a way goes off, demo.sh stops the generator and runs the bootstrap job again as `drain kafka` or
+  `drain singlestore`, which waits (up to three minutes) until what went that way is all in the lake; if it is not,
+  the way stays on. The generator then starts on its new route and counts what each way carried, so a restart
+  still sends nothing twice. Each of the eleven change feeds is a Java extractor of its own in SingleStore's memory,
+  which is why they run only while Kafka is off. `brokerage.singlestore` is `restricted` and regulated, as it holds
+  copies of the party and ledger tables.
 - `gen stop` stops the generator, waits 20 seconds for the sink's last commit, then stops Kafka Connect, Kafka
   and kafbat unless the CDC leg runs. Kafka's topics stay on its volume, so the next `gen` carries on from them:
   the generator replays the world without sending what it sent before, and catches up on the days it missed.

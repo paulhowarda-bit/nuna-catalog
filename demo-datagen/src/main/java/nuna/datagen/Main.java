@@ -29,6 +29,7 @@ import nuna.datagen.world.World;
  *       already happened (the catch-up days, today's earlier hours) as fast as the sink takes it, then each event at
  *       its own time of day in New York, quiet overnight, over weekends and on holidays. A restart resumes where the
  *       last run stopped. A watch restarts the sink's task whenever it has failed ({@link SinkWatch}).</li>
+ *   <li>{@code drain kafka|singlestore}: waits until what went that way is all in the lake ({@link #drain}).</li>
  *   <li>{@code sql <dir>}: writes brokerage-feeds.sql and brokerage-feeds-pipelines.sql into {@code dir}
  *       ({@link SingleStoreTables}).</li>
  * </ul>
@@ -53,8 +54,9 @@ public final class Main {
             case "bootstrap" -> bootstrap();
             case "run" -> run();
             case "sql" -> sql(Path.of(args.length > 1 ? args[1] : "."));
+            case "drain" -> drain(args.length > 1 ? args[1] : "");
             default -> {
-                System.err.println("usage: Main bootstrap | run | sql <dir>");
+                System.err.println("usage: Main bootstrap | run | sql <dir> | drain kafka|singlestore");
                 System.exit(2);
             }
         }
@@ -141,6 +143,54 @@ public final class Main {
                     ? (publisher.sent() - before) + " events sent" : "replayed (sent before a restart)")
                     + (world.unexpectedRejections() > 0 ? "; WARN " + world.unexpectedRejections()
                     + " unexpected rejections so far" : ""));
+            }
+        }
+    }
+
+    /**
+     * Waits until what the world sent one way has all reached the lake, with the generator stopped: through Kafka, each
+     * topic's records since the world began against its sink table's; through SingleStore, each feed table's rows
+     * against its change feed's copy. demo.sh runs it before it turns that way off, since the next run counts what
+     * went that way from the lake. Exits 1 if the lake has not caught up within {@code BROKERAGE_DRAIN_SECONDS}.
+     */
+    static void drain(String way) throws Exception {
+        Feed.Path path = switch (way) {
+            case "kafka" -> Feed.Path.KAFKA;
+            case "singlestore" -> Feed.Path.SINGLESTORE;
+            default -> throw new IllegalArgumentException("drain takes kafka or singlestore, not " + way);
+        };
+        Map<Feed, Long> sent = new EnumMap<>(Feed.class);
+        try (IcebergLake lake = lake()) {
+            if (path == Feed.Path.KAFKA) {
+                String bootstrap = env("KAFKA_BOOTSTRAP", null);
+                Map<Feed, Long> ends = KafkaTopics.endOffsets(bootstrap);
+                Map<Feed, Long> start = lake.startOffsets(ends);
+                ends.forEach((feed, end) -> sent.put(feed, end - start.get(feed)));
+            } else {
+                try (SingleStore store = new SingleStore(env("SINGLESTORE_URL", null), env("SINGLESTORE_USER", "root"),
+                         env("SINGLESTORE_PASSWORD", null), Kit.load())) {
+                    sent.putAll(store.counts());
+                }
+            }
+            long deadline = System.nanoTime() + Duration.ofSeconds(Long.parseLong(env("BROKERAGE_DRAIN_SECONDS",
+                "180"))).toNanos();
+            while (true) {
+                Map<String, String> behind = new java.util.TreeMap<>();
+                sent.forEach((feed, n) -> {
+                    long landed = lake.records(feed.lakeTable(path));
+                    if (landed < n) {
+                        behind.put(feed.lakeTable(path), landed + " of " + n);
+                    }
+                });
+                if (behind.isEmpty()) {
+                    System.out.println("everything sent through " + way + " is in the lake: " + sent);
+                    return;
+                }
+                if (System.nanoTime() > deadline) {
+                    System.out.println("the lake has not caught up with what went through " + way + ": " + behind);
+                    System.exit(1);
+                }
+                Thread.sleep(3000);
             }
         }
     }

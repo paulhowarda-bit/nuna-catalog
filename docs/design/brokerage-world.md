@@ -199,6 +199,15 @@ a sanctions match that raise alerts.
   sent, then tags it `eod-YYYY-MM-DD`. `financial_transactions` gains `locate_id` (a schema change the console shows)
   just before the first short sale. A restart replays the world without sending and carries each topic on from its
   end offset.
+- **Routes (D50, amended 2026-11-24; backlog 238).** The generator needs Kafka or SingleStore, not both (Paul,
+  2026-11-24): `BROKERAGE_ROUTE` (both, kafka, singlestore) comes from demo.sh's switches `kafka` and `ss`. With
+  SingleStore off, the orders go through topic `brokerage.trading.order-events` to `brokerage.trading.order_events`
+  (an append of every change, as the Kafka sink only appends); with Kafka off, every other feed is inserted into a
+  SingleStore table of its own keyed by `seq`, the record's number in its feed, and an append-only change feed per
+  table copies it to `brokerage.singlestore.<table>`. A restart counts what each way carried (a topic's records
+  since the world began, a table's rows, or, for the way that is off, its lake table's records), so it sends nothing
+  twice across a change of route; demo.sh drains a way into the lake (`Main drain`) before turning it off. The
+  end-of-day tags go on every table that changed that day, whichever way it went.
 - **Scale.** Default 1,000 accounts. A business day is about 1,800 financial transactions, 15,700 journal lines, 16,400
   balance rows, 23,400 bars, 300 closing prices and 430 orders (1,300 order changes), about 58,000 rows, so a demo
   left running for a working day holds about 50 business days and 3 million rows. A month at that scale (the fast

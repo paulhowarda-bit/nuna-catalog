@@ -3,12 +3,19 @@
 # (demo/k8s), its sample data, and the matrix's engines on demand. See demo/README.md.
 #
 #   demo/demo.sh up       build the jars and images, start the core stack, load sample data once, with the
-#                         catalog's branch dev and tag sample, turn gen and ss back on if they were, print tokens
-#   demo/demo.sh gen      turn on the brokerage world: its tables, Kafka, Kafka Connect and its live generator
-#                         (turns ss on too: the generator writes orders to SingleStore)
+#                         catalog's branch dev and tag sample, turn gen, ss and kafka back on if they were, print
+#                         tokens
+#   demo/demo.sh gen      turn on the brokerage world: its tables and its live generator, which writes through
+#                         Kafka (with Kafka Connect) or SingleStore or both, as the switches kafka and ss say
+#                         (turns kafka on if neither is)
 #   demo/demo.sh gen stop turn the generator off, and Kafka with it unless the CDC leg runs
-#   demo/demo.sh ss       turn on SingleStore, with its sample databases and change feeds
-#   demo/demo.sh ss stop  turn SingleStore off (and gen, which needs it); its databases stay on its volume
+#   demo/demo.sh ss       turn on SingleStore, with its sample databases and change feeds; the generator's orders
+#                         go to it again
+#   demo/demo.sh ss stop  turn SingleStore off; its databases stay on its volume, and the generator carries on
+#                         through Kafka (turns kafka on if it is off)
+#   demo/demo.sh kafka    let the generator use Kafka: every feed but the orders goes through Kafka and its sink
+#   demo/demo.sh kafka stop  stop Kafka (refused while the CDC leg runs); the generator carries on through
+#                         SingleStore, a change feed per table into brokerage.singlestore, or stops if ss is off
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops, lake and brokerage)
@@ -109,6 +116,7 @@ fill() {
     -e "s|\${TRINO_IMAGE}|$TRINO_IMAGE|g" -e "s|\${OAUTH2_PROXY_IMAGE}|$OAUTH2_PROXY_IMAGE|g" \
     -e "s|\${CLOUDBEAVER_IMAGE}|$CLOUDBEAVER_IMAGE|g" -e "s|\${CONNECT_IMAGE}|$CONNECT_IMAGE|g" \
     -e "s|\${BROKERAGE_IMAGE}|$BROKERAGE_IMAGE|g" -e "s|\${BROKERAGE_IMAGE_ID}|$BROKERAGE_IMAGE_ID|g" \
+    -e "s|\${BROKERAGE_ROUTE}|$(world_route)|g" \
     -e "s|\${SINGLESTORE_ROOT_PASSWORD}|$S2_ROOT_PASSWORD|g" \
     -e "s|\${POSTGRES_IMAGE}|$(image_of postgres.image)|g" -e "s|\${ORACLE_IMAGE}|$(image_of oracle.image)|g" \
     -e "s|\${BACKOFFICE_SQL_HASH}|$(sha256sum "$REPO/demo/cdc/backoffice.sql" | cut -c1-12)|g" \
@@ -130,11 +138,22 @@ unapply() {
     | k delete --ignore-not-found -f - >/dev/null
 }
 
-# The switches gen and ss (D50): on or off, kept across ups (and the overnight run's rebuild) in $SWITCHES, one
-# name a line; all off on a new machine. The third switch, cdc, is on while its leg's deployments exist, and down
-# ends it.
+# The switches gen, ss and kafka (D50; kafka since 2026-11-24, backlog 238): on or off, kept across ups (and the
+# overnight run's rebuild) in $SWITCHES, one name a line; all off on a new machine. kafka says whether the generator
+# writes through Kafka; Kafka runs while it does or the CDC leg runs. The generator needs a way, Kafka or SingleStore
+# (Paul, 2026-11-24), so while gen is on, kafka or ss is. The fourth switch, cdc, is on while its leg's deployments
+# exist, and down ends it.
 SWITCHES="$RUN/switches"
 is_on() { [[ -f "$SWITCHES" ]] && grep -qx "$1" "$SWITCHES"; }
+# A switches file from before kafka was a switch: the generator wrote through Kafka whenever gen was on.
+if [[ -f "$SWITCHES" ]] && ! grep -qx '# kafka is a switch' "$SWITCHES"; then
+  if grep -qx gen "$SWITCHES"; then echo kafka >> "$SWITCHES"; fi
+  echo '# kafka is a switch' >> "$SWITCHES"
+fi
+# The generator's route (BROKERAGE_ROUTE, demo-datagen's Route): both, kafka or singlestore.
+world_route() {
+  if is_on ss && is_on kafka; then echo both; elif is_on ss; then echo singlestore; else echo kafka; fi
+}
 set_switch() {
   local rest
   rest=$(grep -vx "$1" "$SWITCHES" 2>/dev/null || true)
@@ -144,7 +163,7 @@ set_switch() {
 running() { k get deployment "$1" >/dev/null 2>&1; }
 switches_line() {
   local line="" name
-  for name in gen ss; do
+  for name in gen ss kafka; do
     if is_on "$name"; then line+="$name on, "; else line+="$name off, "; fi
   done
   if cdc_running; then line+="cdc on"; else line+="cdc off"; fi
@@ -579,6 +598,42 @@ feeds() {
   start_pipeline lake fx_rates_feed
   start_pipeline ops orders_to_lake
   start_pipeline brokerage brokerage_orders_to_lake
+  if is_on gen && ! is_on kafka; then
+    world_feeds_start
+  fi
+}
+
+# The brokerage world's other feeds in SingleStore, for while Kafka is off (backlog 238): a table each
+# (brokerage-feeds.sql, generated by demo-datagen), made whenever gen runs with ss on, since the generator counts
+# their rows; and a change feed each into the lake under brokerage.singlestore (brokerage-feeds-pipelines.sql), run
+# only while Kafka is off, as each is a Java extractor of its own in SingleStore's memory. The copies hold the
+# party and ledger tables' rows, so their namespace is governed as those are: restricted and regulated.
+WORLD_FEEDS="calendar securities chart_of_accounts booking_schemes accounts bars_5m prices_eod financial_transactions
+  journal_lines posting_rejections balances_eod"
+world_tables() { s2_file brokerage-feeds.sql >/dev/null; }
+world_feeds_start() {
+  local table m=/management/v1/catalogs/$CATALOG
+  say "SingleStore: the brokerage world's feeds, a change feed per table into brokerage.singlestore (Kafka is off)"
+  world_tables
+  api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fsinglestore" '' 200 2>/dev/null \
+    || api brokerage POST "/v1/$CATALOG/namespaces" '{"namespace": ["brokerage", "singlestore"]}' 200 2>/dev/null \
+    || api brokerage GET "/v1/$CATALOG/namespaces/brokerage%1Fsinglestore" '' 200
+  api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/classification" \
+    '{"value":"restricted","provenance":"demo-seed: data catalogue"}'
+  api stella PUT "$m/namespaces/brokerage%1Fsinglestore/attributes/regulated" \
+    '{"value":"true","provenance":"demo-seed: compliance register"}'
+  s2_file brokerage-feeds-pipelines.sql >/dev/null
+  for table in $WORLD_FEEDS; do start_pipeline brokerage "brokerage_${table}_to_lake"; done
+}
+world_feeds_stop() {
+  local name stopped=
+  running singlestore || return 0
+  for name in $(echo "SELECT PIPELINE_NAME FROM information_schema.PIPELINES WHERE DATABASE_NAME = 'brokerage'
+      AND PIPELINE_NAME <> 'brokerage_orders_to_lake' AND STATE = 'Running';" | s2); do
+    echo "STOP PIPELINE brokerage.$name;" | s2 >/dev/null
+    stopped=yes
+  done
+  [[ -z "$stopped" ]] || say "stopped the change feeds of the brokerage world's SingleStore tables"
 }
 
 # Waits until the change feed has made a commit of one of the given kinds; fails after two minutes.
@@ -667,20 +722,129 @@ ss_start() {
   fi
 }
 
-# SingleStore's databases stay on its volume (backlog 237), and ss carries on from them. The generator writes
-# orders to it, so gen goes off first.
+# The switch ss turned off. SingleStore's databases stay on its volume (backlog 237), and ss carries on from them.
+# The generator does not need it (Paul, 2026-11-24): it stops, and starts again through Kafka once the orders' change
+# feed has made its last commit. With kafka off, its other feeds went into SingleStore too: their change feeds bring
+# the last of them into the lake first (Main drain), and kafka goes on. While the CDC leg runs, the generator is
+# stopped already, and starts through Kafka with cdc stop.
 ss_stop() {
+  local reroute=
+  if is_on gen && ! cdc_running; then
+    reroute=yes
+    stop_generator
+  fi
+  if is_on gen && ! is_on kafka && running singlestore; then
+    if ! brokerage_job drain singlestore; then
+      say "the lake has not caught up with the generator's SingleStore tables: SingleStore stays on"
+      [[ -z "$reroute" ]] || gen_start
+      return 1
+    fi
+    world_feeds_stop
+  fi
   if is_on gen; then
-    gen_stop
+    set_switch kafka on
   fi
   set_switch ss off
+  ss_down
+  if [[ -n "$reroute" ]]; then
+    gen_start
+  elif kafka_needed; then
+    start_kafka
+  fi
+}
+ss_down() {
+  running singlestore || return 0
   say "stopping SingleStore (its databases stay on its volume for demo/demo.sh ss)"
   unapply singlestore.yaml
   k wait --for=delete pod -l app=singlestore --timeout=3m >/dev/null 2>&1 || true
 }
 
+# The switch ss turned on: SingleStore, and the generator's orders back to it.
+ss_on() {
+  local before
+  before=$(world_route)
+  ss_start
+  if is_on gen && ! cdc_running && [[ "$before" != "$(world_route)" ]]; then
+    stop_generator
+    gen_start
+  fi
+}
+
+# The switch kafka turned on (backlog 238). With the generator writing into SingleStore alone, it stops, the change
+# feeds of its tables bring the last of them into the lake (Main drain), and it starts again through Kafka.
+kafka_on() {
+  if is_on kafka; then
+    is_on gen && ! cdc_running && gen_start
+    return 0
+  fi
+  if is_on gen && ! cdc_running; then
+    stop_generator
+    if running singlestore && ! brokerage_job drain singlestore; then
+      say "the lake has not caught up with the generator's SingleStore tables: it carries on through SingleStore"
+      gen_start
+      return 1
+    fi
+    world_feeds_stop
+    set_switch kafka on
+    gen_start
+  else
+    set_switch kafka on
+    world_feeds_stop
+    say "the generator will write through Kafka: Kafka starts with it (demo/demo.sh gen, or cdc stop)"
+  fi
+}
+
+# The switch kafka turned off (backlog 238), refused while the CDC leg runs, which needs Kafka. With ss on, the
+# generator stops, the sink brings the last of what it sent into the lake (Main drain), Kafka stops, and the generator
+# starts again with its feeds in SingleStore. With ss off, it has no way left, and gen goes off.
+kafka_off() {
+  if cdc_running; then
+    echo "the CDC leg needs Kafka: demo/demo.sh cdc stop first" >&2
+    return 1
+  fi
+  if ! is_on gen; then
+    set_switch kafka off
+    stop_kafka
+    return 0
+  fi
+  if ! is_on ss; then
+    say "the generator has no way left but Kafka with ss off: gen goes off too (demo/demo.sh ss, then gen, starts it through SingleStore)"
+    gen_stop
+    set_switch kafka off
+    return 0
+  fi
+  stop_generator
+  if running connect && ! brokerage_job drain kafka; then
+    say "the lake has not caught up with the generator's topics: it carries on through Kafka"
+    gen_start
+    return 1
+  fi
+  set_switch kafka off
+  stop_kafka
+  gen_start
+}
+
+# The generator's pod alone, its switch left on, before its route changes; then the last commits of what it wrote.
+stop_generator() {
+  running brokerage || return 0
+  say "stopping the brokerage world's generator while its route changes"
+  unapply brokerage.yaml
+  k wait --for=delete pod -l app=brokerage --timeout=2m >/dev/null 2>&1 || true
+  sleep 20
+}
+
+# A run of the generator's image as a Job (brokerage-bootstrap.yaml, with brokerage.yaml's environment): Main's
+# bootstrap, or drain kafka|singlestore, which waits until what went that way is all in the lake.
+brokerage_job() {
+  local job="brokerage-$1"
+  k delete job "$job" --ignore-not-found >/dev/null
+  fill brokerage-bootstrap.yaml | sed -e "s|name: brokerage-bootstrap|name: $job|" \
+    -e "s|args: \[\"bootstrap\"\]|args: [\"$1\"${2:+, \"$2\"}]|" | k apply -f - >/dev/null
+  finish_job "$job" "the brokerage world's $1${2:+ $2}"
+}
+
 # Kafka and kafbat (kafka.yaml), for the generator and the CDC leg; the catalog audits to its log (D23).
-kafka_needed() { cdc_running || is_on gen; }
+kafka_needed() { cdc_running || { is_on gen && is_on kafka; }; }
 start_kafka() {
   running kafka && return 0
   say "starting Kafka and kafbat"
@@ -699,13 +863,23 @@ stop_kafka() {
   k wait --for=delete pod -l 'app in (connect, kafka, kafka-ui)' --timeout=3m >/dev/null 2>&1 || true
 }
 
-# The switch gen (D50): the brokerage world's tables and governance, Kafka, Kafka Connect with its sink
-# brokerage-lake, and the generator, which catches up on the days it missed (BROKERAGE_CATCH_UP_DAYS). SingleStore
-# first: the generator writes orders there. While the CDC leg runs, the generator waits for cdc stop.
+# The switch gen (D50): the brokerage world's tables and governance, and the generator, which catches up on the
+# days it missed (BROKERAGE_CATCH_UP_DAYS), through the ways the switches kafka and ss give it (backlog 238): with
+# kafka on, Kafka, Kafka Connect and its sink brokerage-lake for every feed but the orders; with ss on, SingleStore
+# for the orders, and with kafka off for every other feed too, each with a change feed. With neither on, kafka goes
+# on: the generator needs one way, not SingleStore (Paul, 2026-11-24). While the CDC leg runs, the generator waits
+# for cdc stop.
 gen_start() {
-  is_on ss || ss_start
+  if ! is_on ss && ! is_on kafka; then
+    set_switch kafka on
+  fi
   set_switch gen on
-  start_kafka
+  if is_on ss && ! running singlestore; then
+    ss_start
+  fi
+  if is_on kafka; then
+    start_kafka
+  fi
   if cdc_running; then
     say "the CDC leg is running: the brokerage world's generator starts with demo/demo.sh cdc stop"
     return 0
@@ -713,7 +887,15 @@ gen_start() {
   pause_world
   brokerage_bootstrap
   brokerage_governance
-  start_connect
+  if is_on ss; then
+    world_tables
+  fi
+  if is_on kafka; then
+    world_feeds_stop
+    start_connect
+  else
+    world_feeds_start
+  fi
   start_brokerage
 }
 
@@ -731,6 +913,7 @@ gen_stop() {
   if cdc_running; then
     connect_api DELETE /connectors/brokerage-lake >/dev/null 2>&1 || true
   fi
+  world_feeds_stop
   stop_kafka
 }
 
@@ -757,12 +940,10 @@ refs() {
 }
 
 # The brokerage world's bootstrap (brokerage-bootstrap.yaml): its catalog namespaces, tables and views, as user
-# brokerage, and its Kafka topics. On every up, before its governance, sink and generator.
+# brokerage, and its Kafka topics while kafka is on. On every gen, before its governance, sink and generator.
 brokerage_bootstrap() {
   say "the brokerage world: its namespaces, tables, views and Kafka topics ($BROKERAGE_IMAGE, bootstrap)"
-  k delete job brokerage-bootstrap --ignore-not-found >/dev/null
-  apply brokerage-bootstrap.yaml
-  finish_job brokerage-bootstrap "the brokerage world's bootstrap"
+  brokerage_job bootstrap
 }
 
 # The brokerage world's governance (docs/design/brokerage-world.md, the namespace tree), set by stella after the
@@ -819,8 +1000,12 @@ wait_for_connect() {
 # tables, through the catalog), put in place on the running worker (the same config twice changes nothing), then its
 # generator (brokerage.yaml), last.
 start_brokerage() {
-  say "the brokerage world: its Iceberg sink brokerage-lake, and its generator ($BROKERAGE_IMAGE)"
-  connect_api PUT /connectors/brokerage-lake/config < "$REPO/demo/brokerage/connector.json" >/dev/null
+  if is_on kafka; then
+    say "the brokerage world: its Iceberg sink brokerage-lake, and its generator ($BROKERAGE_IMAGE, route $(world_route))"
+    connect_api PUT /connectors/brokerage-lake/config < "$REPO/demo/brokerage/connector.json" >/dev/null
+  else
+    say "the brokerage world's generator ($BROKERAGE_IMAGE, route $(world_route): Kafka is off)"
+  fi
   apply brokerage.yaml
   k rollout status deployment/brokerage --timeout=5m >/dev/null
 }
@@ -1076,10 +1261,15 @@ cdc_start() {
     k scale deployment/nuna-audit-tables --replicas=0 >/dev/null
     k wait --for=delete pod -l app.kubernetes.io/instance=nuna-audit-tables --timeout=3m >/dev/null
   fi
-  # The world pauses; its sink stays, on the worker the leg shares.
+  # The world pauses; its sink stays, on the worker the leg shares. With Kafka off, the change feeds of its
+  # SingleStore tables make their last commits and stop: the leg needs their memory too (cdc stop's gen starts them).
   if k get deployment brokerage >/dev/null 2>&1; then
     k scale deployment/brokerage --replicas=0 >/dev/null
     k wait --for=delete pod -l app=brokerage --timeout=2m >/dev/null 2>&1 || true
+    if is_on gen && ! is_on kafka; then
+      sleep 20
+      world_feeds_stop
+    fi
   fi
   # History tables left by an earlier run recorded databases that are gone; each run starts its own.
   local entry ns table
@@ -1175,9 +1365,8 @@ cdc_stop() {
   maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
   if is_on gen; then
     gen_start
-  else
-    stop_kafka
   fi
+  stop_kafka
 }
 
 up() {
@@ -1250,8 +1439,8 @@ up() {
   # The switches (D50) as they were: SingleStore, then Kafka for the generator or the CDC leg.
   if is_on ss; then
     ss_start "$minted"
-  elif running singlestore; then
-    ss_stop
+  else
+    ss_down
   fi
   if kafka_needed; then
     start_kafka
@@ -1353,7 +1542,7 @@ case "${1:-}" in
   engines)
     refuse_while_cdc "the engine matrix"
     if ! running kafka || ! running singlestore; then
-      echo "the engine matrix needs Kafka and SingleStore: demo/demo.sh gen first (it turns ss on too)" >&2
+      echo "the engine matrix needs Kafka and SingleStore: demo/demo.sh gen first, with kafka and ss on" >&2
       exit 1
     fi
     engines
@@ -1363,15 +1552,23 @@ case "${1:-}" in
     case "${2:-}" in
       "") gen_start; print_access ;;
       stop) gen_stop ;;
-      *) sed -n '2,32p' "$0"; exit 2 ;;
+      *) sed -n '2,39p' "$0"; exit 2 ;;
     esac
     ;;
   ss)
     load_images
     case "${2:-}" in
-      "") ss_start; print_access ;;
+      "") ss_on; print_access ;;
       stop) ss_stop ;;
-      *) sed -n '2,32p' "$0"; exit 2 ;;
+      *) sed -n '2,39p' "$0"; exit 2 ;;
+    esac
+    ;;
+  kafka)
+    load_images
+    case "${2:-}" in
+      "") kafka_on ;;
+      stop) kafka_off ;;
+      *) sed -n '2,39p' "$0"; exit 2 ;;
     esac
     ;;
   token)
@@ -1405,7 +1602,7 @@ case "${1:-}" in
   brokerage)
     case "${2:-}" in
       logs) k logs deployment/brokerage --tail=100 -f ;;
-      *) sed -n '2,32p' "$0"; exit 2 ;;
+      *) sed -n '2,39p' "$0"; exit 2 ;;
     esac
     ;;
   cdc)
@@ -1413,7 +1610,7 @@ case "${1:-}" in
     case "${2:-}" in
       "") cdc_start ;;
       stop) cdc_stop ;;
-      *) sed -n '2,32p' "$0"; exit 2 ;;
+      *) sed -n '2,39p' "$0"; exit 2 ;;
     esac
     ;;
   psql)
