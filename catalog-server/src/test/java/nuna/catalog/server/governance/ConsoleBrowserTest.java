@@ -713,8 +713,7 @@ class ConsoleBrowserTest {
         // Why the area is regulated and who marked it, as its flag records them (backlog 213).
         assertThat(cell(regulated, 2)).isEqualTo("console test");
         assertThat(cell(regulated, 3)).endsWith("stella");
-        assertThat(cell(regulated, 4)).isEqualTo("1");
-        assertThat(cell(regulated, 5)).isEqualTo("1");
+        assertThat(cell(regulated, 4)).isEqualTo("1\n1 closed");
         browser.await(By.cssSelector("#regulated .closed-list li[data-on='" + top + ".ledger.accounts']"));
 
         // A hold released is listed as lifted, from what the store keeps of the release (item 133).
@@ -1128,7 +1127,7 @@ class ConsoleBrowserTest {
         assertThat(preview.getDomAttribute("href")).isEqualTo("#c=trading&k=ref&n=" + branch + "&tab=merge");
         preview.click();
         browser.awaitText(By.cssSelector(".merge-verdict[data-verdict='ready']"),
-                "Ready: 1 table would move to main in one transaction");
+                "Ready to merge: 1 table would move to main in one transaction.");
         WebElement moves = browser.await(By.cssSelector(".mm-row.moves[data-path='" + ns + ".orders']"));
         assertThat(moves.findElements(By.cssSelector("dl.mm-v dd"))).extracting(ConsoleBrowser::textContent)
                 .containsExactly(String.valueOf(cut), String.valueOf(mainNow), String.valueOf(onBranch));

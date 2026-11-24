@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 7 S, 15 M, 14 L, 5 XL.
+**42 open:** 8 S, 15 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,6 +53,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
+| [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
 
 ## Open items in full
 
@@ -2887,6 +2888,27 @@ Done looks like:
 - The console's words say what is true without Kafka; Health labels the publish figures as the Kafka copy's and hides
   or explains them when Kafka is not configured.
 - The console checked in the demo with every switch off, signed in as gary.
+
+### 220. Console: findings from Atelier's re-walk after items 212 to 217
+
+- Added: 2026-11-23 by local_6867d144-54ac-41a5-b94a-192a4c66770b
+- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, three small console fixes: one column's wrapping, one count's words, one button's label
+
+Atelier's re-walk after items 212 to 217 (2026-11-23, `status/2026-11-23-console-rewalk-fixes.md`), live in the demo
+at 1440 × 900 with that branch's console. Her two other findings were fixed on that branch (the regulated table's
+width, the merge verdict's one sentence). Left:
+- Audit's "Most recorded" side table clips its Records column (gary on lakehouse's Audit): the header reads "Reco" and
+  the numbers are hidden behind the long paths. Let the paths wrap or truncate with a title, so the number columns stay
+  in view.
+- Audit's headline and "Records in lakehouse" say 1,140 while the All chip and By kind's All say 1,124. Her guess, not
+  checked: the 16 are the audit's own reads, hidden while "Show audit reads" is off. Count the same records in both,
+  or say so ("1,140 records · 16 audit reads hidden").
+- The catalog page read through @sample has a "Copy name" button that does not say what it copies. Name it as 217 did
+  the ref page's ("Copy lakehouse@sample", aria-label "Copy the warehouse name lakehouse@sample").
+
+Done looks like: each as above, checked in the demo at 1440 × 900 (no column clipped: each table's scrollWidth within
+its card); the heavy browser cases that read the headline or the button updated.
 
 ## Done and dropped
 

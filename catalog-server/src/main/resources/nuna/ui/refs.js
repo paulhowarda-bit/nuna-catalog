@@ -827,7 +827,7 @@ async function mergeTab(c, r, list) {
       techDetails(h('p', {class: 'refusal-code'}, `${verdictOf.code} ${verdictOf.type || ''} · POST …/refs/${r.name}/merge, dry run`),
         h('p', {class: 'refusal-meta'}, h('span', null, 'X-Request-ID ' + (answer.requestId || '')), h('span', null, tried))))
     : h('div', {class: 'granted merge-verdict', role: 'status', 'data-verdict': 'ready'},
-      h('p', {class: 'refusal-h'}, icon('check'), `Ready: ${plural(moves.length, 'table')} would move to main in one transaction`),
+      h('p', {class: 'refusal-h'}, icon('check'), `Ready to merge: ${plural(moves.length, 'table')} would move to main in one transaction.`),
       h('p', {class: 'fine'}, moves.every(x => x['main-version'] === x['cut-version'])
         ? 'Main has not committed to any of them since the point, so main takes each one as the branch has it.'
         : 'Main has committed only its own maintenance to them since the point, so main takes each one as the branch changed it.'),
