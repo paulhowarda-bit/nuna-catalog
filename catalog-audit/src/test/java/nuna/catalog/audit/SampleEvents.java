@@ -63,7 +63,9 @@ public final class SampleEvents {
                 new MaintenanceExemption(TABLE, "loadTable", ACTOR),
                 new RefChange(RefChange.Action.MERGED, UUID.fromString("f0000000-0000-0000-0000-000000000001"), "dév",
                         RefChange.Kind.BRANCH, CATALOG, "main", Instant.parse("2026-12-07T10:15:30.123Z"),
-                        List.of(TABLE), ACTOR));
+                        List.of(TABLE), ACTOR),
+                new RowColumnRuleChange(RowColumnRuleChange.Action.SET, TABLE, "grp-equities-read",
+                        "desk = 'EQ' AND region = \"région\"", Map.of("ssn", "'***'", "salary", "NULL"), ACTOR));
     }
 
     /** An event with an id fixed by {@code n}, so its encoding is fixed too. */

@@ -1,0 +1,16 @@
+Breaks: a query with no token, or one nuna does not accept, gets no rules at all instead of no rows.
+Module: catalog-server
+Test: OpaAnswersTest#aMissingOrUnacceptedTokenOrATableTheUserCannotSeeGetsNoRows+withoutAnAcceptedTokenEveryColumnOfAServedCatalogIsNull
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+index 6989387a..6617aba3 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+@@ -103,7 +103,7 @@ final class OpaAnswers {
+                 .path("extraCredentials"), "token")).filter(t -> !t.isBlank());
+         Optional<Caller> user = users.of(token);
+         if (user.isEmpty() || table.schema() == null || table.table() == null) {
+-            return Answer.CLOSED;
++            return Answer.NONE;
+         }
+         return rules.on(warehouse, List.of(table.schema().split("\\.", -1)), table.table(), user.get())
+                 .map(found -> Answer.of(RowColumnPolicy.forUser(found, user.get().subject().groups())))

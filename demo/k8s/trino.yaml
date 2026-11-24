@@ -10,9 +10,17 @@
 # Each query reaches nuna as whoever runs it: the client sends its own catalog token as Trino's extra credential
 # "token" (session USER), and Trino hands it to nuna, which checks it as it checks any engine's. CloudBeaver's
 # connections send the signed-in person's. A query without one fails: Trino then asks nuna to exchange a token,
-# and nuna issues none (D13). Trino's own token, as user trino (Mint.java), serves only the catalogs' config: it
-# holds no grant, but demo.sh registers its client, trino-demo, as a trusted engine (D17), which sees every
-# catalog and nothing in it (D18). jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit
+# and nuna issues none (D13). Trino's own token, as user trino (Mint.java), reads the catalogs' config and vouches for each
+# query's user (below): it holds no grant, but demo.sh registers its client, trino-demo, as a trusted engine (D17), which sees every
+# catalog and nothing in it (D18).
+#
+# Row filters and column masks (D20, backlog 115): Trino asks nuna, as its OPA access control
+# (access-control.properties), for each user's filter and masks on a table, forwarding the user's own token
+# (opa.identity.extra-credentials-keys=token), and applies them; nuna answers from the rules the grant admin set.
+# A table with rules is flagged, and nuna gives a flagged table's files only to a trusted engine (D20): every
+# catalog request also carries Trino's own token in X-Nuna-Engine-Authorization, so nuna sees Trino acting for the
+# user the Authorization token names, with that token's groups. A client reading nuna without Trino gets 403 on a
+# flagged table's data. jvm.config is the image's own with a 768 MB heap in place of 80% of the container, to fit
 # beside the rest of the demo on an 8 GB Docker Desktop; demo.sh engines stops Trino for the run, as Spark needs
 # the room.
 apiVersion: v1
@@ -34,6 +42,12 @@ data:
     -XX:PerBytecodeRecompilationCutoff=10000
     -Djdk.attach.allowAttachSelf=true
     -Djdk.nio.maxCachedBufferSize=2000000
+  access-control.properties: |
+    access-control.name=opa
+    opa.policy.uri=http://nuna-catalog:8181/opa/v1/allow
+    opa.policy.row-filters-uri=http://nuna-catalog:8181/opa/v1/row-filters
+    opa.policy.batch-column-masking-uri=http://nuna-catalog:8181/opa/v1/column-masks
+    opa.identity.extra-credentials-keys=token
   lakehouse.properties: |
     connector.name=iceberg
     iceberg.catalog.type=rest
@@ -42,6 +56,7 @@ data:
     iceberg.rest-catalog.security=OAUTH2
     iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.session=USER
+    iceberg.rest-catalog.http-headers=X-Nuna-Engine-Authorization: Bearer ${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.vended-credentials-enabled=true
     iceberg.rest-catalog.nested-namespace-enabled=true
     iceberg.rest-catalog.server-assigned-table-location-enabled=true
@@ -57,6 +72,7 @@ data:
     iceberg.rest-catalog.security=OAUTH2
     iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.session=USER
+    iceberg.rest-catalog.http-headers=X-Nuna-Engine-Authorization: Bearer ${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.vended-credentials-enabled=true
     iceberg.rest-catalog.nested-namespace-enabled=true
     iceberg.rest-catalog.server-assigned-table-location-enabled=true
@@ -72,6 +88,7 @@ data:
     iceberg.rest-catalog.security=OAUTH2
     iceberg.rest-catalog.oauth2.token=${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.session=USER
+    iceberg.rest-catalog.http-headers=X-Nuna-Engine-Authorization: Bearer ${ENV:NUNA_TOKEN}
     iceberg.rest-catalog.vended-credentials-enabled=true
     iceberg.rest-catalog.nested-namespace-enabled=true
     iceberg.rest-catalog.server-assigned-table-location-enabled=true
@@ -108,6 +125,7 @@ spec:
                 secretKeyRef: {name: demo-trino-token, key: token}
           volumeMounts:
             - {name: config, mountPath: /etc/trino/jvm.config, subPath: jvm.config}
+            - {name: config, mountPath: /etc/trino/access-control.properties, subPath: access-control.properties}
             - {name: catalogs, mountPath: /etc/trino/catalog}
           startupProbe:
             exec:

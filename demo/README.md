@@ -171,7 +171,7 @@ The console offers two ways in:
 | `cdc` | token only | `demo-loaders` | create and modify; Kafka Connect's Iceberg sinks: the brokerage world's `brokerage-lake`, and the CDC leg's |
 | `engine-matrix` | token only | `engine-clients` | create and modify on catalog `engines`; `demo.sh engines` runs the engines with it |
 | `service-account-nuna-audit-tables` | Keycloak client `nuna-audit-tables`, client-credentials grant | `demo-audit-writers` | create and write on `nuna_audit` only: the audit table writer |
-| `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them |
+| `trino` | token only | `demo-engines` | nothing in a catalog: Trino's own sign-in, which reads the catalogs' config. Its client, `trino-demo`, is registered as a trusted engine (D17), so it sees every catalog but nothing in it (D18); queries reach the catalog with the token of whoever runs them, which Trino's own vouches for, so they read flagged tables with their row filter and column masks (D20) |
 
 Catalog `engines` holds the engine matrix's tables. Separation of duties (D18) keeps each group to one duty
 plus reading, and lets a grant admin or a platform operator hold no grant at all: `gary` and `oscar` see no
@@ -529,7 +529,21 @@ storage credentials the catalog vends them:
 - `stella` reads. `gary` and `oscar` see the namespaces and tables listed, but every read fails with
   "Failed to load table", since the catalog refuses them: they hold no grant (D18).
 - Each query is in the catalog's audit trail as the person: a read, a refusal, the credentials vended. Its
-  engine reads `nuna-console`, the client that `demo/Mint.java` names in the people's tokens.
+  record names the person as the end user, and Trino (principal `trino`, engine `trino-demo`) as acting for them:
+  every request also carries Trino's own token in `X-Nuna-Engine-Authorization`, which vouches for the person's.
+- Row filters and column masks (D20): `markets.desks.positions` is flagged, and each group has a rule on it. Run
+  the same query as `ana` and as `stella`:
+
+  ```sql
+  SELECT * FROM lakehouse."markets.desks".positions;
+  ```
+
+  `ana` (`demo-analysts`) gets the equity desk's three rows, each trader's name `***`; `stella` (`demo-stewards`)
+  gets all six rows with `pnl` empty. Trino asks the catalog for them as its OPA access control
+  (`access-control.properties` in `trino.yaml`), forwarding the person's token; the catalog answers from the rules
+  `gary` set. Read without Trino (Spark, say, with the person's own token), the table's data answers 403: only a
+  trusted engine gets a flagged table's files. `gary` lists and changes the rules with
+  `/management/v1/catalogs/lakehouse/row-column-rules`.
 
 - The navigator lists every namespace at every depth, as a schema named by its dotted path; quote it in SQL:
 
@@ -554,7 +568,8 @@ storage credentials the catalog vends them:
   ```
 
 - A query without a token fails: Trino then asks the catalog to exchange one, and the catalog answers that
-  it issues none (D13). Trino's own token, as user `trino`, only reads the catalogs' config. It holds no
+  it issues none (D13). Trino's own token, as user `trino`, reads the catalogs' config and vouches for each
+  query's person, never reading as itself. It holds no
   grant; `demo.sh up` registers its client, `trino-demo`, as a trusted engine (D17), which sees every catalog
   and nothing in it (D18).
 - The user name in a connection names the query in Trino; Trino checks no password.

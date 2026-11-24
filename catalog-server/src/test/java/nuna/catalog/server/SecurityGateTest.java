@@ -60,7 +60,8 @@ import org.springframework.test.context.ContextConfiguration;
         "nuna.security.maintenance-principals=svc-maintenance,svc-trino",
         "nuna.storage.catalogs.gate.profile=" + S3ForTests.PROFILE,
         "nuna.storage.catalogs.gate.kms-key-set=test-keys",
-        "nuna.storage.catalogs.gate.legal-entity=Test Entity"})
+        "nuna.storage.catalogs.gate.legal-entity=Test Entity",
+        "nuna.opa.catalogs.trino_gate=gate"})
 @Tag("heavy")
 @ContextConfiguration(initializers = IssuerForTests.class)
 @Import({PostgresForTests.class, S3ForTests.class, AuditSinkForTests.class})
@@ -464,6 +465,69 @@ class SecurityGateTest {
         assertThat(denial.actor().principal()).isEqualTo("svc-trino");
         assertThat(denial.actor().endUser()).as("the engine's end user is the one decided for").isEqualTo("ann");
         assertThat(denial.actor().engine()).isEqualTo("trino-prod");
+    }
+
+    @Test
+    void anEngineHeaderVouchesForTheUsersOwnToken() throws Exception {
+        String pii = "/v1/gate/namespaces/" + ns(List.of("sales", "eu")) + "/tables/pii";
+        String header = "X-Nuna-Engine-Authorization";
+
+        ok(send(ANN, "GET", pii, null, header, ENGINE));
+        assertHidden(send(ANN, "GET", "/v1/gate/namespaces/hr/tables/staff", null, header, ENGINE),
+                "NoSuchTableException", "loadTable");
+        Denial denial = audit.denials().getLast();
+        assertThat(denial.actor().principal()).isEqualTo("svc-trino");
+        assertThat(denial.actor().endUser()).as("the user the Authorization token names").isEqualTo("ann");
+        assertThat(denial.actor().engine()).isEqualTo("trino-prod");
+
+        assertError(send(ANN, "GET", pii, null, header, ROGUE), 403, "ForbiddenException");
+        assertThat(audit.authFailures().getLast().clientId()).as("the engine refused").isEqualTo("rogue-app");
+        assertError(send(ANN, "GET", pii, null, header, ENGINE, "X-Nuna-End-User", "ann"), 401,
+                "NotAuthorizedException");
+        assertError(send(ANN, "GET", pii, null, header, "Basic x"), 401, "NotAuthorizedException");
+        ok(send(ENGINE, "GET", "/v1/config?warehouse=gate", null, header, ENGINE));
+    }
+
+    @Test
+    void trinoGetsEachUsersRowFilterAndColumnMasksThroughOpa() throws Exception {
+        String rules = "/management/v1/catalogs/gate/row-column-rules";
+        String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        assertDenied(send(GINA, "POST", rules, """
+                {"table":%s,"group":"grant-admins","row-filter":"true"}""".formatted(table)),
+                "setRowColumnRule", "separation-of-duties");
+        noContent(send(GINA, "POST", rules, """
+                {"table":%s,"group":"analysts","row-filter":"id > 10","column-masks":{"id":"NULL"}}"""
+                .formatted(table)));
+        try {
+            String ann = ANN.substring(7);
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate", ann)).body())
+                    .isEqualTo("{\"result\":[{\"expression\":\"id > 10\"}]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate",
+                    IssuerForTests.bearer("wendy", "maintainers").substring(7))).body())
+                    .as("a user whose groups have no rule").isEqualTo("{\"result\":[{\"expression\":\"false\"}]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("trino_gate", "forged")).body())
+                    .isEqualTo("{\"result\":[{\"expression\":\"false\"}]}");
+            assertThat(send(null, "POST", "/opa/v1/row-filters", opaRowFilters("system", ann)).body())
+                    .isEqualTo("{\"result\":[]}");
+            assertThat(send(null, "POST", "/opa/v1/column-masks", """
+                    {"input":{"context":{"identity":{"user":"ann","extraCredentials":{"token":"%s"}}},
+                     "action":{"operation":"GetColumnMask","filterResources":[{"column":{"catalogName":"trino_gate",
+                      "schemaName":"sales.eu","tableName":"pii","columnName":"id","columnType":"bigint"}}]}}}"""
+                    .formatted(ann)).body())
+                    .isEqualTo("{\"result\":[{\"index\":0,\"viewExpression\":{\"expression\":\"NULL\"}}]}");
+            assertThat(send(null, "POST", "/opa/v1/allow", "{\"input\":{}}").body()).isEqualTo("{\"result\":true}");
+        } finally {
+            noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
+                    .formatted(table)));
+        }
+    }
+
+    private static String opaRowFilters(String catalog, String token) {
+        return """
+                {"input":{"context":{"identity":{"user":"anyone","groups":["grant-admins"],
+                  "extraCredentials":{"token":"%s"}}},
+                 "action":{"operation":"GetRowFilters","resource":{"table":{"catalogName":"%s",
+                  "schemaName":"sales.eu","tableName":"pii"}}}}}""".formatted(token, catalog);
     }
 
     @Test

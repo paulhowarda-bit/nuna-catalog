@@ -27,7 +27,8 @@ class AuditRowsTest {
     private static final Set<EventType> ABOUT_THE_TABLE = EnumSet.of(EventType.COMMIT, EventType.DROP,
             EventType.BREAK_GLASS, EventType.OBJECT_READ, EventType.DENIAL, EventType.CREDENTIAL_ISSUE,
             EventType.RENAME, EventType.GOVERNANCE_CHANGE, EventType.UNDROP, EventType.PURGE, EventType.AUDIT_READ,
-            EventType.UNREGISTER, EventType.PURGE_CLAIM, EventType.FILE_DELETION, EventType.MAINTENANCE_EXEMPTION);
+            EventType.UNREGISTER, EventType.PURGE_CLAIM, EventType.FILE_DELETION, EventType.MAINTENANCE_EXEMPTION,
+            EventType.ROW_COLUMN_RULE_CHANGE);
     private static final Set<EventType> ABOUT_THE_NAMESPACE = EnumSet.of(EventType.NAMESPACE_CHANGE,
             EventType.HOLD_CHANGE, EventType.LABEL_CHANGE);
     private static final Set<EventType> ABOUT_THE_CATALOG = EnumSet.of(EventType.GRANT_CHANGE, EventType.STORAGE_SETUP,

@@ -406,6 +406,8 @@ class GovernanceRoutes {
             case WriteResult.Applied applied -> json(200, attribute(record));
             case WriteResult.Unchanged unchanged -> json(200, attribute(own(target, kind).orElse(record)));
             case WriteResult.Missing missing -> throw gone(target);
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HAS_RULES ->
+                    throw rulesStand(target);
             default -> throw new IllegalStateException("putAttribute answered " + result);
         };
     }
@@ -425,8 +427,19 @@ class GovernanceRoutes {
             case WriteResult.Applied applied -> ResponseEntity.noContent().build();
             case WriteResult.Unchanged unchanged -> ResponseEntity.noContent().build();
             case WriteResult.Missing missing -> throw notSet(target, attribute);
+            case WriteResult.Refused refused when refused.reason() == WriteResult.Reason.HAS_RULES ->
+                    throw rulesStand(target);
             default -> throw new IllegalStateException("removeAttribute answered " + result);
         };
+    }
+
+    /**
+     * The row/column-policy flag stays while the table has row filters or column masks, so no rule sits on a table
+     * whose files a client that is no trusted engine may read (D20, backlog 115).
+     */
+    private static CatalogError rulesStand(Target target) {
+        return CatalogError.of(409, "RowColumnRulesExistException", "The table has row filters or column masks;"
+                + " the grant admin removes them before its row/column-policy flag can be removed or set false");
     }
 
     /**

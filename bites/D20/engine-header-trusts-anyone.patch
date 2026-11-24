@@ -1,0 +1,16 @@
+Breaks: any client's token in X-Nuna-Engine-Authorization makes the request a trusted engine's.
+Module: catalog-server
+Test: SecurityGateTest#anEngineHeaderVouchesForTheUsersOwnToken
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
+index b16fa9cb..954c7f94 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/Authentication.java
+@@ -127,7 +127,7 @@ final class Authentication extends OncePerRequestFilter {
+             } else {
+                 checking = engineToken;
+                 Caller engine = authenticator.authenticate(engineToken, Optional.empty(), this::registered);
+-                if (!engine.trustedEngine()) {
++                if (false) {
+                     refuse(request, response, 403, "client " + engine.engine() + " is not a registered trusted"
+                             + " engine, so it may not act for another user", engineToken, null);
+                     return;

@@ -42,12 +42,19 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * (comma-separated groups, each percent-encoded). A request that cannot be authenticated answers 401 (403 when
  * an unregistered client names an end user, 503 with Retry-After when its token could not be checked because the
  * issuer's keys could not be fetched) and is audited as an {@link AuthFailure}; it never reaches a route.
+ *
+ * <p>An engine that passes its users' own tokens through, as Trino does (session USER), names itself instead in
+ * {@value #ENGINE_AUTHORIZATION}, a bearer token of its own (D20, backlog 115): the {@code Authorization} token then
+ * names the end user, with the groups their own token carries, and the engine's must be a registered trusted
+ * engine's (403 if not). Both are verified; a header holding the same token as {@code Authorization} is the engine
+ * acting as itself, and one beside {@value #END_USER} is refused.
  */
 final class Authentication extends OncePerRequestFilter {
 
     static final String CALLER = Authentication.class.getName() + ".caller";
     static final String END_USER = "X-Nuna-End-User";
     static final String END_USER_GROUPS = "X-Nuna-End-User-Groups";
+    static final String ENGINE_AUTHORIZATION = "X-Nuna-Engine-Authorization";
 
     private static final Logger LOG = LoggerFactory.getLogger(Authentication.class);
 
@@ -74,7 +81,9 @@ final class Authentication extends OncePerRequestFilter {
         String path = request.getRequestURI().substring(request.getContextPath().length());
         // The fixed OAuth error names the IdP for clients that have no token yet (D13). The console's own files
         // are what a browser loads before it can sign in; the API calls they make carry a token.
-        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path);
+        // OPA's calls from Trino carry no token of their own: OpaRoutes verifies the user's, which Trino forwards in
+        // the body, and answers from it alone (D20, backlog 115).
+        return path.equals("/v1/oauth/tokens") || UiWiring.isConsoleFile(path) || path.startsWith("/opa/");
     }
 
     @Override
@@ -93,11 +102,42 @@ final class Authentication extends OncePerRequestFilter {
             refuse(request, response, 401, e.getMessage(), token, "Bearer error=\"invalid_request\"");
             return;
         }
+        String engineToken = request.getHeader(ENGINE_AUTHORIZATION);
+        if (engineToken != null) {
+            if (!engineToken.regionMatches(true, 0, "Bearer ", 0, 7) || engineToken.substring(7).isBlank()) {
+                refuse(request, response, 401, ENGINE_AUTHORIZATION + " is not a bearer token", null,
+                        "Bearer error=\"invalid_request\"");
+                return;
+            }
+            engineToken = engineToken.substring(7).trim();
+            if (engineToken.equals(token)) {
+                // The engine acting as itself, its config read with its own token (item 84).
+                engineToken = null;
+            } else if (endUser.isPresent()) {
+                refuse(request, response, 401, ENGINE_AUTHORIZATION + " beside " + END_USER
+                        + ": an engine names its end user one way", token, "Bearer error=\"invalid_request\"");
+                return;
+            }
+        }
         Caller caller;
+        String checking = token;
         try {
-            caller = authenticator.authenticate(token, endUser, this::registered);
+            if (engineToken == null) {
+                caller = authenticator.authenticate(token, endUser, this::registered);
+            } else {
+                checking = engineToken;
+                Caller engine = authenticator.authenticate(engineToken, Optional.empty(), this::registered);
+                if (!engine.trustedEngine()) {
+                    refuse(request, response, 403, "client " + engine.engine() + " is not a registered trusted"
+                            + " engine, so it may not act for another user", engineToken, null);
+                    return;
+                }
+                checking = token;
+                Principal user = authenticator.authenticate(token, Optional.empty(), this::registered).principal();
+                caller = new Caller(engine.principal(), engine.engine(), true, Optional.of(user));
+            }
         } catch (AuthenticationFailure failure) {
-            refuse(request, response, failure.status(), failure.getMessage(), token,
+            refuse(request, response, failure.status(), failure.getMessage(), checking,
                     failure.status() == 401 ? "Bearer error=\"invalid_token\"" : null);
             return;
         } catch (StoreException e) {

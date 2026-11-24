@@ -16,6 +16,7 @@ import nuna.catalog.store.GovernanceLift;
 import nuna.catalog.store.LegalHold;
 import nuna.catalog.store.Name;
 import nuna.catalog.store.NamespaceRecord;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.TrustedEngine;
@@ -23,6 +24,7 @@ import nuna.catalog.store.WriteResult;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -121,6 +123,92 @@ public abstract class GovernanceSuite extends GroupSuite {
                     .contains(next);
             assertThat(underTest().changeRows(change)).isEqualTo(WrittenRows.allOf(change));
         }
+    }
+
+    private void flag(CatalogObject table, String value) {
+        assertApplied(store.putAttribute(new GovernanceAttribute(table.securable(),
+                GovernanceAttribute.Kind.ROW_COLUMN_POLICY, value, "catalog-api", "steward", now()), change()));
+    }
+
+    private static RowColumnRule rule(UUID catalog, CatalogObject table, String group, String filter,
+                                      Map<String, String> masks) {
+        return RowColumnRule.of(catalog, table.id(), group, Optional.ofNullable(filter), masks);
+    }
+
+    @Test
+    @DisplayName("Rules: a group's row filter and column masks are put on a flagged table, replaced, listed by group"
+            + " and removed (D20, backlog 115)")
+    void rulesArePutReplacedListedAndRemoved() {
+        UUID catalog = newCatalog();
+        CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+        flag(table, "true");
+        RowColumnRule traders = rule(catalog, table, "traders", "desk = 'EQ'", Map.of());
+        RowColumnRule auditors = rule(catalog, table, "auditors", null,
+                Map.of("ssn", "'***'", "a.b \"c\"", "NULL"));
+        RowColumnRule tradersAgain = rule(catalog, table, "traders", "desk IN ('EQ', 'FX')", Map.of("ssn", "NULL"));
+
+        assertApplied(store.putRule(traders, "grant-admin", change()));
+        assertApplied(store.putRule(auditors, "grant-admin", change()));
+        assertThat(store.putRule(auditors, "grant-admin", change())).isEqualTo(WriteResult.UNCHANGED);
+        assertApplied(store.putRule(tradersAgain, "grant-admin-2", change()));
+
+        assertThat(store.rulesOn(table.id())).extracting(RowColumnRule.Stored::rule)
+                .containsExactly(auditors, tradersAgain);
+        assertThat(store.rulesOn(table.id()).get(1).setBy()).isEqualTo("grant-admin-2");
+        assertApplied(store.removeRule(catalog, table.id(), "auditors", change()));
+        assertThat(store.removeRule(catalog, table.id(), "auditors", change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.RULE));
+        assertThat(store.removeRule(newCatalog(), table.id(), "traders", change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.RULE));
+        assertThat(store.rulesOn(table.id())).extracting(RowColumnRule.Stored::rule).containsExactly(tradersAgain);
+    }
+
+    @Test
+    @DisplayName("Rules: a rule needs the table's row/column-policy flag, and the flag cannot be removed or set false"
+            + " while the table has rules (D20, backlog 115)")
+    void rulesAndTheFlagHoldEachOther() {
+        UUID catalog = newCatalog();
+        CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+        RowColumnRule traders = rule(catalog, table, "traders", "desk = 'EQ'", Map.of());
+
+        assertThat(store.putRule(traders, "grant-admin", change()))
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_FLAGGED));
+        flag(table, "false");
+        assertThat(store.putRule(traders, "grant-admin", change()))
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.NOT_FLAGGED));
+        assertThat(store.putRule(rule(newCatalog(), table, "traders", "true", Map.of()), "grant-admin", change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        flag(table, "true");
+        assertApplied(store.putRule(traders, "grant-admin", change()));
+
+        assertThat(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "steward",
+                change())).isEqualTo(new WriteResult.Refused(WriteResult.Reason.HAS_RULES));
+        assertThat(store.putAttribute(new GovernanceAttribute(table.securable(),
+                GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "false", "catalog-api", "steward", now()), change()))
+                .isEqualTo(new WriteResult.Refused(WriteResult.Reason.HAS_RULES));
+        assertThat(store.attributesOf(Set.of(table.securable()))).extracting(GovernanceAttribute::value)
+                .containsExactly("true");
+
+        assertApplied(store.removeRule(catalog, table.id(), "traders", change()));
+        assertApplied(store.removeAttribute(table.securable(), GovernanceAttribute.Kind.ROW_COLUMN_POLICY, "steward",
+                change()));
+    }
+
+    @Test
+    @DisplayName("Rules: a purge deletes the table's rules, and a dropped table takes no new rule (backlog 115)")
+    void aPurgeDeletesTheRules() {
+        UUID catalog = newCatalog();
+        CatalogObject table = newTable(newNamespace(catalog, "ns"), "t");
+        flag(table, "true");
+        assertApplied(store.putRule(rule(catalog, table, "traders", "desk = 'EQ'", Map.of()), "grant-admin", change()));
+
+        assertApplied(store.dropObject(table.id(), now().minusSeconds(60), change()));
+        assertThat(store.putRule(rule(catalog, table, "auditors", "true", Map.of()), "grant-admin", change()))
+                .isEqualTo(new WriteResult.Missing(WriteResult.Subject.OBJECT));
+        assertApplied(store.claimPurge(table.id(), "worker", change()));
+        assertApplied(store.completePurge(table.id(), "worker", change()));
+
+        assertThat(store.rulesOn(table.id())).isEmpty();
     }
 
     @Test

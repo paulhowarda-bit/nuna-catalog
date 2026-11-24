@@ -2,10 +2,10 @@ Breaks: any worker completes a purge another worker claimed.
 Module: catalog-store-oracle
 Test: OracleStoreSuiteTest$CatalogObjects#purgeIsClaimedThenCompleted
 diff --git a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
-index d6fd8fa..46867af 100644
+index 0939e181..ab538d5d 100644
 --- a/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
 +++ b/catalog-store-oracle/src/main/java/nuna/catalog/store/oracle/OracleObjects.java
-@@ -262,9 +262,6 @@ final class OracleObjects {
+@@ -271,9 +271,6 @@ final class OracleObjects {
              if (locked.isEmpty() || locked.get().claimant() == null) {
                  return new WriteResult.Missing(WriteResult.Subject.OBJECT);
              }
@@ -14,4 +14,4 @@ index d6fd8fa..46867af 100644
 -            }
              update(connection, "UPDATE catalog_object SET state = 'PURGED', purge_claimant = NULL WHERE id = ?", objectId);
              update(connection, "DELETE FROM grant_record WHERE securable_id = ?", objectId);
-             update(connection, "DELETE FROM pending_deletion WHERE object_id = ?", objectId);
+             update(connection, "DELETE FROM row_column_rule WHERE table_id = ?", objectId);

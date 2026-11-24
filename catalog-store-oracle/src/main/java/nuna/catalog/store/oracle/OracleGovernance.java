@@ -110,6 +110,12 @@ final class OracleGovernance {
             if (missing.isPresent()) {
                 return missing.get();
             }
+            if (takesFlag(attribute.target(), attribute.kind()) && !"true".equals(attribute.value())) {
+                Optional<WriteResult> refused = OracleRules.flagRemovalRefused(connection, attribute.target().id());
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+            }
             upsert(connection, "governance_attribute_pk", "MERGE INTO governance_attribute t USING (SELECT ? target_kind,"
                             + " ? target_id, ? kind, ? value, ? provenance, ? set_by, ? set_at FROM dual) s"
                             + " ON (t.target_id = s.target_id AND t.kind = s.kind)"
@@ -123,9 +129,20 @@ final class OracleGovernance {
         });
     }
 
+    /** Whether the write is to a table's row/column-policy flag, which rules need (backlog 115). */
+    private static boolean takesFlag(Securable target, GovernanceAttribute.Kind kind) {
+        return kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.kind() == Securable.Kind.TABLE;
+    }
+
     /** A DR freeze's removal is its lift, kept with who lifted it and when (backlog 133). */
     WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy, Change change) {
         return transactions.change(change, "attribute remove", connection -> {
+            if (takesFlag(target, kind)) {
+                Optional<WriteResult> refused = OracleRules.flagRemovalRefused(connection, target.id());
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+            }
             Optional<GovernanceAttribute> removed = first(connection, "SELECT value, provenance, set_by, set_at"
                             + " FROM governance_attribute WHERE target_id = ? AND target_kind = ? AND kind = ? FOR UPDATE",
                     row -> new GovernanceAttribute(target, kind, Jdbc.text(row, "value"), Jdbc.text(row, "provenance"),

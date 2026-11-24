@@ -124,6 +124,12 @@ final class MongoGovernance {
             tx.find(ATTRIBUTE, key).ifPresent(tx::see);
             tx.see(target.get());
             tx.mark(Guards.collection(attribute.target().kind()), target.get());
+            if (takesFlag(attribute.target(), attribute.kind()) && !"true".equals(attribute.value())) {
+                Optional<WriteResult> refused = MongoRules.flagRemovalRefused(tx, attribute.target().id());
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+            }
             tx.collection(ATTRIBUTE).updateOne(tx.session, key, new BsonDocument("$set",
                     new BsonDocument("targetKind", new BsonString(attribute.target().kind().name()))
                             .append("value", new BsonString(attribute.value()))
@@ -143,12 +149,24 @@ final class MongoGovernance {
             if (found.isEmpty()) {
                 return new WriteResult.Missing(WriteResult.Subject.ATTRIBUTE);
             }
+            if (takesFlag(target, kind)) {
+                // The removal marks the table's document, so a rule put at once conflicts with it.
+                Optional<WriteResult> refused = MongoRules.flagRemovalRefused(tx, target.id());
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+            }
             Optional<BsonDocument> record = remove(tx, ATTRIBUTE, found.get(), target);
             if (kind == GovernanceAttribute.Kind.DR_FREEZE) {
                 keep(tx, change.id(), GovernanceLift.lifted(attribute(found.get()), removedBy, change.at()), record);
             }
             return WriteResult.APPLIED;
         });
+    }
+
+    /** Whether the write is to a table's row/column-policy flag, which rules need (backlog 115). */
+    private static boolean takesFlag(Securable target, GovernanceAttribute.Kind kind) {
+        return kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.kind() == Securable.Kind.TABLE;
     }
 
     List<GovernanceAttribute> attributesOf(Set<Securable> targets) {
