@@ -34,6 +34,11 @@ spec:
             # The dev image's license turns this on at every start: crash reports, DDL and table metadata to
             # phone-home.singlestore.com. The start script applies these variables after the license.
             - {name: SINGLESTORE_SET_GLOBAL_CRITICAL_DIAGNOSTICS, value: "OFF"}
+            # The image leaves table memory at 63% of maximum_memory (1,740 of 2,764 MB), and the leaf counts its
+            # pipelines' Java extractors against it (1.2 GB for the two change feeds and the Iceberg loads), so it
+            # refused the brokerage world's order writes with 240 MB of tables (backlog 234). 2,400 MB leaves the
+            # master aggregator its ~560 MB inside the 3Gi limit.
+            - {name: SINGLESTORE_SET_GLOBAL_MAXIMUM_TABLE_MEMORY, value: "2400"}
           ports:
             - containerPort: 3306
             - containerPort: 8080
