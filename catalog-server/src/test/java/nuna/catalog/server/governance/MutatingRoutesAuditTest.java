@@ -183,6 +183,11 @@ class MutatingRoutesAuditTest {
         cases.put("POST " + M + "/grants", id -> api.manage("POST", "/grants", grant(api.namespace()), rid(id)));
         cases.put("POST " + M + "/grants/revoke", id -> api.manage("POST", "/grants/revoke", grant(api.namespace()),
                 rid(id)));
+        // The tester holds create and modify, not manage-grants (backlog 115).
+        cases.put("POST " + M + "/row-column-rules", id -> api.manage("POST", "/row-column-rules",
+                rule(withTable()), rid(id)));
+        cases.put("POST " + M + "/row-column-rules/remove", id -> api.manage("POST", "/row-column-rules/remove",
+                rule(withTable()), rid(id)));
         cases.put("PUT /management/v1/engines", id -> api.send("PUT", "/management/v1/engines",
                 engine("m7-refused-" + Api.suffix()), rid(id)));
         cases.put("DELETE /management/v1/engines", id -> api.send("DELETE", "/management/v1/engines?issuer="
@@ -381,6 +386,17 @@ class MutatingRoutesAuditTest {
             expect(api.manage("POST", "/grants/revoke", body, rid(id, api.grantAdmin())), 204);
             return EventType.GRANT_CHANGE;
         });
+        cases.put("POST " + M + "/row-column-rules", id -> {
+            String body = rule(flaggedTable());
+            expect(api.manage("POST", "/row-column-rules", body, rid(id, api.grantAdmin())), 204);
+            return EventType.ROW_COLUMN_RULE_CHANGE;
+        });
+        cases.put("POST " + M + "/row-column-rules/remove", id -> {
+            String body = rule(flaggedTable());
+            expect(api.manage("POST", "/row-column-rules", body, "Authorization", api.grantAdmin()), 204);
+            expect(api.manage("POST", "/row-column-rules/remove", body, rid(id, api.grantAdmin())), 204);
+            return EventType.ROW_COLUMN_RULE_CHANGE;
+        });
         cases.put("PUT /management/v1/engines", id -> {
             expect(api.send("PUT", "/management/v1/engines", engine("m7-put-" + Api.suffix()),
                     rid(id, api.operator())), 204);
@@ -534,6 +550,19 @@ class MutatingRoutesAuditTest {
     private static String grant(String namespace) {
         return "{\"securable\":{\"type\":\"namespace\",\"namespace\":[\"" + namespace + "\"]},"
                 + "\"group\":\"readers-" + Api.suffix() + "\",\"privilege\":\"select\"}";
+    }
+
+    private static String rule(String namespace) {
+        return "{\"table\":{\"type\":\"table\",\"namespace\":[\"" + namespace + "\"],\"name\":\"t\"},"
+                + "\"group\":\"readers-" + Api.suffix() + "\",\"row-filter\":\"desk = 'EQ'\"}";
+    }
+
+    /** A namespace holding table t, which the steward flags for row/column rules (D20). */
+    private String flaggedTable() {
+        String ns = withTable();
+        expect(api.manage("PUT", "/namespaces/" + ns + "/tables/t/attributes/row-column-policy",
+                "{\"value\":\"true\",\"provenance\":\"p\"}", "Authorization", api.steward()), 200);
+        return ns;
     }
 
     private static String engine(String client) {
