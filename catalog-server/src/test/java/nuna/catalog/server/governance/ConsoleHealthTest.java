@@ -447,7 +447,8 @@ class ConsoleHealthTest {
         assertThat(dialog.findElement(By.tagName("h2")).getText()).isEqualTo("Compact orders now");
         dialog.findElement(By.cssSelector("button[type='submit']")).click();
         WebElement asked = browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Compaction of orders requested");
-        assertThat(asked.getText()).contains("202", "asked by olive");
+        // The status is under Technical details (backlog 188), so the box's whole text is read.
+        assertThat(ConsoleBrowser.textContent(asked)).contains("202", "asked by olive");
         assertThat(asked.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
         dialog.findElement(By.cssSelector("button.dlg-x")).click();
 
@@ -469,15 +470,14 @@ class ConsoleHealthTest {
 
     // ---- helpers ----
 
+    /**
+     * Service is a closed page for one who does not run the deployment: said in plain words, and the catalog is never
+     * asked (backlog 184), so no figure, alert, objective or worker panel is drawn.
+     */
     private void assertNoCatalogHealth() {
-        WebElement refused = browser.await(By.cssSelector("#catalog-health .health-refused"));
-        assertThat(refused.getText()).startsWith("Service is shown to platform operators only, and your groups include none.");
-        WebElement refusal = browser.await(By.cssSelector("#catalog-health .refusal"));
-        assertThat(refusal.getDomAttribute("role")).isEqualTo("alert");
-        assertThat(ConsoleBrowser.textContent(refusal.findElement(By.cssSelector(".refusal-code"))))
-                .isEqualTo("403 ForbiddenException");
-        assertThat(refusal.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
-        assertThat(driver.findElements(By.cssSelector("#catalog-health .health-figures"))).isEmpty();
+        assertThat(ConsoleBrowser.textContent(browser.await(By.cssSelector("#closed-page [data-closed] h3"))))
+                .isEqualTo("Service health is open to platform operators.");
+        assertThat(driver.findElements(By.id("catalog-health"))).isEmpty();
         assertThat(driver.findElements(By.id("health-alerts"))).isEmpty();
         assertThat(driver.findElements(By.id("health-slos"))).isEmpty();
         assertThat(driver.findElements(By.id("health-worker"))).isEmpty();

@@ -356,6 +356,9 @@ let found = [];
 let searched = null;
 let searchFailed = null;
 let searchTimer = null;
+// The words a look-up answered (Enter on a full dotted path): its answer stands until they change, and a search that
+// comes back after it does not draw over it.
+let lookedUp = null;
 
 const pathOfTarget = t => [...(t.namespace || []), ...(t.name ? [t.name] : [])].join('.');
 const asItem = t => ({target: t, path: pathOfTarget(t)});
@@ -405,7 +408,7 @@ function search(words) {
       : {catalog: x.catalog, kind: x.kind, namespace: x.namespace, name: x.name}));
     searched = fragment;
     searchFailed = failed;
-    gotoDraw();
+    if (lookedUp !== gotoIn.value) gotoDraw();
   }, 150);
 }
 
@@ -564,12 +567,14 @@ async function lookUp(path) {
     target = await find(path);
   } catch (error) {
     if (gotoIn.value !== asked) return;
+    lookedUp = asked;
     gotoH.textContent = `Could not look up ${path}`;
     gotoList.replaceChildren(h('li', {class: 'none'}, failure(error, {compact: true})));
     return;
   }
   if (!gotoDlg.open || gotoIn.value !== asked) return;
   if (!target) {
+    lookedUp = asked;
     gotoH.textContent = `No namespace, table or view ${path} in ${cat}`;
     gotoList.replaceChildren(h('li', {class: 'none', 'data-goto-none': path}, `${cat} has no namespace, table or view at ${path} that `
       + 'your groups may see. Check the spelling, or type part of the name to search what is listed.'));
@@ -590,6 +595,7 @@ async function openGoto(tab = null, words = '') {
   found = [];
   searched = null;
   searchFailed = null;
+  lookedUp = null;
   gotoDraw();
   if (!gotoDlg.open) gotoDlg.showModal();
   gotoIn.focus();
@@ -603,6 +609,7 @@ async function openGoto(tab = null, words = '') {
 
 gotoIn.addEventListener('input', () => {
   gotoAt = 0;
+  lookedUp = null;
   gotoDraw();
 });
 gotoIn.addEventListener('keydown', e => {

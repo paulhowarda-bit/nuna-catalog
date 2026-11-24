@@ -3261,3 +3261,4 @@ Done looks like:
 | [202](backlog/202.md) | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | done | 2026-11-23 |
 | [209](backlog/209.md) | Console browser tests: one Chrome per server, faster polling, and none beside the demo | done | 2026-11-23 |
 | [211](backlog/211.md) | Console: a first sign-in whose home is Audit lands on the catalog with the most records, not the first name | done | 2026-11-23 |
+| [219](backlog/219.md) | Console: eight browser tests disagree with the pages S2, S3 and S5 made | done | 2026-11-23 |

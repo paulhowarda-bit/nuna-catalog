@@ -110,7 +110,8 @@ class ConsoleSettingsBrowserTest {
         size.sendKeys("256 MB");
         submit("Target data file size is now 268435456");
         assertThat(tableProperties(ns, "orders")).containsEntry("write.target-file-size-bytes", "268435456");
-        awaitValue("write.target-file-size-bytes", "256 MB (268,435,456 bytes) · set");
+        // The bytes as set, then the size in words (backlog 141).
+        awaitValue("write.target-file-size-bytes", "268435456 256 MB · set");
 
         // Reset removes the property, and the default applies again.
         setting("write.parquet.compression-codec").findElement(By.cssSelector("button[data-act='reset']")).click();
