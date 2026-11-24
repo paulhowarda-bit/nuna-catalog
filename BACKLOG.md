@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**53 open:** 15 S, 18 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**54 open:** 16 S, 18 M, 14 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -65,6 +65,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [215](backlog/215.md) | S | Console: the monospace S5 missed, the Overview chart caption, number headers, kind words, dates | four CSS rules | 2026-11-23 |
 | [216](backlog/216.md) | S | Console: an audit record with no archive offers no archive check, and its labels read as words | the archive link drawn only when an archive is configured, and the record's labels as words | 2026-11-23 |
 | [217](backlog/217.md) | S | Console: smaller findings from Atelier's re-walk after phase 2 | five small fixes | 2026-11-23 |
+| [218](backlog/218.md) | S | Console browser tests beside the demo: the agent takes the demo down, runs them and brings it back up (D49) | the refusal's words and CLAUDE.md's sentence, then one run of the browser tests with the demo taken down and brought back up, which is item 209's first run against Docker | 2026-11-23 |
 
 ## Open items in full
 
@@ -3075,6 +3076,25 @@ Atelier's re-walk after phase 2 (2026-11-23, `status/2026-11-23-console-wayfindi
 - The long path in the merge side panel runs to the panel's border.
 
 Done looks like: each settled as Atelier says, checked in the demo.
+
+### 218. Console browser tests beside the demo: the agent takes the demo down, runs them and brings it back up (D49)
+
+- Added: 2026-11-23 by Paul, 2026-11-23
+- Touches: catalog-server/src/test/java/nuna/catalog/server/ConsoleBrowser.java, CLAUDE.md
+- Effort: S, the refusal's words and CLAUDE.md's sentence, then one run of the browser tests with the demo taken down and brought back up, which is item 209's first run against Docker
+
+Paul, 2026-11-23, asked whether the browser tests could take the demo down instead of refusing to run beside it
+(item 209). The test-expert advised against a test doing it: a test JVM cannot tell the other sessions as D49 requires,
+a down wipes the demo's data, and `demo/demo.sh up` builds from the checkout it runs in, so from a worktree it would put
+that branch on the shared demo. Paul: "yes, get the agent to take it down and do the test".
+
+Done looks like:
+
+- The refusal tells the agent what to do: tell every active session, `demo/demo.sh down`, run the tests,
+  `demo/demo.sh up` from a checkout of `main`, and tell them again; `-Pnuna.demo-beside` still runs them beside it.
+- CLAUDE.md says so.
+- The refusal seen beside the demo, then the browser tests run with the demo down: one Chrome for the governance
+  classes, stopped when their context closes, and the classes' times against the 2026-11-23 overnight run's.
 
 ## Done and dropped
 
