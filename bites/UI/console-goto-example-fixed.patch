@@ -1,0 +1,17 @@
+Breaks: Go to a path's empty answer gives the demo's path as its example in every catalog.
+Module: catalog-server
+Test: ConsoleBrowserTest#goToAPathOpensAFullDottedPathNotListedYet
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index b5393375..36014013 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -402,7 +402,7 @@ function gotoDraw() {
+     return li;
+   }));
+   if (!gotoItems.length) {
+-    const example = (all.find(x => x.target.kind === 'table') || {}).path || 'namespace.table';
++    const example = 'markets.fx.rates';
+     gotoList.append(h('li', {class: 'none'}, `Not found among the names listed so far in ${cat}. `
+       + `Open a namespace, or type the full dotted path, such as ${example}.`));
+   }

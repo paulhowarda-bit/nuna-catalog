@@ -45,13 +45,13 @@ export function maintenancePage(catalog) {
       const table = queueTable(rows, {id: 'neediest'});
       queuePanel = panel('Tonight\'s queue', 'equality deletes first, then the highest score', queueChips(rows, table), table);
     } else {
-      queuePanel = emptyQueue(catalog, c);
+      queuePanel = emptyQueue(catalog, c, !!off);
     }
     return [
       pageHead({
         eyebrow: `${catalog} · maintenance`,
         title: !c.total ? nothingToRead(catalog, everywhere, 'maintenance')
-          : off ? [off, h('br'), h('span', {class: 'q'}, shapeWords(c))]
+          : off ? off
             : rows.length
               ? `${plural(rows.length, 'table')} queued for tonight.` + (c.unassessed ? ` ${fmt(c.unassessed)} not assessed yet.` : '')
               : c.unassessed ? shapeWords(c) : `Every table you may read in ${catalog} is in shape.`,

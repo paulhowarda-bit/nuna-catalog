@@ -1,0 +1,16 @@
+Breaks: A branch's tree does not mark the tables the branch changed.
+Module: catalog-server
+Test: ConsoleBrowserTest#aBranchIsMadeCommittedOnPreviewedAndMerged
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/tree.js b/catalog-server/src/main/resources/nuna/ui/tree.js
+index 01c3c04e..c3313c24 100644
+--- a/catalog-server/src/main/resources/nuna/ui/tree.js
++++ b/catalog-server/src/main/resources/nuna/ui/tree.js
+@@ -39,7 +39,6 @@ export function treeOf(catalog, ref = null) {
+   ask(st, []);
+   if (ref) {
+     api.ref(catalog, ref).then(x => {
+-      for (const t of x.changed || []) st.changed.add(keyOf([...t.namespace, t.name]));
+       draw(st);
+     }, () => {});
+   }

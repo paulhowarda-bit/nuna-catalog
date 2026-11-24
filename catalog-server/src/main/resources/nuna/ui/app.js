@@ -14,6 +14,7 @@ import {healthPage} from './health.js';
 import {governancePage} from './governance.js';
 import {auditPage} from './audit.js';
 import {browse, notFound} from './browse.js';
+import {clearReading, readingControl} from './refs.js';
 
 const root = document.documentElement;
 const consoleEl = $('#console');
@@ -154,8 +155,8 @@ function closeMenus() {
 function setChrome(navKey, ref) {
   consoleEl.classList.toggle('rail', !!railPick);
   syncMenuButton();
-  // The top chip names the ref a browse page reads (item 109): lakehouse @dev.
-  for (const b of $$('[data-cat]')) fill(b, cat || '–', ref ? h('span', {class: 'pick-ref'}, '@' + ref) : null);
+  // The catalog chip names the catalog; the Reading control beside it names the ref read (backlog 201).
+  for (const b of $$('[data-cat]')) fill(b, cat || '–');
   for (const b of $$('[data-cat-pick]')) b.setAttribute('aria-checked', String(b.dataset.catPick === cat));
   const hrefs = {overview: pageHref('overview', cat), catalog: href({c: cat, r: ref}), maintenance: pageHref('maintenance', cat),
     governance: pageHref('governance', cat), audit: pageHref('audit', cat), service: pageHref('service')};
@@ -401,8 +402,9 @@ function gotoDraw() {
     return li;
   }));
   if (!gotoItems.length) {
-    gotoList.append(h('li', {class: 'none'}, `Not found among the ${fmt(all.length)} ${all.length === 1 ? 'name' : 'names'} listed so far in ${cat}. `
-      + 'Open a namespace, or type the full dotted path, such as markets.fx.rates.'));
+    const example = (all.find(x => x.target.kind === 'table') || {}).path || 'namespace.table';
+    gotoList.append(h('li', {class: 'none'}, `Not found among the names listed so far in ${cat}. `
+      + `Open a namespace, or type the full dotted path, such as ${example}.`));
   }
   gotoMark();
 }
@@ -547,6 +549,7 @@ function render() {
     }
     return;
   }
+  clearReading();
   // Service is the whole deployment's: platform operators see it though they may hold nothing in any catalog.
   if (r.page !== 'service' && !names.length) {
     cat = null;
@@ -601,6 +604,10 @@ function render() {
   }
   const reading = !r.page && r.k !== 'ref' ? r.r : null;
   setChrome(navKey, reading);
+  // A browse page that reads through a ref draws the Reading control itself (refChrome); every other page with a
+  // catalog gets one whose refs open the catalog through them (Atelier's review, S4; backlog 201).
+  const pageReads = navKey === 'catalog' && r.k !== 'ref' && !(!r.k && r.tab === 'refs');
+  if (cat && r.page !== 'service' && !pageReads) readingControl({c: cat});
   if (!slot.contains(content) || slot.firstElementChild !== content) slot.replaceChildren(content);
   document.title = `${title} · ${r.page === 'service' ? 'all catalogs' : cat}${reading ? '@' + reading : ''} · nuna`;
   if (tabOnly && prev.tab !== r.tab) {

@@ -234,7 +234,7 @@ function catalogPage(catalog, tab, route) {
     k => ({governance: pageHref('governance', catalog), grants: pageHref('governance', catalog, 'grants'),
       audit: pageHref('audit', catalog), refs: catalogHref(catalog, 'refs')})[k] || catalogHref(catalog, k || null, ref));
     refsCount(catalog).then(n => addCount(tabs, 'refs', n));
-    if (key !== 'refs') refChrome(Object.assign({}, route, {r: ref}), side, head);
+    if (key !== 'refs') refChrome(Object.assign({}, route, {r: ref}), head);
     return [head, tabs,
       key === null ? h('div', {class: 'empty'}, h('h3', null, 'A catalog has no such tab'))
         : key === 'properties' ? loading(() => catalogProperties(catalog))
@@ -293,7 +293,7 @@ function namespacePage(target, tab, route) {
   const sub = $('[data-sub]', head);
   const reload = () => fill(body, namespaceTab(target, key, sub, reload));
   reload();
-  refChrome(route, side, head);
+  refChrome(route, head);
   return main;
 }
 

@@ -325,8 +325,7 @@ class ConsoleHealthTest {
         browser.signIn(token("nell", newcomers));
         browser.open("/ui/#p=overview&c=trading");
         String off = "Maintenance is off in trading's policy: nothing will be compacted or expired.";
-        assertThat(browser.await(By.cssSelector("#overview .ph h1")).getText())
-                .isEqualTo(off + "\n1 table not assessed yet: the maintenance worker has not reported.");
+        assertThat(browser.await(By.cssSelector("#overview .ph h1")).getText()).isEqualTo(off);
         shape = browser.await(By.cssSelector("#overview-kpis .kpi[data-kpi='shape']"));
         assertThat(shape.findElement(By.cssSelector(".kpi-d")).getText())
                 .isEqualTo("1 not assessed yet: maintenance is off in the catalog's policy");
@@ -334,12 +333,12 @@ class ConsoleHealthTest {
         assertThat(browser.awaitText(By.cssSelector("#overview .grid-21 p.muted"), "Nothing queued").getText())
                 .isEqualTo("Nothing queued: maintenance is off in trading's policy.");
         browser.open("/ui/#p=maintenance&c=trading");
-        assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText())
-                .isEqualTo(off + "\n1 table not assessed yet: the maintenance worker has not reported.");
+        // One headline, the policy's; the empty queue blames the policy, not the worker (Atelier's re-walk).
+        assertThat(browser.await(By.cssSelector("#maintenance .ph h1")).getText()).isEqualTo(off);
+        assertThat(browser.await(By.id("neediest-none")).getText()).contains("Maintenance is off in trading's policy, "
+                + "so the worker assesses no table and queues none.").doesNotContain("in shape");
         browser.open("/ui/#c=trading&k=table&ns=" + fresh + "&n=first&tab=maintenance");
         assertThat(browser.await(By.id("table-health-off")).getText()).isEqualTo(off);
-        assertThat(browser.await(By.id("neediest-none")).getText()).contains("The maintenance worker has not assessed "
-                + "any table you may read in trading yet, so it has queued none.").doesNotContain("in shape");
     }
 
     @Test

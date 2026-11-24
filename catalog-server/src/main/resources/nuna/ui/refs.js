@@ -9,6 +9,7 @@ import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, edgeCue, facts, failure, fill, fmt, granted, h, icon, jsonPre, load, muted,
   openDialog, dialogForm, field, opensRow, panel, pill, plural, s, select, tabsNav, tbl, techDetails, when} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
+import {auditOpen} from './access.js';
 
 const DAY = 86_400_000;
 const ms = iso => new Date(iso).getTime();
@@ -90,8 +91,10 @@ function madeFrom(r, list) {
 }
 
 /**
- * "Reading main ▾" beside a browse page's title: a disclosure of the catalog's refs, each a link to this page through
- * it, the one read marked current. A link naming a ref that is not live reads it struck through, with none current.
+ * "Reading main ▾" in the header, beside the catalog picker (Atelier's review, S4; backlog 201): a disclosure of the
+ * catalog's refs, each a link to this page through it, the one read marked current, and beside each its own page
+ * (What changed); its foot opens Branches and tags. A link naming a ref that is not live reads it struck through,
+ * with none current.
  */
 function refPick(where, list) {
   const cur = where.r ? findRef(list, where.r) : null;
@@ -106,8 +109,12 @@ function refPick(where, list) {
     const on = !dead && (cur ? cur.name : null) === (r ? r.name : null);
     const sub = !r ? 'the catalog as it is now' : r.kind === 'tag' ? `tag · ${refAt(r['created-at'])} · read-only`
       : `branch · ${plural(r['changed-count'] || 0, 'table')} changed · expires ${expiring(r) ? untilWords(r['expires-at']) : dayMon(r['expires-at'])}`;
-    return h('a', {'aria-current': on ? 'true' : null, href: href(Object.assign({}, where, {r: r ? r.name : null})),
+    const read = h('a', {'aria-current': on ? 'true' : null, href: href(Object.assign({}, where, {r: r ? r.name : null})),
       class: r && expiring(r) ? 'is-warn' : null}, h('b', null, r ? cref(r) : cref('main')), h('span', null, sub));
+    if (!r) return read;
+    return h('div', {class: 'ref-item', 'data-ref-item': r.name}, read,
+      h('a', {class: 'ref-go', href: refHref(where.c, r.name), 'aria-label': `${r.kind === 'tag' ? 'The tag' : 'What changed on'} @${r.name}`},
+        r.kind === 'tag' ? 'Its page' : 'What changed', icon('right')));
   };
   const branches = live(list).filter(r => r.kind === 'branch');
   const tags = live(list).filter(r => r.kind === 'tag');
@@ -143,6 +150,27 @@ function refPick(where, list) {
   };
   document.addEventListener('click', away);
   return wrap;
+}
+
+// The header's Reading control is drawn by the last page that asks; a page that reads through a ref asks with
+// itself as the place each ref links to, any other page with its catalog.
+let wanted = 0;
+
+function showReading(pick) {
+  const slot = document.getElementById('reading-slot');
+  if (slot) slot.replaceChildren(pick);
+}
+
+/** Empties the header's Reading control as a page starts, so one left from the page before never shows. */
+export function clearReading() {
+  wanted++;
+  showReading();
+}
+
+/** The header's Reading control for a page that is not read through a ref: each ref opens the catalog through it. */
+export function readingControl(where) {
+  const mine = ++wanted;
+  refsOf(where.c).then(list => { if (mine === wanted) showReading(refPick(where, list)); }, () => {});
 }
 
 /** The band under a page's title while it reads through a ref. */
@@ -192,12 +220,13 @@ async function noRef(where, list) {
  * The selector and the band for a browse page `where` (a route): the selector goes into `side`, the band after
  * `head`; both once the catalog's refs are read. A page the caller may not list refs on keeps neither.
  */
-export function refChrome(where, side, head) {
+export function refChrome(where, head) {
+  const mine = ++wanted;
   refsOf(where.c).then(async list => {
     // The page may still be going in: wait a task, then draw only into a page that is shown.
     await new Promise(done => setTimeout(done, 0));
     if (!head.parentNode) return;
-    side.prepend(refPick(where, list));
+    if (mine === wanted) showReading(refPick(where, list));
     if (!where.r) return;
     const r = findRef(list, where.r);
     head.after(r ? refBand(r, where, list) : await noRef(where, list));
@@ -285,6 +314,8 @@ export function liveRefLink(c, d) {
 
 /** The last day's ref records of a catalog from the audit feed; none when the caller may not read it. */
 async function refRecords(c, pages = 2) {
+  // Asking a feed the caller may not read is refused and audited as a denial (Atelier's re-walk, 2026-11-23).
+  if (!auditOpen(c)) return null;
   const out = [];
   let pageToken = null;
   try {
@@ -567,11 +598,12 @@ export function refPage(c, name, tab) {
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'until deleted' : `${untilWords(r['expires-at'])} · at most ${dayMon(r['max-expires-at'])}`)),
       h('div', {class: 'kpi'}, h('p', {class: 'kpi-l'}, 'Warehouse'), h('p', {class: 'kpi-v sm mono'}, `${c}@${r.name}`),
         h('p', {class: 'kpi-d'}, r.kind === 'tag' ? 'read endpoints only' : 'reads and commits')));
-    const tabs = r.kind === 'branch' ? [['', 'Changes', total], ['merge', 'Merge'], ['record', 'Record']] : [['', 'What it keeps'], ['record', 'Record']];
+    const record = auditOpen(c) ? [['record', 'Record']] : [];
+    const tabs = r.kind === 'branch' ? [['', 'Changes', total], ['merge', 'Merge'], ...record] : [['', 'What it keeps'], ...record];
     const key = tabs.some(([k]) => k === (tab || '')) ? tab || '' : '';
     const body = h('div', {class: 'tab-body'});
     if (key === 'merge') load(body, () => mergeTab(c, r, list));
-    else if (key === 'record') load(body, () => recordTab(c, r));
+    else if (key === 'record' && record.length) load(body, () => recordTab(c, r));
     else if (r.kind === 'branch') load(body, () => changesTab(c, r, total));
     else fill(body, tagKeeps(c, r, cut));
     return [h('div', {class: 'ph'}, crumbs, title, sub, side), kpis, tabsNav('Ref', tabs, key, k => refHref(c, r.name, k || null)), body];

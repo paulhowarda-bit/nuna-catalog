@@ -97,7 +97,7 @@ export function tablePage(target, tab, route) {
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, acts);
   main.append(head, tabs);
   const body = tabBody(main);
-  refChrome(route, acts, head);
+  refChrome(route, head);
   let metadata = loadTable(target);
   metadata.then(t => {
     const m = t.metadata;
@@ -764,7 +764,7 @@ export function viewPage(target, tab, route) {
   const head = h('div', {class: 'ph'}, crumbsFor(target.catalog, target.namespace, target.name, target.ref), title, side);
   main.append(head, tabs);
   const body = tabBody(main);
-  refChrome(route, side, head);
+  refChrome(route, head);
   const loaded = loadView(target);
   loaded.then(v => {
     title.append(badge('view', 'strong'));

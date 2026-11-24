@@ -75,3 +75,43 @@ Two findings:
   `readsData()` is true; the design had him land on Audit. Left for Atelier's re-walk.
 - The tab ran the pre-rebuild console until each file was fetched afresh. Every `/ui/` file is served with a 1980
   Last-Modified and no ETag, so a revalidation always answers 304. Filed as backlog 203.
+
+## Atelier's re-walk after phase 1 (demo at fe86cfe2)
+
+Atelier re-walked her six tasks live: ana for tasks 1 to 5, gary for task 6. She counted steps as her review does,
+from the landing.
+
+| # | Task | Before | Now | After S1 to S5 (her estimate) |
+|---|---|---|---|---|
+| 1 | `rates`: who changed it last | 7 | 3 (`/`, `markets.fx.rates`, Enter; Overview names the author) | 3, and `rates` alone finds it (S1) |
+| 2 | Read `@sample`, then back to main | 3 | 3, and the tree keeps the tag | 3 |
+| 3 | What `dev` changed, and its merge preview | 6 | 3 | 2 (S4: Reading, @dev, then What changed and Merge) |
+| 4 | Why a table is held or regulated | 3 | 1 (Governance) | 1 |
+| 5 | Tonight's maintenance for a table | 7 | 0 for the catalog (the landing says maintenance is off); 3 for `rates` | 3 |
+| 6 | gary finds a grant's audit record | 6 | 5 (3 if lakehouse was his last catalog) | 2, once he lands on Audit |
+| | Total | 32 | 18 | 14 |
+
+Her findings, worst first, and what became of each:
+- Snapshot ids lose precision in `JSON.parse`, so Overview shows an id that names no snapshot. Filed as backlog 204.
+- gary lands on the Overview of `nuna_audit`, not on Audit. Her fix: Audit before Overview, the audit table's catalog
+  left out of the landing choice, and the remembered catalog kept per user. Taken into S3 (backlog 200).
+- Branches and tags asked the audit feed without checking access, so ana's browsing wrote a denial. Fixed: it asks
+  only a caller who may read the feed, and the ref page's Record tab is shown only to them.
+- Audit words still say Kafka after item 195. Filed as backlog 205.
+- The folded engine-level refs heading was drawn at the browser's default size. Fixed.
+- Go to a path's empty answer claimed "0 names" and gave the demo's path in every catalog. Fixed: no count, and an
+  example from the catalog.
+- With maintenance off, Overview and Maintenance gave a second, amber headline blaming the worker, and the empty
+  queue blamed the worker too. Fixed: one headline, and the queue names the policy.
+- Smaller (Service still shows the catalog picker, an example tag that does not exist, builder language on Branches
+  and tags): left for S3 and S5.
+
+Her design answers for S2 and S3 are in backlog 199 and 200's notes when built:
+- Catalog tabs: Contents, Branches and tags, Properties; the rail pages are the catalog-wide views.
+- Home order: Audit, then Service, then Overview.
+- Audit: all catalogs by default, with a catalog filter.
+- The ref on main-only pages: keep it with a "main only" note.
+- History: one row per metadata commit, ids as strings.
+- Properties editing: behind a Settings drawer.
+- Access: lead with what the viewer may do.
+- Phone: check six tabs at 390 px.

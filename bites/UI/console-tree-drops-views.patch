@@ -3,10 +3,11 @@ Module: catalog-server
 Test: ConsoleBrowserTest#theTreeOpensDownToTablesAndViews
 
 diff --git a/catalog-server/src/main/resources/nuna/ui/tree.js b/catalog-server/src/main/resources/nuna/ui/tree.js
+index 01c3c04e..31d939b6 100644
 --- a/catalog-server/src/main/resources/nuna/ui/tree.js
 +++ b/catalog-server/src/main/resources/nuna/ui/tree.js
-@@ -138,7 +138,7 @@
-       tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), markOf(st, key, true, 'namespace:' + n.join('.')))));
+@@ -160,7 +160,7 @@ function draw(st) {
+       markOf(st, key, true, 'namespace:' + n.join('.')))));
        if (open) walk(n, depth + 1);
      }
 -    for (const [kind, names] of [['table', kids.tables], ['view', kids.views]]) {

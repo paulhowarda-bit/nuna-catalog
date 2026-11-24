@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**47 open:** 8 S, 18 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**48 open:** 9 S, 18 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -56,9 +56,10 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [198](backlog/198.md) | L | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | a new server route (L: it lists names across a whole catalog or every catalog, and must list only what the caller may describe, by the same rule as the catalog list's `inCatalog` and each level's describe check, with a cap and paging), and M in the console (the Go to a path box asks it, shows recent items first, then matches with path and kind) | 2026-11-23 |
 | [199](backlog/199.md) | ? | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | the table page's tabs regrouped (Overview, Schema, History, Access, Maintenance, Audit) from today's ten panels, with redirects from the old tab keys, and the namespace and catalog pages given the same names for the same things | 2026-11-23 |
 | [200](backlog/200.md) | M | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | the rail's items renamed and re-ordered (Home, Catalog, Governance, Audit, Maintenance, Service), each shown only where the role may use it, never folded to icons, and Home routed per role | 2026-11-23 |
-| [201](backlog/201.md) | M | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | one Reading control in the header beside the catalog picker ("lakehouse @dev"), carried by every link the console builds, the tree marking the tables the ref changed, and Branches and tags reached from the control as well as the catalog's tab | 2026-11-23 |
 | [202](backlog/202.md) | M | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers | 2026-11-23 |
 | [203](backlog/203.md) | S | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test | 2026-11-23 |
+| [204](backlog/204.md) | M | Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot | the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string | 2026-11-23 |
+| [205](backlog/205.md) | S | Console: audit words still say Kafka after audit moved to the log (item 195) | the Audit page and Service say where audit records go now that the catalog audits to its log (D23 as item 195 amended it), and show a record's place in the log or the audit table rather than a Kafka partition and offset | 2026-11-23 |
 
 ## Open items in full
 
@@ -2949,23 +2950,6 @@ where the role may use it; Home is the catalog overview for analysts, the feed f
 the rail is labelled on every page at desktop widths and is a drawer on a phone; old `p=overview` links open Home;
 heavy browser tests per role, a bite for Home's routing. Builds on 184 and 192 rather than redoing them.
 
-### 201. Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4)
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/index.html catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: M, one Reading control in the header beside the catalog picker ("lakehouse @dev"), carried by every link the console builds, the tree marking the tables the ref changed, and Branches and tags reached from the control as well as the catalog's tab
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F3 and F8, section 4, S4): reading `rates` as of `@sample`, a click in the tree dropped the ref
-without saying so; the ref is chosen on the catalog page and shown in a band, but nothing in the header says what is
-being read. `12-rates-at-sample.png`, `13-tree-click-drops-ref.png`. Item 173 made the tree and the rail's Catalog
-link carry the ref; item 191 put the engine-level refs apart from the catalog's.
-
-Done looks like: the header shows one Reading control beside the catalog picker ("lakehouse @dev ▾") on every page;
-it lists main, the catalog's branches and tags and a link to Branches and tags; every link the console builds carries
-the ref (tree, rail, crumbs, tabs, Contents, Go to a path); the band stays below; the tree's root reads
-`lakehouse @dev` and marks the tables the ref changed; heavy browser tests and a bite for a link that drops the ref.
-Builds on 173 rather than redoing it.
-
 ### 202. Console: a copy pass across every page, by the words-table method (Atelier's review S5)
 
 - Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
@@ -3000,6 +2984,41 @@ Done looks like: a file whose bytes changed answers 200 with its new content on 
 unchanged one 304 by its ETag; no `/ui/` answer carries the 1980 Last-Modified; a route test fetches a file, then
 revalidates with the ETag it got (304) and with a stale one (200); a bite that sets the Last-Modified back makes it
 fail.
+
+### 204. Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/api.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string
+
+Atelier's re-walk of the console (2026-11-23, in the demo at fe86cfe2): a table's Overview shows its current snapshot
+as `8809372496300770000` where the REST answer names `…770237`. Iceberg snapshot ids are 64-bit; `JSON.parse` keeps
+only 53 bits of them, so the console shows, copies and links ids that name no snapshot. Anyone who copies one to read
+the table as of it gets "snapshot not found" or, worse, nothing at all. Snapshots, the metadata log, the refs pages
+and the merge preview probably show the same; Atelier checked Overview only. Her first review quoted such an id and
+did not notice.
+
+Done looks like: every id the console shows or puts in a link is the one the catalog sent, digit for digit (snapshot
+ids, parent ids, sequence numbers past 2^53); a heavy browser test reads a table whose snapshot id is past 2^53 and
+compares the Overview's and Snapshots' ids with the REST answer's text; a bite that parses ids as numbers again
+makes it fail.
+
+### 205. Console: audit words still say Kafka after audit moved to the log (item 195)
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/audit.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, the Audit page and Service say where audit records go now that the catalog audits to its log (D23 as item 195 amended it), and show a record's place in the log or the audit table rather than a Kafka partition and offset
+
+Atelier's re-walk of the console (2026-11-23, in the demo at fe86cfe2, after item 195 landed): Service shows a panel
+"Audit to Kafka" with 0 records acknowledged, which reads as audit being broken; the Audit page says each record
+"opens to the event as Kafka holds it"; a record shows "Kafka partition -1, offset 1795482234678168", and its chain
+check says "acknowledged by Kafka". Since item 195 the catalog audits to its log `nuna.audit`, which the audit table
+writer takes over OTLP, and Kafka is not on the audit path.
+
+Done looks like: Service's audit panel names where records go and what it counts (or is gone, if the server no longer
+reports it), with no Kafka figure while Kafka is not on the path; the Audit page and a record's details say where the
+record came from in words a reader follows, with no partition or offset of -1; heavy browser tests updated; the item
+that changed the server's health answer (195) is read first, so the console says what the server now reports.
 
 ## Done and dropped
 
@@ -3159,3 +3178,4 @@ fail.
 | [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |
 | [195](backlog/195.md) | Audit goes to logs: the catalog serves and vends without Kafka, and the audit table writer takes the audit records over OTLP (D23) | done | 2026-11-23 |
 | [196](backlog/196.md) | Demo switches: demo.sh gen and ss turn the brokerage generator and SingleStore on and off, as cdc does its leg; Kafka runs only while cdc or gen is on | done | 2026-11-23 |
+| [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |
