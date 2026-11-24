@@ -7,6 +7,48 @@ import {$$, bar, fmt, h, ordinal, pill, plural, s} from './dom.js';
 import {objectHref} from './route.js';
 import * as api from './api.js';
 
+/** The job types a maintenance policy turns on and off. */
+const JOBS = ['compaction.enabled', 'snapshot-expiry.enabled', 'orphan-removal.enabled', 'manifest-rewrite.enabled'];
+
+/** Whether a resolved policy's job keys each come from the catalog or the built-in policy it keeps. */
+const catalogWide = r => JOBS.every(k => ['built-in', 'default', undefined].includes(r[k].source)
+  || String(r[k].source).startsWith('catalog'));
+
+/**
+ * When a resolved maintenance policy has every job type off (Atelier's review, F9; backlog 190), the words that say so,
+ * whose policy it is linked to where it is shown: the catalog's when each key comes from it or the built-in policy it
+ * keeps, else the table's own. Null when any job is on.
+ */
+export function maintenanceOff(catalog, p, href) {
+  const r = (p && p.resolved) || {};
+  if (!JOBS.every(k => r[k] && String(r[k].value) === 'false')) return null;
+  const catalogs = catalogWide(r);
+  return h('span', {'data-maintenance-off': ''}, 'Maintenance is off in ', h('a', {href, onclick: e => {
+    const shown = document.querySelector('[data-policy]');
+    if (shown) {
+      e.preventDefault();
+      shown.scrollIntoView({block: 'start'});
+    }
+  }}, catalogs ? `${catalog}'s policy` : 'this table\'s policy'), ': nothing will be compacted or expired.');
+}
+
+/**
+ * Whether the catalog's policy has every job off, read through one of the caller's own tables there (`tables`, estate
+ * rows), whose policy they may read, so asking writes no denial: when that table's job keys each come from the catalog
+ * or the built-in policy, they are the catalog's. The words, or null when any job is on, a level nearer the table sets
+ * one, or the policy cannot be read.
+ */
+export async function catalogOff(catalog, tables, href) {
+  const t = tables[0];
+  if (!t) return null;
+  try {
+    const p = await api.policy({catalog, kind: 'table', namespace: t.namespace, name: t.name});
+    return catalogWide((p && p.resolved) || {}) ? maintenanceOff(catalog, p, href) : null;
+  } catch {
+    return null;
+  }
+}
+
 export const REASONS = {
   'equality-deletes': ['bad', 'Equality deletes',
     'Equality deletes: every reader must join against them; such a table is compacted first.'],

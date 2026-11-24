@@ -10,7 +10,7 @@ import * as api from './api.js';
 import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, fill, fmt, frozenPill, h, heldPill, icon, jsonPre,
   load, muted, panel, pill, plural, s, sizeWords, tabsNav, tbl, when} from './dom.js';
 import {objectHref, warehouseOf} from './route.js';
-import {keyOfRow, queue, queueOf, REASONS} from './queue.js';
+import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
 import {auditTab, exportDialog, governanceSummary, governanceTab, grantsTab} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
@@ -266,7 +266,9 @@ function propertiesTab(target, t, reload, ref) {
 const refBadge = (name, type) => badge([icon(type === 'tag' ? 'tag' : 'branch'), name], type === 'tag' ? 'ref-t' : 'ref-b');
 
 async function healthSummary(target) {
-  const [health, rows] = await Promise.all([api.tableHealth(target), queue().catch(() => [])]);
+  const [health, rows, policy] = await Promise.all([api.tableHealth(target), queue().catch(() => []),
+    api.policy(target).catch(() => null)]);
+  const off = maintenanceOff(target.catalog, policy, objectHref(target, 'maintenance'));
   const a = health.assessment;
   const c = health['last-compaction'];
   const inCatalog = queueOf(rows, target.catalog);
@@ -277,6 +279,7 @@ async function healthSummary(target) {
   return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'maintenance')}, 'Maintenance'), ' ',
     target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
   target.ref ? h('p', {class: 'fine'}, 'Maintenance is assessed and run on main only. Main\'s, for this table.') : null,
+  off ? h('p', {class: 'fine', id: 'summary-maintenance-off'}, off) : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)
     : pill('ok', icon('check'), 'No compaction needed'),

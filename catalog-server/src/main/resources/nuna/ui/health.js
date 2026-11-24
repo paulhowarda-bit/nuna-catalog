@@ -7,7 +7,7 @@
 import * as api from './api.js';
 import {at, code, facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, tbl, took, when} from './dom.js';
 import {objectHref} from './route.js';
-import {REASONS, compactionWords, iceQueue, keyOfRow, queue, queueOf, reasonPill} from './queue.js';
+import {REASONS, compactionWords, iceQueue, keyOfRow, maintenanceOff, queue, queueOf, reasonPill} from './queue.js';
 import {mayModify, requestButtons, requestsBox} from './requests.js';
 
 const ALERTS = [
@@ -323,9 +323,12 @@ export async function workerPanel() {
 // ---- one table's health, on its tab ----
 
 export async function tableHealthTab(target, reload) {
-  const [health, rows, may] = await Promise.all([api.tableHealth(target), queue().catch(() => []), mayModify(target)]);
+  const [health, rows, may, policy] = await Promise.all([api.tableHealth(target), queue().catch(() => []), mayModify(target),
+    api.policy(target).catch(() => null)]);
   const a = health.assessment;
   const c = health['last-compaction'];
+  const off = maintenanceOff(target.catalog, policy, objectHref(target, 'maintenance'));
+  const offLine = off ? h('p', {class: 'notice', id: 'table-health-off'}, icon('info'), off) : null;
   const mine = [target.catalog, ...target.namespace, target.name].join('.');
   const inCatalog = queueOf(rows, target.catalog);
   const verdictLine = !a ? null : a['needs-compaction']
@@ -336,7 +339,7 @@ export async function tableHealthTab(target, reload) {
   const mini = a && a['needs-compaction'] && inCatalog.some(r => keyOfRow(r) === mine) ? h('div', {class: 'iceline mini'}) : null;
   if (mini) sized(mini, (host, w) => iceQueue(host, w, inCatalog, {me: mine}));
   const assessment = a ? h('div', {class: 'panel'}, h('h2', null, 'Assessment ', h('span', {class: 'meta'}, 'assessed ' + when(a['assessed-at']))),
-    verdictLine, mini,
+    offLine, verdictLine, mini,
     a['needs-compaction'] ? h('ul', {id: 'table-health-reasons', class: 'stack'}, (a.reasons || []).map(reason =>
       h('li', {'data-reason': reason}, reasonPill(reason), ' ', h('span', {class: 'fine'}, (REASONS[reason] || [null, null, reason])[2])))) : null,
     facts([
@@ -348,7 +351,7 @@ export async function tableHealthTab(target, reload) {
       ['Deletion vectors', String(a['deletion-vectors'])],
       ['Equality-delete files', String(a['equality-delete-files'])],
     ]))
-    : h('div', {class: 'panel'}, h('h2', null, 'Assessment'),
+    : h('div', {class: 'panel'}, h('h2', null, 'Assessment'), offLine,
       h('p', {class: 'muted', id: 'table-health-unassessed'}, 'The maintenance worker has not assessed this table yet.'));
   // Requests are main's: the worker compacts and scans main only, so a page read through a ref offers none (item 109).
   if (may && !target.ref) {
@@ -369,11 +372,11 @@ export async function tableHealthTab(target, reload) {
 async function policyFacts(target) {
   const p = await api.policy(target);
   const resolved = Object.entries(p.resolved || {}).sort(([a], [b]) => a.localeCompare(b));
-  return panel('Policy for this table', 'each key with where it was set', h('dl', {class: 'facts one'},
+  return h('div', {'data-policy': ''}, panel('Policy for this table', 'each key with where it was set', h('dl', {class: 'facts one'},
     resolved.map(([key, setting]) => [h('dt', null, h('code', null, key)),
       h('dd', null, setting.source === 'guardrail' ? [h('b', null, setting.value), ' · guardrail',
         setting.reason ? [h('br'), h('span', {class: 'fine'}, setting.reason)] : null]
-        : [setting.value, ' · ', sourceWords(setting.source)])])));
+        : [setting.value, ' · ', sourceWords(setting.source)])]))));
 }
 
 /** Where a policy key was set: built in, a guardrail, or the level's kind. */
