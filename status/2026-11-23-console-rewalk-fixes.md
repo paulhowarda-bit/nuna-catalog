@@ -44,7 +44,11 @@ landing.
 
 Task 4 was counted as it is once the demo runs this branch's server: the demo she walked predates the summary's new
 fields, so Governance showed "No reason recorded"; the reason ("demo-seed: compliance register", by stella) was on the
-Access tab, and the summary route returns it (`GovernanceSummaryTest`).
+Access tab, and the summary route returns it (`GovernanceSummaryTest`). Checked live on 2026-11-24 once the demo ran
+main at a168e127: the summary route gives each area its provenance, set-by and set-at, and Governance's Regulated
+areas reads "brokerage.ledger · namespace | demo-seed: compliance register | 07:17 stella | 6, 0 closed" (and
+brokerage.party), 436 px in its 472 px card. Signed in with ana's minted token: the demo's Keycloak did not answer
+then.
 
 Her findings, worst first:
 - The regulated areas table scrolled sideways at 1440 (493 px in a 472 px card), from 213's new Marked column. Fixed on
