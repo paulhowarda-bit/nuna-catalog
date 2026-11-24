@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**41 open:** 7 S, 15 M, 14 L, 5 XL.
+**46 open:** 7 S, 18 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,6 +53,11 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
+| [198](backlog/198.md) | L | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | a new server route (L: it lists names across a whole catalog or every catalog, and must list only what the caller may describe, by the same rule as the catalog list's `inCatalog` and each level's describe check, with a cap and paging), and M in the console (the Go to a path box asks it, shows recent items first, then matches with path and kind) | 2026-11-23 |
+| [199](backlog/199.md) | ? | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | the table page's tabs regrouped (Overview, Schema, History, Access, Maintenance, Audit) from today's ten panels, with redirects from the old tab keys, and the namespace and catalog pages given the same names for the same things | 2026-11-23 |
+| [200](backlog/200.md) | M | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | the rail's items renamed and re-ordered (Home, Catalog, Governance, Audit, Maintenance, Service), each shown only where the role may use it, never folded to icons, and Home routed per role | 2026-11-23 |
+| [201](backlog/201.md) | M | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | one Reading control in the header beside the catalog picker ("lakehouse @dev"), carried by every link the console builds, the tree marking the tables the ref changed, and Branches and tags reached from the control as well as the catalog's tab | 2026-11-23 |
+| [202](backlog/202.md) | M | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers | 2026-11-23 |
 
 ## Open items in full
 
@@ -2887,6 +2892,93 @@ Done looks like:
 - The console's words say what is true without Kafka; Health labels the publish figures as the Kafka copy's and hides
   or explains them when Kafka is not configured.
 - The console checked in the demo with every switch off, signed in as gary.
+
+### 198. Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1)
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/api.js catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/test/java/nuna/catalog/server/ui/ catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: L, a new server route (L: it lists names across a whole catalog or every catalog, and must list only what the caller may describe, by the same rule as the catalog list's `inCatalog` and each level's describe check, with a cap and paging), and M in the console (the Go to a path box asks it, shows recent items first, then matches with path and kind)
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F1, section 4, S1): "Go to a path" is the console's most prominent finding tool (a header box and
+the `/` key), but it finds only the names the console has listed so far: on `lakehouse` with the tree folded, `rates`
+finds nothing until markets and fx have been opened, and `journal` (a brokerage table) still finds nothing.
+`06-goto-rates.png`, `23-goto-journal.png`, `23-goto-rates-after.png`. Item 185 opens a full dotted path and says what
+was searched; it does not find a name typed alone. Atelier: "This is the biggest single gain." Her task table
+(section 3) counts the steps for finding `rates` from the landing.
+
+Done looks like: a server route lists every namespace, table and view the caller may describe whose name contains a
+fragment, for one catalog or all, with its catalog, path and kind, capped and paged; it lists nothing the caller may
+not describe (a route test per role, and a `catalog-security` review before landing); the Go to a path box shows
+recent items first, then the route's matches across catalogs; `journal` and `rates` are found from a folded tree; a
+heavy browser test and a bite for the route's describe filter.
+
+### 199. Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2)
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: M/L, the table page's tabs regrouped (Overview, Schema, History, Access, Maintenance, Audit) from today's ten panels, with redirects from the old tab keys, and the namespace and catalog pages given the same names for the same things
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F5, section 4, S2): a table has ten tabs (Overview, Schema, Snapshots, Partitioning, Properties,
+Maintenance, Governance, Grants, Audit, Metadata log); tabs differ by level (a namespace has no Branches and tags); the
+same word leads to a catalog summary in the rail and one object's page in a tab. `09-table-rates.png`,
+`61-proto-table.png`, `07-ns-markets.png`. Item 186 puts who made the current snapshot on Overview; item 192 renamed
+the table's Health tab Maintenance; item 191 moved the engine-level refs into their own panel.
+
+Done looks like: a table has six tabs: Overview (last change and by whom, size, health and governance summaries,
+refs), Schema (with partitioning and sort order), History (snapshots and metadata log merged, with who), Access
+(grants, governance attributes, holds), Maintenance (today's tab plus the table's maintenance settings), Audit (only
+for roles that may read it); Properties folds into Overview and Maintenance; old tab links (`tab=snapshots`,
+`tab=partitioning`, `tab=properties`, `tab=governance`, `tab=grants`, `tab=metadata-log`) open the tab that now holds
+them; namespaces and catalogs use the same tab names for the same things. Atelier settles any design question first
+(her review is the brief). Heavy browser tests updated, a bite for the old-tab redirects.
+
+### 200. Console: the rail by role, with distinct words and a Home per role (Atelier's review S3)
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/index.html catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/access.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, the rail's items renamed and re-ordered (Home, Catalog, Governance, Audit, Maintenance, Service), each shown only where the role may use it, never folded to icons, and Home routed per role
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F4 and F5, section 4, S3): the rail offered pages a role may not open and folded to bare icons
+on the Catalog page; "Overview" in the rail is a catalog dashboard while each page also has an Overview tab. Items
+184 (the rail follows the catalog list's `may`, each role lands where its work is) and 192 (Health became Service,
+the rail keeps its labels on the Catalog page) did the quick half. `20-audit-ana.png`, `02-catalog-engines.png`.
+
+Done looks like: the rail reads Home, Catalog, Governance, Audit, Maintenance, Service, in that order, each shown only
+where the role may use it; Home is the catalog overview for analysts, the feed for auditors, Service for operators;
+the rail is labelled on every page at desktop widths and is a drawer on a phone; old `p=overview` links open Home;
+heavy browser tests per role, a bite for Home's routing. Builds on 184 and 192 rather than redoing them.
+
+### 201. Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4)
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/main/resources/nuna/ui/refs.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/index.html catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
+- Effort: M, one Reading control in the header beside the catalog picker ("lakehouse @dev"), carried by every link the console builds, the tree marking the tables the ref changed, and Branches and tags reached from the control as well as the catalog's tab
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, findings F3 and F8, section 4, S4): reading `rates` as of `@sample`, a click in the tree dropped the ref
+without saying so; the ref is chosen on the catalog page and shown in a band, but nothing in the header says what is
+being read. `12-rates-at-sample.png`, `13-tree-click-drops-ref.png`. Item 173 made the tree and the rail's Catalog
+link carry the ref; item 191 put the engine-level refs apart from the catalog's.
+
+Done looks like: the header shows one Reading control beside the catalog picker ("lakehouse @dev ▾") on every page;
+it lists main, the catalog's branches and tags and a link to Branches and tags; every link the console builds carries
+the ref (tree, rail, crumbs, tabs, Contents, Go to a path); the band stays below; the tree's root reads
+`lakehouse @dev` and marks the tables the ref changed; heavy browser tests and a bite for a link that drops the ref.
+Builds on 173 rather than redoing it.
+
+### 202. Console: a copy pass across every page, by the words-table method (Atelier's review S5)
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/
+- Effort: M, every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers
+
+Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F10 and F17, section 4, S5): builder language remains on user screens: footnotes that name
+routes and settings keys, captions in server terms, empty states that state an absence without a way forward.
+Item 188 did the answer boxes and the refs page's captions; its note leaves the footnotes to this item.
+
+Done looks like: a words table (`docs/design/console/`) lists each page's text before and after, made with Atelier
+(chapter 6 of the wireframes gives the method); the console's text follows it; no route or settings key appears
+outside Technical details or a title; monospace only for names, paths and numbers; heavy browser tests that assert
+text updated to the new words.
 
 ## Done and dropped
 
