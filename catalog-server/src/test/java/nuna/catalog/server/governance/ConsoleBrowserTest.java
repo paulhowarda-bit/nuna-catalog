@@ -1058,8 +1058,8 @@ class ConsoleBrowserTest {
         signIn(IssuerForTests.sign(IssuerForTests.claims("tester", "nuna-console", groups.toArray(String[]::new))
                 .issueTime(Date.from(now.minusSeconds(5))).expirationTime(Date.from(until)).build()));
         driver.manage().window().setSize(new Dimension(1440, 900));
-        browser.open("/ui/#" + at("table", eu, "trades", null));
-        browser.awaitText(By.cssSelector("#table-page h1"), "trades");
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#catalog-page table.contents tr[data-kind='namespace'][data-name='" + top + "']"));
 
         WebElement count = browser.await(By.cssSelector("#who .who-groups"));
         String names = String.join(", ", groups);
@@ -1068,14 +1068,22 @@ class ConsoleBrowserTest {
         assertThat(count.getDomAttribute("tabindex")).isEqualTo("0");
         assertThat(textContent(driver.findElement(By.cssSelector("#who .who-text")))).startsWith("tester · 6 groups")
                 .contains(" · until ");
+        assertThat(headerFits()).isTrue();
         assertThat(sideways()).isFalse();
-        assertThat(driver.findElement(By.id("sign-out")).isDisplayed()).isTrue();
 
         // The names drop below the count on hover, still within the window.
         new Actions(driver).moveToElement(count).perform();
         browser.await("the groups are not named on hover", d -> String.valueOf(driver.executeScript(
                 "return getComputedStyle(arguments[0], '::after').content", count)).contains("demo-stewards"));
+        assertThat(headerFits()).isTrue();
         assertThat(sideways()).isFalse();
+    }
+
+    /** Whether the header and its last control, Sign out, end within the window. */
+    private boolean headerFits() {
+        return (Boolean) driver.executeScript("const w = document.documentElement.clientWidth;"
+                + " return document.getElementById('top').scrollWidth <= w"
+                + " && document.getElementById('sign-out').getBoundingClientRect().right <= w");
     }
 
     @Test
