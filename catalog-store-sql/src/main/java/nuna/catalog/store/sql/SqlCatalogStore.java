@@ -33,6 +33,7 @@ import nuna.catalog.store.PendingDeletion;
 import nuna.catalog.store.Pointer;
 import nuna.catalog.store.PointerKey;
 import nuna.catalog.store.Ref;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.RefEntry;
 import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.RefLimits;
@@ -81,6 +82,7 @@ public final class SqlCatalogStore implements CatalogStore {
     private final SqlNamespaces namespaces;
     private final SqlObjects objects;
     private final SqlGrants grants;
+    private final SqlRules rules;
     private final SqlIdempotency idempotency;
     private final SqlOutbox outbox;
     private final SqlGovernance governance;
@@ -111,6 +113,7 @@ public final class SqlCatalogStore implements CatalogStore {
         this.namespaces = new SqlNamespaces(transactions);
         this.objects = new SqlObjects(transactions);
         this.grants = new SqlGrants(transactions);
+        this.rules = new SqlRules(transactions);
         this.idempotency = new SqlIdempotency(transactions);
         this.outbox = new SqlOutbox(transactions);
         this.governance = new SqlGovernance(transactions);
@@ -525,6 +528,23 @@ public final class SqlCatalogStore implements CatalogStore {
     @Override
     public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
         return grants.listOn(securable, page);
+    }
+
+    // ---- row filters and column masks ----
+
+    @Override
+    public WriteResult putRule(RowColumnRule rule, String setBy, Change change) {
+        return rules.put(rule, setBy, change);
+    }
+
+    @Override
+    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, Change change) {
+        return rules.remove(catalogId, tableId, group, change);
+    }
+
+    @Override
+    public List<RowColumnRule.Stored> rulesOn(UUID tableId) {
+        return rules.on(tableId);
     }
 
     // ---- idempotency ----

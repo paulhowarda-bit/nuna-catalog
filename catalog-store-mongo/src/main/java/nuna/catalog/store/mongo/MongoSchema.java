@@ -9,6 +9,7 @@ import static nuna.catalog.store.mongo.MongoCatalogStore.HOLD;
 import static nuna.catalog.store.mongo.MongoCatalogStore.IDEMPOTENCY;
 import static nuna.catalog.store.mongo.MongoCatalogStore.JOURNAL;
 import static nuna.catalog.store.mongo.MongoCatalogStore.LIFT;
+import static nuna.catalog.store.mongo.MongoCatalogStore.RULE;
 import static nuna.catalog.store.mongo.MongoCatalogStore.DR_WATERMARK;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_JOB;
 import static nuna.catalog.store.mongo.MongoCatalogStore.MAINTENANCE_REQUEST;
@@ -218,6 +219,20 @@ final class MongoSchema {
                     }
                 }
                 index(database, LIFT, "governance_lift_by_catalog", false, null, "catalogId", "liftedAt");
+            }),
+            // D20, backlog 115: each group's row filter and column masks on a table, one document per table and group,
+            // which nuna serves to trusted engines to apply. The collection is new, made here outside any transaction,
+            // since a put inserts into it inside one; no server of the previous release touches it, so building its
+            // index locks nothing it uses.
+            new Step(14, "row column rules", database -> {
+                try {
+                    database.createCollection(RULE);
+                } catch (MongoCommandException e) {
+                    if (e.getErrorCode() != NAMESPACE_EXISTS) {
+                        throw e;
+                    }
+                }
+                index(database, RULE, "row_column_rule_key", true, null, "tableId", "group");
             }));
 
     private MongoSchema() {

@@ -53,6 +53,7 @@ import nuna.catalog.store.RefLock;
 import nuna.catalog.store.RefPointers;
 import nuna.catalog.store.SafetyFinding;
 import nuna.catalog.store.SchemaVersion;
+import nuna.catalog.store.RowColumnRule;
 import nuna.catalog.store.Securable;
 import nuna.catalog.store.StorageProfile;
 import nuna.catalog.store.StoreException;
@@ -118,6 +119,7 @@ public final class MongoCatalogStore implements CatalogStore {
     static final String DR_WATERMARK = "dr_watermark";
     static final String REF = "ref";
     static final String REF_ENTRY = "ref_entry";
+    static final String RULE = "row_column_rule";
 
     /** Projections longer than this are stored in pieces (section 7). */
     public static final int PIECE_BYTES = Pointers.PIECE_BYTES;
@@ -139,6 +141,7 @@ public final class MongoCatalogStore implements CatalogStore {
     private final MongoNamespaces namespaces;
     private final MongoObjects objects;
     private final MongoGrants grants;
+    private final MongoRules rules;
     private final MongoIdempotency idempotency;
     private final MongoOutbox outbox;
     private final MongoGovernance governance;
@@ -173,6 +176,7 @@ public final class MongoCatalogStore implements CatalogStore {
         this.namespaces = new MongoNamespaces(transactions);
         this.objects = new MongoObjects(transactions);
         this.grants = new MongoGrants(transactions);
+        this.rules = new MongoRules(transactions);
         this.idempotency = new MongoIdempotency(transactions);
         this.outbox = new MongoOutbox(transactions);
         this.governance = new MongoGovernance(transactions);
@@ -604,6 +608,23 @@ public final class MongoCatalogStore implements CatalogStore {
     @Override
     public Page<GrantRecord> listGrantsOn(Securable securable, PageRequest page) {
         return grants.listOn(securable, page);
+    }
+
+    // ---- row filters and column masks ----
+
+    @Override
+    public WriteResult putRule(RowColumnRule rule, String setBy, Change change) {
+        return rules.put(rule, setBy, change);
+    }
+
+    @Override
+    public WriteResult removeRule(UUID catalogId, UUID tableId, String group, Change change) {
+        return rules.remove(catalogId, tableId, group, change);
+    }
+
+    @Override
+    public List<RowColumnRule.Stored> rulesOn(UUID tableId) {
+        return rules.on(tableId);
     }
 
     // ---- idempotency ----

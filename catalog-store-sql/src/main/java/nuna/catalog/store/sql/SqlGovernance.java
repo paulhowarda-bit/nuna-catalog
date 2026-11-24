@@ -89,6 +89,12 @@ final class SqlGovernance {
             if (missing.isPresent()) {
                 return missing.get();
             }
+            if (takesFlag(attribute.target(), attribute.kind()) && !"true".equals(attribute.value())) {
+                Optional<WriteResult> refused = SqlRules.flagRemovalRefused(connection, attribute.target().id());
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+            }
             update(connection, "INSERT INTO governance_attribute (target_kind, target_id, kind, value, provenance, set_by,"
                             + " set_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (target_id, kind) DO UPDATE SET"
                             + " target_kind = EXCLUDED.target_kind, value = EXCLUDED.value,"
@@ -102,6 +108,12 @@ final class SqlGovernance {
     /** A DR freeze's removal is its lift, kept with who lifted it and when (backlog 133). */
     WriteResult removeAttribute(Securable target, GovernanceAttribute.Kind kind, String removedBy, Change change) {
         return transactions.change(change, "attribute remove", connection -> {
+            if (takesFlag(target, kind)) {
+                Optional<WriteResult> refused = SqlRules.flagRemovalRefused(connection, target.id());
+                if (refused.isPresent()) {
+                    return refused.get();
+                }
+            }
             Optional<GovernanceAttribute> removed = first(connection, "DELETE FROM governance_attribute"
                             + " WHERE target_id = ? AND target_kind = ? AND kind = ?"
                             + " RETURNING value, provenance, set_by, set_at",
@@ -116,6 +128,11 @@ final class SqlGovernance {
             }
             return WriteResult.APPLIED;
         });
+    }
+
+    /** Whether the write is to a table's row/column-policy flag, which rules need (backlog 115). */
+    private static boolean takesFlag(Securable target, GovernanceAttribute.Kind kind) {
+        return kind == GovernanceAttribute.Kind.ROW_COLUMN_POLICY && target.kind() == Securable.Kind.TABLE;
     }
 
     List<GovernanceAttribute> attributesOf(Set<Securable> targets) {
