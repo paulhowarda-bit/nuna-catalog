@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**46 open:** 7 S, 18 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**47 open:** 8 S, 18 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -58,6 +58,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [200](backlog/200.md) | M | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | the rail's items renamed and re-ordered (Home, Catalog, Governance, Audit, Maintenance, Service), each shown only where the role may use it, never folded to icons, and Home routed per role | 2026-11-23 |
 | [201](backlog/201.md) | M | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | one Reading control in the header beside the catalog picker ("lakehouse @dev"), carried by every link the console builds, the tree marking the tables the ref changed, and Branches and tags reached from the control as well as the catalog's tab | 2026-11-23 |
 | [202](backlog/202.md) | M | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers | 2026-11-23 |
+| [203](backlog/203.md) | S | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test | 2026-11-23 |
 
 ## Open items in full
 
@@ -2979,6 +2980,26 @@ Done looks like: a words table (`docs/design/console/`) lists each page's text b
 (chapter 6 of the wireframes gives the method); the console's text follows it; no route or settings key appears
 outside Technical details or a title; monospace only for names, paths and numbers; heavy browser tests that assert
 text updated to the new words.
+
+### 203. Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/java/nuna/catalog/server/ui/UiWiring.java catalog-server/src/test/java/nuna/catalog/server/ui/
+- Effort: S, the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test
+
+`UiWiring` serves `/ui/*` from the jar with `Cache-Control: no-cache` and the jar entry's Last-Modified, which Gradle's
+reproducible jars set to `Fri, 01 Feb 1980 00:00:00 GMT` for every file, with no ETag. A browser revalidates each
+file, the server answers 304 for every one, and the browser goes on running the console it loaded before the
+upgrade, new server or not, until its cache is cleared. Found on 2026-11-23 rebuilding the nuna-demo stack for the
+console's wayfinding: the headless Chrome kept the pre-rebuild `app.js` (no `access.js`, the rail's Service link
+`undefined`) through every reload, with `curl -D -` showing the 1980 Last-Modified and no ETag, until each file was
+fetched with `cache: 'reload'`. At work every upgrade would leave people on the old console with the new server
+behind it, and a module set that mixes old and new files can fail to load at all.
+
+Done looks like: a file whose bytes changed answers 200 with its new content on the next revalidation, and an
+unchanged one 304 by its ETag; no `/ui/` answer carries the 1980 Last-Modified; a route test fetches a file, then
+revalidates with the ETag it got (304) and with a stale one (200); a bite that sets the Last-Modified back makes it
+fail.
 
 ## Done and dropped
 
