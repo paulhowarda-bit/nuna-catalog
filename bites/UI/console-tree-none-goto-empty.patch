@@ -1,0 +1,17 @@
+Breaks: Go to a path opens empty from the tree filter's empty answer, without the words typed in the filter.
+Module: catalog-server
+Test: ConsoleBrowserTest#goToAPathOpensAFullDottedPathNotListedYet
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index 025e4b83..e99e10bd 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -767,7 +767,7 @@ document.addEventListener('click', e => {
+   else if (act === 'menu') menu();
+   else if (act === 'menu-close') menu(false);
+   else if (act === 'pick') catMenu();
+-  else if (act === 'goto') openGoto(null, t.dataset.gotoWords || '');
++  else if (act === 'goto') openGoto();
+   else if (act === 'goto-audit') openGoto('audit');
+ });
+ 
