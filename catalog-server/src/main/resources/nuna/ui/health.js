@@ -17,17 +17,17 @@ const ALERTS = [
 ];
 
 const SLOS = [
-  ['load', 'Loads and exports answered 200', 'Loads within'],
-  ['not-modified', 'Loads answered 304', '304s within'],
-  ['commit', 'Commits answered 200', 'Commits within'],
+  ['load', 'Table loads and exports', 'Loads within', 'Loads and exports answered 200'],
+  ['not-modified', 'Loads that found no change', 'Unchanged loads within', 'Loads answered 304'],
+  ['commit', 'Commits', 'Commits within', 'Commits answered 200'],
 ];
 
 /** Each SLO family with its share within the objective, as words and as a number. */
 export function sloFigures(slos) {
-  return SLOS.map(([family, label, short]) => {
+  return SLOS.map(([family, label, short, status]) => {
     const slo = slos[family] || {};
     const ratio = slo.count ? slo.within / slo.count : null;
-    return {family, label, short: `${short} ${slo['objective-ms']} ms`, slo, ratio,
+    return {family, label, status, short: `${short} ${slo['objective-ms']} ms`, slo, ratio,
       share: ratio === null ? null : (100 * ratio).toFixed(2) + '%', met: slo.met};
   });
 }
@@ -65,7 +65,7 @@ function sloScale(ratio, W) {
 }
 
 function verdict(met) {
-  return met === undefined ? muted('none in the window') : met ? pill('ok', icon('check'), 'met') : pill('bad', 'missed');
+  return met === undefined ? muted('no requests in the last day') : met ? pill('ok', icon('check'), 'met') : pill('bad', 'missed');
 }
 
 export function healthPage() {
@@ -80,9 +80,9 @@ async function catalogHealth() {
     health = await api.catalogHealth();
   } catch (error) {
     if (error.status !== 403) throw error;
-    return [pageHead({eyebrow: 'deployment · the last day, to now', title: 'Service'}),
+    return [pageHead({eyebrow: 'all catalogs · the last day', title: 'Service'}),
       h('div', {class: 'notice'}, icon('info'), h('span', {class: 'health-refused'},
-        h('b', null, 'Catalog health is shown to platform operators only.'), ' Your groups do not include one. The catalog answered:')),
+        h('b', null, 'Service is shown to platform operators only,'), ' and your groups include none. The catalog answered:')),
       failure(error, {big: true})];
   }
   const slos = sloFigures(health.slos || {});
@@ -98,7 +98,7 @@ async function catalogHealth() {
   load(store, storePanel);
   return [
     pageHead({
-      eyebrow: 'deployment · the last day, to now',
+      eyebrow: 'all catalogs · the last day',
       title: [health.silent ? `${health.answered} of ${total} servers answered. ` : `All ${plural(health.answered)} answered. `,
         !judged.length ? 'No request was timed in the window.' : missed
           ? h('span', {class: 'q'}, `${missed} latency objective${missed === 1 ? ' was' : 's were'} missed.`)
@@ -109,17 +109,17 @@ async function catalogHealth() {
     h('div', {class: 'health-figures'},
       panel('Latency objectives', 'met when 99 in 100 finish within the objective',
         tbl('slo-tbl hide-sm', ['Requests', 'Objective', ['Count', 'num'], ['Within it', 'num'], 'Share within, on a 97–100% scale', 'p99', 'Verdict'],
-          slos.map(x => h('tr', {'data-slo': x.family}, h('td', null, x.label), h('td', {class: 'tnum'}, 'p99 < ' + x.slo['objective-ms'] + ' ms'),
+          slos.map(x => h('tr', {'data-slo': x.family, title: x.status}, h('td', null, x.label), h('td', {class: 'tnum'}, 'p99 < ' + x.slo['objective-ms'] + ' ms'),
             h('td', {class: 'num'}, String(x.slo.count ?? 0)), h('td', {class: 'num'}, String(x.slo.within ?? 0)),
             h('td', {class: 'slo'}, sloScale(x.ratio, 240), x.share || ''), h('td', {class: 'tnum'}, p99(x.slo.p99) || ''),
             h('td', null, verdict(x.met)))), {id: 'health-slos'}),
-        h('div', {class: 'mslo slo only-sm'}, slos.map(x => h('div', null, h('span', null, x.short),
+        h('div', {class: 'mslo slo only-sm'}, slos.map(x => h('div', {title: x.status}, h('span', null, x.short),
           x.share ? pill(x.met ? 'ok' : x.met === false ? 'bad' : '', x.share) : muted('none'), sloScale(x.ratio, 300)))),
         h('p', {class: 'fine hide-sm'}, 'Share within the objective on a 97 to 100% scale. The tall tick is the 99% objective; a share '
           + 'below 97% points off the scale\'s left edge, with its value.')),
       h('div', {class: 'grid-3'},
         panel('Audit to Kafka', null, audit(health.audit || {}),
-          h('p', {class: 'fine'}, 'A failed publish refuses the request it audits (D23).')),
+          h('p', {class: 'fine'}, 'If an audit record cannot be published, the request it records is refused.')),
         panel('Credential vending', null, vends(health['credential-vends'] || {})),
         panel('Alerts fired', null, alerts(health.alerts || {}),
           h('p', {class: 'fine'}, 'Paging stays in your alerting; these are the last day\'s counts.'))),
@@ -227,9 +227,9 @@ async function drPanel() {
     ['lag', 'Longest lag', longest ? took(1000 * longest['lag-seconds']) : null],
   ]),
   never.length ? h('p', {class: 'fine'}, 'Never verified: no watermark yet, so the readout counts every version they '
-    + 'have. They are left out of the most and the longest.') : null,
-  more ? h('p', {class: 'fine', id: 'health-dr-more'}, `Read the first ${fmt(DR_PAGE * DR_PAGES)} by id; the most `
-    + 'and the longest are among them.') : null);
+    + 'have. They are left out of Most versions behind and Longest lag.') : null,
+  more ? h('p', {class: 'fine', id: 'health-dr-more'}, `Only the first ${fmt(DR_PAGE * DR_PAGES)} tables were checked; `
+    + 'Most versions behind and Longest lag are among those.') : null);
 }
 
 /** A list of figures, each [key, label, value]; a value that is null shows as a dash. */
@@ -266,12 +266,11 @@ async function storePanel() {
     allowed.length ? h('ul', {class: 'stack', id: 'health-store-findings'}, allowed.map(f =>
       h('li', {'data-code': f.code}, code(f.code), ' ', h('span', {class: 'fine'}, f.detail)))) : null,
     h('p', {class: 'fine'}, 'Each server checks its database\'s durability when it starts, and starts despite a finding '
-      + 'only when ', code('nuna.database.allow-unsafe'), ' names it.'),
-    h('p', {class: 'fine', id: 'health-store-pitr'}, 'The point-in-time recovery window is the one this deployment '
-      + 'declares in ', code('nuna.governance.pitr-window'), ', not read from the database. The catalog relies on it: '
-      + 'orphan removal deletes only files older than it, and a dropped table is kept longer than it, so a database '
-      + 'restored to any point within it never names a deleted file. The database\'s own backups must keep at least '
-      + 'that long; the catalog cannot check that they do.'));
+      + 'only when the deployment\'s ', h('span', {title: 'nuna.database.allow-unsafe'}, 'settings'), ' allow it.'),
+    h('p', {class: 'fine', id: 'health-store-pitr'}, 'This window is what the deployment ',
+      h('span', {title: 'nuna.governance.pitr-window'}, 'declares'), ', not something read from the database. Orphan '
+      + 'removal deletes only files older than it, and dropped tables are kept longer, so a database restored within it '
+      + 'never names a deleted file. Keep the database\'s own backups at least this long: the catalog cannot check.'));
 }
 
 /** A declared window in seconds, in whole days or hours when it is one. */
@@ -328,7 +327,7 @@ export async function workerPanel() {
       latestFailed ? ['Latest failed scan', when(latestFailed['started-at']) + ': ' + (latestFailed.error || '')] : null,
     ]),
     scans.length ? tbl('scans', ['Started', 'Took', 'Outcome', 'Failures'], shown, {id: 'health-scans'})
-      : h('p', {class: 'muted'}, 'The worker has reported no scan.'),
+      : h('p', {class: 'muted'}, 'The maintenance worker has not reported a scan. Check that it is running.'),
     h('p', {class: 'fine'}, 'A failure on one table never stops the scan; the next scan retries that table. ', more));
 }
 
@@ -345,7 +344,7 @@ export async function tableHealthTab(target, reload) {
   const inCatalog = queueOf(rows, target.catalog);
   const verdictLine = !a ? null : a['needs-compaction']
     ? h('p', {id: 'table-health-verdict'}, h('span', {class: 'pill ' + ((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn')},
-      'Needs compaction · score ' + a.score), ' ', muted('Score ' + a.score + ': ' + (a.reasons || []).join(', ')))
+      'Needs compaction · score ' + a.score), ' ', muted('Score ' + a.score + ': ' + (a.reasons || []).map(r => REASONS[r] ? REASONS[r][1].toLowerCase() : r).join(', ')))
     : h('p', {id: 'table-health-verdict'}, pill('ok', icon('check'), 'No compaction needed'), ' ',
       muted('Under every threshold of its maintenance policy.'));
   const mini = a && a['needs-compaction'] && inCatalog.some(r => keyOfRow(r) === mine) ? h('div', {class: 'iceline mini'}) : null;
@@ -368,7 +367,7 @@ export async function tableHealthTab(target, reload) {
   // Requests are main's: the worker compacts and scans main only, so a page read through a ref offers none (item 109).
   if (may && !target.ref) {
     assessment.append(h('div', {class: 'refusal-acts', id: 'table-health-acts'}, requestButtons(target, health.requests, reload),
-      h('span', {class: 'fine'}, 'Now, inside the cleanup window or outside it.')));
+      h('span', {class: 'fine'}, 'Runs at the worker\'s next scan, even outside the cleanup window.')));
   }
   const last = h('div', {class: 'panel', id: 'table-health-compaction'}, h('h2', null, 'Last compaction'), c ? facts([
     ['Outcome', compactionWords(c)[0]],

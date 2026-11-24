@@ -125,7 +125,7 @@ function onRefCell(x, path, isNamespace) {
   }
   const t = x.changed.find(c => [...c.namespace, c.name].join('.') === key);
   return t ? h('span', {class: 'on-ref'}, pill('ok', 'changed here'), ' ', badge('v' + fmt(t.version), 'strong'))
-    : h('span', {class: 'on-ref muted'}, 'as at the point');
+    : h('span', {class: 'on-ref muted'}, `not changed on @${x.ref}`);
 }
 
 /** A table's last commit: when, then by whom; an engine acting for someone names them both (12:49 by lake). */
@@ -183,7 +183,7 @@ function contentsTable(catalog, levels, x) {
       x.ref ? h('td', null, onRefCell(x, [...levels, name], false)) : null)),
   ];
   if (!rows.length) return h('div', {class: 'empty'}, h('h3', null, levels.length ? 'Nothing in this namespace' : 'No namespace in this catalog'),
-    h('p', null, 'Or nothing you may describe: the catalog lists only what your groups may see.'));
+    h('p', null, 'Or nothing your groups may see. If you expected something here, ask a grant admin.'));
   const heads = ['Name', 'Kind', 'Format', 'Tonight\'s queue', 'Governance', ['Snapshots', 'num'],
     x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean);
   // A column with nothing on any row says nothing, so it goes (Atelier's review, F16; backlog 193).
@@ -191,11 +191,9 @@ function contentsTable(catalog, levels, x) {
   const empty = heads.map((_, i) => i > 1 && rows.every(r => blank(r.children[i])));
   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
-    h('p', {class: 'fine'}, 'Only what your groups may describe is listed. ', x.ref
-      ? `The catalog keeps format, snapshots and last commit for main's metadata only, so through @${x.ref} they are left out: `
-        + 'open a table to read it as the ref has it. Maintenance and governance are main\'s, and bind the ref too.'
-      : 'Format, snapshots and last commit are what the catalog keeps of each table\'s current metadata; its health, governance '
-        + 'and history are on its own page. A namespace counts the tables beneath it that you may describe.'));
+    h('p', {class: 'fine'}, 'Only what your groups may see is listed. ', x.ref
+      ? `Through @${x.ref}, format, snapshots and last commit are left out: open a table to see it as @${x.ref} has it.`
+      : 'Open a table for its maintenance, access and history.'));
 }
 
 const countWords = (n, w) => n ? plural(n, w) : `no ${w}s`;
@@ -226,7 +224,7 @@ function catalogPage(catalog, tab, route) {
     }
     const side = h('div', {class: 'side'}, copyButton(catalog, 'Copy name'), copyLinkButton());
     const head = h('div', {class: 'ph'},
-      h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('db')), h('h1', {tabindex: '-1'}, catalog), h('code', {class: 'muted'}, 'catalog')),
+      h('div', {class: 'title-row'}, h('span', {class: 'kind'}, icon('db')), h('h1', {tabindex: '-1'}, catalog), h('span', {class: 'muted'}, 'catalog')),
       x ? h('p', {class: 'sub'}, `${countWords(x.ns.length, 'namespace')} · `,
         x.q.length ? `${plural(x.q.length, 'table')} queued for tonight` : 'nothing you may read is queued for tonight') : null,
       side);
@@ -262,12 +260,12 @@ async function catalogProperties(catalog) {
           ? 'the bucket\'s default' : sp.encryption || null],
         ['KMS key set', p['kms-key-set'] ? code(p['kms-key-set']) : null],
       ])),
-    h('div', {class: 'stack'}, h('div', {class: 'notice'}, icon('info'), h('span', null, h('b', null, 'Set in the deployment\'s configuration.'),
-      ' The Iceberg REST API has no catalog properties of its own, and the console sets none. A catalog\'s owner and '
-      + 'classification are on its ', h('a', {href: pageHref('governance', catalog, 'holds')}, 'governance'),
-      ', and how its tables are compacted, expired and cleaned is its ',
+    h('div', {class: 'stack'}, h('div', {class: 'notice'}, icon('info'), h('span', null,
+      h('b', null, 'Set when the deployment was configured; they can\'t be changed here.'),
+      ' The catalog\'s owner and classification are under ', h('a', {href: pageHref('governance', catalog, 'holds')}, 'Governance'),
+      ', and how its tables are compacted, expired and cleaned up is its ',
       h('a', {href: pageHref('maintenance', catalog), 'data-act': 'policy'}, 'maintenance policy'),
-      '. The profile\'s keys and role are never shown.'))));
+      '. Storage keys and roles are never shown.'))));
 }
 
 // ---- a namespace ----
@@ -341,6 +339,6 @@ async function refPropertiesTab(target) {
 async function propertiesTab(target, reload) {
   const ns = await api.namespace(target.catalog, target.namespace);
   return settingsTab({target, settings: NAMESPACE_SETTINGS, props: ns.properties || {}, ctx: {}, reload,
-    needs: 'the properties update an engine sends',
+    needs: 'A change here is checked and audited like an engine\'s.',
     write: (updates, removals) => api.namespaceProperties(target.catalog, target.namespace, updates, removals)});
 }

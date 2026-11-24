@@ -7,7 +7,7 @@
 import * as api from './api.js';
 import {may, operates} from './access.js';
 import {$$, badge, code, dialogForm, facts, failure, field, fill, granted, h, heldPill, frozenPill, icon, jsonPre, load,
-  muted, openDialog, panel, pill, plural, select, tbl, text, when, at, copyButton} from './dom.js';
+  muted, openDialog, panel, pill, plural, select, tbl, techDetails, text, when, at, copyButton} from './dom.js';
 import {dotted, objectHref} from './route.js';
 import {liveRefLink, refWords} from './refs.js';
 import {heldHere} from './requests.js';
@@ -15,6 +15,10 @@ import {heldHere} from './requests.js';
 export const PRIVILEGES = ['describe', 'select', 'write', 'modify', 'create', 'manage-tags', 'manage-grants'];
 const CLASSES = ['public', 'internal', 'confidential', 'restricted'];
 const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', 'row-column-policy'];
+/** Each attribute in words, its key one hover away (Atelier's words table, T10). */
+const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'retention-class': 'Retention class',
+  regulated: 'Regulated area', 'row-column-policy': 'Row and column policy'};
+const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
 
 const what = target => target.kind === 'catalog' ? target.catalog : dotted(target);
 const lastWord = target => target.name || (target.namespace.length ? target.namespace[target.namespace.length - 1] : target.catalog);
@@ -142,7 +146,7 @@ export async function governanceTab(target, reload) {
   const freezes = target.kind === 'namespace' && operates();
   const left = h('div', {class: 'panel', id: 'governance'}, h('h2', null, 'Governance ', h('span', {class: 'meta'}, 'each value with where it was set')),
     status,
-    facts(ATTRIBUTES.map(name => [name, valueWithSource(name)]), 'effective'),
+    facts(ATTRIBUTES.map(name => [attributeLabel(name), valueWithSource(name)]), 'effective'),
     !tags ? null : h('div', {class: 'refusal-acts', 'data-acts': 'labels'},
       h('button', {class: 'btn sm', type: 'button', 'data-label': 'classification', onclick: () => classify(target, effective.classification, reload)},
         effective.classification ? 'Change the classification' : 'Set a classification'),
@@ -169,7 +173,7 @@ export async function governanceTab(target, reload) {
     : h('p', {class: 'muted'}, 'None, here or above.'));
   const attributes = panel('Attributes', 'nearest level first', attrs.length
     ? tbl('attributes stack-line', ['Attribute', 'Value', 'Level', 'Provenance', 'Set'], attrs.map(a => h('tr', null,
-      h('td', {class: 'name'}, a.attribute), h('td', {class: 'wrap'}, a.value), h('td', null, levelLabel(a.level, here, levels)),
+      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, a.value), h('td', null, levelLabel(a.level, here, levels)),
       h('td', {class: 'muted wrap'}, a.provenance), h('td', null, h('span', {class: 'tnum'}, at(a['set-at'])), ' ', muted(a['set-by'])))))
     : h('p', {class: 'muted'}, 'No attribute set here or above.'));
   const enforced = panel('What the catalog enforces', target.kind === 'namespace' || target.kind === 'catalog' ? 'beneath it' : 'on every call',
@@ -247,8 +251,8 @@ function setRetentionClass(target, current, reload) {
   load(body, async () => {
     const classes = (await api.policy(target))['retention-classes'] || [];
     if (!classes.length) {
-      return h('p', {class: 'muted', 'data-none': ''}, 'This server has no retention class to choose from. A platform operator '
-        + 'names them in its configuration, nuna.governance.retention-classes.');
+      return h('p', {class: 'muted', 'data-none': '', title: 'nuna.governance.retention-classes'}, 'No retention classes are set '
+        + 'up on this server yet. Ask a platform operator to add them.');
     }
     const options = classes.map(c => [c.name, c['minimum-snapshot-age']
       ? `${c.name} · snapshots kept at least ${ageWords(c['minimum-snapshot-age'])}` : `${c.name} · no minimum age`]);
@@ -517,12 +521,32 @@ export function grantsTab(target) {
   return h('div', {class: 'grid-21 grants-here'}, reach,
     h('div', {class: 'stack'}, who,
       panel(`Grant on this ${target.kind}`, null, form, out,
-        h('p', {class: 'fine'}, 'Needs ', code('manage-grants'), '. A group that manages grants holds no other duty, and data and tags '
-          + 'never share a group: the catalog refuses a grant that would break that, and the refusal shows here as it answered.')),
+        h('p', {class: 'fine'}, 'A group that manages grants holds no other duty, and data and tags never share a group: the '
+          + 'catalog refuses a grant that would break that.')),
       panel('Your groups\' grants', `in ${target.catalog}`, mine)));
 }
 
 // ---- the audit trail ----
+
+/** Iceberg's update actions in words (Atelier's words table, T5); an action not listed shows as it is. */
+const ACTION_WORDS = {
+  'add-snapshot': 'snapshot added', 'remove-snapshots': 'snapshots expired',
+  'set-snapshot-ref': 'ref moved', 'remove-snapshot-ref': 'ref removed',
+  'add-schema': 'schema added', 'set-current-schema': 'schema changed', 'remove-schemas': 'old schemas removed',
+  'add-spec': 'partition spec added', 'set-default-spec': 'partitioning changed', 'remove-partition-specs': 'old specs removed',
+  'add-sort-order': 'sort order added', 'set-default-sort-order': 'sort order changed',
+  'set-properties': 'properties set', 'remove-properties': 'properties removed',
+  'set-location': 'location set', 'upgrade-format-version': 'format upgraded', 'assign-uuid': 'id assigned',
+  'set-statistics': 'statistics updated', 'remove-statistics': 'statistics updated',
+  'set-partition-statistics': 'statistics updated', 'remove-partition-statistics': 'statistics updated',
+};
+
+/** A commit's update actions in words, each once, in order; beside a snapshot added, main moving to it goes unsaid. */
+export function actionWords(updates) {
+  const actions = (updates || []).map(u => u.action);
+  const added = actions.includes('add-snapshot');
+  return [...new Set(actions.filter(a => !(added && a === 'set-snapshot-ref')).map(a => ACTION_WORDS[a] || a))];
+}
 
 /** A record's branch field: main, or the catalog ref it went through, as @name (item 109). */
 const onRef = branch => !branch || branch === 'main' ? 'main' : '@' + branch;
@@ -531,7 +555,7 @@ const onRef = branch => !branch || branch === 'main' ? 'main' : '@' + branch;
 export function describe(type, d, catalog) {
   switch (type) {
     case 'commit': return `version ${d.before ? d.before.version : '–'} → ${d.after ? d.after.version : '–'} on ${onRef(d.branch)}; `
-      + (Array.isArray(d.updates) ? d.updates.map(u => u.action).join(', ') : '');
+      + (Array.isArray(d.updates) ? actionWords(d.updates).join(', ') : '');
     case 'read': return `loaded version ${d.served ? d.served.version : '–'} of ${onRef(d.branch)}`;
     case 'ref': return catalog ? [refWords(d), liveRefLink(catalog, d)] : refWords(d);
     case 'denial': return `refused ${d.operation}${d.privilege ? ' (needs ' + d.privilege + ')' : ''}: ${d.reason}`;
@@ -566,7 +590,7 @@ function feedRow(r) {
   h('span', {class: 't'}, when(r.time)),
   h('span', {class: 'w'}, h('b', null, actor.principal || '–'), actor.endUser ? [' for ', h('b', null, actor.endUser)] : null,
     h('br'), h('span', {class: 'via'}, actor.engine ? 'via ' + actor.engine : '')),
-  h('div', null, badge(r.type || type), h('p', {class: 'what'}, describe(type, d))), btn);
+  h('div', null, h('span', {class: 'badge', title: r.type || type}, type), h('p', {class: 'what'}, describe(type, d))), btn);
   btn.addEventListener('click', () => {
     const open = btn.getAttribute('aria-expanded') === 'true';
     btn.setAttribute('aria-expanded', String(!open));
@@ -612,13 +636,14 @@ export function auditTab(target, {title} = {}) {
       }}, label + ' ', h('span', {class: 'n'}, String(k === 'all' ? records.length : counts[k])))));
     const people = [...new Set(records.map(r => ((r.data || {}).actor || {}).principal).filter(Boolean))].sort();
     fill(who, h('option', {value: ''}, 'Anyone'), people.map(p => h('option', {value: p}, p)));
-    fill(windowBox, panel('What was read', null, facts([
+    fill(windowBox, panel('How far back this goes', null, facts([
+      ['Complete', w.complete ? 'Yes: every record still kept is shown.'
+        : [h('b', null, 'No.'), ' Older records may exist beyond the scanned window: search the SIEM for the full trail.']],
+    ]), techDetails(facts([
       ['Topic', [code(w.topic || ''), `, partition ${w.partition}`]],
       ['Offsets', [code(String(w['from-offset'])), ' to ', code(String(w['to-offset']))]],
       ['Scan limit', String(w['scan-limit'] ?? '')],
-      ['Complete', w.complete ? 'Yes: it reaches the oldest record the topic still holds.'
-        : [h('b', null, 'No.'), ' Older records may exist beyond the scanned window: search the SIEM for the full trail.']],
-    ]), h('p', {class: 'fine window'}, `Read from ${w.topic}, partition ${w.partition}, offsets ${w['from-offset']} to ${w['to-offset']}.`)));
+    ]), h('p', {class: 'fine window'}, `Read from ${w.topic}, partition ${w.partition}, offsets ${w['from-offset']} to ${w['to-offset']}.`))));
     setTimeout(apply);
     return records.length ? records.map(feedRow)
       : h('p', {class: 'muted feed-none'}, `No audit record about this ${target.kind} in the scanned window.`);
@@ -637,5 +662,5 @@ export function auditTab(target, {title} = {}) {
         status, feed)),
     h('div', {class: 'stack'}, windowBox,
       panel('Archive', null, h('p', {class: 'fine'}, 'Changes reach a hash-chained archive kept at least five years. '
-        + 'Each record\'s place in the chain is shown with the catalog-wide feed.'))));
+        + 'Each record\'s place in the chain is on the Audit page.'))));
 }

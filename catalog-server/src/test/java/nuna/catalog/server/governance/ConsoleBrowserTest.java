@@ -543,9 +543,9 @@ class ConsoleBrowserTest {
         assertThat(frozen.getText()).contains("DR freeze in force", FREEZE_REASON);
         assertThat(browser.await(By.cssSelector("#governance .status-held")).getText()).startsWith("1 legal hold");
 
-        assertThat(fact("owner")).startsWith("desk-a ").contains("inherited from namespace " + top);
-        assertThat(fact("classification")).startsWith("internal ").contains("this table");
-        assertThat(fact("retention-class")).isEqualTo("–");
+        assertThat(fact("Owner")).startsWith("desk-a ").contains("inherited from namespace " + top);
+        assertThat(fact("Classification")).startsWith("internal ").contains("this table");
+        assertThat(fact("Retention class")).isEqualTo("–");
 
         List<WebElement> holds = driver.findElements(By.cssSelector("#table-page tr[data-hold]"));
         assertThat(holds).hasSize(1);
@@ -553,8 +553,8 @@ class ConsoleBrowserTest {
         assertThat(cell(holds.get(0), 2)).isEqualTo("inherited from namespace " + top + ".equities");
         assertThat(cell(holds.get(0), 3)).endsWith("stella");
         assertThat(rows(panel("Attributes"))).extracting(row -> row.get(0) + " = " + row.get(1) + " @ " + row.get(2))
-                .contains("classification = internal @ this table",
-                        "owner = desk-a @ inherited from namespace " + top);
+                .contains("Classification = internal @ this table",
+                        "Owner = desk-a @ inherited from namespace " + top);
 
         // The level above sees the same hold as its own, and no freeze.
         browser.open("/ui/#" + at("namespace", equities, null, "governance"));
@@ -816,7 +816,8 @@ class ConsoleBrowserTest {
                 .isEqualTo(JsonPath.<String>read(answer.body(), "$.error.message"));
         assertThat(refusal.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid")).isNotBlank();
         // The catalog's own records, from the audit topic, for whoever manages its grants.
-        browser.await(By.cssSelector("#audit-page #audit p.window"));
+        browser.await("the catalog's own trail did not load",
+                d -> d.findElements(By.cssSelector("#audit-page #audit p.window")).isEmpty() ? null : true);
         browser.await("the audit figures are shown without the audit tables",
                 d -> d.findElements(By.id("audit-kpis")).isEmpty());
 
@@ -873,7 +874,7 @@ class ConsoleBrowserTest {
         String table = api.id(String.join("\u001f", eu), "tables", "trades");
         assertThat(JsonPath.<String>read(raw, "$.subject")).isEqualTo(table);
         assertThat(JsonPath.<String>read(raw, "$.type")).isEqualTo("nuna.catalog.denial");
-        assertThat(browser.await(By.cssSelector("#audit p.window")).getText())
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit p.window"))))
                 .startsWith("Read from nuna.catalog.audit, partition ");
 
         // The kind chips keep only the refusals.

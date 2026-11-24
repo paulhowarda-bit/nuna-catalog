@@ -5,7 +5,7 @@ import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, sta
   from './auth.js';
 import * as api from './api.js';
 import {auditOpen, groupWords, keepAccess, landingCatalogs, operates, readsData} from './access.js';
-import {$, $$, at, failure, fill, fmt, h, icon, pill, plural} from './dom.js';
+import {$, $$, at, failure, fill, fmt, h, icon, pill, plural, techDetails} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
@@ -208,8 +208,8 @@ function showWho() {
   const initials = String(name).split(/[^A-Za-z0-9]+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
   for (const n of $$('[data-initials]')) n.textContent = initials;
   const who = $('#who');
-  who.title = 'From the token, as the browser reads it; the server decides what it allows.'
-    + (until ? ' The token lasts until ' + at(until) + '.' : '');
+  who.title = (until ? 'Signed in until ' + at(until) + '. ' : '')
+    + 'The catalog checks what you may do on every request.';
   fill($('.who-text', who), h('b', null, h('strong', null, name)), groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null);
   for (const p of $$('p[data-who]', navEl)) {
     p.textContent = `Signed in as ${name}${groups.length ? ' · ' + groups.join(', ') : ''}${until ? ' · until ' + at(until) : ''}`;
@@ -279,8 +279,8 @@ function signInPage(message, again) {
   if (config.oidc) {
     const host = new URL(config.oidc.issuer).host;
     const status = h('div', {'aria-live': 'polite'});
-    form.append(h('p', {class: 'muted'}, 'Your organisation\'s sign-in page opens. The console keeps the token in this tab only, and the '
-      + 'catalog checks it on every call.'),
+    form.append(h('p', {class: 'muted'}, 'Your organisation\'s sign-in page opens, then brings you back here. Your sign-in lasts in '
+      + 'this tab only.'),
     h('button', {class: 'btn primary lg', type: 'button', 'data-act': 'signin', onclick: async () => {
       fill(status, h('p', {class: 'loading-line'}, 'Going to ' + host + '…'));
       try {
@@ -295,8 +295,9 @@ function signInPage(message, again) {
     const status = h('div', {'aria-live': 'polite'});
     if (config.oidc) form.append(h('div', {class: 'or'}, 'development only'));
     form.append(h('div', null,
-      h('p', {class: 'fine'}, h('b', null, 'Paste a bearer token.'), ' Shown because this server sets ', h('code', null, 'nuna.ui.dev-token-login=true'), '.'),
-      box, h('p', {class: 'fine'}, 'Kept in this tab only and sent as a bearer token; the server checks it on every call.')),
+      h('p', {class: 'fine', title: 'nuna.ui.dev-token-login=true'}, h('b', null, 'Paste a bearer token.'),
+        ' For development only: this server allows signing in with one.'),
+      box, h('p', {class: 'fine'}, 'Kept in this tab only.')),
     h('button', {class: 'btn' + (config.oidc ? '' : ' primary'), type: 'button', 'data-act': 'signin-token', onclick: () => {
       try {
         useToken(box.value);
@@ -307,9 +308,10 @@ function signInPage(message, again) {
     }}, 'Use this token'), status);
   }
   if (!config.oidc && !config['dev-token-login']) {
-    form.append(h('p', {class: 'notice'}, icon('info'), h('span', null, 'No sign-in is configured on this server. An operator sets ',
-      h('code', null, 'nuna.ui.oidc.issuer'), ' and ', h('code', null, 'nuna.ui.oidc.client-id'), ' (or, for local development only, ',
-      h('code', null, 'nuna.ui.dev-token-login=true'), ').')));
+    form.append(h('div', {class: 'notice'}, icon('info'), h('div', null, 'No sign-in is set up on this server. Ask whoever runs nuna '
+      + 'to connect your organisation\'s sign-in.',
+    techDetails(h('p', null, 'An operator sets ', h('code', null, 'nuna.ui.oidc.issuer'), ' and ', h('code', null, 'nuna.ui.oidc.client-id'),
+      ' (or, for local development only, ', h('code', null, 'nuna.ui.dev-token-login=true'), ').')))));
   }
   fill(signinEl, h('main', {class: 'signin', id: 'signin-page'},
     h('div', {class: 'signin-side'}, brand(), h('h2', null, CLAIM),
@@ -806,7 +808,8 @@ async function boot() {
   } catch (error) {
     $('#booting').hidden = true;
     signinEl.hidden = false;
-    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true, title: 'The console could not read its settings, /ui/config.json'}),
+    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true, title: 'The console could not start: it could not load its settings.',
+      tech: 'GET /ui/config.json'}),
       h('button', {class: 'btn sm', type: 'button', 'data-act': 'try-again', onclick: () => location.reload()}, 'Try again')));
     return;
   }
@@ -819,7 +822,7 @@ async function boot() {
     }
   }
   if (signedIn()) await start();
-  else signedOut(signingOut ? 'Signed out.' : claims() ? 'The token has expired. Sign in again.' : null);
+  else signedOut(signingOut ? 'Signed out.' : claims() ? 'Your sign-in has expired. Sign in again.' : null);
 }
 
 boot();

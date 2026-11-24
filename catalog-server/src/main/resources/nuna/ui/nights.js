@@ -44,9 +44,9 @@ export function lastNightPanel(nights) {
   return h('div', {class: 'panel', id: 'last-night', 'data-night': t.night},
     h('h2', null, 'Last night ', h('span', {class: 'meta'}, `${dayWords(t.night)} · ${hm(t.opens)} to ${hm(t.closes)}`
       + (slots ? ` · ${plural(slots, 'slot')}` : ''))),
-    jobs.length ? [chart, h('p', {class: 'fine'}, 'Dashed line: the window\'s end. A job cut off there keeps every file group it '
-      + 'finished. A job names its table only if you may read it; every catalog\'s jobs are drawn.')]
-      : h('p', {class: 'muted'}, 'No compaction Job or orphan scan ran that night; the night\'s round-the-clock work is counted below.'),
+    jobs.length ? [chart, h('p', {class: 'fine'}, 'Dashed line: the end of the cleanup window. A job cut off there keeps the work it '
+      + 'finished. Jobs on tables you may not read are drawn without a name.')]
+      : h('p', {class: 'muted'}, 'No compaction or orphan scan ran that night. Work done at other hours is counted below.'),
     h('div', {class: 'kpi-list gantt-sum'},
       h('div', null, h('span', null, 'Compaction jobs finished'), h('b', null, fmt(n(t['tables-compacted'])))),
       h('div', null, h('span', null, `Cut off at ${hm(t.closes)}`), h('b', {class: n(t['jobs-cut-off']) ? 'warn-n' : null}, fmt(n(t['jobs-cut-off'])))),
@@ -70,7 +70,7 @@ function gantt(host, W, t, jobs, slots) {
   const px = ms => X0 + (Math.min(Math.max(ms, t0), t1) - t0) / Math.max(1, t1 - t0) * (X1 - X0);
   const bottom = TOP + lanes * (LH + LG);
   const svg = s('svg', {viewBox: `0 0 ${W} ${bottom + 22}`, role: 'group',
-    'aria-label': `Jobs of the night of ${t.night}, from ${hm(t.opens)} to ${hm(t.closes)}: ${plural(jobs.length - scans.length, 'compaction Job')} `
+    'aria-label': `Jobs of the night of ${t.night}, from ${hm(t.opens)} to ${hm(t.closes)}: ${plural(jobs.length - scans.length, 'compaction job')} `
       + `on ${plural(slots, 'slot')} and ${plural(scans.length, 'orphan scan')}.`});
   for (let i = 0; i < lanes; i++) {
     const y = TOP + i * (LH + LG);

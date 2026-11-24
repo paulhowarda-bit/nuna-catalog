@@ -82,12 +82,12 @@ export function requestButtons(target, requests, done) {
 }
 
 const INTRO = {
-  'compaction': path => ['The worker compacts ', code(path), ' as one Job at its next scan, inside its cleanup window or '
-    + 'outside it, in the first of its compaction slots to come free, whatever its last assessment says. The Job stops at '
-    + 'the request\'s deadline and keeps every file group it finished.'],
+  'compaction': path => ['The worker compacts ', code(path), ' at its next scan, in or out of its cleanup window, as soon as '
+    + 'a compaction slot is free, whatever its last assessment says. It stops at the request\'s deadline and keeps the work '
+    + 'it finished.'],
   'orphan-scan': path => ['The worker lists the location of ', code(path), ' at its next scan, inside its cleanup window or '
-    + 'outside it, and records each file nothing references, older than its policy\'s orphan-removal.older-than, for '
-    + 'deletion once the database\'s PITR window has passed. A scan the request\'s deadline stops records nothing.'],
+    + 'outside it, and records each file nothing refers to that is older than its policy\'s orphan-removal age, for '
+    + 'deletion once the database\'s recovery window has passed. A scan stopped at the deadline records nothing.'],
 };
 
 /** Asks for one job now, in a dialog that shows the catalog's answer, a refusal as it came. */
@@ -95,8 +95,8 @@ export function askDialog(target, job, done) {
   const j = JOBS[job];
   const path = [...target.namespace, target.name].join('.');
   const body = h('div', null, h('p', null, INTRO[job](path)),
-    h('p', {class: 'fine'}, 'Needs ', code('modify'), ' on the table. Refused under a DR freeze, an orphan scan under a '
-      + 'legal hold, and a job the table\'s maintenance policy turns off.'),
+    h('p', {class: 'fine'}, 'Needs ', code('modify'), ' on the table. The catalog refuses it during a DR freeze, refuses an '
+      + 'orphan scan while the table is on legal hold, and refuses a job the table\'s policy turns off.'),
     dialogForm(null, j.button, async (form, out) => {
       const answer = await api.requestMaintenance(target, job);
       const r = answer.body || {};

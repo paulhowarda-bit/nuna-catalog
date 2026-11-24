@@ -196,7 +196,7 @@ class ConsoleSignInTest {
         RemoteWebDriver driver = browser.session();
         // No sign-in started in this tab.
         browser.open("/ui/?code=forged&state=forged");
-        browser.awaitText(By.cssSelector("main .notice"), "does not match a sign-in this tab started");
+        browser.awaitText(By.cssSelector("main .notice"), "This sign-in was not started in this tab");
 
         // A sign-in started here, then an answer carrying another state: refused before any code is traded.
         browser.open("/ui/");
@@ -204,7 +204,7 @@ class ConsoleSignInTest {
         assertThat(driver.getCurrentUrl()).contains("code_challenge_method=S256").contains("code_challenge=");
         browser.open("/ui/?code=forged&state=forged");
         browser.awaitText(By.cssSelector("main .notice"),
-                "The sign-in answer does not match a sign-in this tab started; start again.");
+                "This sign-in was not started in this tab, or has expired. Start again.");
         assertThat(driver.getCurrentUrl()).doesNotContain("code=", "state=");
         assertThat(storageKeys("sessionStorage")).doesNotContain("nuna.token", "nuna.oidc.pending");
         assertThat(driver.findElement(By.id("who")).getText()).isEmpty();

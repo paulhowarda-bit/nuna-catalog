@@ -174,7 +174,7 @@ function draw(st) {
   };
   walk([], 1);
   st.ul.replaceChildren(...items);
-  if (f && items.length === 1) st.ul.append(h('li', {class: 'tree-none muted'}, `No name listed so far in ${c} matches.`));
+  if (f && items.length === 1) st.ul.append(h('li', {class: 'tree-none muted'}, `No open namespace in ${c} holds a matching name. Open more of the tree, or use Go to a path.`));
 }
 
 /** What the tree has listed beneath a level so far, or null. */
