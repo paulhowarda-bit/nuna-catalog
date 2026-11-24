@@ -8,7 +8,7 @@
 #                         (turns ss on too: the generator writes orders to SingleStore)
 #   demo/demo.sh gen stop turn the generator off, and Kafka with it unless the CDC leg runs
 #   demo/demo.sh ss       turn on SingleStore, with its sample databases and change feeds
-#   demo/demo.sh ss stop  turn SingleStore off (and gen, which needs it); its databases go with it
+#   demo/demo.sh ss stop  turn SingleStore off (and gen, which needs it); its databases stay on its volume
 #   demo/demo.sh engines  run the engine matrix (Spark, Kafka Connect, PyIceberg, SingleStore) against the stack
 #   demo/demo.sh token    print the URLs and the tokens again (re-mints them if they have expired)
 #   demo/demo.sh sql      open a SingleStore prompt (databases ops, lake and brokerage)
@@ -23,8 +23,10 @@
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the deployments, pods and services, and Kafka Connect's connectors
-#   demo/demo.sh down     delete the namespace and the compaction Jobs' one, and everything in them (keeps the
-#                         signing key, tokens, Keycloak keys and the certificate)
+#   demo/demo.sh down     stop and delete everything but the data: PostgreSQL's, Silo's, Kafka's and SingleStore's
+#                         volumes stay, and the next up carries on from them (the CDC leg is deleted, as cdc stop does)
+#   demo/demo.sh wipe     down, and delete the volumes too: the next up writes fresh sample data (keeps the signing
+#                         key, tokens, Keycloak keys and the certificate, as down does)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
 # Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
@@ -120,9 +122,13 @@ fill() {
     "$STACK/$1"
 }
 
-# A manifest from demo/k8s, filled in and applied; or deleted, with whatever of it is there.
+# A manifest from demo/k8s, filled in and applied; or deleted, with whatever of it is there but its volume claims,
+# which keep the data for the next start (backlog 237; demo.sh wipe deletes them).
 apply() { fill "$1" | k apply -f - >/dev/null; }
-unapply() { fill "$1" | k delete --ignore-not-found -f - >/dev/null; }
+unapply() {
+  fill "$1" | awk 'BEGIN { RS = "\n---\n"; ORS = "\n---\n" } !/\nkind: PersistentVolumeClaim\n/' \
+    | k delete --ignore-not-found -f - >/dev/null
+}
 
 # The switches gen and ss (D50): on or off, kept across ups (and the overnight run's rebuild) in $SWITCHES, one
 # name a line; all off on a new machine. The third switch, cdc, is on while its leg's deployments exist, and down
@@ -621,8 +627,8 @@ seed() {
   k create configmap demo-seeded >/dev/null
 }
 
-# SingleStore's databases, once per pod (done when ops exists; a new pod starts empty, and seed empties a running
-# one when it makes a new lake).
+# SingleStore's databases, once per volume (done when ops exists; a new or wiped volume starts empty, and seed
+# empties a running one when it makes a new lake).
 ss_seed() {
   if [[ -n "$(echo "SHOW DATABASES LIKE 'ops';" | s2)" ]]; then
     echo "SingleStore already holds the sample data"
@@ -660,14 +666,14 @@ ss_start() {
   fi
 }
 
-# SingleStore keeps no volume, so its databases go with it; ss loads them again. The generator writes orders to
-# it, so gen goes off first.
+# SingleStore's databases stay on its volume (backlog 237), and ss carries on from them. The generator writes
+# orders to it, so gen goes off first.
 ss_stop() {
   if is_on gen; then
     gen_stop
   fi
   set_switch ss off
-  say "stopping SingleStore (its databases go with it; demo/demo.sh ss loads them again)"
+  say "stopping SingleStore (its databases stay on its volume for demo/demo.sh ss)"
   unapply singlestore.yaml
   k wait --for=delete pod -l app=singlestore --timeout=3m >/dev/null 2>&1 || true
 }
@@ -681,7 +687,8 @@ start_kafka() {
   k patch deployment kafka-ui --type strategic --patch "$(fill kafka-ui-signin.yaml)" >/dev/null
   k wait --for=condition=available --timeout=8m deployment/kafka deployment/kafka-ui >/dev/null
 }
-# Kafka keeps no volume: what is in it goes with it. Kafka Connect, which keeps its offsets in Kafka, goes first.
+# Kafka's topics stay on its volume (backlog 237), Kafka Connect's offsets among them, so the generator and the sink
+# carry on where they stopped. Kafka Connect goes first.
 stop_kafka() {
   kafka_needed && return 0
   running kafka || running connect || return 0
@@ -1141,7 +1148,9 @@ EOF
 # next cdc starts from nothing; the history tables stay, for Trino to read, and Kafka and Kafka Connect stay only
 # while gen is on. The topics go after the connectors, which would otherwise write them again, and from a pod
 # of their own: a Kafka tool in the broker's pod could push it past its memory limit.
-cdc_stop() {
+# The CDC leg's connectors (and their offsets), databases and Kafka topics; Kafka Connect and the history tables stay.
+# Its databases keep no volume, so their topics and offsets go with them: a later cdc starts the leg anew.
+cdc_delete() {
   say "deleting the CDC leg: its connectors, databases and Kafka topics (Kafka Connect and the history tables stay)"
   cdc_connectors_delete
   k delete deployment,service,configmap -l nuna-demo/cdc=true --ignore-not-found >/dev/null
@@ -1155,6 +1164,10 @@ cdc_stop() {
       for group in $($bin/kafka-consumer-groups.sh $kafka --list | grep -E "backoffice|oracle|cockroach"); do
         $bin/kafka-consumer-groups.sh $kafka --delete --group "$group" >/dev/null
       done' >/dev/null
+}
+
+cdc_stop() {
+  cdc_delete
   say "starting Trino again"
   k scale deployment/trino --replicas=1 >/dev/null
   audit_writer
@@ -1195,12 +1208,12 @@ up() {
   # silo-signin.yaml's patch replaces Silo's pod, and the new one waits for Keycloak: until the rollout ends,
   # the old pod answers alone, and a bucket made in it goes with it.
   k rollout status deployment/s3 --timeout=8m >/dev/null
-  # The seed job makes the warehouse bucket. It runs on every up: a new Silo pod starts without it.
+  # The seed job makes the warehouse bucket if Silo's volume does not hold it yet (a new or wiped one).
   k delete job seed --ignore-not-found >/dev/null
   apply seed.yaml
   k wait --for=condition=complete --timeout=3m job/seed >/dev/null
   # Silo's policy warehouse-read, which Keycloak's client role of that name gives ana and presenter in Silo's
-  # console (silo-signin.yaml): Silo keeps it only for the pod's life, as it keeps the bucket.
+  # console (silo-signin.yaml): Silo keeps it on its volume, and making it again replaces it with the file's.
   k exec -i deployment/s3 -c silo -- sh -c 'cat > /tmp/warehouse-read.json &&
     mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
     mc admin policy create l warehouse-read /tmp/warehouse-read.json >/dev/null' < "$STACK/silo-warehouse-read.json"
@@ -1270,6 +1283,29 @@ up() {
     maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
   fi
   print_access
+}
+
+# Everything stops and goes but the data (backlog 237): the volume claims, PostgreSQL's, Silo's, Kafka's and
+# SingleStore's, and configmap demo-seeded, which says the sample data in them is complete. The namespace stays, as
+# the claims are in it; demo.sh wipe deletes it. The CDC leg goes as cdc stop deletes it: its databases keep no
+# volume, so the offsets Kafka keeps for them must go too. The compaction Jobs' namespace holds nothing to keep.
+down() {
+  local release
+  kubectl --context "$CONTEXT" get namespace "$NS" >/dev/null 2>&1 || return 0
+  if cdc_running; then
+    cdc_delete || say "the CDC leg was not cleanly deleted (see above): its Kafka topics or offsets may be left"
+  fi
+  for release in $(helm --kube-context "$CONTEXT" -n "$NS" list -q 2>/dev/null); do
+    helm --kube-context "$CONTEXT" -n "$NS" uninstall "$release" --wait >/dev/null 2>&1 || true
+  done
+  say "deleting namespace $NS's pods and settings; its volumes stay (demo/demo.sh wipe deletes them)"
+  k delete deployment,statefulset,job,service,secret,poddisruptionbudget,role,rolebinding,networkpolicy,ingress \
+    --all --ignore-not-found --wait=true >/dev/null
+  k delete configmap --field-selector 'metadata.name!=demo-seeded,metadata.name!=kube-root-ca.crt' \
+    --ignore-not-found >/dev/null
+  k delete serviceaccount --field-selector metadata.name!=default --ignore-not-found >/dev/null
+  k delete pod --all --ignore-not-found --wait=true >/dev/null
+  kubectl --context "$CONTEXT" delete namespace "$NS-compaction" --ignore-not-found --wait=true >/dev/null
 }
 
 # The memory the CDC leg holds is what Spark's Job and the lake writer's need.
@@ -1418,11 +1454,15 @@ case "${1:-}" in
     fi
     ;;
   down)
-    helm --kube-context "$CONTEXT" -n "$NS" uninstall "$RELEASE" --wait 2>/dev/null || true
-    kubectl --context "$CONTEXT" delete namespace "$NS" "$NS-compaction" --ignore-not-found --wait=true
+    down
+    ;;
+  wipe)
+    down
+    say "deleting namespace $NS with its volumes: PostgreSQL's, Silo's, Kafka's and SingleStore's data"
+    kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
     ;;
   *)
-    sed -n '2,32p' "$0"
+    sed -n '2,34p' "$0"
     exit 2
     ;;
 esac

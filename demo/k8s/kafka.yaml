@@ -2,12 +2,16 @@
 # key server. EngineMatrixTest applies both. demo/demo.sh applies this only while the brokerage world's generator
 # or the CDC leg runs (demo.sh gen, demo.sh cdc; D50): the catalog audits to its log, not to Kafka (D23, amended
 # 2026-11-23). No pod gets Service environment variables: the Kafka image reads every KAFKA_* variable as broker
-# configuration.
+# configuration. Kafka keeps its topics on a volume (claim kafka-data, below; backlog 237), so the generator and
+# Kafka Connect's sink carry on from their offsets after demo.sh down and up, or gen stop and gen.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: kafka
 spec:
+  # One broker at a time on the volume.
+  strategy:
+    type: Recreate
   selector:
     matchLabels: {app: kafka}
   template:
@@ -32,14 +36,33 @@ spec:
             - {name: KAFKA_TRANSACTION_STATE_LOG_MIN_ISR, value: "1"}
             - {name: KAFKA_AUTO_CREATE_TOPICS_ENABLE, value: "true"}
             - {name: KAFKA_HEAP_OPTS, value: "-Xms256m -Xmx256m"}
+            # The volume holds the log, formatted for this cluster id: named, so a later start finds it its own.
+            - {name: CLUSTER_ID, value: "5L6g3nShT-eMCtK--X86sw"}
+            - {name: KAFKA_LOG_DIRS, value: /var/lib/kafka/data/logs}
           ports:
             - containerPort: 9092
           readinessProbe:
             tcpSocket:
               port: 9092
             periodSeconds: 2
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/kafka/data}
           resources:
             limits: {memory: 640Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: kafka-data}
+---
+# Kafka's topics, Kafka Connect's offsets among them. demo.sh down, gen stop and cdc stop keep it; demo.sh wipe
+# deletes it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kafka-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 5Gi}
 ---
 apiVersion: v1
 kind: Service

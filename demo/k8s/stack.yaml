@@ -2,12 +2,16 @@
 # kafbat are in kafka.yaml. Part 2 is the S3 store (store-silo.yaml or store-ceph.yaml, then seed.yaml), part 3
 # the catalog (the Helm chart with catalog-values.yaml), part 4 SingleStore (singlestore.yaml). demo/demo.sh and
 # EngineMatrixTest both apply them. Images are never pulled by the cluster: Docker Desktop's runs them from the
-# local Docker engine, and the harness loads them into kind.
+# local Docker engine, and the harness loads them into kind. PostgreSQL keeps its data on a volume of its own
+# (claim postgres-data, below; backlog 237), which demo.sh down keeps and demo.sh wipe deletes.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: postgres
 spec:
+  # One pod at a time on the volume: two PostgreSQL servers on one data directory would corrupt it.
+  strategy:
+    type: Recreate
   selector:
     matchLabels: {app: postgres}
   template:
@@ -30,8 +34,25 @@ spec:
             exec:
               command: ["pg_isready", "-U", "catalog", "-d", "catalog"]
             periodSeconds: 2
+          # PostgreSQL 18's image keeps its data in /var/lib/postgresql/18/docker, beneath this mount.
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/postgresql}
           resources:
             limits: {memory: 384Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: postgres-data}
+---
+# PostgreSQL's data: the catalog's, the audit tables' catalog's and Keycloak's database. demo.sh down and the
+# switches keep it; demo.sh wipe deletes it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 5Gi}
 ---
 apiVersion: v1
 kind: Service

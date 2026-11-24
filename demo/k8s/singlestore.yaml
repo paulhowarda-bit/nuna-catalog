@@ -3,8 +3,8 @@
 # the dev image: demo.sh's has the change-feed connector built in, Studio's browser telemetry off and Studio
 # signing people in through Keycloak with SAML (singlestore.Dockerfile), tagged with the hash of the jar and the
 # Dockerfile so a change replaces the pod; a matrix run on its own uses the plain image, and has no Secret
-# keycloak-keys, so the certificate's volume is optional. No volume for the data: it goes with the pod (demo.sh
-# seeds a new one). The demo publishes Studio on port 8183. It reserves 1.5 GB though it uses over 2 GB:
+# keycloak-keys, so the certificate's volume is optional. Its databases are on a volume (claim singlestore-data,
+# below; backlog 237), which ss stop and demo.sh down keep and demo.sh wipe deletes. The demo publishes Studio on port 8183. It reserves 1.5 GB though it uses over 2 GB:
 # with Keycloak, a fuller reservation leaves no room on Docker Desktop's node for Spark's 2 GB job.
 apiVersion: apps/v1
 kind: Deployment
@@ -56,6 +56,8 @@ spec:
           volumeMounts:
             - {name: keycloak-certificate, mountPath: /etc/nuna-demo, readOnly: true}
             - {name: tls, mountPath: /etc/nuna-demo/tls, readOnly: true}
+            # The dev image keeps its nodes' data under /data.
+            - {name: data, mountPath: /data}
           resources:
             requests: {memory: 1536Mi}
             limits: {memory: 3Gi}
@@ -68,6 +70,18 @@ spec:
               - {key: realm-certificate-pem, path: keycloak-saml.crt}
         - name: tls
           secret: {secretName: demo-tls, optional: true}
+        - name: data
+          persistentVolumeClaim: {claimName: singlestore-data}
+---
+# SingleStore's databases.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: singlestore-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 10Gi}
 ---
 apiVersion: v1
 kind: Service

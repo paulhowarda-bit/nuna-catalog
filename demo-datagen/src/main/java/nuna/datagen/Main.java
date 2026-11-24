@@ -83,7 +83,7 @@ public final class Main {
                 long sent = end - start.getOrDefault(feed, 0L);
                 if (sent < 0) {
                     throw new IllegalStateException("topic " + feed.source + " holds fewer records than when the world"
-                        + " began: Kafka lost them, so the world cannot resume; demo/demo.sh down and up start a new one");
+                        + " began: Kafka lost them, so the world cannot resume; demo/demo.sh wipe and up start a new one");
                 }
                 return sent;
             });
