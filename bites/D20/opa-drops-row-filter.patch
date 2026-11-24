@@ -1,0 +1,16 @@
+Breaks: nuna's answer to Trino's row-filter question drops the user's filter, so every row is read.
+Module: catalog-server
+Test: OpaAnswersTest#aUserGetsTheirGroupsFilter+aUserNoneOfWhoseGroupsHasARuleGetsNoRows
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+index 6989387a..58d8a4f7 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/security/OpaAnswers.java
+@@ -69,7 +69,7 @@ final class OpaAnswers {
+         Answer answer = answer(input, new Named(text(table, "catalogName"), text(table, "schemaName"),
+                 text(table, "tableName")));
+         ArrayNode result = JSON.createArrayNode();
+-        answer.rowFilter().ifPresent(filter -> result.addObject().put("expression", filter));
++        // the filter is dropped
+         return wrap(result);
+     }
+ 

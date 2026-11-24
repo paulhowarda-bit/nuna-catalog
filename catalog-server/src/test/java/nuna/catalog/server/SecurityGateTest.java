@@ -492,6 +492,9 @@ class SecurityGateTest {
     void trinoGetsEachUsersRowFilterAndColumnMasksThroughOpa() throws Exception {
         String rules = "/management/v1/catalogs/gate/row-column-rules";
         String table = "{\"type\":\"table\",\"namespace\":[\"sales\",\"eu\"],\"name\":\"pii\"}";
+        assertDenied(send(GINA, "POST", rules, """
+                {"table":%s,"group":"grant-admins","row-filter":"true"}""".formatted(table)),
+                "setRowColumnRule", "separation-of-duties");
         noContent(send(GINA, "POST", rules, """
                 {"table":%s,"group":"analysts","row-filter":"id > 10","column-masks":{"id":"NULL"}}"""
                 .formatted(table)));
@@ -513,7 +516,6 @@ class SecurityGateTest {
                     .formatted(ann)).body())
                     .isEqualTo("{\"result\":[{\"index\":0,\"viewExpression\":{\"expression\":\"NULL\"}}]}");
             assertThat(send(null, "POST", "/opa/v1/allow", "{\"input\":{}}").body()).isEqualTo("{\"result\":true}");
-            log.await("\"type\":\"nuna.catalog.row-column-rule\"");
         } finally {
             noContent(send(GINA, "POST", rules + "/remove", "{\"table\":%s,\"group\":\"analysts\"}"
                     .formatted(table)));

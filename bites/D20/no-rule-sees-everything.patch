@@ -1,0 +1,16 @@
+Breaks: a user none of whose groups has a rule on a table with rules sees every row.
+Module: catalog-security
+Test: RowColumnPolicyTest#aUserNoneOfWhoseGroupsHasARuleGetsNoRows
+diff --git a/catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java b/catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java
+index edee389c..9183b00b 100644
+--- a/catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java
++++ b/catalog-security/src/main/java/nuna/catalog/security/RowColumnPolicy.java
+@@ -50,7 +50,7 @@ public final class RowColumnPolicy {
+         List<RowColumnRule> theirs = rules.stream().filter(rule -> groups.contains(rule.group()))
+                 .sorted((a, b) -> a.group().compareTo(b.group())).toList();
+         if (theirs.isEmpty()) {
+-            return new Applied(Optional.of(NO_ROWS), new TreeMap<>());
++            return Applied.NOTHING;
+         }
+         Optional<String> filter;
+         if (theirs.stream().anyMatch(rule -> rule.rowFilter().isEmpty())) {
