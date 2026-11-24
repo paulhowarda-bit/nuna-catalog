@@ -603,6 +603,8 @@ pre.raw { overflow: visible; }
 .slo .tk { stroke: var(--line-strong); stroke-width: 1.5; }
 .slo .obj { stroke: var(--text); stroke-width: 2; }
 .slo .dot { fill: var(--ok-mark); stroke: var(--surface); stroke-width: 2; }
+.slo .off { fill: var(--bad-mark); stroke: var(--surface); stroke-width: 1.5; }
+.slo .offv { font: 600 12px var(--f-mono); fill: var(--bad-ink); paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
 /* v10: drawings keep their size on a phone, scrolling sideways rather than shrinking their text */
 .iceline .ref { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 4 5; }
 .ice-cap { font: 500 12px/1.4 var(--f-mono); color: var(--text-2); margin-top: 10px; }

@@ -209,6 +209,20 @@ class ConsoleHealthTest {
         WebElement commits = driver.findElement(By.cssSelector("#health-slos tr[data-slo='commit']"));
         assertThat(cell(commits, 3)).isEqualTo(String.valueOf(figure(own, "commit") + 20));
         assertThat(cell(commits, 7)).as("the other server's 20 commits, 2 of them slow").isEqualTo("missed");
+        // A share below the 97 to 100% scale points off its left edge with its value, the share's tenths cut, not
+        // rounded up onto the scale (Atelier's review, F15; backlog 194); one on the scale is a dot.
+        long within = Long.parseLong(cell(commits, 4));
+        long count = Long.parseLong(cell(commits, 3));
+        if (within * 100 < 97 * count) {
+            double tenths = Math.floor(1000.0 * within / count) / 10;
+            String shown = (tenths == Math.rint(tenths) ? String.valueOf((long) tenths) : String.valueOf(tenths)) + "%";
+            assertThat(commits.findElements(By.cssSelector("td.slo svg circle.dot"))).isEmpty();
+            assertThat(commits.findElements(By.cssSelector("td.slo svg path.off"))).hasSize(1);
+            assertThat(ConsoleBrowser.textContent(commits.findElement(By.cssSelector("td.slo svg text.offv"))))
+                    .isEqualTo(shown);
+        } else {
+            assertThat(commits.findElements(By.cssSelector("td.slo svg path.off"))).isEmpty();
+        }
         WebElement notModified = driver.findElement(By.cssSelector("#health-slos tr[data-slo='not-modified']"));
         assertThat(cell(notModified, 3)).isEqualTo(String.valueOf(figure(own, "not-modified")));
         assertThat(rows("#health-vend-failures")).contains(List.of("ServiceUnavailableException",
