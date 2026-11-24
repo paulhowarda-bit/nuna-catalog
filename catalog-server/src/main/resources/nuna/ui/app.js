@@ -579,11 +579,12 @@ async function lookUp(path) {
   location.hash = objectHref(target, gotoTab === 'audit' ? 'audit' : null);
 }
 
-async function openGoto(tab = null) {
+/** Opens Go to a path, with `words` already typed (the tree filter's, backlog 208). */
+async function openGoto(tab = null, words = '') {
   if (!catalogs) return;
   closeMenus();
   gotoTab = tab;
-  gotoIn.value = '';
+  gotoIn.value = words;
   gotoAt = 0;
   queued = [];
   found = [];
@@ -766,7 +767,7 @@ document.addEventListener('click', e => {
   else if (act === 'menu') menu();
   else if (act === 'menu-close') menu(false);
   else if (act === 'pick') catMenu();
-  else if (act === 'goto') openGoto();
+  else if (act === 'goto') openGoto(null, t.dataset.gotoWords || '');
   else if (act === 'goto-audit') openGoto('audit');
 });
 

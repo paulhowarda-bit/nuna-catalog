@@ -307,6 +307,18 @@ class ConsoleBrowserTest {
         browser.awaitText(By.id("goto-h"), "Opened lately");
         assertThat(browser.await(By.cssSelector("#goto-list li[role='option']")).getDomAttribute("data-goto-target"))
                 .isEqualTo("trading:" + top + ".equities.eu.positions");
+
+        // The tree's filter lists only what is open; when nothing open matches, it hands its words to Go to a path,
+        // which searches every name (Atelier's words table, "Not words" 4; backlog 208).
+        browser.open("/ui/#c=trading");
+        browser.await(node("namespace:" + top));
+        driver.findElement(By.cssSelector(".tree input[aria-label='Filter names in the tree']")).sendKeys("accounts");
+        WebElement none = browser.await(By.cssSelector(".tree li.tree-none"));
+        assertThat(textContent(none)).startsWith("No open namespace in trading holds a matching name.");
+        none.findElement(By.xpath(".//button[normalize-space()='Go to a path']")).click();
+        assertThat(browser.await(By.id("goto-in")).getDomProperty("value")).isEqualTo("accounts");
+        browser.await(By.cssSelector("#goto-list [data-goto-target='trading:" + top + ".ledger.accounts']")).click();
+        browser.awaitText(By.cssSelector("#table-page h1"), "accounts");
     }
 
     /**
