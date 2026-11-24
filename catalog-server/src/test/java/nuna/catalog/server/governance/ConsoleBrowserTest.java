@@ -514,6 +514,49 @@ class ConsoleBrowserTest {
     }
 
     @Test
+    void snapshotIdsPastTwoToTheFiftyThreeAreShownDigitForDigit() {
+        // Iceberg's snapshot ids are 64-bit, and most are past 2^53, where a double cannot hold every integer: read
+        // as numbers, 9007199254740993 would show as ...992 and 8809372496300770237 as ...770000 (backlog 204).
+        long first = 8_809_372_496_300_770_237L;
+        long second = 9_007_199_254_740_993L;
+        List<String> levels = List.of("ids_" + Api.suffix());
+        expect(api.rest("POST", "/namespaces", "{\"namespace\":" + json(levels) + "}"), 200);
+        String location = create(levels, "ticks", 2);
+        String root = location.substring(0, location.indexOf("/metadata/"));
+        long now = System.currentTimeMillis();
+        expect(api.rest("POST", tableRest(levels, "ticks"), """
+                {"requirements":[],"updates":[
+                  {"action":"add-snapshot","snapshot":{"snapshot-id":%d,"sequence-number":1,"timestamp-ms":%d,
+                    "manifest-list":"%s/metadata/snap-1.avro","schema-id":0,"summary":{"operation":"append"}}},
+                  {"action":"add-snapshot","snapshot":{"snapshot-id":%d,"parent-snapshot-id":%d,"sequence-number":2,
+                    "timestamp-ms":%d,"manifest-list":"%s/metadata/snap-2.avro","schema-id":0,
+                    "summary":{"operation":"append"}}},
+                  {"action":"set-snapshot-ref","ref-name":"main","snapshot-id":%d,"type":"branch"}]}"""
+                .formatted(first, now - 2_000, root, second, first, now - 1_000, root, second)), 200);
+        String answer = expect(api.rest("GET", tableRest(levels, "ticks"), null), 200).body();
+        java.util.regex.Matcher sent = java.util.regex.Pattern.compile("\"current-snapshot-id\"\\s*:\\s*(\\d+)")
+                .matcher(answer);
+        assertThat(sent.find()).isTrue();
+        assertThat(sent.group(1)).as("the catalog's own text").isEqualTo(String.valueOf(second));
+
+        signIn(tester());
+        browser.open("/ui/#" + at("table", levels, "ticks", null));
+        assertThat(fact("Current snapshot")).startsWith(sent.group(1) + " · append · ");
+        tab("history");
+        List<WebElement> rows = browser.await("the commit that added the snapshots is not shown", d -> {
+            List<WebElement> found = d.findElements(By.cssSelector("#metadata-log tbody tr[data-id]"));
+            return found.isEmpty() ? null : found;
+        });
+        assertThat(rows).extracting(row -> row.getDomAttribute("data-id")).containsExactly(String.valueOf(first));
+        assertThat(driver.findElements(By.cssSelector(".lanes circle[data-id]")))
+                .extracting(c -> c.getDomAttribute("data-id"))
+                .containsExactly(String.valueOf(first), String.valueOf(second));
+        browser.await(By.xpath("//button[normalize-space()='Show the whole summary']")).click();
+        String whole = textContent(browser.await(By.cssSelector("#selected-snapshot pre.raw")));
+        assertThat(whole).contains("\"snapshot-id\": " + second + ",", "\"parent-snapshot-id\": " + first + ",");
+    }
+
+    @Test
     void theViewTabsShowEveryVersionWithItsSql() {
         signIn(tester());
         browser.open("/ui/#" + at("view", equities, "daily", null));
@@ -1419,6 +1462,11 @@ class ConsoleBrowserTest {
     }
 
     private static String tablePath(List<String> levels, String table) {
+        return "/namespaces/" + ns(levels) + "/tables/" + table;
+    }
+
+    /** A table's Iceberg REST path below the catalog's prefix. */
+    private static String tableRest(List<String> levels, String table) {
         return "/namespaces/" + ns(levels) + "/tables/" + table;
     }
 
