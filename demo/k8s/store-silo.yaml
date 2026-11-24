@@ -1,10 +1,14 @@
 # -Ps3=silo: Silo, the maintained MinIO fork, as Service s3 (http://s3:9000). Its console, MinIO's, is on the
-# pod's 9001 (otherwise a random port at each start); the demo publishes it on port 8184 (ports.yaml).
+# pod's 9001 (otherwise a random port at each start); the demo publishes it on port 8184 (ports.yaml). It keeps its
+# objects, buckets, users and policies on a volume (claim s3-data, below; backlog 237).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: s3
 spec:
+  # One pod at a time on the volume.
+  strategy:
+    type: Recreate
   selector:
     matchLabels: {app: s3}
   template:
@@ -28,8 +32,23 @@ spec:
               path: /minio/health/live
               port: 9000
             periodSeconds: 2
+          volumeMounts:
+            - {name: data, mountPath: /data}
           resources:
             limits: {memory: 512Mi}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: s3-data}
+---
+# Silo's data: the warehouse's files. demo.sh down keeps it; demo.sh wipe deletes it.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: s3-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests: {storage: 20Gi}
 ---
 apiVersion: v1
 kind: Service

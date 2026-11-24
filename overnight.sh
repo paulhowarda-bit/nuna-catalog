@@ -43,8 +43,8 @@
 # and Testcontainers is given 60 s, not 10, to reach Docker (backlog 32).
 #
 # If the nuna-demo stack is running, the run takes it down first (demo/demo.sh down) and rebuilds it at the end
-# (demo/demo.sh up): fresh sample data, no CDC leg. Its deployments keep no volumes, so pausing them could not
-# keep their data anyway (Paul, 2026-11-15). A dry run only says what it would do.
+# (demo/demo.sh up), no CDC leg. down keeps the data on the demo's volumes, so up carries on from it (backlog
+# 237); the CDC leg, which keeps none, goes. A dry run only says what it would do.
 
 # The whole run is one function, so bash has read all of it before it starts: landing a change to this file
 # while a run is going cannot change what that run does.

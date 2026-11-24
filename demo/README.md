@@ -98,8 +98,15 @@ demo/demo.sh up
   450 MB of up to 768 MB, its PostgreSQL 128 MB), so `cdc` stops Trino, the audit table writer, the maintenance
   worker and the generator, and `engines` and `rate` refuse to run beside it. With the leg up, the stack's requests fill
   Kubernetes to within about 20 MB, so CloudBeaver is replaced by stopping the old pod first.
-- No volumes: the data lives as long as the pods. After Docker Desktop restarts, every pod starts empty: run
-  `up` again and it writes the sample data again (it checks the catalog, not a marker).
+- The data stays (backlog 237): PostgreSQL (the catalog's database, with the audit tables' catalog), Silo (the
+  warehouse's files), Kafka (its topics, Kafka Connect's offsets among them) and SingleStore keep their data on
+  volumes of their own, claims `postgres-data`, `s3-data`, `kafka-data` and `singlestore-data` in Docker Desktop's
+  `hostpath` storage. `down`, `ss stop`, `gen stop`, a pod's restart and a Docker Desktop restart keep them, and the
+  next `up` carries on from them: it writes the sample data only into a lake that lacks it. `wipe` deletes them
+  (Stop, below). Resetting Docker Desktop's Kubernetes cluster deletes them too. Keycloak keeps no volume: it imports
+  its realm, people and clients from `keycloak-realm.json` at every start, so a change made in its admin console
+  lasts until its pod goes; the catalog names people by their user names, which the realm file fixes. The CDC
+  leg's databases keep none either: `cdc stop` and `down` delete the leg, its topics and its offsets.
 
 At the end it prints the console URL, <https://localhost:8181/ui/>, the passwords and the tokens.
 
@@ -350,8 +357,10 @@ events to Kafka and SingleStore, and the demo's pipelines bring them into Iceber
   `brokerage.trading` is `internal`. `brokerage` and `brokerage.trading` have owners. The grants on all of
   `lakehouse` cover them: `ana` and `stella` read them, in the console and in Trino.
 - `gen stop` stops the generator, waits 20 seconds for the sink's last commit, then stops Kafka Connect, Kafka
-  and kafbat unless the CDC leg runs. Kafka keeps no volume, so the topics go with it; the next `gen` makes them
-  again, and the generator catches up on the days it missed.
+  and kafbat unless the CDC leg runs. Kafka's topics stay on its volume, so the next `gen` carries on from them:
+  the generator replays the world without sending what it sent before, and catches up on the days it missed.
+  `wipe` deletes the topics with the lake; if Kafka alone lost them, the generator stops and says so (`wipe` and
+  `up` start a new world).
 - Memory: the generator asks for 256 MB, Kafka Connect 512 MB, the bootstrap job 384 MB while it runs. `cdc`
   pauses the generator; `up`, `rate` and `engines` stop it and Kafka Connect while they run.
 
@@ -408,11 +417,11 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
 - Its identity: Keycloak's service account of client `nuna-maintenance`, `service-account-nuna-maintenance`, the
   catalog's maintenance principal (`demo-values.yaml`), in group `demo-maintenance`, which holds `write` on
   `lakehouse`. Its compaction Jobs sign in the same way. It deletes from Silo as its own user, `nuna-maintenance`,
-  which may only list and delete beneath the tables (`silo-maintenance.json`); `up` makes it, since Silo keeps users
-  only for the pod's life.
-- Nothing it queues for deletion is deleted: a file waits out the 7-day PITR window first, and the demo's data
-  never lasts that long. Nor do the nights: the database goes with its pod, so after the overnight run's rebuild
-  the 30-night trends start again.
+  which may only list and delete beneath the tables (`silo-maintenance.json`); `up` makes it again each time,
+  which leaves one already on Silo's volume as it was.
+- A file it queues for deletion waits out the 7-day PITR window first, so the first deletions come a week after
+  the data was written. The database outlives `down` and the overnight run's rebuild, so the 30-night trends
+  build up; `wipe` starts them again.
 - Memory: the worker asks for 192 MB, of up to 512 MB; a compaction Job asks for 64 MB, of up to 1.25 GB, with
   Spark's driver at 640 MB (Start, above). `cdc` and `engines` stop the worker and any Job running, and start the
   worker again after.
@@ -558,8 +567,8 @@ right that making, merging and deleting a ref needs:
 - Tag `sample`, made from main after that: the sample data as `up` loaded it. On a new lake it comes before the
   brokerage world's bootstrap, so it holds nothing of `brokerage`.
 
-It makes them once per lake: the tag, made last, says they are made. Like everything else they go with the
-catalog's PostgreSQL, so after `demo/demo.sh down`, or a Docker Desktop restart, the next `up` makes them again.
+It makes them once per lake: the tag, made last, says they are made. They live in the catalog's PostgreSQL, which
+`down` keeps, so only after `demo/demo.sh wipe` does the next `up` make them again.
 
 Trino has a catalog for the branch, `lakehouse_dev` (`iceberg.rest-catalog.warehouse=lakehouse@dev`, in
 `k8s/trino.yaml`), beside `lakehouse`, which reads and writes main: an engine's catalog configuration names one ref.
@@ -813,8 +822,20 @@ Debezium's change topics, the sinks' control topics and Oracle's schema history.
 demo/demo.sh down
 ```
 
-This deletes the namespace, the compaction Jobs' namespace `nuna-demo-compaction`, and everything in them. The signing key, tokens and Keycloak's keys stay in
-`~/.nuna-demo`; the next `up` loads the sample data again.
+This stops and deletes everything in the namespace but the data: the volume claims of PostgreSQL, Silo, Kafka and
+SingleStore stay, with configmap `demo-seeded`, and so does the namespace that holds them. The compaction Jobs'
+namespace `nuna-demo-compaction` goes. A running CDC leg is deleted as `cdc stop` deletes it. The next `up` carries
+on from the data: the lake, its branch and tag, the governance, the audit table, SingleStore's databases and the
+brokerage world as they were.
+
+To start again from fresh sample data:
+
+```bash
+demo/demo.sh wipe
+```
+
+This is `down`, then deletes the namespace with its volumes. The signing key, tokens, Keycloak's keys and the
+certificate stay in `~/.nuna-demo` either way.
 
 ```bash
 demo/demo.sh status
