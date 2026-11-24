@@ -9,19 +9,29 @@ export const SEP = '\u001f';
 // Maintenance.
 const OLD_PAGES = {health: 'service'};
 const OLD_TABS = {health: 'maintenance'};
+// A table's ten tabs became six, and a namespace's and a view's Governance and Grants became Access (Atelier's review,
+// S2; backlog 199): an old link opens the tab that now holds what it showed.
+const ACCESS = {governance: 'access', grants: 'access'};
+const OLD_KIND_TABS = {
+  table: Object.assign({snapshots: 'history', 'metadata-log': 'history', partitioning: 'schema', properties: 'settings'}, ACCESS),
+  view: ACCESS,
+  namespace: ACCESS,
+};
 
 /** {page, c, k, ns: [], n, tab, g, r} from the fragment. A catalog with no page is that catalog's browse page. */
 export function parse() {
   const p = new URLSearchParams(location.hash.slice(1));
   const ns = p.get('ns') ? p.get('ns').split(SEP) : [];
   const page = OLD_PAGES[p.get('p')] || p.get('p') || null;
+  const k = p.get('k') || (ns.length ? 'namespace' : 'catalog');
+  const tab = p.get('tab');
   return {
     page,
     c: p.get('c') || null,
-    k: p.get('k') || (ns.length ? 'namespace' : 'catalog'),
+    k,
     ns,
     n: p.get('n') || null,
-    tab: (!page && OLD_TABS[p.get('tab')]) || p.get('tab') || null,
+    tab: (!page && ((OLD_KIND_TABS[k] || {})[tab] || OLD_TABS[tab])) || tab || null,
     g: p.get('g') || null,
     r: p.get('r') || null,
   };

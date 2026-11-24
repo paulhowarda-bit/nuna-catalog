@@ -1,0 +1,17 @@
+Breaks: The name search answers a catalog the caller holds nothing in without auditing the refusal.
+Module: catalog-server
+Test: NameSearchRoutesTest#oneCatalogMayBeAskedForAndOneTheCallerHoldsNothingInIsAnsweredAsNoneAndAudited
+
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+index b54f2682..11f2a0d7 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/NameSearchRoutes.java
+@@ -212,7 +212,7 @@ class NameSearchRoutes {
+             String declared = storage.catalogs().keySet().stream()
+                     .filter(name -> Names.normalize(name).equals(Names.normalize(only))).findFirst()
+                     .orElseThrow(() -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + only));
+-            found.put(management.catalog(only, request, "searchNames", Privilege.DESCRIBE).id(), declared);
++            found.put(store.findCatalog(Names.normalize(only)).filter(c -> holdings.inCatalog(request.caller(), c.id())).orElseThrow(() -> CatalogError.noSuchWarehouse("The given warehouse does not exist: " + only)).id(), declared);
+             return found;
+         }
+         storage.catalogs().keySet().stream().sorted(String.CASE_INSENSITIVE_ORDER)

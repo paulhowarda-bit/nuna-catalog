@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**47 open:** 9 S, 17 M, 15 L, 5 XL, and 1 not estimated yet (`Effort: ?`).
+**48 open:** 11 S, 18 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,12 +53,13 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
-| [198](backlog/198.md) | L | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | a new server route (L: it lists names across a whole catalog or every catalog, and must list only what the caller may describe, by the same rule as the catalog list's `inCatalog` and each level's describe check, with a cap and paging), and M in the console (the Go to a path box asks it, shows recent items first, then matches with path and kind) | 2026-11-23 |
-| [199](backlog/199.md) | ? | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | the table page's tabs regrouped (Overview, Schema, History, Access, Maintenance, Audit) from today's ten panels, with redirects from the old tab keys, and the namespace and catalog pages given the same names for the same things | 2026-11-23 |
 | [202](backlog/202.md) | M | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers | 2026-11-23 |
 | [203](backlog/203.md) | S | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test | 2026-11-23 |
 | [204](backlog/204.md) | M | Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot | the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string | 2026-11-23 |
 | [205](backlog/205.md) | S | Console: audit words still say Kafka after audit moved to the log (item 195) | the Audit page and Service say where audit records go now that the catalog audits to its log (D23 as item 195 amended it), and show a record's place in the log or the audit table rather than a Kafka partition and offset | 2026-11-23 |
+| [206](backlog/206.md) | S | Console: with maintenance off, the empty queue offers Edit the catalog's policy | one link on two empty states, drawn only for those who may modify the catalog, and a browser test | 2026-11-23 |
+| [207](backlog/207.md) | M | Console: maintenance policy keys get labels, each key in its title | an 11-entry label map used by four panels and the policy editor's fields, and their browser tests | 2026-11-23 |
+| [208](backlog/208.md) | S | Console: the tree filter's empty answer offers Go to a path | one button on the tree filter's empty state that opens Go to a path with the words typed, and a browser test | 2026-11-23 |
 
 ## Open items in full
 
@@ -2894,45 +2895,6 @@ Done looks like:
   or explains them when Kafka is not configured.
 - The console checked in the demo with every switch off, signed in as gary.
 
-### 198. Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1)
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/java/nuna/catalog/server/ui/UiRoutes.java catalog-server/src/main/java/nuna/catalog/server/security/Holdings.java catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/main/resources/nuna/ui/api.js catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/test/java/nuna/catalog/server/ui/ catalog-server/src/test/java/nuna/catalog/server/governance/ConsoleBrowserTest.java
-- Effort: L, a new server route (L: it lists names across a whole catalog or every catalog, and must list only what the caller may describe, by the same rule as the catalog list's `inCatalog` and each level's describe check, with a cap and paging), and M in the console (the Go to a path box asks it, shows recent items first, then matches with path and kind)
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F1, section 4, S1): "Go to a path" is the console's most prominent finding tool (a header box and
-the `/` key), but it finds only the names the console has listed so far: on `lakehouse` with the tree folded, `rates`
-finds nothing until markets and fx have been opened, and `journal` (a brokerage table) still finds nothing.
-`06-goto-rates.png`, `23-goto-journal.png`, `23-goto-rates-after.png`. Item 185 opens a full dotted path and says what
-was searched; it does not find a name typed alone. Atelier: "This is the biggest single gain." Her task table
-(section 3) counts the steps for finding `rates` from the landing.
-
-Done looks like: a server route lists every namespace, table and view the caller may describe whose name contains a
-fragment, for one catalog or all, with its catalog, path and kind, capped and paged; it lists nothing the caller may
-not describe (a route test per role, and a `catalog-security` review before landing); the Go to a path box shows
-recent items first, then the route's matches across catalogs; `journal` and `rates` are found from a folded tree; a
-heavy browser test and a bite for the route's describe filter.
-
-### 199. Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2)
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/main/resources/nuna/ui/browse.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/governance.js catalog-server/src/main/resources/nuna/ui/panels.js catalog-server/src/main/resources/nuna/ui/route.js catalog-server/src/main/resources/nuna/ui/style.css catalog-server/src/test/java/nuna/catalog/server/governance/
-- Effort: M/L, the table page's tabs regrouped (Overview, Schema, History, Access, Maintenance, Audit) from today's ten panels, with redirects from the old tab keys, and the namespace and catalog pages given the same names for the same things
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F5, section 4, S2): a table has ten tabs (Overview, Schema, Snapshots, Partitioning, Properties,
-Maintenance, Governance, Grants, Audit, Metadata log); tabs differ by level (a namespace has no Branches and tags); the
-same word leads to a catalog summary in the rail and one object's page in a tab. `09-table-rates.png`,
-`61-proto-table.png`, `07-ns-markets.png`. Item 186 puts who made the current snapshot on Overview; item 192 renamed
-the table's Health tab Maintenance; item 191 moved the engine-level refs into their own panel.
-
-Done looks like: a table has six tabs: Overview (last change and by whom, size, health and governance summaries,
-refs), Schema (with partitioning and sort order), History (snapshots and metadata log merged, with who), Access
-(grants, governance attributes, holds), Maintenance (today's tab plus the table's maintenance settings), Audit (only
-for roles that may read it); Properties folds into Overview and Maintenance; old tab links (`tab=snapshots`,
-`tab=partitioning`, `tab=properties`, `tab=governance`, `tab=grants`, `tab=metadata-log`) open the tab that now holds
-them; namespaces and catalogs use the same tab names for the same things. Atelier settles any design question first
-(her review is the brief). Heavy browser tests updated, a bite for the old-tab redirects.
-
 ### 202. Console: a copy pass across every page, by the words-table method (Atelier's review S5)
 
 - Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
@@ -3002,6 +2964,48 @@ Done looks like: Service's audit panel names where records go and what it counts
 reports it), with no Kafka figure while Kafka is not on the path; the Audit page and a record's details say where the
 record came from in words a reader follows, with no partition or offset of -1; heavy browser tests updated; the item
 that changed the server's health answer (195) is read first, so the console says what the server now reports.
+
+### 206. Console: with maintenance off, the empty queue offers Edit the catalog's policy
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/queue.js catalog-server/src/main/resources/nuna/ui/overview.js catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, one link on two empty states, drawn only for those who may modify the catalog, and a browser test
+
+With maintenance off in a catalog's policy, the empty queue (`queue.js` `emptyQueue`) and Overview's "Nothing queued"
+say so but give no way to turn it on. Atelier's words table for backlog 202 (`docs/design/console/words-table-2026-11-23.md`, "Not words" 1) asks for an
+**Edit the catalog's policy** link after "Maintenance is off in {catalog}'s policy…", for people who may modify the
+catalog.
+
+Done looks like: both empty states end with that link, opening the catalog's maintenance policy editor, shown only to
+callers who may modify the catalog; a heavy browser test for both, and a bite.
+
+### 207. Console: maintenance policy keys get labels, each key in its title
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/maintenance.js catalog-server/src/main/resources/nuna/ui/health.js catalog-server/src/main/resources/nuna/ui/table.js catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: M, an 11-entry label map used by four panels and the policy editor's fields, and their browser tests
+
+The maintenance policy's keys show as raw keys (`snapshot-expiry.max-age`, `compaction.target-file-size-bytes` and
+so on) in `maintenance.js` `policyPanel` and `editPolicy`, `health.js` `policyFacts` and the table's snapshot expiry
+facts. Atelier's words table for backlog 202 (`docs/design/console/words-table-2026-11-23.md`, "Not words" 3, and rule 3) gives the labels: "Snapshot expiry",
+"Keep snapshots for", "Keep at least", "Orphan removal", "Remove orphans older than", "Compaction", "Target file size",
+"Fewest input files", "Delete-file share", "Manifest rewrite", "Fewest manifests".
+
+Done looks like: each panel and the edit dialog's fields show the label, with the key as its `title`; heavy browser
+tests updated; a bite for the map.
+
+### 208. Console: the tree filter's empty answer offers Go to a path
+
+- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
+- Touches: catalog-server/src/main/resources/nuna/ui/tree.js catalog-server/src/main/resources/nuna/ui/app.js catalog-server/src/test/java/nuna/catalog/server/governance/
+- Effort: S, one button on the tree filter's empty state that opens Go to a path with the words typed, and a browser test
+
+The tree filter's empty state (`tree.js`) says no open namespace holds a matching name (row C7 of Atelier's words
+table for backlog 202, `docs/design/console/words-table-2026-11-23.md`) but gives no way on. Since backlog 198, Go to a path finds a name typed alone in any
+catalog. "Not words" 4 of the table asks for a **Go to a path** button there.
+
+Done looks like: the empty state has a Go to a path button that opens the dialog with the filter's words already
+typed; a heavy browser test and a bite.
 
 ## Done and dropped
 
@@ -3161,5 +3165,7 @@ that changed the server's health answer (195) is read first, so the console says
 | [194](backlog/194.md) | Console: the Health latency chart marks a share below its scale with its value (Atelier's review Q13) | done | 2026-11-23 |
 | [195](backlog/195.md) | Audit goes to logs: the catalog serves and vends without Kafka, and the audit table writer takes the audit records over OTLP (D23) | done | 2026-11-23 |
 | [196](backlog/196.md) | Demo switches: demo.sh gen and ss turn the brokerage generator and SingleStore on and off, as cdc does its leg; Kafka runs only while cdc or gen is on | done | 2026-11-23 |
+| [198](backlog/198.md) | Console: one search that knows every name, a route listing what the caller may describe (Atelier's review S1) | done | 2026-11-23 |
+| [199](backlog/199.md) | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | done | 2026-11-23 |
 | [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
 | [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |

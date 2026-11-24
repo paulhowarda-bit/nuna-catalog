@@ -1,0 +1,17 @@
+Breaks: Go to a path no longer asks the catalog's search, so a name typed alone is found only once its namespace was listed.
+Module: catalog-server
+Test: ConsoleBrowserTest#goToAPathOpensAFullDottedPathNotListedYet
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/app.js b/catalog-server/src/main/resources/nuna/ui/app.js
+index dee32216..d7f32093 100644
+--- a/catalog-server/src/main/resources/nuna/ui/app.js
++++ b/catalog-server/src/main/resources/nuna/ui/app.js
+@@ -448,7 +448,7 @@ function gotoDraw() {
+       : searchFailed ? 'Matches among the names listed so far; the catalog\'s search did not answer'
+         : gotoItems.length ? `${gotoItems.length === 9 ? 'First 9' : gotoItems.length} match${gotoItems.length === 1 ? '' : 'es'}`
+           : 'No match in any catalog';
+-    search(words);
++
+     // A full dotted path opens even when the console has not listed it yet: Enter looks it up, level by level, as a
+     // deep link does (Atelier's review, F1).
+     if (typedPath && !gotoItems.some(x => x.path === typedPath)) {

@@ -89,7 +89,7 @@ function tableNote(key, target) {
 function namespaceNote(key, target) {
   if (key === 'location') return 'Changes nothing: the catalog assigns every table\'s location itself, never from its namespace.';
   if (key === 'owner') {
-    return ['Not the owner the catalog enforces: that is the ', h('a', {href: objectHref(target, 'governance')},
+    return ['Not the owner the catalog enforces: that is the ', h('a', {href: objectHref(target, 'access')},
       'governance owner'), '.'];
   }
   return null;
