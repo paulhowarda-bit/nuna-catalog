@@ -53,3 +53,25 @@ Checked: the fast build at landing. Live in the demo through the swap: 191, 188,
 dates as `ana`; 194 as `oscar`. Not checked live: 193's sign-out and slow-IdP paths (`ConsoleSignInTest`, heavy).
 The heavy browser cases run overnight. Bites recorded for each guarded check;
 `console-sign-in-ignores-state` recorded again where 193 moved it.
+
+## After the demo's rebuild (main at fe86cfe2, Paul's go-ahead)
+
+The stack was taken down and brought up at main fe86cfe2, which carries batches 1 to 3 and items 195 and 196.
+Each step was announced to every interactive session (D49). A first `up` stopped while starting the base services
+(`deployments.apps "kafka-ui" not found`): the landing of 195 and 196 changed `demo/demo.sh` and its Kafka
+manifests in the main checkout while that `up` was reading the script. A second `up` finished.
+
+Checked live, in a headless Chrome signed in through Keycloak, with the demo's own files and no swap:
+- 184: ana's rail is Overview, Catalog, Maintenance and Governance; oscar's is Catalog, Governance and Service, and he
+  lands on Service.
+- 192: the rail says Service, and an old `#p=health` link opens it.
+- 193: gary's tab kept the sign-in's ID token, and Sign out came straight back to "Signed out." with no Keycloak
+  confirm page.
+- 194: oscar's latency rows show load at 62% and commits at 96.1% as markers off the scale's left edge, with their
+  values.
+
+Two findings:
+- gary now lands on the Overview of `nuna_audit`, which arrived with 195 and 196. He may read that catalog, so
+  `readsData()` is true; the design had him land on Audit. Left for Atelier's re-walk.
+- The tab ran the pre-rebuild console until each file was fetched afresh. Every `/ui/` file is served with a 1980
+  Last-Modified and no ETag, so a revalidation always answers 304. Filed as backlog 203.
