@@ -2,7 +2,8 @@
 // Iceberg REST when it is first opened. A table in tonight's queue carries a mark, and so does whatever a hold, a DR
 // freeze or a regulated flag is set on, from the catalog's governance summary and holds list (item 128). Read through
 // a catalog branch or tag (r=, item 109), the tree lists each level through catalog@ref, names the ref beside the
-// catalog, and its links keep it (item 173); each ref has a tree of its own.
+// catalog, and its links keep it (item 173); each ref has a tree of its own, which marks the tables the branch changed
+// and the namespaces above them (backlog 201).
 
 import * as api from './api.js';
 import {$, failure, h, icon} from './dom.js';
@@ -25,9 +26,10 @@ export function treeOf(catalog, ref = null) {
   const el = h('div', {class: 'tree', 'data-catalog': catalog, 'data-ref': ref || null}, h('div', {class: 'tree-in'},
     h('label', {class: 'field'}, icon('search'), input), ul,
     h('p', {class: 'tree-key'}, [['m-bad', 'equality deletes'], ['m-warn', 'small files or deletes'], ['m-held', 'held'],
-      ['m-frozen', 'DR freeze'], ['m-reg', 'regulated']]
+      ['m-frozen', 'DR freeze'], ['m-reg', 'regulated'], ref ? ['m-chg', `changed on @${ref}`] : null].filter(Boolean)
       .map(([c, w]) => h('span', null, h('i', {class: c}), w)))));
-  st = {catalog, ref, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map(), gov: new Map()};
+  st = {catalog, ref, el, ul, input, got: new Map(), asked: new Map(), open: new Set(), cur: 'catalog', marks: new Map(), gov: new Map(),
+    changed: new Set()};
   trees.set(id, st);
   input.addEventListener('input', () => draw(st));
   queue().then(rows => {
@@ -35,7 +37,20 @@ export function treeOf(catalog, ref = null) {
     draw(st);
   }, () => {});
   ask(st, []);
+  if (ref) {
+    api.ref(catalog, ref).then(x => {
+      for (const t of x.changed || []) st.changed.add(keyOf([...t.namespace, t.name]));
+      draw(st);
+    }, () => {});
+  }
   return st;
+}
+
+/** A dot on a table the branch read changed, or on a namespace above one. */
+function changedOf(st, key, isNamespace) {
+  const hit = isNamespace ? [...st.changed].some(k => k.startsWith(key + SEP)) : st.changed.has(key);
+  const words = isNamespace ? `a table beneath it changed on @${st.ref}` : `changed on @${st.ref}`;
+  return hit ? h('span', {class: 'tree-chg', 'data-changed': '', title: words}, h('span', {class: 'vh'}, words)) : null;
 }
 
 /** Lists one level: its child namespaces, and its tables and views; the catalog's own level has namespaces only. */
@@ -141,7 +156,8 @@ function draw(st) {
       });
       items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind: 'namespace', namespace: n, ref}),
         'aria-current': st.cur === 'namespace:' + key ? 'true' : null, 'aria-expanded': String(open), 'data-node': 'namespace:' + n.join('.')},
-      tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), markOf(st, key, true, 'namespace:' + n.join('.')))));
+      tw, icon('ns', 'ic ico-n'), h('span', {class: 'nm'}, n[n.length - 1]), changedOf(st, key, true),
+      markOf(st, key, true, 'namespace:' + n.join('.')))));
       if (open) walk(n, depth + 1);
     }
     for (const [kind, names] of [['table', kids.tables], ['view', kids.views]]) {
@@ -151,6 +167,7 @@ function draw(st) {
         items.push(h('li', null, h('a', {class: 'node ' + d, href: objectHref({catalog: c, kind, namespace: levels, name, ref}),
           'aria-current': st.cur === kind + ':' + key ? 'true' : null, 'data-node': kind + ':' + [...levels, name].join('.')},
         h('span', {class: 'tw'}), icon(kind, 'ic ' + (kind === 'view' ? 'ico-v' : 'ico-t')), h('span', {class: 'nm'}, name),
+        kind === 'table' ? changedOf(st, key, false) : null,
         markOf(st, kind === 'table' ? key : null, false, kind + ':' + [...levels, name].join('.')))));
       }
     }

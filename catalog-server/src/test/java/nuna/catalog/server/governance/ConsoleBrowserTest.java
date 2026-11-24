@@ -945,16 +945,35 @@ class ConsoleBrowserTest {
         assertThat(JsonPath.<String>read(committed.body(), "$.metadata-location")).contains(".branch-");
         assertThat(properties(ns)).doesNotContainKey("k");
 
-        // Read through the branch, the table's page says so wherever the catalog is named.
+        // Read through the branch, the table's page says so wherever the catalog is named: the band, the first
+        // crumb, and the Reading control in the header beside the catalog picker (Atelier's review, S4; backlog
+        // 201), whose menu offers each ref's own page; the tree marks the table the branch changed.
         browser.open("/ui/#" + at("table", List.of(ns), "orders", null) + "&r=" + branch);
         browser.awaitText(By.cssSelector("#table-page h1"), "orders");
         assertThat(browser.awaitText(By.cssSelector("[data-ref-band='" + branch + "']"), "Reading the branch").getText())
                 .contains("1 table changed on it");
-        assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading@" + branch);
+        assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
         assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
                 .isEqualTo("trading@" + branch);
-        assertThat(browser.await(By.cssSelector("[data-ref-pick]")).getDomAttribute("aria-label"))
-                .isEqualTo("Reading branch " + branch + ". Choose a branch or tag");
+        WebElement reading = browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]"));
+        assertThat(reading.getDomAttribute("aria-label")).isEqualTo("Reading branch " + branch + ". Choose a branch or tag");
+        assertThat(driver.findElements(By.cssSelector("#table-page [data-ref-pick]"))).isEmpty();
+        reading.click();
+        assertThat(browser.await(By.cssSelector("#ref-menu [data-ref-item='" + branch + "'] a.ref-go"))
+                .getDomAttribute("href")).isEqualTo("#c=trading&k=ref&n=" + branch);
+        reading.click();
+        browser.await(By.cssSelector(".tree[data-ref='" + branch + "'] [data-node='table:" + ns + ".orders'] [data-changed]"));
+        browser.await(By.cssSelector(".tree[data-ref='" + branch + "'] [data-node='namespace:" + ns + "'] [data-changed]"));
+
+        // A page that reads main only, Overview, keeps the control: it reads main, and a ref opens the catalog
+        // through it.
+        browser.open("/ui/#p=overview&c=trading");
+        WebElement fromOverview = browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]"));
+        assertThat(fromOverview.getDomAttribute("aria-label")).isEqualTo("Reading main. Choose a branch or tag");
+        fromOverview.click();
+        driver.findElement(By.cssSelector("#ref-menu [data-ref-item='" + branch + "'] > a:first-child")).click();
+        browser.await("the ref did not open the catalog through it",
+                d -> d.getCurrentUrl().endsWith("#c=trading&r=" + branch));
 
         // The merge tab shows the dry run: the table moves from main's version to the next one.
         HttpResponse<String> plan = expect(api.manage("POST", "/refs/" + branch + "/merge?dry-run=true", null), 200);
@@ -1014,7 +1033,9 @@ class ConsoleBrowserTest {
             signIn(tester());
             browser.open("/ui/#" + at("table", List.of(ns), "orders", "properties") + "&r=" + tag);
             browser.awaitText(By.cssSelector("[data-ref-band='" + tag + "']"), "Reading the tag");
-            assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading@" + tag);
+            assertThat(textContent(browser.await(By.cssSelector("#catalog-pick [data-cat]")))).isEqualTo("trading");
+            assertThat(browser.await(By.cssSelector("#top [data-ref-pick]")).getDomAttribute("aria-label"))
+                    .isEqualTo("Reading tag " + tag + ". Choose a branch or tag");
             assertThat(textContent(driver.findElement(By.cssSelector("#table-page nav.crumbs > a"))))
                     .isEqualTo("trading@" + tag);
             browser.await(By.cssSelector("[data-ref-note='props']"));

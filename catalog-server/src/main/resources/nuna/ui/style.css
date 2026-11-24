@@ -596,6 +596,8 @@ pre.raw { overflow: visible; }
 .tree-key { display: flex; flex-wrap: wrap; gap: 6px 12px; padding: 10px 10px 0; margin-top: 4px; border-top: 1px solid var(--line); font-size: var(--t-12); color: var(--text-2); }
 .tree-key span { display: inline-flex; align-items: center; gap: 5px; }
 .tree-key i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.tree-key .m-chg, .tree-chg { background: var(--cref-mark); }
+.tree-chg { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex: none; margin-left: 2px; }
 .tree-key .m-warn { background: var(--warn-mark); } .tree-key .m-bad { background: var(--bad-mark); } .tree-key .m-held { background: var(--held-mark); }
 .tree-key .m-frozen { background: var(--frozen-mark); } .tree-key .m-reg { background: var(--text-2); }
 /* latency objectives: a dot on a labelled scale */
@@ -1214,3 +1216,10 @@ details.tech[open] > summary { margin-bottom: 4px; }
 
 /* A touch screen has no keys to press (backlog 193). */
 @media (hover: none) and (pointer: coarse) { .nc-nav .foot { display: none; } }
+
+/* The Reading control in the header, beside the catalog picker (backlog 201). */
+.reading-slot { display: flex; align-items: center; }
+.reading-slot:empty { display: none; }
+.ref-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; }
+.ref-menu .ref-go { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; color: var(--accent); font-size: var(--t-12); white-space: nowrap; }
+@container frame (max-width: 760px) { .nc-top .ref-pick .lbl { display: none; } }
