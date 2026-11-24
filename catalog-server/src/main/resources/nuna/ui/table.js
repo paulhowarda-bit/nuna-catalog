@@ -311,7 +311,7 @@ async function healthSummary(target) {
   words.push(c ? `Last compaction ${at(c['ended-at'] || c['started-at'])}, ${c.outcome}.` : 'No compaction has run for this table.');
   return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'maintenance')}, 'Maintenance'), ' ',
     target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
-  target.ref ? h('p', {class: 'fine'}, 'Maintenance runs on main only; this is main\'s.') : null,
+  target.ref ? h('p', {class: 'fine'}, `@${target.ref}'s tables are never compacted or expired; every file it reaches is kept.`) : null,
   off ? h('p', {class: 'fine', id: 'summary-maintenance-off'}, off) : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)

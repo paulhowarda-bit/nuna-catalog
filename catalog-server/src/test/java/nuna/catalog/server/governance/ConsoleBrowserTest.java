@@ -229,12 +229,13 @@ class ConsoleBrowserTest {
         signIn(api.grantAdmin());
         browser.open("/ui/");
         browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
-        assertThat(rail()).containsExactly("catalog", "governance", "audit");
+        // The home comes first in the rail (Atelier's re-walk after phase 2, backlog 217).
+        assertThat(rail()).containsExactly("audit", "catalog", "governance");
 
         signIn(api.operator());
         browser.open("/ui/");
         browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
-        assertThat(rail()).containsExactly("catalog", "governance", "service");
+        assertThat(rail()).containsExactly("service", "catalog", "governance");
         // Service is the whole deployment's: it offers no catalog to pick (backlog 200).
         assertThat(driver.findElement(By.cssSelector(".pick-wrap")).isDisplayed()).isFalse();
     }
@@ -299,7 +300,10 @@ class ConsoleBrowserTest {
         browser.await(By.cssSelector(".nc-go")).click();
         box = browser.await(By.id("goto-in"));
         box.sendKeys(top + " positions");
-        browser.await(By.cssSelector("#goto-list [data-goto-target='trading:" + top + ".equities.eu.positions']")).click();
+        WebElement match = browser.await(By.cssSelector("#goto-list [data-goto-target='trading:" + top + ".equities.eu.positions']"));
+        // A match in the catalog being read names it too (Atelier's re-walk after phase 2, backlog 217).
+        assertThat(textContent(match.findElement(By.cssSelector(".gp [data-goto-catalog='trading']")))).isEqualTo("in trading");
+        match.click();
         browser.awaitText(By.cssSelector("#table-page h1"), "positions");
         browser.open("/ui/#p=overview&c=trading");
         browser.await(By.cssSelector("#overview-kpis"));
@@ -651,8 +655,11 @@ class ConsoleBrowserTest {
         assertThat(Integer.parseInt(governanceKpi("freezes"))).isPositive();
         assertThat(Integer.parseInt(governanceKpi("regulated"))).isPositive();
         WebElement regulated = browser.await(By.cssSelector("#regulated tr[data-on='" + top + ".ledger']"));
-        assertThat(cell(regulated, 2)).isEqualTo("1");
-        assertThat(cell(regulated, 3)).isEqualTo("1");
+        // Why the area is regulated and who marked it, as its flag records them (backlog 213).
+        assertThat(cell(regulated, 2)).isEqualTo("console test");
+        assertThat(cell(regulated, 3)).endsWith("stella");
+        assertThat(cell(regulated, 4)).isEqualTo("1");
+        assertThat(cell(regulated, 5)).isEqualTo("1");
         browser.await(By.cssSelector("#regulated .closed-list li[data-on='" + top + ".ledger.accounts']"));
 
         // A hold released is listed as lifted, from what the store keeps of the release (item 133).
@@ -766,7 +773,15 @@ class ConsoleBrowserTest {
         assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
                 .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d, .*");
 
-        browser.await(By.cssSelector("#audit-kinds tr[data-type='nuna.catalog.grant'] button")).click();
+        // By kind uses the chips' words, so its counts add up to them; each badge is its chip's word, the raw type
+        // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
+        assertThat(driver.findElements(By.cssSelector("#audit-kinds tr:has(td)")).stream()
+                .map(row -> cell(row, 1) + " " + cell(row, 2)).toList()).containsExactly("Grants 1", "Commits 1", "All 2");
+        assertThat(textContent(driver.findElement(By.cssSelector("#audit-feed .chip[data-f='hold']")))).isEqualTo("Governance 0");
+        WebElement grantBadge = driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .badge"));
+        assertThat(textContent(grantBadge)).isEqualTo("Grant");
+        assertThat(grantBadge.getDomAttribute("title")).isEqualTo("nuna.catalog.grant");
+        browser.await(By.cssSelector("#audit-kinds tr[data-kind='grant'] button")).click();
         browser.await("the feed did not show only grants", d -> feedTypes().equals(List.of("grant")));
         assertThat(lastAsked()).isEqualTo("nuna.catalog.grant");
         assertThat(driver.getCurrentUrl()).contains("p=audit", "kind=grant");
@@ -774,6 +789,10 @@ class ConsoleBrowserTest {
                 .isEqualTo("true");
         driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] button")).click();
         assertThat(textContent(browser.await(By.cssSelector("#audit-feed .feed-row .rec")))).contains("r2");
+        // No archive is configured, so the record offers no archive check, and its object's label is a word (backlog 216).
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row .rec dt")).stream().map(ConsoleBrowser::textContent)
+                .toList()).contains("Table").doesNotContain("Archive", "table");
+        assertThat(driver.findElements(By.cssSelector("#audit-feed .feed-row .rec .chain-link"))).isEmpty();
 
         // Back from the record's table keeps the kind.
         driver.findElement(By.cssSelector("#audit-feed .feed-row[data-type='grant'] .what a")).click();
@@ -1020,7 +1039,17 @@ class ConsoleBrowserTest {
         int mainNow = JsonPath.read(plan.body(), "$.tables[0].main-version");
         int onBranch = JsonPath.read(plan.body(), "$.tables[0].branch-version");
         int mainAfter = JsonPath.read(plan.body(), "$.tables[0].version");
-        browser.open("/ui/#c=trading&k=ref&n=" + branch + "&tab=merge");
+        // The branch's Changes tab says whether it merges, linked to the Merge tab, so what it changed and whether it
+        // merges is one step (Atelier's re-walk after phase 2, backlog 212); its header copies the warehouse name.
+        browser.open("/ui/#c=trading&k=ref&n=" + branch);
+        WebElement onChanges = browser.awaitText(By.cssSelector(".tab-body .merge-verdict[data-verdict='ready']"),
+                "Ready to merge: 1 table would move to main in one transaction.");
+        browser.await(By.cssSelector("#ref-changes tr[data-path='" + ns + ".orders']"));
+        assertThat(textContent(driver.findElement(By.cssSelector("button[aria-label='Copy the warehouse name trading@" + branch + "']"))))
+                .isEqualTo("Copy trading@" + branch);
+        WebElement preview = onChanges.findElement(By.linkText("Preview the merge"));
+        assertThat(preview.getDomAttribute("href")).isEqualTo("#c=trading&k=ref&n=" + branch + "&tab=merge");
+        preview.click();
         browser.awaitText(By.cssSelector(".merge-verdict[data-verdict='ready']"),
                 "Ready: 1 table would move to main in one transaction");
         WebElement moves = browser.await(By.cssSelector(".mm-row.moves[data-path='" + ns + ".orders']"));

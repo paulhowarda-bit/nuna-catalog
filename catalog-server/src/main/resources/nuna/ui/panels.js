@@ -19,6 +19,9 @@ const ATTRIBUTES = ['classification', 'owner', 'retention-class', 'regulated', '
 const ATTRIBUTE_LABELS = {classification: 'Classification', owner: 'Owner', 'retention-class': 'Retention class',
   regulated: 'Regulated area', 'row-column-policy': 'Row and column policy'};
 const attributeLabel = name => ATTRIBUTE_LABELS[name] ? h('span', {title: name}, ATTRIBUTE_LABELS[name]) : name;
+/** An attribute's value in words: the regulated flag is Yes or No, not true or false (backlog 213). */
+const attributeValue = (name, v) => name === 'regulated' && /^(true|false)$/i.test(String(v))
+  ? (String(v).toLowerCase() === 'true' ? 'Yes' : 'No') : String(v);
 
 const what = target => target.kind === 'catalog' ? target.catalog : dotted(target);
 const lastWord = target => target.name || (target.namespace.length ? target.namespace[target.namespace.length - 1] : target.catalog);
@@ -133,7 +136,7 @@ export async function governanceTab(target, reload) {
     const a = nearest(name);
     const v = effective[name];
     if (v === undefined || v === null) return null;
-    return [String(v), ' ', a ? h('span', {class: 'muted'}, '· ', levelLabel(a.level, here, levels), a.provenance ? ' · ' + a.provenance : '') : null];
+    return [attributeValue(name, v), ' ', a ? h('span', {class: 'muted'}, '· ', levelLabel(a.level, here, levels), a.provenance ? ' · ' + a.provenance : '') : null];
   };
   const status = h('div', {class: 'status-row'},
     freeze ? h('p', {class: 'status-frozen'}, frozenPill('DR freeze in force'), ' ', h('span', {class: 'fine'}, String(freeze)))
@@ -173,7 +176,7 @@ export async function governanceTab(target, reload) {
     : h('p', {class: 'muted'}, 'None, here or above.'));
   const attributes = panel('Attributes', 'nearest level first', attrs.length
     ? tbl('attributes stack-line', ['Attribute', 'Value', 'Level', 'Provenance', 'Set'], attrs.map(a => h('tr', null,
-      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, a.value), h('td', null, levelLabel(a.level, here, levels)),
+      h('td', {class: ATTRIBUTE_LABELS[a.attribute] ? null : 'name'}, attributeLabel(a.attribute)), h('td', {class: 'wrap'}, attributeValue(a.attribute, a.value)), h('td', null, levelLabel(a.level, here, levels)),
       h('td', {class: 'muted wrap'}, a.provenance), h('td', null, h('span', {class: 'tnum'}, at(a['set-at'])), ' ', muted(a['set-by'])))))
     : h('p', {class: 'muted'}, 'No attribute set here or above.'));
   const enforced = panel('What the catalog enforces', target.kind === 'namespace' || target.kind === 'catalog' ? 'beneath it' : 'on every call',
@@ -266,7 +269,10 @@ function setRetentionClass(target, current, reload) {
   });
 }
 
-/** Marks a catalog or namespace as a regulated area, or clears its own mark (set to false, so the clearing is recorded). */
+/**
+ * Marks a catalog or namespace as a regulated area, or clears its own mark (set to false, so the clearing is recorded),
+ * with the reason as its provenance, which Governance shows beside the area (Atelier, 2026-11-23; backlog 213).
+ */
 function setRegulated(target, marked, inherited, reload) {
   const words = marked
     ? ['Clearing the mark opens the tables beneath this ' + target.kind + ' that have no classification of their own, '
@@ -276,9 +282,16 @@ function setRegulated(target, marked, inherited, reload) {
       + 'unregistered.', inherited ? ' A level above already marks it regulated; a mark here keeps it so if that one is cleared.' : ''];
   openDialog(marked ? `Clear the regulated mark on ${lastWord(target)}` : `Mark ${lastWord(target)} as a regulated area`, h('div', null,
     h('p', null, ...words),
-    h('p', {class: 'fine'}, RECORDED),
-    dialogForm(null, marked ? 'Clear the mark' : 'Mark as regulated', async (form, out) => {
-      const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', 'console');
+    h('p', {class: 'fine'}, 'The reason is recorded with the mark, under your name, in the audit trail.'),
+    dialogForm([field('Reason, as it will be recorded', text('reason', marked ? 'Compliance review: no regulated data left here'
+      : 'Compliance register: holds customer personal data'))], marked ? 'Clear the mark' : 'Mark as regulated', async (form, out) => {
+      const reason = form.elements.reason.value.trim();
+      if (!reason) {
+        fill(out, h('p', {class: 'fine grant-hint'}, marked ? 'Write the reason: the audit record carries it.'
+          : 'Write the reason: the area carries it for as long as it is marked.'));
+        return;
+      }
+      const answer = await api.setAttribute(target, 'regulated', marked ? 'false' : 'true', reason);
       forgetMarks(target.catalog);
       fill(out, granted(marked ? `${what(target)} is no longer a regulated area` : `${what(target)} is a regulated area`, answer));
       reload();
@@ -573,11 +586,45 @@ export function describe(type, d, catalog) {
   }
 }
 
-const KIND_OF = type => type === 'denial' ? 'refusal' : type === 'read' || type === 'audit-read' ? 'read'
-  : type === 'credential-issue' ? 'cred' : type === 'commit' || type === 'governance' || type === 'hold' || type === 'drop'
-    || type === 'undrop' || type === 'purge' || type === 'rename' || type === 'namespace' || type === 'ref' ? 'change' : 'other';
+/** Every record type that changes something, for the Audit page's Changes figure. */
+export const CHANGES = ['commit', 'governance', 'hold', 'grant', 'label', 'drop', 'undrop', 'rename', 'namespace', 'ref', 'purge',
+  'purge-claim', 'file-deletion', 'maintenance-exemption', 'unregister', 'storage-setup', 'engine', 'break-glass'];
 
-const KINDS = [['all', 'All'], ['change', 'Changes'], ['read', 'Reads'], ['cred', 'Credentials'], ['refusal', 'Refusals'], ['other', 'Other']];
+/**
+ * The kinds audit records are filtered by (Atelier's review, F7; backlog 187), each as [key, the chip's word, a
+ * record's badge, its record types], and the one map every audit view takes its words from, so a badge, a chip and a
+ * By kind row of one kind say the same and their counts add up (Atelier's re-walk after phase 2, backlog 214).
+ * Governance holds a hold and every governance record: a DR freeze (D37), a label, a maintenance policy.
+ */
+export const AUDIT_KINDS = [
+  ['all', 'All', null, null],
+  ['grant', 'Grants', 'Grant', ['grant']],
+  ['hold', 'Governance', 'Governance', ['hold', 'governance']],
+  ['ref', 'Branches and tags', 'Branch or tag', ['ref']],
+  ['commit', 'Commits', 'Commit', ['commit']],
+  ['change', 'Other changes', 'Change', CHANGES.filter(t => !['grant', 'hold', 'governance', 'ref', 'commit'].includes(t))],
+  ['read', 'Reads', 'Read', ['read', 'audit-read']],
+  ['cred', 'Credentials', 'Credential', ['credential-issue']],
+  ['refusal', 'Refusals', 'Refusal', ['denial', 'auth-failure']],
+];
+
+/** A record type without its prefix: `commit` for `nuna.catalog.commit`. */
+export const shortType = type => String(type || '').replace(/^nuna\.catalog\./, '');
+
+/** The kind a record type belongs to, null for a type no kind names. */
+export const auditKindOf = type => (AUDIT_KINDS.find(([k, , , types]) => k !== 'all' && types.includes(shortType(type))) || [null])[0];
+
+/** A record's badge: its kind's word in the UI font, a ref's own kind for a ref record, the full type its title. */
+export function auditBadge(type, data) {
+  const kind = AUDIT_KINDS.find(([k]) => k === auditKindOf(type));
+  const refKind = String((data || {}).kind || '').toLowerCase();
+  const word = shortType(type) === 'ref' && (refKind === 'branch' || refKind === 'tag') ? (refKind === 'tag' ? 'Tag' : 'Branch')
+    : kind ? kind[2] : 'Other';
+  return h('span', {class: 'badge', title: type || ''}, word);
+}
+
+const KIND_OF = type => auditKindOf(type) || 'other';
+const KINDS = [...AUDIT_KINDS.map(([k, label]) => [k, label]), ['other', 'Other']];
 
 function feedRow(r) {
   const type = String(r.type || '').replace(/^nuna\.catalog\./, '');
@@ -590,7 +637,7 @@ function feedRow(r) {
   h('span', {class: 't'}, when(r.time)),
   h('span', {class: 'w'}, h('b', null, actor.principal || '–'), actor.endUser ? [' for ', h('b', null, actor.endUser)] : null,
     h('br'), h('span', {class: 'via'}, actor.engine ? 'via ' + actor.engine : '')),
-  h('div', null, h('span', {class: 'badge', title: r.type || type}, type), h('p', {class: 'what'}, describe(type, d))), btn);
+  h('div', null, auditBadge(r.type, d), h('p', {class: 'what'}, describe(type, d))), btn);
   btn.addEventListener('click', () => {
     const open = btn.getAttribute('aria-expanded') === 'true';
     btn.setAttribute('aria-expanded', String(!open));
@@ -656,8 +703,8 @@ export function auditTab(target, {title} = {}) {
       h('div', {class: 'feed-box'},
         h('div', {class: 'feed-filters'},
           h('label', {class: 'ff'}, 'Kind', chipBox),
-          h('label', {class: 'ff'}, 'Who', h('span', {class: 'field mono select'}, who)),
-          h('label', {class: 'ff'}, 'How many', h('span', {class: 'field mono select'}, limit))),
+          h('label', {class: 'ff'}, 'Who', h('span', {class: 'field select'}, who)),
+          h('label', {class: 'ff'}, 'How many', h('span', {class: 'field select'}, limit))),
         h('div', {class: 'refusal-acts'}, h('button', {class: 'btn sm', type: 'button', onclick: run}, 'Refresh')),
         status, feed)),
     h('div', {class: 'stack'}, windowBox,

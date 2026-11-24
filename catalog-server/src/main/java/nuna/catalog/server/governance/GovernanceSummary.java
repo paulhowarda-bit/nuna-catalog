@@ -96,7 +96,7 @@ final class GovernanceSummary {
      * The counts: tables, those with a classification (their own or inherited, as their labels carry it), those
      * closed until classified, held (a hold on them or above) and frozen (a DR freeze on them or above); the
      * standing holds and freezes; each regulated area, a level whose own regulated flag is true, with the tables
-     * it covers and how many of those are closed; and every closed table.
+     * it covers, how many of those are closed, and the flag's provenance, setter and time; and every closed table.
      */
     ObjectNode summary() {
         int tables = 0;
@@ -155,6 +155,11 @@ final class GovernanceSummary {
             node.set("on", on(levels.get(on)));
             node.put("tables", area[0]);
             node.put("closed", area[1]);
+            // Why the area is regulated and who said so, as its flag records them (Atelier's re-walk, backlog 213).
+            GovernanceAttribute flag = own(on, GovernanceAttribute.Kind.REGULATED).orElseThrow();
+            node.put("provenance", flag.provenance());
+            node.put("set-by", flag.setBy());
+            node.put("set-at", flag.setAt().toString());
         });
         ArrayNode closedNode = body.putArray("closed");
         closed.forEach(level -> closedNode.add(on(level)));
