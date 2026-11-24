@@ -207,7 +207,7 @@ class ConsoleBrowserTest {
         signIn(tester());
         browser.open("/ui/");
         browser.await("the tester did not land on the overview", d -> d.getCurrentUrl().endsWith("#p=overview&c=trading"));
-        assertThat(rail()).containsExactly("overview", "catalog", "maintenance", "governance");
+        assertThat(rail()).containsExactly("overview", "catalog", "refs", "maintenance", "governance");
         browser.open("/ui/#" + at("table", eu, "trades", "governance"));
         browser.await(By.cssSelector("#governance .status-row"));
         // A table's six tabs, Audit left out for one who may not read its trail (backlog 199); Access leads with
@@ -230,14 +230,50 @@ class ConsoleBrowserTest {
         browser.open("/ui/");
         browser.await("the grant admin did not land on Audit", d -> d.getCurrentUrl().endsWith("#p=audit&c=trading"));
         // The home comes first in the rail (Atelier's re-walk after phase 2, backlog 217).
-        assertThat(rail()).containsExactly("audit", "catalog", "governance");
+        assertThat(rail()).containsExactly("audit", "catalog", "refs", "governance");
 
         signIn(api.operator());
         browser.open("/ui/");
         browser.await("the operator did not land on Service", d -> d.getCurrentUrl().endsWith("#p=service"));
-        assertThat(rail()).containsExactly("service", "catalog", "governance");
+        assertThat(rail()).containsExactly("service", "catalog", "refs", "governance");
         // Service is the whole deployment's: it offers no catalog to pick (backlog 200).
         assertThat(driver.findElement(By.cssSelector(".pick-wrap")).isDisplayed()).isFalse();
+        // An operator freezes a namespace from Holds and freezes, not only from its Access tab (backlog 221).
+        browser.open("/ui/#p=governance&c=trading&tab=holds");
+        browser.await(By.cssSelector("#governance-holds [data-act='freeze-path']")).click();
+        WebElement named = browser.await(By.cssSelector("dialog.dlg"));
+        named.findElement(By.cssSelector("input[name='path']")).sendKeys(top + ".equities.eu");
+        named.findElement(By.cssSelector("button[type='submit']")).click();
+        browser.awaitText(By.cssSelector("dialog.dlg #dlg-h"), "Freeze eu for DR");
+        driver.findElement(By.cssSelector("dialog.dlg button.dlg-x")).click();
+    }
+
+    /**
+     * Branches and tags have a place in the rail for anyone who may list them (Paul, 2026-11-23: "how do i create a
+     * branch"; backlog 221): it opens the catalog's page of them, current there and not Catalog, with the Reading
+     * control; one whose groups don't hold create reads why there, with no button to make one.
+     */
+    @Test
+    void theRailOpensBranchesAndTagsAndSaysWhyOneMayNotMakeOne() {
+        signIn(api.grantAdmin());
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#nav a[data-k='refs']")).click();
+        browser.await("the rail did not open Branches and tags", d -> d.getCurrentUrl().endsWith("#c=trading&tab=refs"));
+        browser.await(By.cssSelector("#nav a[data-k='refs'][aria-current='page']"));
+        assertThat(driver.findElements(By.cssSelector("#nav a[data-k='catalog'][aria-current]"))).isEmpty();
+        assertThat(textContent(browser.await(By.cssSelector("#refs-page h1")))).isEqualTo("Branches and tags in trading");
+        assertThat(textContent(browser.await(By.cssSelector("#refs-page [data-no-create]"))))
+                .startsWith("You can read every branch and tag here. Making, renewing, merging or deleting one needs "
+                        + "create on trading");
+        assertThat(driver.findElements(By.cssSelector("[data-act='ref-new']"))).isEmpty();
+        browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]")).click();
+        browser.await(By.cssSelector("#ref-menu a.mfoot"));
+        assertThat(driver.findElements(By.cssSelector("#ref-menu [data-act='ref-new-menu']"))).isEmpty();
+        // The catalog's own page keeps Contents and Properties.
+        browser.open("/ui/#c=trading");
+        assertThat(browser.await(By.cssSelector("#catalog-page nav.tabs a[data-tab]")).isDisplayed()).isTrue();
+        assertThat(driver.findElements(By.cssSelector("#catalog-page nav.tabs a[data-tab]")))
+                .extracting(a -> a.getDomAttribute("data-tab")).containsExactly("overview", "properties");
     }
 
     /**
@@ -1052,8 +1088,10 @@ class ConsoleBrowserTest {
         expect(api.rest("POST", "/namespaces/" + ns + "/tables", Api.TABLE.formatted("orders")), 200);
 
         signIn(tester());
-        browser.open("/ui/#c=trading&tab=refs");
-        browser.await(By.cssSelector("button[data-act='ref-new']")).click();
+        browser.open("/ui/#c=trading");
+        browser.await(By.cssSelector("#nav a[data-k='refs']")).click();
+        browser.await(By.cssSelector("#refs-page .ph button[data-act='ref-new'], #refs-page .refs-empty button[data-act='ref-new']"))
+                .click();
         WebElement make = browser.await(By.cssSelector("dialog.dlg"));
         assertThat(textContent(make.findElement(By.id("dlg-h")))).isEqualTo("Make a branch or tag");
         assertThat(make.findElement(By.cssSelector("button[data-k='branch']")).getDomAttribute("aria-pressed"))
@@ -1097,6 +1135,9 @@ class ConsoleBrowserTest {
         WebElement fromOverview = browser.await(By.cssSelector("#top #reading-slot [data-ref-pick]"));
         assertThat(fromOverview.getDomAttribute("aria-label")).isEqualTo("Reading main. Choose a branch or tag");
         fromOverview.click();
+        // The menu makes a branch or tag too, for one who may (backlog 221).
+        assertThat(textContent(browser.await(By.cssSelector("#ref-menu [data-act='ref-new-menu']"))))
+                .isEqualTo("Make a branch or tag");
         driver.findElement(By.cssSelector("#ref-menu [data-ref-item='" + branch + "'] > a:first-child")).click();
         browser.await("the ref did not open the catalog through it",
                 d -> d.getCurrentUrl().endsWith("#c=trading&r=" + branch));
