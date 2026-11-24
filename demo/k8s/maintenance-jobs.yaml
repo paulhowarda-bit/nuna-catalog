@@ -1,0 +1,18 @@
+# The maintenance worker's compaction Jobs run here, in a namespace of their own (D30): a pod may run as any service
+# account and mount any Secret of its namespace, so never the catalog's. The chart (maintenance-values.yaml) adds the
+# Role that lets the worker create Jobs and Secrets here, and the Jobs' service account, which has no rights.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ${NAMESPACE}-compaction
+---
+# The catalog vends each table's credentials with the store's endpoint as its own pods name it, http://s3:9000
+# (demo-values.yaml), which resolves only in the demo's namespace. Here the same short name points there.
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+  namespace: ${NAMESPACE}-compaction
+spec:
+  type: ExternalName
+  externalName: s3.${NAMESPACE}.svc.cluster.local

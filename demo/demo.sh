@@ -23,8 +23,8 @@
 #   demo/demo.sh sqlplus [user]  a SQL*Plus prompt on the CDC leg's Oracle, PDB FREEPDB1 (default treasury)
 #   demo/demo.sh cockroach [user]  a SQL prompt on the CDC leg's CockroachDB, database custody (default root)
 #   demo/demo.sh status   show the deployments, pods and services, and Kafka Connect's connectors
-#   demo/demo.sh down     delete the namespace and everything in it (keeps the signing key, tokens, Keycloak keys
-#                         and the certificate)
+#   demo/demo.sh down     delete the namespace and the compaction Jobs' one, and everything in them (keeps the
+#                         signing key, tokens, Keycloak keys and the certificate)
 #
 # Needs bash (Git Bash on Windows), Docker Desktop with Kubernetes on, kubectl, helm, curl, unzip, openssl (Git
 # Bash has it), and JDK 25 (JAVA_HOME or java on PATH). kubectl and helm always use NUNA_DEMO_CONTEXT (default
@@ -62,6 +62,8 @@ TRINO_IMAGE=trinodb/trino:484
 OAUTH2_PROXY_IMAGE=quay.io/oauth2-proxy/oauth2-proxy:v7.15.6
 CLOUDBEAVER_IMAGE=
 CONNECT_IMAGE=
+# The engine matrix's Spark image, which the maintenance worker's compaction Jobs run (maintenance-values.yaml).
+SPARK_IMAGE=nuna-engines/spark:4.1.4-iceberg-1.12.0
 # The brokerage world's generator (brokerage.Dockerfile), and its image's id.
 BROKERAGE_IMAGE=
 BROKERAGE_IMAGE_ID=
@@ -209,9 +211,9 @@ image_id() { docker image inspect -f '{{.Id}}' "$1" | sed 's/^sha256://' | cut -
 # its Dockerfile, so a change to either replaces the pod (and up seeds the new one); the brokerage world's with the
 # hash of its classpath and its Dockerfile. The cluster never pulls: images it runs come from the local Docker engine.
 build() {
-  say "building the catalog server, audit table writer, change-feed connector and brokerage world jars (no tests run)"
-  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :catalog-audit-tables:bootJar :singlestore-change-feed:connectorJar \
-    :demo-datagen:imageLib)
+  say "building the catalog server, audit table writer, maintenance worker, change-feed connector and brokerage world jars (no tests run)"
+  (cd "$REPO" && ./gradlew -q :catalog-server:bootJar :catalog-audit-tables:bootJar :catalog-maintenance:bootJar \
+    :singlestore-change-feed:connectorJar :demo-datagen:imageLib)
   local jar="$REPO/singlestore-change-feed/build/libs/nuna-changefeed-connector.jar"
   rm -rf "$RUN/images"
   mkdir -p "$RUN/images/singlestore" "$RUN/images/lake/lib" "$RUN/images/brokerage"
@@ -220,10 +222,17 @@ build() {
   cp "$REPO/demo/LakeWriter.java" "$RUN/images/lake/"
   cp -r "$REPO/demo-datagen/build/image/lib" "$RUN/images/brokerage/"
 
-  say "building the images: the catalog, the audit table writer, SingleStore with the connector, the lake writer, CloudBeaver, the brokerage world"
+  say "building the images: the catalog, the audit table writer, the maintenance worker, SingleStore with the connector, the lake writer, CloudBeaver, the brokerage world"
   docker build -q -f "$REPO/deploy/image/Dockerfile" -t nuna-catalog:demo "$REPO/catalog-server/build/libs" >/dev/null
   docker build -q -f "$REPO/deploy/image/audit-tables.Dockerfile" -t nuna-audit-tables:demo \
     "$REPO/catalog-audit-tables/build/libs" >/dev/null
+  docker build -q -f "$REPO/deploy/image/maintenance.Dockerfile" -t nuna-maintenance:demo \
+    "$REPO/catalog-maintenance/build/libs" >/dev/null
+  # Built once: its Dockerfile downloads Iceberg's jars from Maven Central.
+  if ! docker image inspect "$SPARK_IMAGE" >/dev/null 2>&1; then
+    say "building the Spark image $SPARK_IMAGE for the compaction Jobs (once)"
+    docker build -q -t "$SPARK_IMAGE" "$REPO/catalog-tests-engines/images/spark" >/dev/null
+  fi
   # Studio's SAML address, in the image, names the host.
   SINGLESTORE_IMAGE="nuna-demo-singlestore:$( (cat "$jar" "$STACK/singlestore.Dockerfile"; echo "$DEMO_HOST") \
     | sha256sum | cut -c1-12)"
@@ -270,7 +279,7 @@ publish_tokens() {
 }
 
 # Keycloak's realm signing key and certificate, CloudBeaver's client and cookie secrets and the client secrets of
-# the audit table writer and Silo's console, made once per machine in $RUN/keycloak and kept, and published as
+# the audit table writer, the maintenance worker and Silo's console, made once per machine in $RUN/keycloak and kept, and published as
 # Secret keycloak-keys (keycloak.yaml, cloudbeaver.yaml, singlestore.yaml, silo-signin.yaml; audit_writer passes
 # the writer its secret). The key is fixed
 # rather than Keycloak's own, made at each start, because SingleStore checks Studio's SAML sign-ins against its
@@ -290,6 +299,7 @@ publish_keycloak_keys() {
   # Made apart from the rest: the folder predates it on machines that ran the demo before.
   [[ -f "$dir/audit-tables-client-secret" ]] || openssl rand -hex 24 > "$dir/audit-tables-client-secret"
   [[ -f "$dir/silo-client-secret" ]] || openssl rand -hex 24 > "$dir/silo-client-secret"
+  [[ -f "$dir/maintenance-client-secret" ]] || openssl rand -hex 24 > "$dir/maintenance-client-secret"
   # The token the catalog sends with its audit log to the audit table writer's OTLP receiver (D23, amended
   # 2026-11-23), which asks for at least 32 characters.
   [[ -f "$dir/audit-otlp-token" ]] || openssl rand -hex 32 > "$dir/audit-otlp-token"
@@ -303,6 +313,7 @@ publish_keycloak_keys() {
     --from-literal=cloudbeaver-cookie-secret="$(tr -d '\r\n' < "$dir/cloudbeaver-cookie-secret")" \
     --from-literal=audit-tables-client-secret="$(tr -d '\r\n' < "$dir/audit-tables-client-secret")" \
     --from-literal=silo-client-secret="$(tr -d '\r\n' < "$dir/silo-client-secret")" \
+    --from-literal=maintenance-client-secret="$(tr -d '\r\n' < "$dir/maintenance-client-secret")" \
     --from-literal=audit-otlp-token="$(tr -d '\r\n' < "$dir/audit-otlp-token")" \
     --dry-run=client -o yaml | k apply -f - >/dev/null
 }
@@ -406,7 +417,8 @@ wait_for_console() {
 
 # By SQL, so the server's separation-of-duties check (D18) never sees these: each group keeps to one duty plus
 # reading. ana's demo-analysts change data and definitions; stella's demo-stewards tag and read. gary's
-# demo-grant-admins and oscar's demo-operators may hold no grant at all, so they hold none.
+# demo-grant-admins and oscar's demo-operators may hold no grant at all, so they hold none. The maintenance worker's
+# demo-maintenance holds write on lakehouse, which it maintains (D30).
 grants() {
   say "granting the demo groups and the engine matrix their privileges (by SQL)"
   k exec -i deployment/postgres -- psql -q -v ON_ERROR_STOP=1 -U catalog -d catalog <<'SQL'
@@ -416,6 +428,7 @@ FROM catalog c,
      (VALUES ('lakehouse', 'demo-loaders', 'create'), ('lakehouse', 'demo-loaders', 'modify'),
              ('lakehouse', 'demo-analysts', 'create'), ('lakehouse', 'demo-analysts', 'modify'),
              ('lakehouse', 'demo-stewards', 'manage-tags'), ('lakehouse', 'demo-stewards', 'select'),
+             ('lakehouse', 'demo-maintenance', 'write'),
              ('engines', 'engine-clients', 'create'), ('engines', 'engine-clients', 'modify'),
              ('engines', 'demo-analysts', 'create'), ('engines', 'demo-analysts', 'modify'),
              ('engines', 'demo-stewards', 'select')) AS g(catalog_name, group_name, privilege)
@@ -445,6 +458,47 @@ audit_writer() {
     --set-string "secrets.values.nuna\.audit-tables\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/audit-tables-client-secret")" \
     --set-string "secrets.values.nuna\.audit-tables\.otlp\.token=$(tr -d '\r\n' < "$RUN/keycloak/audit-otlp-token")" \
     --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-audit-tables:demo)" --wait --timeout 5m >/dev/null
+}
+
+# The maintenance worker (D30; chart deploy/helm/nuna-maintenance, maintenance-values.yaml), installed or brought up to
+# date, with its compaction Jobs' namespace (maintenance-jobs.yaml) and its own Silo user, which may list and delete
+# beneath the tables (silo-maintenance.json); Silo keeps the user only for the pod's life, so every up makes it. It
+# signs in to Keycloak as client nuna-maintenance, with the secret publish_keycloak_keys made. The image's id as a pod
+# annotation, as for the catalog. One replica: an upgrade also starts it again after cdc stopped it.
+maintenance_worker() {
+  say "starting the maintenance worker (chart deploy/helm/nuna-maintenance), its compaction Jobs in namespace $NS-compaction"
+  k exec -i deployment/s3 -c silo -- sh -c 'cat > /tmp/nuna-maintenance.json &&
+    mc alias set l http://127.0.0.1:9000 nunatest nunatest-secret-key >/dev/null &&
+    mc admin user add l nuna-maintenance nuna-maintenance-secret-key >/dev/null &&
+    mc admin policy create l nuna-maintenance /tmp/nuna-maintenance.json >/dev/null &&
+    { mc admin policy attach l nuna-maintenance --user nuna-maintenance >/dev/null 2>&1 || true; }' \
+    < "$STACK/silo-maintenance.json"
+  fill maintenance-jobs.yaml | kubectl --context "$CONTEXT" apply -f - >/dev/null
+  fill maintenance-values.yaml > "$RUN/maintenance-values.yaml"
+  helm --kube-context "$CONTEXT" -n "$NS" upgrade --install nuna-maintenance "$REPO/deploy/helm/nuna-maintenance" \
+    -f "$RUN/maintenance-values.yaml" \
+    --set-string "secrets.values.nuna\.maintenance\.token\.client-secret=$(tr -d '\r\n' < "$RUN/keycloak/maintenance-client-secret")" \
+    --set-string "secrets.values.nuna\.maintenance\.storage\.s3\.secret-access-key=nuna-maintenance-secret-key" \
+    --set-string "podAnnotations.nuna-demo/image=$(image_id nuna-maintenance:demo)" --wait --timeout 5m >/dev/null
+}
+
+# Stops the maintenance worker, if it runs, for memory something else needs (cdc, engines). A compaction Job already
+# running finishes.
+stop_maintenance() {
+  if running nuna-maintenance; then
+    k scale deployment/nuna-maintenance --replicas=0 >/dev/null
+    k wait --for=delete pod -l app.kubernetes.io/instance=nuna-maintenance --timeout=2m >/dev/null 2>&1 || true
+  fi
+}
+
+# Catalog lakehouse's maintenance policy (D30), as ana, who may modify it: every job on, snapshots expired once an
+# hour old (the least the catalog allows), keeping the newest 5 of each table; the other keys as built in. The
+# database is new at each up, so every up sets it. Branches, tags, holds and freezes keep what they keep.
+maintenance_policy() {
+  say "turning maintenance on in $CATALOG's policy (as ana)"
+  api ana PUT "/management/v1/catalogs/$CATALOG/maintenance-policy" '{"snapshot-expiry.enabled": "true",
+    "snapshot-expiry.max-snapshot-age": "PT1H", "snapshot-expiry.min-snapshots-to-keep": "5",
+    "orphan-removal.enabled": "true", "compaction.enabled": "true", "manifest-rewrite.enabled": "true"}'
 }
 
 # Waits for a Job to end: prints its output, deletes it, fails if it failed.
@@ -996,9 +1050,10 @@ cdc_start() {
   fi
   image=$(image_of cockroachdb.image)
   docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null
-  say "stopping Trino and the brokerage world's generator: the CDC leg needs their memory"
+  say "stopping Trino, the brokerage world's generator and the maintenance worker: the CDC leg needs their memory"
   k scale deployment/trino --replicas=0 >/dev/null
   k wait --for=delete pod -l app=trino --timeout=2m >/dev/null
+  stop_maintenance
   # Beside SingleStore the leg needs the audit table writer's memory too. The catalog sends it the audit records
   # over OTLP (D23, amended 2026-11-23), so while it is stopped the Audit page misses them; the catalog's log keeps
   # them. cdc stop starts it again.
@@ -1097,6 +1152,7 @@ cdc_stop() {
   say "starting Trino again"
   k scale deployment/trino --replicas=1 >/dev/null
   audit_writer
+  maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
   if is_on gen; then
     gen_start
   else
@@ -1169,6 +1225,13 @@ up() {
   # writer's Job needs, while Kafka Connect and the generator are stopped. A failure in it never stops up.
   seed
   refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
+  maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again (backlog 230)"
+  # After the lake writer's Jobs, whose memory it would take; stopped while the CDC leg runs, as cdc stop says.
+  if cdc_running; then
+    say "the CDC leg is running: the maintenance worker stays stopped until demo/demo.sh cdc stop"
+  else
+    maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
+  fi
 
   # The switches (D50) as they were: SingleStore, then Kafka for the generator or the CDC leg.
   if is_on ss; then
@@ -1219,18 +1282,22 @@ engines() {
     publish_tokens
     annotate_tokens
   fi
-  say "stopping Trino, CloudBeaver, Kafka Connect and the brokerage world for the run"
+  say "stopping Trino, CloudBeaver, Kafka Connect, the brokerage world and the maintenance worker for the run"
   k scale deployment/trino deployment/cloudbeaver --replicas=0 >/dev/null
   k wait --for=delete pod -l 'app in (trino, cloudbeaver)' --timeout=2m >/dev/null
   pause_world
+  stop_maintenance
   say "running the engine matrix against namespace $NS"
   local status=0
   (cd "$REPO" && ./gradlew :catalog-tests-engines:test --rerun -Pnightly --tests EngineMatrixTest \
     -Pengines.cluster="$CONTEXT" -Pengines.stack="$NS" -Pengines.token-file="$RUN/tokens/engine-matrix.jwt" -Ps3=silo) \
     || status=$?
-  say "starting Trino, CloudBeaver, Kafka Connect and the brokerage world again"
+  say "starting Trino, CloudBeaver, Kafka Connect, the brokerage world and the maintenance worker again"
   k scale deployment/trino deployment/cloudbeaver --replicas=1 >/dev/null
   resume_world
+  if running nuna-maintenance; then
+    k scale deployment/nuna-maintenance --replicas=1 >/dev/null
+  fi
   return "$status"
 }
 
@@ -1344,7 +1411,7 @@ case "${1:-}" in
     ;;
   down)
     helm --kube-context "$CONTEXT" -n "$NS" uninstall "$RELEASE" --wait 2>/dev/null || true
-    kubectl --context "$CONTEXT" delete namespace "$NS" --ignore-not-found --wait=true
+    kubectl --context "$CONTEXT" delete namespace "$NS" "$NS-compaction" --ignore-not-found --wait=true
     ;;
   *)
     sed -n '2,32p' "$0"

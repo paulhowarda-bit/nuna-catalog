@@ -1,7 +1,8 @@
 # Keycloak: the demo's sign-in with a username and password, until a directory (AD, Entra ID) is configured.
 # Realm nuna (keycloak-realm.json, which demo.sh loads as ConfigMap keycloak-realm) holds the demo's people,
-# their groups and the clients of the console, kafbat, CloudBeaver and SingleStore Studio, and the audit table
-# writer's client, which signs in with the client-credentials grant as its service account. The browser reaches
+# their groups and the clients of the console, kafbat, CloudBeaver and SingleStore Studio, and the clients of the
+# audit table writer and the maintenance worker, which sign in with the client-credentials grant as their service
+# accounts. The browser reaches
 # Keycloak through the front door on https://<host>:8180 (ports.yaml, demo.sh's NUNA_DEMO_HOST), so its tokens
 # carry issuer https://<host>:8180/realms/nuna, and it takes the front door's X-Forwarded headers; the catalog
 # fetches the realm's keys inside the cluster, from http://keycloak:8080. Development mode, with an
@@ -52,6 +53,8 @@ spec:
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: audit-tables-client-secret}}
             - name: NUNA_SILO_CLIENT_SECRET
               valueFrom: {secretKeyRef: {name: keycloak-keys, key: silo-client-secret}}
+            - name: NUNA_MAINTENANCE_CLIENT_SECRET
+              valueFrom: {secretKeyRef: {name: keycloak-keys, key: maintenance-client-secret}}
           ports:
             - containerPort: 8080
             - containerPort: 9000
