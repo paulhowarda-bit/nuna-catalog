@@ -465,8 +465,9 @@ SQL
 # Trino's own client, trino-demo (Mint.java), registered as a trusted engine (D17) by oscar, a platform operator.
 # Its group holds no grant, so only as a registered engine does its own token see the catalogs and read their
 # config (D18, item 84); it still sees nothing in them. On every up, before Trino starts: the registry goes with
-# PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it could also name an end
-# user; the demo never has it do so, as each query carries the token of whoever runs it (trino.yaml).
+# PostgreSQL's pod, and registering it again leaves the registry as it was. Registered, it vouches for the user of
+# each query, whose own token the query carries (trino.yaml), so a flagged table's data reaches them through Trino
+# with their row filter and column masks applied (D20, backlog 115).
 trusted_engines() {
   say "registering Trino's client, trino-demo, as a trusted engine (as oscar, the platform operator)"
   api oscar PUT /management/v1/engines '{"issuer": "https://idp.demo/nuna", "client-id": "trino-demo"}' 204
@@ -681,6 +682,29 @@ seed() {
   api gary POST "$m/grants" '{"securable":{"type":"namespace","namespace":["markets"]},"group":"demo-quants","privilege":"describe"}'
   api gary POST "$m/grants" "{\"securable\":{\"type\":\"table\",\"namespace\":[\"markets\",\"equities\",\"eu\",\"xetra\"],\"name\":\"trades\"},\"group\":\"demo-quants\",\"privilege\":\"select\"}"
   k create configmap demo-seeded >/dev/null
+}
+
+# Row filters and column masks (D20, backlog 115), on markets.desks.positions, which the lake writer makes once (its
+# files are written before the flag, which then lets only a trusted engine reach them). stella flags it and gary,
+# the grant admin, sets each group's rule: ana's demo-analysts see the equity desk's rows with each trader's name
+# masked, and stella's demo-stewards every desk's rows with the P&L hidden. In CloudBeaver each runs
+#   SELECT * FROM lakehouse."markets.desks".positions
+# through Trino and gets their own answer; read without Trino, its data answers 403. Every up, after seed: setting
+# them again changes nothing.
+row_column_rules() {
+  local m=/management/v1/catalogs/$CATALOG ns='markets%1Fdesks'
+  local table='{"type":"table","namespace":["markets","desks"],"name":"positions"}'
+  if ! api ana HEAD "/v1/$CATALOG/namespaces/$ns/tables/positions" '' 204 2>/dev/null; then
+    say "writing markets.desks.positions, the sample for row filters and column masks (demo/LakeWriter.java)"
+    lake positions
+  fi
+  say "row filters and column masks on markets.desks.positions: flagged by stella, each group's rule set by gary (D20)"
+  api stella PUT "$m/namespaces/$ns/tables/positions/attributes/row-column-policy" \
+    '{"value":"true","provenance":"demo-seed: data catalogue"}' &&
+  api gary POST "$m/row-column-rules" \
+    "{\"table\":$table,\"group\":\"demo-analysts\",\"row-filter\":\"desk = 'EQ'\",\"column-masks\":{\"trader\":\"'***'\"}}" &&
+  api gary POST "$m/row-column-rules" \
+    "{\"table\":$table,\"group\":\"demo-stewards\",\"column-masks\":{\"pnl\":\"NULL\"}}"
 }
 
 # SingleStore's databases, once per volume (done when ops exists; a new or wiped volume starts empty, and seed
@@ -1435,6 +1459,7 @@ up() {
   seed
   refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
   maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again (backlog 230)"
+  row_column_rules || say "the row filters and column masks on markets.desks.positions were not set (see the answer above); the next up tries again (backlog 115)"
 
   # The switches (D50) as they were: SingleStore, then Kafka for the generator or the CDC leg.
   if is_on ss; then

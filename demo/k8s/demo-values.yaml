@@ -56,6 +56,13 @@ config:
           user-id-claim: preferred_username
           groups-claim: groups
           client-id-claim: azp
+    # Trino's catalogs (trino.yaml), each to the warehouse it reads, so nuna can answer Trino's OPA access control
+    # with each user's row filter and column masks (D20, backlog 115).
+    opa:
+      catalogs:
+        lakehouse: lakehouse
+        lakehouse_dev: lakehouse@dev
+        engines: engines
     ui:
       oidc:
         issuer: https://${DEMO_HOST}:8180/realms/nuna
