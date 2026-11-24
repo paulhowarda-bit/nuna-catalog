@@ -3,10 +3,8 @@ package nuna.maintenance;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.Map;
 import org.apache.iceberg.DataFile;
-import org.apache.iceberg.Snapshot;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.rest.RESTCatalog;
@@ -16,9 +14,9 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.DockerClientFactory;
 
 /**
- * Kafka down (D23, D30): the catalog cannot audit the credentials a table load hands out, so it answers 503 and the
- * worker can do nothing to the table. The scan reports the failure, changes nothing and does not stop; the first scan
- * after Kafka is back does the work. Heavy: it pauses the broker and waits out the catalog's audit timeouts.
+ * Kafka down (D23, amended 2026-11-23: "Log as the main audit path"; D30): the catalog audits the credentials a table
+ * load hands out to its log {@code nuna.audit}, so an outage blocks nothing and the worker's scan expires the table's
+ * snapshots as it would with Kafka up. Heavy: it pauses the broker.
  */
 @Tag("heavy")
 class KafkaDownTest {
@@ -31,7 +29,7 @@ class KafkaDownTest {
     }
 
     @Test
-    void aScanWithoutKafkaChangesNothingAndTheNextOneCatchesUp() throws Exception {
+    void aScanWithKafkaDownStillDoesItsWork() throws Exception {
         FakeClock clock = new FakeClock();
         try (RESTCatalog writer = catalog.writer(); Worker worker = catalog.worker(clock, Compactor.NONE)) {
             TableIdentifier id = TestCatalog.table(writer, "unaudited");
@@ -53,24 +51,9 @@ class KafkaDownTest {
                 DockerClientFactory.instance().client().unpauseContainerCmd(kafka).exec();
             }
 
-            assertThat(down.failures).as("the table could not be loaded").isNotEmpty();
-            assertThat(writer.loadTable(id).snapshots()).hasSize(2);
-            assertThat(catalog.pending(object)).isEmpty();
-
-            Instant deadline = Instant.now().plus(Duration.ofMinutes(2));
-            while (count(writer.loadTable(id)) > 1 && Instant.now().isBefore(deadline)) {
-                worker.runOnce();
-            }
-            assertThat(writer.loadTable(id).snapshots()).as("expired once Kafka was back").hasSize(1);
+            assertThat(down.failures).as("nothing failed for want of Kafka").isEmpty();
+            assertThat(writer.loadTable(id).snapshots()).as("expired with Kafka down").hasSize(1);
             assertThat(catalog.pending(object)).isNotEmpty();
         }
-    }
-
-    private static int count(Table table) {
-        int snapshots = 0;
-        for (Snapshot ignored : table.snapshots()) {
-            snapshots++;
-        }
-        return snapshots;
     }
 }

@@ -367,6 +367,11 @@ class ConsoleHealthTest {
         assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.max-snapshot-age']"), "Keep snapshots for");
         assertLabel(By.cssSelector("dt [data-key='snapshot-expiry.min-snapshots-to-keep']"), "Keep at least");
 
+        // The catalog's policy needs describe on the catalog, which select on a namespace does not give.
+        String describers = "health-describers-" + Api.suffix();
+        expect(api.manage("POST", "/grants", "{\"securable\":{\"type\":\"catalog\"},\"group\":\"" + describers
+                + "\",\"privilege\":\"describe\"}", AUTH, api.grantAdmin()), 204);
+        browser.signIn(token("cora", describers));
         browser.open("/ui/#p=maintenance&c=trading");
         assertLabel(By.cssSelector("#policy tr[data-key='compaction.target-file-size-bytes'] [data-key]"),
                 "Target file size");
@@ -389,8 +394,8 @@ class ConsoleHealthTest {
     /**
      * With maintenance off in the catalog's policy, both empty states end with Edit the catalog's policy for someone
      * who may modify the catalog (backlog 206). Such a grant shows them every table in the catalog, the assessed ones
-     * here among them, so nell's own grants are answered in the page with modify on the catalog; the server still
-     * decides the save.
+     * here among them, so nell's own grants are answered in the page with modify on the catalog, and so is the
+     * catalog's policy, which such a grant would let her read; the server still decides the save.
      */
     @Test
     void maintenanceOffOffersTheCatalogsPolicyToThoseWhoMayModifyIt() {
@@ -399,10 +404,18 @@ class ConsoleHealthTest {
         browser.await(By.cssSelector("#namespace-page .title-row h1"));
         driver.executeScript("""
                 const real = window.fetch;
-                window.fetch = (url, init) => new URL(url, location.origin).pathname === '/management/v1/catalogs/trading/grants'
-                  ? Promise.resolve(new Response(JSON.stringify({grants: [{securable: {type: 'catalog'}, group: arguments[0],
-                      privilege: 'modify'}]}), {headers: {'Content-Type': 'application/json'}}))
-                  : real(url, init);
+                const answer = body => Promise.resolve(new Response(JSON.stringify(body),
+                  {headers: {'Content-Type': 'application/json'}}));
+                window.fetch = (url, init) => {
+                  const path = new URL(url, location.origin).pathname;
+                  if (path === '/management/v1/catalogs/trading/grants') {
+                    return answer({grants: [{securable: {type: 'catalog'}, group: arguments[0], privilege: 'modify'}]});
+                  }
+                  if (path === '/management/v1/catalogs/trading/maintenance-policy' && init.method === 'GET') {
+                    return answer({target: {type: 'catalog'}, policy: {}, resolved: {}});
+                  }
+                  return real(url, init);
+                };
                 location.hash = '#p=maintenance&c=trading';
                 """, newcomers);
         WebElement edit = browser.await(By.cssSelector("#neediest-none [data-act='edit-policy']"));

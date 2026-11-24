@@ -3,6 +3,7 @@ package nuna.catalog.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.jayway.jsonpath.JsonPath;
+import nuna.catalog.server.governance.AuditLogCapture;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -56,9 +58,17 @@ class RestRoutesTest {
     @Autowired
     private JdbcTemplate jdbc;
 
+    // The relay writes each change to the audit log and takes it out of the outbox (D23, amended 2026-11-23).
+    private final AuditLogCapture log = new AuditLogCapture();
+
     @BeforeEach
     void grantPrivileges() {
         IssuerForTests.grant(jdbc, "trading", IssuerForTests.GROUP, "create", "modify");
+    }
+
+    @AfterEach
+    void closeTheLog() {
+        log.close();
     }
 
     @Test
@@ -90,8 +100,7 @@ class RestRoutesTest {
         assertThat(send("DELETE", "/namespaces/" + ns(top, "Desk"), null).statusCode()).isEqualTo(204);
         assertThat(send("DELETE", "/namespaces/" + ns(top), null).statusCode()).isEqualTo(204);
         assertError(send("DELETE", "/namespaces/" + ns(top), null), 404, "NoSuchNamespaceException");
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE type = 'nuna.catalog.namespace'",
-                Integer.class)).isGreaterThanOrEqualTo(5);
+        log.await(5, "\"type\":\"nuna.catalog.namespace\"");
     }
 
     @Test
@@ -308,8 +317,7 @@ class RestRoutesTest {
         assertThat(back.statusCode()).as(back.body()).isEqualTo(200);
         assertThat(JsonPath.<String>read(back.body(), "$.metadata.table-uuid")).isEqualTo(id);
         assertThat(send("POST", table, snapshot(location, 2, 1L, true)).statusCode()).isEqualTo(200);
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE type = 'nuna.catalog.unregister'",
-                Integer.class)).isGreaterThanOrEqualTo(1);
+        log.await("\"type\":\"nuna.catalog.unregister\"");
     }
 
     /**
