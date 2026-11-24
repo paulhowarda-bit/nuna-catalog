@@ -12,6 +12,9 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.event.ContextClosedEvent;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.Testcontainers;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.Network;
@@ -26,34 +29,109 @@ import org.testcontainers.utility.DockerImageName;
  * ({@code crypto.subtle}). A deployment serves the console over HTTPS, so Chrome is told to treat this one origin as
  * secure; nothing else about the browser is changed.
  *
- * <p>One container serves a test class; each test opens its own {@link #session()}, a fresh browser profile with
- * empty storage and no cookies, so no test sees another's sign-in.
+ * <p>One container serves every class that drives the same server with no network of its own (the governance tests'
+ * classes, which share one test context): the first starts it, and it stops when that context closes
+ * ({@link StopWithServer}), not with each class, which started one of its own and spent 3 to 19 s on it (backlog 209).
+ * A class that joins a network gets a container of its own, which {@link #close()} stops. Each test opens its own
+ * {@link #session()}, a fresh browser profile with empty storage and no cookies, so no test sees another's sign-in.
+ *
+ * <p>No browser starts while the nuna-demo stack's pods run, unless {@code -Pnuna.demo-beside} says to: beside it the
+ * tests ran past half an hour, Chrome unreachable and their waits running out, for want of memory (backlog 209).
  */
 public final class ConsoleBrowser implements AutoCloseable {
 
     /** How long a step may take to show its result: loads go through the server, Kafka and the store. */
     public static final Duration WAIT = Duration.ofSeconds(30);
 
+    /** How often a wait looks again. Selenium's default, 500 ms, had a step ready just after a look wait out the rest. */
+    private static final Duration POLL = Duration.ofMillis(100);
+
+    /** The container the classes on one server share, and that server's port; null when none runs. */
+    private static BrowserWebDriverContainer shared;
+    private static Map<Integer, Integer> sharedPorts;
+
     private final BrowserWebDriverContainer chrome;
+    private final boolean own;
     private final String origin;
     private RemoteWebDriver driver;
 
     /**
-     * Starts the browser.
+     * Starts the browser, or with no network joins the one already driving this server.
      *
      * @param serverPort  the port the server under test listens on, on the host
      * @param consolePort the port the browser reaches it on, at {@code host.testcontainers.internal}
      * @param network     a Docker network to join, to reach containers there by their aliases; null for none
      */
     public ConsoleBrowser(int serverPort, int consolePort, Network network) {
-        Testcontainers.exposeHostPorts(Map.of(serverPort, consolePort));
         origin = "http://" + GenericContainer.INTERNAL_HOST_HOSTNAME + ":" + consolePort;
-        chrome = new BrowserWebDriverContainer(DockerImageName.parse(System.getProperty("chrome.image")))
-                .withAccessToHost(true);
+        own = network != null;
+        chrome = own ? start(serverPort, consolePort, network) : shared(serverPort, consolePort);
+    }
+
+    private static synchronized BrowserWebDriverContainer shared(int serverPort, int consolePort) {
+        Map<Integer, Integer> ports = Map.of(serverPort, consolePort);
+        if (shared != null && !(ports.equals(sharedPorts) && shared.isRunning())) {
+            stopShared(null);
+        }
+        if (shared == null) {
+            shared = start(serverPort, consolePort, null);
+            sharedPorts = ports;
+        }
+        return shared;
+    }
+
+    private static BrowserWebDriverContainer start(int serverPort, int consolePort, Network network) {
+        refuseBesideTheDemo();
+        Testcontainers.exposeHostPorts(Map.of(serverPort, consolePort));
+        BrowserWebDriverContainer chrome =
+                new BrowserWebDriverContainer(DockerImageName.parse(System.getProperty("chrome.image")))
+                        .withAccessToHost(true);
         if (network != null) {
             chrome.withNetwork(network);
         }
         chrome.start();
+        return chrome;
+    }
+
+    /** Stops the shared container if it drives the server on {@code serverPort}, or whichever it drives for null. */
+    private static synchronized void stopShared(Integer serverPort) {
+        if (shared != null && (serverPort == null || sharedPorts.containsKey(serverPort))) {
+            try {
+                shared.stop();
+            } finally {
+                shared = null;
+                sharedPorts = null;
+            }
+        }
+    }
+
+    private static void refuseBesideTheDemo() {
+        if (Boolean.getBoolean("nuna.demo-beside")) {
+            return;
+        }
+        int demo = DockerClientFactory.instance().client().listContainersCmd()
+                .withLabelFilter(Map.of("io.kubernetes.pod.namespace", "nuna-demo")).exec().size();
+        if (demo > 0) {
+            throw new IllegalStateException("The nuna-demo stack is running (" + demo + " of its containers). Beside "
+                    + "it Docker and Windows run short of memory, and the console's browser tests have run past half an "
+                    + "hour with Chrome unreachable and their waits running out (backlog 209). Run them with the demo "
+                    + "down, as the overnight run does, or pass -Pnuna.demo-beside to run them beside it anyway.");
+        }
+    }
+
+    /**
+     * Stops the shared browser when the test context whose server it drives closes: this module keeps one context at a
+     * time ({@code spring.properties}), so that is when the classes on that server are done. Registered in
+     * {@code META-INF/spring.factories}, which the module's test jar leaves out.
+     */
+    public static final class StopWithServer implements ApplicationListener<ContextClosedEvent> {
+        @Override
+        public void onApplicationEvent(ContextClosedEvent event) {
+            Integer port = event.getApplicationContext().getEnvironment().getProperty("local.server.port", Integer.class);
+            if (port != null) {
+                stopShared(port);
+            }
+        }
     }
 
     /** The console's origin as the browser sees it. */
@@ -113,6 +191,7 @@ public final class ConsoleBrowser implements AutoCloseable {
      */
     public <T> T await(String what, Function<WebDriver, T> condition) {
         return new WebDriverWait(driver, WAIT)
+                .pollingEvery(POLL)
                 .withMessage(() -> what + "; the page shows:\n" + visibleText())
                 .ignoring(StaleElementReferenceException.class)
                 .until(condition);
@@ -156,12 +235,15 @@ public final class ConsoleBrowser implements AutoCloseable {
         }
     }
 
+    /** Ends the open session, and stops the container if it is this browser's own; a shared one stops with its server. */
     @Override
     public void close() {
         try {
             quit();
         } finally {
-            chrome.stop();
+            if (own) {
+                chrome.stop();
+            }
         }
     }
 }

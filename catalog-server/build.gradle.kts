@@ -78,6 +78,8 @@ tasks.jar {
 val testJar = tasks.register<Jar>("testJar") {
     archiveClassifier = "tests"
     from(sourceSets.test.get().output)
+    // ConsoleBrowser's listener, for this module's tests only (backlog 209).
+    exclude("META-INF/spring.factories")
 }
 configurations.consumable("testJar") {
     outgoing.artifact(testJar)
@@ -92,6 +94,9 @@ tasks.test {
     listOf("postgres.image", "keycloak.image", "kafka.image", "oracle.image", "mongo.image", "chrome.image",
         "toxiproxy.image")
         .forEach { systemProperty(it, project.property(it)!!) }
+    // The console's browser tests refuse to start beside the nuna-demo stack unless -Pnuna.demo-beside (ConsoleBrowser,
+    // backlog 209).
+    systemProperty("nuna.demo-beside", providers.gradleProperty("nuna.demo-beside").isPresent)
     // IcebergImportBoundaryTest and NoKmsBoundaryTest read every module's main sources.
     inputs.files(rootProject.fileTree(rootDir) { include("*/src/main/java/**/*.java") })
         .withPropertyName("mainSources").withPathSensitivity(PathSensitivity.RELATIVE).ignoreEmptyDirectories()

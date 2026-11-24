@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**48 open:** 11 S, 18 M, 14 L, 5 XL.
+**47 open:** 11 S, 17 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -53,7 +53,6 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [172](backlog/172.md) | S | Console: export a table's metadata and log as a catalog ref reads it (item 109's review) | the export route takes `?ref=` as the metadata log does (the ref's pointer, its file checked against the hash, and the log through the ref), a fast test and a bite, and the console's button through a ref with `@ref` in the file name | 2026-11-23 |
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
-| [202](backlog/202.md) | M | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers | 2026-11-23 |
 | [203](backlog/203.md) | S | Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified | the console's resource handler stops answering by Last-Modified (`setUseLastModified(false)`) and gives each file an ETag of its content (Spring's `ShallowEtagHeaderFilter` on `/ui/*`), with a route test | 2026-11-23 |
 | [204](backlog/204.md) | M | Console: snapshot ids lose precision in JSON.parse, so a copied id names no snapshot | the console parses every answer with `JSON.parse`, which makes each 64-bit id a double; the fix reads ids as strings (a reviver that keeps the source text of an integer past 2^53, as Chrome 114+ and Firefox 135+ give it) and every page that shows or links an id uses that string | 2026-11-23 |
 | [205](backlog/205.md) | S | Console: audit words still say Kafka after audit moved to the log (item 195) | the Audit page and Service say where audit records go now that the catalog audits to its log (D23 as item 195 amended it), and show a record's place in the log or the audit table rather than a Kafka partition and offset | 2026-11-23 |
@@ -2895,21 +2894,6 @@ Done looks like:
   or explains them when Kafka is not configured.
 - The console checked in the demo with every switch off, signed in as gary.
 
-### 202. Console: a copy pass across every page, by the words-table method (Atelier's review S5)
-
-- Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
-- Touches: catalog-server/src/main/resources/nuna/ui/
-- Effort: M, every caption, empty state, refusal and help line on every page put through Atelier's words-table method (before and after), with monospace kept to names, paths and numbers
-
-Atelier's review (`docs/design/console/review-2026-11-23/console-review-2026-11-23.md`, finding F10 and F17, section 4, S5): builder language remains on user screens: footnotes that name
-routes and settings keys, captions in server terms, empty states that state an absence without a way forward.
-Item 188 did the answer boxes and the refs page's captions; its note leaves the footnotes to this item.
-
-Done looks like: a words table (`docs/design/console/`) lists each page's text before and after, made with Atelier
-(chapter 6 of the wireframes gives the method); the console's text follows it; no route or settings key appears
-outside Technical details or a title; monospace only for names, paths and numbers; heavy browser tests that assert
-text updated to the new words.
-
 ### 203. Console: a browser keeps the old console after an upgrade, as every file answers 304 by a 1980 Last-Modified
 
 - Added: 2026-11-23 by local_e487fb16-63eb-45e7-8ba3-39349926fc05
@@ -3169,3 +3153,5 @@ typed; a heavy browser test and a bite.
 | [199](backlog/199.md) | Console: object first, a table's ten tabs cut to six, with the same names at every level (Atelier's review S2) | done | 2026-11-23 |
 | [200](backlog/200.md) | Console: the rail by role, with distinct words and a Home per role (Atelier's review S3) | done | 2026-11-23 |
 | [201](backlog/201.md) | Console: the ref as global context, one Reading control in the header carried by every link (Atelier's review S4) | done | 2026-11-23 |
+| [202](backlog/202.md) | Console: a copy pass across every page, by the words-table method (Atelier's review S5) | done | 2026-11-23 |
+| [209](backlog/209.md) | Console browser tests: one Chrome per server, faster polling, and none beside the demo | done | 2026-11-23 |
