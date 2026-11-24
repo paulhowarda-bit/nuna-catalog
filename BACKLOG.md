@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**47 open:** 12 S, 16 M, 14 L, 5 XL.
+**48 open:** 12 S, 17 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -59,6 +59,7 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [228](backlog/228.md) | S | Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only | finding why the context no longer loads (likely a later PostgreSQL step that assumes journal partitions) and recording the bite again so the server starts; cause not known yet | 2026-11-24 |
 | [231](backlog/231.md) | S | Console: between 761 and 1,016 px, and 1,241 and 1,297 px, the header is wider than the window (Atelier decides) | a few header rules at two container widths once Atelier says what gives way; a browser test | 2026-11-24 |
 | [232](backlog/232.md) | S | Console: a frozen table's page is wider than the window at 1440 px (its frozen pill runs past the edge) | find which head or panel holds the pill and let it wrap; a browser test | 2026-11-24 |
+| [233](backlog/233.md) | M | The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards | three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series | 2026-11-24 |
 
 ## Open items in full
 
@@ -3023,6 +3024,41 @@ right edge at 1,473 px. It shows only once the page's governance has loaded, so 
 
 Done when a frozen (and held) table's page is no wider than the window at 1440 px, and a browser test checks it after
 the page has loaded its governance.
+
+### 233. The demo's metrics switch: an OTel collector, Prometheus and Grafana with nuna's dashboards
+
+- Added: 2026-11-24 by local_d697e3a0-9dcf-4401-b754-2b759dcc6b79
+- Touches: demo/demo.sh, demo/k8s/metrics.yaml, demo/k8s/demo-values.yaml, demo/README.md, deploy/grafana/
+- Effort: M, three new pods in one manifest, a fourth switch in demo.sh built like gen, ss and cdc, and fixing whatever the dashboards get wrong once they meet real series
+
+Paul, 2026-11-24, asked whether Grafana is part of the demo; it is not, and he asked for this item.
+
+**What is missing.** The demo runs no metrics stack. The catalog exports its metrics and traces over OTLP (D43), but in
+the demo only its logs go anywhere (`telemetry.logsEndpoint`, to the audit table writer; `demo/k8s/demo-values.yaml`
+says "metrics and traces go nowhere"). The dashboards and alert rules in `deploy/grafana/` (backlog 44) read nuna's
+meter names as Prometheus' default OTLP translation names them, and have never run against live data
+(`deploy/grafana/README.md`).
+
+**What to build.** A fourth demo switch, `metrics`, beside `gen`, `ss` and `cdc` (D50): `demo.sh metrics` turns it on,
+`demo.sh metrics stop` off, kept in `~/.nuna-demo/switches` and put back by `up`, off on a new machine.
+
+- `demo/k8s/metrics.yaml`: an OpenTelemetry collector (OTLP in; metrics out to Prometheus by remote write or its OTLP
+  receiver), Prometheus with the rule files in `deploy/grafana/rules/`, and Grafana with a provisioned Prometheus data
+  source and the three dashboards in `deploy/grafana/dashboards/` loaded. Grafana signs in through Keycloak like the
+  demo's other UIs (backlog 174) and is listed by `print_access` while it runs.
+- The catalog and the maintenance worker send metrics (and traces, if the collector can keep them cheaply) to the
+  collector only while the switch is on, the way the audit writer's switches already change what runs; with it off,
+  they export nothing and log no export failures beyond what they do today.
+- Memory: the three pods should ask well under 1 GB. The README's memory figures say a stack with `gen` and `ss` on
+  leaves about 200 MB of Docker Desktop's 7.5 GB, so measure the switch's requests and say in `demo/README.md` which
+  switches it fits beside; if it does not fit beside `gen` and `ss`, `demo.sh metrics` says so and refuses, as
+  `engines` and `sql` refuse today.
+
+**Done when** `demo.sh metrics` brings up the three pods, Grafana opens signed in through Keycloak, and each of the
+three dashboards shows live series from the demo's catalog and maintenance worker. Every panel that shows nothing
+because a series name differs from what the dashboards assume is fixed in `deploy/grafana/` (and
+`docs/observability/dashboards-and-alerts.md`) or listed as not produced in the demo. `demo.sh metrics stop` removes
+the pods and the catalog stops exporting to them, and `up` puts the switch back as it was.
 
 ## Done and dropped
 
