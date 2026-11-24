@@ -780,8 +780,8 @@ demo/demo.sh cdc stop
 ```
 
 deletes the leg: its connectors, with their offsets (so the next `cdc` snapshots its new databases), its
-databases, Kafka topics and consumer groups; and starts Trino, the audit table writer and the brokerage world's
-generator again. Kafka Connect keeps running, with the brokerage world's sink. The history tables stay, for
+databases, Kafka topics and consumer groups; and starts Trino, the audit table writer, the maintenance worker and
+the brokerage world's generator again. Kafka Connect keeps running, with the brokerage world's sink. The history tables stay, for
 Trino to read.
 
 ## The engines
