@@ -98,6 +98,12 @@ async function rest(catalog) {
  */
 export const catalogs = () => call('/management/v1/catalogs');
 
+/**
+ * Every namespace, table and view whose name holds `fragment`, among those the caller may describe, in every catalog
+ * (backlog 198): [{catalog, kind, namespace, name}], the first page, namespaces first.
+ */
+export const names = fragment => call('/management/v1/names?pageSize=50&q=' + encodeURIComponent(fragment)).then(b => b.names || []);
+
 export async function namespaces(catalog, parent) {
   const query = parent.length ? '?parent=' + ns(parent) : '';
   return all(`${await rest(catalog)}/namespaces${query}`, 'namespaces');

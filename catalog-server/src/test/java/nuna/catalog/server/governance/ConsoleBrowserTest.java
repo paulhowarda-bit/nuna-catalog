@@ -284,13 +284,29 @@ class ConsoleBrowserTest {
         box = browser.await(By.id("goto-in"));
         box.sendKeys("zzqq");
         assertThat(textContent(browser.await(By.cssSelector("#goto-list li.none"))))
-                .startsWith("Not found among the names listed so far in trading").doesNotContain("fewer words")
-                .as("an example from this catalog, not the demo's").doesNotContain("markets.fx.rates");
+                .isEqualTo("No namespace, table or view you may see has a name like that, in any catalog. Check the "
+                        + "spelling, or type fewer letters.");
         box.clear();
         box.sendKeys(top + ".equities.nothing_here");
         box.sendKeys(Keys.ENTER);
         browser.await(By.cssSelector("#goto-list [data-goto-none='" + top + ".equities.nothing_here']"));
         assertThat(driver.getCurrentUrl()).endsWith("#p=overview&c=trading");
+
+        // A name typed alone is found though no page has listed its namespace: the catalog's search knows every name
+        // the tester may describe (Atelier's review, S1; backlog 198). Then it comes first, as opened lately.
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis"));
+        browser.await(By.cssSelector(".nc-go")).click();
+        box = browser.await(By.id("goto-in"));
+        box.sendKeys(top + " positions");
+        browser.await(By.cssSelector("#goto-list [data-goto-target='trading:" + top + ".equities.eu.positions']")).click();
+        browser.awaitText(By.cssSelector("#table-page h1"), "positions");
+        browser.open("/ui/#p=overview&c=trading");
+        browser.await(By.cssSelector("#overview-kpis"));
+        browser.await(By.cssSelector(".nc-go")).click();
+        browser.awaitText(By.id("goto-h"), "Opened lately");
+        assertThat(browser.await(By.cssSelector("#goto-list li[role='option']")).getDomAttribute("data-goto-target"))
+                .isEqualTo("trading:" + top + ".equities.eu.positions");
     }
 
     /**
