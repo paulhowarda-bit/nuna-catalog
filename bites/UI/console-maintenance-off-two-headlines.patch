@@ -1,0 +1,17 @@
+Breaks: With maintenance off in the policy, Overview gives a second headline blaming the worker.
+Module: catalog-server
+Test: ConsoleHealthTest#aTableNotAssessedYetIsNeitherInShapeNorQueued
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/overview.js b/catalog-server/src/main/resources/nuna/ui/overview.js
+index 81c57398..79eba314 100644
+--- a/catalog-server/src/main/resources/nuna/ui/overview.js
++++ b/catalog-server/src/main/resources/nuna/ui/overview.js
+@@ -30,7 +30,7 @@ export function overviewPage(catalog) {
+       eyebrow: `${catalog} · ${now.toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'})}, `
+         + now.toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'}),
+       title: !c.total ? nothingToRead(catalog, everywhere, 'overview')
+-        : off ? off
++        : off ? [off, h('br'), h('span', {class: 'q'}, shapeWords(c))]
+         : none ? shapeWords(c)
+           : [shapeWords(c) + ' ', c.queued
+             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
