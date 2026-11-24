@@ -1232,12 +1232,6 @@ up() {
   seed
   refs || say "the catalog's branch dev and tag sample were not made (see the answer above); the next up tries again (backlog 110)"
   maintenance_policy || say "maintenance was not turned on in $CATALOG's policy (see the answer above); the next up tries again (backlog 230)"
-  # After the lake writer's Jobs, whose memory it would take; stopped while the CDC leg runs, as cdc stop says.
-  if cdc_running; then
-    say "the CDC leg is running: the maintenance worker stays stopped until demo/demo.sh cdc stop"
-  else
-    maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
-  fi
 
   # The switches (D50) as they were: SingleStore, then Kafka for the generator or the CDC leg.
   if is_on ss; then
@@ -1266,6 +1260,14 @@ up() {
     cdc_running || gen_start
   else
     gen_stop
+  fi
+  # Last, after the lake writer's Jobs, whose memory it would take, and once the change feeds and the brokerage world's
+  # sink have committed: the worker assesses each table once a night, at its first scan in the window, so started
+  # earlier it would find nothing to queue until noon. Stopped while the CDC leg runs, as cdc stop says.
+  if cdc_running; then
+    say "the CDC leg is running: the maintenance worker stays stopped until demo/demo.sh cdc stop"
+  else
+    maintenance_worker || say "the maintenance worker did not start (see above); the next up tries again (backlog 230)"
   fi
   print_access
 }

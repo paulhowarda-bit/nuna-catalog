@@ -392,11 +392,13 @@ nights' trends. Every `up` turns every job on in `lakehouse`'s policy, as `ana`,
   512 MB target), or more delete files than 30% of its data files, or any equality delete; manifests are rewritten
   at 100; orphans are files unreferenced for 14 days.
 - The cleanup window is open all day, each night ending as the next begins at 12:00 in New York
-  (`maintenance-values.yaml`). So whenever the demo comes up, the worker assesses every table at its first scan,
-  queues the ones that need compaction, and compacts them one at a time, a Spark Job each in namespace
-  `nuna-demo-compaction`; at noon the next night assesses them again. It scans every 5 minutes, expiring snapshots
-  and rewriting manifests at each scan, and starts the next Job as the last ends. Each table is compacted once a
-  night at most.
+  (`maintenance-values.yaml`). So whenever the demo comes up, the worker, which `up` starts last, once the change
+  feeds and the brokerage world's sink have committed, assesses every table at its first scan, queues the ones that
+  need compaction, and compacts them one at a time, a Spark Job each in namespace `nuna-demo-compaction`; at noon
+  the next night assesses them again. It scans every 5 minutes, expiring snapshots and rewriting manifests at each
+  scan, and starts the next Job as the last ends. Each table is assessed and compacted once a night at most. The
+  worker keeps the night's assessments in memory, so to assess every table again now, start it again:
+  `kubectl -n nuna-demo rollout restart deployment/nuna-maintenance`.
 - The brokerage world's Kafka Connect sink and SingleStore's change feeds commit every 15 and 5 seconds, so their
   tables gather small files and snapshots all day: they are the queue. `markets.equities.eu.xetra.orders` and
   `brokerage.trading.orders` carry equality deletes, which go first.
