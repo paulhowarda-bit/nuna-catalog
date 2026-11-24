@@ -1,0 +1,17 @@
+Breaks: The console never says that the policy has every maintenance job off.
+Module: catalog-server
+Test: ConsoleHealthTest#aTableNotAssessedYetIsNeitherInShapeNorQueued
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/queue.js b/catalog-server/src/main/resources/nuna/ui/queue.js
+index e3cf75ef..5a24009e 100644
+--- a/catalog-server/src/main/resources/nuna/ui/queue.js
++++ b/catalog-server/src/main/resources/nuna/ui/queue.js
+@@ -21,7 +21,7 @@ const catalogWide = r => JOBS.every(k => ['built-in', 'default', undefined].incl
+  */
+ export function maintenanceOff(catalog, p, href) {
+   const r = (p && p.resolved) || {};
+-  if (!JOBS.every(k => r[k] && String(r[k].value) === 'false')) return null;
++  if (JOBS.length) return null;
+   const catalogs = catalogWide(r);
+   return h('span', {'data-maintenance-off': ''}, 'Maintenance is off in ', h('a', {href, onclick: e => {
+     const shown = document.querySelector('[data-policy]');
