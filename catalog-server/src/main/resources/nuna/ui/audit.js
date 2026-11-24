@@ -5,7 +5,7 @@
 // read from the audit topic as before, for those who manage its grants.
 
 import * as api from './api.js';
-import {at, badge, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
+import {at, code, copyButton, facts, failure, fmt, h, icon, jsonPre, load, muted, pageHead, panel, pill, plural,
   tbl} from './dom.js';
 import {objectHref, SEP} from './route.js';
 import {auditTab, describe} from './panels.js';
@@ -89,8 +89,8 @@ export function auditPage(catalog) {
     return pageHead({
       eyebrow: `${catalog} · audit`,
       title,
-      sub: 'Every read, change, credential, access refusal and file deletion in this catalog, newest first, from the audit '
-        + 'tables. Each record opens to the event as Kafka holds it, with its request id and its place in the hash chain.',
+      sub: 'Every read, change, credential, access refusal and file deletion in this catalog, newest first. Open a record '
+        + 'for the full event, its request id and its place in the hash chain.',
       side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'goto-audit'}, icon('search'), 'Open a table\'s audit tab'),
     });
   });
@@ -124,7 +124,7 @@ function summaryKpis(catalog, sum) {
   const all = total(sum['by-type']);
   return [
     h('div', {class: 'kpi', 'data-kpi': 'records'}, h('p', {class: 'kpi-l'}, icon('audit'), `Records in ${catalog}`),
-      h('p', {class: 'kpi-v'}, fmt(all)), h('p', {class: 'kpi-d'}, h('b', null, fmt(total(sum['deployment-by-type']))), ' in the deployment')),
+      h('p', {class: 'kpi-v'}, fmt(all)), h('p', {class: 'kpi-d'}, h('b', null, fmt(total(sum['deployment-by-type']))), ' across all catalogs')),
     h('div', {class: 'kpi', 'data-kpi': 'refusals'}, h('p', {class: 'kpi-l'}, 'Refusals'),
       h('p', {class: 'kpi-v'}, fmt(kindTotal(sum['by-type'], ['denial', 'auth-failure']))), h('p', {class: 'kpi-d'}, 'each one a record in the feed')),
     h('div', {class: 'kpi', 'data-kpi': 'changes'}, h('p', {class: 'kpi-l'}, 'Changes'),
@@ -152,7 +152,7 @@ function chainPanel(a) {
     h('p', null, !check ? pill('', icon('clock'), 'Not checked yet') : check.intact
       ? pill('ok', icon('check'), 'Whole at ' + at(check['ended-at'])) : pill('bad', icon('x'), 'Broken')),
     facts([
-      ['Chains', `${fmt((a.verified || []).length)} verified, one per partition of the audit topic`],
+      ['Chains', h('span', {title: 'One per partition of the audit topic'}, `${fmt((a.verified || []).length)} verified`)],
       ['Each record', 'hashes the one before it in its partition, with its sequence'],
       ['Archive', [code(`s3://${a.bucket}/${a.prefix || ''}`), ` · kept ${a.retention}`]],
       ['Last check', check ? `${at(check['started-at'])} to ${at(check['ended-at'])}` : null],
@@ -170,12 +170,12 @@ function countPanels(catalog, sum, choose) {
     h('div', {class: 'panel', id: 'audit-kinds'}, h('h2', null, 'By kind ', h('span', {class: 'meta'}, 'last day')),
       tbl('kinds', ['Type', ['Records', 'num']], [...types.map(t => h('tr', {'data-type': t}, h('td', null,
         h('button', {class: 'linkish', type: 'button', 'data-choose': kindOf(t), 'aria-label': `Show ${short(t)} records in the feed`,
-          onclick: () => choose(t)}, code(t))),
+          onclick: () => choose(t)}, h('code', {title: t}, short(t)))),
         h('td', {class: 'num'}, fmt(byType[t])))), h('tr', {class: 'is-cur'}, h('td', null, h('b', null, 'All')),
         h('td', {class: 'num'}, h('b', null, fmt(all))))]),
-      h('p', {class: 'fine'}, `${onDay(sum.from)} to ${onDay(sum.to)}, as the audit tables hold them. Each type shows its kind in `
-        + 'the feed. The server\'s own counters on Service differ: the writer leaves its own records out, and a record sent '
-        + 'to the fallback log reaches neither.')),
+      h('p', {class: 'fine', title: 'The writer leaves its own records out, and a record sent to the fallback log reaches '
+        + 'neither count.'}, `${onDay(sum.from)} to ${onDay(sum.to)}. Choose a type to show its records in the feed. Service `
+        + 'counts differently, so its figures may not match these.')),
     h('div', {class: 'panel', id: 'audit-busiest'}, h('h2', null, 'Most recorded ', h('span', {class: 'meta'}, 'last day')),
       (sum.busiest || []).length ? tbl('stack-line', ['Object', ['Records', 'num'], ['Reads', 'num'], 'Written most by'],
         sum.busiest.map(b => h('tr', {'data-path': (b.path || []).join('.')},
@@ -247,9 +247,9 @@ function feedPanel(catalog, summary, own) {
     feed.append(...records.map(r => feedRow(catalog, r)));
     shown += records.length;
     const committed = (answer.table || {})['committed-at'];
-    status.textContent = `${plural(shown, 'record')} shown, newest first. Read from the audit tables as committed at `
-      + `${committed ? at(committed) : 'their last commit'}, so about a minute behind.`
-      + (answer['searched-to'] ? ` Every record after ${at(answer['searched-to'])} was searched.` : '');
+    status.textContent = `${plural(shown, 'record')} shown, newest first, up to `
+      + `${committed ? at(committed) : 'the last commit'}. Records arrive here about a minute after they happen.`
+      + (answer['searched-to'] ? ` Searched back to ${at(answer['searched-to'])}.` : '');
     if (!shown && !answer['next-page-token']) feed.replaceChildren(h('p', {class: 'muted feed-none'}, 'No record matches. Try another kind, anyone, or an earlier time.'));
     more.replaceChildren();
     if (answer['next-page-token']) {
@@ -333,7 +333,7 @@ function feedRow(catalog, r) {
   h('span', {class: 't'}, at(r.time, true)),
   h('span', {class: 'w'}, h('b', null, r.principal || '–'), r['end-user'] ? [' for ', h('b', null, r['end-user'])] : null,
     h('br'), h('span', {class: 'via'}, r.engine ? 'via ' + r.engine : '')),
-  h('div', null, badge(r.type || type), ' ', chainPill(r.chain),
+  h('div', null, h('span', {class: 'badge', title: r.type || type}, type), ' ', chainPill(r.chain),
     h('p', {class: 'what'}, describe(type, event.data || {}, catalog) || r.operation || '',
       o && o.path && o.path.length ? [' · ', objectLink(catalog, o.kind, o.path, null)] : null)), btn);
   let detail = null;
@@ -366,7 +366,7 @@ function recordDetail(catalog, r) {
       h('dt', null, 'Hash chain'), h('dd', null, r.chain && r.chain.status === 'verified'
         ? ['verified past this record', r.chain['checked-at'] ? ` by the check at ${at(r.chain['checked-at'])}` : '']
         : r.chain && r.chain.status === 'no-archive' ? 'no archive is configured'
-          : 'not verified yet: acknowledged by Kafka, and the next hourly check reaches it'),
+          : 'not verified yet: the next hourly check will reach it'),
       h('dt', null, 'Its link'), link,
       o && o.path && o.path.length ? [h('dt', null, String(o.kind || '').toLowerCase() || 'Object'),
         h('dd', null, objectLink(catalog, o.kind, o.path, null))] : null,
@@ -377,7 +377,7 @@ function recordDetail(catalog, r) {
 /** A record's place in its hash chain, read from the archive's segment that holds it. */
 async function chainLink(r) {
   const c = await api.auditChain(r.partition, r.offset, r['event-id']);
-  if (!c.archived) return h('span', null, pill('', icon('clock'), 'Not archived yet'), ' the archive consumer has not written its segment');
+  if (!c.archived) return h('span', null, pill('', icon('clock'), 'Not archived yet'), ' the archive has not received it');
   return h('span', null, c['link-holds'] ? pill('ok', icon('check'), 'Link holds') : pill('bad', icon('x'), 'Link broken'),
     ` sequence ${fmt(c.sequence)} of ${c.chain}`, h('br'),
     h('span', {class: 'fine'}, 'previous ', code(String(c['previous-hash'] || '').slice(0, 16) + '…'),

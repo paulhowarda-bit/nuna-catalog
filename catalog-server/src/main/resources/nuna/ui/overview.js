@@ -35,14 +35,14 @@ export function overviewPage(catalog) {
           : [shapeWords(c) + ' ', c.queued
             ? h('span', {class: 'q'}, `${fmt(c.queued)} queued for tonight.`) : 'Nothing queued for tonight.'],
       sub: off ? `${plural(c.total, 'table')} you may read, none assessed: the worker assesses a table only where its policy turns `
-        + 'maintenance on. Each table\'s health is on its own page.'
-        : 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s health is on its own page.',
+        + 'maintenance on.'
+        : 'Of the tables you may read, as the maintenance worker last assessed them. Each table\'s Maintenance tab has the detail.',
       side: assessed ? pill('ok', icon('check'), 'Last assessed ' + new Date(assessed).toLocaleTimeString('en-GB', {hour: '2-digit', minute: '2-digit'})) : null,
     })];
     if (c.total) {
       const ice = h('div', {class: 'iceline wide', 'data-iceline': 'estate'});
       sized(ice, (host, w) => iceEstate(host, w, tables));
-      out.push(panel('Every table, one mark', 'above: in shape, height is data files, log scale · below: queued, depth is score',
+      out.push(panel('Every table, one mark', 'above the line: in shape, taller for more data files (log scale) · below: queued, deeper for a higher score',
         ice, estateLegend(tables)));
     }
     const kpis = h('div', {class: 'kpis', id: 'overview-kpis'});
@@ -123,10 +123,10 @@ async function auditKpi(catalog) {
     h('p', {class: 'kpi-v'}, fmt(count(null)), h('small', null, 'records')),
     h('div', {class: 'kpi-list'},
       h('div', null, h('span', null, 'Refusals'), h('b', null, fmt(count(['nuna.catalog.denial', 'nuna.catalog.auth-failure'])))),
-      h('div', null, h('span', null, 'In the deployment'), h('b', null, fmt(Object.values(sum['deployment-by-type'] || {})
+      h('div', null, h('span', null, 'Across all catalogs'), h('b', null, fmt(Object.values(sum['deployment-by-type'] || {})
         .reduce((a, x) => a + Number(x || 0), 0)))),
-      h('div', null, h('span', null, 'Archive chain checked'), h('b', null, check === undefined ? 'no archive'
-        : check ? (check.intact ? at(check['ended-at']) : 'broken') : 'not yet'))));
+      h('div', null, h('span', null, 'Archive chain'), h('b', null, check === undefined ? 'no archive'
+        : check ? (check.intact ? 'intact at ' + at(check['ended-at']) : 'broken') : 'not checked yet'))));
 }
 
 /** Latency objectives, last day: platform operators only; anyone else sees nothing here, not a refusal. */
@@ -143,7 +143,7 @@ async function latencyKpi() {
   const judged = slos.filter(x => x.met !== undefined).length;
   return [h('div', {class: 'kpi'},
     h('p', {class: 'kpi-l'}, h('a', {href: pageHref('service')}, icon('health'), 'Latency objectives, last day')),
-    h('p', {class: 'kpi-v'}, judged ? `${met} of ${judged}` : '–', h('small', null, judged ? 'met' : 'none in the window')),
+    h('p', {class: 'kpi-v'}, judged ? `${met} of ${judged}` : '–', h('small', null, judged ? 'met' : 'no requests in the last day')),
     h('div', {class: 'kpi-list'}, slos.map(x => h('div', null, h('span', null, x.short), h('b', null, x.share || muted('–')))))),
   h('div', {class: 'kpi'},
     h('p', {class: 'kpi-l'}, h('a', {href: pageHref('service')}, icon('server'), 'Servers')),

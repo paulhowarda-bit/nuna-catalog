@@ -95,7 +95,7 @@ class ConsoleSettingsBrowserTest {
         String asked = change("write.parquet.compression-codec");
         assertThat(asked).contains("How engines compress the Parquet files they write");
         new Select(browser.await(By.cssSelector("dialog.dlg select[name='value']"))).selectByValue("gzip");
-        String requestId = submit("write.parquet.compression-codec is gzip");
+        String requestId = submit("Parquet compression is now gzip");
         assertThat(tableProperties(ns, "orders")).containsEntry("write.parquet.compression-codec", "gzip");
         // The commit also vends credentials under the same request id, and that record comes first.
         CatalogEvent commit = api.awaitRecord(json -> json.contains("\"" + requestId + "\"")
@@ -108,13 +108,13 @@ class ConsoleSettingsBrowserTest {
         WebElement size = driver.findElement(By.cssSelector("dialog.dlg input[name='value']"));
         size.clear();
         size.sendKeys("256 MB");
-        submit("write.target-file-size-bytes is 268435456");
+        submit("Target data file size is now 268435456");
         assertThat(tableProperties(ns, "orders")).containsEntry("write.target-file-size-bytes", "268435456");
         awaitValue("write.target-file-size-bytes", "256 MB (268,435,456 bytes) · set");
 
         // Reset removes the property, and the default applies again.
         setting("write.parquet.compression-codec").findElement(By.cssSelector("button[data-act='reset']")).click();
-        submit("write.parquet.compression-codec is reset");
+        submit("Parquet compression is back to its default");
         assertThat(tableProperties(ns, "orders")).doesNotContainKey("write.parquet.compression-codec")
                 .containsEntry("write.target-file-size-bytes", "268435456");
         awaitValue("write.parquet.compression-codec", "zstd · default");
@@ -214,11 +214,11 @@ class ConsoleSettingsBrowserTest {
         assertThat(driver.findElements(By.cssSelector("#settings tr[data-setting]")))
                 .extracting(r -> r.getDomAttribute("data-setting")).containsExactly("comment");
         assertThat(property("location").getText()).contains("Changes nothing");
-        assertThat(property("owner").getText()).contains("governance owner");
+        assertThat(property("owner").getText()).contains("that one is on the Access tab");
         noFreeFormEntry();
         change("comment");
         typeAndSubmit("Orders as booked");
-        browser.awaitText(By.cssSelector("dialog.dlg .granted"), "comment is Orders as booked");
+        browser.awaitText(By.cssSelector("dialog.dlg .granted"), "Description is now Orders as booked");
         closeDialog();
         String namespace = expect(api.rest("GET", "/namespaces/" + Api.ns(ns), null), 200).body();
         assertThat(JsonPath.<Map<String, String>>read(namespace, "$.properties"))

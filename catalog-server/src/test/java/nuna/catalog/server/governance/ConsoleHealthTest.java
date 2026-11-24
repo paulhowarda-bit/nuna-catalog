@@ -238,7 +238,7 @@ class ConsoleHealthTest {
 
         // Platform operators hold no grant, so tonight's queue lists no table for them; the worker is there too.
         browser.open("/ui/#p=maintenance&c=trading");
-        assertThat(browser.await(By.id("neediest-none")).getText()).contains("No table you may read");
+        assertThat(browser.await(By.id("neediest-none")).getText()).contains("no table you may read");
         assertThat(driver.findElements(By.cssSelector("#neediest tbody tr"))).isEmpty();
         assertThat(browser.await(By.cssSelector("#maintenance #health-last-success")).getText())
                 .isEqualTo(local(lastSuccess) + " by maintenance");
@@ -393,7 +393,7 @@ class ConsoleHealthTest {
 
     private void assertNoCatalogHealth() {
         WebElement refused = browser.await(By.cssSelector("#catalog-health .health-refused"));
-        assertThat(refused.getText()).startsWith("Catalog health is shown to platform operators only.");
+        assertThat(refused.getText()).startsWith("Service is shown to platform operators only, and your groups include none.");
         WebElement refusal = browser.await(By.cssSelector("#catalog-health .refusal"));
         assertThat(refusal.getDomAttribute("role")).isEqualTo("alert");
         assertThat(ConsoleBrowser.textContent(refusal.findElement(By.cssSelector(".refusal-code"))))

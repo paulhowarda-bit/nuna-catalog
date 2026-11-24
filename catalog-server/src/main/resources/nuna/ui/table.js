@@ -13,7 +13,7 @@ import {$, $$, at, badge, code, copyButton, copyText, edgeCue, facts, failure, f
 import {objectHref, warehouseOf} from './route.js';
 import {keyOfRow, maintenanceOff, queue, queueOf, REASONS} from './queue.js';
 import {sourceWords, tableHealthTab} from './health.js';
-import {accessTab, auditTab, exportDialog, governanceSummary} from './panels.js';
+import {accessTab, actionWords, auditTab, exportDialog, governanceSummary} from './panels.js';
 import {copyLinkButton, crumbsFor} from './browse.js';
 import {askDialog, mayModify, requestPills} from './requests.js';
 import {settingsTab, TABLE_SETTINGS} from './settings.js';
@@ -51,7 +51,7 @@ const noLiveRef = error => error.status === 404 && error.type === 'NoSuchWarehou
 function refusedLoad(error, others, ref) {
   if (ref && noLiveRef(error)) return null;
   return [failure(error, {big: true}), error.status === 403 ? h('div', {class: 'notice'}, icon('info'),
-    h('span', null, h('b', null, `${others} are checked on their own`), '. The catalog checks each tab separately, so one refusal never closes the others.'))
+    h('span', null, h('b', null, `You may still open ${others}:`), ' each tab is checked on its own.'))
     : null];
 }
 
@@ -270,7 +270,7 @@ function propertiesTab(target, t, reload, ref) {
         ? facts(Object.entries(props).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [code(k), String(v)])) : muted('No property is set.'))];
   }
   const on = target.ref ? ` on @${(ref && ref.name) || target.ref}` : '';
-  const tab = settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: `a commit to the table${on}, as an engine makes it, so every commit rule applies`,
+  const tab = settingsTab({target, settings: TABLE_SETTINGS, props, reload, needs: `A change here is a commit to the table${on}: the same rules apply as to an engine's commit, and it is audited.`,
     ctx: {formatVersion: m['format-version'], codec: props['write.parquet.compression-codec'] || 'zstd'},
     write: (updates, removals) => api.tableProperties(warehouseOf(target), target.namespace, target.name, m['table-uuid'],
       updates, removals)});
@@ -311,7 +311,7 @@ async function healthSummary(target) {
   words.push(c ? `Last compaction ${at(c['ended-at'] || c['started-at'])}, ${c.outcome}.` : 'No compaction has run for this table.');
   return h('div', {class: 'panel'}, h('h2', null, h('a', {class: 'h-link', href: objectHref(target, 'maintenance')}, 'Maintenance'), ' ',
     target.ref ? h('span', {class: 'meta'}, 'main\'s') : a ? h('span', {class: 'meta'}, 'assessed ' + at(a['assessed-at'])) : null),
-  target.ref ? h('p', {class: 'fine'}, 'Maintenance is assessed and run on main only. Main\'s, for this table.') : null,
+  target.ref ? h('p', {class: 'fine'}, 'Maintenance runs on main only; this is main\'s.') : null,
   off ? h('p', {class: 'fine', id: 'summary-maintenance-off'}, off) : null,
   h('p', null, !a ? pill('', 'Not assessed yet') : a['needs-compaction']
     ? pill((a.reasons || []).includes('equality-deletes') ? 'bad' : 'warn', `Needs compaction · score ${a.score}`)
@@ -421,7 +421,7 @@ function schemaTab(target, t) {
   return [panel('Schemas', all.length > 1 ? [`current: ${curId} · pick two to compare`, all.length > shown.length
     ? ` · the newest ${shown.length} of ${all.length}` : ''] : 'one, as created', tl), diff,
   h('div', {class: 'notice'}, icon('info'), h('span', null, h('b', null, 'Iceberg keeps no date for a schema.'),
-    ' The commit that added one is in this table\'s ', h('a', {href: objectHref(target, 'audit')}, 'audit trail'), ', with who made it.'))];
+    ' The commit that added one is on ', h('a', {href: objectHref(target, 'history')}, 'History'), ', with who made it.'))];
 }
 
 // ---- snapshots and refs ----
@@ -608,8 +608,8 @@ function historyTab(target, t) {
     await page(null);
     return [h('h2', null, 'Commits ', logMeta),
       tbl('stack-line mlog', [['Version', 'num'], 'Written', 'Change', 'Snapshot', ['Rows', 'num'], 'By', 'Iceberg refs', ''], tbody), more,
-      h('p', {class: 'fine'}, 'Each row is a commit that wrote one metadata file, from the catalog\'s commit journal, with who made it '
-        + 'and the snapshot it added. The journal keeps every commit; the table keeps the files listed under Kept.')];
+      h('p', {class: 'fine'}, 'Each row is one commit: who made it, what it changed and the snapshot it added. The catalog keeps '
+        + 'every commit, even after the table\'s own list drops its file.')];
   });
   const expiry = h('div');
   load(expiry, async () => {
@@ -640,7 +640,7 @@ function historyTab(target, t) {
       panel('Current file', null, facts([['File', code(t['metadata-location'] || '')], ['Written', when(m['last-updated-ms'])],
         ['Format version', String(m['format-version'])]])),
       panel('Kept', `${plural(kept, 'file')} in the table's metadata`, facts([
-        [code('write.metadata.previous-versions-max'), props['write.metadata.previous-versions-max']
+        [h('span', {title: 'write.metadata.previous-versions-max'}, 'Earlier metadata files listed'), props['write.metadata.previous-versions-max']
           ? [props['write.metadata.previous-versions-max'], ' · table'] : '100 · built-in'],
       ], 'one'), h('p', {class: 'fine'}, 'Every change writes a new metadata file; the table keeps the current one and those before it, '
         + 'up to the limit. A file that falls off the list is removed by the orphan scan.'))));
@@ -697,12 +697,12 @@ function partitionTab(target, t) {
  */
 function changeWords(updates, version) {
   if (updates && !Array.isArray(updates)) {
-    return !updates['metadata-location'] ? 'create' : Number(version) > 1 ? 'revive' : 'register';
+    return !updates['metadata-location'] ? 'created' : Number(version) > 1 ? 'restored' : 'registered';
   }
   const merge = Array.isArray(updates) ? updates.find(u => u.action === 'merge-branch') : null;
-  if (merge) return `Took @${merge.branch}'s version ${fmt(merge['branch-version'])} as main's next version, in the merge of @${merge.branch}`;
-  const actions = [...new Set((updates || []).map(u => u.action))];
-  return actions.length ? actions.join(', ') : muted('no update');
+  if (merge) return `Merged @${merge.branch} (its version ${fmt(merge['branch-version'])})`;
+  const words = actionWords(updates);
+  return words.length ? words.join(', ') : muted('no update');
 }
 
 /** Who made a commit: the principal, the person an engine acted for, and the engine. */

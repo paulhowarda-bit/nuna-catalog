@@ -44,7 +44,7 @@ export async function send(path, {method = 'GET', body, headers = {}} = {}) {
   }
   if (!response.ok) {
     const error = json && json.error;
-    if (response.status === 401) signedOut('The catalog did not accept the token (401). Sign in again.');
+    if (response.status === 401) signedOut('Your sign-in has expired or was not accepted. Sign in again.');
     throw new ApiError(response.status, error ? error.type : response.statusText,
       error ? error.message : text.slice(0, 500), requestId);
   }

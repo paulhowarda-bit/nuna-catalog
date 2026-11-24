@@ -61,10 +61,9 @@ function summaryPage(catalog, tabs) {
         title: [`${fmt(f.classified)} of ${plural(f.total, 'table')} classified. `, f.closed
           ? h('span', {class: 'q'}, `${plural(f.closed, 'table')} closed until a steward classifies ${f.closed === 1 ? 'it' : 'them'}.`)
           : 'None closed.'],
-        sub: 'Classification, owner, retention class and the regulated flag are set here in the console, on the Governance tab '
-          + 'of a catalog, namespace, table or view, each recorded with who set it and at which level; an outside data catalogue can '
-          + 'push them too, if one is ever connected. The catalog enforces them, with holds and freezes, on every load, commit '
-          + 'and maintenance job.',
+        sub: 'Classification, owner, retention class and the regulated flag are set on the Access tab of each namespace, table '
+          + 'or view, and for the catalog itself under Holds and freezes, each recorded with who set it. The catalog enforces '
+          + 'them, with holds and freezes, on every load, commit and maintenance job.',
       }),
       tabs,
       h('div', {class: 'kpis', id: 'governance-kpis'},
@@ -84,7 +83,7 @@ function summaryPage(catalog, tabs) {
             : h('p', {class: 'muted'}, 'No regulated area in this catalog: an unclassified table stays open.'),
           closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
             h('li', {'data-on': (on.path || []).join('.')}, onLink(catalog, on))))] : null,
-          h('p', {class: 'fine'}, 'A table in a regulated area is refused everything but describe until it has a classification of its own.'))),
+          h('p', {class: 'fine'}, 'Until a table in a regulated area has its own classification, people can find it but not read or change it.'))),
     ];
   });
   show();
@@ -176,7 +175,7 @@ function grantsPage(catalog, tabs, group) {
         h('td', null, h('span', {class: 'tnum'}, at(x['granted-at'])), ' ', muted(x['granted-by'])),
         h('td', null, h('button', {class: 'btn sm ghost', type: 'button', onclick: () => revokeDialog(catalog, x, showList)}, 'Revoke')))))
           : h('p', {class: 'muted'}, g ? `${g} holds no grant in ${catalog}.` : `Your groups hold no grant in ${catalog}.`),
-        h('p', {class: 'fine'}, 'Type a group in the form to list its grants; reading another group\'s grants needs ', code('manage-grants'), '.')];
+        h('p', {class: 'fine'}, 'Type a group in the form to list its grants.')];
     });
   };
   groupIn.addEventListener('change', () => {
@@ -210,7 +209,7 @@ function grantsPage(catalog, tabs, group) {
     eyebrow: `${catalog} · governance`,
     title: `Grants in ${catalog}`,
     sub: 'Grants go to groups, never to people. A group that manages grants holds no other duty, and data and tags never share a group: '
-      + 'the catalog refuses a grant that would break that, and its refusal shows here as it answered.',
+      + 'the catalog refuses a grant that would break that.',
     side: h('button', {class: 'btn sm', type: 'button', 'data-act': 'export-grants', onclick: () => exportGrants(catalog)}, icon('down'), 'Export every grant'),
   }), tabs, h('div', {class: 'grid-21'},
     h('div', {class: 'stack'},
@@ -281,7 +280,7 @@ function holdsPage(catalog, tabs) {
 
 function holdOnPath(catalog) {
   openDialog(`Place a hold in ${catalog}`, h('div', null,
-    h('p', null, 'Name a namespace or a table. The hold carries its reason for as long as it stands.'),
+    h('p', null, 'Name a namespace, table or view. The hold carries its reason for as long as it stands.'),
     dialogForm([
       field('Kind', select('kind', [['namespace', 'namespace'], ['table', 'table'], ['view', 'view']], 'namespace')),
       field('Path', text('path', 'such as equities.eu, or equities.eu.trades for a table')),
