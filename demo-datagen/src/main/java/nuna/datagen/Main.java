@@ -111,7 +111,7 @@ public final class Main {
                     long sent = end - start.get(feed);
                     if (sent < 0) {
                         throw new IllegalStateException("topic " + feed.topic + " holds fewer records than when the world"
-                            + " began: Kafka lost them, so the world cannot resume; demo/demo.sh wipe starts a new one");
+                            + " began: Kafka lost them, so the world cannot resume; demo/demo.sh wipe and up start a new one");
                     }
                     viaKafka.put(feed, sent);
                 });
