@@ -7,7 +7,7 @@
 import * as api from './api.js';
 import {at, code, facts, failure, fmt, h, icon, load, muted, pageHead, panel, pill, s, sized, tbl, took, when} from './dom.js';
 import {objectHref} from './route.js';
-import {REASONS, compactionWords, iceQueue, keyOfRow, maintenanceOff, queue, queueOf, reasonPill} from './queue.js';
+import {REASONS, compactionWords, estate, iceQueue, keyOfRow, maintenanceOff, queue, queueOf, reasonPill} from './queue.js';
 import {mayModify, requestButtons, requestsBox} from './requests.js';
 
 const ALERTS = [
@@ -225,12 +225,14 @@ async function drPanel() {
         + 'checks a DR store.')));
   }
   const target = t => ({catalog: t.catalog, kind: t.kind, namespace: t.namespace || [], name: t.name});
+  const path = [most.catalog, ...(most.namespace || []), most.name].filter(Boolean).join('.');
+  // Linked only for one who may read it: an operator holds no data grant, and its page would refuse them (backlog 225).
+  const readable = most.catalog && (await estate().catch(() => [])).some(t => t.id === most.id);
   return h('div', {class: 'panel hide-sm', id: 'health-dr'}, head, kpis([
     ['behind', 'Tables behind their watermark', count(behind.length)],
     never.length ? ['never', 'Never verified', count(never.length)] : null,
-    ['most', 'Most versions behind', [fmt(most['versions-behind']), ' · ', most.catalog
-      ? h('a', {href: objectHref(target(most)), title: [most.catalog, ...(most.namespace || []), most.name].join('.')}, most.name)
-      : most.name]],
+    ['most', 'Most versions behind', [fmt(most['versions-behind']), ' · ',
+      h(readable ? 'a' : 'span', {href: readable ? objectHref(target(most)) : null, title: path}, most.name)]],
     ['lag', 'Longest lag', longest ? took(1000 * longest['lag-seconds']) : null],
   ]),
   never.length ? h('p', {class: 'fine'}, 'Never verified: no watermark yet, so the readout counts every version they '
