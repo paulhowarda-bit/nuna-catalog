@@ -11,13 +11,13 @@ import java.util.List;
 import org.slf4j.LoggerFactory;
 
 /** The lines of the audit log {@value AuditTrail#LOGGER} while it is open, decoded; closing restores the logger. */
-final class AuditLogCapture implements AutoCloseable {
+public final class AuditLogCapture implements AutoCloseable {
 
     private final Logger logger = (Logger) LoggerFactory.getLogger(AuditTrail.LOGGER);
     private final Level level = logger.getLevel();
     private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
 
-    AuditLogCapture() {
+    public AuditLogCapture() {
         appender.start();
         logger.addAppender(appender);
     }
@@ -36,19 +36,28 @@ final class AuditLogCapture implements AutoCloseable {
     }
 
     /**
-     * The first audit line holding {@code text}, waiting up to 30 seconds for it: the relay writes a change shortly
-     * after its commit.
+     * The first audit line holding every one of {@code texts}, waiting up to 30 seconds for it: the relay writes a
+     * change shortly after its commit.
      */
-    String await(String text) {
+    public String await(String... texts) {
+        return await(1, texts).getFirst();
+    }
+
+    /**
+     * The audit lines holding every one of {@code texts}, waiting up to 30 seconds for at least {@code count} of them:
+     * the relay writes a change shortly after its commit, and takes it out of the outbox.
+     */
+    public List<String> await(int count, String... texts) {
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos();
         while (true) {
-            for (String line : lines()) {
-                if (line.contains(text)) {
-                    return line;
-                }
+            List<String> holding = lines().stream()
+                    .filter(line -> java.util.Arrays.stream(texts).allMatch(line::contains)).toList();
+            if (holding.size() >= count) {
+                return holding;
             }
             if (System.nanoTime() > deadline) {
-                throw new AssertionError("no audit line holds " + text);
+                throw new AssertionError(holding.size() + " audit lines, not " + count + ", hold all of "
+                        + java.util.Arrays.toString(texts));
             }
             try {
                 Thread.sleep(100);

@@ -139,9 +139,10 @@ class ConsoleSignInTest {
         assertThat(driver.getCurrentUrl()).as("the code and state leave the address bar")
                 .startsWith(browser.origin() + "/ui/").doesNotContain("code=", "state=");
 
-        // The token is the realm's, for the catalog, from the console's client, and kept in this tab only.
-        assertThat(storageKeys("sessionStorage")).containsExactly("nuna.token");
-        assertThat(storageKeys("localStorage")).doesNotContain("nuna.token");
+        // The token is the realm's, for the catalog, from the console's client, and kept in this tab only,
+        // beside the ID token that names the session at sign-out (backlog 193).
+        assertThat(storageKeys("sessionStorage")).containsExactlyInAnyOrder("nuna.token", "nuna.id-token");
+        assertThat(storageKeys("localStorage")).doesNotContain("nuna.token", "nuna.id-token");
         String claims = claims((String) driver.executeScript("return sessionStorage.getItem('nuna.token')"));
         assertThat(JsonPath.<String>read(claims, "$.iss")).isEqualTo(ISSUER);
         assertThat(JsonPath.<String>read(claims, "$.azp")).isEqualTo("nuna-console");

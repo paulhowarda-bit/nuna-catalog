@@ -827,7 +827,7 @@ class ConsoleBrowserTest {
         assertThat(feedTypes()).containsExactly("grant", "commit");
         assertThat(lastAsked()).contains("nuna.catalog.grant", "nuna.catalog.read").doesNotContain("audit-read");
         assertThat(textContent(browser.await(By.cssSelector("#audit-kinds p.fine"))))
-                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a type to show its records in the feed\\. .*");
+                .matches("\\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d to \\d{1,2} [A-Z][a-z]{2} \\d\\d:\\d\\d\\. Choose a kind to show its records in the feed\\. .*");
 
         // By kind uses the chips' words, so its counts add up to them; each badge is its chip's word, the raw type
         // its title (Atelier's re-walk after phase 2, backlog 214). The audit's own reads are hidden, so not counted.
