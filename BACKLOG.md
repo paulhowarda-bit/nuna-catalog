@@ -8,7 +8,7 @@ Effort is the working time one agent needs to finish the item, builds and tests 
 on is in the way: **S** under 2 hours, **M** up to a day, **L** 2 to 5 days, **XL** more than 5 days (a
 milestone). The words after the size say why, and what the item waits on, if anything.
 
-**42 open:** 8 S, 15 M, 14 L, 5 XL.
+**45 open:** 10 S, 16 M, 14 L, 5 XL.
 
 | # | Effort | Item | Why that size | Added |
 |--:|:-:|:--|:--|:--|
@@ -54,6 +54,9 @@ milestone). The words after the size say why, and what the item waits on, if any
 | [177](backlog/177.md) | S | Register and revive refuse a branch's metadata file on main (item 107's merge-base review, low) | one check on the metadata location in two CommitEngine operations, a fast test and a bite | 2026-11-23 |
 | [197](backlog/197.md) | M | After audit goes to logs (195): a table's Audit tab reads the audit table, not the topic; the console says which rows came from the log; Health's publish figures are the Kafka copy's | one route's source and three console pages' words, with their tests; waits on nothing | 2026-11-23 |
 | [220](backlog/220.md) | S | Console: findings from Atelier's re-walk after items 212 to 217 | three small console fixes: one column's wrapping, one count's words, one button's label | 2026-11-23 |
+| [226](backlog/226.md) | S | Bite metadata-log-ref-page-by-version runs the server out of heap instead of failing its test, and run.sh calls it NO BITE | re-record one bite against a test that ends on an assertion, and make the judge call an executor crash SETUP, not NO BITE | 2026-11-24 |
+| [227](backlog/227.md) | M | Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot | the race is a drop landing between two reads; the suite needs a way to land it there every time on MongoDB (a hook or a second session), found and then recorded again | 2026-11-24 |
+| [228](backlog/228.md) | S | Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only | finding why the context no longer loads (likely a later PostgreSQL step that assumes journal partitions) and recording the bite again so the server starts; cause not known yet | 2026-11-24 |
 
 ## Open items in full
 
@@ -2921,6 +2924,65 @@ width, the merge verdict's one sentence). Left:
 
 Done looks like: each as above, checked in the demo at 1440 × 900 (no column clipped: each table's scrollWidth within
 its card); the heavy browser cases that read the headline or the button updated.
+
+### 226. Bite metadata-log-ref-page-by-version runs the server out of heap instead of failing its test, and run.sh calls it NO BITE
+
+- Added: 2026-11-24 by overnight run 2026-11-24
+- Touches: bites/D33/metadata-log-ref-page-by-version.patch catalog-server/src/test/ bites/run.sh bites/test-run.sh
+- Effort: S, re-record one bite against a test that ends on an assertion, and make the judge call an executor crash SETUP, not NO BITE
+
+What failed: in the overnight run of 2026-11-24, `bites/D33/metadata-log-ref-page-by-version.patch`
+(`MetadataLogRefTest#throughABranchThePagesCrossTheCutWithoutAGapOrARepeat`, item 109) came out
+`NO BITE (1 passed)`. Its log shows the break did bite, but not on an assertion: with a token's line ignored, the
+pages repeat without end, and after 47 min 49 s the test JVM died with `Gradle Test Executor 310 FAILED`,
+`java.lang.OutOfMemoryError at LifecycleRoutes.java:429` ("Java heap space").
+
+Two things are wrong:
+- The test follows the pages with no bound, so a paging bug hangs it for most of an hour and then crashes it,
+  instead of failing it on an assertion (for example, more pages than the log has lines).
+- `bites/run.sh` judged a run whose test executor crashed as NO BITE, counting one test as passed. An executor
+  failure proves neither verdict; it should be SETUP at least.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\metadata-log-ref-page-by-version.log`, `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites.log` line 734.
+
+Done when the test bounds its paging and fails on an assertion under this break, `bites/run.sh` on the bite reports
+BITES in under a few minutes, the judge no longer reports NO BITE for an executor crash (with a case in
+`bites/test-run.sh`), and the overnight run shows the bite biting.
+
+### 227. Bite mongo-cut-read-outside-the-snapshot does not bite: everyTableInACutHasItsNamespace passes with the cut read outside the snapshot
+
+- Added: 2026-11-24 by overnight run 2026-11-24
+- Touches: catalog-store-api/src/test/ catalog-store-mongo/src/test/ bites/D33/mongo-cut-read-outside-the-snapshot.patch
+- Effort: M, the race is a drop landing between two reads; the suite needs a way to land it there every time on MongoDB (a hook or a second session), found and then recorded again
+
+What failed: in the overnight run of 2026-11-24, `bites/D33/mongo-cut-read-outside-the-snapshot.patch` came out
+`NO BITE (1 passed)`: with `MongoRefs` reading a ref's tables outside the cut's snapshot session,
+`MongoStoreSuiteTest$Refs#everyTableInACutHasItsNamespace` still passed (BUILD SUCCESSFUL in 30 s). The test
+does not make a namespace go between the cut's namespace read and its table read, so it cannot see the break.
+Recorded under item 102; related races in items 157 and 158.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\mongo-cut-read-outside-the-snapshot.log`, `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites.log` line 743.
+
+Done when the test (or a new one in the shared refs suite) lands a drop between the two reads every time, fails
+on an assertion with the patch applied, and the overnight run shows the bite biting.
+
+### 228. Bite store-skips-postgresql-steps is SETUP again: the server no longer starts on PostgreSQL migrated with the shared steps only
+
+- Added: 2026-11-24 by overnight run 2026-11-24
+- Touches: bites/M8/store-skips-postgresql-steps.patch catalog-store-sql/ catalog-server/src/test/
+- Effort: S, finding why the context no longer loads (likely a later PostgreSQL step that assumes journal partitions) and recording the bite again so the server starts; cause not known yet
+
+What failed: in the overnight run of 2026-11-24, `bites/M8/store-skips-postgresql-steps.patch`
+(`SchemaAtStartupTest`) came out `SETUP: 1 of 1 failed in setup`. The Spring context did not load:
+`StoreException at Transactions.java:222` caused by `PSQLException at QueryExecutorImpl.java:2993`. Item 30
+fixed exactly this on 2026-11-15 (the server started and the test failed on its assertion that the journal is
+partitioned); something landed since makes the store fail on a PostgreSQL migrated without V4. Candidates: schema
+steps added by items 114, 126 and 133.
+
+Evidence: `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites\store-skips-postgresql-steps.log`, `C:\Users\paulh\code\nuna-catalog\.overnight\runs\2026-11-24\bites.log` line 1475.
+
+Done when the server starts with the patch applied and `SchemaAtStartupTest` fails on its assertion:
+`bites/run.sh` on the bite reports BITES, and so does the overnight run.
 
 ## Done and dropped
 
