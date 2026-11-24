@@ -1,0 +1,15 @@
+Breaks: A record Kafka does not take fails the request, so the worker's table load gets no credential while Kafka is down and its scan does nothing.
+Module: catalog-maintenance
+Test: KafkaDownTest
+diff --git a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+index 0046e5cd..bb42983f 100644
+--- a/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
++++ b/catalog-server/src/main/java/nuna/catalog/server/governance/AuditTrail.java
+@@ -89,6 +89,7 @@ public final class AuditTrail {
+                 topic.get().publish(event);
+             } catch (RuntimeException e) {
+                 kafkaFailed(1, e);
++                throw e;
+             }
+         }
+     }
