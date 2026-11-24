@@ -241,9 +241,22 @@ function overviewTab(target, t) {
         ['Properties', [propsDd(m.properties), ' ', h('a', {href: objectHref(target, 'properties')}, 'Settings')]],
       ]))),
     h('div', {class: 'stack'}, health, gov,
-      refs.length ? panel('Iceberg refs in this table', null, facts(refs.map(([name, ref]) => [refBadge(name, ref.type),
+      refs.length ? engineRefs(target, refs.map(([name, ref]) => [refBadge(name, ref.type),
         [ref['snapshot-id'] === m['current-snapshot-id'] ? 'current snapshot' : code(String(ref['snapshot-id'])),
-          ref['max-ref-age-ms'] ? muted(` · kept ${Math.round(ref['max-ref-age-ms'] / 86_400_000)} days`) : null]]))) : null));
+          ref['max-ref-age-ms'] ? muted(` · kept ${Math.round(ref['max-ref-age-ms'] / 86_400_000)} days`) : null]])) : null));
+}
+
+/**
+ * A table's own Iceberg refs (Atelier's review, F8; backlog 191): named apart from the catalog's branches and tags, and
+ * folded while one of those is read, so a page read through @sample does not lead with this table's main.
+ */
+function engineRefs(target, rows) {
+  const title = 'Engine-level refs in this table\'s metadata';
+  const body = [h('p', {class: 'fine'}, 'Iceberg\'s own branches and tags, set by engines inside this table, not the catalog\'s.'),
+    facts(rows)];
+  if (!target.ref) return h('div', {class: 'panel', id: 'engine-refs'}, h('h2', null, title), body);
+  return h('details', {class: 'panel fold', id: 'engine-refs'}, h('summary', null, h('h2', null, title, ' ',
+    h('span', {class: 'meta'}, 'Iceberg\'s own, not the catalog\'s'))), body);
 }
 
 /** The table's settings and every property it has (item 141); through a branch a change commits on it, through a tag none is offered. */
@@ -263,7 +276,9 @@ function propertiesTab(target, t, reload, ref) {
   return target.ref ? [refNote(ref || target.ref, 'props'), tab] : tab;
 }
 
-const refBadge = (name, type) => badge([icon(type === 'tag' ? 'tag' : 'branch'), name], type === 'tag' ? 'ref-t' : 'ref-b');
+/** A table's own Iceberg ref, set by an engine: one icon for them all, apart from the catalog's branches and tags (backlog 191). */
+const refBadge = (name, type) => h('span', {title: `Iceberg ${type === 'tag' ? 'tag' : 'branch'} in this table's metadata`},
+  badge([icon('iref'), name], type === 'tag' ? 'ref-t' : 'ref-b'));
 
 async function healthSummary(target) {
   const [health, rows, policy] = await Promise.all([api.tableHealth(target), queue().catch(() => []),

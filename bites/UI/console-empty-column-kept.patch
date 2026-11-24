@@ -1,0 +1,17 @@
+Breaks: Contents keeps a column with nothing on any row.
+Module: catalog-server
+Test: ConsoleBrowserTest#contentsShowEachTablesFormatSnapshotsAndLastCommit
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/browse.js b/catalog-server/src/main/resources/nuna/ui/browse.js
+index c1400621..e070c8b5 100644
+--- a/catalog-server/src/main/resources/nuna/ui/browse.js
++++ b/catalog-server/src/main/resources/nuna/ui/browse.js
+@@ -188,7 +188,7 @@ function contentsTable(catalog, levels, x) {
+     x.ref ? 'Last commit here' : 'Last commit', x.ref ? `On @${x.ref}` : null].filter(Boolean);
+   // A column with nothing on any row says nothing, so it goes (Atelier's review, F16; backlog 193).
+   const blank = td => ['', '–', '—'].includes(td.textContent.trim());
+-  const empty = heads.map((_, i) => i > 1 && rows.every(r => blank(r.children[i])));
++  const empty = heads.map((_, i) => false && rows.every(r => blank(r.children[i])));
+   for (const r of rows) [...r.children].forEach((td, i) => { if (empty[i]) td.remove(); });
+   return h('div', {class: 'panel', id: 'contents'}, tbl('contents stack-line', heads.filter((_, i) => !empty[i]), rows),
+     h('p', {class: 'fine'}, 'Only what your groups may describe is listed. ', x.ref

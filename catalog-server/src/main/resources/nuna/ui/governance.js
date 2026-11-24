@@ -4,7 +4,7 @@
 
 import * as api from './api.js';
 import {at, code, failure, fill, fmt, frozenPill, granted, h, heldPill, icon, load, muted, openDialog, pageHead, panel,
-  pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre} from './dom.js';
+  pill, plural, select, tabsNav, tbl, text, dialogForm, field, copyButton, jsonPre, opensRow} from './dom.js';
 import {href, objectHref, pageHref} from './route.js';
 import {drFreeze, governanceTab, PRIVILEGES, placeHold, releaseHold, revokeDialog, targetOfOn} from './panels.js';
 import {closedNote, may, operates} from './access.js';
@@ -78,7 +78,8 @@ function summaryPage(catalog, tabs) {
           h('p', {class: 'fine'}, 'A hold stops snapshot expiry, orphan removal, drops and purges. A freeze stops every cleanup and write '
             + 'beneath it until it is lifted. ', h('a', {href: pageHref('governance', catalog, 'holds')}, 'With what was lifted'))),
         h('div', {class: 'panel', id: 'regulated'}, h('h2', null, 'Regulated areas ', h('span', {class: 'meta'}, 'closed until classified')),
-          regulated.length ? tbl('stack-line', ['Area', ['Tables', 'num'], ['Closed', 'num']], regulated.map(r => h('tr', {'data-on': (r.on.path || []).join('.')},
+          regulated.length ? tbl('stack-line', ['Area', ['Tables', 'num'], ['Closed', 'num']], regulated.map(r => h('tr', {class: r.on.kind === 'catalog' ? null : 'opens',
+            onclick: opensRow, 'data-on': (r.on.path || []).join('.')},
             h('td', {class: 'name'}, onLink(catalog, r.on)), h('td', {class: 'num'}, fmt(r.tables || 0)), h('td', {class: 'num'}, fmt(r.closed || 0)))))
             : h('p', {class: 'muted'}, 'No regulated area in this catalog: an unclassified table stays open.'),
           closed.length ? [h('h3', null, 'Closed until classified'), h('ul', {class: 'stack closed-list'}, closed.map(on =>
@@ -95,7 +96,8 @@ function standingTable(catalog, standing, reload) {
   if (!standing.length) return h('p', {class: 'muted'}, `No hold or freeze stands in ${catalog}.`);
   return tbl('holds', ['Kind', 'On', 'Reason, as recorded', 'Placed', ''], standing.map(x => {
     const level = targetOfOn(catalog, x.on);
-    return h('tr', {'data-kind': x.kind, 'data-on': (x.on.path || []).join('.')},
+    return h('tr', {class: x.on.kind === 'catalog' ? null : 'opens', onclick: opensRow, 'data-kind': x.kind,
+      'data-on': (x.on.path || []).join('.')},
       h('td', null, x.kind === 'hold' ? heldPill('Hold') : frozenPill('Freeze')),
       h('td', {class: 'name'}, onLink(catalog, x.on)),
       h('td', {class: 'wrap'}, x.reason || muted('–')),
@@ -111,7 +113,8 @@ function standingTable(catalog, standing, reload) {
  * on a level dropped since is named by its kind and id, as there is no longer a path to it.
  */
 function liftedTable(catalog, lifted) {
-  return tbl('holds', ['Kind', 'On', 'Reason, as recorded', 'Placed', 'Lifted'], lifted.map(x => h('tr', {'data-kind': x.kind,
+  return tbl('holds', ['Kind', 'On', 'Reason, as recorded', 'Placed', 'Lifted'], lifted.map(x => h('tr', {
+    class: x.on.path === null || x.on.kind === 'catalog' ? null : 'opens', onclick: opensRow, 'data-kind': x.kind,
     'data-on': (x.on.path || []).join('.')},
   h('td', null, pill('', icon(x.kind === 'hold' ? 'lock' : 'snow'), x.kind === 'hold' ? 'Hold' : 'Freeze')),
   h('td', {class: 'name'}, x.on.path === null ? [code(x.on.id), ' ', muted(`· ${x.on.kind}, dropped since`)] : onLink(catalog, x.on)),

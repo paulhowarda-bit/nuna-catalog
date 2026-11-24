@@ -1,11 +1,11 @@
 // The console: sign-in, the shell (top bar, menu, catalog picker, theme, Go to a path) and the router. Each page
 // lives in its own module and asks the catalog's own routes for what it shows; the server decides every permission.
 
-import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startSignIn, useToken, whenSignedOut}
+import {backFromSignOut, claims, finishSignIn, signedIn, signedOut, signOut, startAgain, startSignIn, useToken, whenSignedOut}
   from './auth.js';
 import * as api from './api.js';
 import {auditOpen, groupWords, keepAccess, operates, readsData} from './access.js';
-import {$, $$, failure, fill, fmt, h, icon, pill} from './dom.js';
+import {$, $$, at, failure, fill, fmt, h, icon, pill} from './dom.js';
 import {href, objectHref, pageHref, parse, remembered, SEP, warehouseOf} from './route.js';
 import {estate, keyOfRow, queue, queueOf, REASONS, targetOfRow} from './queue.js';
 import {overviewPage} from './overview.js';
@@ -200,10 +200,10 @@ function showWho() {
   for (const n of $$('[data-initials]')) n.textContent = initials;
   const who = $('#who');
   who.title = 'From the token, as the browser reads it; the server decides what it allows.'
-    + (until ? ' The token lasts until ' + until.toLocaleString() + '.' : '');
+    + (until ? ' The token lasts until ' + at(until) + '.' : '');
   fill($('.who-text', who), h('b', null, h('strong', null, name)), groups.length ? h('span', {class: 'muted'}, ' · ' + groups.join(', ')) : null);
   for (const p of $$('p[data-who]', navEl)) {
-    p.textContent = `Signed in as ${name}${groups.length ? ' · ' + groups.join(', ') : ''}${until ? ' · until ' + until.toLocaleString() : ''}`;
+    p.textContent = `Signed in as ${name}${groups.length ? ' · ' + groups.join(', ') : ''}${until ? ' · until ' + at(until) : ''}`;
   }
 }
 
@@ -249,7 +249,13 @@ function horizon() {
 
 const CLAIM = 'The Iceberg catalog that keeps every table in shape and every change on record.';
 
-function signInPage(message) {
+/** Forgets a half-finished sign-in and opens the sign-in screen afresh (backlog 193). */
+const startAgainButton = () => h('button', {class: 'btn sm', type: 'button', 'data-act': 'start-again', onclick: () => {
+  startAgain();
+  location.replace(location.pathname);
+}}, 'Start again');
+
+function signInPage(message, again) {
   consoleEl.hidden = true;
   $('#booting').hidden = true;
   signinEl.hidden = false;
@@ -259,7 +265,8 @@ function signInPage(message) {
   document.title = 'Sign in · nuna';
   const form = h('div', {class: 'signin-form'}, brand('only-sm'), h('p', {class: 'claim only-sm'}, CLAIM),
     h('h1', null, 'Sign in to nuna'),
-    message ? h('p', {class: 'notice', role: 'status'}, icon('info'), h('span', null, message)) : null);
+    message ? h('p', {class: 'notice', role: 'status'}, icon('info'), h('span', null, message)) : null,
+    again ? startAgainButton() : null);
   if (config.oidc) {
     const host = new URL(config.oidc.issuer).host;
     const status = h('div', {'aria-live': 'polite'});
@@ -270,7 +277,7 @@ function signInPage(message) {
       try {
         await startSignIn(config.oidc);
       } catch (error) {
-        fill(status, failure(error, {title: 'Sign-in did not start'}));
+        fill(status, failure(error, {title: 'Sign-in did not start'}), startAgainButton());
       }
     }}, icon('key'), 'Sign in with ' + host), status);
   }
@@ -695,19 +702,20 @@ applyTheme();
 async function boot() {
   const signingOut = backFromSignOut();
   try {
-    const response = await fetch('/ui/config.json', {cache: 'no-store', credentials: 'omit'});
+    const response = await fetch('/ui/config.json', {cache: 'no-store', credentials: 'omit', signal: AbortSignal.timeout(15000)});
     config = await response.json();
   } catch (error) {
     $('#booting').hidden = true;
     signinEl.hidden = false;
-    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true, title: 'The console could not read its settings, /ui/config.json'})));
+    fill(signinEl, h('main', {class: 'nc-main'}, failure(error, {big: true, title: 'The console could not read its settings, /ui/config.json'}),
+      h('button', {class: 'btn sm', type: 'button', 'data-act': 'try-again', onclick: () => location.reload()}, 'Try again')));
     return;
   }
   if (config.oidc) {
     try {
       await finishSignIn(config.oidc);
     } catch (error) {
-      signInPage(error.message);
+      signInPage(error.message, true);
       return;
     }
   }

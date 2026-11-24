@@ -1,0 +1,17 @@
+Breaks: A slow IdP is not named: the sign-in shows the browser's own error.
+Module: catalog-server
+Test: ConsoleSignInTest#anIdpThatDoesNotAnswerIsNamedWithStartAgain
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/auth.js b/catalog-server/src/main/resources/nuna/ui/auth.js
+index f1bf7b05..97ea193e 100644
+--- a/catalog-server/src/main/resources/nuna/ui/auth.js
++++ b/catalog-server/src/main/resources/nuna/ui/auth.js
+@@ -21,7 +21,7 @@ async function idp(url, init) {
+   try {
+     return await fetch(url, {...init, credentials: 'omit', signal: AbortSignal.timeout(IDP_WAIT_MS)});
+   } catch (error) {
+-    throw new Error(error && error.name === 'TimeoutError'
++    throw error; throw new Error(error && error.name === 'TimeoutError'
+       ? `${host} is not answering: no reply in ${IDP_WAIT_MS / 1000} s.`
+       : `${host} could not be reached: ${error && error.message || error}.`);
+   }

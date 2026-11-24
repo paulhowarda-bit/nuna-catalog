@@ -1,0 +1,17 @@
+Breaks: An answer box shows its status and request id in the open again.
+Module: catalog-server
+Test: ConsoleSettingsBrowserTest#theCatalogsRefusalIsShownWithItsRequestId
+
+diff --git a/catalog-server/src/main/resources/nuna/ui/dom.js b/catalog-server/src/main/resources/nuna/ui/dom.js
+index 4fce3604..f278cac8 100644
+--- a/catalog-server/src/main/resources/nuna/ui/dom.js
++++ b/catalog-server/src/main/resources/nuna/ui/dom.js
+@@ -197,7 +197,7 @@ export async function load(container, loader, title) {
+  * What an answer box keeps for whoever asks support: the status, the route and the request id, folded behind one
+  * "Technical details" so the box leads with what happened in plain words (Atelier's review, F10; backlog 188).
+  */
+-export const techDetails = (...kids) => h('details', {class: 'tech'}, h('summary', null, 'Technical details'), kids);
++export const techDetails = (...kids) => h('details', {class: 'tech', open: ''}, h('summary', null, 'Technical details'), kids);
+ 
+ export function failure(error, opts = {}) {
+   if (error && error.status) {

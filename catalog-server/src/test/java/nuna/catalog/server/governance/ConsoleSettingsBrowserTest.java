@@ -156,8 +156,11 @@ class ConsoleSettingsBrowserTest {
         driver.findElement(By.cssSelector("dialog.dlg button[type='submit']")).click();
 
         WebElement refusal = browser.await(By.cssSelector("dialog.dlg .refusal"));
-        assertThat(refusal.getText()).contains("Refused by the catalog", "403", "holds no privilege that gives modify",
-                "audited as a denial");
+        assertThat(refusal.getText()).contains("Refused by the catalog", "holds no privilege that gives modify",
+                "The refusal is recorded in the audit.").doesNotContain("X-Request-ID");
+        // Its status and request id are behind Technical details (Atelier's review, F10; backlog 188).
+        refusal.findElement(By.cssSelector("details.tech > summary")).click();
+        assertThat(refusal.getText()).contains("403", "audited as a denial");
         String requestId = refusal.findElement(By.cssSelector("[data-rid]")).getDomAttribute("data-rid");
         assertThat(requestId).isNotBlank();
         assertThat(refusal.getText()).contains("X-Request-ID " + requestId);

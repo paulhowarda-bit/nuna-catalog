@@ -37,7 +37,11 @@ function p99(value) {
   return value['at-most-ms'] !== undefined ? '≤ ' + value['at-most-ms'] + ' ms' : '> ' + value['over-ms'] + ' ms';
 }
 
-/** The share within the objective as a dot on a 97 to 100% scale; the tall tick is the 99% objective. */
+/**
+ * The share within the objective as a dot on a 97 to 100% scale; the tall tick is the 99% objective. A share below
+ * the scale is a marker pointing off its left edge with the share beside it, so 78% and 1% no longer look alike
+ * (Atelier's review, F15; backlog 194).
+ */
 function sloScale(ratio, W) {
   const x0 = W === 300 ? 16 : 14;
   const x1 = W - x0;
@@ -49,7 +53,14 @@ function sloScale(ratio, W) {
     svg.append(s('line', {class: pct === 99 ? 'obj' : 'tk', x1: x, y1: pct === 99 ? 4 : 8, x2: x, y2: pct === 99 ? 20 : 16}),
       s('text', {class: 'lab', x, y: 36, 'text-anchor': pct === 97 ? 'start' : pct === 100 ? 'end' : 'middle'}, pct + '%'));
   }
-  if (ratio !== null) svg.append(s('circle', {class: 'dot', cx: xOf(Math.max(97, Math.min(100, 100 * ratio))), cy: 12, r: 6}));
+  if (ratio === null) return svg;
+  const pct = 100 * ratio;
+  if (pct < 97) {
+    svg.append(s('path', {class: 'off', d: `M${x0 - 8} 12 L${x0 + 3} 5.5 L${x0 + 3} 18.5 Z`}),
+      s('text', {class: 'offv', x: x0 + 9, y: 16.5}, Math.floor(pct * 10) / 10 + '%'));
+  } else {
+    svg.append(s('circle', {class: 'dot', cx: xOf(Math.min(100, pct)), cy: 12, r: 6}));
+  }
   return svg;
 }
 
@@ -104,7 +115,8 @@ async function catalogHealth() {
             h('td', null, verdict(x.met)))), {id: 'health-slos'}),
         h('div', {class: 'mslo slo only-sm'}, slos.map(x => h('div', null, h('span', null, x.short),
           x.share ? pill(x.met ? 'ok' : x.met === false ? 'bad' : '', x.share) : muted('none'), sloScale(x.ratio, 300)))),
-        h('p', {class: 'fine hide-sm'}, 'Share within the objective on a 97 to 100% scale. The tall tick is the 99% objective.')),
+        h('p', {class: 'fine hide-sm'}, 'Share within the objective on a 97 to 100% scale. The tall tick is the 99% objective; a share '
+          + 'below 97% points off the scale\'s left edge, with its value.')),
       h('div', {class: 'grid-3'},
         panel('Audit to Kafka', null, audit(health.audit || {}),
           h('p', {class: 'fine'}, 'A failed publish refuses the request it audits (D23).')),
